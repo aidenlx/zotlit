@@ -2,11 +2,12 @@ import type { Plugin } from "obsidian";
 
 import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 
 import { plainPluginSettings } from "./plain";
 import type { PlainPluginSettings } from "./plain";
 import { layerPluginSettings, PluginSettings } from "./service";
-import type { PluginSettingsOptions } from "./service";
+import type { PluginSettingsOptions, Settings } from "./service";
 
 export type SettingsFixtureOptions = Partial<PluginSettingsOptions> & {
   plugin: Pick<Plugin, "loadData" | "saveData">;
@@ -65,3 +66,53 @@ export const plainSettingsOf = Effect.fnUntraced(function* (
 ) {
   return (yield* settingsRuntimeOf(options)).settings;
 });
+
+/** Values a test seeds: persisted settings, and default Profile bindings by name. */
+export type SettingsOverrides = Partial<Settings> &
+  Partial<ResolvedLiteratureNoteProfileBindings>;
+
+const BINDING_KEYS = [
+  "note.literature-folder",
+  "citation.references-style",
+  "note.import-folder",
+  "note.import-colored-highlights",
+  "note.import-annotations-as-template",
+] as const satisfies readonly (keyof ResolvedLiteratureNoteProfileBindings)[];
+
+/**
+ * Writes `overrides` through the real store: settings through `update`, and a
+ * binding name through the default Profile's bindings.
+ */
+export function applySettings(
+  settings: Pick<
+    PlainPluginSettings,
+    "update" | "updateDefaultLiteratureNoteProfileBindings"
+  >,
+  overrides: SettingsOverrides,
+): void {
+  const persisted: Record<string, unknown> = { ...overrides };
+  const bindings: Record<string, unknown> = {};
+  for (const key of BINDING_KEYS) {
+    if (!(key in persisted)) continue;
+    bindings[key] = persisted[key];
+    delete persisted[key];
+  }
+  if (Object.keys(persisted).length > 0)
+    settings.update(persisted as Partial<Settings>);
+  if (Object.keys(bindings).length > 0)
+    settings.updateDefaultLiteratureNoteProfileBindings(
+      bindings as Partial<ResolvedLiteratureNoteProfileBindings>,
+    );
+}
+
+/** The real store over empty plugin data, seeded with `overrides`. */
+export async function buildSeededSettings(overrides: SettingsOverrides = {}) {
+  const settings = await buildSettings({
+    plugin: {
+      loadData: () => Promise.resolve(null),
+      saveData: () => Promise.resolve(),
+    },
+  });
+  applySettings(settings, overrides);
+  return settings;
+}

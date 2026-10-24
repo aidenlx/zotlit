@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Stream } from "@/lib/effect";
-import { defaults } from "@/services/settings/schema";
-import type { Settings } from "@/services/settings/schema";
+import { buildSeededSettings } from "@/services/settings/__fixtures__";
 
 import {
   WikilinkDisplaySettings,
@@ -202,8 +199,8 @@ describe("citationOfRun", () => {
 });
 
 describe("WikilinkDisplaySettings", () => {
-  it("seeds from the first snapshot without asking for a redraw", () => {
-    const settings = new SettingsStub({
+  it("seeds from the first snapshot without asking for a redraw", async () => {
+    await using settings = await buildSeededSettings({
       "citation.wikilink-citations": true,
     });
     const display = new WikilinkDisplaySettings();
@@ -215,8 +212,8 @@ describe("WikilinkDisplaySettings", () => {
     expect(redraws).toBe(0);
   });
 
-  it("shows wikilinks only while their source and formatted presentation are on", () => {
-    const settings = new SettingsStub({
+  it("shows wikilinks only while their source and formatted presentation are on", async () => {
+    await using settings = await buildSeededSettings({
       "citation.wikilink-citations": true,
       "citation.show-formatted": true,
     });
@@ -233,8 +230,8 @@ describe("WikilinkDisplaySettings", () => {
     expect(display.enabled).toBe(false);
   });
 
-  it("asks for a redraw when a later snapshot changes what a link displays", () => {
-    const settings = new SettingsStub({
+  it("asks for a redraw when a later snapshot changes what a link displays", async () => {
+    await using settings = await buildSeededSettings({
       "citation.wikilink-citations": false,
     });
     const display = new WikilinkDisplaySettings();
@@ -248,8 +245,8 @@ describe("WikilinkDisplaySettings", () => {
     expect(redraws).toBe(2);
   });
 
-  it("stays quiet for a setting neither surface reads", () => {
-    const settings = new SettingsStub();
+  it("stays quiet for a setting neither surface reads", async () => {
+    await using settings = await buildSeededSettings();
     const display = new WikilinkDisplaySettings();
     let redraws = 0;
     display.watch(testRuntime(), settings, () => redraws++);
@@ -258,8 +255,10 @@ describe("WikilinkDisplaySettings", () => {
     expect(redraws).toBe(0);
   });
 
-  it("takes the click while Citations stay closed as links", () => {
-    const settings = new SettingsStub({ "citation.open-as-links": true });
+  it("takes the click while Citations stay closed as links", async () => {
+    await using settings = await buildSeededSettings({
+      "citation.open-as-links": true,
+    });
     const display = new WikilinkDisplaySettings();
     let redraws = 0;
     display.watch(testRuntime(), settings, () => redraws++);
@@ -271,8 +270,10 @@ describe("WikilinkDisplaySettings", () => {
     expect(redraws).toBe(1);
   });
 
-  it("reads the click apart from the Hover Action", () => {
-    const settings = new SettingsStub({ "citation.hover-action": "off" });
+  it("reads the click apart from the Hover Action", async () => {
+    await using settings = await buildSeededSettings({
+      "citation.hover-action": "off",
+    });
     const display = new WikilinkDisplaySettings();
     display.watch(testRuntime(), settings, () => undefined);
 
@@ -280,8 +281,8 @@ describe("WikilinkDisplaySettings", () => {
     expect(display.clickIntercepted).toBe(true);
   });
 
-  it("stops following once unsubscribed", () => {
-    const settings = new SettingsStub();
+  it("stops following once unsubscribed", async () => {
+    await using settings = await buildSeededSettings();
     const display = new WikilinkDisplaySettings();
     let redraws = 0;
 
@@ -292,20 +293,3 @@ describe("WikilinkDisplaySettings", () => {
     expect(redraws).toBe(0);
   });
 });
-
-class SettingsStub {
-  current: Readonly<Settings>;
-  readonly #events = testEvent<Readonly<Settings>>();
-  readonly changes = Stream.suspend(() =>
-    this.#events.stream.pipe(Stream.prepend([this.current])),
-  );
-
-  constructor(overrides: Partial<Settings> = {}) {
-    this.current = { ...defaults, ...overrides };
-  }
-
-  update(overrides: Partial<Settings>): void {
-    this.current = { ...this.current, ...overrides };
-    this.#events.emit(this.current);
-  }
-}

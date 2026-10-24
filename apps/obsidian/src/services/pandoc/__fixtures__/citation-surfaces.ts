@@ -24,6 +24,7 @@ import { act } from "preact/test-utils";
 import { vi } from "vitest";
 
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { spliceFrontMatter } from "@/lib/live-text";
 import {
@@ -34,7 +35,6 @@ import {
   KEY_B,
   LibraryScopeStub,
   personalLibrary,
-  SettingsStub,
 } from "@/services/citation-index/test-harness";
 import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
 import { CitationPopover } from "@/services/citation-popover/service";
@@ -43,7 +43,11 @@ import { citationTextFixture } from "@/services/citation-text/__fixtures__";
 import { createCitationEngine } from "@/services/pandoc/engine";
 import { bibliographyRenderFixture } from "@/services/pandoc/render-cache/__fixtures__";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
+import { applySettings, buildSeededSettings } from "@/services/settings/__fixtures__";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
+
+type ProfileFixture = Pick<Settings, "profiles" | "defaultDocument">;
 import { seedWorksSql } from "@/services/zotero-reads/test-utils";
 import { applyCitationPresentation } from "@/views/citation-presentation/presentation";
 import type { CitationPresentationChoice } from "@/views/citation-presentation/presentation";
@@ -275,7 +279,16 @@ export async function openCitationVault({
     await writeFile(join(dataDir, "styles", name), xml);
   }
 
-  const settings = new SettingsStub(overrides);
+  // The Profile registry this fixture reads lives beside the settings store,
+  // which holds no Profile list of its own.
+  const { profiles, defaultDocument, ...persisted } = overrides;
+  let profileFixture: ProfileFixture = { profiles, defaultDocument };
+  const profileChanged = testEvent<void>();
+  const settings = stack.use(await buildSeededSettings(persisted));
+  const profileSettings = (): Settings => ({
+    ...settings.current,
+    ...profileFixture,
+  });
   const harness = stack.use(
     await createCitationIndexHarness(
       { [DRAFT]: DRAFT_BODY, [EXPORT_NOTE]: EXPORT_BODY },
@@ -330,7 +343,7 @@ export async function openCitationVault({
   );
   const cache = stack.use(
     await bibliographyRenderFixture({
-      profile: { changed: settings.changes.pipe(Stream.drop(1), Stream.map(() => undefined)) },
+      profile: { changed: Stream.merge(settings.changes.pipe(Stream.drop(1), Stream.map(() => undefined)), profileChanged.stream) },
       db: harness.db,
       pandocEngine: {
         getStatus: () => ({ kind: "installed", version: "test", binary: { directory: "pandoc-engine", name: "pandoc.wasm" } }),
@@ -352,7 +365,7 @@ export async function openCitationVault({
   const citationText = stack.use(
     citationTextFixture({
       openDocuments: new OpenDocumentsStub(),
-      profile: profileReader(() => settings.current, harness.metadataCache),
+      profile: profileReader(profileSettings, harness.metadataCache),
       app: harness.app,
       citationIndex: harness.index,
       citationLookup: harness.lookup,
@@ -367,7 +380,7 @@ export async function openCitationVault({
     {
       runtime: citationText.runtime,
       app: sidebarApp(harness),
-      profile: profileReader(() => settings.current, harness.metadataCache),
+      profile: profileReader(profileSettings, harness.metadataCache),
       db: harness.db,
       citationIndex: harness.index,
       citationLookup: harness.lookup,
@@ -392,7 +405,7 @@ export async function openCitationVault({
   });
 
   const popover = stack.use(new CitationPopover({ runtime: cache.runtime,
-    profile: profileReader(() => settings.current, harness.metadataCache),
+    profile: profileReader(profileSettings, harness.metadataCache),
     app: {
       metadataCache: harness.metadataCache,
       vault: {
@@ -450,7 +463,13 @@ export async function openCitationVault({
     };
   };
 
-  const exportDeps = exportAdapter({ dataDir, engine, harness, settings });
+  const exportDeps = exportAdapter({
+    dataDir,
+    engine,
+    harness,
+    settings,
+    profileSettings,
+  });
 
   const held = stack.move();
   return {
@@ -534,7 +553,12 @@ export async function openCitationVault({
       await act(async () => undefined);
     },
     async setSettings(next) {
-      settings.update(next);
+      const { profiles, defaultDocument, ...persisted } = next;
+      applySettings(settings, persisted);
+      if ("profiles" in next || "defaultDocument" in next) {
+        profileFixture = { ...profileFixture, profiles, defaultDocument };
+        profileChanged.emit();
+      }
       // The drop reaches every surface at once; the pane republishes with it.
       await act(async () => undefined);
     },
@@ -586,15 +610,17 @@ function exportAdapter({
   engine,
   harness,
   settings,
+  profileSettings,
 }: {
   dataDir: string;
   engine: Awaited<ReturnType<typeof createCitationEngine>>;
   harness: CitationIndexHarness;
-  settings: SettingsStub;
+  settings: PlainPluginSettings;
+  profileSettings: () => Settings;
 }): PandocExportDeps {
   return {
     citationParse: inProcessParseClient,
-    profile: profileReader(() => settings.current, harness.metadataCache),
+    profile: profileReader(profileSettings, harness.metadataCache),
     app: {
       metadataCache: harness.metadataCache,
       vault: {

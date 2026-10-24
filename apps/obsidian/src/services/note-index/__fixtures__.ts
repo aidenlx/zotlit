@@ -27,6 +27,46 @@ export function buildNoteIndex(app: App, stack: AsyncDisposableStack) {
   return Object.assign(plainNoteIndex(runtime), { runtime });
 }
 
+/**
+ * The real Note Index for a consumer suite, over a host of its own. The plugin
+ * was enabled at runtime, so the Full Scan is done once this resolves.
+ *
+ * @param notes each Literature Note's path, and the Item key it carries.
+ * @param stack owns the index's runtime.
+ */
+export async function openNoteVault(
+  notes: Record<string, string>,
+  stack: AsyncDisposableStack,
+) {
+  const host = createNoteHost(
+    Object.fromEntries(
+      Object.entries(notes).map(([path, itemKey]) => [
+        path,
+        cache({ itemKey }),
+      ]),
+    ),
+    { enabledAtRuntime: true },
+  );
+  const noteIndex = buildNoteIndex(host.app, stack);
+  await noteIndex.whenIndexed();
+  return {
+    ...host,
+    noteIndex,
+    /**
+     * The note at `path`, created when the vault holds none, now carries
+     * `itemKey`, or no key; resolves once the Note Index has read the edit.
+     */
+    writeNote: async (
+      path: string,
+      itemKey: string | undefined,
+    ): Promise<void> => {
+      const file = host.vault.files.get(path) ?? host.vault.addFile(path);
+      host.metadataCache.change(file, cache({ itemKey }));
+      await noteIndex.whenSettled();
+    },
+  };
+}
+
 type Callback = (...args: unknown[]) => void;
 type MetadataEvent = "changed" | "deleted" | "resolved";
 type VaultEvent = "rename" | "delete";

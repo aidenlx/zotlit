@@ -13,7 +13,7 @@ import type { Library, LibraryCitekey } from "@zotlit/db";
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
 import type { Context } from "@/lib/effect";
-import { Effect, SubscriptionRef, Stream } from "@/lib/effect";
+import { Effect, Stream } from "@/lib/effect";
 import type { ParseClient } from "@/services/citation-parse/client";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { resolveLibraryScope } from "@/services/library-scope/scope";
@@ -23,11 +23,13 @@ import type {
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 import type { LibraryScopeEvents } from "@/services/library-scope/service";
-import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
+import { buildNoteIndex } from "@/services/note-index/__fixtures__";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 import { testClock } from "@/services/query-client/test-clock";
-import { defaults } from "@/services/settings/schema";
+import { buildSeededSettings } from "@/services/settings/__fixtures__";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
@@ -93,6 +95,11 @@ export class MockMetadataCache {
     return this.fileCache.get(path) ?? null;
   }
 
+  /** The cache holds every file the harness added, so it is already clean. */
+  onCleanCache(callback: () => void): void {
+    callback();
+  }
+
   getFirstLinkpathDest(linkpath: string, _sourcePath: string): TFile | null {
     return this.files.get(`${linkpath}.md`) ?? null;
   }
@@ -153,7 +160,10 @@ export class MockMetadataCache {
 export class MockVault {
   readonly bodies = new Map<string, string>();
   readonly reads: string[] = [];
-  readonly #listeners = new Set<Callback>();
+  readonly #listeners: Record<"rename" | "delete", Set<Callback>> = {
+    rename: new Set(),
+    delete: new Set(),
+  };
   readonly #held = new Map<string, PromiseWithResolvers<void>>();
   readonly #failures = new Map<string, unknown>();
 
@@ -199,14 +209,17 @@ export class MockVault {
     file.stat = statOf(body);
   }
 
-  on(_name: "rename", callback: Callback): EventRef {
-    this.#listeners.add(callback);
-    return { e: this, callback } as unknown as EventRef;
+  on(name: "rename" | "delete", callback: Callback): EventRef {
+    this.#listeners[name].add(callback);
+    return { e: this, name, callback } as unknown as EventRef;
   }
 
   offref(ref: EventRef): void {
-    const { callback } = ref as unknown as { callback: Callback };
-    this.#listeners.delete(callback);
+    const { name, callback } = ref as unknown as {
+      name: "rename" | "delete";
+      callback: Callback;
+    };
+    this.#listeners[name].delete(callback);
   }
 
   deleteFile(file: TFile): void {
@@ -224,7 +237,7 @@ export class MockVault {
     updateFilePath(file, path);
     this.metadataCache.files.set(path, file);
     if (cache) this.metadataCache.fileCache.set(path, cache);
-    for (const callback of this.#listeners) callback(file, oldPath);
+    for (const callback of this.#listeners.rename) callback(file, oldPath);
   }
 }
 
@@ -238,23 +251,6 @@ export class MockWorkspace {
   layoutReady(): void {
     for (const callback of this.#pending.splice(0)) callback();
   }
-}
-
-export class NoteIndexStub {
-  readonly notes = new Map<string, TFile>();
-
-  getNotesByItemKey(indexedKey: string): TFile[] {
-    const note = this.notes.get(indexedKey);
-    return note ? [note] : [];
-  }
-
-  whenIndexed(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  readonly changed = Stream.empty;
-  readonly indexed = Stream.empty;
-  readonly "frontmatter-changed" = Stream.empty;
 }
 
 /**
@@ -600,78 +596,6 @@ export class MemoryStore implements CitekeyStore {
   [Symbol.dispose](): void {}
 }
 
-export class SettingsStub {
-  readonly #state;
-  readonly changes;
-  constructor(overrides: SettingsOverrides = {}) {
-    this.#state = Effect.runSync(
-      SubscriptionRef.make<Readonly<Settings>>(
-        applySettingsOverrides(defaults, overrides),
-      ),
-    );
-    this.changes = SubscriptionRef.changes(this.#state);
-  }
-  get current(): Readonly<Settings> {
-    return Effect.runSync(SubscriptionRef.get(this.#state));
-  }
-  update(overrides: SettingsOverrides): void {
-    Effect.runSync(
-      SubscriptionRef.set(
-        this.#state,
-        applySettingsOverrides(this.current, overrides),
-      ),
-    );
-  }
-}
-
-type SettingsOverrides = Partial<Settings> &
-  Partial<ResolvedLiteratureNoteProfileBindings>;
-
-function applySettingsOverrides(
-  current: Readonly<Settings>,
-  overrides: SettingsOverrides,
-): Settings {
-  const {
-    ["note.literature-folder"]: literatureFolder,
-    ["citation.references-style"]: referencesStyle,
-    ["note.import-folder"]: importFolder,
-    ["note.import-colored-highlights"]: importColoredHighlights,
-    ["note.import-annotations-as-template"]: importAnnotationsAsTemplate,
-    ...persisted
-  } = overrides;
-  const profile = overrides["note.default-profile"];
-  return {
-    ...current,
-    ...persisted,
-    "note.default-profile": {
-      ...current["note.default-profile"],
-      ...profile,
-      bindings: {
-        ...current["note.default-profile"].bindings,
-        ...profile?.bindings,
-        ...(literatureFolder === undefined
-          ? {}
-          : { "note.literature-folder": literatureFolder }),
-        ...(referencesStyle === undefined
-          ? {}
-          : { "citation.references-style": referencesStyle }),
-        ...(importFolder === undefined
-          ? {}
-          : { "note.import-folder": importFolder }),
-        ...(importColoredHighlights === undefined
-          ? {}
-          : { "note.import-colored-highlights": importColoredHighlights }),
-        ...(importAnnotationsAsTemplate === undefined
-          ? {}
-          : {
-              "note.import-annotations-as-template":
-                importAnnotationsAsTemplate,
-            }),
-      },
-    },
-  };
-}
-
 export interface CitationIndexHarness extends AsyncDisposable {
   app: App;
   draft: TFile;
@@ -683,8 +607,8 @@ export interface CitationIndexHarness extends AsyncDisposable {
   closeIndex: () => Promise<void>;
   lookup: Awaited<ReturnType<typeof citationLookupFixture>>;
   metadataCache: MockMetadataCache;
-  noteIndex: NoteIndexStub;
-  settings: SettingsStub;
+  noteIndex: PlainNoteIndex;
+  settings: PlainPluginSettings;
   store: MemoryStore;
   vault: MockVault;
   workspace: MockWorkspace;
@@ -711,7 +635,7 @@ export interface CitationIndexHarnessOptions {
    */
   zoteroRows?: string;
   notes?: boolean;
-  settingsService?: SettingsStub;
+  settingsService?: PlainPluginSettings;
   awaitReady?: boolean;
   libraryScope?: LibraryScopeStub;
 }
@@ -724,7 +648,6 @@ export async function createCitationIndexHarness(
   const metadataCache = new MockMetadataCache();
   const vault = new MockVault(metadataCache);
   const workspace = new MockWorkspace();
-  const noteIndex = new NoteIndexStub();
   const store = options.store ?? new MemoryStore();
   const db = stack.use(
     options.db ?? new DatabaseStub({ seed: options.zoteroRows }),
@@ -750,14 +673,13 @@ export async function createCitationIndexHarness(
       ["roe2025", KEY_B],
     ] as const) {
       const path = citekey === "doe2024" ? "Doe 2024.md" : "Roe 2025.md";
-      const note = addFile(path, "");
+      addFile(path, "");
       metadataCache.fileCache.set(path, {
         frontmatter: {
           [FIELD_ZOTERO_KEY]: indexedKey,
           [FIELD_CITEKEY]: citekey,
         },
       } as CachedMetadata);
-      noteIndex.notes.set(indexedKey, note);
     }
   }
   for (const [path, body] of Object.entries(documents)) {
@@ -766,8 +688,20 @@ export async function createCitationIndexHarness(
   }
 
   const app = { metadataCache, vault, workspace } as unknown as App;
+  // The Note Index runs as it does once enabled at runtime: layout is ready
+  // and the cache clean, so its Full Scan finishes before the harness returns.
+  // The Citation Index keeps the deferred layout the test releases.
+  const noteIndex = buildNoteIndex(
+    {
+      metadataCache,
+      vault,
+      workspace: { onLayoutReady: (callback: () => void) => callback() },
+    } as unknown as App,
+    stack,
+  );
   const settings =
-    options.settingsService ?? new SettingsStub(options.settings);
+    options.settingsService ??
+    stack.use(await buildSeededSettings(options.settings));
   const clock = testClock();
   const queryClient = stack.use(queryClientsFixture(clock.now));
   const lookup = stack.use(

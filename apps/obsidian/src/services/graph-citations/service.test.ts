@@ -32,10 +32,9 @@ import { lookupAnswerFor } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type { CitationOccurrence } from "@/services/citation-index/scan";
 import type { CitekeyResolution } from "@/services/citation-index/service";
-import { SettingsStub } from "@/services/citation-index/test-harness";
 import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
-import { NoteIndexStub } from "@/services/note-index/test-stub";
+import { openNoteVault } from "@/services/note-index/__fixtures__";
+import { buildSeededSettings } from "@/services/settings/__fixtures__";
 import type { Settings } from "@/services/settings/schema";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import type { WorkLabelSource } from "@/services/zotero-reads/rpc";
@@ -49,7 +48,9 @@ import { graphNode, themeStates, themeStatesNothing } from "./test-stub";
 const DEFAULT_COLOR = { a: 1, rgb: 0xe8622c };
 
 const warn = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/log", () => ({
+// The real Note Index logs through the root logger; keep it.
+vi.mock("@/lib/log", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/log")>()),
   getLogger: () => ({ trace: vi.fn(), debug: vi.fn(), info: vi.fn(), warn }),
 }));
 
@@ -538,15 +539,15 @@ interface FixtureOptions {
   links?: LinkMap;
   /** The vault's own unresolved links: the `[[wikilink]]`s that reach no file. */
   unresolved?: LinkMap;
-  /** The Note Index's key-to-notes table; Doe's one note by default. */
-  notes?: Record<string, { path: string }[]>;
+  /** Each Literature Note's path and the Item key it carries; Doe's one note by default. */
+  notes?: Record<string, string>;
   /** The serialized layout Obsidian restored this session's leaves from. */
   savedLayout?: unknown;
   /** What the vault-wide settings say beyond the Wikilink Citations choice. */
   settings?: Partial<Settings>;
 }
 
-function makeFixture(options: FixtureOptions = {}) {
+async function makeFixture(options: FixtureOptions = {}) {
   const listeners = new Map<string, Set<() => void>>();
   const leaves: WorkspaceLeaf[] = [];
   /** What unloads each leaf's view, which is what closing the leaf runs. */
@@ -602,13 +603,16 @@ function makeFixture(options: FixtureOptions = {}) {
     },
   } as unknown as App;
   const citationIndex = new CitationIndexStub();
-  const noteIndex = new NoteIndexStub(
-    options.notes ?? { DEE23456: [{ path: "Literature/Doe 2024.md" }] },
+  const { noteIndex, writeNote } = await openNoteVault(
+    options.notes ?? { "Literature/Doe 2024.md": "DEE23456" },
+    owned,
   );
-  const settings = new SettingsStub({
-    "citation.wikilink-citations": options.wikilinkCitations ?? false,
-    ...options.settings,
-  });
+  const settings = owned.use(
+    await buildSeededSettings({
+      "citation.wikilink-citations": options.wikilinkCitations ?? false,
+      ...options.settings,
+    }),
+  );
   const openCitekey = vi.fn(() => Promise.resolve());
   const openIndexedKey = vi.fn(() => Promise.resolve());
   const citationPopover = { show: vi.fn(), showWork: vi.fn(), hide: vi.fn() };
@@ -658,15 +662,7 @@ function makeFixture(options: FixtureOptions = {}) {
     },
     citationIndex,
     citationLookup: citationIndex.lookup,
-    // The stub answers plain `{ path }` records where the index answers files.
-    noteIndex: noteIndex as unknown as Pick<
-      PlainNoteIndex,
-      | "getIndexedItemKeys"
-      | "getNotesByItemKey"
-      | "changed"
-      | "indexed"
-      | "frontmatter-changed"
-    >,
+    noteIndex,
     citekeyEditor: { openCitekey, openIndexedKey },
     citationPopover,
     settings,
@@ -694,7 +690,7 @@ function makeFixture(options: FixtureOptions = {}) {
     settleLookup,
     citationIndex,
     citationLookup: citationIndex.lookup,
-    noteIndex,
+    writeNote,
     settings,
     reads,
     openCitekey,
@@ -772,19 +768,24 @@ function makeFixture(options: FixtureOptions = {}) {
   };
 }
 
+/** What each fixture's Note Index and settings store hold, released after the test. */
+let owned = new AsyncDisposableStack();
+
 function makePresentationFixture(options: FixtureOptions = {}) {
   return makeFixture({ ...options, presentation: true });
 }
 
-afterEach(() => {
+afterEach(async () => {
   vi.useRealTimers();
+  await owned.disposeAsync();
+  owned = new AsyncDisposableStack();
   warn.mockClear();
   themeStatesNothing();
 });
 
 describe("GraphCitations installation", () => {
   it("keeps current view choices after the graph feature is toggled off and on", async () => {
-    const fixture = makeFixture({
+    const fixture = await makeFixture({
       savedLayout: {
         id: "leaf-0",
         type: "leaf",
@@ -805,7 +806,7 @@ describe("GraphCitations installation", () => {
   });
 
   it("installs before a new view loads and ignores shared presentation choices", async () => {
-    const fixture = makeFixture({
+    const fixture = await makeFixture({
       savedGlobal: {
         "zotlit-color-citation-links": true,
         "zotlit-citation-popover": true,
@@ -838,7 +839,7 @@ describe("GraphCitations installation", () => {
   });
 
   it("restores independent global graph view states", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const first = fixture.addLeaf("graph", "first");
@@ -886,7 +887,7 @@ describe("GraphCitations installation", () => {
   });
 
   it("keeps ordinary graphs native until presentation controls are enabled", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const graph = fixture.addLeaf("graph");
@@ -912,7 +913,7 @@ describe("GraphCitations installation", () => {
   });
 
   it("installs once per renderer across repeated layout events and draws the additions", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const global = fixture.addLeaf("graph");
@@ -942,7 +943,7 @@ describe("GraphCitations installation", () => {
   });
 
   it("installs a graph opened after layout ready on the next layout change", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     await fixture.layoutReady();
@@ -956,7 +957,7 @@ describe("GraphCitations installation", () => {
   });
 
   it("restores the real app when the native render throws", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -976,7 +977,7 @@ describe("GraphCitations installation", () => {
   });
 
   it("leaves a leaf with a missing member native and reports it once", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -994,7 +995,7 @@ describe("GraphCitations installation", () => {
   });
 
   it("installs nothing while the Graph core plugin is disabled", async () => {
-    const fixture = makeFixture({ graphEnabled: false });
+    const fixture = await makeFixture({ graphEnabled: false });
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1005,7 +1006,7 @@ describe("GraphCitations installation", () => {
   });
 
   it("waits for a deferred leaf without a report, then installs on the layout change its load fires", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const { engine, load } = fixture.addDeferredLeaf("localgraph");
@@ -1033,7 +1034,7 @@ describe("GraphCitations installation", () => {
 
 describe("GraphCitations clicks", () => {
   it("opens a Cited Work Node through the citekey action and never natively", async () => {
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1053,7 +1054,7 @@ describe("GraphCitations clicks", () => {
   });
 
   it("opens an ambiguous Cited Work Node through the citekey action, which offers the candidates", async () => {
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("localgraph");
@@ -1076,8 +1077,7 @@ describe("GraphCitations clicks", () => {
     "replaces the hover target when a Literature Note is created and deleted (pointer in popover: %s)",
     async (inPopover) => {
       vi.useFakeTimers();
-      const notes: Record<string, { path: string }[]> = {};
-      const fixture = makePresentationFixture({ notes });
+      const fixture = await makePresentationFixture({ notes: {} });
       await using service = fixture.service;
       await service.ready;
       const engine = fixture.addLeaf("graph");
@@ -1106,9 +1106,8 @@ describe("GraphCitations clicks", () => {
         false,
       );
 
-      notes.DEE23456 = [{ path: "Literature/Doe 2024.md" }];
       delete renderer.nodeLookup["@doe2024"];
-      fixture.noteIndex.emit("changed");
+      await fixture.writeNote("Literature/Doe 2024.md", "DEE23456");
       await vi.advanceTimersByTimeAsync(400);
       expect(hide).toHaveBeenCalledOnce();
       renderer.onNodeHover(
@@ -1129,10 +1128,9 @@ describe("GraphCitations clicks", () => {
       engine.hoverPopover = notePopover;
       if (inPopover) renderer.onNodeUnhover();
 
-      delete notes.DEE23456;
       delete renderer.nodeLookup["Literature/Doe 2024.md"];
       renderer.nodeLookup["@doe2024"] = { x: 2, y: 3 };
-      fixture.noteIndex.emit("changed");
+      await fixture.writeNote("Literature/Doe 2024.md", undefined);
       await vi.advanceTimersByTimeAsync(400);
       expect(hideNote).toHaveBeenCalledOnce();
       renderer.onNodeHover(
@@ -1148,7 +1146,7 @@ describe("GraphCitations clicks", () => {
   );
 
   it("calls through for every other node", async () => {
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1175,7 +1173,7 @@ describe("GraphCitations clicks", () => {
 
 describe("GraphCitations right-clicks", () => {
   it("offers every action for a Cited Work Node whose key names one item", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1212,7 +1210,7 @@ describe("GraphCitations right-clicks", () => {
   });
 
   it("leaves out Open in Zotero for an ambiguous key, which names no single item", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("localgraph");
@@ -1232,7 +1230,7 @@ describe("GraphCitations right-clicks", () => {
   });
 
   it("offers the citation key alone for a key that names no item", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1253,7 +1251,7 @@ describe("GraphCitations right-clicks", () => {
   });
 
   it("offers the create action while the resolution snapshot is cold", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     fixture.citationIndex.cold = true;
@@ -1276,7 +1274,7 @@ describe("GraphCitations right-clicks", () => {
   });
 
   it("calls through for every node while the additions carry no Cited Work Node", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     fixture.citationIndex.citationsByPath.mockReturnValue(
@@ -1298,7 +1296,7 @@ describe("GraphCitations right-clicks", () => {
   });
 
   it("calls through to the native menu for every other node", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1317,7 +1315,7 @@ describe("GraphCitations right-clicks", () => {
 
 describe("GraphCitations hovers", () => {
   it("closes citation details when this view's popover control is turned off", async () => {
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1336,7 +1334,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("requires the platform modifier for graph popovers only when enabled", async () => {
-    const fixture = makePresentationFixture({
+    const fixture = await makePresentationFixture({
       settings: { "citation.hover-require-mod-graph": true },
     });
     await using service = fixture.service;
@@ -1376,7 +1374,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("shows the Citation Popover of a Cited Work Node, anchored at the node", async () => {
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1403,7 +1401,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("shows the Citation Popover of the Item a Literature Note carries", async () => {
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("localgraph");
@@ -1427,7 +1425,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("keeps the native hover on every node while the Hover Action is off", async () => {
-    const fixture = makePresentationFixture({
+    const fixture = await makePresentationFixture({
       settings: {
         "citation.hover-action": "off",
         "citation.hover-require-mod-graph": true,
@@ -1448,7 +1446,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("asks for a Literature Note's page preview under the shared citekey source, and shows nothing for a Cited Work Node", async () => {
-    const fixture = makePresentationFixture({
+    const fixture = await makePresentationFixture({
       settings: {
         "citation.hover-action": "page-preview",
         "citation.hover-require-mod-graph": true,
@@ -1484,11 +1482,11 @@ describe("GraphCitations hovers", () => {
   });
 
   it("shows the Citation Popover of a Literature Note only a wikilink Citation cites", async () => {
-    const fixture = makePresentationFixture({
+    const fixture = await makePresentationFixture({
       wikilinkCitations: true,
       notes: {
-        DEE23456: [{ path: "Literature/Doe 2024.md" }],
-        LEE56789: [{ path: "Literature/Lee 2019.md" }],
+        "Literature/Doe 2024.md": "DEE23456",
+        "Literature/Lee 2019.md": "LEE56789",
       },
     });
     // Wiki cites Lee by wikilink alone, which adds no edge of its own.
@@ -1514,7 +1512,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("shows a source-less popover on a Literature Note no document cites", async () => {
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1535,7 +1533,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("calls through for every other node", async () => {
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1556,7 +1554,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("retires the anchor on the unhover no popover outlives, and keeps it for one that does", async () => {
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1582,7 +1580,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("gives a second hovered node an anchor of its own, so its preview is not read as the first one again", async () => {
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1611,7 +1609,7 @@ describe("GraphCitations hovers", () => {
 
   it("lets go of a hold when the hovered graph closes", async () => {
     vi.useFakeTimers();
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph", "hovered");
@@ -1646,7 +1644,7 @@ describe("GraphCitations hovers", () => {
 
   it("lets go of a hold on the window that armed it, after the graph moved to a pop-out", async () => {
     vi.useFakeTimers();
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph", "hovered");
@@ -1680,7 +1678,7 @@ describe("GraphCitations hovers", () => {
 
   it("states the popover's target again after Obsidian's sweep drops it, until the pointer leaves", async () => {
     vi.useFakeTimers();
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1710,7 +1708,7 @@ describe("GraphCitations hovers", () => {
 
   it("stops holding a popover that has hidden, with no unhover of its own", async () => {
     vi.useFakeTimers();
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1740,7 +1738,7 @@ describe("GraphCitations hovers", () => {
 
   it("waits for a page preview that opens on Obsidian's own delay, then holds it", async () => {
     vi.useFakeTimers();
-    const fixture = makePresentationFixture({
+    const fixture = await makePresentationFixture({
       settings: {
         "citation.hover-action": "page-preview",
         "citation.hover-require-mod-graph": true,
@@ -1770,7 +1768,7 @@ describe("GraphCitations hovers", () => {
 
   it("gives up on a hover no popover ever answers", async () => {
     vi.useFakeTimers();
-    const fixture = makePresentationFixture({
+    const fixture = await makePresentationFixture({
       settings: {
         "citation.hover-action": "page-preview",
         "citation.hover-require-mod-graph": true,
@@ -1799,7 +1797,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("keeps the native hover on a node the renderer holds no place for", async () => {
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1817,7 +1815,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("restores both hover members and takes the anchor away on teardown", async () => {
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     const service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1871,7 +1869,7 @@ function hoverEach(engine: FakeEngine): void {
 
 describe("GraphCitations re-rendering", () => {
   it("requests only the citekeys in the current graph facts", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     fixture.addLeaf("graph");
@@ -1887,7 +1885,7 @@ describe("GraphCitations re-rendering", () => {
 
   it("re-renders every installed leaf once per burst of index events", async () => {
     vi.useFakeTimers();
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const global = fixture.addLeaf("graph");
@@ -1905,7 +1903,7 @@ describe("GraphCitations re-rendering", () => {
       fixture.citationIndex.emit(event);
       vi.runAllTimers();
     }
-    fixture.noteIndex.emit("changed");
+    await fixture.writeNote("Literature/Poe 2026.md", "PEE45678");
     vi.runAllTimers();
 
     expect(global.renders).toHaveLength(5);
@@ -1935,7 +1933,7 @@ describe("GraphCitations node colours", () => {
 
   it("colors only Cited Work Nodes without a group", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1953,7 +1951,7 @@ describe("GraphCitations node colours", () => {
 
   it("leaves a Literature Note the user's colour group matched as the group coloured it", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1971,7 +1969,7 @@ describe("GraphCitations node colours", () => {
 
   it("keeps a Literature Note native while the Pandoc citations row is off", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1992,13 +1990,13 @@ describe("GraphCitations node colours", () => {
 
   it("keeps native colors on a Literature Note only a Wikilink Citation reaches", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
-    const fixture = makeFixture({
+    const fixture = await makeFixture({
       wikilinkCitations: true,
       // Reading cites Roe's note by `[[Roe 2025]]` and no citekey reaches it:
       // `roe2025` is ambiguous, so it draws a Cited Work Node of its own.
       notes: {
-        DEE23456: [{ path: "Literature/Doe 2024.md" }],
-        REE34567: [{ path: "Literature/Roe 2025.md" }],
+        "Literature/Doe 2024.md": "DEE23456",
+        "Literature/Roe 2025.md": "REE34567",
       },
       links: {
         "Draft.md": { "Other.md": 1 },
@@ -2030,7 +2028,7 @@ describe("GraphCitations node colours", () => {
   it("reads the theme again on a css change and colours the next render from it", async () => {
     vi.useFakeTimers();
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2055,7 +2053,7 @@ describe("GraphCitations node colours", () => {
 
   it("hands off the native node set once the feature is off", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2083,7 +2081,7 @@ function colorsOf(
 
 describe("GraphCitations teardown", () => {
   it("restores every member and draws natively once per leaf when the setting turns off", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const global = fixture.addLeaf("graph");
@@ -2115,7 +2113,7 @@ describe("GraphCitations teardown", () => {
   });
 
   it("keeps another plugin's render wrapper when ZotLit is disabled", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2140,7 +2138,7 @@ describe("GraphCitations teardown", () => {
   });
 
   it("installs again when the setting turns back on", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     expect(fixture.citationIndex.lookupCount).toBe(0);
@@ -2164,7 +2162,7 @@ describe("GraphCitations teardown", () => {
   });
 
   it("lets go of what the view holds for its unload once the installation ends", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph", "hovered");
@@ -2185,7 +2183,7 @@ describe("GraphCitations teardown", () => {
   });
 
   it("restores every member, draws natively once, and unsubscribes on dispose", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     const service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2202,7 +2200,7 @@ describe("GraphCitations teardown", () => {
     expect(engine.renders[1]!.facaded).toBe(false);
     expect(fixture.listenerCount()).toBe(0);
     fixture.citationIndex.emit("backfilled");
-    fixture.noteIndex.emit("changed");
+    await fixture.writeNote("Literature/Poe 2026.md", "PEE45678");
     expect(engine.renders).toHaveLength(2);
   });
 });
@@ -2228,7 +2226,7 @@ function rowToggle(
 
 describe("GraphCitations Filters rows", () => {
   it("builds the rows in the Filters section, without the Wikilink row while the vault-wide setting excludes the syntax", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2249,7 +2247,7 @@ describe("GraphCitations Filters rows", () => {
   });
 
   it("adds the Wikilink row while the vault-wide setting admits the syntax, and rebuilds the rows when that choice changes", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2272,7 +2270,7 @@ describe("GraphCitations Filters rows", () => {
   });
 
   it("starts a local graph at what its leaf carried while deferred", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const { engine, load } = fixture.addDeferredLeaf("localgraph", {
@@ -2297,7 +2295,7 @@ describe("GraphCitations Filters rows", () => {
   });
 
   it("starts a local graph the layout loaded straight away from the workspace file", async () => {
-    const fixture = makeFixture({
+    const fixture = await makeFixture({
       savedLayout: {
         main: {
           type: "split",
@@ -2331,7 +2329,7 @@ describe("GraphCitations Filters rows", () => {
   });
 
   it("returns the rows to their defaults when the panel restores default settings", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2359,7 +2357,7 @@ describe("GraphCitations Filters rows", () => {
   });
 
   it("draws no citation edge while Pandoc citations is off", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2375,7 +2373,7 @@ describe("GraphCitations Filters rows", () => {
   });
 
   it("takes a citing note's own links to narrowed-away targets away with them", async () => {
-    const fixture = makeFixture({
+    const fixture = await makeFixture({
       links: { "Draft.md": { "Other.md": 1 } },
       unresolved: { "Draft.md": { todo: 1 } },
     });
@@ -2399,7 +2397,7 @@ describe("GraphCitations Filters rows", () => {
   });
 
   it("takes each note's Wikilink Citations away while that row is off, and leaves every other link to a Literature Note alone", async () => {
-    const fixture = makeFixture({
+    const fixture = await makeFixture({
       wikilinkCitations: true,
       links: {
         "Draft.md": { "Other.md": 1 },
@@ -2434,7 +2432,7 @@ describe("GraphCitations Filters rows", () => {
   });
 
   it("keeps a local graph's row in the leaf state Obsidian persists", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("localgraph", "local-1");
@@ -2456,7 +2454,7 @@ describe("GraphCitations Filters rows", () => {
   });
 
   it("rebuilds the rows without drawing the graph natively in between", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2476,7 +2474,7 @@ describe("GraphCitations Filters rows", () => {
   });
 
   it("removes every row when the feature turns off", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2512,7 +2510,7 @@ function groupsButton(engine: FakeEngine): HTMLButtonElement {
 
 describe("GraphCitations Groups button", () => {
   it("adds one literature notes group, keeps the groups the user has, and saves", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2530,7 +2528,7 @@ describe("GraphCitations Groups button", () => {
   });
 
   it("takes the button away when the feature turns off, and brings it back on", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2554,7 +2552,7 @@ describe("GraphCitations Groups button", () => {
 
 describe("GraphCitations Display row", () => {
   it("prepends controls so native last-row CSS still targets the Animate row", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2572,7 +2570,7 @@ describe("GraphCitations Display row", () => {
   });
 
   it("starts a global graph from its own defaults", async () => {
-    const fixture = makeFixture({
+    const fixture = await makeFixture({
       savedGlobal: { "zotlit-color-citation-links": false },
     });
     await using service = fixture.service;
@@ -2591,7 +2589,7 @@ describe("GraphCitations Display row", () => {
   });
 
   it("round-trips through the engine's set options", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2610,7 +2608,7 @@ describe("GraphCitations Display row", () => {
   });
 
   it("returns to its default when the panel restores default settings", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2628,7 +2626,7 @@ describe("GraphCitations Display row", () => {
   });
 
   it("stays as the user left it while the Filters rows are rebuilt", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2650,7 +2648,7 @@ describe("GraphCitations Display row", () => {
   });
 
   it("leaves the Display section as found when the feature turns off", async () => {
-    const fixture = makeFixture();
+    const fixture = await makeFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2677,7 +2675,7 @@ describe("GraphCitations citation edge colour", () => {
   /** A graph whose edges are drawn and whose theme states a citation colour. */
   async function drawn(options: FixtureOptions = {}) {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = makePresentationFixture(options);
+    const fixture = await makePresentationFixture(options);
     const service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2699,7 +2697,7 @@ describe("GraphCitations citation edge colour", () => {
 
   it("draws the one line a reciprocal pair shows in the citation colour", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2720,7 +2718,7 @@ describe("GraphCitations citation edge colour", () => {
 
   it("draws an ordinary edge natively while the citation the other way is out of the render", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("localgraph");
@@ -2737,7 +2735,7 @@ describe("GraphCitations citation edge colour", () => {
 
   it("asks for the frame that draws an edge natively once the citation that drew it is gone", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = makePresentationFixture({
+    const fixture = await makePresentationFixture({
       // Draft links Doe the ordinary way too, so the edge outlives the
       // citation the row takes away.
       links: { "Draft.md": { "Literature/Doe 2024.md": 1 } },
@@ -2762,7 +2760,7 @@ describe("GraphCitations citation edge colour", () => {
   it("asks for the frame that draws an edge in the citation colour once a citation names it", async () => {
     vi.useFakeTimers();
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = makePresentationFixture({
+    const fixture = await makePresentationFixture({
       wikilinkCitations: true,
       links: { "Reading.md": { "Literature/Doe 2024.md": 1 } },
     });
@@ -2813,7 +2811,7 @@ describe("GraphCitations citation edge colour", () => {
 
   it("draws an edge whose sprite is built after the hand-off, and again after it is destroyed", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2868,7 +2866,7 @@ describe("GraphCitations citation edge colour", () => {
 
   it("draws a Wikilink Citation the vault already carried in the citation colour", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = makePresentationFixture({
+    const fixture = await makePresentationFixture({
       wikilinkCitations: true,
       links: {
         "Reading.md": { "Literature/Doe 2024.md": 1 },
@@ -2917,7 +2915,7 @@ describe("GraphCitations citation edge colour", () => {
 
   it("leaves the edges native when a build moved a renderer member, and says so once", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2982,10 +2980,10 @@ function addNativeRows(
 }
 
 /** A graph leaf carrying the native rows, ready for the preset. */
-function presetFixture(
+async function presetFixture(
   options: FixtureOptions & { viewType?: "graph" | "localgraph" } = {},
 ) {
-  const fixture = makePresentationFixture(options);
+  const fixture = await makePresentationFixture(options);
   const viewType = options.viewType ?? "graph";
   const engine = fixture.addLeaf(viewType, "preset-leaf");
   addNativeRows(engine, viewType);
@@ -3008,7 +3006,7 @@ const PRESET_ROWS = {
 
 describe("GraphCitations Citation Graph preset", () => {
   it("keeps a saved citation graph's labels off until the command preset runs", async () => {
-    const fixture = presetFixture({
+    const fixture = await presetFixture({
       savedGlobal: {
         "zotlit-pandoc-citations": true,
         "zotlit-citation-popover": true,
@@ -3032,7 +3030,7 @@ describe("GraphCitations Citation Graph preset", () => {
   });
 
   it("presets the global graph, and adds the literature notes group", async () => {
-    const fixture = presetFixture();
+    const fixture = await presetFixture();
     await using service = fixture.service;
     await service.ready;
     await fixture.layoutReady();
@@ -3059,7 +3057,7 @@ describe("GraphCitations Citation Graph preset", () => {
   });
 
   it("names the Wikilink citations key only where its row stands", async () => {
-    const off = presetFixture();
+    const off = await presetFixture();
     await using offService = off.service;
     await offService.ready;
     await off.layoutReady();
@@ -3067,7 +3065,7 @@ describe("GraphCitations Citation Graph preset", () => {
 
     expect(off.engine.options["zotlit-wikilink-citations"]).toBeUndefined();
 
-    const on = presetFixture({ wikilinkCitations: true });
+    const on = await presetFixture({ wikilinkCitations: true });
     await using onService = on.service;
     await onService.ready;
     await on.layoutReady();
@@ -3080,7 +3078,7 @@ describe("GraphCitations Citation Graph preset", () => {
   });
 
   it("preserves the user's forces when applying the preset", async () => {
-    const fixture = presetFixture();
+    const fixture = await presetFixture();
     await using service = fixture.service;
     await service.ready;
     await fixture.layoutReady();
@@ -3094,7 +3092,7 @@ describe("GraphCitations Citation Graph preset", () => {
   });
 
   it("leaves the local graph's orphans alone, which its panel has no row for", async () => {
-    const fixture = presetFixture({ viewType: "localgraph" });
+    const fixture = await presetFixture({ viewType: "localgraph" });
     await using service = fixture.service;
     await service.ready;
     await fixture.layoutReady();
@@ -3111,7 +3109,7 @@ describe("GraphCitations Citation Graph preset", () => {
   });
 
   it("installs the leaf first, so a graph opened by the command hears ZotLit's keys", async () => {
-    const fixture = presetFixture();
+    const fixture = await presetFixture();
     await using service = fixture.service;
     await service.ready;
     // No layout event has reached the service, which is where a command that
@@ -3128,7 +3126,7 @@ describe("GraphCitations Citation Graph preset", () => {
   });
 
   it("adds no second literature notes group on a second run", async () => {
-    const fixture = presetFixture();
+    const fixture = await presetFixture();
     await using service = fixture.service;
     await service.ready;
     await fixture.layoutReady();
@@ -3144,7 +3142,7 @@ describe("GraphCitations Citation Graph preset", () => {
   });
 
   it("leaves a graph whose set-options path moved as Obsidian opened it", async () => {
-    const fixture = presetFixture();
+    const fixture = await presetFixture();
     await using service = fixture.service;
     await service.ready;
     await fixture.layoutReady();
@@ -3279,7 +3277,7 @@ function installFakeLabelPixi(): Disposable {
 
 describe("Graph Work Labels", () => {
   it("persists the Display row and restores its default", async () => {
-    const fixture = makePresentationFixture();
+    const fixture = await makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -3304,7 +3302,7 @@ describe("Graph Work Labels", () => {
   it("fills only drawn works outside render and covers lazy rebuild, width, refresh, and native restoration", async () => {
     vi.useFakeTimers();
     using _pixi = installFakeLabelPixi();
-    const fixture = makePresentationFixture({ labelDatabase: true });
+    const fixture = await makePresentationFixture({ labelDatabase: true });
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -3406,7 +3404,7 @@ describe("Graph Work Labels", () => {
   it("keeps the held labels on screen while a database change reads them again", async () => {
     vi.useFakeTimers();
     using _pixi = installFakeLabelPixi();
-    const fixture = makePresentationFixture({ labelDatabase: true });
+    const fixture = await makePresentationFixture({ labelDatabase: true });
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -3447,7 +3445,7 @@ describe("Graph Work Labels", () => {
   it("keeps native labels for unreadable items and missing PIXI", async () => {
     vi.useFakeTimers();
     using _pixi = installFakeLabelPixi();
-    const fixture = makePresentationFixture({ labelDatabase: true });
+    const fixture = await makePresentationFixture({ labelDatabase: true });
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -3490,7 +3488,7 @@ describe("Graph Work Labels", () => {
   it("leaves excluded Library items native", async () => {
     vi.useFakeTimers();
     using _pixi = installFakeLabelPixi();
-    const fixture = makePresentationFixture({
+    const fixture = await makePresentationFixture({
       labelDatabase: true,
       labelLibraryScope: [],
     });
@@ -3514,7 +3512,7 @@ describe("Graph Work Labels", () => {
   it("destroys owned sprites and restores native labels once per leaf on unload", async () => {
     vi.useFakeTimers();
     using _pixi = installFakeLabelPixi();
-    const fixture = makePresentationFixture({ labelDatabase: true });
+    const fixture = await makePresentationFixture({ labelDatabase: true });
     await using service = fixture.service;
     await service.ready;
     const engines = [fixture.addLeaf("graph"), fixture.addLeaf("localgraph")];
@@ -3546,7 +3544,7 @@ describe("Graph Work Labels", () => {
   it("restores native text after a failed style update and requests a frame", async () => {
     vi.useFakeTimers();
     using _pixi = installFakeLabelPixi();
-    const fixture = makePresentationFixture({ labelDatabase: true });
+    const fixture = await makePresentationFixture({ labelDatabase: true });
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");

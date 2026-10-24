@@ -6,12 +6,12 @@ import {
 } from "vitest";
 import { describe, expect, it } from "vitest";
 
-import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
-import { NoteIndexStub } from "@/services/note-index/test-stub";
-import { defaults } from "@/services/settings/schema";
+import { openNoteVault } from "@/services/note-index/__fixtures__";
+import { buildSeededSettings } from "@/services/settings/__fixtures__";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
 
 import { WikilinkEditor } from "./service";
@@ -37,8 +37,9 @@ const leaves = (dispatched: string[]) =>
 
 interface Harness extends AsyncDisposable {
   service: WikilinkEditor;
-  settings: SettingsStub;
-  noteIndex: NoteIndexStub;
+  settings: PlainPluginSettings;
+  /** Gives the vault's one Literature Note another Item key, or none. */
+  writeNote: (itemKey: string | undefined) => Promise<void>;
   citationText: CitationTextStub;
   citationLookup: LookupStub;
   registered: Extension[];
@@ -47,8 +48,10 @@ interface Harness extends AsyncDisposable {
 }
 
 async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
-  const settings = new SettingsStub(overrides);
-  const noteIndex = new NoteIndexStub();
+  await using stack = new AsyncDisposableStack();
+  const settings = stack.use(await buildSeededSettings(overrides));
+  const notes = await openNoteVault({ "Doe 2024.md": "DEE23456" }, stack);
+  const { noteIndex } = notes;
   const citationText = new CitationTextStub();
   const citationLookup = new LookupStub();
   const dispatched: string[] = [];
@@ -73,16 +76,20 @@ async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
     settings,
   } as never);
   await service.ready;
+  const owned = stack.move();
   return {
     service,
     settings,
-    noteIndex,
+    writeNote: (itemKey) => notes.writeNote("Doe 2024.md", itemKey),
     citationText,
     citationLookup,
     registered,
     reconfigures: () => reconfigures,
     dispatched,
-    [Symbol.asyncDispose]: () => service[Symbol.asyncDispose](),
+    [Symbol.asyncDispose]: async () => {
+      await service[Symbol.asyncDispose]();
+      await owned.disposeAsync();
+    },
   };
 }
 
@@ -105,10 +112,10 @@ describe("WikilinkEditor registration", () => {
 describe("WikilinkEditor redraw", () => {
   it("redraws every open editor when a Literature Note changes", async () => {
     await using harnessed = await harness();
-    const { noteIndex, dispatched } = harnessed;
+    const { writeNote, dispatched } = harnessed;
 
-    noteIndex.emit("changed");
-    expect(dispatched).toEqual(["note.md", "other.md"]);
+    await writeNote("REE34567");
+    await expect.poll(() => dispatched).toEqual(["note.md", "other.md"]);
   });
 
   it("redraws when a gating setting changes", async () => {
@@ -204,23 +211,5 @@ class LookupStub extends CitationLookupStub {
   }
   emit(): void {
     this.refresh();
-  }
-}
-
-class SettingsStub {
-  current: Readonly<Settings>;
-  readonly ready = Promise.resolve();
-  readonly #events = testEvent<Readonly<Settings>>();
-  readonly changes = Stream.suspend(() =>
-    this.#events.stream.pipe(Stream.prepend([this.current])),
-  );
-
-  constructor(overrides: Partial<Settings> = {}) {
-    this.current = { ...defaults, ...overrides };
-  }
-
-  update(overrides: Partial<Settings>): void {
-    this.current = { ...this.current, ...overrides };
-    this.#events.emit(this.current);
   }
 }

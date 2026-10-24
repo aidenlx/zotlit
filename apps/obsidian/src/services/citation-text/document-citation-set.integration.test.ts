@@ -222,18 +222,18 @@ async function readText(
  * A Literature Note for an Item Zotero holds no citation key for, so the
  * derived citekey falls back to the note's own filename.
  */
-function addKeylessNote(
+async function addKeylessNote(
   harness: CitationIndexHarness,
   path: string,
   indexedKey: string,
-): TFile {
+): Promise<TFile> {
   const note = makeFile(path, "");
   harness.metadataCache.files.set(path, note);
   harness.vault.bodies.set(path, "");
-  harness.metadataCache.fileCache.set(path, {
-    frontmatter: { [FIELD_ZOTERO_KEY]: indexedKey },
-  } as CachedMetadata);
-  harness.noteIndex.notes.set(indexedKey, note);
+  harness.metadataCache.setFrontmatter(note, {
+    [FIELD_ZOTERO_KEY]: indexedKey,
+  });
+  await harness.noteIndex.whenSettled();
   return note;
 }
 
@@ -547,8 +547,8 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
         { "draft.md": body },
         { settings: { "citation.wikilink-citations": true } },
       );
-      addKeylessNote(harness, "folder1/Draft.md", KEY_C);
-      addKeylessNote(harness, "folder2/Draft.md", KEY_D);
+      await addKeylessNote(harness, "folder1/Draft.md", KEY_C);
+      await addKeylessNote(harness, "folder2/Draft.md", KEY_D);
       harness.metadataCache.fileCache.set("draft.md", {
         links: [
           link("folder1/Draft", body.indexOf("[[folder1")),
@@ -582,8 +582,8 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
         { "draft.md": body },
         { settings: { "citation.wikilink-citations": true } },
       );
-      addKeylessNote(harness, "Papers/Ess.md", KEY_E);
-      addKeylessNote(harness, "Archive/Ess2.md", KEY_E);
+      await addKeylessNote(harness, "Papers/Ess.md", KEY_E);
+      await addKeylessNote(harness, "Archive/Ess2.md", KEY_E);
       harness.metadataCache.fileCache.set("draft.md", {
         links: [
           link("Papers/Ess", body.indexOf("[[Papers")),

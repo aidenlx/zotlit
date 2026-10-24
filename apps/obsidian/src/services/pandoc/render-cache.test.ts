@@ -14,11 +14,11 @@ import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import { profileRuntimeOf } from "@/services/profile/__fixtures__";
-import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
-import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import type { Held } from "@/services/query-client/service";
 import { layerQueryClients } from "@/services/query-client/service";
-import { defaults } from "@/services/settings/schema";
+import { buildSeededSettings } from "@/services/settings/__fixtures__";
+import type { SettingsOverrides } from "@/services/settings/__fixtures__";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { createTemplateHost } from "@/services/template/__fixtures__";
 import { zoteroPrefFixture } from "@/services/zotero-pref/__fixtures__";
 import { ZoteroPref } from "@/services/zotero-pref/service";
@@ -431,55 +431,6 @@ class ZoteroPrefStub {
   }
 }
 
-class SettingsStub {
-  current: Readonly<Settings>;
-  get loaded() {
-    return Promise.resolve(this.current);
-  }
-  readonly #events = testEvent<Readonly<Settings>>();
-  readonly changes = Stream.suspend(() =>
-    this.#events.stream.pipe(Stream.prepend([this.current])),
-  );
-
-  constructor(overrides: SettingsOverrides = {}) {
-    this.current = applySettingsOverrides(defaults, overrides);
-  }
-
-  update(overrides: SettingsOverrides): void {
-    this.current = applySettingsOverrides(this.current, overrides);
-    this.#events.emit(this.current);
-  }
-}
-
-type SettingsOverrides = Partial<Settings> &
-  Pick<
-    Partial<ResolvedLiteratureNoteProfileBindings>,
-    "citation.references-style"
-  >;
-
-function applySettingsOverrides(
-  current: Readonly<Settings>,
-  overrides: SettingsOverrides,
-): Settings {
-  const { ["citation.references-style"]: referencesStyle, ...persisted } =
-    overrides;
-  return {
-    ...current,
-    ...persisted,
-    "note.default-profile": {
-      ...current["note.default-profile"],
-      ...persisted["note.default-profile"],
-      bindings: {
-        ...current["note.default-profile"].bindings,
-        ...persisted["note.default-profile"]?.bindings,
-        ...(referencesStyle === undefined
-          ? {}
-          : { "citation.references-style": referencesStyle }),
-      },
-    },
-  };
-}
-
 /** One render cache and the stubs it reads, torn down with the test that holds it. */
 interface Harness extends AsyncDisposable {
   cache: Awaited<ReturnType<typeof bibliographyRenderFixture>>;
@@ -487,7 +438,7 @@ interface Harness extends AsyncDisposable {
   pandocEngine: PandocEngineStub;
   db: DatabaseStub;
   zoteroPref: ZoteroPrefStub;
-  settings: SettingsStub;
+  settings: PlainPluginSettings;
   /** Every `invalidated` the cache announced. */
   invalidations: number[];
   profileEvents: {
@@ -512,10 +463,12 @@ async function openHarness(
   const db = new DatabaseStub();
   const pandocEngine = new PandocEngineStub();
   const zoteroPref = new ZoteroPrefStub(dataDir);
-  const settings = new SettingsStub({
-    "citation.references-style": null,
-    ...overrides,
-  });
+  const settings = stack.use(
+    await buildSeededSettings({
+      "citation.references-style": null,
+      ...overrides,
+    }),
+  );
   const profileChanged = testEvent<void>();
   const profileEvents = { emit: (_event: "changed") => profileChanged.emit() };
   const cache = stack.use(
@@ -747,10 +700,14 @@ describe("BibliographyRenderCache", () => {
         const items = [item("alpha")];
 
         yield* Effect.promise(() => cache.render(items));
-        settings.update({ "citation.references-style": IEEE });
+        settings.updateDefaultLiteratureNoteProfileBindings({
+          "citation.references-style": IEEE,
+        });
         const changed = yield* Effect.promise(() => cache.render(items));
         // The same style again is no change at all.
-        settings.update({ "citation.references-style": IEEE });
+        settings.updateDefaultLiteratureNoteProfileBindings({
+          "citation.references-style": IEEE,
+        });
 
         expect(invalidations).toHaveLength(1);
         expect(changed).toEqual({
@@ -1278,7 +1235,9 @@ describe("BibliographyRenderCache citations", () => {
       const { cache, engine, settings } = harness;
 
       yield* Effect.promise(() => cache.renderCitations(["[@alpha]"], items));
-      settings.update({ "citation.references-style": IEEE });
+      settings.updateDefaultLiteratureNoteProfileBindings({
+        "citation.references-style": IEEE,
+      });
       const changed = yield* Effect.promise(() =>
         cache.renderCitations(["[@alpha]"], items),
       );

@@ -7,7 +7,6 @@ import {
 } from "vitest";
 import { describe, expect, it, vi } from "vitest";
 
-import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
@@ -20,10 +19,11 @@ import type {
   CitationHoverRequest,
   NavigationPane,
 } from "@/services/citekey-navigation";
-import { NoteIndexStub } from "@/services/note-index/test-stub";
+import { openNoteVault } from "@/services/note-index/__fixtures__";
 import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import type { Held } from "@/services/query-client/service";
-import { defaults } from "@/services/settings/schema";
+import { buildSeededSettings } from "@/services/settings/__fixtures__";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
 
 import { internalLink, section } from "./__fixtures__/internal-link";
@@ -48,8 +48,9 @@ function held(source: string, works: string[] = [WANG_KEY]): string {
 }
 
 interface Harness extends AsyncDisposable {
-  settings: SettingsStub;
-  noteIndex: NoteIndexStub;
+  settings: PlainPluginSettings;
+  /** Gives the vault's one Literature Note another Item key, or none. */
+  writeNote: (itemKey: string | undefined) => Promise<void>;
   citationText: CitationTextStub;
   citationIndex: CitationIndexStub;
   /** Runs the registered post-processor over one link and reads its display. */
@@ -94,8 +95,10 @@ async function harness({
   /** The file that owns each rendered section. */
   sourcePath?: string;
 } = {}): Promise<Harness> {
-  const settings = new SettingsStub(overrides);
-  const noteIndex = new NoteIndexStub();
+  await using stack = new AsyncDisposableStack();
+  const settings = stack.use(await buildSeededSettings(overrides));
+  const notes = await openNoteVault({ [`${WANG}.md`]: WANG_KEY }, stack);
+  const { noteIndex } = notes;
   const citationText = new CitationTextStub(formatted ?? {}, pending, {
     presentationFailure,
     citekeys: citekeys ?? { [WANG_KEY]: "wang2020" },
@@ -167,9 +170,10 @@ async function harness({
     settings,
   } as never);
   await service.ready;
+  const owned = stack.move();
   return {
     settings,
-    noteIndex,
+    writeNote: (itemKey) => notes.writeNote(`${WANG}.md`, itemKey),
     citationText,
     citationIndex,
     requests,
@@ -206,7 +210,10 @@ async function harness({
     unloadSections: () => {
       for (const child of children.splice(0)) child.unload();
     },
-    [Symbol.asyncDispose]: () => service[Symbol.asyncDispose](),
+    [Symbol.asyncDispose]: async () => {
+      await service[Symbol.asyncDispose]();
+      await owned.disposeAsync();
+    },
   };
 }
 
@@ -542,10 +549,10 @@ describe("WikilinkReading click", () => {
 describe("WikilinkReading rerender", () => {
   it("renders every reading view again when a Literature Note changes", async () => {
     await using harnessed = await harness();
-    const { noteIndex, rerenders } = harnessed;
+    const { writeNote, rerenders } = harnessed;
 
-    noteIndex.emit("changed");
-    expect(rerenders()).toBe(1);
+    await writeNote("WXYZ2345");
+    await expect.poll(rerenders).toBe(1);
   });
 
   it("renders again when a gating setting changes", async () => {
@@ -884,23 +891,5 @@ class CitationIndexStub {
 
   emit(): void {
     this.#changed(this.#citekeys);
-  }
-}
-
-class SettingsStub {
-  current: Readonly<Settings>;
-  readonly ready = Promise.resolve();
-  readonly #events = testEvent<Readonly<Settings>>();
-  readonly changes = Stream.suspend(() =>
-    this.#events.stream.pipe(Stream.prepend([this.current])),
-  );
-
-  constructor(overrides: Partial<Settings> = {}) {
-    this.current = { ...defaults, ...overrides };
-  }
-
-  update(overrides: Partial<Settings>): void {
-    this.current = { ...this.current, ...overrides };
-    this.#events.emit(this.current);
   }
 }

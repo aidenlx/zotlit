@@ -7,7 +7,7 @@ import { FileSystemAdapter, Scope } from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
-import { NoteIndexStub } from "@/services/note-index/test-stub";
+import { openNoteVault } from "@/services/note-index/__fixtures__";
 
 import {
   annotationReads,
@@ -53,6 +53,14 @@ function workspace(views: { view: unknown }[]) {
   return app;
 }
 
+/** The Note Index each test opened, released after it. */
+let noteIndexes = new AsyncDisposableStack();
+
+/** The real Note Index over a vault with no Literature Note. */
+async function emptyNoteIndex() {
+  return (await openNoteVault({}, noteIndexes)).noteIndex;
+}
+
 /** A bound PDF view, and the registry that owns it. */
 async function readerRegistry(
   view: unknown,
@@ -66,7 +74,7 @@ async function readerRegistry(
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
-    noteIndex: new NoteIndexStub(),
+    noteIndex: await emptyNoteIndex(),
     libraryTagNames: async () => [],
   });
   await service.ready;
@@ -79,8 +87,10 @@ beforeEach(() => {
   setMockPlatform({ isMacOS: false });
 });
 
-afterEach(() => {
+afterEach(async () => {
   resetMockPlatform();
+  await noteIndexes.disposeAsync();
+  noteIndexes = new AsyncDisposableStack();
 });
 
 it("answers nothing for a file no open view holds", async () => {

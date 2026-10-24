@@ -8,6 +8,7 @@ import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
+import { buildSeededSettings } from "@/services/settings/__fixtures__";
 
 import {
   GROUP_KEY,
@@ -30,7 +31,6 @@ import {
   MemoryStore,
   MY_LIBRARY_ID,
   personalLibrary,
-  SettingsStub,
 } from "./test-harness";
 import type {
   CitationIndexHarness,
@@ -1002,7 +1002,7 @@ describe("CitationIndex resolution", () => {
 
   it.effect("publishes after listener registration with settled settings", () =>
     Effect.promise(async () => {
-      const settings = new SettingsStub();
+      await using settings = await buildSeededSettings();
       const { index } = await makeHarness(
         { "draft.md": "@doe2024." },
         { settingsService: settings },
@@ -1018,7 +1018,7 @@ describe("CitationIndex resolution", () => {
 
   it.effect("stays silent when disposed during listener registration", () =>
     Effect.promise(async () => {
-      const settings = new SettingsStub();
+      await using settings = await buildSeededSettings();
       const { index } = await makeHarness(
         { "draft.md": "@doe2024." },
         { settingsService: settings },

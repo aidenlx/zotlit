@@ -11,7 +11,7 @@ import type { Mock } from "vitest";
 
 import { themeHook } from "@/lib/theme-hooks";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
-import { NoteIndexStub } from "@/services/note-index/test-stub";
+import { openNoteVault } from "@/services/note-index/__fixtures__";
 
 import {
   annotation,
@@ -32,8 +32,10 @@ beforeEach(() => {
   setMockPlatform({ isMacOS: false });
 });
 
-afterEach(() => {
+afterEach(async () => {
   resetMockPlatform();
+  await noteIndexes.disposeAsync();
+  noteIndexes = new AsyncDisposableStack();
 });
 
 /** The eleven probes of the seam re-verification, as issue #1140 numbers them. */
@@ -131,12 +133,20 @@ function secondsShown(slot: HTMLElement): string | null {
   );
 }
 
+/** The Note Index each test opened, released after it. */
+let noteIndexes = new AsyncDisposableStack();
+
+/** The real Note Index over a vault with no Literature Note. */
+async function emptyNoteIndex() {
+  return (await openNoteVault({}, noteIndexes)).noteIndex;
+}
+
 /** The service's deps that every test here builds the same way. */
-function standingDeps() {
+async function standingDeps() {
   return {
     markGestures: markGestures(),
     settings: readerSettings(),
-    noteIndex: new NoteIndexStub(),
+    noteIndex: await emptyNoteIndex(),
     libraryTagNames: async () => [],
   };
 }
@@ -167,8 +177,10 @@ beforeEach(() => {
   setMockPlatform({ isMacOS: false });
 });
 
-afterEach(() => {
+afterEach(async () => {
   resetMockPlatform();
+  await noteIndexes.disposeAsync();
+  noteIndexes = new AsyncDisposableStack();
 });
 
 it("binds an open PDF view, resolves its vault path, and unbinds on unload", async () => {
@@ -182,7 +194,7 @@ it("binds an open PDF view, resolves its vault path, and unbinds on unload", asy
     attachments,
     annotations,
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
 
   {
@@ -227,7 +239,7 @@ it("refreshes the repository when an open PDF leaf becomes active", async () => 
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
 
@@ -247,7 +259,7 @@ it("rebuilds the marks from data after PDF.js recycles the page", async () => {
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   await service.bindings[0]!.refreshed;
@@ -273,7 +285,7 @@ it("probes the page a view had already painted before the binding attached", asy
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -373,7 +385,7 @@ it("opens the create popup over a page painted before the binding attached", asy
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   await service.bindings[0]!.refreshed;
@@ -399,7 +411,7 @@ it("reads the text structure of a document Obsidian opened after the binding att
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   await service.bindings[0]!.refreshed;
@@ -423,7 +435,7 @@ it("reads the text structure again once the view reopened its document", async (
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   await service.bindings[0]!.refreshed;
@@ -456,7 +468,7 @@ it("waits for the first render when Obsidian is still opening the document", asy
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -484,7 +496,7 @@ it("reads an external file's absolute path from the file itself", async () => {
     attachments,
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
 
@@ -509,7 +521,7 @@ it("leaves a PDF Zotero does not know exactly as Obsidian opened it", async () =
     attachments,
     annotations,
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -542,7 +554,7 @@ it("paints a view bound while the resolver could not answer yet", async () => {
     attachments,
     annotations,
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -575,7 +587,7 @@ it("unbinds a leaf whose viewer Obsidian already closed", async () => {
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   await service.bindings[0]!.refreshed;
@@ -605,7 +617,7 @@ it("fails closed to the reader when the controller seam changed shape", async ()
     attachments,
     annotations,
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -633,7 +645,7 @@ it("drops its page listener when a page's viewport changed shape", async () => {
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -661,7 +673,7 @@ it("rebinds a leaf that opened another PDF and unbinds a closed leaf", async () 
     attachments,
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
 
@@ -703,7 +715,7 @@ it("waits for the file a view has yet to load before it resolves anything", asyn
     attachments,
     annotations,
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
 
@@ -732,7 +744,7 @@ it("exposes each open PDF view as a Reader Session of its own", async () => {
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
 
@@ -756,7 +768,7 @@ it("announces a late PDF session after its resolved target is available", async 
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   const announced: unknown[] = [];
@@ -793,7 +805,7 @@ it("names a standalone attachment in its session, with no parent Item", async ()
     }),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
 
@@ -814,7 +826,7 @@ it("paints the mark a consumer selected, and drops one the read retired", async 
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -847,7 +859,7 @@ it("paints a group a consumer selected, with no popup, and walks it down to one 
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT, UNDERLINE, lower]),
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -896,7 +908,7 @@ it("keeps a selected group through a landing on one of its marks", async () => {
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT, UNDERLINE]),
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -931,7 +943,7 @@ it("lands on the mark a card click names, on a page Obsidian moves to first", as
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -968,7 +980,7 @@ it("drops a Landing still waiting on its page when a consumer clears the selecti
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -995,7 +1007,7 @@ it("stops announcing once the view's binding is gone", async () => {
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   const session = service.bindings[0]!.session;
@@ -1024,7 +1036,7 @@ it("keeps the toolbar's nodes across capability announcements, and stands them d
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
     now: () => NOW,
   });
   await service.ready;
@@ -1074,7 +1086,7 @@ it("counts a cooldown down on the toolbar's window, under the binding's disposer
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
     now: () => NOW,
   });
   {
@@ -1111,7 +1123,7 @@ it("keeps pending authorization informational in the PDF reader", async () => {
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([], { kind: "authorizing" }),
     capabilityGestures: gestures,
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
 
@@ -1137,7 +1149,7 @@ it("probes before a blocked keystroke is answered, and stays out of the way othe
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: gestures,
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
 
@@ -1184,7 +1196,7 @@ it("opens one Annotation History per Attachment and ends it with the last view",
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
 
   {
@@ -1215,7 +1227,7 @@ it("lands on the Annotation an undo changed, and reports one Zotero moved", asyn
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: gestures,
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -1294,7 +1306,7 @@ it("records a read of the other Attachment an open names in a restored tab", asy
     capabilityGestures: capabilityGestures(),
     recordRead,
     now: () => NOW,
-    ...standingDeps(),
+    ...(await standingDeps()),
   });
   await service.ready;
   layoutReady();
