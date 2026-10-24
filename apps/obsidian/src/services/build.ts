@@ -18,7 +18,6 @@ import {
   annotationCardShown,
   revealAnnotationInView,
 } from "@/views/annot-view/register";
-import { openLibraryView } from "@/views/library/register";
 import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
@@ -69,7 +68,7 @@ import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
 import { pluginLayer } from "./plugin-layer";
 import { plainProfile } from "./profile/plain";
 import { plainQueryClients } from "./query-client/plain";
-import { ReleaseService } from "./release/service";
+import { Release } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import { plainPluginSettings } from "./settings/plain";
 import { loadLiteratureNoteTemplateMigrationData } from "./template/migration";
@@ -149,19 +148,7 @@ export async function buildServices(
     .useValue({
       queryClient: () => plainQueryClients(runtime),
     })
-    .use({
-      release: ({ settings }) =>
-        new ReleaseService({
-          app: plugin.app,
-          version: plugin.manifest.version,
-          settings,
-          // A first install or an update opens the Library View, in place of
-          // the empty tab or beside the open note.
-          openFirstScreen: async () => {
-            await openLibraryView(plugin.app, { pane: "first-screen" });
-          },
-        }),
-    })
+    .useValue({ release: () => runtime.runSync(Release) })
     .useValue({
       template: () => plainTemplate(runtime),
     })

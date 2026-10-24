@@ -34,6 +34,7 @@ vi.mock("@/views/template-workbench/register", () => ({
 function ctx(): SettingTabContext {
   return {
     runtime: testRuntime(),
+    bridge: { runPromise: Effect.runPromise },
     webWorkbenchEnabled: true,
     app: {
       vault: { getFileByPath: () => null, adapter: {} },

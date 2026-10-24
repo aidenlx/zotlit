@@ -56,7 +56,6 @@ import { runBatchUpdateAll } from "./services/note-feature/update-batch";
 import { reapCslStore } from "./services/pandoc/reap-temps";
 import { addProfileActions } from "./services/profile/actions";
 import { registerProtocolHandlers } from "./services/protocol/register";
-import { addReleaseActions } from "./services/release/actions";
 import { ServiceStartupFailed } from "./services/startup-failure";
 import { registerTemplateWorkbench } from "./services/template-workbench/register";
 import { ZotLitSettingTab } from "./setting-tab";
@@ -352,6 +351,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     this.addSettingTab(
       new ZotLitSettingTab({
         runtime: services.runtime,
+        bridge: services.bridge,
         webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
         importProfile: services.importProfile,
         profile: services.profile,
@@ -389,7 +389,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     };
     addCustomizeActions(this, customizeDeps);
     addProfileActions(this, { importProfile: services.importProfile });
-    addReleaseActions(this, { release: services.release });
     addIndexedKeyActions(this);
     addCitekeyEditorActions(this, { citekeyEditor: services.citekeyEditor });
     addGraphCitationsActions(this, {
@@ -550,6 +549,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       settings: services.settings,
       welcome: {
         runtime: services.runtime,
+        bridge: services.bridge,
         app: this.app,
         reads: services.zoteroReads,
         queries: services.queryClient,

@@ -73,7 +73,7 @@ function renderMigrationReminderButtons(
       // See the blur comment in templates.ts's renderJsTemplatesButton: the
       // reconciler skips re-rendering the row containing document.activeElement.
       btn.buttonEl.blur();
-      ctx.release.acknowledgeMigration();
+      void ctx.bridge.runPromise(ctx.release.acknowledgeMigration());
     }),
   );
 }
@@ -118,7 +118,9 @@ function resourcesItems(
         setting.addButton((btn) =>
           btn
             .setButtonText(m.settings_resources_whats_new_button())
-            .onClick(() => void ctx.release.openReleaseNote()),
+            .onClick(
+              () => void ctx.bridge.runPromise(ctx.release.openReleaseNote()),
+            ),
         );
       },
     },

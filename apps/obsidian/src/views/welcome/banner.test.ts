@@ -16,7 +16,7 @@ import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
-import { ReleaseService } from "@/services/release/service";
+import { buildRelease } from "@/services/release/__fixtures__";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 
@@ -46,7 +46,7 @@ async function setup(
   const plugin = new PluginStub(app, { __VERSION__: 10, ...data });
   const settings = await loadSettings(plugin);
   await settings.loaded;
-  const deps = bannerDeps(app, settings);
+  const deps = await bannerDeps(app, settings);
   /**
    * Obsidian reloads: plugin data, written to disk, is read again by a new
    * instance of the plugin.
@@ -82,10 +82,10 @@ async function loadSettings(plugin: PluginStub): Promise<PlainPluginSettings> {
 }
 
 /** What the banner reads, over `settings`, beside a Zotero database of 3 Items. */
-function bannerDeps(
+async function bannerDeps(
   app: App,
   settings: PlainPluginSettings,
-): WelcomeBannerDeps {
+): Promise<WelcomeBannerDeps> {
   const events = testEvents<Record<string, () => void>>([
     "changed",
     "degraded",
@@ -93,8 +93,21 @@ function bannerDeps(
     "db-file-missing",
     "refreshing",
   ]);
+  const release = cleanup.use(
+    await buildRelease({
+      app,
+      layoutReady: () => {},
+      current: () => settings.current,
+      origin: settings.hydrationOrigin,
+      update: (patch) => {
+        settings.update(patch);
+      },
+      version: "2.2.0",
+    }),
+  );
   const deps: WelcomeBannerDeps = {
     runtime: testRuntime(),
+    bridge: release.bridge,
     app,
     reads: {
       state: "ready",
@@ -111,9 +124,7 @@ function bannerDeps(
       locateZotero: vi.fn(),
     },
     templateMigration: { convert: vi.fn(), retryCleanup: vi.fn() },
-    release: cleanup.use(
-      new ReleaseService({ app, version: "2.2.0", settings }),
-    ),
+    release: release.release,
   };
   return deps;
 }

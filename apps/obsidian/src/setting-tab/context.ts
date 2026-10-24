@@ -1,5 +1,6 @@
 import type { App, PluginManifest } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import type { LanguagePackLifecycle } from "@/lib/i18n";
 import type { CapabilityNotices } from "@/services/annotation-repository/notices";
@@ -15,7 +16,7 @@ import type { LocalBridgeService } from "@/services/local-bridge/service";
 import type { LocalServerService } from "@/services/local-server/service";
 import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
 import type { PlainProfile } from "@/services/profile/plain";
-import type { ReleaseService } from "@/services/release/service";
+import type { Release } from "@/services/release/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
 import type { PlainTemplate } from "@/services/template/plain";
@@ -33,7 +34,7 @@ export type SettingsControlKey = SettingsKey | ProfileControlKey;
 
 /** The release-service surface the setting tab needs — reused by both render paths. */
 export type ReleaseTabActions = Pick<
-  ReleaseService,
+  Release["Service"],
   "openReleaseNote" | "acknowledgeMigration"
 >;
 
@@ -91,6 +92,7 @@ export type AttachmentImportActions = Pick<
  */
 export interface SettingTabContext {
   runtime: SubscriptionRuntime;
+  bridge: Pick<EffectBridge, "runPromise">;
   webWorkbenchEnabled: boolean;
   app: App;
   importProfile: ImportProfile;

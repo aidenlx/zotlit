@@ -2,6 +2,7 @@ import { PluginSettingTab } from "obsidian";
 import type { SettingDefinitionItem } from "obsidian";
 
 import { Stream } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import type { LanguagePackLifecycle } from "@/lib/i18n";
@@ -49,6 +50,7 @@ import { zoteroPageItems } from "./zotero";
 
 export interface ZotLitSettingTabOptions {
   runtime: SubscriptionRuntime;
+  bridge: Pick<EffectBridge, "runPromise">;
   webWorkbenchEnabled: boolean;
   importProfile: SettingTabContext["importProfile"];
   plugin: ZotLitPlugin;
@@ -100,6 +102,7 @@ export interface ZotLitSettingTabOptions {
 }
 
 export class ZotLitSettingTab extends PluginSettingTab {
+  readonly #bridge: Pick<EffectBridge, "runPromise">;
   readonly #webWorkbenchEnabled: boolean;
   readonly #importProfile: SettingTabContext["importProfile"];
   readonly #plugin: ZotLitPlugin;
@@ -153,6 +156,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
 
   constructor({
     runtime,
+    bridge,
     webWorkbenchEnabled,
     importProfile,
     plugin,
@@ -178,6 +182,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   }: ZotLitSettingTabOptions) {
     super(plugin.app, plugin);
     this.#runtime = runtime;
+    this.#bridge = bridge;
     this.#webWorkbenchEnabled = webWorkbenchEnabled;
     this.#plugin = plugin;
     this.#importProfile = importProfile;
@@ -295,6 +300,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   override getSettingDefinitions(): SettingDefinitionItem[] {
     const ctx: SettingTabContext = {
       runtime: this.#runtime,
+      bridge: this.#bridge,
       webWorkbenchEnabled: this.#webWorkbenchEnabled,
       app: this.#plugin.app,
       importProfile: this.#importProfile,

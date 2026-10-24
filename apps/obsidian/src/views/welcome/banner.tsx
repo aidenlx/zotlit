@@ -8,12 +8,13 @@ import type { App } from "obsidian";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type { PlainQueryClients } from "@/services/query-client/plain";
-import type { ReleaseService } from "@/services/release/service";
+import type { Release } from "@/services/release/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { SettingsPatch } from "@/services/settings/service";
 import type { PlainTemplateMigration } from "@/services/template/plain";
@@ -45,6 +46,7 @@ const CONNECTION_CHECKING_DELAY_MS = 200;
 
 export interface WelcomeBannerDeps {
   runtime: SubscriptionRuntime;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
   app: App;
   reads: Pick<
     PlainZoteroReads,
@@ -65,7 +67,7 @@ export interface WelcomeBannerDeps {
   setupActions: SetupActions;
   templateMigration: Pick<PlainTemplateMigration, "convert" | "retryCleanup">;
   release: Pick<
-    ReleaseService,
+    Release["Service"],
     | "hasV1Templates"
     | "acknowledgeMigration"
     | "acknowledgeUpdate"
@@ -128,10 +130,10 @@ export class WelcomeBanner extends Component {
    * upgraded state and the update of the running version.
    */
   dismiss(): void {
-    const { release } = this.#deps;
+    const { bridge, release } = this.#deps;
     this.#store.setState({ converted: false });
-    release.acknowledgeMigration();
-    release.acknowledgeUpdate();
+    bridge.runSync(release.acknowledgeMigration());
+    bridge.runSync(release.acknowledgeUpdate());
     this.#keep({
       "welcome.dismissed": true,
       "welcome.requested": false,
@@ -196,7 +198,7 @@ export class WelcomeBanner extends Component {
 
   override onload(): void {
     using stack = new DisposableStack();
-    const { app, settings, release } = this.#deps;
+    const { app, bridge, settings, release } = this.#deps;
 
     const folderExists = (folder: string) =>
       app.vault.getFolderByPath(normalizePath(folder)) !== null;
@@ -215,7 +217,9 @@ export class WelcomeBanner extends Component {
             templateConversionPending: s["note.template-conversion-pending"],
             templateFolder: s["template.folder"],
             templateConversionResult: s["note.template-conversion-result"],
-            v1TemplatesPresent: release.hasV1Templates(s["template.folder"]),
+            v1TemplatesPresent: bridge.runSync(
+              release.hasV1Templates(s["template.folder"]),
+            ),
             updatePending: s["release.update-pending"],
             noticesEnabled: s["release.notices-enabled"],
           });
@@ -227,7 +231,9 @@ export class WelcomeBanner extends Component {
       const state = this.#store.getState();
       this.#store.setState({
         literatureFolderExists: folderExists(state.literatureFolder),
-        v1TemplatesPresent: release.hasV1Templates(state.templateFolder),
+        v1TemplatesPresent: bridge.runSync(
+          release.hasV1Templates(state.templateFolder),
+        ),
       });
     };
     const created = app.vault.on("create", refreshVaultEvidence);
@@ -253,8 +259,8 @@ export class WelcomeBanner extends Component {
       dismiss: () => this.dismiss(),
       showSteps: (shown) => this.#keep({ "welcome.steps-shown": shown }),
       openReleaseNote: () => {
-        void release.openReleaseNote();
-        release.acknowledgeUpdate();
+        void bridge.runPromise(release.openReleaseNote());
+        bridge.runSync(release.acknowledgeUpdate());
       },
       ...this.#deps.setupActions,
       ...this.#host,

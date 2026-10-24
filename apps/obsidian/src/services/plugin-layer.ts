@@ -5,6 +5,7 @@ import type { CliHost } from "@/lib/cli-command";
 import { Layer } from "@/lib/effect";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { PluginHost } from "@/lib/plugin-host";
+import { openLibraryView } from "@/views/library/register";
 
 import { layerChineseSegmenter } from "./chinese-segmenter/service";
 import type { ChineseSegmenter } from "./chinese-segmenter/service";
@@ -36,6 +37,9 @@ import { layerProfile } from "./profile/service";
 import type { Profile } from "./profile/service";
 import { layerQueryClients } from "./query-client/service";
 import type { QueryClients } from "./query-client/service";
+import { layerReleaseActions } from "./release/actions";
+import { layerRelease } from "./release/service";
+import type { Release } from "./release/service";
 import { layerPluginSettings } from "./settings/service";
 import type { PluginSettings } from "./settings/service";
 import { startingAs } from "./startup-failure";
@@ -79,6 +83,7 @@ export function pluginLayer(
   | LibraryScope
   | ZoteroReads
   | PluginSettings
+  | Release
   | UseLedger
   | QueryClients
   | CitationParse
@@ -110,6 +115,14 @@ export function pluginLayer(
     Layer.provideMerge(
       Layer.mergeAll(
         layerUseLedger.pipe(startingAs("UseLedger")),
+        layerRelease({
+          version: plugin.manifest.version,
+          // A first install or an update opens the Library View, in place of
+          // the empty tab or beside the open note.
+          openFirstScreen: async () => {
+            await openLibraryView(plugin.app, { pane: "first-screen" });
+          },
+        }).pipe(startingAs("Release")),
         layerTemplateMigration(migration).pipe(
           startingAs("TemplateMigration"),
           Layer.provideMerge(layerTemplate.pipe(startingAs("Template"))),
@@ -146,6 +159,7 @@ export function pluginLayer(
     layerLibraryScopeCli.pipe(startingAs("LibraryScopeCli")),
     layerLibraryScopeNotices.pipe(startingAs("LibraryScopeNotices")),
     layerPandocResolve.pipe(startingAs("PandocResolve")),
+    layerReleaseActions.pipe(startingAs("ReleaseActions")),
   ).pipe(Layer.provide(Layer.succeed(PluginHost, plugin)));
   return registrations.pipe(Layer.provideMerge(services));
 }

@@ -25,6 +25,7 @@ import {
 } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Effect } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { SearchHit, SearchOptions } from "@/services/item-lookup/service";
 import type {
@@ -590,6 +591,7 @@ async function pluginData(stored?: unknown) {
     settings,
     welcome: {
       runtime: testRuntime(),
+      bridge: effectBridge(testRuntime()),
       app: host.app,
       reads: readsDeps,
       queries: queryClientsFixture(),
@@ -598,9 +600,12 @@ async function pluginData(stored?: unknown) {
       setupActions,
       templateMigration: { convert: vi.fn(), retryCleanup: vi.fn() },
       release: {
-        hasV1Templates: () => false,
-        acknowledgeMigration: vi.fn(),
-        acknowledgeUpdate: vi.fn(),
+        version: "2.2.0",
+        checked: Effect.void,
+        openReleaseNote: () => Effect.void,
+        hasV1Templates: () => Effect.succeed(false),
+        acknowledgeMigration: () => Effect.void,
+        acknowledgeUpdate: () => Effect.void,
       },
     },
     literatureNotes,
