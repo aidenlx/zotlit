@@ -1,6 +1,6 @@
 // The bridge that puts a legacy Service into the plugin's Effect Layer graph.
 import { Cause, Effect, Layer } from "@/lib/effect";
-import type { Context } from "@/lib/effect";
+import type { Context, Scope } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 
 import { superviseReady } from "./service-base";
@@ -19,7 +19,7 @@ import type { Service } from "./service-base";
 export function serviceLayer<I, S extends Service<any>, R>(
   tag: Context.Key<I, S>,
   { key, make }: { key: string; make: Effect.Effect<S, never, R> },
-): Layer.Layer<I, never, R> {
+): Layer.Layer<I, never, Exclude<R, Scope.Scope>> {
   return Layer.effect(
     tag,
     Effect.gen(function* () {

@@ -5,7 +5,6 @@ import { hashKey } from "@tanstack/query-core";
 import type { QueryFunctionContext, QueryKey } from "@tanstack/query-core";
 
 import { Cause, Context, Effect, Exit } from "@/lib/effect";
-import type { Layer } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
@@ -20,7 +19,8 @@ import {
 } from "./contract";
 import type { ExcerptRequest } from "./contract";
 import type { ExcerptImage } from "./format";
-import { ExcerptImages, supersedes } from "./service";
+import { ExcerptImages } from "./layer";
+import { supersedes } from "./service";
 import type { AvailableExcerpt, ExcerptImageService } from "./service";
 
 /** The key prefix every live display read lives under. */
@@ -542,4 +542,4 @@ export const layerExcerptDisplays = serviceLayer(ExcerptDisplays, {
       stored: (request) => images.stored(request),
     });
   }),
-}) as Layer.Layer<ExcerptDisplays, never, ExcerptImages | QueryClients>;
+});

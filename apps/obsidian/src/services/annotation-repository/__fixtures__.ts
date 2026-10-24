@@ -21,8 +21,8 @@ import {
 import { effectBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
+import { ExcerptImages } from "@/services/excerpt-image/layer";
 import type { AvailableExcerpt } from "@/services/excerpt-image/service";
-import { ExcerptImages } from "@/services/excerpt-image/service";
 import type { ExcerptImageService } from "@/services/excerpt-image/service";
 import { plainQueryClients } from "@/services/query-client/plain";
 import { layerQueryClients } from "@/services/query-client/service";
