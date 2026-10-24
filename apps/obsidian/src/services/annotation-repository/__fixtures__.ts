@@ -271,10 +271,15 @@ export async function setup(
       } as ZoteroPrefSnapshot),
     }),
   );
+  // Each persisted-excerpt baseline takes a lease of its own before it asks
+  // the store, so a test that counts the repository's batch reads subtracts
+  // these (see `batchReads`).
+  const excerptBaselines = vi.fn();
   const excerptImages = stubService<ExcerptImageService>(
     "ExcerptImageService",
     {
       stored: async ({ annotation, source }) => {
+        excerptBaselines();
         if (!persistedExcerpt) return null;
         const fingerprint = await persistedExcerpt(annotation, source);
         return fingerprint === null
@@ -319,6 +324,7 @@ export async function setup(
     db: { acquireRead, refresh },
     dbEvents,
     acquireRead,
+    excerptBaselines,
     queryClient,
     localApi,
     localApiService,
@@ -718,4 +724,26 @@ export function zoteroLibrary(
       };
     },
   };
+}
+
+type ReadCounters = Pick<
+  Awaited<ReturnType<typeof setup>>,
+  "acquireRead" | "excerptBaselines"
+>;
+
+/** Start counting the repository's database reads from zero. */
+export function clearReads(counters: ReadCounters): void {
+  counters.acquireRead.mockClear();
+  counters.excerptBaselines.mockClear();
+}
+
+/**
+ * The batch reads the repository took: every lease, less the one each
+ * Annotation's persisted-excerpt baseline takes for its saved request.
+ */
+export function batchReads(counters: ReadCounters): number {
+  return (
+    counters.acquireRead.mock.calls.length -
+    counters.excerptBaselines.mock.calls.length
+  );
 }

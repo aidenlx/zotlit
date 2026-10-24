@@ -158,14 +158,12 @@ export class AnnotationPopoverCore implements Disposable {
               subscriptions.defer(() => opened.release());
               excerpt = opened;
             }
-            if (excerpt !== null) {
-              const demand = excerpt;
-              void deps
-                .excerptRequest({ annotation, source: list.source })
-                .then((request) => {
-                  if (current()) demand.demand(request);
-                });
-            }
+            const demand = excerpt;
+            void deps
+              .excerptRequest({ annotation, source: list.source })
+              .then((request) => {
+                if (current()) demand.demand(request);
+              });
           }
           const shown = popover.render(
             <AnnotationPopoverContent

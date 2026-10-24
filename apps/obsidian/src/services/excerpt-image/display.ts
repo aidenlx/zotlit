@@ -9,6 +9,7 @@ import type { EffectBridge } from "@/lib/effect-bridge";
 import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { QueryClients } from "@/services/query-client/service";
+import type { Held } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 import { serviceLayer } from "@/services/service-layer";
 
@@ -321,14 +322,12 @@ export class ExcerptDisplayService extends Service<void> {
   async #seed(slot: Slot): Promise<void> {
     // A Held Read that already answers the key needs no fallback: the store
     // read below would be discarded, so it never starts.
-    if (this.#deps.bridge.runSync(this.#deps.queries.peek(slot.key)) !== null)
-      return;
+    if (this.#peek(slot) !== null) return;
     const stored = await this.#deps.stored(slot.latest);
     if (!stored) return;
     if (this.#slots.get(slot.hash) !== slot) return;
     // A publication that landed while the store read ran is the answer now.
-    if (this.#deps.bridge.runSync(this.#deps.queries.peek(slot.key)) !== null)
-      return;
+    if (this.#peek(slot) !== null) return;
     this.#deps.queries.client.setQueryData<AvailableExcerpt>(slot.key, stored);
     this.#notify(slot);
   }
@@ -420,7 +419,6 @@ export class ExcerptDisplayService extends Service<void> {
       this.#deps.queries.read<AvailableExcerpt>(slot.key, (context) =>
         this.#resolve(slot, context),
       ),
-      null,
     );
     const reading = { excerpt: wanted, settled };
     slot.read = reading;
@@ -433,11 +431,7 @@ export class ExcerptDisplayService extends Service<void> {
 
   /** The excerpt key of what the slot holds, `null` where it holds nothing. */
   #held(slot: Slot): string | null {
-    return (
-      this.#deps.bridge.runSync(
-        this.#deps.queries.peek<AvailableExcerpt>(slot.key),
-      )?.value.identity.key ?? null
-    );
+    return this.#peek(slot)?.value.identity.key ?? null;
   }
 
   /**
@@ -477,9 +471,7 @@ export class ExcerptDisplayService extends Service<void> {
         status: card.demand ? "cleared" : card.stated ? "absent" : "reading",
       };
     const request = card.demand;
-    const held = this.#deps.bridge.runSync(
-      this.#deps.queries.peek<AvailableExcerpt>(slot.key),
-    );
+    const held = this.#peek(slot);
     if (!held)
       return {
         image: null,
@@ -516,10 +508,23 @@ export class ExcerptDisplayService extends Service<void> {
     );
   }
 
-  async #heldRead<A, E>(effect: Effect.Effect<A, E>, released: A): Promise<A> {
-    const exit = await this.#deps.bridge.runPromiseExit(effect);
+  /** What the slot's Held Read answers now, `null` where it holds nothing. */
+  #peek(slot: Slot): Held<AvailableExcerpt> | null {
+    return this.#deps.bridge.runSync(
+      this.#deps.queries.peek<AvailableExcerpt>(slot.key),
+    );
+  }
+
+  /**
+   * One Held Read; a read the released query client interrupts answers
+   * `null`, as it did through the plain adapter.
+   */
+  async #heldRead(
+    read: Effect.Effect<AvailableExcerpt | null, unknown>,
+  ): Promise<AvailableExcerpt | null> {
+    const exit = await this.#deps.bridge.runPromiseExit(read);
     if (Exit.isSuccess(exit)) return exit.value;
-    if (Cause.hasInterruptsOnly(exit.cause)) return released;
+    if (Cause.hasInterruptsOnly(exit.cause)) return null;
     throw Cause.squash(exit.cause);
   }
 }

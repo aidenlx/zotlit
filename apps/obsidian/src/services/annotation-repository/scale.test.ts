@@ -16,14 +16,17 @@ import {
   setup,
   NOW,
   switchToLocalApi,
+  batchReads,
+  clearReads,
 } from "./__fixtures__";
 import type { RepositoryClient } from "./__fixtures__";
 import { UNHELD_RETENTION } from "./service";
 
 it("reads the Annotations of several Attachments in one batch read", async () => {
   await using stack = new AsyncDisposableStack();
-  const { repository, acquireRead } = await setup(stack);
-  acquireRead.mockClear();
+  const reads = await setup(stack);
+  const { repository } = reads;
+  clearReads(reads);
 
   // A view reads each Attachment it shows in the same task.
   const [pdf, epub] = await Promise.all([
@@ -31,24 +34,25 @@ it("reads the Annotations of several Attachments in one batch read", async () =>
     repository.read("EPUBBKS2"),
   ]);
 
-  expect(acquireRead).toHaveBeenCalledTimes(9);
+  expect(batchReads(reads)).toBe(1);
   expect(pdf?.annotations).toHaveLength(7);
   expect(epub?.annotations.map(({ key }) => key)).toEqual(["EPUBMRK2"]);
 });
 
 it("drops a list no surface holds, and reads it fresh for the next surface that holds it", async () => {
   await using stack = new AsyncDisposableStack();
-  const { repository, acquireRead } = await setup(stack);
+  const reads = await setup(stack);
+  const { repository } = reads;
 
   const view = repository.hold(["RGRPDF24"]);
   await repository.read("RGRPDF24");
   view[Symbol.dispose]();
   expect(repository.peek("RGRPDF24")).toBeNull();
 
-  acquireRead.mockClear();
+  clearReads(reads);
   using _again = repository.hold(["RGRPDF24"]);
   const list = await repository.read("RGRPDF24");
-  expect(acquireRead).toHaveBeenCalledTimes(8);
+  expect(batchReads(reads)).toBe(1);
   expect(list?.annotations).toHaveLength(7);
 });
 
@@ -128,15 +132,16 @@ function published(repository: RepositoryClient, keys: readonly string[]) {
 
 it("lets the lists go as views over many Attachments close", async () => {
   await using stack = new AsyncDisposableStack();
-  const { repository, client, acquireRead, dbEvents } = await setup(stack);
+  const reads = await setup(stack);
+  const { repository, client, acquireRead, dbEvents } = reads;
   const keys = seedAttachments(client, 40);
 
   // Two views over overlapping sets of Attachments: one batch read each.
   const first = repository.hold(keys.slice(0, 25));
   const second = repository.hold(keys.slice(15));
-  acquireRead.mockClear();
+  clearReads(reads);
   const lists = await Promise.all(keys.map((key) => repository.read(key)));
-  expect(acquireRead).toHaveBeenCalledTimes(41);
+  expect(batchReads(reads)).toBe(1);
   expect(lists[39]?.annotations).toHaveLength(1);
   expect(published(repository, keys)).toHaveLength(40);
 

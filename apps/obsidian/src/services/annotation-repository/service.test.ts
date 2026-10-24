@@ -59,6 +59,7 @@ import {
   useFakeTimers,
   writable,
   zoteroLibrary,
+  batchReads,
 } from "./__fixtures__";
 import type { GroupLibrary } from "./__fixtures__";
 import type { RepositoryClient } from "./__fixtures__";
@@ -211,21 +212,23 @@ it("carries each tag's type from both Annotation Sources", async () => {
 
 it("serves one database read to every surface that asks for one attachment at once", async () => {
   await using stack = new AsyncDisposableStack();
-  const { repository, acquireRead } = await setup(stack);
+  const reads = await setup(stack);
+  const { repository } = reads;
 
   const [overlay, view] = await Promise.all([
     repository.read("RGRPDF24"),
     repository.read("RGRPDF24"),
   ]);
 
-  expect(acquireRead).toHaveBeenCalledTimes(8);
+  expect(batchReads(reads)).toBe(1);
   expect(overlay).toBe(view);
   expect(repository.peek("RGRPDF24")?.value).toBe(overlay);
 });
 
 it("shares one refresh and publishes the canonical held result", async () => {
   await using stack = new AsyncDisposableStack();
-  const { repository, acquireRead } = await setup(stack);
+  const reads = await setup(stack);
+  const { repository, acquireRead } = reads;
   const first = await repository.read("RGRPDF24");
   const gate = Promise.withResolvers<void>();
   const readSnapshot = acquireRead.getMockImplementation()!;
@@ -242,7 +245,7 @@ it("shares one refresh and publishes the canonical held result", async () => {
   gate.resolve();
 
   const refreshed = await overlay;
-  expect(acquireRead).toHaveBeenCalledTimes(9);
+  expect(batchReads(reads)).toBe(2);
   expect(refreshed).toBe(first);
   expect(repository.peek("RGRPDF24")?.value).toBe(first);
 });
