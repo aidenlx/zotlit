@@ -29,7 +29,7 @@ export function createTemplateHost(files: Record<string, string> = {}) {
     },
   } as unknown as App;
   const plugin = new PluginStub(app, {
-    __VERSION__: 10,
+    __VERSION__: 11,
     "template.folder": "templates",
   });
   return { ...host, app, plugin, storage };

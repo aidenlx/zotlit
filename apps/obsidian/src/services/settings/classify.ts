@@ -13,6 +13,7 @@ export type DiskClassification =
   | { kind: "v8"; raw: Record<string, unknown> }
   | { kind: "v9"; raw: Record<string, unknown> }
   | { kind: "v10"; raw: Record<string, unknown> }
+  | { kind: "v11"; raw: Record<string, unknown> }
   | { kind: "future"; version: number }
   | { kind: "malformed"; reason: string };
 
@@ -45,6 +46,7 @@ export function hydrationOriginOf(
     case "v8":
     case "v9":
     case "v10":
+    case "v11":
     case "future":
       return "current";
   }
@@ -80,7 +82,8 @@ export function classifyDiskData(raw: unknown): DiskClassification {
   if (version === 8) return { kind: "v8", raw };
   if (version === 9) return { kind: "v9", raw };
   if (version === 10) return { kind: "v10", raw };
-  if (version > 10) return { kind: "future", version };
+  if (version === 11) return { kind: "v11", raw };
+  if (version > 11) return { kind: "future", version };
   return {
     kind: "malformed",
     reason: `__VERSION__ is not a positive integer (got ${version})`,

@@ -26,7 +26,6 @@ import type { PlainCitationText } from "@/services/citation-text/plain";
 import {
   CITEKEY_HOVER_SOURCE,
   hoverPreferences,
-  pagePreviewRequiresMod,
 } from "@/services/citekey-navigation";
 import type {
   HoverPreferences,
@@ -123,11 +122,7 @@ export class CitekeyEditor extends Service<void> {
 
   /** Registered once; its contents are the on/off switch. */
   readonly #extensions: Extension[] = [];
-  /**
-   * The annotation link hover, registered once like {@link #extensions}; it
-   * holds the hover while `citation.annotation-links` is on.
-   */
-  readonly #annotationLinkExtensions: Extension[] = [];
+  /** The annotation link hover, registered once beside {@link #extensions}. */
   readonly #annotationLinkHover: Extension;
 
   #active = false;
@@ -167,11 +162,8 @@ export class CitekeyEditor extends Service<void> {
       showFormatted: () => this.#showFormatted,
       citationText: (path) => this.#citationText.peek(path),
     });
-    // A Durable Annotation Link is no Pandoc citation, so its hover follows
-    // the Hover Action alone, whatever the citation treatment is set to.
+    // A Durable Annotation Link shows its Annotation on every hover.
     this.#annotationLinkHover = annotationLinkHoverExtension({
-      hoverPreferences: () => this.#hover,
-      pagePreviewRequiresMod: () => pagePreviewRequiresMod(this.#app),
       showAnnotation: (request) => this.#annotationPopover.show(request),
     });
     this.ready = this.#load();
@@ -195,15 +187,9 @@ export class CitekeyEditor extends Service<void> {
       display: m.hover_source_citekey(),
       defaultMod: true,
     });
-    // Filled before it is registered, so the first editors start with it and
-    // need no reconfiguring for it.
-    if ((this.#settings.current ?? defaults)["citation.annotation-links"]) {
-      this.#annotationLinkExtensions.push(this.#annotationLinkHover);
-    }
-    this.#plugin.registerEditorExtension(this.#annotationLinkExtensions);
+    this.#plugin.registerEditorExtension(this.#annotationLinkHover);
     this.#plugin.registerEditorExtension(this.#extensions);
     stack.defer(() => {
-      this.#annotationLinkExtensions.length = 0;
       this.#extensions.length = 0;
       this.#app.workspace.updateOptions();
     });
@@ -269,7 +255,6 @@ export class CitekeyEditor extends Service<void> {
     // Read straight through: hover answers from the newest snapshot, and
     // nothing drawn depends on it.
     this.#hover = hoverPreferences(settings);
-    this.#applyAnnotationLinks(settings["citation.annotation-links"]);
     const pandocCitations = settings["citation.pandoc-citations"];
     const navigationEnabled =
       pandocCitations && settings["citation.open-as-links"];
@@ -307,22 +292,6 @@ export class CitekeyEditor extends Service<void> {
         showFormatted,
       });
     }
-  }
-
-  /**
-   * Holds the annotation link hover while ZotLit treats Durable Annotation
-   * Links, so with the setting off an editor runs none of it.
-   */
-  #applyAnnotationLinks(enabled: boolean): void {
-    if (enabled === this.#annotationLinkExtensions.length > 0) return;
-    this.#annotationLinkExtensions.length = 0;
-    if (enabled) this.#annotationLinkExtensions.push(this.#annotationLinkHover);
-    this.#app.workspace.updateOptions();
-    logger.debug(
-      enabled
-        ? "Annotation link hover enabled"
-        : "Annotation link hover disabled",
-    );
   }
 
   /** The palette commands gate on this independently from presentation. */

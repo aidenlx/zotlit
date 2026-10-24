@@ -43,7 +43,7 @@ it.effect("holds the first Libraries answer when the layer builds", () =>
             reads,
             layerQueryClients,
             layerPluginSettings({
-              loadData: async () => ({ __VERSION__: 10 }),
+              loadData: async () => ({ __VERSION__: 11 }),
               saveData: async () => {},
             }),
           ),

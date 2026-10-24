@@ -7,7 +7,7 @@ import { annotationRows, annotationUri } from "./__fixtures__/annotations";
 import type { CitedBySnapshot } from "./service";
 import { createCitationIndexHarness, KEY_A, KEY_B } from "./test-harness";
 
-it("#1693 numbers Annotation Citations with other sources and lists their notes in Cited By", async () => {
+it("keeps Annotation Citations outside the Document Citation Set", async () => {
   await using harness = await createCitationIndexHarness(
     {
       "draft.md": `[](${annotationUri})\n@roe2025\n[[Doe 2024]]\n[p. 42](${annotationUri})\n![](${annotationUri})`,
@@ -20,34 +20,23 @@ it("#1693 numbers Annotation Citations with other sources and lists their notes 
   const { index, draft, workspace } = harness;
   const set = await index.getDocumentCitationSet(draft);
   expect(set.citations).toMatchObject([
-    { indexedKey: KEY_A, refNumber: 1, linkpath: "Doe 2024.md" },
-    { indexedKey: KEY_B, refNumber: 2 },
+    { indexedKey: KEY_B, refNumber: 1 },
+    { indexedKey: KEY_A, refNumber: 2, linkpath: "Doe 2024" },
   ]);
   expect(set.occurrences.map(({ kind }) => kind)).toEqual([
-    "annotation",
     "citekey",
     "wikilink",
   ]);
-  expect(set.occurrences[0]).toEqual({
-    kind: "annotation",
-    raw: "ANN23456",
-    pageLabel: "42",
-    position: {
-      start: { line: 0, col: 0, offset: 0 },
-      end: { line: 0, col: 68, offset: 68 },
-    },
-  });
+  expect(set.omittedSyntaxes).toEqual(["annotation"]);
   workspace.layoutReady();
   await index.whenIndexed();
   expect((await index.getCitedBy(KEY_A)).groups).toMatchObject([
     {
       path: "draft.md",
-      occurrences: [
-        { kind: "annotation", raw: "ANN23456" },
-        { kind: "wikilink" },
-      ],
+      occurrences: [{ kind: "wikilink" }],
     },
   ]);
+  expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual(["annotation"]);
   const snapshots: CitedBySnapshot[] = [];
   const stop = index.observeCitedBy(KEY_A, (snapshot) =>
     snapshots.push(snapshot),
@@ -57,13 +46,13 @@ it("#1693 numbers Annotation Citations with other sources and lists their notes 
       .poll(() =>
         snapshots.at(-1)?.groups[0]?.occurrences.map(({ kind }) => kind),
       )
-      .toEqual(["annotation", "wikilink"]);
+      .toEqual(["wikilink"]);
   } finally {
     stop();
   }
 });
 
-it("#1693 keeps a deleted Annotation as an unresolved reference distinct from a literal citation key", async () => {
+it("keeps a deleted Annotation Citation outside unresolved references", async () => {
   await using harness = await createCitationIndexHarness(
     {
       "draft.md":
@@ -72,59 +61,29 @@ it("#1693 keeps a deleted Annotation as an unresolved reference distinct from a 
     { zoteroRows: annotationRows },
   );
   const set = await harness.index.getDocumentCitationSet(harness.draft);
-  expect(set.citations).toMatchObject([
-    {
-      indexedKey: null,
-      refNumber: 1,
-      occurrences: [{ kind: "annotation", raw: "ZZZZZZZZ" }],
-    },
-    {
-      indexedKey: null,
-      refNumber: 2,
-      occurrences: [{ kind: "citekey", raw: "ZZZZZZZZ" }],
-    },
-  ]);
+  expect(set.citations).toMatchObject([{ indexedKey: null, refNumber: 1 }]);
   expect(buildReferenceEntries(set.citations)).toMatchObject([
-    { kind: "unresolved", annotationKey: "ZZZZZZZZ" },
     { kind: "unresolved", citekey: "ZZZZZZZZ" },
   ]);
+  expect(set.omittedSyntaxes).toEqual(["annotation"]);
 });
 
-it.each([
-  {
-    label: "a parent without a Citation Key",
-    library: "library",
-    annotation: "ANNNCKEY",
-    attachment: "PDFNCKEY",
-    key: "NCKEY234",
-    citekey: null,
-  },
-  {
-    label: "a group Library Annotation",
-    library: "groups/7",
-    annotation: "ANN23456",
-    attachment: "PDF23456",
-    key: KEY_B,
-    citekey: "roe2025",
-  },
-])(
-  "#1693 resolves $label by Item identity",
-  async ({ library, annotation, attachment, key, citekey }) => {
+it.each(["library", "groups/7"])(
+  "excludes an Annotation Citation from a %s source",
+  async (library) => {
     await using harness = await createCitationIndexHarness(
       {
-        "draft.md": `[](zotero://open/${library}/items/${attachment}?page=iv&annotation=${annotation})`,
+        "draft.md": `[](zotero://open/${library}/items/PDF23456?page=iv&annotation=ANN23456)`,
       },
       { zoteroRows: annotationRows },
     );
     const set = await harness.index.getDocumentCitationSet(harness.draft);
-    expect(set.citations).toMatchObject([{ indexedKey: key, refNumber: 1 }]);
-    expect(buildReferenceEntries(set.citations)).toMatchObject([
-      { kind: "summary", source: { citekey } },
-    ]);
+    expect(set.citations).toEqual([]);
+    expect(set.omittedSyntaxes).toEqual(["annotation"]);
   },
 );
 
-it("#1693 reports an attachment-only empty link as a Reference Error", async () => {
+it("does not report a disabled Annotation Citation as a Reference Error", async () => {
   await using harness = await createCitationIndexHarness({
     "draft.md":
       "[](zotero://open/library/items/PDF23456)\n[PDF](zotero://open/library/items/PDF23456)",
@@ -132,25 +91,14 @@ it("#1693 reports an attachment-only empty link as a Reference Error", async () 
   const { index, draft, settings } = harness;
   const set = await index.getDocumentCitationSet(draft);
   expect(set.citations).toEqual([]);
-  expect(set.errors).toMatchObject([
-    {
-      kind: "malformed-annotation",
-      occurrence: {
-        kind: "annotation",
-        raw: "zotero://open/library/items/PDF23456",
-        position: { start: { offset: 0 }, end: { offset: 40 } },
-      },
-    },
-  ]);
-  expect(
-    buildReferenceEntries(set.citations, { errors: set.errors }),
-  ).toMatchObject([{ kind: "malformed" }]);
-  settings.update({ "citation.annotation-citations": false });
+  expect(set.errors).toEqual([]);
+  expect(set.omittedSyntaxes).toEqual(["annotation"]);
+  settings.update({ "citation.pandoc-citations": false });
   expect((await index.getDocumentCitationSet(draft)).errors).toEqual([]);
   expect(await index.documentOmittedSyntaxes(draft)).toEqual(["annotation"]);
 });
 
-it("#1693 omits and restores Annotation Citations without another parse", async () => {
+it("keeps Annotation Citations omitted across citation source changes", async () => {
   let parses = 0;
   await using harness = await createCitationIndexHarness(
     {
@@ -171,14 +119,14 @@ it("#1693 omits and restores Annotation Citations without another parse", async 
   const { index, draft, workspace, settings } = harness;
   workspace.layoutReady();
   await index.whenIndexed();
-  expect((await index.getDocumentCitationSet(draft)).citations).toHaveLength(1);
+  expect((await index.getDocumentCitationSet(draft)).citations).toEqual([]);
   const snapshots: CitedBySnapshot[] = [];
   const stop = index.observeCitedBy(KEY_A, (snapshot) =>
     snapshots.push(snapshot),
   );
   try {
-    await expect.poll(() => snapshots.at(-1)?.groups.length).toBe(1);
-    settings.update({ "citation.annotation-citations": false });
+    await expect.poll(() => snapshots.at(-1)?.groups.length).toBe(0);
+    settings.update({ "citation.pandoc-citations": false });
     expect((await index.getDocumentCitationSet(draft)).citations).toEqual([]);
     expect(await index.documentOmittedSyntaxes(draft)).toEqual(["annotation"]);
     expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual(["annotation"]);
@@ -188,13 +136,6 @@ it("#1693 omits and restores Annotation Citations without another parse", async 
       ),
     ).toEqual([]);
     await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
-    settings.update({ "citation.annotation-citations": true });
-    expect((await index.getDocumentCitationSet(draft)).citations).toMatchObject(
-      [{ indexedKey: KEY_A }],
-    );
-    expect(await index.documentOmittedSyntaxes(draft)).toEqual([]);
-    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
-    await expect.poll(() => snapshots.at(-1)?.groups.length).toBe(1);
     expect(parses).toBe(2);
   } finally {
     stop();

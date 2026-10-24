@@ -11,13 +11,10 @@ import type {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Stream } from "@/lib/effect";
 import {
   setup,
   useFakeTimers,
 } from "@/services/annotation-repository/__fixtures__";
-import { defaults } from "@/services/settings/schema";
 
 import { AnnotationLinkReading } from "./reading";
 import { AnnotationPopover } from "./service";
@@ -54,17 +51,12 @@ async function harness(stack: AsyncDisposableStack) {
   );
   const service = stack.use(
     new AnnotationLinkReading({
-      runtime: testRuntime(),
       app: { workspace: { getLeavesOfType: () => [{ view }] } } as never,
       plugin: {
         registerMarkdownPostProcessor: (postProcessor) => {
           process = postProcessor;
           return postProcessor;
         },
-      },
-      settings: {
-        current: defaults,
-        changes: Stream.succeed(defaults),
       },
       annotationPopover: popover,
     }),

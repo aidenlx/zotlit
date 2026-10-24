@@ -770,7 +770,7 @@ The per-vault choice of what a plain click on a Rendered Citation does, for lite
 _Avoid_: Open Pandoc Citations as Links (the retired Pandoc-only scope), citation click toggle
 
 **Hover Action** _(Obsidian)_:
-The per-vault choice of what hovering a recognized citation, Literature Note wikilink, or Durable Annotation Link shows: Off, Citation Popover (the default), or Page Preview. Off leaves Obsidian's native wikilink hover intact, and Citekey Navigation keeps selection and the open commands — never hover. A Durable Annotation Link names no note to preview, so under Page Preview it shows the Annotation Popover too.
+The per-vault choice of what hovering a recognized citation or Literature Note wikilink shows: Off, Citation Popover (the default), or Page Preview. Off leaves Obsidian's native wikilink hover intact, and Citekey Navigation keeps selection and the open commands — never hover. A Durable Annotation Link always shows the Annotation Popover.
 _Avoid_: hover mode, popover toggle (a three-way choice, not an on/off)
 
 **Citation Popover** _(Obsidian)_:
@@ -778,7 +778,7 @@ The concise hover popover that shows each cited entry's formatted bibliography t
 _Avoid_: concise popover (the working name), hover tooltip, hover card
 
 **Annotation Popover** _(Obsidian)_:
-The hover popover of a Durable Annotation Link in Live Preview, Source mode, or Reading view: the Annotation's quoted text, comment, page label, and colour, and the Excerpt Image of an image or ink Annotation, read from the Annotation repository with no reader open. It wears the Citation Popover's chrome and follows the Hover Action; a link whose Annotation no longer exists shows a short unavailable state.
+The hover popover of a Durable Annotation Link in Live Preview, Source mode, or Reading view: the Annotation's quoted text, comment, page label, and colour, and the Excerpt Image of an image or ink Annotation, read from the Annotation repository with no reader open. It wears the Citation Popover's chrome and stays available on every annotation link; a link whose Annotation no longer exists shows a short unavailable state.
 _Avoid_: annotation hover card, annotation preview (a page preview shows a note)
 
 **Citekey Reading Rendering** _(Obsidian)_:
@@ -846,11 +846,11 @@ One appearance of a Durable Annotation Link in one file — its form (Annotation
 _Avoid_: annotation reference, annotation backlink (the Backlink is the link ZotLit writes, not its appearance), annotation usage
 
 **Omitted Occurrence**:
-A Citation Occurrence that stays outside an answer because the Pandoc Citations, Wikilink Citations, or Annotation Citations choice excludes its Citation Syntax. Reporting it is what makes a short answer visible as short: an answer that counts some of a document's citations otherwise reads exactly like one that counts them all.
+A Citation Occurrence that stays outside an answer because the Pandoc Citations or Wikilink Citations choice excludes its Citation Syntax, or because it is an Annotation Citation. Reporting it is what makes a short answer visible as short: an answer that counts some of a document's citations otherwise reads exactly like one that counts them all.
 _Avoid_: skipped citation, filtered occurrence (both name the mechanism, not the fact)
 
 **Document Citation Set**:
-The ordered Citation Occurrences one document contributes to ZotLit's Obsidian citation-aware features after the Pandoc Citations, Wikilink Citations, and Annotation Citations choices are applied. An eligible Wikilink Citation is an unaliased Literature Note link with no fragment or a valid Citation Fragment; heading links, block links, malformed Citation Fragments, and malformed Annotation Citations stay outside the set. The References Sidebar, Cited By Sidebar, In-text Citation Rendering, numbering, and Citekey Navigation all use this same membership and source order. Setting changes recompute it immediately from the internal Citation Index; built-in Pandoc export has its own membership contract.
+The ordered Citation Occurrences one document contributes to ZotLit's Obsidian citation-aware features after the Pandoc Citations and Wikilink Citations choices are applied. Annotation Citations always stay outside it. An eligible Wikilink Citation is an unaliased Literature Note link with no fragment or a valid Citation Fragment; heading links, block links, malformed Citation Fragments, and malformed Annotation Citations stay outside the set. The References Sidebar, Cited By Sidebar, In-text Citation Rendering, numbering, and Citekey Navigation all use this same membership and source order. Setting changes recompute it immediately from the internal Citation Index; built-in Pandoc export has its own membership contract.
 _Avoid_: citation universe, rendered citations (presentation, not membership)
 
 **Citation Cluster**:
@@ -870,7 +870,7 @@ The default-off choice to include eligible Literature Note wikilinks in the Docu
 _Avoid_: wikilink as citekey (the working name), link citations
 
 **Annotation Citations**:
-The default-on choice to include Annotation Citations in the Document Citation Set. Turning it off leaves them as links and excludes them from ZotLit's Obsidian citation-aware features without disabling the internal Citation Index.
+The empty-text Annotation link form. Annotation Citations always stay outside the Document Citation Set, so they never appear as references or Cited By entries. They remain Annotation Occurrences in the internal Citation Index.
 _Avoid_: annotation link citations, position citations
 
 ### Zotero connection

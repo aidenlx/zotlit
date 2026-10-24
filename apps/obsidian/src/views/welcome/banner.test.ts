@@ -43,7 +43,7 @@ async function setup(
   const app = host.app as unknown as App;
   // No Web Viewer: the Release Note opens in the browser.
   Object.assign(app, { internalPlugins: { getEnabledPluginById: () => null } });
-  const plugin = new PluginStub(app, { __VERSION__: 10, ...data });
+  const plugin = new PluginStub(app, { __VERSION__: 11, ...data });
   const settings = await loadSettings(plugin);
   await settings.loaded;
   const deps = bannerDeps(app, settings);

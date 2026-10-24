@@ -54,7 +54,7 @@ it.effect("scope close flushes a pending edit and waits for its write", () =>
     );
     yield* Effect.promise(() => started.promise);
     expect(writes).toEqual([
-      { __VERSION__: 10, "server.hostname": "/on-close" },
+      { __VERSION__: 11, "server.hostname": "/on-close" },
     ]);
     expect(closed).toBe(false);
     const duringClose = yield* Effect.exit(
@@ -73,7 +73,7 @@ it.effect("changes emits saved settings and edits in order", () =>
     const settings = yield* settingsOf({
       plugin: {
         loadData: async () => ({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "server.hostname": "/saved",
         }),
         saveData: async () => {},
@@ -118,7 +118,7 @@ it.effect(
       yield* TestClock.adjust(1);
       yield* Effect.promise(() => saved.promise);
       yield* settings.flush();
-      expect(writes).toEqual([{ __VERSION__: 10, "server.hostname": "/last" }]);
+      expect(writes).toEqual([{ __VERSION__: 11, "server.hostname": "/last" }]);
     }),
 );
 
@@ -129,7 +129,7 @@ it.effect(
       const settings = yield* plainSettingsOf({
         plugin: {
           loadData: async () => ({
-            __VERSION__: 10,
+            __VERSION__: 11,
             "server.hostname": "/saved",
           }),
           saveData: async () => {},
@@ -202,7 +202,7 @@ it.effect("flush preserves a synchronous storage failure", () =>
 
 it.effect("#1705 a failed read blocks the release check's save", () =>
   Effect.gen(function* () {
-    const original = { __VERSION__: 10, "server.hostname": "/saved" };
+    const original = { __VERSION__: 11, "server.hostname": "/saved" };
     let data: unknown = original;
     const settings = yield* settingsOf({
       plugin: {
@@ -263,7 +263,7 @@ it.effect(
       const settings = yield* settingsOf({
         plugin: {
           loadData: async () => ({
-            __VERSION__: 10,
+            __VERSION__: 11,
             "server.hostname": "/stored",
           }),
           saveData: async () => {},
@@ -344,7 +344,7 @@ it.effect("#1705 adapter calls are safe after whole-runtime disposal", () =>
     const { settings, close } = yield* settingsRuntimeOf({
       plugin: {
         loadData: async () => ({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "server.hostname": "/saved",
         }),
         saveData: async (value) => {

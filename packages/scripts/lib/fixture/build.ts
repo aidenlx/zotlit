@@ -1117,7 +1117,7 @@ function writePrefs(
 }
 
 /** ZotLit's settings version, so the vault loads without a migration pass. */
-const SETTINGS_VERSION = 10;
+const SETTINGS_VERSION = 11;
 
 /** ZotLit's right-sidebar view types, as `registerView` declares them. */
 const ZOTLIT_SIDEBAR_VIEW_TYPES = [

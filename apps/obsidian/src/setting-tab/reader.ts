@@ -21,5 +21,11 @@ export function readerPageItems(): SettingDefinitionItem<SettingsKey>[] {
       desc: m.settings_reader_open_file_links_desc(),
       control: { type: "toggle", key: "reader.open-file-links" },
     },
+    {
+      id: "settings_reader_open_annotation_links",
+      name: m.settings_reader_open_annotation_links_name(),
+      desc: m.settings_reader_open_annotation_links_desc(),
+      control: { type: "toggle", key: "reader.open-annotation-links" },
+    },
   ];
 }

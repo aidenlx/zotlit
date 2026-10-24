@@ -11,6 +11,7 @@ import {
   migrateV7ToV8,
   migrateV8ToV9,
   migrateV9ToV10,
+  migrateV10ToV11,
 } from "./migrate";
 
 describe("migrateLegacyV0", () => {
@@ -733,5 +734,38 @@ describe("migrateV9ToV10", () => {
   it("returns an empty object for non-plain inputs", () => {
     expect(migrateV9ToV10(null)).toEqual({});
     expect(migrateV9ToV10(42)).toEqual({});
+  });
+});
+
+describe("migrateV10ToV11", () => {
+  it("moves the annotation opening choice to the Reader settings", () => {
+    expect(
+      migrateV10ToV11({
+        __VERSION__: 10,
+        "citation.annotation-links": false,
+        "citation.annotation-citations": true,
+        "citation.open-annotation-links": false,
+        "server.enabled": true,
+      }),
+    ).toEqual({
+      __VERSION__: 10,
+      "reader.open-annotation-links": false,
+      "server.enabled": true,
+    });
+  });
+
+  it("uses the enabled Reader default when the old value is absent", () => {
+    expect(
+      migrateV10ToV11({
+        __VERSION__: 10,
+        "citation.annotation-links": false,
+        "citation.annotation-citations": false,
+      }),
+    ).toEqual({ __VERSION__: 10 });
+  });
+
+  it("returns an empty object for non-plain inputs", () => {
+    expect(migrateV10ToV11(null)).toEqual({});
+    expect(migrateV10ToV11(42)).toEqual({});
   });
 });

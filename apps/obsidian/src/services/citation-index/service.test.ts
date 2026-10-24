@@ -17,8 +17,11 @@ import {
   groupTwin,
   bothLibraries,
 } from "./__fixtures__/ambiguous";
-import type { CitationSyntax } from "./scan";
-import type { CitedBySnapshot, Citation } from "./service";
+import type {
+  CitedBySnapshot,
+  Citation,
+  DocumentCitationSyntax,
+} from "./service";
 import {
   createCitationIndexHarness,
   DatabaseStub,
@@ -338,7 +341,7 @@ describe("CitationIndex", () => {
         expect(index.syntaxes()).toEqual({
           citekey: "included",
           wikilink: "excluded",
-          annotation: "included",
+          annotation: "excluded",
         });
 
         settings.update({
@@ -349,7 +352,7 @@ describe("CitationIndex", () => {
         expect(index.syntaxes()).toEqual({
           citekey: "excluded",
           wikilink: "included",
-          annotation: "included",
+          annotation: "excluded",
         });
       }),
   );
@@ -376,7 +379,7 @@ describe("CitationIndex", () => {
         await index.whenIndexed();
 
         const summary = (
-          syntaxes: CitationSyntax[] = ["citekey", "wikilink"],
+          syntaxes: DocumentCitationSyntax[] = ["citekey", "wikilink"],
         ) =>
           [...index.citationsByPath(syntaxes)].map(([path, occurrences]) => [
             path,

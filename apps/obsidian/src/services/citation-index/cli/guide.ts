@@ -79,7 +79,7 @@ const COVERAGE_STATES = {
 /** Which setting controls a Citation Syntax's admission into an answer. */
 const SYNTAX_STATES = {
   annotation:
-    "Included while the 'Annotation citations' setting (citation.annotation-citations) is on; on by default.",
+    "Always excluded from the Document Citation Set. Annotation links remain Annotation Occurrences for annotation-uses.",
   citekey:
     "Included while the 'Pandoc citations' setting (citation.pandoc-citations) is on.",
   wikilink:

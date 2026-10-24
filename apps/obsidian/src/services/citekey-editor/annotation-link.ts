@@ -15,11 +15,6 @@ import { tokenNodes, visibleLineRanges } from "@/lib/editor-decoration";
 import type { DocRange, TokenNode } from "@/lib/editor-decoration";
 import { getLogger } from "@/lib/log";
 import type { AnnotationHoverRequest } from "@/services/annotation-popover/service";
-import {
-  annotationHoverIntent,
-  hoverGesture,
-} from "@/services/citekey-navigation";
-import type { HoverPreferences } from "@/services/citekey-navigation";
 
 const logger = getLogger("citekey-editor");
 
@@ -27,10 +22,6 @@ const logger = getLogger("citekey-editor");
 export type DurableAnnotationLink = AnnotationOpenUriOptions;
 
 export interface AnnotationLinkHoverHandlers {
-  /** What hover answers with, read once per hover. */
-  hoverPreferences: () => HoverPreferences;
-  /** Whether Obsidian's Page preview row for ZotLit citations asks for Mod. */
-  pagePreviewRequiresMod: () => boolean;
   /** Show the popover of one hovered Durable Annotation Link. */
   showAnnotation: (request: AnnotationHoverRequest) => void;
 }
@@ -49,7 +40,7 @@ const linkMark = Decoration.mark({ class: LINK_CLASS });
 
 /**
  * Shows the Annotation a hovered Durable Annotation Link names, in Live
- * Preview and Source mode alike, as the Hover Action asks.
+ * Preview and Source mode alike.
  *
  * Obsidian raises no `hover-link` for an external link, so the hover is read
  * here, off the link Obsidian draws, and goes straight to the popover.
@@ -124,19 +115,6 @@ function hoverAt(
   const editorMode = view.dom.closest(".is-live-preview")
     ? "live-preview"
     : "source";
-  const intent = annotationHoverIntent(
-    hoverGesture(event, { surface: "editor", editorMode }),
-    handlers.hoverPreferences(),
-    handlers.pagePreviewRequiresMod,
-  );
-  if (intent.kind === "nothing") {
-    logger.trace("Annotation link hover suppressed", {
-      annotationKey: link.annotationKey,
-      editorMode,
-      reason: intent.reason,
-    });
-    return;
-  }
   const info = view.state.field(editorInfoField, false);
   if (!info) return;
   logger.trace("Annotation link shows its annotation", {

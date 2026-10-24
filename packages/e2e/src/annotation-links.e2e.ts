@@ -398,8 +398,7 @@ async function searchAndInsert(
 
 /** The settings that decide what ZotLit does with a Durable Annotation Link. */
 interface LinkSettings {
-  "citation.annotation-links"?: boolean;
-  "citation.open-annotation-links"?: boolean;
+  "reader.open-annotation-links"?: boolean;
 }
 
 /**
@@ -786,12 +785,6 @@ interface HoverOutcome {
   /** The superscript the popover drew from the quote's rich text, if any. */
   sup: string | null;
   /**
-   * The text of the popover a second hover over the same link opened, in the
-   * same view, once annotation links were turned on again; only for a
-   * scenario that asks.
-   */
-  restored?: string;
-  /**
    * The open popover once the pointer crossed from the link's text onto its
    * URL; only for a scenario that asks.
    */
@@ -823,16 +816,6 @@ interface HoverScenario {
   pandocOff?: boolean;
   /** The annotation link settings to change for this scenario. */
   linkSettings?: LinkSettings;
-  /**
-   * The annotation link settings to change once the note is open, so the
-   * editor that hovers is one that was built before the change.
-   */
-  afterOpen?: LinkSettings;
-  /**
-   * After the hover that shows nothing, turn annotation links on again and
-   * hover the same link in the same view, as {@link HoverOutcome.restored}.
-   */
-  restore?: boolean;
   /** Wait for a decoded Excerpt Image as well as the text. */
   image?: boolean;
   /** Hold Ctrl or Command through the hover. */
@@ -865,11 +848,9 @@ async function hover({
   pagePreviewMod,
   pandocOff = false,
   linkSettings = {},
-  afterOpen = {},
-  restore = false,
   image = false,
   mod = false,
-  absent = hoverAction === "off",
+  absent = false,
   crossToUrl = false,
 }: HoverScenario): Promise<HoverOutcome> {
   // The control link has a line of its own; the cursor stays on the empty
@@ -906,7 +887,6 @@ async function hover({
         pagePreview['zotlit-citekey']=${pagePreviewMod};`
         }
         ${showNote(JSON.stringify(note), gesture)}
-        ${applyLinkSettings(afterOpen)}
         ${linkTarget(gesture)}
         cleanup.defer(()=>view.hoverPopover?.hide());
         link.dispatchEvent(new MouseEvent('mouseover',{clientX:x,clientY:y,bubbles:true,metaKey:${mod},ctrlKey:${mod},view:link.ownerDocument.defaultView}));
@@ -916,10 +896,9 @@ async function hover({
           // hovered later in a split under the Citation Popover. Every hover
           // popover waits the same opening delay, so once the control's has
           // opened, one the first hover had started would have opened too.
-          // Annotation links go back on before that delay ends, which holds
-          // only because both hover gates act at the mouseover itself, never
-          // as the delay ends.
-          s.settings.update({'citation.hover-action':'popover','citation.annotation-links':true});
+          // The Hover Action goes back on before that delay ends; the first
+          // link's mouseover has already decided whether it opens a popover.
+          s.settings.update({'citation.hover-action':'popover'});
           const control=app.workspace.getLeaf('split','vertical');
           cleanup.adopt(control,(leaf)=>leaf.detach());
           await control.setViewState({type:'markdown',state:{file:file.path,mode:'preview'}});
@@ -928,16 +907,6 @@ async function hover({
           controlLink.dispatchEvent(new MouseEvent('mouseover',{bubbles:true,view:controlLink.ownerDocument.defaultView}));
           await until(()=>opened(control.view),()=>'The control hover opened no popover');
           outcome={popover:!!opened(view)||link.ownerDocument.querySelectorAll('.hover-popover').length!==1,text:null,color:null,image:false,sup:null};
-          if(${restore}){
-            // The control step turned annotation links on again; the view
-            // that showed nothing now answers the same link, found afresh
-            // since Live Preview may draw it anew as the editor reconfigures.
-            control.view.hoverPopover?.hide();
-            ${linkTarget(gesture)}
-            link.dispatchEvent(new MouseEvent('mouseover',{clientX:x,clientY:y,bubbles:true,metaKey:${mod},ctrlKey:${mod},view:link.ownerDocument.defaultView}));
-            const again=await until(()=>opened(view),()=>'The same link opened no popover once annotation links were on again');
-            outcome.restored=await until(()=>again.hoverEl.querySelector('.zt-citation-popover-content')?.textContent,()=>'The restored popover never filled');
-          }
         }else{
           const popover=await until(()=>opened(view),()=>'No popover opened over the link');
           const content=()=>popover.hoverEl.isConnected?popover.hoverEl.querySelector('.zt-citation-popover-content'):null;
@@ -1366,31 +1335,21 @@ describe.skipIf(!reachable)("Annotation links", () => {
       });
     }, 120000);
 
-    it.each([
-      ["while ZotLit treats no annotation links", "citation.annotation-links"],
-      [
-        "while annotation links are set to open in Zotero",
-        "citation.open-annotation-links",
-      ],
-    ] as const)(
-      "%s",
-      async (_, key) => {
-        const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);
+    it("while annotation links are set to open in Zotero", async () => {
+      const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);
 
-        const outcome = await follow({
-          note: noteWith(url),
-          url,
-          gesture: "reading",
-          linkSettings: { [key]: false },
-        });
+      const outcome = await follow({
+        note: noteWith(url),
+        url,
+        gesture: "reading",
+        linkSettings: { "reader.open-annotation-links": false },
+      });
 
-        expect(outcome).toMatchObject({
-          reader: null,
-          passed: [expect.objectContaining({ url })],
-        });
-      },
-      120000,
-    );
+      expect(outcome).toMatchObject({
+        reader: null,
+        passed: [expect.objectContaining({ url })],
+      });
+    }, 120000);
 
     // Obsidian's own "Open in default browser" item calls `window.open` with
     // this target, which is the whole of that gesture as Capture sees it.
@@ -1473,15 +1432,14 @@ describe.skipIf(!reachable)("Annotation links", () => {
       expect(outcome.text).toContain(FIRST_PAGE.text);
     }, 120000);
 
-    it("with nothing under Page Preview while Mod is not held", async () => {
+    it("under Page Preview without Mod", async () => {
       const outcome = await hover({
         url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
         gesture: "reading",
         hoverAction: "page-preview",
-        absent: true,
       });
 
-      expect(outcome.popover).toBe(false);
+      expect(outcome.text).toContain(FIRST_PAGE.text);
     }, 120000);
 
     // ZotLit's row in Obsidian's Page preview settings, once the researcher
@@ -1497,8 +1455,8 @@ describe.skipIf(!reachable)("Annotation links", () => {
       expect(outcome.text).toContain(FIRST_PAGE.text);
     }, 120000);
 
-    // Source mode shows the link's Markdown, where a hover is editing more
-    // often than reading: as for Obsidian's own links, it waits for Mod.
+    // Source mode shows the link's Markdown, and the Annotation stays
+    // available there.
     it("in Source mode with Mod held", async () => {
       const outcome = await hover({
         url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
@@ -1527,14 +1485,13 @@ describe.skipIf(!reachable)("Annotation links", () => {
       });
     }, 120000);
 
-    it("with nothing in Source mode while Mod is not held", async () => {
+    it("in Source mode without Mod", async () => {
       const outcome = await hover({
         url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
         gesture: "source",
-        absent: true,
       });
 
-      expect(outcome.popover).toBe(false);
+      expect(outcome.text).toContain(FIRST_PAGE.text);
     }, 120000);
 
     // A Durable Annotation Link is no Pandoc citation: its hover stays when
@@ -1555,27 +1512,22 @@ describe.skipIf(!reachable)("Annotation links", () => {
       const outcome = await hover({
         url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
         gesture: "live-preview",
-        linkSettings: { "citation.open-annotation-links": false },
+        linkSettings: { "reader.open-annotation-links": false },
       });
 
       expect(outcome.text).toContain(FIRST_PAGE.text);
     }, 120000);
 
-    // The setting changes under a note already open: the editor drops its
-    // hover and takes it back without being opened again.
     it.each(["live-preview", "reading"] as const)(
-      "with nothing while ZotLit treats no annotation links, and again once they are back, in %s",
+      "while the citation Hover Action is off, in %s",
       async (gesture) => {
         const outcome = await hover({
           url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
           gesture,
-          afterOpen: { "citation.annotation-links": false },
-          restore: true,
-          absent: true,
+          hoverAction: "off",
         });
 
-        expect(outcome.popover).toBe(false);
-        expect(outcome.restored).toContain(FIRST_PAGE.text);
+        expect(outcome.text).toContain(FIRST_PAGE.text);
       },
       120000,
     );
@@ -1607,20 +1559,6 @@ describe.skipIf(!reachable)("Annotation links", () => {
           popover: true,
           text: run.m.annotation_popover_unavailable(),
         });
-      },
-      120000,
-    );
-
-    it.each(["live-preview", "reading"] as const)(
-      "with nothing while the Hover Action is off, in %s",
-      async (gesture) => {
-        const outcome = await hover({
-          url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
-          gesture,
-          hoverAction: "off",
-        });
-
-        expect(outcome.popover).toBe(false);
       },
       120000,
     );
