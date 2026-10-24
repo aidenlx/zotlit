@@ -32,7 +32,7 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 import { heldResolution } from "./lookup";
-import { CitationLookup } from "./lookup-service";
+import { CitationLookup, inertObservation } from "./lookup-service";
 import type { CitationLookupStatus } from "./lookup-service";
 export type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 export type { CitationLookupObservation } from "./lookup-service";
@@ -259,8 +259,12 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         if (Cause.hasInterruptsOnly(exit.cause)) throw lookupReleased();
         throw Cause.squash(exit.cause);
       },
-      observe: (changed: () => void) => run(lookup.observe(changed)),
-      whenResolved: () => runPromise(lookup.whenResolved()),
+      observe: (changed: () => void) =>
+        scope.state._tag === "Closed"
+          ? inertObservation()
+          : run(lookup.observe(changed)),
+      whenResolved: () =>
+        runPromiseExit(lookup.whenResolved()).then(() => undefined),
     };
     const joinSources = (
       citations: Parameters<typeof readReferenceSources>[1],
