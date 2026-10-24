@@ -577,6 +577,25 @@ export class AnnotationsLayout extends Component {
     this.#hold = null;
   }
 
+  /**
+   * Show no cards until `attachmentKey`'s are read. Rows the query already
+   * landed for it keep their reads, whose cards show as their lists land:
+   * nothing else would read them again. Rows of any other Attachment go as
+   * {@link clear} drops them.
+   */
+  clearCardsFor(attachmentKey: string): void {
+    if (!sameKeys(this.#shown, [attachmentKey])) {
+      this.clear();
+      return;
+    }
+    this.store.setState({
+      annotations: null,
+      sources: new Map(),
+      unresolved: [],
+      editing: null,
+    });
+  }
+
   /** Drop the answers of the reads still running: a later `showRows` replaces them. */
   cancelReads(): void {
     this.#latest.clear();
