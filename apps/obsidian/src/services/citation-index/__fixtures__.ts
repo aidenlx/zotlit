@@ -1,12 +1,12 @@
 /** The real Citation Lookup layer over already-owned consumer fixture dependencies. */
 import type { App } from "obsidian";
 
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { Scope } from "@/lib/effect";
 import { Context, Effect, Layer, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import type { ParseClient } from "@/services/citation-parse/client";
 import { CitationParse } from "@/services/citation-parse/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
@@ -223,7 +223,7 @@ export function citationIndexFixture(
     layerCitationIndex(deps.openStore).pipe(
       Layer.provide(
         Layer.mergeAll(
-          Layer.succeed(ObsidianApp, deps.app),
+          layerHostApp(deps.app),
           Layer.succeed(
             ZoteroReads,
             stubService<ZoteroReads["Service"]>("ZoteroReads", {

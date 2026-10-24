@@ -1,16 +1,19 @@
 // A Use Ledger built from its layer over a fake App.
 import type { App } from "obsidian";
 
+import {
+  layerHostApp,
+  MemoryMetadataCache,
+} from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { Context, Effect, Layer, Stream } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { ObsidianApp } from "@/lib/obsidian-app";
 
 import { plainUseLedger } from "./plain";
 import type { PlainUseLedger } from "./plain";
 import { layerUseLedger, UseLedger } from "./service";
 
-/** An App whose local storage is `storage`, with inert workspace events. */
+/** An App whose local storage is `storage`, with inert workspace events and an in-memory metadata cache. */
 export function fakeApp(storage: {
   load: () => unknown;
   save?: (key: string, value: unknown) => void;
@@ -21,7 +24,7 @@ export function fakeApp(storage: {
     loadLocalStorage: storage.load,
     saveLocalStorage: storage.save ?? (() => {}),
     workspace: { onLayoutReady: () => {}, on: ref },
-    metadataCache: { on: ref },
+    metadataCache: new MemoryMetadataCache(),
   } as unknown as App;
 }
 
@@ -52,5 +55,5 @@ export const inertUseLedger: PlainUseLedger = {
 };
 
 function ledgerOver(app: App): Layer.Layer<UseLedger> {
-  return layerUseLedger.pipe(Layer.provide(Layer.succeed(ObsidianApp, app)));
+  return layerUseLedger.pipe(Layer.provide(layerHostApp(app)));
 }

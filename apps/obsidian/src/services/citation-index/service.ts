@@ -23,6 +23,7 @@ import { acquireDisposable, isScopeClosed } from "@/lib/effect-scope";
 import { startupBarrier } from "@/lib/effect-startup";
 import { changesUntil, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import { CitationParse } from "@/services/citation-parse/service";
 import { LibraryScope } from "@/services/library-scope/service";
@@ -201,6 +202,7 @@ export const layerCitationIndex = (openStore = openCitekeyStore) =>
 function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
   return Effect.gen(function* () {
     const app = yield* ObsidianApp;
+    const metadata = yield* MetadataCache;
     const db = yield* ZoteroReads;
     const libraryScope = yield* LibraryScope;
     const noteIndex = yield* NoteIndex;
@@ -1582,10 +1584,19 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         }),
       )
       .pipe(Effect.forkIn(scope, { startImmediately: true }));
-    for (const event of ["changed", "deleted", "resolve", "resolved"] as const)
-      yield* intake
-        .on(event, app.metadataCache, event)
-        .pipe(Scope.provide(scope));
+    // The metadata cache's events join the vault's in one ordered intake.
+    yield* forkEach(metadata.changes, (event) => {
+      switch (event._tag) {
+        case "changed":
+          intake.callback("changed")(event.file, event.data);
+          break;
+        case "deleted":
+          intake.callback("deleted")(event.file);
+          break;
+        default:
+          intake.callback(event._tag)();
+      }
+    }).pipe(Scope.provide(scope));
     yield* intake.on("rename", app.vault, "rename").pipe(Scope.provide(scope));
     yield* forkEach(settings.changes, applySettings).pipe(Scope.provide(scope));
     // IndexedDB can stall; startup waits the shared bound and the open goes on.

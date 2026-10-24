@@ -5,6 +5,7 @@ import type { CliHost } from "@/lib/cli-command";
 import { Layer } from "@/lib/effect";
 import { nodeFetch } from "@/lib/node-fetch";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { layerMetadataCache } from "@/lib/obsidian-metadata-cache";
 import { PluginHost } from "@/lib/plugin-host";
 import { openLibraryView } from "@/views/library/register";
 
@@ -193,7 +194,11 @@ export function pluginLayer(
         layerQueryClients.pipe(startingAs("QueryClients")),
       ),
     ),
-    Layer.provide(Layer.succeed(ObsidianApp, plugin.app)),
+    Layer.provide(
+      layerMetadataCache.pipe(
+        Layer.provideMerge(Layer.succeed(ObsidianApp, plugin.app)),
+      ),
+    ),
     Layer.provideMerge(
       layerLogging.pipe(
         Layer.provide(layerLogOutput(plugin)),

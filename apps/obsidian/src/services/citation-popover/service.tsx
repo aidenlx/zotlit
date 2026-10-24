@@ -2,12 +2,13 @@
 import type { App, HoverParent, TFile } from "obsidian";
 import type { ReactNode } from "react";
 
-import { registerEvent } from "@/lib/disposables";
 import { Cause, Context, Effect, Exit, Layer } from "@/lib/effect";
 import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
+import { filterTag } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
 import {
   describeCandidates,
@@ -190,6 +191,7 @@ export const layerCitationPopover: Layer.Layer<
   CitationPopover,
   never,
   | ObsidianApp
+  | MetadataCache
   | ZoteroReads
   | CitationLookup
   | CitationIndex
@@ -201,6 +203,7 @@ export const layerCitationPopover: Layer.Layer<
   CitationPopover,
   Effect.gen(function* () {
     const app = yield* ObsidianApp;
+    const metadata = yield* MetadataCache;
     const reads = yield* ZoteroReads;
     const lookup = yield* CitationLookup;
     const index = yield* CitationIndex;
@@ -347,20 +350,20 @@ export const layerCitationPopover: Layer.Layer<
         );
       }
       if (!("work" in request)) {
-        subscriptions.use(
-          // oxlint-disable-next-line zotlit-services/obsidian-events-intake -- This registration belongs to one visit, not the layer.
-          registerEvent(
-            app.metadataCache.on("deleted", (file) => {
+        subscriptions.defer(
+          bridge.subscribe(
+            filterTag(metadata.changes, "deleted"),
+            ({ file }) => {
               if (file.path === request.sourcePath) popover.hide();
-            }),
+            },
           ),
         );
-        subscriptions.use(
-          // oxlint-disable-next-line zotlit-services/obsidian-events-intake -- This registration belongs to one visit, not the layer.
-          registerEvent(
-            app.metadataCache.on("changed", (file) => {
+        subscriptions.defer(
+          bridge.subscribe(
+            filterTag(metadata.changes, "changed"),
+            ({ file }) => {
               if (file.path === request.sourcePath) draw();
-            }),
+            },
           ),
         );
       }

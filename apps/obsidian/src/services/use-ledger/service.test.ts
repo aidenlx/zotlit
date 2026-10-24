@@ -1,6 +1,7 @@
 import { TestClock } from "effect/testing";
 import { expect, vi } from "vitest";
 
+import type { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { Effect, Logger } from "@/lib/effect";
 import { LogCategory } from "@/lib/effect-log";
 import { it } from "@/lib/effect-vitest";
@@ -70,7 +71,14 @@ it.effect(
       const ledger = yield* Effect.scoped(useLedgerOf(app));
       yield* ledger.record("AAAAAAAA", "opened");
 
-      expect(offref).toHaveBeenCalledTimes(2);
+      // The workspace listener is the ledger's; the metadata cache's belongs
+      // to the MetadataCache tag, which closes with it here.
+      expect(offref).toHaveBeenCalledTimes(1);
+      expect(
+        (app.metadataCache as unknown as MemoryMetadataCache).listenerCount(
+          "changed",
+        ),
+      ).toBe(0);
       expect(yield* ledger.current).toEqual({});
       expect(save).not.toHaveBeenCalled();
     }),

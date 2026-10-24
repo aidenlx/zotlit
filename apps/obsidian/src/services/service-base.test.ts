@@ -79,13 +79,23 @@ it("disposes services newest first, so an older service keeps its vault and meta
     .useValue({ noteIndex: () => buildNoteIndex(app, stack) })
     .use({ newer: ({ noteIndex }) => new ReadsOnTeardown(noteIndex) });
   expect(vault.listened().sort()).toEqual(["delete", "rename"]);
-  expect(metadataCache.listened().sort()).toEqual(["changed", "deleted"]);
+  expect(metadataCache.listened().sort()).toEqual([
+    "changed",
+    "deleted",
+    "resolve",
+    "resolved",
+  ]);
 
   const disposed = stack.disposeAsync();
   await services.newer.started.promise;
   await delay(20);
   expect(vault.listened().sort()).toEqual(["delete", "rename"]);
-  expect(metadataCache.listened().sort()).toEqual(["changed", "deleted"]);
+  expect(metadataCache.listened().sort()).toEqual([
+    "changed",
+    "deleted",
+    "resolve",
+    "resolved",
+  ]);
 
   services.newer.finish();
   await disposed;
