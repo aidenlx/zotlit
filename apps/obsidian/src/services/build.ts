@@ -133,6 +133,7 @@ export async function buildServices(
 
   return container
     .useValue({ runtime: () => runtime })
+    .useValue({ bridge: () => bridge })
     .useValue({
       settings: () => plainPluginSettings(runtime),
     })

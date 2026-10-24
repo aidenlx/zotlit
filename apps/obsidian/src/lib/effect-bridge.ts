@@ -11,7 +11,9 @@ import { subscribe } from "./effect-stream";
  *
  * The runners are captured from the runtime context at build time: a disposed
  * runtime clears its context, while the captured context still answers with
- * the services' released values.
+ * the services' released values. `runPromiseExit` alone runs its fiber in the
+ * runtime's scope, so unload interrupts a pending run and the caller sees an
+ * interrupt-only Exit: use it where a closed runtime has its own answer.
  */
 export interface EffectBridge {
   readonly runSync: <A, E>(effect: Effect.Effect<A, E>) => A;
