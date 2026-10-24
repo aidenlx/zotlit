@@ -30,6 +30,7 @@ import { layerQueryClients } from "./query-client/service";
 import type { QueryClients } from "./query-client/service";
 import { layerPluginSettings } from "./settings/service";
 import type { PluginSettings } from "./settings/service";
+import { startingAs } from "./startup-failure";
 import { layerTemplateMigration } from "./template/migration";
 import type {
   TemplateMigration,
@@ -50,7 +51,8 @@ import { workerClient } from "./zotero-reads/worker-client";
  * converted services, and the legacy services bridged into it with
  * `serviceLayer`. Settings and logging build first, so every other service
  * logs from its first line and closes before them. Every service reads time
- * from the Effect Clock, which a test replaces.
+ * from the Effect Clock, which a test replaces. Each layer starts under its
+ * service's name, so a defect during acquisition names what failed.
  */
 export function pluginLayer(
   plugin: Plugin,
@@ -75,31 +77,52 @@ export function pluginLayer(
   | TemplateMigration
 > {
   return layerCitationText().pipe(
-    Layer.provideMerge(layerCitationIndex()),
-    Layer.provideMerge(
-      Layer.mergeAll(layerBibliographyRender, layerCitationLookup),
-    ),
-    Layer.provideMerge(Layer.mergeAll(layerLibraryScope, layerProfile)),
-    Layer.provideMerge(layerZoteroReads(workerClient())),
+    startingAs("CitationText"),
+    Layer.provideMerge(layerCitationIndex().pipe(startingAs("CitationIndex"))),
     Layer.provideMerge(
       Layer.mergeAll(
-        layerUseLedger,
+        layerBibliographyRender.pipe(startingAs("BibliographyRender")),
+        layerCitationLookup.pipe(startingAs("CitationLookup")),
+      ),
+    ),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        layerLibraryScope.pipe(startingAs("LibraryScope")),
+        layerProfile.pipe(startingAs("Profile")),
+      ),
+    ),
+    Layer.provideMerge(
+      layerZoteroReads(workerClient()).pipe(startingAs("ZoteroReads")),
+    ),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        layerUseLedger.pipe(startingAs("UseLedger")),
         layerTemplateMigration(migration).pipe(
-          Layer.provideMerge(layerTemplate),
+          startingAs("TemplateMigration"),
+          Layer.provideMerge(layerTemplate.pipe(startingAs("Template"))),
         ),
-        layerZoteroPref.pipe(Layer.provide(layerZoteroPrefFiles)),
-        Layer.mergeAll(layerChineseSegmenter, layerPandocEngine).pipe(
-          Layer.provide(layerManagedBinaryPlatform),
+        layerZoteroPref.pipe(
+          Layer.provide(layerZoteroPrefFiles),
+          startingAs("ZoteroPref"),
         ),
-        layerNoteIndex,
-        layerCitationParse,
-        layerQueryClients,
+        Layer.mergeAll(
+          layerChineseSegmenter.pipe(startingAs("ChineseSegmenter")),
+          layerPandocEngine.pipe(startingAs("PandocEngine")),
+        ).pipe(Layer.provide(layerManagedBinaryPlatform)),
+        layerNoteIndex.pipe(startingAs("NoteIndex")),
+        layerCitationParse.pipe(startingAs("CitationParse")),
+        layerQueryClients.pipe(startingAs("QueryClients")),
       ),
     ),
     Layer.provide(Layer.succeed(ObsidianApp, plugin.app)),
     Layer.provideMerge(
-      layerLogging.pipe(Layer.provide(layerLogOutput(plugin))),
+      layerLogging.pipe(
+        Layer.provide(layerLogOutput(plugin)),
+        startingAs("Logging"),
+      ),
     ),
-    Layer.provideMerge(layerPluginSettings(plugin)),
+    Layer.provideMerge(
+      layerPluginSettings(plugin).pipe(startingAs("PluginSettings")),
+    ),
   );
 }

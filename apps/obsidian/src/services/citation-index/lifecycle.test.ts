@@ -1,3 +1,4 @@
+import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
 import { Effect, Stream } from "@/lib/effect";
@@ -364,5 +365,58 @@ it.effect(
       await reset;
       expect(clears).toBe(1);
       expect(h.vault.reads.length).toBe(new Set(h.vault.reads).size);
+    }),
+);
+
+it.effect(
+  "starts within the bound while the store stalls, then writes earlier scans and drops through (#1705)",
+  () =>
+    Effect.gen(function* () {
+      const context = yield* Effect.context<never>();
+      const store = new MemoryStore();
+      const documents = { "draft.md": "@doe2024", "gone.md": "@roe2020" };
+      yield* Effect.promise(async () => {
+        await using seed = await createCitationIndexHarness(documents, {
+          store,
+          notes: false,
+        });
+        await seed.index.getFileScan(seed.draft);
+        await seed.index.getFileScan(seed.metadataCache.files.get("gone.md")!);
+      });
+      const release = Promise.withResolvers<void>();
+      const written = Promise.withResolvers<void>();
+      const put = store.put.bind(store);
+      store.put = async (record) => {
+        await put(record);
+        if (record.path === "draft.md") written.resolve();
+      };
+      const h = yield* Effect.acquireRelease(
+        Effect.promise(() =>
+          createCitationIndexHarness(
+            { ...documents, "draft.md": "@smith2021" },
+            {
+              context,
+              notes: false,
+              awaitReady: false,
+              openStore: async () => {
+                await release.promise;
+                return store;
+              },
+            },
+          ),
+        ),
+        (h) => Effect.promise(() => h[Symbol.asyncDispose]()),
+      );
+      yield* TestClock.adjust("5 seconds");
+      yield* Effect.promise(() => h.ready);
+      yield* Effect.promise(() => h.index.getFileScan(h.draft));
+      h.vault.deleteFile(h.metadataCache.files.get("gone.md")!);
+      release.resolve();
+      yield* Effect.promise(() => written.promise);
+      expect(JSON.stringify(store.records.get("draft.md"))).toContain(
+        "smith2021",
+      );
+      expect(store.records.has("gone.md")).toBe(false);
+      expect(h.index.citationKeys()).toEqual(["smith2021"]);
     }),
 );

@@ -64,6 +64,7 @@ import { registerPandocResolve } from "./services/pandoc/register";
 import { addProfileActions } from "./services/profile/actions";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
+import { ServiceStartupFailed } from "./services/startup-failure";
 import { registerTemplateWorkbench } from "./services/template-workbench/register";
 import { addCitationTemplateActions } from "./services/template/actions";
 import { ZotLitSettingTab } from "./setting-tab";
@@ -157,6 +158,29 @@ function assertElectronVersion(): void {
   throw new Error(
     `Obsidian installer is too old (Electron v${version}, required >=v${__MIN_ELECTRON_VERSION__})`,
   );
+}
+
+/**
+ * Stop plugin load on a service whose acquisition died, naming it on screen
+ * and in the console. The onload stack releases what started as the error
+ * leaves onload.
+ *
+ * @throws the startup failure, aborting plugin load.
+ */
+function reportStartupFailure(error: unknown): never {
+  if (error instanceof ServiceStartupFailed) {
+    new BaseNotice(
+      BaseNotice.render((renderer) => {
+        renderer.setTitle(m.notice_startup_failed());
+        renderer.addText(
+          m.notice_startup_failed_detail({ service: error.service }),
+        );
+      }),
+      0,
+    );
+    console.error(`ZotLit: ${error.message}`, error.cause);
+  }
+  throw error;
 }
 
 function showLanguagePackLifecycle(lifecycle: LanguagePackLifecycle): void {
@@ -299,7 +323,9 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     void reapCslStore({ signal: reapAbort.signal });
     void reapExcerptTemps({ signal: reapAbort.signal });
 
-    const { services } = await buildServices(this, stack);
+    const { services } = await buildServices(this, stack).catch(
+      reportStartupFailure,
+    );
 
     // One Customize flow shared by every entry action.
     const customize = createCustomize({

@@ -20,6 +20,7 @@ import {
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { acquireDisposable, isScopeClosed } from "@/lib/effect-scope";
+import { startupBarrier } from "@/lib/effect-startup";
 import { changesUntil, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import type { ParseClient } from "@/services/citation-parse/client";
@@ -1587,24 +1588,30 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         .pipe(Scope.provide(scope));
     yield* intake.on("rename", app.vault, "rename").pipe(Scope.provide(scope));
     yield* forkEach(settings.changes, applySettings).pipe(Scope.provide(scope));
-    // Store acquisition and restoration are exactly the old startup barrier.
-    yield* Effect.gen(function* () {
+    // IndexedDB can stall; startup waits the shared bound and the open goes on.
+    // Scans and drops made before a late open never reached the store, so the
+    // restore writes them through.
+    const restore = Effect.gen(function* () {
       const opened = yield* Effect.acquireRelease(
         Effect.tryPromise(() => openStore(app)),
         (opened) => Effect.try(() => opened[Symbol.dispose]()).pipe(recover),
       ).pipe(Scope.provide(scope));
       store = opened;
       const loaded = yield* Effect.tryPromise(() => opened.load());
-      let restored = 0;
+      const restoredPaths = new Set<string>();
       for (const { path, ...scan } of loaded) {
         if (!scans.has(path) && !restoreInvalidated?.has(path)) {
           setScan(path, scan);
-          restored += 1;
+          restoredPaths.add(path);
         }
       }
+      for (const [path, scan] of scans)
+        if (!restoredPaths.has(path)) persist({ path, ...scan });
+      for (const path of restoreInvalidated ?? [])
+        if (!scans.has(path)) forget(path);
       log("debug", "Citation index store loaded", {
         count: loaded.length,
-        restored,
+        restored: restoredPaths.size,
       });
     }).pipe(
       recover,
@@ -1614,6 +1621,12 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         }),
       ),
     );
+    yield* startupBarrier(
+      restore,
+      Effect.sync(() =>
+        log("warn", "Citation index store is still opening", {}),
+      ),
+    ).pipe(Scope.provide(scope));
     app.workspace.onLayoutReady(intake.callback("layoutReady"));
     return {
       current,
