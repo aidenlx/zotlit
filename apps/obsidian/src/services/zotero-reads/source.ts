@@ -21,7 +21,6 @@ import {
   Ref,
   Scope,
   Stream,
-  SynchronizedRef,
 } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log-category";
 import { readParentBeside } from "@/services/database/read-parent";
@@ -145,10 +144,11 @@ interface WatchSignal {
   filename?: string;
 }
 
-interface RefreshLaneState {
-  done: Deferred.Deferred<void, DbUnavailable> | null;
-  again: boolean;
-  failure: DbUnavailable | null;
+/** A request for a refresh, and the completion its caller awaits. */
+interface RefreshRequest {
+  /** Whether an unchanged source fingerprint may stand in for the read. */
+  skipUnchanged: boolean;
+  done: Deferred.Deferred<void, DbUnavailable>;
 }
 
 /**
@@ -196,11 +196,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
       const watchSignals = yield* Queue.unbounded<WatchSignal>();
       const watchTimer = yield* Ref.make<Fiber.Fiber<void> | null>(null);
       const watchTrusted = yield* Ref.make(false);
-      const lane = yield* SynchronizedRef.make<RefreshLaneState>({
-        done: null,
-        again: false,
-        failure: null,
-      });
+      const refreshRequests = yield* Queue.unbounded<RefreshRequest>();
       /** Completes once the first refresh settled, either way. */
       const firstSettled = yield* Deferred.make<void>();
 
@@ -413,11 +409,14 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
         yield* publish({ _tag: "db-file-missing" });
       });
 
+      /** Resolves to the failure the refresh ended on, or `null` when it did not fail. */
       const refreshOnce = Effect.fnUntraced(
-        function* (skipUnchanged: boolean) {
+        function* (
+          skipUnchanged: boolean,
+        ): Effect.fn.Return<DbUnavailable | null> {
           const before = yield* Ref.get(state);
           const current = before.config;
-          if (!current) return;
+          if (!current) return null;
           const { databasePath, readMode: configuredMode } = current;
           yield* reapReadParent(databasePath);
           // Fingerprinted before the read, never after: a Zotero write that
@@ -429,7 +428,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
           // retain the full refresh path.
           if (
             skipUnchanged &&
-            !(yield* SynchronizedRef.get(lane)).again &&
+            (yield* Queue.size(refreshRequests)) === 0 &&
             (yield* Ref.get(state)).config === current &&
             before.state === "ready" &&
             before.lastError === null &&
@@ -442,7 +441,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
             yield* logDebug(
               "External change ignored, database unchanged since last read",
             );
-            return;
+            return null;
           }
           const result = yield* Effect.result(
             Effect.uninterruptibleMask((restore) =>
@@ -460,10 +459,6 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
                   () => Scope.close(readScope, Exit.void),
                 );
                 yield* clients.swap(opened);
-                yield* SynchronizedRef.update(lane, (currentLane) => ({
-                  ...currentLane,
-                  failure: null,
-                }));
                 yield* Ref.update(state, (previous) => ({
                   ...previous,
                   hasClient: true,
@@ -486,10 +481,6 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
             yield* publish({ _tag: "refresh-failed", error, moved });
             yield* logWarningCause("Failed to refresh Zotero database", error);
             yield* maybeSignalMissingDatabase(databasePath);
-            yield* SynchronizedRef.update(lane, (currentLane) => ({
-              ...currentLane,
-              failure: error,
-            }));
             // Keep serving the previous client on a failed refresh; only go
             // degraded when there was never a working client to fall back to.
             const after = yield* Ref.modify(state, (previous) => [
@@ -506,7 +497,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
               yield* closeWatcherScopes;
               yield* publish({ _tag: "degraded", error });
             }
-            return;
+            return error;
           }
           yield* rebindWatchers();
           const currentState = yield* Ref.get(state);
@@ -520,83 +511,55 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
             sourcePath: databasePath,
             readMode: currentState.readMode,
           });
+          return null;
         },
         Effect.ensuring(Deferred.succeed(firstSettled, undefined)),
       );
 
-      const refreshLane: (
+      /**
+       * Refreshes until no request is waiting. A request that arrives during a
+       * run waits in the queue, and everything that gathered there shares one
+       * trailing rerun, which always reads. Each caller of the busy period
+       * settles with the outcome of its last run.
+       */
+      const runRefreshes = (
+        callers: ReadonlyArray<RefreshRequest>,
         skipUnchanged: boolean,
-        done: Deferred.Deferred<void, DbUnavailable>,
-      ) => Effect.Effect<void> = Effect.fnUntraced(
-        function* (
-          skipUnchanged: boolean,
-          done: Deferred.Deferred<void, DbUnavailable>,
-        ) {
-          yield* publish({ _tag: "refreshing", active: true });
-          let canSkipUnchanged = skipUnchanged;
-          do {
-            yield* SynchronizedRef.update(lane, (current) => ({
-              ...current,
-              again: false,
-            }));
-            yield* refreshOnce(canSkipUnchanged);
-            // A request during an active refresh always gets its trailing read.
-            canSkipUnchanged = false;
-            if ((yield* SynchronizedRef.get(lane)).again)
-              yield* logDebug("Trailing request queued, rerunning refresh");
-          } while ((yield* SynchronizedRef.get(lane)).again);
-          yield* SynchronizedRef.modify(lane, (current) => {
-            if (current.done !== done) return [false, current] as const;
-            const failure = current.failure;
-            Deferred.doneUnsafe(
-              done,
-              failure ? Exit.fail(failure) : Exit.succeed(undefined),
-            );
-            return [
-              current.again,
-              {
-                done: null,
-                again: false,
-                failure: null,
-              },
-            ] as const;
-          }).pipe(
-            Effect.flatMap((trailing) =>
-              trailing ? makeAndStartRefreshLane(false) : Effect.void,
-            ),
+      ): Effect.Effect<void> =>
+        Effect.gen(function* () {
+          const failure = yield* refreshOnce(skipUnchanged);
+          if ((yield* Queue.size(refreshRequests)) > 0) {
+            yield* logDebug("Trailing request queued, rerunning refresh");
+            const trailing = yield* Queue.takeAll(refreshRequests);
+            return yield* runRefreshes([...callers, ...trailing], false);
+          }
+          const outcome = failure ? Exit.fail(failure) : Exit.void;
+          yield* Effect.forEach(
+            callers,
+            ({ done }) => Deferred.done(done, outcome),
+            { discard: true },
           );
-        },
-        Effect.ensuring(publish({ _tag: "refreshing", active: false })),
+        });
+
+      yield* Queue.takeAll(refreshRequests).pipe(
+        Effect.flatMap((requests) =>
+          Effect.andThen(
+            publish({ _tag: "refreshing", active: true }),
+            runRefreshes(
+              requests,
+              requests.every(({ skipUnchanged }) => skipUnchanged),
+            ),
+          ).pipe(
+            Effect.ensuring(publish({ _tag: "refreshing", active: false })),
+          ),
+        ),
+        Effect.forever,
+        Effect.forkIn(lifetime, { startImmediately: true }),
       );
 
-      const makeAndStartRefreshLane: (
-        skipUnchanged: boolean,
-      ) => Effect.Effect<void> = Effect.fnUntraced(function* (
-        skipUnchanged: boolean,
-      ) {
-        const done = yield* Deferred.make<void, DbUnavailable>();
-        const current: Deferred.Deferred<void, DbUnavailable> | null =
-          yield* SynchronizedRef.modify(lane, (state) =>
-            state.done
-              ? ([null, state] as const)
-              : ([
-                  done,
-                  {
-                    ...state,
-                    done,
-                  },
-                ] as const),
-          );
-        if (current)
-          yield* refreshLane(skipUnchanged, done).pipe(
-            Effect.forkIn(lifetime, { startImmediately: true }),
-          );
-      });
-
       /**
-       * Single-flight refresh lane with trailing-rerun coalescing: every
-       * trigger shares one in-flight run, and a trigger mid-run sets one
-       * trailing rerun. Returns the run's completion.
+       * Single-flight refresh lane with trailing-rerun coalescing. Returns the
+       * completion of the busy period that serves this request.
        */
       const enqueueRefresh = ({
         skipUnchanged = false,
@@ -605,18 +568,8 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
       > =>
         Effect.gen(function* () {
           const done = yield* Deferred.make<void, DbUnavailable>();
-          const started: Deferred.Deferred<void, DbUnavailable> =
-            yield* SynchronizedRef.modify(lane, (current) =>
-              current.done
-                ? ([current.done, { ...current, again: true }] as const)
-                : ([done, { ...current, done }] as const),
-            );
-          if (started === done)
-            yield* refreshLane(skipUnchanged, done).pipe(
-              Effect.forkIn(lifetime, { startImmediately: true }),
-            );
-          else yield* logDebug("Refresh in flight, coalescing trailing rerun");
-          return started;
+          yield* Queue.offer(refreshRequests, { skipUnchanged, done });
+          return done;
         });
 
       // --- Watching ---------------------------------------------------------
