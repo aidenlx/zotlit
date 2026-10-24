@@ -52,6 +52,7 @@ import {
   Fiber,
   FiberMap,
   Layer,
+  Ref,
   Scope,
   Semaphore,
   Stream,
@@ -118,7 +119,7 @@ export interface HandlersOptions {
    * Applies the log level `Configure` sends: the worker reconfigures the
    * logger that forwards its records. Without it the level goes unused.
    */
-  applyLogLevel?: (level: ReadsConfig["logLevel"]) => void;
+  applyLogLevel?: (level: ReadsConfig["logLevel"]) => Effect.Effect<void>;
 }
 
 /** Run a synchronous read; a SQLite throw becomes a {@link DbUnavailable}. */
@@ -218,8 +219,10 @@ interface Pinned {
   readonly memos: NoteMemos;
   /** Holds the borrow; closes after the Snapshot ends and its last read finishes. */
   readonly scope: Scope.Closeable;
-  active: number;
-  ended: boolean;
+  readonly counters: Ref.Ref<{
+    readonly active: number;
+    readonly ended: boolean;
+  }>;
 }
 
 export function handlersLayer(options?: HandlersOptions) {
@@ -284,7 +287,9 @@ export function handlersLayer(options?: HandlersOptions) {
           .pipe(
             Effect.andThen(connection.configure(config)),
             Effect.andThen(
-              Effect.sync(() => options?.applyLogLevel?.(config.logLevel)),
+              Effect.suspend(
+                () => options?.applyLogLevel?.(config.logLevel) ?? Effect.void,
+              ),
             ),
             configuring.withPermits(1),
           );
@@ -299,12 +304,14 @@ export function handlersLayer(options?: HandlersOptions) {
       const querySlots = yield* Semaphore.make(2);
 
       const releasePinned = (entry: Pinned) =>
-        Effect.suspend(() => {
-          entry.active -= 1;
-          return entry.ended && entry.active === 0
-            ? Scope.close(entry.scope, Exit.void)
-            : Effect.void;
-        });
+        Ref.modify(entry.counters, (before) => [
+          before.ended && before.active === 1,
+          { ...before, active: before.active - 1 },
+        ]).pipe(
+          Effect.flatMap((shouldClose) =>
+            shouldClose ? Scope.close(entry.scope, Exit.void) : Effect.void,
+          ),
+        );
 
       /**
        * Borrow for the caller's scope: the Snapshot's pinned connection when
@@ -319,11 +326,15 @@ export function handlersLayer(options?: HandlersOptions) {
       > => {
         if (snapshot === undefined) return connection.borrow;
         return Effect.acquireRelease(
-          Effect.suspend(() => {
+          Effect.gen(function* () {
             const entry = pinned.get(snapshot);
-            if (!entry) return Effect.fail(new SnapshotExpired({ snapshot }));
-            entry.active += 1;
-            return Effect.succeed(entry);
+            if (!entry)
+              return yield* Effect.fail(new SnapshotExpired({ snapshot }));
+            yield* Ref.update(entry.counters, (before) => ({
+              ...before,
+              active: before.active + 1,
+            }));
+            return entry;
           }),
           releasePinned,
         ).pipe(Effect.map((entry) => entry.client));
@@ -580,20 +591,26 @@ export function handlersLayer(options?: HandlersOptions) {
                   client,
                   memos: noteMemos(),
                   scope,
-                  active: 0,
-                  ended: false,
+                  counters: yield* Ref.make({
+                    active: 0,
+                    ended: false,
+                  }),
                 };
                 pinned.set(id, entry);
                 // The Snapshot lives as long as its stream: the stream's scope
                 // ends when the caller ends the stream or its client goes
                 // away. The pinned borrow ends after the Snapshot's last read.
                 yield* Effect.addFinalizer(() =>
-                  Effect.suspend(() => {
+                  Effect.gen(function* () {
                     pinned.delete(id);
-                    entry.ended = true;
-                    return entry.active === 0
-                      ? Scope.close(scope, Exit.void)
-                      : Effect.void;
+                    const shouldClose = yield* Ref.modify(
+                      entry.counters,
+                      (before) => [
+                        before.active === 0,
+                        { ...before, ended: true },
+                      ],
+                    );
+                    if (shouldClose) yield* Scope.close(scope, Exit.void);
                   }),
                 );
                 return Stream.concat(Stream.make(id), Stream.never);

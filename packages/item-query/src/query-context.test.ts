@@ -1,7 +1,5 @@
 // The Query Context: a caller binds `this` to one Item (and one Attachment),
 // and a Filter Expression reads it as `this.item` / `this.attachment`.
-import { configureSync, resetSync } from "@logtape/logtape";
-import type { LogRecord } from "@logtape/logtape";
 import { Cause, Exit } from "effect";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
@@ -10,6 +8,8 @@ import {
   SCENARIO_LIBRARIES,
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
+import { setLibraryLogSink } from "@zotlit/shared/logging";
+import type { LibraryLogRecord } from "@zotlit/shared/logging";
 
 import { ANNOTATIONS, ATTACHMENTS, collectQuery, ITEMS } from ".";
 import type { ItemQueryRequest, QueryDataset } from ".";
@@ -22,24 +22,12 @@ beforeAll(() => {
 });
 afterAll(() => scenario.close());
 
-const logs: LogRecord[] = [];
+const logs: LibraryLogRecord[] = [];
 beforeEach(() => {
   logs.length = 0;
 });
-beforeAll(() =>
-  configureSync({
-    sinks: { capture: (record) => logs.push(record) },
-    loggers: [
-      {
-        category: ["zotlit", "item-query"],
-        sinks: ["capture"],
-        lowestLevel: "debug",
-      },
-      { category: ["logtape", "meta"], sinks: [], lowestLevel: "error" },
-    ],
-  }),
-);
-afterAll(() => resetSync());
+beforeAll(() => setLibraryLogSink((record) => logs.push(record)));
+afterAll(() => setLibraryLogSink(undefined));
 
 async function run(
   dataset: QueryDataset<any>,

@@ -10,6 +10,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { queryClientsOf } from "@/services/query-client/__fixtures__";
 import { plainSettingsOf } from "@/services/settings/__fixtures__";
 import { readsFixture } from "@/services/zotero-reads/__fixtures__";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { layerSource } from "@/services/zotero-reads/source";
 import { inProcessClient } from "@/services/zotero-reads/test-utils";
 
@@ -43,7 +44,11 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const missing = () =>
-        Promise.reject(new Error("ENOENT: database is absent"));
+        Effect.fail(
+          new DbUnavailable({
+            message: "ENOENT: database is absent",
+          }),
+        );
       const { service, plain } = yield* readsFixture(
         inProcessClient(
           layerSource({
@@ -59,7 +64,7 @@ it.effect(
               snapshotSource: missing,
               prepareRead: missing,
               existsSync: () => false,
-              reapReadClones: async () => {},
+              reapReadClones: () => Effect.void,
             },
           }),
         ),

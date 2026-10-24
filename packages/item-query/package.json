@@ -26,6 +26,7 @@
     "@logtape/logtape": "catalog:",
     "@zotlit/db": "workspace:*",
     "@zotlit/filter-expression": "workspace:*",
+    "@zotlit/shared": "workspace:*",
     "@zotlit/zotero-types": "workspace:*",
     "arkregex": "catalog:",
     "effect": "catalog:",

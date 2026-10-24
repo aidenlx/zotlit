@@ -1,24 +1,21 @@
+import { getLogger as getLogTapeLogger } from "@logtape/logtape";
 // Effect is the plugin's logging API; its records reach the LogTape sinks
 // `layerLogging` configures.
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as NativeEffect from "effect/Effect";
 import * as Logger from "effect/Logger";
 import * as References from "effect/References";
 
+import { setLibraryLogSink } from "@zotlit/shared/logging";
+
+import { LogCategory, withLogCategory } from "./effect-log-category";
 import { rootLogger } from "./log";
 
-/** The category under `["zotlit", "obsidian"]` an Effect's logs are filed under. */
-export const LogCategory = Context.Reference<readonly string[]>(
-  "zotlit/effect-log/LogCategory",
-  { defaultValue: () => [] },
-);
+export { LogCategory, withLogCategory };
 
-/** File the logs of an Effect under `category`, below `["zotlit", "obsidian"]`. */
-export const withLogCategory =
-  (...category: [string, ...string[]]) =>
-  <A, E, R>(self: NativeEffect.Effect<A, E, R>): NativeEffect.Effect<A, E, R> =>
-    NativeEffect.provideService(self, LogCategory, category);
+setLibraryLogSink(({ level, category, message, properties }) =>
+  getLogTapeLogger(category)[level](message, properties),
+);
 
 const METHODS = {
   Fatal: "fatal",
@@ -40,9 +37,12 @@ export const logTapeLogger = Logger.make<unknown, void>(
   ({ message, logLevel, cause, fiber, date }) => {
     if (logLevel === "All" || logLevel === "None") return;
     const category = fiber.getRef(LogCategory);
-    const logger = category.length
-      ? rootLogger.getChild(category as [string, ...string[]])
-      : rootLogger;
+    const logger =
+      category[0] === "zotlit"
+        ? getLogTapeLogger(category as [string, ...string[]])
+        : category.length
+          ? rootLogger.getChild(category as [string, ...string[]])
+          : rootLogger;
     const [text, ...details] = Array.isArray(message) ? message : [message];
     const properties: Record<string, unknown> = {
       ...fiber.getRef(References.CurrentLogAnnotations),

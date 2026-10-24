@@ -79,6 +79,19 @@ export default defineConfig(({ mode }) => {
     conditions: ["module", "node", "development|production"],
     tsconfigPaths: true,
   };
+  const workerResolveConfig = {
+    ...resolveConfig,
+    alias: [
+      {
+        find: /^@\/lib\/effect$/,
+        replacement: resolve(import.meta.dirname, "src/lib/effect-worker.ts"),
+      },
+      ...Object.entries(resolveConfig.alias).map(([find, replacement]) => ({
+        find,
+        replacement,
+      })),
+    ],
+  };
   const define = {
     __DEV__: JSON.stringify(isDev),
     __WEB_WORKBENCH_ENABLED__: JSON.stringify(
@@ -170,7 +183,7 @@ export default defineConfig(({ mode }) => {
         config: {
           mode,
           define,
-          resolve: resolveConfig,
+          resolve: workerResolveConfig,
           external: builtins,
           minify: isProd,
           sourcemap: isProd ? false : "inline",
@@ -186,7 +199,7 @@ export default defineConfig(({ mode }) => {
         config: {
           mode,
           define,
-          resolve: resolveConfig,
+          resolve: workerResolveConfig,
           external: builtins,
           minify: isProd,
           sourcemap: isProd ? false : "inline",

@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 
+import { Effect } from "@/lib/effect";
+
 vi.mock("@/lib/reflink", () => {
   class ReflinkUnsupportedError extends Error {}
   return {
@@ -17,6 +19,13 @@ vi.mock("@/lib/reflink", () => {
 });
 
 import { prepareRead } from "./read-source";
+
+function inspectPrepared<A>(
+  preparation: ReturnType<typeof prepareRead>,
+  inspect: (prepared: import("./read-source").PreparedRead) => A,
+): Promise<A> {
+  return Effect.runPromise(Effect.scoped(Effect.map(preparation, inspect)));
+}
 
 async function createFixture(): Promise<
   AsyncDisposable & { source: string; sqlite: DatabaseSync }
@@ -48,17 +57,18 @@ describe("reflink fallback reasons", () => {
       INSERT INTO fixture VALUES ('committed in WAL');
     `);
 
-    await using prepared = await prepareRead("reflink", source);
-    using snapshot = new DatabaseSync(prepared.path, {
-      readOnly: true,
-    });
+    await inspectPrepared(prepareRead("reflink", source), (prepared) => {
+      using snapshot = new DatabaseSync(prepared.path, {
+        readOnly: true,
+      });
 
-    expect(prepared.path).not.toBe(source);
-    expect(prepared.effectiveMode).toBe("copy");
-    expect(prepared.uriOptions).toEqual({ mode: "ro" });
-    expect(prepared.fallbackReason).toBe("reflink-unsupported");
-    expect(snapshot.prepare("SELECT value FROM fixture").get()).toEqual({
-      value: "committed in WAL",
+      expect(prepared.path).not.toBe(source);
+      expect(prepared.effectiveMode).toBe("copy");
+      expect(prepared.uriOptions).toEqual({ mode: "ro" });
+      expect(prepared.fallbackReason).toBe("reflink-unsupported");
+      expect(snapshot.prepare("SELECT value FROM fixture").get()).toEqual({
+        value: "committed in WAL",
+      });
     });
   });
 
@@ -66,30 +76,30 @@ describe("reflink fallback reasons", () => {
     await using fixture = await createFixture();
     const { source } = fixture;
 
-    await using prepared = await prepareRead("auto", source);
-
-    expect(prepared.path).not.toBe(source);
-    expect(prepared.effectiveMode).toBe("copy");
-    expect(prepared.fallbackReason).toBe("reflink-unsupported");
+    await inspectPrepared(prepareRead("auto", source), (prepared) => {
+      expect(prepared.path).not.toBe(source);
+      expect(prepared.effectiveMode).toBe("copy");
+      expect(prepared.fallbackReason).toBe("reflink-unsupported");
+    });
   });
 
   it("reports an unsupported explicit reflink when no WAL is skipped", async () => {
     await using fixture = await createFixture();
     const { source } = fixture;
-    await using prepared = await prepareRead("reflink", source);
-
-    expect(prepared.path).not.toBe(source);
-    expect(prepared.effectiveMode).toBe("copy");
-    expect(prepared.fallbackReason).toBe("reflink-unsupported");
+    await inspectPrepared(prepareRead("reflink", source), (prepared) => {
+      expect(prepared.path).not.toBe(source);
+      expect(prepared.effectiveMode).toBe("copy");
+      expect(prepared.fallbackReason).toBe("reflink-unsupported");
+    });
   });
 
   it("uses a verified main-file copy for an explicit immutable read", async () => {
     await using fixture = await createFixture();
     const { source } = fixture;
-    await using prepared = await prepareRead("immutable", source);
-
-    expect(prepared.path).not.toBe(source);
-    expect(prepared.effectiveMode).toBe("immutable");
-    expect(prepared.uriOptions).toEqual({ mode: "ro", immutable: true });
+    await inspectPrepared(prepareRead("immutable", source), (prepared) => {
+      expect(prepared.path).not.toBe(source);
+      expect(prepared.effectiveMode).toBe("immutable");
+      expect(prepared.uriOptions).toEqual({ mode: "ro", immutable: true });
+    });
   });
 });

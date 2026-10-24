@@ -1,9 +1,8 @@
 import type { AnnotationPositionRaw } from "@drizzle/schema";
-import { getLogger } from "@logtape/logtape";
+
+import { logLibrary } from "@zotlit/shared/logging";
 
 import type { TagType } from "./zt-tag";
-
-const logger = getLogger(["zotlit", "db", "annotations"]);
 
 /**
  * Maps Zotero's numeric annotation type IDs to string names.
@@ -120,7 +119,12 @@ export function annotationTypeToName(
   const name = ANNOT_TYPE[type];
   if (name) return name;
 
-  logger.warn("Unknown annotation type {type}", { type });
+  logLibrary({
+    level: "warn",
+    category: ["zotlit", "db", "annotations"],
+    message: "Unknown annotation type {type}",
+    properties: { type },
+  });
   return "unknown";
 }
 

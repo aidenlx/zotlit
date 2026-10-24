@@ -9,8 +9,8 @@ import {
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 // The worker owns the full citation maps and publishes requested projections.
-import { Effect, Fiber, Option, Scope, Stream } from "@/lib/effect";
-import { getLogger } from "@/lib/log";
+import { Effect, Fiber, Option, Ref, Scope, Stream } from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log-category";
 import type {
   CitationLookupRequest,
   CitationLookupWireAnswer,
@@ -25,8 +25,6 @@ import type { Connection } from "./connection";
 import type { DbUnavailable } from "./rpc";
 
 export const CITEKEY_WINDOW = 1000;
-
-const logger = getLogger("citation-index");
 
 interface Published {
   client: NodeDatabaseClient;
@@ -47,9 +45,9 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
 ) {
   const lifetime = yield* Scope.Scope;
   const incarnation = crypto.randomUUID();
-  let serial = 0;
-  let published: Published | undefined;
-  let candidate: Candidate | undefined;
+  const serial = yield* Ref.make(0);
+  const published = yield* Ref.make<Published | undefined>(undefined);
+  const candidate = yield* Ref.make<Candidate | undefined>(undefined);
 
   const build = Effect.fnUntraced(function* (
     scope: LibraryScope | null,
@@ -58,8 +56,9 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
     const client = yield* connection.borrow;
     borrowed.client = client;
     const database = connection.databaseGeneration(client);
+    const before = yield* Ref.get(published);
     const previous =
-      published?.database === database ? published.snapshot : undefined;
+      before?.database === database ? before.snapshot : undefined;
     const libraries = yield* Effect.try({
       try: () => getLibraries(client),
       catch: toDbUnavailable,
@@ -100,23 +99,22 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
       new Set(selected.available.map(({ libraryID }) => libraryID)),
       { previous },
     ).pipe(Effect.catchDefect((cause) => Effect.fail(toDbUnavailable(cause))));
-    const retained = snapshot === previous && published !== undefined;
+    const retained = snapshot === previous && before !== undefined;
     const revision =
-      snapshot === previous && published
-        ? published.revision
-        : `${incarnation}:${++serial}`;
-    published = {
+      snapshot === previous && before
+        ? before.revision
+        : `${incarnation}:${yield* Ref.updateAndGet(serial, (n) => n + 1)}`;
+    yield* Ref.set(published, {
       client,
       database,
       scope: JSON.stringify(scope),
       snapshot,
       revision,
-    };
-    logger.debug("Citation lookup published", {
-      revision,
-      retained,
-      database,
     });
+    yield* Effect.logDebug("Citation lookup published").pipe(
+      Effect.annotateLogs({ revision, retained, database }),
+      withLogCategory("citation-index"),
+    );
   });
 
   const lookup = Effect.fnUntraced(function* (
@@ -127,7 +125,7 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
       const answer = yield* Effect.scoped(
         Effect.gen(function* () {
           const client = yield* connection.borrow;
-          const current = published;
+          const current = yield* Ref.get(published);
           if (current?.client === client && current.scope === scope) {
             const annotationKeys = yield* Effect.try({
               try: () => {
@@ -202,24 +200,23 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
       // A caller owns only its wait. The worker lifetime owns the shared build
       // and its connection borrow, even if the initiating caller cancels.
       const running = yield* Effect.uninterruptible(
-        Effect.suspend(() => {
-          if (candidate) return Effect.succeed(candidate);
-          const borrowed: Pick<Candidate, "client"> = {};
-          return Effect.map(
-            Effect.forkIn(
+        Effect.suspend(() =>
+          Effect.gen(function* () {
+            const current = yield* Ref.get(candidate);
+            if (current) return current;
+            const borrowed: Pick<Candidate, "client"> = {};
+            const fiber = yield* Effect.forkIn(
               Effect.scoped(build(request.scope, borrowed)).pipe(
-                Effect.ensuring(
-                  Effect.sync(() => {
-                    candidate = undefined;
-                  }),
-                ),
+                Effect.ensuring(Ref.set(candidate, undefined)),
               ),
               lifetime,
               { startImmediately: false },
-            ),
-            (fiber) => (candidate = Object.assign(borrowed, { fiber })),
-          );
-        }),
+            );
+            const next = Object.assign(borrowed, { fiber });
+            yield* Ref.set(candidate, next);
+            return next;
+          }),
+        ),
       );
       const result = yield* Effect.result(Fiber.join(running.fiber));
       if (result._tag === "Failure") {

@@ -1,5 +1,3 @@
-import { configureSync, resetSync } from "@logtape/logtape";
-import type { LogRecord } from "@logtape/logtape";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
 import { SCAN_PAGE_SIZE } from "@zotlit/db/item-query";
@@ -12,30 +10,20 @@ import {
   seedBulkAttachments,
   seedBulkLibrary,
 } from "@zotlit/db/test-scenario";
+import { setLibraryLogSink } from "@zotlit/shared/logging";
+import type { LibraryLogRecord } from "@zotlit/shared/logging";
 
 import { ANNOTATIONS, ATTACHMENTS, collectQuery } from ".";
 import type { RunEvent } from "./test-helpers";
 import { runEffect } from "./test-helpers";
 import { PRODUCTION_TUNING } from "./tuning";
 
-const logs: LogRecord[] = [];
+const logs: LibraryLogRecord[] = [];
 beforeEach(() => {
   logs.length = 0;
 });
-beforeAll(() =>
-  configureSync({
-    sinks: { capture: (record) => logs.push(record) },
-    loggers: [
-      {
-        category: ["zotlit", "item-query"],
-        sinks: ["capture"],
-        lowestLevel: "debug",
-      },
-      { category: ["logtape", "meta"], sinks: [], lowestLevel: "error" },
-    ],
-  }),
-);
-afterAll(() => resetSync());
+beforeAll(() => setLibraryLogSink((record) => logs.push(record)));
+afterAll(() => setLibraryLogSink(undefined));
 
 /** The properties of each plan record the candidate pass logged. */
 const planRecords = () =>

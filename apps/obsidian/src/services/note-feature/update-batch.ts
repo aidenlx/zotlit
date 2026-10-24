@@ -480,7 +480,7 @@ async function displayRef(
   itemID: number,
 ): Promise<ItemRef | null> {
   await using lease = await deps.zoteroReads.acquireRead();
-  return await readDisplayRef(lease.reads, itemID);
+  return await Effect.runPromise(readDisplayRef(lease.reads, itemID));
 }
 
 /**

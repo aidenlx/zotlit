@@ -1,13 +1,5 @@
-// Effect for worker entry points: Chromium scheduling without the renderer log bridge.
-import * as Context from "effect/Context";
-import * as NativeEffect from "effect/Effect";
-import { Scheduler } from "effect/Scheduler";
-
-import { browserScheduler } from "./browser-scheduler";
-
+// Worker Effect entry point: the same API as `effect.ts`, without LogTape.
+// oxlint-disable-next-line no-restricted-imports -- This is the worker-native Effect entry point.
 export * from "effect";
-
-const workerServices = Context.make(Scheduler, browserScheduler);
-
-export const runFork: typeof NativeEffect.runFork =
-  NativeEffect.runForkWith(workerServices);
+export * as Effect from "./effect-worker-runtime";
+export { runFork } from "./effect-worker-runtime";

@@ -1096,6 +1096,9 @@ importers:
       '@zotlit/filter-expression':
         specifier: workspace:*
         version: link:../filter-expression
+      '@zotlit/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@zotlit/zotero-types':
         specifier: workspace:*
         version: link:../zotero-types
