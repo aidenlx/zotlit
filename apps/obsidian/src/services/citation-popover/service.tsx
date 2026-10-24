@@ -265,7 +265,12 @@ export const layerCitationPopover: Layer.Layer<
           indexedKeys: [...(request.indexedKeys ?? [])],
           annotationKeys: [...(request.annotationKeys ?? [])],
         };
-        const answer = await held(lookup.read(selected), undefined, { signal });
+        const answer = await held(lookup.read(selected), undefined, {
+          signal,
+        }).catch((error: unknown) => {
+          // A failure after unload is the release, like an interrupt.
+          throw stopped ? lookupReleased() : error;
+        });
         if (answer === undefined) throw lookupReleased();
         return answer;
       },
@@ -274,7 +279,10 @@ export const layerCitationPopover: Layer.Layer<
           index.getDocumentCitationSet(file, options),
           undefined,
           { signal: options?.signal },
-        );
+        ).catch((error: unknown) => {
+          // The read is a `tryPromise`: throw what the index rejected with.
+          throw Cause.isUnknownError(error) ? error.cause : error;
+        });
         if (result === undefined)
           throw new DOMException("Citation Index released", "AbortError");
         return result;

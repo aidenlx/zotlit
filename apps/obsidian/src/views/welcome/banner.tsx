@@ -132,8 +132,14 @@ export class WelcomeBanner extends Component {
   dismiss(): void {
     const { bridge, release } = this.#deps;
     this.#store.setState({ converted: false });
-    bridge.runSync(release.acknowledgeMigration());
-    bridge.runSync(release.acknowledgeUpdate());
+    try {
+      bridge.runSync(release.acknowledgeMigration());
+      bridge.runSync(release.acknowledgeUpdate());
+    } catch (error) {
+      logger.warn("The Welcome View banner could not acknowledge the release", {
+        error,
+      });
+    }
     this.#keep({
       "welcome.dismissed": true,
       "welcome.requested": false,

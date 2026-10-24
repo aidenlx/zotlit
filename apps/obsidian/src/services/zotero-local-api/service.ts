@@ -251,23 +251,15 @@ export function layerZoteroLocalApi(options: {
         writeStateFor: (attachmentKey) =>
           Effect.sync(() => session.writeStateFor(attachmentKey)),
         remembered: () => Effect.promise(() => session.remembered()),
-        authorize: (signal) =>
-          Effect.promise((interrupt) =>
-            session.authorize(
-              signal ? AbortSignal.any([signal, interrupt]) : interrupt,
-            ),
-          ),
+        // A gesture with no signal keeps the shared request alive, so an
+        // interrupt does not abandon it.
+        authorize: (signal) => Effect.promise(() => session.authorize(signal)),
         forgetAuthorization: () =>
           Effect.promise(() => session.forgetAuthorization()),
+        // A write runs to its answer once sent: an interrupt would leave its
+        // outcome unknown.
         authorizedSend: (path, options) =>
-          Effect.promise((interrupt) =>
-            session.authorizedSend(path, {
-              ...options,
-              signal: options.signal
-                ? AbortSignal.any([options.signal, interrupt])
-                : interrupt,
-            }),
-          ),
+          Effect.promise(() => session.authorizedSend(path, options)),
         writeLastRead: (attachmentKey, serverID, instant) =>
           Effect.promise(() =>
             session.writeLastRead(attachmentKey, serverID, instant),

@@ -3,6 +3,7 @@
 import type { ButtonComponent, Setting, SettingGroupItem } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
@@ -10,6 +11,8 @@ import type { CapabilityCopy } from "@/services/annotation-repository/capability
 import { countdownInterval } from "@/services/annotation-repository/cooldown";
 
 import type { SettingsKey, SettingTabContext } from "./context";
+
+const logger = getLogger(["setting-tab", "zotero-editing"]);
 
 /** Whether one action is offered at all, and whether it can be selected now. */
 export interface ActionState {
@@ -157,6 +160,11 @@ function renderEditingRow(
         if (read !== reads) return;
         remembered = value;
         apply();
+      })
+      .catch((error: unknown) => {
+        logger.warn("Cannot read the Remembered Write Authorization", {
+          error,
+        });
       });
   };
 
@@ -202,7 +210,12 @@ function renderEditingRow(
       button.setButtonText(m.settings_zotero_editing_forget()).onClick(() => {
         void ctx.bridge
           .runPromise(ctx.writeAuthorization.forgetAuthorization())
-          .then(refreshRemembered);
+          .then(refreshRemembered)
+          .catch((error: unknown) => {
+            logger.warn("Cannot forget the Remembered Write Authorization", {
+              error,
+            });
+          });
       });
     });
 
