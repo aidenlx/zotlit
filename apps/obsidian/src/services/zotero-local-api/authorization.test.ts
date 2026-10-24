@@ -4,6 +4,7 @@
 
 import { expect, it, vi } from "vitest";
 
+import { manualClock } from "@/lib/__fixtures__/manual-clock";
 import { AbortError } from "@/lib/abort-error";
 
 import {
@@ -233,17 +234,17 @@ it("holds Zotero's cooldown, with the Retry-After it named", async () => {
 
 it("asks again once the cooldown has run out", async () => {
   await using stack = new AsyncDisposableStack();
-  let now = NOW;
+  const time = manualClock(NOW);
   const answers: ZoteroAnswers = {
     authorize: vi
       .fn()
       .mockImplementationOnce(() => rateLimited())
       .mockImplementation(() => authorized({ remember: true })),
   };
-  const { client } = await setup(stack, answers, { now: () => now });
+  const { client } = await setup(stack, answers, { clock: time });
 
   await client.authorize();
-  now = NOW.add({ seconds: 61 });
+  time.set(NOW.add({ seconds: 61 }));
   const granted = await client.authorize();
 
   expect(granted).toEqual({ value: undefined });

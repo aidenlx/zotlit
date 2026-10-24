@@ -451,6 +451,7 @@ describe("AnnotationPopover with an Excerpt Image", () => {
             sourceScope: DATA_DIR,
             zoteroReads: db,
             paths: { dataDir: DATA_DIR, baseAttachmentPath: null },
+            bridge,
           }),
         commentRenderer: () => () => () => {},
       }),

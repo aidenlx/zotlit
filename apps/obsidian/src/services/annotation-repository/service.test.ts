@@ -4,6 +4,7 @@ import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
+import { manualClock } from "@/lib/__fixtures__/manual-clock";
 import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import { excerptFingerprint } from "@/services/excerpt-image/contract";
@@ -4755,12 +4756,12 @@ function movedGeometry(annotationKey: string, step = 0) {
  * inside. Nothing waits on real time.
  */
 function clock() {
-  let at = NOW;
+  const hand = manualClock(NOW);
   return {
-    now: () => at,
+    clock: hand,
     /** The pause between two presses. */
     pass(milliseconds: number): void {
-      at = at.add({ milliseconds });
+      hand.advance({ milliseconds });
     },
   };
 }
@@ -4804,7 +4805,7 @@ it("undoes a run of keyboard nudges inside the window as one step", async () => 
   const zotero = zoteroHoldingMarks();
   const time = clock();
   const { repository } = await writable(stack, zotero.answers, {
-    repositoryNow: time.now,
+    clock: time.clock,
   });
   repository.openHistory("RGRPDF24");
 
@@ -4827,7 +4828,7 @@ it("redoes a joined run of nudges as the one step it became", async () => {
   const zotero = zoteroHoldingMarks();
   const time = clock();
   const { repository } = await writable(stack, zotero.answers, {
-    repositoryNow: time.now,
+    clock: time.clock,
   });
   repository.openHistory("RGRPDF24");
 
@@ -4848,7 +4849,7 @@ it("discards the redo steps when a nudge joins the run on top", async () => {
   const zotero = zoteroHoldingMarks();
   const time = clock();
   const { repository } = await writable(stack, zotero.answers, {
-    repositoryNow: time.now,
+    clock: time.clock,
   });
   repository.openHistory("RGRPDF24");
 
@@ -4872,7 +4873,7 @@ it("keeps a keyboard nudge made after the window as its own step", async () => {
   const zotero = zoteroHoldingMarks();
   const time = clock();
   const { repository } = await writable(stack, zotero.answers, {
-    repositoryNow: time.now,
+    clock: time.clock,
   });
   repository.openHistory("RGRPDF24");
 
@@ -4894,7 +4895,7 @@ it("keeps a keyboard nudge made at the window's own edge as its own step", async
   const zotero = zoteroHoldingMarks();
   const time = clock();
   const { repository } = await writable(stack, zotero.answers, {
-    repositoryNow: time.now,
+    clock: time.clock,
   });
   repository.openHistory("RGRPDF24");
 
@@ -4913,7 +4914,7 @@ it("keeps a keyboard nudge on another Annotation as its own step", async () => {
   const zotero = zoteroHoldingMarks();
   const time = clock();
   const { repository } = await writable(stack, zotero.answers, {
-    repositoryNow: time.now,
+    clock: time.clock,
   });
   repository.openHistory("RGRPDF24");
 
@@ -4939,7 +4940,7 @@ it("keeps a pointer Geometry Edit out of a run of keyboard nudges", async () => 
   const zotero = zoteroHoldingMarks();
   const time = clock();
   const { repository } = await writable(stack, zotero.answers, {
-    repositoryNow: time.now,
+    clock: time.clock,
   });
   repository.openHistory("RGRPDF24");
 
@@ -4958,7 +4959,7 @@ it("keeps a colour pick out of a run of keyboard nudges", async () => {
   const zotero = zoteroHoldingMarks();
   const time = clock();
   const { repository } = await writable(stack, zotero.answers, {
-    repositoryNow: time.now,
+    clock: time.clock,
   });
   repository.openHistory("RGRPDF24");
 

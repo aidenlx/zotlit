@@ -1162,6 +1162,7 @@ export class AnnotationsLayout extends Component {
       ...input,
       zoteroReads: this.#deps.reads,
       paths: this.#deps.zoteroPref,
+      bridge: this.#deps.bridge,
     });
   }
 
