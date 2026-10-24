@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { AbortError } from "@/lib/abort-error";
 import { ManagedRuntime } from "@/lib/effect";
-import { exchangeWithZotero, ZoteroHttp } from "@/lib/zotero-http";
+import { sendToZotero, ZoteroHttp } from "@/lib/zotero-http";
 import type { ZoteroAnswer, ZoteroRequest } from "@/lib/zotero-http";
 import { layerZoteroHttpNode } from "@/lib/zotero-http-node";
 
@@ -15,10 +15,13 @@ afterAll(() => runtime.dispose());
 /** One round trip through the production `ZoteroHttp` client. */
 async function send(
   origin: string,
-  init: Omit<ZoteroRequest, "port" | "path"> & { path?: string } = {},
+  init: Omit<ZoteroRequest, "port" | "path"> & {
+    path?: string;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<ZoteroAnswer> {
   const http = await runtime.runPromise(ZoteroHttp);
-  return exchangeWithZotero(http, {
+  return sendToZotero(runtime, http, {
     port: Number(new URL(origin).port),
     path: "/",
     ...init,

@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
+import { Effect } from "@/lib/effect";
 import { routeTableHttpClient } from "@/lib/http-client";
+import type { Route } from "@/lib/http-client";
 import { withZoteroHeaders } from "@/lib/zotero-http";
 
 import { fetchBibliography, LOCAL_API_PREF } from "./bibliography";
@@ -67,12 +69,7 @@ function ports(
 ): BibliographyPorts & { calls: Call[] } {
   const calls: Call[] = [];
   const rpcUrl = `http://127.0.0.1:${httpPort}/better-bibtex/json-rpc`;
-  const route = (request: {
-    url: URL;
-    method: string;
-    headers: Headers;
-    body: string | null;
-  }): Response => {
+  const route: Route = (request) => {
     // A closed Zotero fails the connection.
     if (fixture.zoteroClosed) throw new Error("ECONNREFUSED");
     const url = request.url.href;
@@ -128,6 +125,7 @@ function ports(
   return {
     calls,
     http: withZoteroHeaders(routeTableHttpClient(route)),
+    run: { runPromiseExit: Effect.runPromiseExit },
     httpPort,
     localApiEnabled: fixture.localApiEnabled ?? true,
   };

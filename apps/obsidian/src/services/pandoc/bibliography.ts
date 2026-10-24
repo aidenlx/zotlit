@@ -9,8 +9,12 @@ import { formatIndexedKey } from "@zotlit/db";
 import type { CslItemData } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
-import { exchangeWithZotero, parseJson, zoteroOrigin } from "@/lib/zotero-http";
-import type { ZoteroClient, ZoteroRequest } from "@/lib/zotero-http";
+import { parseJson, sendToZotero, zoteroOrigin } from "@/lib/zotero-http";
+import type {
+  ZoteroHttp,
+  ZoteroRequest,
+  ZoteroRunner,
+} from "@/lib/zotero-http";
 import { ZOTERO_HTTP_PORT_PREF } from "@/services/zotero-pref/prefs-file";
 
 const logger = getLogger(["pandoc", "bibliography"]);
@@ -45,7 +49,9 @@ interface ZoteroReply {
 
 export interface BibliographyPorts {
   /** The `ZoteroHttp` loopback client. */
-  http: ZoteroClient;
+  http: ZoteroHttp["Service"];
+  /** Runs each exchange: the plugin's `EffectBridge`. */
+  run: ZoteroRunner;
   /** HTTP port read from the active Zotero profile. */
   httpPort: number | null;
   /**
@@ -298,7 +304,7 @@ async function send(
   request: ZoteroRequest,
 ): Promise<ZoteroReply | null> {
   try {
-    const { status, text } = await exchangeWithZotero(ports.http, request);
+    const { status, text } = await sendToZotero(ports.run, ports.http, request);
     return { status, text };
   } catch (error) {
     const url = `${zoteroOrigin(request.port)}${request.path}`;

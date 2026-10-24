@@ -43,7 +43,7 @@ export class ManagedBinaryPlatform extends Context.Service<
 >()("zotlit/managed-binary/ManagedBinaryPlatform") {}
 
 /** The platform over the remote `HttpClient` the caller provides. */
-export const layerManagedBinaryPlatformWith = Layer.effect(
+const layerManagedBinaryPlatformWith = Layer.effect(
   ManagedBinaryPlatform,
   Effect.gen(function* () {
     const app = yield* ObsidianApp;

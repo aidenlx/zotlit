@@ -12,6 +12,7 @@ import type { HttpMethod } from "effect/http";
 
 import { AbortError } from "@/lib/abort-error";
 import { Cause, Context, Effect, Exit, Layer, Option } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 
 /**
  * Zotero refuses requests it reads as browser traffic: a `Mozilla/` user agent,
@@ -58,12 +59,6 @@ export class ZoteroHttp extends Context.Service<
   HttpClient.HttpClient
 >()("zotlit/zotero-http/ZoteroHttp") {}
 
-/**
- * The client a {@link ZoteroHttp} consumer holds, named here so Promise code
- * that takes one imports nothing from Effect.
- */
-export type ZoteroClient = HttpClient.HttpClient;
-
 /** `client` with {@link ZOTERO_ALLOWED_REQUEST} added to each request. */
 export function withZoteroHeaders(
   client: HttpClient.HttpClient,
@@ -91,11 +86,13 @@ export interface ZoteroRequest {
   /** The path and query, from the leading `/`. */
   readonly path: string;
   /** @default "GET" */
-  readonly method?: string;
+  readonly method?: ZoteroMethod;
   readonly headers?: Readonly<Record<string, string>>;
   readonly body?: string;
-  readonly signal?: AbortSignal;
 }
+
+/** A method a Zotero request goes out with. */
+export type ZoteroMethod = HttpMethod.HttpMethod;
 
 /** What Zotero answered, read to the end. */
 export interface ZoteroAnswer {
@@ -105,26 +102,19 @@ export interface ZoteroAnswer {
 }
 
 /**
- * One round trip to Zotero over {@link ZoteroHttp}, for the Promise code that
- * calls it. Resolves with whatever status Zotero answered, however unhappy;
- * rejects only when the connection itself failed, which is how a closed Zotero
- * announces itself.
+ * One round trip to Zotero over {@link ZoteroHttp}. Succeeds with whatever
+ * status Zotero answered, however unhappy; fails only when the connection
+ * itself failed, which is how a closed Zotero announces itself.
  *
- * The body is read to the end before this resolves, and it is measured, so no
+ * The body is read to the end before this succeeds, and it is measured, so no
  * request arrives without a `Content-Length`: Zotero answers `400` to a
- * chunked one.
- *
- * @throws {AbortError} when `signal` aborts, before the answer or mid-body.
- * @throws {TypeError} carrying the transport failure as its `cause`, when the
- *   connection fails.
+ * chunked one. An interrupt destroys the request.
  */
-export async function exchangeWithZotero(
-  http: HttpClient.HttpClient,
-  { port, path, method = "GET", headers = {}, body, signal }: ZoteroRequest,
-): Promise<ZoteroAnswer> {
-  let request = HttpClientRequest.make(method as HttpMethod.HttpMethod)(
-    `${zoteroOrigin(port)}${path}`,
-  );
+export function exchangeWithZotero(
+  http: ZoteroHttp["Service"],
+  { port, path, method = "GET", headers = {}, body }: ZoteroRequest,
+): Effect.Effect<ZoteroAnswer, HttpClientError.HttpClientError> {
+  let request = HttpClientRequest.make(method)(`${zoteroOrigin(port)}${path}`);
   if (body !== undefined) {
     // A raw body leaves the content type to the caller's headers.
     request = HttpClientRequest.setBody(
@@ -133,16 +123,38 @@ export async function exchangeWithZotero(
     );
   }
   request = HttpClientRequest.setHeaders(request, headers);
-  const exit = await Effect.runPromiseExit(
-    Effect.flatMap(http.execute(request), (response) =>
-      Effect.map(response.text, (text) => ({
-        status: response.status,
-        headers: new Headers(response.headers),
-        text,
-      })),
-    ),
-    { signal },
+  return Effect.flatMap(http.execute(request), (response) =>
+    Effect.map(response.text, (text) => ({
+      status: response.status,
+      headers: new Headers(response.headers),
+      text,
+    })),
   );
+}
+
+/**
+ * The runner a Promise caller enters Effect through: the plugin's
+ * `EffectBridge`, or one made from a layer's own context.
+ */
+export type ZoteroRunner = Pick<EffectBridge, "runPromiseExit">;
+
+/**
+ * {@link exchangeWithZotero} for the Promise code that calls Zotero, run
+ * through `runner`, with the errors `fetch` raised before.
+ *
+ * @param request.signal abandons the exchange.
+ * @throws {AbortError} when `signal` aborts, before the answer or mid-body.
+ * @throws {TypeError} carrying the transport failure as its `cause`, when the
+ *   connection fails.
+ */
+export async function sendToZotero(
+  runner: ZoteroRunner,
+  http: ZoteroHttp["Service"],
+  { signal, ...request }: ZoteroRequest & { readonly signal?: AbortSignal },
+): Promise<ZoteroAnswer> {
+  const exit = await runner.runPromiseExit(exchangeWithZotero(http, request), {
+    signal,
+  });
   if (Exit.isSuccess(exit)) return exit.value;
   if (signal?.aborted) throw new AbortError();
   const error = Option.getOrElse(Exit.findErrorOption(exit), () =>

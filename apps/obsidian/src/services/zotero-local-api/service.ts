@@ -211,7 +211,8 @@ export function layerZoteroLocalApi(options: {
       const server = yield* LocalServer;
       const http = yield* ZoteroHttp;
       const now = options.now ?? instantClock(yield* Clock.Clock);
-      const run = Effect.runSyncWith(yield* Effect.context<never>());
+      const context = yield* Effect.context<never>();
+      const run = Effect.runSyncWith(context);
       const bus = yield* PubSub.unbounded<LocalApiEvent>();
       yield* Effect.addFinalizer(() => PubSub.shutdown(bus));
       const publish = (event: LocalApiEvent): void => {
@@ -221,6 +222,7 @@ export function layerZoteroLocalApi(options: {
         Promise.resolve(
           new LocalApiSession({
             http,
+            run: { runPromiseExit: Effect.runPromiseExitWith(context) },
             credentials: options.credentials,
             probeDeadline: options.probeDeadline,
             now,

@@ -5,8 +5,8 @@ import { parseIndexedKey } from "@zotlit/db";
 
 import { AbortError } from "@/lib/abort-error";
 import { getLogger } from "@/lib/log";
-import { exchangeWithZotero, parseJson, zoteroOrigin } from "@/lib/zotero-http";
-import type { ZoteroClient } from "@/lib/zotero-http";
+import { parseJson, sendToZotero, zoteroOrigin } from "@/lib/zotero-http";
+import type { ZoteroHttp, ZoteroMethod, ZoteroRunner } from "@/lib/zotero-http";
 
 import {
   API_VERSION,
@@ -153,7 +153,9 @@ export type LocalApiEvent =
 
 export interface LocalApiSessionDeps {
   /** The `ZoteroHttp` loopback client. */
-  http: ZoteroClient;
+  http: ZoteroHttp["Service"];
+  /** Runs each exchange, from the context of the layer that holds the session. */
+  run: ZoteroRunner;
   /** Zotero's HTTP port. */
   httpPort: () => number | null;
   publish: (event: LocalApiEvent) => void;
@@ -189,6 +191,7 @@ type ProbeState = LocalApiState | { kind: "unprobed" };
  */
 export class LocalApiSession implements AsyncDisposable {
   readonly #http;
+  readonly #run;
   readonly #httpPort;
   readonly #publish;
   readonly #credentials;
@@ -228,6 +231,7 @@ export class LocalApiSession implements AsyncDisposable {
 
   constructor({
     http,
+    run,
     httpPort,
     publish,
     credentials,
@@ -236,6 +240,7 @@ export class LocalApiSession implements AsyncDisposable {
     now = () => Temporal.Now.instant(),
   }: LocalApiSessionDeps) {
     this.#http = http;
+    this.#run = run;
     this.#httpPort = httpPort;
     this.#publish = publish;
     this.#credentials = credentials;
@@ -385,7 +390,7 @@ export class LocalApiSession implements AsyncDisposable {
       expectedServerID?: string;
       /** Background read Uses update state without edit notices. */
       silent?: boolean;
-      method: string;
+      method: ZoteroMethod;
       body?: string;
       headers?: Readonly<Record<string, string>>;
       signal?: AbortSignal;
@@ -1057,7 +1062,7 @@ export class LocalApiSession implements AsyncDisposable {
     options: {
       serverID: string | null;
       signal?: AbortSignal;
-      method?: string;
+      method?: ZoteroMethod;
       body?: string;
       headers?: Readonly<Record<string, string>>;
     },
@@ -1069,7 +1074,7 @@ export class LocalApiSession implements AsyncDisposable {
     }
     const { serverID, signal, method, body } = options;
     try {
-      const reply: ZoteroReply = await exchangeWithZotero(this.#http, {
+      const reply: ZoteroReply = await sendToZotero(this.#run, this.#http, {
         port,
         path,
         method,
