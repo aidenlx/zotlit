@@ -16,7 +16,11 @@ import {
   Schema,
   Stream,
 } from "@/lib/effect";
-import { LogCategory, withLogCategory } from "@/lib/effect-log-category";
+import {
+  LogCategory,
+  LogTimestamp,
+  withLogCategory,
+} from "@/lib/effect-log-category";
 
 /** The lowest worker log level a [`ReadsConfig`] can select. */
 export type PortLogLevel =
@@ -250,6 +254,7 @@ const emitLogPortRecord = (record: LogPortRecord) => {
     record.message,
     ...record.details,
   ).pipe(
+    Effect.provideService(LogTimestamp, record.timestamp),
     Effect.annotateLogs(annotations),
     withLogCategory(...(record.category as [string, ...string[]])),
   );
