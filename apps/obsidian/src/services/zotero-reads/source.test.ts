@@ -322,9 +322,11 @@ describe("ZoteroReads source", () => {
 
     await source.run(source.reads.Configure(config({ readMode: "immutable" })));
     await source.run(source.reads.Refresh());
-    expect(
-      source.events.filter((event) => event._tag === "changed").at(-1),
-    ).toEqual({ _tag: "changed", readMode: "immutable" });
+    await vi.waitFor(() =>
+      expect(
+        source.events.filter((event) => event._tag === "changed").at(-1),
+      ).toEqual({ _tag: "changed", readMode: "immutable" }),
+    );
     const seed = await source.run(
       Stream.runHead(source.reads.Changes()).pipe(
         Effect.map(Option.getOrThrow),
@@ -439,11 +441,15 @@ describe("ZoteroReads source", () => {
     await using source = await startSource(config(), ports);
     await source.version();
 
+    // Each change waits for the read it started: Configures that arrive
+    // together share one run on the newest settings.
     const immutable = config({ readMode: "immutable" });
     await source.run(source.reads.Configure(immutable));
+    await vi.waitFor(() => expect(ports.prepareRead).toHaveBeenCalledTimes(2));
     await source.run(
       source.reads.Configure({ ...immutable, databasePath: next }),
     );
+    await vi.waitFor(() => expect(ports.prepareRead).toHaveBeenCalledTimes(3));
     await source.run(
       source.reads.Configure({
         ...immutable,
@@ -518,6 +524,159 @@ describe("ZoteroReads source", () => {
     await source.sawTags(["refreshing", "changed", "changed", "refreshing"]);
     expect(ports.prepareRead).toHaveBeenCalledTimes(2);
     await expect(source.version()).resolves.toBe(1);
+  });
+
+  describe("refresh lane coalescing", () => {
+    /** A held `prepareRead` that fails with `message` once released. */
+    function holdFailure(
+      ports: ReturnType<typeof testPorts>["ports"],
+      message: string,
+    ) {
+      const held = Effect.runSync(Deferred.make<void>());
+      ports.prepareRead.mockImplementationOnce(() =>
+        Effect.andThen(
+          Deferred.await(held),
+          Effect.fail(new DbUnavailable({ message })),
+        ),
+      );
+      return {
+        release: () => Effect.runSync(Deferred.succeed(held, undefined)),
+      };
+    }
+
+    /** Tracks whether a request's promise has settled, without awaiting it. */
+    function watchSettled<T>(promise: Promise<T>) {
+      let settled = false;
+      const outcome = promise.then(
+        (value) => ({ ok: true as const, value }),
+        (error: unknown) => ({ ok: false as const, error }),
+      );
+      void outcome.then(() => {
+        settled = true;
+      });
+      return { outcome, isSettled: () => settled };
+    }
+
+    it("runs one trailing rerun for every request made during a refresh", async () => {
+      const { ports } = testPorts();
+      await using source = await startSource(config(), ports);
+      await source.idle();
+      const held = holdRead(ports);
+      const before = source.events.length;
+
+      const first = source.run(source.reads.Refresh());
+      await vi.waitFor(() =>
+        expect(ports.prepareRead).toHaveBeenCalledTimes(2),
+      );
+      const during = [
+        source.run(source.reads.Refresh()),
+        source.run(source.reads.Refresh()),
+        source.run(source.reads.Refresh()),
+      ];
+      // The requests must join the active lane before its read settles.
+      await source.version();
+      held.release();
+      await Promise.all([first, ...during]);
+      await source.idle();
+
+      // The startup open, the held run, and a single rerun for all three.
+      expect(ports.prepareRead).toHaveBeenCalledTimes(3);
+      await source.sawTags(
+        ["refreshing", "changed", "changed", "refreshing"],
+        before,
+      );
+    });
+
+    it("keeps the first caller waiting for the trailing rerun", async () => {
+      const { ports } = testPorts();
+      await using source = await startSource(config(), ports);
+      await source.idle();
+      const heldFirst = holdRead(ports);
+      const heldTrailing = holdRead(ports);
+
+      const first = watchSettled(source.run(source.reads.Refresh()));
+      await vi.waitFor(() =>
+        expect(ports.prepareRead).toHaveBeenCalledTimes(2),
+      );
+      const second = watchSettled(source.run(source.reads.Refresh()));
+      await source.version();
+      heldFirst.release();
+      await vi.waitFor(() =>
+        expect(ports.prepareRead).toHaveBeenCalledTimes(3),
+      );
+
+      // The first read is done and the trailing one is held.
+      expect(first.isSettled()).toBe(false);
+      expect(second.isSettled()).toBe(false);
+      heldTrailing.release();
+      await Promise.all([first.outcome, second.outcome]);
+    });
+
+    it("settles every caller with the failure of the lane's last refresh", async () => {
+      const { ports } = testPorts();
+      await using source = await startSource(config(), ports);
+      await source.idle();
+      const held = holdFailure(ports, "first");
+      ports.prepareRead.mockImplementationOnce(() =>
+        Effect.fail(new DbUnavailable({ message: "trailing" })),
+      );
+
+      const first = source.run(Effect.flip(source.reads.Refresh()));
+      await vi.waitFor(() =>
+        expect(ports.prepareRead).toHaveBeenCalledTimes(2),
+      );
+      const second = source.run(Effect.flip(source.reads.Refresh()));
+      await source.version();
+      held.release();
+
+      await expect(Promise.all([first, second])).resolves.toMatchObject([
+        { _tag: "DbUnavailable", message: "trailing" },
+        { _tag: "DbUnavailable", message: "trailing" },
+      ]);
+      expect(ports.prepareRead).toHaveBeenCalledTimes(3);
+    });
+
+    it("settles every caller successfully when the trailing rerun recovers", async () => {
+      const { ports } = testPorts();
+      await using source = await startSource(config(), ports);
+      await source.idle();
+      const held = holdFailure(ports, "first");
+
+      const first = watchSettled(source.run(source.reads.Refresh()));
+      await vi.waitFor(() =>
+        expect(ports.prepareRead).toHaveBeenCalledTimes(2),
+      );
+      const second = watchSettled(source.run(source.reads.Refresh()));
+      await source.version();
+      held.release();
+
+      await expect(
+        Promise.all([first.outcome, second.outcome]),
+      ).resolves.toMatchObject([{ ok: true }, { ok: true }]);
+      expect(ports.prepareRead).toHaveBeenCalledTimes(3);
+    });
+
+    it("gives a push that arrives during a refresh its trailing read even when the source is unchanged", async () => {
+      const { ports } = testPorts();
+      await using source = await startSource(config(), ports);
+      await source.idle();
+      const held = holdRead(ports);
+
+      const refresh = source.run(source.reads.Refresh());
+      await vi.waitFor(() =>
+        expect(ports.prepareRead).toHaveBeenCalledTimes(2),
+      );
+      await source.run(source.reads.NotifyExternalChange());
+      await source.elapse();
+      await gatesDecided(ports, source);
+      held.release();
+      await refresh;
+      await source.idle();
+
+      // An idle push over an unchanged source reads nothing (see the
+      // self-echo gate); one that joined a running refresh still reads.
+      expect(ports.prepareRead).toHaveBeenCalledTimes(3);
+    });
   });
 
   it("hands a borrower the newest client while an unread one is released", async () => {
