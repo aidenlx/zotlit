@@ -937,7 +937,8 @@ function isTemporalRoot(node: TypeNode): boolean {
 /**
  * Effect code holds dates as Effect's `DateTime` and durations as `Duration`,
  * and reads the current time through `Clock`, so `TestClock` drives every
- * date the code makes and one date type crosses each service interface.
+ * date the code makes and one date type crosses each service interface
+ * (CODING_STANDARDS.md → Effect → Time).
  * `Temporal` belongs to code outside Effect; the edge between the two
  * converts, and the files that hold that edge are listed in oxlint.config.ts.
  */

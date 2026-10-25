@@ -43,7 +43,7 @@ export const uniqueIdPaths = ["react", "preact/compat", "preact/hooks"].map(
  * `date-fns` or `dayjs`. One date type per side keeps each value's instant,
  * zone and serialized string the same as it crosses between them. A library
  * that takes or hands in a `Date` converts in one adapter module, which an
- * override names with its reason.
+ * override names with its reason (CODING_STANDARDS.md → Dates).
  */
 const dateFix =
   "Use Temporal outside Effect and DateTime in Effect code (DateTime.now or Clock for the current time). A library that takes or gives a Date converts in its adapter module.";
