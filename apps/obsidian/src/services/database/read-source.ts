@@ -265,18 +265,18 @@ function acquireRead(
       return yield* prepareTempRead("copy", sourcePath, { owner });
 
     return yield* prepareTempRead("reflink", sourcePath, { owner }).pipe(
-      Effect.catch((error) =>
-        error instanceof ReflinkUnsupportedError
-          ? prepareTempRead("copy", sourcePath, { owner }).pipe(
-              Effect.map((acquired) => ({
-                ...acquired,
-                read: {
-                  ...acquired.read,
-                  fallbackReason: "reflink-unsupported" as const,
-                },
-              })),
-            )
-          : Effect.fail(error),
+      Effect.catchIf(
+        (error) => error instanceof ReflinkUnsupportedError,
+        () =>
+          prepareTempRead("copy", sourcePath, { owner }).pipe(
+            Effect.map((acquired) => ({
+              ...acquired,
+              read: {
+                ...acquired.read,
+                fallbackReason: "reflink-unsupported" as const,
+              },
+            })),
+          ),
       ),
     );
   });
