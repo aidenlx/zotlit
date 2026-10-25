@@ -81,6 +81,7 @@ import {
   Fiber,
   Layer,
   PubSub,
+  Result,
   Schema,
   Scope,
   Stream,
@@ -865,15 +866,14 @@ const runMigrationHook = Effect.fn("PluginSettings.migrate")(function* (
   raw: unknown,
   stage: string,
 ): Effect.fn.Return<Record<string, unknown> | null> {
-  let migrated: unknown;
-  try {
-    migrated = hook(raw);
-  } catch (error) {
+  const run = yield* Effect.result(Effect.try(() => hook(raw)));
+  if (Result.isFailure(run)) {
     yield* Effect.logWarning("Migration threw; falling back to defaults").pipe(
-      Effect.annotateLogs({ error, stage }),
+      Effect.annotateLogs({ error: run.failure.cause, stage }),
     );
     return null;
   }
+  const migrated = run.success;
   if (!isPlainObject(migrated)) {
     yield* Effect.logWarning(
       "Migration returned a non-plain value; falling back to defaults",

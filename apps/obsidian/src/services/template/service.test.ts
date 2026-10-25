@@ -804,18 +804,17 @@ partials:
           ),
         );
 
-        let failure: unknown;
-        try {
-          service.render("note", {
-            title: "Paper",
-            backlink: "zotero://select/items/1",
-            attachments: [],
-            annotations: [],
-            notes: [],
-          });
-        } catch (error) {
-          failure = error;
-        }
+        const failure = (yield* Effect.flip(
+          Effect.try(() =>
+            service.render("note", {
+              title: "Paper",
+              backlink: "zotero://select/items/1",
+              attachments: [],
+              annotations: [],
+              notes: [],
+            }),
+          ),
+        )).cause;
         expect(failure).toBeInstanceOf(TemplateError);
         expect((failure as TemplateError).templateName).toBe("content");
         expect(service.compileErrors.get("content")).toBeDefined();
@@ -848,12 +847,9 @@ partials:
           },
         };
 
-        let failure: unknown;
-        try {
-          service.render("note", data);
-        } catch (error) {
-          failure = error;
-        }
+        const failure = (yield* Effect.flip(
+          Effect.try(() => service.render("note", data)),
+        )).cause;
 
         expect(failure).toBeInstanceOf(TemplateError);
         expect((failure as TemplateError).templateName).toBe("citation");
@@ -881,12 +877,9 @@ partials:
         },
       };
 
-      let failure: unknown;
-      try {
-        service.render("note", data);
-      } catch (error) {
-        failure = error;
-      }
+      const failure = (yield* Effect.flip(
+        Effect.try(() => service.render("note", data)),
+      )).cause;
 
       expect(failure).toBeInstanceOf(InertTemplateError);
       expect((failure as InertTemplateError).templateName).toBe("citation");
@@ -916,12 +909,9 @@ partials:
           },
         };
 
-        let failure: unknown;
-        try {
-          service.render("note", data);
-        } catch (error) {
-          failure = error;
-        }
+        const failure = (yield* Effect.flip(
+          Effect.try(() => service.render("note", data)),
+        )).cause;
 
         // liquidjs wraps a throwing data getter in its own error type, so the
         // guard is the class the batch runners read: an application error whose
@@ -957,12 +947,9 @@ partials:
           },
         };
 
-        let failure: unknown;
-        try {
-          service.render("note", data);
-        } catch (error) {
-          failure = error;
-        }
+        const failure = (yield* Effect.flip(
+          Effect.try(() => service.render("note", data)),
+        )).cause;
 
         expect(failure).toBeInstanceOf(InertTemplateError);
         expect((failure as InertTemplateError).message).toBe(
@@ -989,12 +976,9 @@ partials:
         makeHarness({ vault }, context),
       );
 
-      let failure: unknown;
-      try {
-        service.render("note", { title: "Paper" });
-      } catch (error) {
-        failure = error;
-      }
+      const failure = (yield* Effect.flip(
+        Effect.try(() => service.render("note", { title: "Paper" })),
+      )).cause;
 
       expect(failure).toBeInstanceOf(InertTemplateError);
       expect((failure as InertTemplateError).templateName).toBe("citation");
@@ -1022,12 +1006,9 @@ partials:
         },
       };
 
-      let failure: unknown;
-      try {
-        service.render("note", data);
-      } catch (error) {
-        failure = error;
-      }
+      const failure = (yield* Effect.flip(
+        Effect.try(() => service.render("note", data)),
+      )).cause;
 
       expect(failure).toBeInstanceOf(InertTemplateError);
       expect((failure as InertTemplateError).templateName).toBe("citation");
@@ -1041,16 +1022,22 @@ partials:
         const context = yield* Effect.context<never>();
         const original = DEFAULT_TEMPLATES.note;
         DEFAULT_TEMPLATES.note = "{% if zt.title %}";
-        try {
+        yield* Effect.gen(function* () {
           const { service } = yield* Effect.promise(() =>
             makeHarness(undefined, context),
           );
 
           expect(() => service.render("note", { title: "Paper" })).toThrow();
           expect(service.compileErrors.get("note")).toBeDefined();
-        } finally {
-          DEFAULT_TEMPLATES.note = original;
-        }
+        }).pipe(
+          // A JS `finally` around `yield*` does not run when the yielded
+          // Effect fails; `ensuring` restores the default on every exit.
+          Effect.ensuring(
+            Effect.sync(() => {
+              DEFAULT_TEMPLATES.note = original;
+            }),
+          ),
+        );
       }),
   );
 

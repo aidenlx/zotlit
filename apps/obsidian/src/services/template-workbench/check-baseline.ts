@@ -84,14 +84,15 @@ export const selectCheckBaseline = Effect.fnUntraced(function* (
       source = read.success;
     }
   }
-  try {
-    const stamp = parseProfileStamp(
-      previewBaseline(source, "", null).frontmatter[
-        FIELD_LITERATURE_NOTE_PROFILE
-      ],
-    );
-    return { ok: true as const, source, kind, path, stamp };
-  } catch (error) {
-    return failed(error);
-  }
+  const stamp = yield* Effect.result(
+    Effect.try(() =>
+      parseProfileStamp(
+        previewBaseline(source, "", null).frontmatter[
+          FIELD_LITERATURE_NOTE_PROFILE
+        ],
+      ),
+    ),
+  );
+  if (Result.isFailure(stamp)) return failed(stamp.failure.cause);
+  return { ok: true as const, source, kind, path, stamp: stamp.success };
 });

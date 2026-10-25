@@ -223,27 +223,28 @@ export const checkPlainDocument = Effect.fn(
       ),
     );
     documentContext = { ...documentContext, dataRevision };
-    try {
-      const rendered =
-        document.kind === "citation"
-          ? deps.templates.renderCitationSource(
-              source,
-              loaded.data as CitationTemplateData,
-            )
-          : deps.templates.renderPartialSource(source, loaded.data, {
-              name: document.label,
-            });
-      checks[document.kind] = {
-        status: "passed",
-        diagnostics: [],
-        output: rendered,
-      };
-    } catch (error) {
-      checks[document.kind] = {
-        status: "failed",
-        diagnostics: [checkDiagnostic(error, caller)],
-      };
-    }
+    checks[document.kind] = yield* Effect.try(() =>
+      document.kind === "citation"
+        ? deps.templates.renderCitationSource(
+            source,
+            loaded.data as CitationTemplateData,
+          )
+        : deps.templates.renderPartialSource(source, loaded.data, {
+            name: document.label,
+          }),
+    ).pipe(
+      Effect.match({
+        onSuccess: (rendered): ProfileCheck => ({
+          status: "passed",
+          diagnostics: [],
+          output: rendered,
+        }),
+        onFailure: (error): ProfileCheck => ({
+          status: "failed",
+          diagnostics: [checkDiagnostic(error.cause, caller)],
+        }),
+      }),
+    );
     const after = JSON.parse(yield* inspect(inspectRequest)) as InspectedSource;
     const profileAfter = JSON.parse(
       yield* inspectBindings({
