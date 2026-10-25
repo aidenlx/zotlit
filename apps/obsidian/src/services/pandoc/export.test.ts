@@ -170,12 +170,12 @@ function ports(fixture: Fixture): ExportPorts & {
   };
 }
 
-function run(
+const run = Effect.fnUntraced(function* (
   fixture: Fixture,
   request: Partial<Parameters<typeof exportCitedDocument>[0]> = {},
-): Promise<ExportResult> & { ports: ReturnType<typeof ports> } {
+) {
   const wired = ports(fixture);
-  const effect = exportCitedDocument(
+  const result = yield* exportCitedDocument(
     {
       document: { sourcePath: SOURCE, links: fixture.links ?? [] },
       markdown: (fixture.links ?? []).map((link) => link.original).join(" "),
@@ -184,8 +184,8 @@ function run(
     },
     wired,
   );
-  return Object.assign(Effect.runPromise(effect), { ports: wired });
-}
+  return { result, ports: wired };
+});
 
 function failure(result: ExportResult): ExportFailure | undefined {
   return "error" in result ? result.error : undefined;
@@ -199,14 +199,13 @@ const CITED: Fixture = {
 };
 
 describe("exportCitedDocument", () => {
-  it.each([
+  it.effect.each([
     "[](zotero://open/library/items/ABCD2345?page=12&annotation=EFGH6789)",
     "[](<zotero://open/groups/7/items/ABCD2345?page=12&annotation=EFGH6789>)",
-  ])(
-    "keeps Annotation Citation source byte for byte: %s (#1694)",
-    async (markdown) => {
-      const running = run({}, { markdown });
-      await expect(running).resolves.toHaveProperty("output");
+  ])("keeps Annotation Citation source byte for byte: %s (#1694)", (markdown) =>
+    Effect.gen(function* () {
+      const running = yield* run({}, { markdown });
+      expect(running.result).toHaveProperty("output");
       const [request] = running.ports.prepareDocument.mock.calls[0] as [
         PrepareRequest,
       ];
@@ -215,279 +214,326 @@ describe("exportCitedDocument", () => {
         RenderRequest,
       ];
       expect(render.document.citedIds).toEqual([]);
-    },
+    }),
   );
 
-  it.each([false, true])(
+  it.effect.each([false, true])(
     "cites each Item by the CSL id its source gave it (snapshot unavailable: %s)",
-    async (snapshotUnavailable) => {
-      const running = run({ ...CITED, snapshotUnavailable });
-      await expect(running).resolves.toHaveProperty("output");
+    (snapshotUnavailable) =>
+      Effect.gen(function* () {
+        const running = yield* run({ ...CITED, snapshotUnavailable });
+        expect(running.result).toHaveProperty("output");
+
+        const [request] = running.ports.renderPrepared.mock.calls[0] as [
+          RenderRequest,
+        ];
+        expect(request.bibliography).toEqual([ZETA, ADAMS]);
+        expect(request.document.citedIds).toEqual([ZETA.id, ADAMS.id]);
+        expect(request.format).toBe("docx");
+      }),
+  );
+
+  it.effect("cites an Item named only by a literal citation key", () =>
+    Effect.gen(function* () {
+      const running = yield* run({
+        links: [],
+        citekeys: { zeta2020: "ZETA1234" },
+        placed: { ZETA1234: ref("ZETA1234") },
+        items: { ZETA1234: ZETA },
+        citedIds: ["zeta2020"],
+      });
+      expect(running.result).toHaveProperty("output");
+
+      expect(running.ports.fetchBibliography).toHaveBeenCalledWith([
+        ref("ZETA1234"),
+      ]);
+      const [request] = running.ports.renderPrepared.mock.calls[0] as [
+        RenderRequest,
+      ];
+      expect(request.bibliography).toEqual([ZETA]);
+      expect(request.document.citedIds).toEqual(["zeta2020"]);
+    }),
+  );
+
+  it.effect("collects an Item cited both ways into one entry", () =>
+    Effect.gen(function* () {
+      const running = yield* run({
+        ...CITED,
+        // A source that answers with the item URI, so the rewrite to the
+        // author's own citation key is what the assertions below read.
+        items: { ZETA1234: ZETA_URI, ADAM5678g5: ADAMS },
+        citekeys: { zeta2020: "ZETA1234" },
+        citedIds: ["#ZETA1234", "zeta2020", "#ADAM5678g5"],
+      });
+      expect(running.result).toHaveProperty("output");
 
       const [request] = running.ports.renderPrepared.mock.calls[0] as [
         RenderRequest,
       ];
-      expect(request.bibliography).toEqual([ZETA, ADAMS]);
-      expect(request.document.citedIds).toEqual([ZETA.id, ADAMS.id]);
-      expect(request.format).toBe("docx");
-    },
+      // One Item, one entry, and the citation key the author wrote carries it.
+      expect(request.bibliography).toEqual([
+        { ...ZETA_URI, id: "zeta2020" },
+        ADAMS,
+      ]);
+      expect(request.document.citedIds).toEqual([
+        "zeta2020",
+        "zeta2020",
+        ADAMS.id,
+      ]);
+    }),
   );
 
-  it("cites an Item named only by a literal citation key", async () => {
-    const running = run({
-      links: [],
-      citekeys: { zeta2020: "ZETA1234" },
-      placed: { ZETA1234: ref("ZETA1234") },
-      items: { ZETA1234: ZETA },
-      citedIds: ["zeta2020"],
-    });
-    await expect(running).resolves.toHaveProperty("output");
+  it.effect(
+    "tells one Item's Indexed Key from another Item's citation key",
+    () =>
+      Effect.gen(function* () {
+        // The wikilinked Item is keyed ZETA1234; the literal Citation spells that
+        // same text as a citation key, and it belongs to the other Item.
+        const running = yield* run({
+          links: [link("Zeta 2020")],
+          notes: { "Zeta 2020": "ZETA1234" },
+          citekeys: { ZETA1234: "ADAM5678g5" },
+          placed: { ZETA1234: ref("ZETA1234"), ADAM5678g5: ref("ADAM5678", 5) },
+          items: { ZETA1234: ZETA_URI, ADAM5678g5: ADAMS },
+          citedIds: ["#ZETA1234", "ZETA1234"],
+        });
+        expect(running.result).toHaveProperty("output");
 
-    expect(running.ports.fetchBibliography).toHaveBeenCalledWith([
-      ref("ZETA1234"),
-    ]);
-    const [request] = running.ports.renderPrepared.mock.calls[0] as [
-      RenderRequest,
-    ];
-    expect(request.bibliography).toEqual([ZETA]);
-    expect(request.document.citedIds).toEqual(["zeta2020"]);
-  });
+        const [request] = running.ports.renderPrepared.mock.calls[0] as [
+          RenderRequest,
+        ];
+        // Two Items, cited apart: the wikilink's own, and the one the key names.
+        expect(request.document.citedIds).toEqual([ZETA_URI.id, "ZETA1234"]);
+        expect(request.bibliography).toEqual([
+          ZETA_URI,
+          { ...ADAMS, id: "ZETA1234" },
+        ]);
+      }),
+  );
 
-  it("collects an Item cited both ways into one entry", async () => {
-    const running = run({
-      ...CITED,
-      // A source that answers with the item URI, so the rewrite to the
-      // author's own citation key is what the assertions below read.
-      items: { ZETA1234: ZETA_URI, ADAM5678g5: ADAMS },
-      citekeys: { zeta2020: "ZETA1234" },
-      citedIds: ["#ZETA1234", "zeta2020", "#ADAM5678g5"],
-    });
-    await expect(running).resolves.toHaveProperty("output");
+  it.effect("stops on a literal citation key naming no live Item", () =>
+    Effect.gen(function* () {
+      const running = yield* run({
+        links: [],
+        citedIds: ["ghost2024", "zeta2020"],
+      });
 
-    const [request] = running.ports.renderPrepared.mock.calls[0] as [
-      RenderRequest,
-    ];
-    // One Item, one entry, and the citation key the author wrote carries it.
-    expect(request.bibliography).toEqual([
-      { ...ZETA_URI, id: "zeta2020" },
-      ADAMS,
-    ]);
-    expect(request.document.citedIds).toEqual([
-      "zeta2020",
-      "zeta2020",
-      ADAMS.id,
-    ]);
-  });
-
-  it("tells one Item's Indexed Key from another Item's citation key", async () => {
-    // The wikilinked Item is keyed ZETA1234; the literal Citation spells that
-    // same text as a citation key, and it belongs to the other Item.
-    const running = run({
-      links: [link("Zeta 2020")],
-      notes: { "Zeta 2020": "ZETA1234" },
-      citekeys: { ZETA1234: "ADAM5678g5" },
-      placed: { ZETA1234: ref("ZETA1234"), ADAM5678g5: ref("ADAM5678", 5) },
-      items: { ZETA1234: ZETA_URI, ADAM5678g5: ADAMS },
-      citedIds: ["#ZETA1234", "ZETA1234"],
-    });
-    await expect(running).resolves.toHaveProperty("output");
-
-    const [request] = running.ports.renderPrepared.mock.calls[0] as [
-      RenderRequest,
-    ];
-    // Two Items, cited apart: the wikilink's own, and the one the key names.
-    expect(request.document.citedIds).toEqual([ZETA_URI.id, "ZETA1234"]);
-    expect(request.bibliography).toEqual([
-      ZETA_URI,
-      { ...ADAMS, id: "ZETA1234" },
-    ]);
-  });
-
-  it("stops on a literal citation key naming no live Item", async () => {
-    const running = run({ links: [], citedIds: ["ghost2024", "zeta2020"] });
-
-    expect(failure(await running)).toEqual({
-      kind: "citation-keys-unknown",
-      citekeys: ["ghost2024", "zeta2020"],
-    });
-    expect(running.ports.renderPrepared).not.toHaveBeenCalled();
-    expect(running.ports.fetchBibliography).not.toHaveBeenCalled();
-  });
-
-  it("stops on a literal citation key several Items answer to", async () => {
-    const running = run({
-      links: [],
-      citekeys: { zeta2020: "ZETA1234" },
-      ambiguous: ["doe2024"],
-      citedIds: ["zeta2020", "doe2024"],
-    });
-
-    expect(failure(await running)).toEqual({
-      kind: "citation-keys-ambiguous",
-      citekeys: ["doe2024"],
-    });
-    expect(running.ports.renderPrepared).not.toHaveBeenCalled();
-  });
-
-  it("stops when the resolution snapshot cannot be read", async () => {
-    const running = run({
-      links: [],
-      snapshotUnavailable: true,
-      citedIds: ["zeta2020"],
-    });
-
-    expect(failure(await running)).toEqual({
-      kind: "database-unavailable",
-      dataDir: "/Zotero",
-    });
-  });
-
-  it.each([false, true])(
-    "converts a document that cites nothing without asking Zotero (snapshot unavailable: %s)",
-    async (snapshotUnavailable) => {
-      const running = run({ links: [link("Some Note")], snapshotUnavailable });
-      await expect(running).resolves.toHaveProperty("output");
-
+      expect(failure(running.result)).toEqual({
+        kind: "citation-keys-unknown",
+        citekeys: ["ghost2024", "zeta2020"],
+      });
+      expect(running.ports.renderPrepared).not.toHaveBeenCalled();
       expect(running.ports.fetchBibliography).not.toHaveBeenCalled();
-      const [request] = running.ports.prepareDocument.mock.calls[0] as [
-        PrepareRequest,
-      ];
-      expect(
-        JSON.parse(String(request.files?.[PANDOC_RESOLVE_MAP_FILENAME])),
-      ).toMatchObject({ citations: {}, selectedLiterals: {} });
-    },
+    }),
   );
 
-  it("stops on a citation fragment that names no literature note", async () => {
-    const running = run({
-      links: [link("Zeta 2020"), link("Meeting notes#cite:locator=7")],
-      notes: { "Zeta 2020": "ZETA1234" },
-      placed: { ZETA1234: ref("ZETA1234") },
-      items: { ZETA1234: ZETA },
-    });
+  it.effect("stops on a literal citation key several Items answer to", () =>
+    Effect.gen(function* () {
+      const running = yield* run({
+        links: [],
+        citekeys: { zeta2020: "ZETA1234" },
+        ambiguous: ["doe2024"],
+        citedIds: ["zeta2020", "doe2024"],
+      });
 
-    expect(failure(await running)).toEqual({
-      kind: "citation-intent",
-      linkpaths: ["Meeting notes"],
-    });
-    expect(running.ports.renderPrepared).not.toHaveBeenCalled();
-  });
+      expect(failure(running.result)).toEqual({
+        kind: "citation-keys-ambiguous",
+        citekeys: ["doe2024"],
+      });
+      expect(running.ports.renderPrepared).not.toHaveBeenCalled();
+    }),
+  );
 
-  it("stops when the Zotero database cannot be read", async () => {
-    const running = run({ ...CITED, databaseUnavailable: true });
+  it.effect("stops when the resolution snapshot cannot be read", () =>
+    Effect.gen(function* () {
+      const running = yield* run({
+        links: [],
+        snapshotUnavailable: true,
+        citedIds: ["zeta2020"],
+      });
 
-    expect(failure(await running)).toEqual({
-      kind: "database-unavailable",
-      dataDir: "/Zotero",
-    });
-    expect(running.ports.fetchBibliography).not.toHaveBeenCalled();
-  });
+      expect(failure(running.result)).toEqual({
+        kind: "database-unavailable",
+        dataDir: "/Zotero",
+      });
+    }),
+  );
 
-  it("stops when the database cannot place a cited Item", async () => {
-    const running = run({ ...CITED, placed: { ZETA1234: ref("ZETA1234") } });
+  it.effect.each([false, true])(
+    "converts a document that cites nothing without asking Zotero (snapshot unavailable: %s)",
+    (snapshotUnavailable) =>
+      Effect.gen(function* () {
+        const running = yield* run({
+          links: [link("Some Note")],
+          snapshotUnavailable,
+        });
+        expect(running.result).toHaveProperty("output");
 
-    expect(failure(await running)).toEqual({
-      kind: "items-missing",
-      sources: ["Adams 2018"],
-    });
-    expect(running.ports.renderPrepared).not.toHaveBeenCalled();
-  });
+        expect(running.ports.fetchBibliography).not.toHaveBeenCalled();
+        const [request] = running.ports.prepareDocument.mock.calls[0] as [
+          PrepareRequest,
+        ];
+        expect(
+          JSON.parse(String(request.files?.[PANDOC_RESOLVE_MAP_FILENAME])),
+        ).toMatchObject({ citations: {}, selectedLiterals: {} });
+      }),
+  );
 
-  it("names the notes behind the Items Zotero returned nothing for", async () => {
-    const running = run({
-      ...CITED,
-      bibliographyFailure: {
-        code: "items-missing",
-        source: "local-api",
-        indexedKeys: ["ADAM5678g5"],
-      },
-    });
+  it.effect("stops on a citation fragment that names no literature note", () =>
+    Effect.gen(function* () {
+      const running = yield* run({
+        links: [link("Zeta 2020"), link("Meeting notes#cite:locator=7")],
+        notes: { "Zeta 2020": "ZETA1234" },
+        placed: { ZETA1234: ref("ZETA1234") },
+        items: { ZETA1234: ZETA },
+      });
 
-    expect(failure(await running)).toEqual({
-      kind: "items-missing",
-      sources: ["Adams 2018"],
-    });
-  });
+      expect(failure(running.result)).toEqual({
+        kind: "citation-intent",
+        linkpaths: ["Meeting notes"],
+      });
+      expect(running.ports.renderPrepared).not.toHaveBeenCalled();
+    }),
+  );
 
-  it("names the notes Better BibTeX holds no citation key for", async () => {
-    const running = run({
-      ...CITED,
-      bibliographyFailure: {
-        code: "citation-key-missing",
-        indexedKeys: ["ZETA1234"],
-      },
-    });
+  it.effect("stops when the Zotero database cannot be read", () =>
+    Effect.gen(function* () {
+      const running = yield* run({ ...CITED, databaseUnavailable: true });
 
-    expect(failure(await running)).toEqual({
-      kind: "citation-keys-missing",
-      sources: ["Zeta 2020"],
-    });
-  });
+      expect(failure(running.result)).toEqual({
+        kind: "database-unavailable",
+        dataDir: "/Zotero",
+      });
+      expect(running.ports.fetchBibliography).not.toHaveBeenCalled();
+    }),
+  );
 
-  it("passes a closed Zotero and a disabled local API through", async () => {
-    expect(
-      failure(
-        await run({
-          ...CITED,
-          bibliographyFailure: { code: "zotero-unreachable", port: 23119 },
-        }),
-      ),
-    ).toEqual({ kind: "zotero-unreachable", port: 23119 });
+  it.effect("stops when the database cannot place a cited Item", () =>
+    Effect.gen(function* () {
+      const running = yield* run({
+        ...CITED,
+        placed: { ZETA1234: ref("ZETA1234") },
+      });
 
-    expect(
-      failure(
-        await run({
-          ...CITED,
-          bibliographyFailure: {
-            code: "local-api-disabled",
-            pref: "httpServer.localAPI.enabled",
-          },
-        }),
-      ),
-    ).toEqual({
-      kind: "local-api-disabled",
-      pref: "httpServer.localAPI.enabled",
-    });
-  });
+      expect(failure(running.result)).toEqual({
+        kind: "items-missing",
+        sources: ["Adams 2018"],
+      });
+      expect(running.ports.renderPrepared).not.toHaveBeenCalled();
+    }),
+  );
 
-  it("reports an automatic Zotero HTTP port as undiscoverable", async () => {
-    expect(
-      failure(
-        await run({
-          ...CITED,
-          bibliographyFailure: {
-            code: "zotero-port-automatic",
-            pref: "httpServer.port",
-          },
-        }),
-      ),
-    ).toEqual({ kind: "zotero-port-automatic", pref: "httpServer.port" });
-  });
-
-  it("reports a source that answered and refused", async () => {
-    expect(
-      failure(
-        await run({
+  it.effect(
+    "names the notes behind the Items Zotero returned nothing for",
+    () =>
+      Effect.gen(function* () {
+        const running = yield* run({
           ...CITED,
           bibliographyFailure: {
-            code: "source-failed",
-            source: "better-bibtex",
-            detail: "no such translator",
+            code: "items-missing",
+            source: "local-api",
+            indexedKeys: ["ADAM5678g5"],
           },
-        }),
-      ),
-    ).toEqual({
-      kind: "source-failed",
-      source: "better-bibtex",
-      detail: "no such translator",
-    });
-  });
+        });
 
-  it("reports a conversion Pandoc refused", async () => {
-    expect(
-      failure(await run({ ...CITED, engineError: "unknown writer" })),
-    ).toEqual({ kind: "engine", detail: "unknown writer" });
-  });
+        expect(failure(running.result)).toEqual({
+          kind: "items-missing",
+          sources: ["Adams 2018"],
+        });
+      }),
+  );
+
+  it.effect("names the notes Better BibTeX holds no citation key for", () =>
+    Effect.gen(function* () {
+      const running = yield* run({
+        ...CITED,
+        bibliographyFailure: {
+          code: "citation-key-missing",
+          indexedKeys: ["ZETA1234"],
+        },
+      });
+
+      expect(failure(running.result)).toEqual({
+        kind: "citation-keys-missing",
+        sources: ["Zeta 2020"],
+      });
+    }),
+  );
+
+  it.effect("passes a closed Zotero and a disabled local API through", () =>
+    Effect.gen(function* () {
+      expect(
+        failure(
+          (yield* run({
+            ...CITED,
+            bibliographyFailure: { code: "zotero-unreachable", port: 23119 },
+          })).result,
+        ),
+      ).toEqual({ kind: "zotero-unreachable", port: 23119 });
+
+      expect(
+        failure(
+          (yield* run({
+            ...CITED,
+            bibliographyFailure: {
+              code: "local-api-disabled",
+              pref: "httpServer.localAPI.enabled",
+            },
+          })).result,
+        ),
+      ).toEqual({
+        kind: "local-api-disabled",
+        pref: "httpServer.localAPI.enabled",
+      });
+    }),
+  );
+
+  it.effect("reports an automatic Zotero HTTP port as undiscoverable", () =>
+    Effect.gen(function* () {
+      expect(
+        failure(
+          (yield* run({
+            ...CITED,
+            bibliographyFailure: {
+              code: "zotero-port-automatic",
+              pref: "httpServer.port",
+            },
+          })).result,
+        ),
+      ).toEqual({ kind: "zotero-port-automatic", pref: "httpServer.port" });
+    }),
+  );
+
+  it.effect("reports a source that answered and refused", () =>
+    Effect.gen(function* () {
+      expect(
+        failure(
+          (yield* run({
+            ...CITED,
+            bibliographyFailure: {
+              code: "source-failed",
+              source: "better-bibtex",
+              detail: "no such translator",
+            },
+          })).result,
+        ),
+      ).toEqual({
+        kind: "source-failed",
+        source: "better-bibtex",
+        detail: "no such translator",
+      });
+    }),
+  );
+
+  it.effect("reports a conversion Pandoc refused", () =>
+    Effect.gen(function* () {
+      expect(
+        failure(
+          (yield* run({ ...CITED, engineError: "unknown writer" })).result,
+        ),
+      ).toEqual({ kind: "engine", detail: "unknown writer" });
+    }),
+  );
 });
 
 /**
