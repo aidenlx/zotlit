@@ -34,6 +34,8 @@ The `effecttsgo/*` rules (`@effect/tsgo`, configured in `packages/config/oxlint.
 - **Warn:** every other preset rule (`effect-fn-opportunity`, `lazy-effect`, `schema-number`, `unknown-in-effect-catch` and the rewrite hints). A warning does not fail the lint, but it is not left in the code: the change that adds one fixes it. `any-unknown-in-error-context` is off: `unknown` is the correct error at a Promise seam and in generic helpers that accept any Effect, and the tsgo default is also off.
 - **Not checked:** the rules do not see where a failure is handled, whether a step must be uninterruptible, how a layer releases what it acquires, or whether a test proves the behavior. Review these by hand (the list below).
 
+`zotlit-effect-tests/typed-fake` (`scripts/oxlint-plugin-effect-tests.ts`) reports a test fake behind a cast. Review what it cannot see: a fake carries only the members its test reads, and a fake that several tests share is one double in its service's `__fixtures__.ts` (root `policies/testing-strategy.md` → Service fakes).
+
 `zotlit-effect-style/no-tacit` (`scripts/oxlint-plugin-effect-style.ts`) reports a function passed by name to an Effect combinator, such as `Effect.map(fn)`, and `flow`: write the lambda `(x) => fn(x)` (Effect v4 code style → Avoid Tacit Usage).
 
 Check in particular:

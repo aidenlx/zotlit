@@ -5,6 +5,7 @@ import {
   noEffectRunInTest,
   noRealTimerInEffectTest,
   serviceStub,
+  typedFake,
 } from "../../scripts/oxlint-plugin-effect-tests";
 
 RuleTester.describe = describe;
@@ -128,6 +129,104 @@ tester.run("service-stub", serviceStub, {
     {
       code: 'Layer.succeed(Reads, { current } satisfies Partial<Reads["Service"]> as unknown as Reads["Service"])',
       errors: stub,
+    },
+  ],
+});
+
+const layerFake = [{ messageId: "layer" }];
+const hostFake = [{ messageId: "host" }];
+const serviceFake = [{ messageId: "service" }];
+const neverFake = [{ messageId: "never" }];
+const layer = 'import { Effect, Layer } from "effect";\n';
+const host = 'import type { App, CachedMetadata, TFile } from "obsidian";\n';
+
+// Failure modes: a fake whose type a cast hides goes unflagged, or a typed
+// fake, a cast of a value that is no fake, or a case service-stub reports is
+// flagged.
+tester.run("typed-fake", typedFake, {
+  valid: [
+    `${layer}Layer.mock(Reads, { current });`,
+    `${layer}Layer.succeed(Reads, Reads.of({ current }));`,
+    `${layer}Layer.succeed(Reads, stubService<Reads["Service"]>("Reads", { current }));`,
+    `${host}const app = stubService<App>("App", { vault });`,
+    `${host}const cache: CachedMetadata = { frontmatter: {} };`,
+    // A cast of a value that is no literal fake, outside a layer.
+    `${host}const app = host.app as unknown as App;`,
+    `${host}const target = event.target as HTMLElement;`,
+    "const shape = { hoverEl } as unknown as { hoverEl: HTMLElement };",
+    "const value = read() as never;",
+    `${layer}const items = [1, 2] as const;`,
+    // service-stub reports this one.
+    `${layer}Layer.succeed(Reads, { current } as unknown as Reads["Service"]);`,
+    // A name from another module.
+    'import type { App } from "./app";\nconst app = { vault } as unknown as App;',
+  ],
+  invalid: [
+    {
+      code: `${layer}Layer.succeed(Reads, reads as never);`,
+      errors: layerFake,
+    },
+    {
+      code: `${layer}Layer.mock(Reads, { current } as never);`,
+      errors: layerFake,
+    },
+    {
+      code: `${layer}Layer.succeed(Reads)(reads as unknown as Reads);`,
+      errors: layerFake,
+    },
+    {
+      code: `${layer}Layer.succeed(Reads, Reads.of({ current } as never));`,
+      errors: layerFake,
+    },
+    {
+      code: `${layer}Effect.provideService(effect, Reads, reads as never);`,
+      errors: layerFake,
+    },
+    {
+      code: `${layer}layerVaultFrom(vault as unknown as VaultSource);`,
+      errors: layerFake,
+    },
+    {
+      code: `${layer}layerHostApp(host.app as unknown as App);`,
+      errors: layerFake,
+    },
+    {
+      code: `${host}const app = { vault } as unknown as App;`,
+      errors: hostFake,
+    },
+    { code: `${host}const app = { vault } as App;`, errors: hostFake },
+    {
+      code: `${host}const file = { path: "a.md" } as TFile;`,
+      errors: hostFake,
+    },
+    {
+      code: `${host}const files = [{ path: "a.md" } as unknown as TFile];`,
+      errors: hostFake,
+    },
+    {
+      code: 'import type { Vault } from "@/lib/obsidian-vault";\nconst vault = { read } as unknown as Vault["Service"] & {};',
+      errors: hostFake,
+    },
+    {
+      code: 'import type { Leaf } from "obsidian";\nconst leaf = { view } as unknown as Partial<Leaf>;',
+      errors: hostFake,
+    },
+    {
+      code: "const deps = { profile } as unknown as ViewDeps;",
+      errors: serviceFake,
+    },
+    {
+      code: 'const profile = { current } as unknown as ViewDeps["profile"];',
+      errors: serviceFake,
+    },
+    {
+      code: 'const settings = { current } as unknown as Pick<PluginSettings["Service"], "current">;',
+      errors: serviceFake,
+    },
+    { code: "new View({ refresh: () => done } as never);", errors: neverFake },
+    {
+      code: "const deps = { refresh } as unknown as never;",
+      errors: neverFake,
     },
   ],
 });
