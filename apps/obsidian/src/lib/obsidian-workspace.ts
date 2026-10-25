@@ -130,12 +130,14 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     onFileMenu: Effect.fn("Workspace.onFileMenu")((handler) =>
       menuHook(
         "file-menu",
-        // oxlint-disable-next-line max-params -- Obsidian's own `file-menu` shape.
+        // Obsidian's own `file-menu` arguments.
         (
-          menu: Menu,
-          file: TAbstractFile,
-          from: string,
-          leaf: WorkspaceLeaf | undefined,
+          ...[menu, file, from, leaf]: [
+            Menu,
+            TAbstractFile,
+            string,
+            WorkspaceLeaf | undefined,
+          ]
         ) => handler(menu, file, { source: from, leaf }),
       ),
     ),

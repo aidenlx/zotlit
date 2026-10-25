@@ -56,13 +56,12 @@ export class MemoryFileManager implements FileManagerSource {
     this.renames.push({ from, to: newPath });
   }
 
-  /** A wikilink to the full path, with `subpath` and `alias` when given. */
-  // oxlint-disable-next-line max-params -- Obsidian's own generateMarkdownLink shape.
+  /**
+   * A wikilink to the full path, with `subpath` and `alias` when given. The
+   * arguments keep Obsidian's own shape; the source path is unused.
+   */
   generateMarkdownLink(
-    file: TFile,
-    _sourcePath: string,
-    subpath = "",
-    alias?: string,
+    ...[file, , subpath = "", alias]: [TFile, string, string?, string?]
   ): string {
     return `[[${file.path}${subpath}${alias ? `|${alias}` : ""}]]`;
   }
