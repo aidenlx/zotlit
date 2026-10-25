@@ -7,9 +7,8 @@ import type {
   TFile,
 } from "obsidian";
 
-import { Context, Effect, Layer, Stream } from "@/lib/effect";
-import { withLogCategory } from "@/lib/effect-log";
-import { filterTag } from "@/lib/effect-stream";
+import { Context, Effect, Layer } from "@/lib/effect";
+import type { Stream } from "@/lib/effect";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { obsidianEventSource } from "@/lib/obsidian-event-source";
 import type { ObsidianEventEmitter } from "@/lib/obsidian-event-source";
@@ -49,8 +48,7 @@ export interface MetadataCacheShape {
   /**
    * Completes once the cache is resolved: at once when it already is, else
    * when the parse queue and the link resolver next go idle. It reads
-   * Obsidian's undocumented `onCleanCache`; a build without that hook waits
-   * for the next `resolved`. During startup the cache is empty and reads as
+   * Obsidian's undocumented `onCleanCache`. During startup the cache is empty and reads as
    * resolved until the vault loads, so a consumer that needs every file waits
    * for layout-ready first.
    */
@@ -95,7 +93,7 @@ export const makeMetadataCache = Effect.fnUntraced(function* (
   return MetadataCache.of({
     fileCache: (file) => Effect.sync(() => source.getFileCache(file)),
     changes: events.stream,
-    whenResolved: whenResolved(source, events.stream),
+    whenResolved: whenResolved(source),
   });
 });
 
@@ -106,24 +104,9 @@ export const makeMetadataCache = Effect.fnUntraced(function* (
  * `resolved` fires only when the resolver queue drains after running, so a
  * vault with no indexable files never emits it.
  */
-function whenResolved(
-  source: MetadataCacheSource,
-  changes: Stream.Stream<MetadataEvent>,
-): Effect.Effect<void> {
-  return Effect.suspend(() => {
-    const { onCleanCache } = source;
-    if (typeof onCleanCache === "function")
-      return Effect.callback<void>((resume) => {
-        onCleanCache.call(source, () => resume(Effect.void));
-      });
-    return Effect.logWarning(
-      "Metadata cache has no onCleanCache hook; waiting for resolved",
-    ).pipe(
-      withLogCategory("metadata-cache"),
-      Effect.andThen(
-        filterTag(changes, "resolved").pipe(Stream.take(1), Stream.runDrain),
-      ),
-    );
+function whenResolved(source: MetadataCacheSource): Effect.Effect<void> {
+  return Effect.callback<void>((resume) => {
+    source.onCleanCache(() => resume(Effect.void));
   });
 }
 

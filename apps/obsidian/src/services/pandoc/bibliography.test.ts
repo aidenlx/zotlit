@@ -3,9 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
+import { fakeFetchClient } from "@/lib/__fixtures__/fake-fetch";
 import { Effect } from "@/lib/effect";
-import { routeTableHttpClient } from "@/lib/http-client";
-import type { Route } from "@/lib/http-client";
 import { withZoteroHeaders } from "@/lib/zotero-http";
 
 import { fetchBibliography, LOCAL_API_PREF } from "./bibliography";
@@ -69,15 +68,15 @@ function ports(
 ): BibliographyPorts & { calls: Call[] } {
   const calls: Call[] = [];
   const rpcUrl = `http://127.0.0.1:${httpPort}/better-bibtex/json-rpc`;
-  const route: Route = (request) => {
+  const fetch: typeof globalThis.fetch = async (input, init) => {
     // A closed Zotero fails the connection.
     if (fixture.zoteroClosed) throw new Error("ECONNREFUSED");
-    const url = request.url.href;
+    const url = String(input);
     const call: Call = {
       url,
-      method: request.method,
-      headers: request.headers,
-      body: request.body ?? undefined,
+      method: init?.method ?? "GET",
+      headers: new Headers(init?.headers),
+      body: typeof init?.body === "string" ? init.body : undefined,
     };
     if (url === rpcUrl) {
       const { method, params } = JSON.parse(call.body ?? "{}") as {
@@ -124,7 +123,7 @@ function ports(
   };
   return {
     calls,
-    http: withZoteroHeaders(routeTableHttpClient(route)),
+    http: withZoteroHeaders(fakeFetchClient(fetch)),
     run: { runPromiseExit: Effect.runPromiseExit },
     httpPort,
     localApiEnabled: fixture.localApiEnabled ?? true,

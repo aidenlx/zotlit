@@ -270,16 +270,13 @@ it.effect(
     }),
 );
 
-it.effect.each(["layout", "clean-cache", "resolved"] as const)(
+it.effect.each(["layout", "clean-cache"] as const)(
   "scope close settles indexing and stops a late %s callback",
   (phase) =>
     Effect.gen(function* () {
-      const host = createNoteHost(
-        { "paper.md": cache({ itemKey: "ABCD2345" }) },
-        { cleanCacheHook: phase !== "resolved" },
-      );
-      if (phase === "resolved")
-        expect(host.metadataCache.onCleanCache).toBeUndefined();
+      const host = createNoteHost({
+        "paper.md": cache({ itemKey: "ABCD2345" }),
+      });
       const scope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
         Scope.close(scope, Exit.void),
       );

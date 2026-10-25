@@ -114,15 +114,17 @@ export function exchangeWithZotero(
   http: ZoteroHttp["Service"],
   { port, path, method = "GET", headers = {}, body }: ZoteroRequest,
 ): Effect.Effect<ZoteroAnswer, HttpClientError.HttpClientError> {
-  let request = HttpClientRequest.make(method)(`${zoteroOrigin(port)}${path}`);
-  if (body !== undefined) {
-    // A raw body leaves the content type to the caller's headers.
-    request = HttpClientRequest.setBody(
-      request,
-      HttpBody.raw(body, { contentLength: Buffer.byteLength(body) }),
-    );
-  }
-  request = HttpClientRequest.setHeaders(request, headers);
+  // The headers go on after the body: setting a raw body removes any
+  // `Content-Type`, and the caller's headers carry it.
+  const request = HttpClientRequest.make(method)(
+    `${zoteroOrigin(port)}${path}`,
+    {
+      body:
+        body === undefined
+          ? undefined
+          : HttpBody.raw(body, { contentLength: Buffer.byteLength(body) }),
+    },
+  ).pipe(HttpClientRequest.setHeaders(headers));
   return Effect.flatMap(http.execute(request), (response) =>
     Effect.map(response.text, (text) => ({
       status: response.status,
