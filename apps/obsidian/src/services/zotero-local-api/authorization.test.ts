@@ -2,9 +2,9 @@
 // in-memory credential store: what each dialog outcome leaves the session in,
 // and what each refusal of a write does to the key in hand.
 
+import { TestClock } from "effect/testing";
 import { expect, it, vi } from "vitest";
 
-import { manualClock } from "@/lib/__fixtures__/manual-clock";
 import { AbortError } from "@/lib/abort-error";
 
 import {
@@ -234,17 +234,16 @@ it("holds Zotero's cooldown, with the Retry-After it named", async () => {
 
 it("asks again once the cooldown has run out", async () => {
   await using stack = new AsyncDisposableStack();
-  const time = manualClock(NOW);
   const answers: ZoteroAnswers = {
     authorize: vi
       .fn()
       .mockImplementationOnce(() => rateLimited())
       .mockImplementation(() => authorized({ remember: true })),
   };
-  const { client } = await setup(stack, answers, { clock: time });
+  const { client, runtime } = await setup(stack, answers);
 
   await client.authorize();
-  time.set(NOW.add({ seconds: 61 }));
+  await runtime.runPromise(TestClock.adjust("61 seconds"));
   const granted = await client.authorize();
 
   expect(granted).toEqual({ value: undefined });

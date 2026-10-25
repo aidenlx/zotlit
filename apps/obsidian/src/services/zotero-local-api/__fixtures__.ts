@@ -1,9 +1,8 @@
+import { TestClock } from "effect/testing";
 import { vi } from "vitest";
 
 import type { DbUpdated } from "@zotlit/protocol";
 
-import { manualClock } from "@/lib/__fixtures__/manual-clock";
-import type { ManualClock } from "@/lib/__fixtures__/manual-clock";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 // Zotero Local API answers, and the transport that replays them.
 //
@@ -719,12 +718,20 @@ export interface ClientOptions {
   key?: string;
   /** The deadline a Capability Probe runs under. @default one that never fires */
   probeDeadline?: () => AbortSignal;
-  /** The Clock the dialog cooldown is read against. @default a Clock standing at {@link NOW} */
-  clock?: ManualClock;
 }
 
-/** The instant a test's clock stands at unless it says otherwise. */
+/** The instant a fixture's TestClock stands at until a test moves it. */
 export const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
+
+/**
+ * One TestClock for a fixture's runtime, standing at {@link NOW} before any
+ * layer above it reads time. A test moves it with
+ * `await runtime.runPromise(TestClock.adjust(duration))`.
+ */
+export const testClockAtNow = Layer.provideMerge(
+  Layer.effectDiscard(TestClock.setTime(NOW.epochMilliseconds)),
+  TestClock.layer(),
+);
 
 /**
  * The client over a fake transport, with the two event sources it subscribes to
@@ -798,7 +805,7 @@ export async function localApiClient(
     probeDeadline:
       options.probeDeadline ?? (() => new AbortController().signal),
   }).pipe(
-    Layer.provide(options.clock?.layer ?? manualClock(NOW).layer),
+    Layer.provideMerge(testClockAtNow),
     Layer.provide(
       Layer.mergeAll(
         Layer.succeed(ZoteroPref, pref),
