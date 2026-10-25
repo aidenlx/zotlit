@@ -9,7 +9,7 @@ import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { LogCategory } from "@/lib/effect-log";
 
-import { fakeApp, useLedgerOf } from "./__fixtures__";
+import { ledgerHost, useLedgerOf } from "./__fixtures__";
 
 const itemKey = (n: number) =>
   n
@@ -24,7 +24,7 @@ const itemKey = (n: number) =>
 it.effect("keeps the 300 most recently used Items across reloads", () =>
   Effect.gen(function* () {
     let stored: unknown;
-    const app = fakeApp({
+    const host = ledgerHost({
       load: () => stored,
       save: (_key, value) => {
         stored = structuredClone(value);
@@ -32,7 +32,7 @@ it.effect("keeps the 300 most recently used Items across reloads", () =>
     });
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const ledger = yield* useLedgerOf(app);
+        const ledger = yield* useLedgerOf(host);
         for (let item = 0; item < 300; item++) {
           yield* TestClock.adjust(1);
           yield* ledger.record(itemKey(item), "opened");
@@ -52,7 +52,7 @@ it.effect("keeps the 300 most recently used Items across reloads", () =>
       }),
     );
 
-    const reloaded = yield* useLedgerOf(app);
+    const reloaded = yield* useLedgerOf(host);
     expect(Object.keys(yield* reloaded.current)).toHaveLength(300);
     expect(yield* reloaded.get("AAAAAAAB")).toBeUndefined();
     expect((yield* reloaded.get("AAAAAAAA"))?.instant.epochMilliseconds).toBe(
@@ -66,7 +66,7 @@ it.effect("keeps the 300 most recently used Items across reloads", () =>
 it.effect("saves each instant in the ISO form it has always had", () =>
   Effect.gen(function* () {
     let stored: unknown;
-    const app = fakeApp({
+    const host = ledgerHost({
       load: () => stored,
       save: (_key, value) => {
         stored = structuredClone(value);
@@ -74,7 +74,7 @@ it.effect("saves each instant in the ISO form it has always had", () =>
     });
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const ledger = yield* useLedgerOf(app);
+        const ledger = yield* useLedgerOf(host);
         yield* TestClock.adjust(1000);
         yield* ledger.record("AAAAAAAA", "opened");
         yield* TestClock.adjust(120);
@@ -86,7 +86,7 @@ it.effect("saves each instant in the ISO form it has always had", () =>
       AAAAAAAB: { instant: "1970-01-01T00:00:01.12Z", kind: "cited" },
     });
 
-    const reloaded = yield* useLedgerOf(app);
+    const reloaded = yield* useLedgerOf(host);
     expect((yield* reloaded.get("AAAAAAAB"))?.instant.epochMilliseconds).toBe(
       1120,
     );
@@ -102,14 +102,14 @@ it.effect(
       const save = vi.fn();
       const metadataCache = new MemoryMetadataCache();
       const workspace = new MemoryWorkspace();
-      const app = fakeApp({
+      const host = ledgerHost({
         load: () => undefined,
         save,
         workspace,
         metadataCache,
       });
 
-      const ledger = yield* Effect.scoped(useLedgerOf(app));
+      const ledger = yield* Effect.scoped(useLedgerOf(host));
       yield* ledger.record("AAAAAAAA", "opened");
 
       // The workspace and metadata cache listeners close with the ledger and
@@ -131,13 +131,13 @@ it.effect(
       const capture = Logger.make(({ logLevel, fiber }) => {
         logged.push({ level: logLevel, category: fiber.getRef(LogCategory) });
       });
-      const app = fakeApp({
+      const host = ledgerHost({
         load: () => {
           throw new SyntaxError("Unexpected token");
         },
       });
 
-      const ledger = yield* useLedgerOf(app).pipe(
+      const ledger = yield* useLedgerOf(host).pipe(
         Effect.provide(Logger.layer([capture])),
       );
 
@@ -159,7 +159,7 @@ it.effect("records an opened Item note only once the layout is ready", () =>
       frontmatter: { [FIELD_ZOTERO_KEY]: "AAAAAAAA" },
     });
     const ledger = yield* useLedgerOf(
-      fakeApp({ load: () => undefined, workspace, metadataCache }),
+      ledgerHost({ load: () => undefined, workspace, metadataCache }),
     );
 
     workspace.open(note);
@@ -178,18 +178,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const metadataCache = new MemoryMetadataCache();
-      const deferred: TFile[] = [];
-      const workspace = Object.assign(
-        new MemoryWorkspace({ layoutReady: true }),
-        {
-          // Obsidian's debounced active-leaf events: `run` delivers now.
-          requestActiveLeafEvents: {
-            run: () => {
-              for (const file of deferred.splice(0)) workspace.open(file);
-            },
-          },
-        },
-      );
+      const workspace = new MemoryWorkspace({ layoutReady: true });
       const note = new TFile();
       note.path = "Paper.md";
       note.extension = "md";
@@ -197,11 +186,11 @@ it.effect(
         frontmatter: { [FIELD_ZOTERO_KEY]: "AAAAAAAA" },
       });
       const ledger = yield* useLedgerOf(
-        fakeApp({ load: () => undefined, workspace, metadataCache }),
+        ledgerHost({ load: () => undefined, workspace, metadataCache }),
       );
 
       yield* TestClock.adjust(1);
-      deferred.push(note);
+      workspace.deferOpen(note);
       yield* ledger.withoutNoteUse(
         note,
         Effect.gen(function* () {
@@ -222,9 +211,9 @@ it.effect(
   "changes replays the current Uses, delivers updates and ends when the scope closes",
   () =>
     Effect.gen(function* () {
-      const app = fakeApp({ load: () => undefined, save: () => {} });
+      const host = ledgerHost({ load: () => undefined, save: () => {} });
       const scope = yield* Scope.make();
-      const ledger = yield* useLedgerOf(app).pipe(Scope.provide(scope));
+      const ledger = yield* useLedgerOf(host).pipe(Scope.provide(scope));
       const delivered = yield* Queue.unbounded<number>();
       const listening = yield* Stream.runForEach(ledger.changes, (entries) =>
         Queue.offer(delivered, Object.keys(entries).length),

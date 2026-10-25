@@ -9,14 +9,15 @@ import {
   SubscriptionRef,
 } from "effect";
 import type { Stream } from "effect";
-import type { App, TFile } from "obsidian";
+import type { TFile } from "obsidian";
 
 import { isIndexedKey } from "@zotlit/db";
 
 import { parseInstant, toInstant } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag, forkEach } from "@/lib/effect-stream";
-import { ObsidianApp } from "@/lib/obsidian-app";
+import { DeviceStorage } from "@/lib/obsidian-device-storage";
+import type { DeviceStorageShape } from "@/lib/obsidian-device-storage";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
@@ -67,10 +68,10 @@ export class UseLedger extends Context.Service<
  * Closing the scope stops recording.
  */
 const makeUseLedger = Effect.gen(function* () {
-  const app = yield* ObsidianApp;
+  const storage = yield* DeviceStorage;
   const metadata = yield* MetadataCache;
   const workspace = yield* Workspace;
-  const ledger = yield* SubscriptionRef.make(newest(yield* readSaved(app)));
+  const ledger = yield* SubscriptionRef.make(newest(yield* readSaved(storage)));
   const excludedOpens = new Map<TFile, number>();
   let closed = false;
 
@@ -89,16 +90,19 @@ const makeUseLedger = Effect.gen(function* () {
     if (previous && DateTime.isGreaterThan(previous.instant, use.instant))
       return use;
     const next = newest({ ...before, [itemKey]: use });
-    app.saveLocalStorage(
-      STORAGE_KEY,
-      Object.fromEntries(
-        Object.entries(next).map(([key, entry]) => [
-          key,
-          // Temporal's ISO form, the bytes the ledger has always saved.
-          { instant: toInstant(entry.instant).toString(), kind: entry.kind },
-        ]),
-      ),
-    );
+    // A failed save stays a defect of `record`, as Obsidian's throw was.
+    yield* storage
+      .save(
+        STORAGE_KEY,
+        Object.fromEntries(
+          Object.entries(next).map(([key, entry]) => [
+            key,
+            // Temporal's ISO form, the bytes the ledger has always saved.
+            { instant: toInstant(entry.instant).toString(), kind: entry.kind },
+          ]),
+        ),
+      )
+      .pipe(Effect.orDie);
     yield* SubscriptionRef.set(ledger, next);
     return use;
   });
@@ -150,7 +154,7 @@ const makeUseLedger = Effect.gen(function* () {
 
   // Obsidian defers file-open: deliver a pending open, so it lands inside or
   // outside an operation's scope as it happened.
-  const flush = () => app.workspace.requestActiveLeafEvents.run();
+  const flush = workspace.requestActiveLeafEvents;
 
   return UseLedger.of({
     current,
@@ -169,21 +173,24 @@ const makeUseLedger = Effect.gen(function* () {
     record,
     withoutNoteUse: Effect.fn("UseLedger.withoutNoteUse")((file, open) =>
       Effect.acquireUseRelease(
-        Effect.sync(() => {
-          flush();
-          excludedOpens.set(file, (excludedOpens.get(file) ?? 0) + 1);
-        }),
+        flush.pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              excludedOpens.set(file, (excludedOpens.get(file) ?? 0) + 1);
+            }),
+          ),
+        ),
         () => open,
         () =>
-          Effect.sync(() => {
-            try {
-              flush();
-            } finally {
-              const remaining = excludedOpens.get(file)! - 1;
-              if (remaining) excludedOpens.set(file, remaining);
-              else excludedOpens.delete(file);
-            }
-          }),
+          flush.pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                const remaining = excludedOpens.get(file)! - 1;
+                if (remaining) excludedOpens.set(file, remaining);
+                else excludedOpens.delete(file);
+              }),
+            ),
+          ),
       ),
     ),
   });
@@ -192,15 +199,18 @@ const makeUseLedger = Effect.gen(function* () {
 export const layerUseLedger: Layer.Layer<
   UseLedger,
   never,
-  ObsidianApp | MetadataCache | Workspace
+  DeviceStorage | MetadataCache | Workspace
 > = Layer.effect(UseLedger, makeUseLedger);
 
 /**
  * The Uses saved for this vault, or none when they cannot be read: the ledger
  * builds during plugin load, so a failed read must not stop the plugin.
  */
-function readSaved(app: App): Effect.Effect<Record<string, Use>> {
-  return Effect.try(() => loadUses(app.loadLocalStorage(STORAGE_KEY))).pipe(
+function readSaved(
+  storage: DeviceStorageShape,
+): Effect.Effect<Record<string, Use>> {
+  return storage.load(STORAGE_KEY).pipe(
+    Effect.flatMap((raw) => Effect.try(() => loadUses(raw))),
     Effect.catch((error) =>
       Effect.logWarning("Could not read the saved Uses; starting empty").pipe(
         Effect.annotateLogs({ error: error.cause }),

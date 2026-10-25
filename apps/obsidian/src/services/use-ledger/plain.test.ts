@@ -5,7 +5,7 @@ import { expect } from "vitest";
 
 import { subscribe } from "@/lib/effect-stream";
 
-import { buildUseLedger, fakeApp } from "./__fixtures__";
+import { buildUseLedger, ledgerHost } from "./__fixtures__";
 import type { PlainLedger as Ledger } from "./plain";
 
 // #1705: a throwing subscriber stays registered and sees both immediate Uses.
@@ -14,7 +14,7 @@ it.effect("keeps a throwing listener subscribed for later Uses", () =>
     const stack = yield* Effect.acquireDisposable(
       Effect.tryPromise(async () => new AsyncDisposableStack()),
     );
-    const ledger = buildUseLedger(fakeApp({ load: () => undefined }), stack);
+    const ledger = buildUseLedger(ledgerHost({ load: () => undefined }), stack);
     const received: Ledger[] = [];
     const { promise, resolve } = Promise.withResolvers<void>();
     stack.defer(

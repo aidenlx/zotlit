@@ -323,14 +323,10 @@ export default defineConfig({
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
-      // No tag member yet: `workspace.requestActiveLeafEvents` (use-ledger),
-      // the side splits (library/view.ts), and the raw workspace that the
-      // editor lookup takes (library/view.ts, library/item-actions.ts).
-      files: [
-        "src/services/use-ledger/service.ts",
-        "src/views/library/item-actions.ts",
-        "src/views/library/view.ts",
-      ],
+      // No tag member yet: the side splits (library/view.ts), and the raw
+      // workspace that the editor lookup takes (library/view.ts,
+      // library/item-actions.ts).
+      files: ["src/views/library/item-actions.ts", "src/views/library/view.ts"],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
