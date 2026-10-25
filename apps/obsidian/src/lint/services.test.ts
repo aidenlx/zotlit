@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 
 import {
   cliCommandRegistration,
+  clockTime,
   effectNativeResources,
   interruptPredicate,
   noDefaultRuntime,
@@ -337,6 +338,113 @@ tester.run("no-default-runtime", noDefaultRuntime, {
     {
       code: 'import { Effect as E } from "@/lib/effect";\nawait E.runPromiseExit(x);',
       errors: [{ messageId: "empty" }],
+    },
+  ],
+});
+
+const services = "/repo/apps/obsidian/src/services/example/layer.ts";
+const library = "/repo/apps/obsidian/src/lib/example.ts";
+const effectImport = 'import { Effect } from "@/lib/effect";\n';
+const instantOption = { messageId: "option" };
+
+tester.run("clock-time", clockTime, {
+  valid: [
+    // No Effect in the file: the legacy clock stays.
+    { code: "const at = Date.now();", filename: library },
+    { code: "const at = Temporal.Now.instant();", filename: library },
+    { code: "const at = performance.now();", filename: library },
+    {
+      code: "const at = new Date();",
+      filename: library,
+    },
+    // A type-only import of the bridge is not Effect code.
+    {
+      code: 'import type { EffectBridge } from "@/lib/effect-bridge";\nconst at = Date.now();\nconst instant = Temporal.Now.instant();',
+      filename: library,
+    },
+    // Reading time through Clock, and building a Date from a value.
+    {
+      code: `${effectImport}const read = Effect.gen(function* () {\n  const at = yield* Clock.currentTimeMillis;\n  return new Date(at);\n});`,
+      filename: library,
+    },
+    // Another object's `now`.
+    { code: `${effectImport}const at = clock.now();`, filename: library },
+    {
+      code: `${effectImport}const at = Temporal.Instant.from(text);`,
+      filename: library,
+    },
+    // A layer that reads Clock takes no `now`.
+    {
+      code: `${effectImport}export const layer = (options: { readonly root: string }) => Layer.empty;`,
+      filename: services,
+    },
+    // `now` as a value, not a function, and a non-layer function.
+    {
+      code: `${effectImport}export const layerFor = (options: { readonly now: string }) => Layer.empty;`,
+      filename: services,
+    },
+    {
+      code: `${effectImport}export function build(options: { now?: () => Temporal.Instant }) {}`,
+      filename: services,
+    },
+    // Outside src/services the option part does not apply.
+    {
+      code: `${effectImport}export const layer = (options: { now?: () => number }) => Layer.empty;`,
+      filename: library,
+    },
+  ],
+  invalid: [
+    {
+      code: `${effectImport}const at = Date.now();`,
+      filename: library,
+      errors: [{ messageId: "clock" }],
+    },
+    {
+      code: `${effectImport}const at = Temporal.Now.instant();`,
+      filename: library,
+      errors: [{ messageId: "clock" }],
+    },
+    {
+      code: `${effectImport}const zone = Temporal.Now.timeZoneId();`,
+      filename: library,
+      errors: [{ messageId: "clock" }],
+    },
+    {
+      code: 'import { Clock } from "effect";\nconst at = performance.now();',
+      filename: library,
+      errors: [{ messageId: "clock" }],
+    },
+    {
+      code: `${effectImport}const at = new Date();`,
+      filename: library,
+      errors: [{ messageId: "clock" }],
+    },
+    {
+      code: `${effectImport}export const layer = (options: { readonly now?: () => Temporal.Instant } = {}) => Layer.empty;`,
+      filename: services,
+      errors: [instantOption],
+    },
+    {
+      code: `${effectImport}export function layerLive(options: { now: () => number }) { return Layer.empty; }`,
+      filename: services,
+      errors: [instantOption],
+    },
+    {
+      // The options type is declared in the same file.
+      code: `${effectImport}interface LayerOptions { readonly now?: () => Temporal.Instant }\nexport const layer = (options: LayerOptions = {}) => Layer.empty;`,
+      filename: services,
+      errors: [instantOption],
+    },
+    {
+      code: `${effectImport}export type LayerOptions = Base & { now(): number };\nexport const layer = ({ now }: LayerOptions) => Layer.empty;`,
+      filename: services,
+      errors: [instantOption],
+    },
+    {
+      // A plain parameter named `now`.
+      code: `${effectImport}export const layerSessions = (now: () => Temporal.Instant = () => Temporal.Instant.from(zero)) => Layer.empty;`,
+      filename: services,
+      errors: [instantOption],
     },
   ],
 });

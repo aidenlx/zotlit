@@ -298,6 +298,36 @@ export default defineConfig({
       rules: { "zotlit-services/no-default-runtime": "off" },
     },
     {
+      files: ["src/**/*.{ts,tsx}"],
+      excludeFiles: [
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/*.browser-test.ts",
+        "**/__fixtures__/**",
+        "**/__fixtures__.ts",
+        // Benchmarks measure wall time on purpose.
+        "**/*.bench.ts",
+        // Converts the Effect Clock into a Temporal function for a non-Effect core.
+        "src/lib/effect-clock.ts",
+      ],
+      rules: { "zotlit-services/clock-time": "error" },
+    },
+    {
+      // Clock backlog: read time through Clock (`Clock.currentTimeMillis` or `DateTime.now` in Effect code; `instantClock(yield* Clock.Clock)` from `@/lib/effect-clock` for a non-Effect core), then remove the file from the list.
+      files: [
+        "src/services/citation-index/snapshot.ts",
+        "src/services/item-lookup/service.ts",
+        "src/services/item-query/answer.ts",
+        "src/services/item-query/job.ts",
+        "src/services/item-query/measure.ts",
+        "src/services/item-query/service.ts",
+        "src/services/item-query/trace.ts",
+        "src/services/note-feature/operations.ts",
+        "src/views/annot-view/view.tsx",
+      ],
+      rules: { "zotlit-services/clock-time": "off" },
+    },
+    {
       files: ["src/services/**/plain.ts"],
       rules: { "zotlit-services/plain-adapter-streams": "error" },
     },
