@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { Effect } from "@/lib/effect";
 import type { Settings } from "@/services/settings/schema";
 
 import { FILES, openerHarness } from "./__fixtures__";
@@ -50,7 +51,12 @@ async function host(
   const registration = registerFileLinkCapture({
     opener,
     attachments: resolver,
-    settings: { current: { "reader.open-file-links": enabled } as Settings },
+    settings: {
+      current: Effect.succeed({
+        "reader.open-file-links": enabled,
+      } as Settings),
+    },
+    bridge: { runSync: Effect.runSync },
     window: target,
   });
   let installed = true;

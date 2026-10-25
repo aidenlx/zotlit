@@ -3,7 +3,6 @@ import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
 import { Context, Deferred, Effect, Fiber, Layer } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import { ServiceContainer } from "@/services/service-base";
 
@@ -18,8 +17,8 @@ class Probe extends Context.Service<Probe, { value: number }>()(
 // default scheduler, which Obsidian throttles in a hidden window.
 it.effect("runs its fibers on the browser scheduler", () =>
   Effect.gen(function* () {
-    const stack = yield* acquireAsyncDisposable(
-      async () => new AsyncDisposableStack(),
+    const stack = yield* Effect.acquireDisposable(
+      Effect.tryPromise(async () => new AsyncDisposableStack()),
     );
     const runtime = buildRuntime(Layer.succeed(Probe, { value: 1 }), stack);
 

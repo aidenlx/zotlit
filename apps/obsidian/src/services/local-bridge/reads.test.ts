@@ -18,10 +18,13 @@ import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature
 import { LOCAL_BRIDGE_PATHS } from "@zotlit/workbench/bridge";
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Effect } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { excerptAssetIdentities } from "@/services/excerpt-image/materialize";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -171,7 +174,7 @@ async function harness(
   }
   const fileAt = (path: string): TFile | null =>
     vaultFiles.has(path) ? ({ path } as TFile) : null;
-  const app = {
+  const app = Object.assign({} as App, {
     vault: {
       getName: () => VAULT_NAME,
       getFileByPath: fileAt,
@@ -199,16 +202,17 @@ async function harness(
       getAvailablePathForAttachment: (name: string) =>
         Promise.resolve(`literatures/attachments/${name}`),
     },
-  } as unknown as App;
+  });
 
   const settings = {
-    current: { ...defaults, "attachment.import": true },
-  } as unknown as Pick<PlainPluginSettings, "current">;
+    current: Effect.sync(() => ({ ...defaults, "attachment.import": true })),
+  } satisfies Pick<PluginSettings["Service"], "current">;
 
   const partials = options.partials ?? [CITATION_TEMPLATE];
   const reads = createLocalBridgeReads({
     app,
     settings,
+    bridge: effectBridge(testRuntime()),
     zoteroReads: inProcessReadsService(sharedClientOpener(sqlite)),
     noteIndex: {
       whenIndexed: () => Promise.resolve(),
@@ -272,7 +276,7 @@ async function harness(
 
 /** The registry as the bridge reads it: two Profiles, one of them the built-in. */
 function profileReader(): BridgeProfileReader {
-  return {
+  return Object.assign({} as BridgeProfileReader, {
     ready: Promise.resolve(),
     loaded: true,
     resolveProfile: (selector: string) => {
@@ -288,7 +292,7 @@ function profileReader(): BridgeProfileReader {
       Promise.resolve(
         selector === "default" ? DEFAULT_PROFILE_SOURCE : BOOKS_SOURCE,
       ),
-  } as unknown as BridgeProfileReader;
+  });
 }
 
 it("answers the generated Note, Annotation, and Filename schemas", async () => {

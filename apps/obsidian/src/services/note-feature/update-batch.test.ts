@@ -233,9 +233,10 @@ function makeDeps(
       dbState,
     ),
     settings: {
-      current: defaults,
-      update: vi.fn(),
+      current: Effect.succeed(defaults),
+      update: vi.fn(() => Effect.void),
     },
+    bridge: { runSync: Effect.runSync },
     libraryScope: { resolveLibraries: () => currentScope },
     noteFeature: {
       planCreations: async (keys: readonly string[]) =>
@@ -567,7 +568,10 @@ it("classifies conflicting Companion Profiles as kept rows before any write or p
   deps.noteFeature.writeNoteUpdate = writeNoteUpdate;
   // A remembered Profile persisted by an earlier version stays inert.
   Object.assign(deps.settings, {
-    current: { ...defaults, "note.last-used-profile": books },
+    current: Effect.succeed({
+      ...defaults,
+      "note.last-used-profile": books,
+    }),
   });
   using settingsUpdate = vi.spyOn(deps.settings, "update");
   deps.noteFeature.planCreations = vi.fn(async (keys) =>

@@ -596,7 +596,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     );
     this.register(
       subscribe(this.#deps.runtime, deps.settings.changes, (settings) => {
-        if (!settings) return;
         const bindings = settings["note.default-profile"].bindings;
         this.#bindingDefaults = {
           folder: bindings["note.literature-folder"],
@@ -656,7 +655,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   /** The folder a filename has to sit in to name a Template Document. */
   get #templateFolder(): string {
-    return templateFolderOf(this.#deps.settings);
+    return templateFolderOf(this.#deps.settings, this.#deps.bridge);
   }
   /** The root an editor with no template region of its own writes. */
   get #defaultRoot(): TemplateRoot {
@@ -1880,6 +1879,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         app: this.app,
         lookup: this.#deps.itemLookup,
         settings: this.#deps.settings,
+        bridge: this.#deps.bridge,
       },
       this.store.getState().item ?? undefined,
     )

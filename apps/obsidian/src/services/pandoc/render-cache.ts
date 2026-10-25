@@ -7,7 +7,6 @@ import type { CslItemData } from "@zotlit/db";
 import {
   Cause,
   Context,
-  Deferred,
   Effect,
   Fiber,
   Layer,
@@ -18,7 +17,6 @@ import {
   SubscriptionRef,
 } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
-import { changesUntil } from "@/lib/effect-stream";
 import { Profile } from "@/services/profile/service";
 import { QueryClients } from "@/services/query-client/service";
 import type { Held } from "@/services/query-client/service";
@@ -131,6 +129,16 @@ export interface ReadOptions {
   signal?: AbortSignal;
 }
 
+/** Each bibliography render invalidation. */
+export function renderInvalidated(
+  render: Pick<BibliographyRender["Service"], "events">,
+): Stream.Stream<void> {
+  return render.events.pipe(
+    Stream.filter((event) => event._tag === "invalidated"),
+    Stream.map(() => undefined),
+  );
+}
+
 /** The style IDs a render finds unavailable, each once until it clears. */
 export function missingStyleChanges(
   changes: Stream.Stream<BibliographyRenderState>,
@@ -154,7 +162,6 @@ export const layerBibliographyRender = Layer.effect(
     const scope = yield* Scope.Scope;
     const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
     const styles = new InstalledStyleCache();
-    const stopped = yield* Deferred.make<void>();
     let closed = false;
     const state = yield* SubscriptionRef.make<BibliographyRenderState>({
       vaultPresentation: vaultPresentation(yield* settings.current),
@@ -252,7 +259,7 @@ export const layerBibliographyRender = Layer.effect(
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
         closed = true;
-        yield* Deferred.succeed(stopped, undefined);
+        yield* PubSub.shutdown(state.pubsub);
       }),
     );
     yield* Effect.logInfo("Vault citation presentation selected").pipe(
@@ -362,7 +369,7 @@ export const layerBibliographyRender = Layer.effect(
     });
     return BibliographyRender.of({
       state: SubscriptionRef.get(state),
-      changes: changesUntil(state, Deferred.await(stopped)),
+      changes: SubscriptionRef.changes(state),
       events: Stream.fromPubSub(events),
       render: Effect.fn("BibliographyRender.render")(
         function* (items, presentation) {

@@ -2,10 +2,11 @@
 // over `capability-notices.ts`, which decides what is said and how often.
 //
 // @see apps/obsidian/policies/ui-seams.md
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { Service } from "@/services/service-base";
-import type { ZoteroLocalApiClient } from "@/services/zotero-local-api/service";
+import type { LocalApiPort } from "@/services/zotero-local-api/port";
 
 import {
   allowEditingNotice,
@@ -63,14 +64,20 @@ export interface CapabilityNoticesDeps {
    * a write left on one Annotation — which is where a Write Conflict is heard.
    */
   capabilities: Pick<
-    AnnotationRepository,
-    "capabilityFor" | "mutationFor" | "on" | "probe"
+    AnnotationRepository["Service"],
+    | "annotationChanged"
+    | "capabilityChanges"
+    | "capabilityFor"
+    | "mutationFor"
+    | "probe"
+    | "writeConflicts"
   >;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
   /**
    * What a refused write, a swapped database and a retired mark are heard on,
    * and the one request Allow editing sends.
    */
-  writes: Pick<ZoteroLocalApiClient, "authorize" | "on">;
+  writes: Pick<LocalApiPort, "authorize" | "on">;
   /** Reveals the "Zotero editing" settings row. */
   openEditingSettings: () => void;
   /** Whether an Annotation View on screen already shows this card. */
@@ -96,6 +103,7 @@ export interface CapabilityNoticesDeps {
  */
 export class CapabilityNotices extends Service<void> {
   readonly #capabilities;
+  readonly #bridge;
   readonly #writes;
   readonly #openEditingSettings;
   readonly #cardShown;
@@ -107,6 +115,7 @@ export class CapabilityNotices extends Service<void> {
 
   constructor({
     capabilities,
+    bridge,
     writes,
     openEditingSettings,
     cardShown,
@@ -116,6 +125,7 @@ export class CapabilityNotices extends Service<void> {
   }: CapabilityNoticesDeps) {
     super();
     this.#capabilities = capabilities;
+    this.#bridge = bridge;
     this.#writes = writes;
     this.#openEditingSettings = openEditingSettings;
     this.#cardShown = cardShown;
@@ -149,7 +159,7 @@ export class CapabilityNotices extends Service<void> {
    *   know the gesture is done. The reader ignores it.
    */
   async showEditingCapability(): Promise<void> {
-    await this.#capabilities.probe();
+    await this.#bridge.runPromise(this.#capabilities.probe());
     this.#openEditingSettings();
   }
 
@@ -160,7 +170,9 @@ export class CapabilityNotices extends Service<void> {
    * @param attachmentKey the Attachment's Indexed Key.
    */
   reportBlockedGesture(attachmentKey: string): void {
-    const capability = this.#capabilities.capabilityFor(attachmentKey);
+    const capability = this.#bridge.runSync(
+      this.#capabilities.capabilityFor(attachmentKey),
+    );
     const notice = this.#ledger.blockedGesture(attachmentKey, capability);
     if (!notice) return;
     logger.debug("An edit gesture met a block", { attachmentKey, capability });
@@ -170,28 +182,34 @@ export class CapabilityNotices extends Service<void> {
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
     stack.defer(
-      this.#capabilities.on("capability-changed", () => {
+      this.#bridge.subscribe(this.#capabilities.capabilityChanges, () => {
         this.#ledger.refresh((attachmentKey) =>
-          this.#capabilities.capabilityFor(attachmentKey),
+          this.#bridge.runSync(this.#capabilities.capabilityFor(attachmentKey)),
         );
       }),
     );
     // A conflict the user cannot see is a change lost in silence, so the one
     // notice that answers it is the way to the card.
     stack.defer(
-      this.#capabilities.on("write-conflict", (annotationKey) => {
-        this.#conflicted(annotationKey);
+      this.#bridge.subscribe(this.#capabilities.writeConflicts, (conflict) => {
+        this.#conflicted(conflict.annotationKey);
       }),
     );
     // A card that settled back to any other state has no conflict standing on
     // it, so the next one is news rather than the same one twice.
     stack.defer(
-      this.#capabilities.on("annotation-changed", (annotationKey) => {
-        if (this.#capabilities.mutationFor(annotationKey).kind === "conflict") {
-          return;
-        }
-        this.#ledger.conflictResolved(annotationKey);
-      }),
+      this.#bridge.subscribe(
+        this.#capabilities.annotationChanged,
+        (annotationKey) => {
+          if (
+            this.#bridge.runSync(this.#capabilities.mutationFor(annotationKey))
+              .kind === "conflict"
+          ) {
+            return;
+          }
+          this.#ledger.conflictResolved(annotationKey);
+        },
+      ),
     );
     stack.defer(
       this.#writes.on("write-refused", (failure, library) => {

@@ -1,21 +1,25 @@
 import { parseIndexedKey } from "@zotlit/db";
 
-import { Effect } from "@/lib/effect";
-import { getLogger } from "@/lib/log";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import type { EffectBridge } from "@/lib/effect-bridge";
+import { bridgeLog } from "@/lib/effect-log";
+import { acquireReadLease } from "@/services/zotero-reads/lease";
+import type { ZoteroReads } from "@/services/zotero-reads/service";
 
-import type { ZoteroLocalApiClient } from "./service";
-
-const logger = getLogger("last-read");
+import type { ZoteroLocalApi } from "./service";
 
 /** Send only this live read, against the database that resolved its Attachment. */
 export async function writeReadUse(
   {
     reads,
+    bridge,
     api,
   }: {
-    reads: Pick<PlainZoteroReads, "acquireRead">;
-    api: ZoteroLocalApiClient;
+    reads: Pick<ZoteroReads["Service"], "snapshot">;
+    bridge: Pick<
+      EffectBridge,
+      "runSync" | "runPromise" | "runPromiseExit" | "closed"
+    >;
+    api: Pick<ZoteroLocalApi["Service"], "state" | "writeLastRead">;
   },
   {
     attachmentKey,
@@ -27,15 +31,16 @@ export async function writeReadUse(
     serverID: string | null;
   },
 ): Promise<void> {
+  const log = bridgeLog(bridge, "last-read");
   const parsed = parseIndexedKey(attachmentKey);
-  const state = api.state;
+  const state = bridge.runSync(api.state);
   if (
     !parsed ||
     parsed.groupID !== null ||
     state.kind !== "available" ||
     !state.authorized
   ) {
-    logger.trace("Read write-back skipped", {
+    log.trace("Read write-back skipped", {
       attachmentKey,
       reason: !parsed
         ? "invalid attachment"
@@ -48,7 +53,7 @@ export async function writeReadUse(
     return;
   }
   if (resolvedServerID === null || resolvedServerID !== state.source.serverID) {
-    logger.trace("Read write-back skipped", {
+    log.trace("Read write-back skipped", {
       attachmentKey,
       reason: "resolved source differs",
     });
@@ -57,22 +62,24 @@ export async function writeReadUse(
   try {
     let serverID: string | null;
     {
-      await using lease = await reads.acquireRead();
-      const database = await Effect.runPromise(
+      await using lease = await acquireReadLease(reads, bridge);
+      const database = await bridge.runPromise(
         lease.reads.DatabaseIdentity({}),
       );
       serverID = database.serverID;
     }
     if (serverID !== resolvedServerID) {
-      logger.trace("Read write-back skipped", {
+      log.trace("Read write-back skipped", {
         attachmentKey,
         reason: "current database differs",
       });
       return;
     }
-    await api.writeLastRead(attachmentKey, serverID, instant);
+    await bridge.runPromise(
+      api.writeLastRead(attachmentKey, serverID, instant),
+    );
   } catch (error) {
-    logger.debug("Could not write this read Use to Zotero", {
+    log.debug("Could not write this read Use to Zotero", {
       attachmentKey,
       error,
     });

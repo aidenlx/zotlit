@@ -3,6 +3,7 @@ import type { App, Command, Plugin, TAbstractFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { registerFileMenu } from "@/services/file-menu";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
@@ -95,7 +96,8 @@ function openVault({ note, settings = {} }: VaultOptions = {}) {
   const deps = {
     app,
     zoteroPref: { dataDir: DATA_DIR },
-    settings: { current: resolvedSettings },
+    settings: { current: Effect.succeed(resolvedSettings) },
+    bridge: { runSync: Effect.runSync },
   };
   registerCitationPresentation(
     {

@@ -210,12 +210,6 @@ export const makePortLogger = (
   });
 };
 
-/** Install the worker-side port logger as the Effect logger. */
-export const layerPortLogger = (
-  port: Pick<LogMessagePort, "postMessage">,
-  level: Ref.Ref<PortLogLevel | null>,
-): Layer.Layer<never> => Logger.layer([makePortLogger(port, level)]);
-
 /** Re-emit records from app-agnostic libraries through the worker's logger. */
 export const layerLibraryLogPort: Layer.Layer<never> = Layer.effectDiscard(
   Effect.gen(function* () {

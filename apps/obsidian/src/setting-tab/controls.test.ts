@@ -5,9 +5,11 @@ import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Stream } from "@/lib/effect";
 import { Effect } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import { it } from "@/lib/effect-vitest";
+import type { LocalServer } from "@/services/local-server/service";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
-import { plainSettingsOf } from "@/services/settings/__fixtures__";
+import { settingsRuntimeOf } from "@/services/settings/__fixtures__";
 
 import { ZotLitSettingTab } from "./index";
 import type { ZotLitSettingTabOptions } from "./index";
@@ -17,7 +19,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       let disk: unknown;
-      const settings = yield* plainSettingsOf({
+      const { settings } = yield* settingsRuntimeOf({
         plugin: {
           loadData: async () => null,
           saveData: async (value) => {
@@ -25,7 +27,7 @@ it.effect(
           },
         },
       });
-      yield* Effect.promise(() => settings.loaded);
+      yield* settings.loaded;
       const cleanup: (() => void)[] = [];
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
@@ -48,11 +50,16 @@ it.effect(
         runSync: Effect.runSync,
         runPromise: Effect.runPromise,
       };
+      const runtime = testRuntime();
       const tab = new ZotLitSettingTab({
-        runtime: testRuntime(),
+        runtime,
+        bridge: effectBridge(runtime),
         plugin: { app: {}, register: (off: () => void) => cleanup.push(off) },
         settings,
-        localServer: events,
+        localServer: stubService<LocalServer["Service"]>("LocalServer", {
+          effectivePort: Effect.succeed(null),
+          effectivePortChanges: Stream.empty,
+        }),
         localBridge: events,
         libraryScope: events,
         profile: { ...events, ready: new Promise(() => {}) },
@@ -72,7 +79,7 @@ it.effect(
       expect(tab.getControlValue("note-profile:default:folder")).toBe(
         "Research",
       );
-      yield* Effect.promise(() => settings.flush());
+      yield* settings.flush();
       expect(disk).toMatchObject({
         __VERSION__: 11,
         "citation.at-trigger": true,

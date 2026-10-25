@@ -26,6 +26,7 @@ import type {
 } from "@zotlit/workbench/snapshot";
 
 import { Effect } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { profileRevision } from "@/lib/profile-revision";
 import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
@@ -37,7 +38,7 @@ import {
 } from "@/services/pandoc/styles";
 import type { PlainProfile } from "@/services/profile/plain";
 import type { ProfileReader } from "@/services/profile/service";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
@@ -68,7 +69,8 @@ export class SelectedItemUnavailableError extends Error {
 
 export interface LocalBridgeReadDeps {
   app: App;
-  settings: Pick<PlainPluginSettings, "current">;
+  settings: Pick<PluginSettings["Service"], "current">;
+  bridge: Pick<EffectBridge, "runSync">;
   zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   noteIndex: Pick<
     PlainNoteIndex,

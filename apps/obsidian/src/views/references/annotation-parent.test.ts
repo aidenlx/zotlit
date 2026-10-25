@@ -62,7 +62,10 @@ it("#1704 refreshes an Annotation Citation's parent in References after a databa
     runtime: streamRuntime,
     citationText: { peek: () => null, changed: Stream.empty },
     citekeyEditor: { openIndexedKey: async () => {} },
-    profile: profileReader(harness.settings.current, app.metadataCache),
+    profile: profileReader(
+      () => harness.settingsBridge.runSync(harness.settings.current),
+      app.metadataCache,
+    ),
     pandocEngine: {
       binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
         "PandocEngine",

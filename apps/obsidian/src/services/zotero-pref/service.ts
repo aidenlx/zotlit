@@ -15,15 +15,14 @@ import { COMPANION_ADDON_ID, ZOTERO_DB_FILENAME } from "@/lib/constants";
 import {
   Cause,
   Context,
-  Deferred,
   Effect,
   Layer,
+  PubSub,
+  Stream,
   SubscriptionRef,
 } from "@/lib/effect";
-import type { Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
-import { changesUntil } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import {
@@ -102,6 +101,19 @@ export class ZoteroPref extends Context.Service<
   }
 >()("zotlit/zotero-pref/ZoteroPref") {}
 
+/** Fires when the resolved paths may have moved: the prefs or the data directory override changed. */
+export function resolvedChanged(
+  pref: Pick<ZoteroPref["Service"], "changes">,
+): Stream.Stream<void> {
+  return pref.changes.pipe(
+    Stream.changesWith(
+      (a, b) => a.prefs === b.prefs && a.dataDirOverride === b.dataDirOverride,
+    ),
+    Stream.drop(1),
+    Stream.map(() => undefined),
+  );
+}
+
 export const layerZoteroPref = Layer.effect(
   ZoteroPref,
   Effect.gen(function* () {
@@ -121,7 +133,6 @@ export const layerZoteroPref = Layer.effect(
     const current = SubscriptionRef.get(state);
     let generation = 0;
     let closed = false;
-    const stopped = yield* Deferred.make<void>();
 
     const readProfiles = Effect.fn("ZoteroPref.readProfiles")(function* () {
       const root = getZoteroProfilesRoot();
@@ -244,12 +255,12 @@ export const layerZoteroPref = Layer.effect(
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         closed = true;
-      }).pipe(Effect.andThen(Deferred.succeed(stopped, undefined))),
+      }).pipe(Effect.andThen(PubSub.shutdown(state.pubsub))),
     );
 
     return ZoteroPref.of({
       current,
-      changes: changesUntil(state, Deferred.await(stopped)),
+      changes: SubscriptionRef.changes(state),
       get: Effect.fn("ZoteroPref.get")(function* (name: string) {
         return (yield* current).prefs.get(PREF_BRANCH + name);
       }),

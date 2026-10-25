@@ -2,11 +2,13 @@
 import { getLogger as getLogTapeLogger } from "@logtape/logtape";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
 import * as Logger from "effect/Logger";
 import * as References from "effect/References";
 
 import { setLibraryLogSink } from "@zotlit/shared/logging";
 
+import type { EffectBridge } from "./effect-bridge";
 import {
   LogCategory,
   LogTimestamp,
@@ -138,3 +140,60 @@ export const logServices = Context.make(
   Logger.CurrentLoggers,
   new Set([logTapeLogger]),
 ).pipe(Context.add(References.MinimumLogLevel, "All"));
+
+/**
+ * The failure boundary of a consumer that outlives one bad element: log the
+ * cause under `category`, with `annotations` on that record, and carry on.
+ * Interruption passes through, so shutdown still stops the consumer.
+ */
+export const logAndContinue =
+  (
+    message: string,
+    category: string,
+    annotations?: Readonly<Record<string, unknown>>,
+  ) =>
+  <A, E, R>(
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A | void, never, R> =>
+    effect.pipe(
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
+        const logged = Effect.logError(message, cause);
+        return (
+          annotations ? Effect.annotateLogs(logged, annotations) : logged
+        ).pipe(withLogCategory(category));
+      }),
+    );
+
+/** One level's log call for plain code: the message and the fields it carries. */
+type BridgeLogMethod = (
+  message: string,
+  fields?: Readonly<Record<string, unknown>>,
+) => void;
+
+/**
+ * The log calls of plain code that holds a bridge, written under `category`
+ * through the bridge's runtime so they reach the plugin's loggers.
+ */
+export function bridgeLog(
+  bridge: Pick<EffectBridge, "runSync">,
+  category: string,
+): Record<"trace" | "debug" | "info" | "warn" | "error", BridgeLogMethod> {
+  const at =
+    (log: (message: string) => Effect.Effect<void>): BridgeLogMethod =>
+    (message, fields) => {
+      const record = log(message);
+      bridge.runSync(
+        (fields ? Effect.annotateLogs(record, fields) : record).pipe(
+          withLogCategory(category),
+        ),
+      );
+    };
+  return {
+    trace: at(Effect.logTrace),
+    debug: at(Effect.logDebug),
+    info: at(Effect.logInfo),
+    warn: at(Effect.logWarning),
+    error: at(Effect.logError),
+  };
+}

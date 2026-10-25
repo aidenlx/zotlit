@@ -20,6 +20,7 @@ import {
 } from "@zotlit/workbench/ui";
 import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
@@ -27,7 +28,7 @@ import { MENU_SECTION } from "@/lib/menu-section";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
@@ -81,7 +82,8 @@ export interface ExplorerViewDeps extends TemplateDataDeps {
     | "acquireRead"
   >;
   itemLookup: Pick<ItemLookup, "search" | "openSession">;
-  settings: Pick<PlainPluginSettings, "current" | "changes">;
+  settings: Pick<PluginSettings["Service"], "current" | "changes">;
+  bridge: Pick<EffectBridge, "runSync">;
   templates: Pick<
     PlainTemplate,
     "javascriptTemplatesEnabled" | "render" | "renderCitation"
@@ -683,6 +685,7 @@ export class TemplateDataExplorerView extends ItemView {
       app: this.app,
       lookup: this.#deps.itemLookup,
       settings: this.#deps.settings,
+      bridge: this.#deps.bridge,
     };
     const item = await (searchAll
       ? searchWorkbenchItem(deps)

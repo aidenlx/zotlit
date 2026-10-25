@@ -1,3 +1,4 @@
+import { TestClock } from "effect/testing";
 import { expect, it, vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
@@ -59,10 +60,11 @@ import {
   useFakeTimers,
   writable,
   zoteroLibrary,
+  batchReads,
 } from "./__fixtures__";
 import type { GroupLibrary } from "./__fixtures__";
+import type { RepositoryClient } from "./__fixtures__";
 import { JOIN_WINDOW_MS } from "./history";
-import type { AnnotationRepository } from "./service";
 import type { AnnotationList, AnnotationRecord, LockReason } from "./service";
 import type { GeometryEdit } from "./write";
 
@@ -211,21 +213,23 @@ it("carries each tag's type from both Annotation Sources", async () => {
 
 it("serves one database read to every surface that asks for one attachment at once", async () => {
   await using stack = new AsyncDisposableStack();
-  const { repository, acquireRead } = await setup(stack);
+  const reads = await setup(stack);
+  const { repository } = reads;
 
   const [overlay, view] = await Promise.all([
     repository.read("RGRPDF24"),
     repository.read("RGRPDF24"),
   ]);
 
-  expect(acquireRead).toHaveBeenCalledOnce();
+  expect(batchReads(reads)).toBe(1);
   expect(overlay).toBe(view);
   expect(repository.peek("RGRPDF24")?.value).toBe(overlay);
 });
 
 it("shares one refresh and publishes the canonical held result", async () => {
   await using stack = new AsyncDisposableStack();
-  const { repository, acquireRead } = await setup(stack);
+  const reads = await setup(stack);
+  const { repository, acquireRead } = reads;
   const first = await repository.read("RGRPDF24");
   const gate = Promise.withResolvers<void>();
   const readSnapshot = acquireRead.getMockImplementation()!;
@@ -242,7 +246,7 @@ it("shares one refresh and publishes the canonical held result", async () => {
   gate.resolve();
 
   const refreshed = await overlay;
-  expect(acquireRead).toHaveBeenCalledTimes(2);
+  expect(batchReads(reads)).toBe(2);
   expect(refreshed).toBe(first);
   expect(repository.peek("RGRPDF24")?.value).toBe(first);
 });
@@ -264,7 +268,9 @@ it("drops the whole Zotero database partition on a refresh and names every attac
   await using stack = new AsyncDisposableStack();
   const { repository, client, dbEvents } = await setup(stack);
   const changed: string[] = [];
-  stack.defer(repository.on("annotations-changed", (key) => changed.push(key)));
+  stack.defer(
+    repository.listen("annotations-changed", (key) => changed.push(key)),
+  );
 
   await repository.read("RGRPDF24");
   await repository.read("EPUBBKS2");
@@ -643,7 +649,7 @@ it("announces a write and a draft on one Annotation through one signal", async (
   const { repository } = await writable(stack, zotero.answers);
   const seen: { mutation: string; comment: string | null }[] = [];
   stack.defer(
-    repository.on("annotation-changed", (key) => {
+    repository.listen("annotation-changed", (key) => {
       const state = repository.annotationState(key);
       seen.push({
         mutation: state.mutation.kind,
@@ -670,7 +676,7 @@ it("announces every Annotation a complete read finds gone, with a draft or witho
   repository.editTextField("comment", "K3JRFLFQ", "Worth citing");
   const announced: string[] = [];
   stack.defer(
-    repository.on("annotation-changed", (key) => {
+    repository.listen("annotation-changed", (key) => {
       if (repository.annotationState(key).gone) announced.push(key);
     }),
   );
@@ -909,7 +915,7 @@ it("hides an old database draft and cancels its save schedule", async () => {
     await vi.advanceTimersByTimeAsync(500);
     const hidden = new Promise<string>((resolve) => {
       stack.defer(
-        repository.on("annotation-changed", (key) => {
+        repository.listen("annotation-changed", (key) => {
           if (repository.annotationState(key).hidden) resolve(key);
         }),
       );
@@ -1226,7 +1232,7 @@ it("answers the session's own capability, and announces when one moves", async (
   });
   let announced = 0;
   stack.defer(
-    repository.on("capability-changed", () => {
+    repository.listen("capability-changed", () => {
       announced += 1;
     }),
   );
@@ -1519,15 +1525,19 @@ it("retains a paused draft until an explicit save after authorization returns", 
   useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
-    const { repository, localApi, requests } = await writable(stack, {
-      authorize: () => authorized({ remember: true }),
-      item: () =>
-        annotationItem(
-          afterWrite("PUPR5FG5", { comment: "Keep these words", version: 20 }),
-        ),
-    });
+    const { repository, localApi, localApiService, bridge, requests } =
+      await writable(stack, {
+        authorize: () => authorized({ remember: true }),
+        item: () =>
+          annotationItem(
+            afterWrite("PUPR5FG5", {
+              comment: "Keep these words",
+              version: 20,
+            }),
+          ),
+      });
     repository.editTextField("comment", "PUPR5FG5", "Keep these words");
-    await localApi.forgetAuthorization();
+    await bridge.runPromise(localApiService.forgetAuthorization());
     repository.editTextField("comment", "PUPR5FG5", "Blocked typing");
     expect(repository.textDraftFor("comment", "PUPR5FG5")?.text).toBe(
       "Keep these words",
@@ -1564,22 +1574,25 @@ it("saves text typed during a held draft's save once that save lands", async () 
     const first = Promise.withResolvers<Response>();
     const submitted: string[] = [];
     let version = 20;
-    const { repository, localApi } = await writable(stack, {
-      authorize: () => authorized({ remember: true }),
-      write: (request) => {
-        submitted.push(JSON.parse(request.body ?? "{}").annotationComment);
-        return submitted.length === 1 ? first.promise : writeAccepted();
+    const { repository, localApi, localApiService, bridge } = await writable(
+      stack,
+      {
+        authorize: () => authorized({ remember: true }),
+        write: (request) => {
+          submitted.push(JSON.parse(request.body ?? "{}").annotationComment);
+          return submitted.length === 1 ? first.promise : writeAccepted();
+        },
+        item: () =>
+          annotationItem(
+            afterWrite("PUPR5FG5", {
+              comment: submitted.at(-1),
+              version: version++,
+            }),
+          ),
       },
-      item: () =>
-        annotationItem(
-          afterWrite("PUPR5FG5", {
-            comment: submitted.at(-1),
-            version: version++,
-          }),
-        ),
-    });
+    );
     repository.editTextField("comment", "PUPR5FG5", "Held words");
-    await localApi.forgetAuthorization();
+    await bridge.runPromise(localApiService.forgetAuthorization());
     await localApi.authorize();
 
     const saving = repository.submitTextField("comment", "PUPR5FG5");
@@ -1950,7 +1963,7 @@ it("discards a draft only when its own source confirms deletion", async () => {
   repository.editTextField("comment", "PUPR5FG5", "Unsaved");
   const deleted = new Promise<string>((resolve) => {
     stack.defer(
-      repository.on("annotation-changed", (key) => {
+      repository.listen("annotation-changed", (key) => {
         if (repository.annotationState(key).gone) resolve(key);
       }),
     );
@@ -1980,7 +1993,7 @@ it("discards a queued draft when the verified database confirms deletion after A
     );
     const deleted = new Promise<string>((resolve) => {
       stack.defer(
-        repository.on("annotation-changed", (key) => {
+        repository.listen("annotation-changed", (key) => {
           if (repository.annotationState(key).gone) resolve(key);
         }),
       );
@@ -2039,7 +2052,7 @@ it("announces the pixels a saved recolour moved, off the record Zotero answered 
   });
   const announced: Array<[string, string | null]> = [];
   stack.defer(
-    repository.on("excerpt-pixels-changed", (record) =>
+    repository.listen("excerpt-pixels-changed", (record) =>
       announced.push([record.key, record.color]),
     ),
   );
@@ -2063,7 +2076,7 @@ it("says nothing for a saved write that left the pixels alone", async () => {
   });
   const announced: string[] = [];
   stack.defer(
-    repository.on("excerpt-pixels-changed", (record) =>
+    repository.listen("excerpt-pixels-changed", (record) =>
       announced.push(record.key),
     ),
   );
@@ -2087,7 +2100,7 @@ it("announces nothing while a write is still in flight", async () => {
   });
   const announced: string[] = [];
   stack.defer(
-    repository.on("excerpt-pixels-changed", (record) =>
+    repository.listen("excerpt-pixels-changed", (record) =>
       announced.push(record.key),
     ),
   );
@@ -2111,7 +2124,7 @@ it("announces the pixels a read found moved, where no write of its own said so",
   });
   const announced: Array<[string, string | null, string]> = [];
   stack.defer(
-    repository.on("excerpt-pixels-changed", (record, source) =>
+    repository.listen("excerpt-pixels-changed", (record, source) =>
       announced.push([record.key, record.color, source.kind]),
     ),
   );
@@ -2171,7 +2184,7 @@ it("finds a source change's moved pixels with no mounted consumer to ask", async
   });
   const announced: Array<[string, string | null]> = [];
   stack.defer(
-    repository.on("excerpt-pixels-changed", (record) =>
+    repository.listen("excerpt-pixels-changed", (record) =>
       announced.push([record.key, record.color]),
     ),
   );
@@ -2224,7 +2237,7 @@ it("compares a session's first read against the image this device persists", asy
   });
   const announced: string[] = [];
   stack.defer(
-    repository.on("excerpt-pixels-changed", (record) =>
+    repository.listen("excerpt-pixels-changed", (record) =>
       announced.push(record.key),
     ),
   );
@@ -2358,7 +2371,7 @@ it("shows the fresh Zotero value beside the user's input, with both verbs", asyn
   });
   const conflicted: string[] = [];
   stack.defer(
-    repository.on("write-conflict", (annotationKey, attachmentKey) => {
+    repository.listen("write-conflict", (annotationKey, attachmentKey) => {
       conflicted.push(`${annotationKey} on ${attachmentKey}`);
     }),
   );
@@ -2382,7 +2395,9 @@ it("resolves silently where Zotero already holds the value the write asked for",
     item: () => annotationItem(afterWrite("PUPR5FG5", { color: "#ff6666" })),
   });
   const conflicted: string[] = [];
-  stack.defer(repository.on("write-conflict", (key) => conflicted.push(key)));
+  stack.defer(
+    repository.listen("write-conflict", (key) => conflicted.push(key)),
+  );
 
   const outcome = await repository.patchColor("PUPR5FG5", "#FF6666");
 
@@ -2593,14 +2608,14 @@ it("shows a write in flight as pending, and draws its Pending Proposal at once",
   });
   const states: string[] = [];
   stack.defer(
-    repository.on("annotation-changed", (key) => {
+    repository.listen("annotation-changed", (key) => {
       states.push(repository.mutationFor(key).kind);
     }),
   );
   // What a surface redrawing on the announcement reads, in the same task.
   const announced: (string | null)[] = [];
   stack.defer(
-    repository.on("annotations-changed", (key) => {
+    repository.listen("annotations-changed", (key) => {
       announced.push(colorOf(repository.peek(key)?.value ?? null, "PUPR5FG5"));
     }),
   );
@@ -2635,7 +2650,7 @@ it("stays pending from the first write to the last of a queue on one Annotation"
   const { repository } = await writable(stack, zotero.answers);
   const states: string[] = [];
   stack.defer(
-    repository.on("annotation-changed", (key) => {
+    repository.listen("annotation-changed", (key) => {
       states.push(repository.mutationFor(key).kind);
     }),
   );
@@ -2667,7 +2682,7 @@ it("draws a submitted comment at once, through a refresh, until Zotero confirms 
     list?.annotations.find(({ key }) => key === "PUPR5FG5")?.comment ?? null;
   const drawn: (string | null)[] = [];
   stack.defer(
-    repository.on("annotations-changed", (key) => {
+    repository.listen("annotations-changed", (key) => {
       drawn.push(commentOf(repository.peek(key)?.value ?? null));
     }),
   );
@@ -2811,7 +2826,7 @@ it.each([
     });
     const drawn: (string | null)[] = [];
     stack.defer(
-      repository.on("annotations-changed", (key) => {
+      repository.listen("annotations-changed", (key) => {
         drawn.push(colorOf(repository.peek(key)?.value ?? null, "PUPR5FG5"));
       }),
     );
@@ -3422,7 +3437,7 @@ it("saves a Geometry Edit in one patch and publishes the record Zotero answers",
   });
   const announced: unknown[] = [];
   stack.defer(
-    repository.on("excerpt-pixels-changed", (record) =>
+    repository.listen("excerpt-pixels-changed", (record) =>
       announced.push([record.key, record.position]),
     ),
   );
@@ -3468,7 +3483,7 @@ it("draws a Geometry Edit while it saves as Zotero will store it, and announces 
       ?.value.annotations.find(({ key }) => key === "FDRFQ7C2");
   const pixels: string[] = [];
   stack.defer(
-    repository.on("excerpt-pixels-changed", ({ key }) => pixels.push(key)),
+    repository.listen("excerpt-pixels-changed", ({ key }) => pixels.push(key)),
   );
 
   // The reader's own edge, before Zotero's three decimals.
@@ -3525,7 +3540,9 @@ it("puts Zotero's geometry beside the attempted Geometry Edit on a 412", async (
       annotationItem(afterWrite("FDRFQ7C2", { position: moved, version: 30 })),
   });
   const conflicted: string[] = [];
-  stack.defer(repository.on("write-conflict", (key) => conflicted.push(key)));
+  stack.defer(
+    repository.listen("write-conflict", (key) => conflicted.push(key)),
+  );
 
   const outcome = await repository.patchGeometry(
     "FDRFQ7C2",
@@ -3754,7 +3771,7 @@ it("draws nothing while an automatic comment save is in flight", async () => {
     const resting = drawn();
     const frames: unknown[] = [];
     stack.defer(
-      repository.on("annotation-changed", () => frames.push(drawn())),
+      repository.listen("annotation-changed", () => frames.push(drawn())),
     );
 
     await vi.advanceTimersByTimeAsync(1_000);
@@ -4168,7 +4185,7 @@ it("shares one history across two views, and ends it with the last", async () =>
   const zotero = zoteroHolding("PUPR5FG5");
   const { repository } = await writable(stack, zotero.answers);
   const changed: string[] = [];
-  stack.defer(repository.on("history-changed", (key) => changed.push(key)));
+  stack.defer(repository.listen("history-changed", (key) => changed.push(key)));
 
   repository.openHistory("RGRPDF24");
   repository.openHistory("RGRPDF24");
@@ -4734,21 +4751,6 @@ function movedGeometry(annotationKey: string, step = 0) {
   return { position, sortIndex };
 }
 
-/**
- * A clock the test moves itself, for the window a run of keyboard nudges joins
- * inside. Nothing waits on real time.
- */
-function clock() {
-  let at = NOW;
-  return {
-    now: () => at,
-    /** The pause between two presses. */
-    pass(milliseconds: number): void {
-      at = at.add({ milliseconds });
-    },
-  };
-}
-
 it("puts the position, Sort Index and quoted text back when a drag is undone", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
@@ -4786,14 +4788,11 @@ it("puts the position, Sort Index and quoted text back when a drag is undone", a
 it("undoes a run of keyboard nudges inside the window as one step", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
-  const time = clock();
-  const { repository } = await writable(stack, zotero.answers, {
-    repositoryNow: time.now,
-  });
+  const { repository, runtime } = await writable(stack, zotero.answers);
   repository.openHistory("RGRPDF24");
 
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
-  time.pass(200);
+  await runtime.runPromise(TestClock.adjust(200));
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
   expect(zotero.held("PUPR5FG5")).toMatchObject(movedGeometry("PUPR5FG5", 1));
 
@@ -4809,14 +4808,11 @@ it("undoes a run of keyboard nudges inside the window as one step", async () => 
 it("redoes a joined run of nudges as the one step it became", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
-  const time = clock();
-  const { repository } = await writable(stack, zotero.answers, {
-    repositoryNow: time.now,
-  });
+  const { repository, runtime } = await writable(stack, zotero.answers);
   repository.openHistory("RGRPDF24");
 
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
-  time.pass(200);
+  await runtime.runPromise(TestClock.adjust(200));
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
   await repository.undo("RGRPDF24");
 
@@ -4830,10 +4826,7 @@ it("redoes a joined run of nudges as the one step it became", async () => {
 it("discards the redo steps when a nudge joins the run on top", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
-  const time = clock();
-  const { repository } = await writable(stack, zotero.answers, {
-    repositoryNow: time.now,
-  });
+  const { repository, runtime } = await writable(stack, zotero.answers);
   repository.openHistory("RGRPDF24");
 
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
@@ -4844,7 +4837,7 @@ it("discards the redo steps when a nudge joins the run on top", async () => {
   // A nudge on the Annotation the step under the undone one names joins that
   // step, and a joined edit is a new edit: what a redo would have put back is
   // discarded, as it is for a step of its own.
-  time.pass(200);
+  await runtime.runPromise(TestClock.adjust(200));
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
 
   expect(repository.canRedo("RGRPDF24")).toBe(false);
@@ -4854,14 +4847,11 @@ it("discards the redo steps when a nudge joins the run on top", async () => {
 it("keeps a keyboard nudge made after the window as its own step", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
-  const time = clock();
-  const { repository } = await writable(stack, zotero.answers, {
-    repositoryNow: time.now,
-  });
+  const { repository, runtime } = await writable(stack, zotero.answers);
   repository.openHistory("RGRPDF24");
 
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
-  time.pass(600);
+  await runtime.runPromise(TestClock.adjust(600));
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
 
   expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
@@ -4876,15 +4866,12 @@ it("keeps a keyboard nudge made after the window as its own step", async () => {
 it("keeps a keyboard nudge made at the window's own edge as its own step", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
-  const time = clock();
-  const { repository } = await writable(stack, zotero.answers, {
-    repositoryNow: time.now,
-  });
+  const { repository, runtime } = await writable(stack, zotero.answers);
   repository.openHistory("RGRPDF24");
 
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
   // Exactly the window: the run ends at it rather than inside it.
-  time.pass(JOIN_WINDOW_MS);
+  await runtime.runPromise(TestClock.adjust(JOIN_WINDOW_MS));
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
 
   expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
@@ -4895,14 +4882,11 @@ it("keeps a keyboard nudge made at the window's own edge as its own step", async
 it("keeps a keyboard nudge on another Annotation as its own step", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
-  const time = clock();
-  const { repository } = await writable(stack, zotero.answers, {
-    repositoryNow: time.now,
-  });
+  const { repository, runtime } = await writable(stack, zotero.answers);
   repository.openHistory("RGRPDF24");
 
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5"), "keyboard");
-  time.pass(100);
+  await runtime.runPromise(TestClock.adjust(100));
   await repository.patchGeometry("K3JRFLFQ", moved("K3JRFLFQ"), "keyboard");
 
   expect(await repository.undo("RGRPDF24")).toEqual({
@@ -4921,14 +4905,11 @@ it("keeps a keyboard nudge on another Annotation as its own step", async () => {
 it("keeps a pointer Geometry Edit out of a run of keyboard nudges", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
-  const time = clock();
-  const { repository } = await writable(stack, zotero.answers, {
-    repositoryNow: time.now,
-  });
+  const { repository, runtime } = await writable(stack, zotero.answers);
   repository.openHistory("RGRPDF24");
 
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
-  time.pass(100);
+  await runtime.runPromise(TestClock.adjust(100));
   // A handle drag, inside the window a nudge would have joined in.
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "pointer");
 
@@ -4940,16 +4921,13 @@ it("keeps a pointer Geometry Edit out of a run of keyboard nudges", async () => 
 it("keeps a colour pick out of a run of keyboard nudges", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
-  const time = clock();
-  const { repository } = await writable(stack, zotero.answers, {
-    repositoryNow: time.now,
-  });
+  const { repository, runtime } = await writable(stack, zotero.answers);
   repository.openHistory("RGRPDF24");
 
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
-  time.pass(100);
+  await runtime.runPromise(TestClock.adjust(100));
   await repository.patchColor("PUPR5FG5", "#ff6666");
-  time.pass(100);
+  await runtime.runPromise(TestClock.adjust(100));
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
 
   // Steps of different kinds never merge, so the nudge after the pick is its
@@ -5534,7 +5512,7 @@ it("re-reads after a 412 and applies the same names again, with no Write Conflic
   const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
   const { repository } = await writable(stack, zotero.answers);
   let conflicts = 0;
-  stack.defer(repository.on("write-conflict", () => (conflicts += 1)));
+  stack.defer(repository.listen("write-conflict", () => (conflicts += 1)));
 
   repository.editTags("PUPR5FG5", ["review", "nlp", "figure"]);
   // Zotero moves under the session, and ZotLit has not read it yet.
@@ -5560,7 +5538,7 @@ it("shares one tag draft and preserves it across unrelated refresh changes", asy
   const { repository } = await writable(stack, zotero.answers);
   const announced: string[] = [];
   stack.defer(
-    repository.on("annotation-changed", (key) => announced.push(key)),
+    repository.listen("annotation-changed", (key) => announced.push(key)),
   );
 
   // The Mark Popup starts the session; the card opens onto the same draft.
@@ -5590,7 +5568,7 @@ it("saves, conflicts, and discards a comment draft and a tag draft on one Annota
     const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
     const { repository } = await writable(stack, zotero.answers);
     let conflicts = 0;
-    stack.defer(repository.on("write-conflict", () => (conflicts += 1)));
+    stack.defer(repository.listen("write-conflict", () => (conflicts += 1)));
 
     // Both editors are open on one Annotation; the tag session ends first.
     repository.editTextField("comment", "PUPR5FG5", "Worth citing");
@@ -5666,7 +5644,7 @@ it("requires a choice when Zotero changes a drafted Quoted Text, and ends it by 
   const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
   const { repository, requests } = await writable(stack, zotero.answers);
   let conflicts = 0;
-  stack.defer(repository.on("write-conflict", () => (conflicts += 1)));
+  stack.defer(repository.listen("write-conflict", () => (conflicts += 1)));
   const patches = (from: number) =>
     requests.slice(from).filter(({ method }) => method === "PATCH");
 
@@ -5746,7 +5724,7 @@ it("settles a Quoted Text draft that Zotero already holds with no conflict", asy
   const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
   const { repository, requests } = await writable(stack, zotero.answers);
   let conflicts = 0;
-  stack.defer(repository.on("write-conflict", () => (conflicts += 1)));
+  stack.defer(repository.listen("write-conflict", () => (conflicts += 1)));
   repository.editTextField("text", "PUPR5FG5", "Same words");
   zotero.changeInZotero({ text: "Same words" });
   const sent = requests.length;
@@ -5859,7 +5837,7 @@ it("keeps the verbs live and the draft saving until the read-back lands", async 
   // closes onto the new chips rather than the old ones.
   let tagsWhenClosed: readonly string[] | undefined;
   stack.defer(
-    repository.on("annotation-changed", () => {
+    repository.listen("annotation-changed", () => {
       if (repository.tagDraftFor("PUPR5FG5")) return;
       tagsWhenClosed = repository
         .peek("RGRPDF24")
@@ -5887,7 +5865,7 @@ it("hides an old database's tag draft when the database switches", async () => {
   repository.editTags("PUPR5FG5", ["figure"]);
   const hidden = new Promise<string>((resolve) => {
     stack.defer(
-      repository.on("annotation-changed", (key) => {
+      repository.listen("annotation-changed", (key) => {
         if (repository.annotationState(key).hidden) resolve(key);
       }),
     );
@@ -5913,10 +5891,13 @@ it("hides an old database's tag draft when the database switches", async () => {
 it("holds a tag draft when editing becomes unavailable, until Save tags after it returns", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
-  const { repository, localApi } = await writable(stack, zotero.answers);
+  const { repository, localApi, localApiService, bridge } = await writable(
+    stack,
+    zotero.answers,
+  );
 
   repository.editTags("PUPR5FG5", ["review", "nlp", "todo"]);
-  await localApi.forgetAuthorization();
+  await bridge.runPromise(localApiService.forgetAuthorization());
   expect(repository.tagDraftFor("PUPR5FG5")?.manualSave).toBe(true);
   // The editor closes as editing goes, and adds the text still typed first.
   repository.editTags("PUPR5FG5", ["review", "nlp", "todo", "figure"]);
@@ -6055,7 +6036,7 @@ it("discards a tag draft when deletion is confirmed in Zotero", async () => {
   repository.editTags("PUPR5FG5", ["figure"]);
   const deleted: string[] = [];
   stack.defer(
-    repository.on("annotation-changed", (key) => {
+    repository.listen("annotation-changed", (key) => {
       if (repository.annotationState(key).gone) deleted.push(key);
     }),
   );
@@ -6086,9 +6067,12 @@ it("discards the tag draft with the comment draft when the Annotation is deleted
 it("discards a held tag draft and keeps the tags Zotero holds", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
-  const { repository, localApi } = await writable(stack, zotero.answers);
+  const { repository, localApiService, bridge } = await writable(
+    stack,
+    zotero.answers,
+  );
   repository.editTags("PUPR5FG5", ["figure"]);
-  await localApi.forgetAuthorization();
+  await bridge.runPromise(localApiService.forgetAuthorization());
   await repository.submitTags("PUPR5FG5", { automatic: true });
 
   repository.discardTagDraft("PUPR5FG5");
@@ -6103,7 +6087,7 @@ it("discards a held tag draft and keeps the tags Zotero holds", async () => {
 
 /** Save one tag session that ends on `names`, as the editor closing does. */
 async function saveTags(
-  repository: AnnotationRepository,
+  repository: RepositoryClient,
   names: readonly string[],
 ): Promise<void> {
   repository.editTags("PUPR5FG5", names);
@@ -6199,7 +6183,7 @@ it("sends the tag undo again after a 412, applied to the fresh tags", async () =
   const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
   const { repository } = await writable(stack, zotero.answers);
   let conflicts = 0;
-  stack.defer(repository.on("write-conflict", () => (conflicts += 1)));
+  stack.defer(repository.listen("write-conflict", () => (conflicts += 1)));
   repository.openHistory("RGRPDF24");
   await saveTags(repository, ["review", "nlp", "figure"]);
   const sent = zotero.patches.length;
@@ -6348,10 +6332,7 @@ function expectedLocks(locked: Readonly<Record<string, LockReason>> = {}) {
   );
 }
 
-function recordOf(
-  repository: AnnotationRepository,
-  key: string,
-): AnnotationRecord {
+function recordOf(repository: RepositoryClient, key: string): AnnotationRecord {
   const record = repository
     .peek("RGRPDF24")
     ?.value.annotations.find((annotation) => annotation.key === key);
@@ -6454,7 +6435,9 @@ it("refuses every verb on an External Annotation before any request", async () =
   );
   const sent = requests.length;
   const drawn: string[] = [];
-  stack.defer(repository.on("annotations-changed", (key) => drawn.push(key)));
+  stack.defer(
+    repository.listen("annotations-changed", (key) => drawn.push(key)),
+  );
 
   const outcomes = [
     await repository.patchColor("PUPR5FG5", "#ff6666"),

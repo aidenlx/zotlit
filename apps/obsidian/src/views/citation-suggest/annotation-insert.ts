@@ -2,6 +2,7 @@
 // annotation rendered through the user's template.
 import type { App, MarkdownFileInfo } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { getLogger } from "@/lib/log";
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
 import type { NoteFeature } from "@/services/note-feature";
@@ -16,7 +17,8 @@ const logger = getLogger(["views", "annotation-suggest"]);
 
 export interface AnnotationInsertDeps {
   app: App;
-  annotations: Pick<AnnotationRepository, "read">;
+  annotations: Pick<AnnotationRepository["Service"], "read">;
+  bridge: Pick<EffectBridge, "runPromise" | "runSync">;
   noteFeature: Pick<NoteFeature, "prepareAnnotationInsert">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   useLedger: Pick<PlainUseLedger, "record">;
@@ -63,7 +65,9 @@ export async function insertAnnotation(
     workspace: deps.app.workspace,
   });
   const sourceScope = deps.zoteroPref.dataDir;
-  const list = await deps.annotations.read(hit.attachmentKey);
+  const list = await deps.bridge.runPromise(
+    deps.annotations.read(hit.attachmentKey),
+  );
   if (!held.valid()) return { kind: "settled" };
   const annotation = list?.annotations.find(({ key }) => key === hit.key);
   if (!list || !annotation) {

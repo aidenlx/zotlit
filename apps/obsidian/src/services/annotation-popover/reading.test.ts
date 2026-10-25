@@ -16,8 +16,8 @@ import {
   useFakeTimers,
 } from "@/services/annotation-repository/__fixtures__";
 
-import { AnnotationLinkReading } from "./reading";
-import { AnnotationPopover } from "./service";
+import { AnnotationPopoverCore } from "./popover";
+import { AnnotationLinkReadingCore } from "./reading";
 
 const HREF = "zotero://open/library/items/RGRPDF24?annotation=PUPR5FG5&page=1";
 
@@ -28,10 +28,11 @@ const HREF = "zotero://open/library/items/RGRPDF24?annotation=PUPR5FG5&page=1";
  * test; the section is a real component Obsidian would unload.
  */
 async function harness(stack: AsyncDisposableStack) {
-  const { repository } = await setup(stack);
+  const { service: repository, bridge } = await setup(stack);
   const popover = stack.use(
-    new AnnotationPopover({
+    new AnnotationPopoverCore({
       annotations: repository,
+      bridge,
       excerptDisplay: {
         open: () => {
           throw new Error("The hovered Annotation has no Excerpt Image");
@@ -50,18 +51,19 @@ async function harness(stack: AsyncDisposableStack) {
     { containerEl: container, hoverPopover: null },
   );
   const service = stack.use(
-    new AnnotationLinkReading({
-      app: { workspace: { getLeavesOfType: () => [{ view }] } } as never,
-      plugin: {
-        registerMarkdownPostProcessor: (postProcessor) => {
+    new AnnotationLinkReadingCore({
+      host: {
+        app: { workspace: { getLeavesOfType: () => [{ view }] } } as never,
+        registerMarkdownPostProcessor: (
+          postProcessor: MarkdownPostProcessor,
+        ) => {
           process = postProcessor;
           return postProcessor;
         },
       },
-      annotationPopover: popover,
+      show: (request) => popover.show(request),
     }),
   );
-  await service.ready;
   const el = container.appendChild(document.createElement("div"));
   el.innerHTML = `<p><a class="external-link" href="${HREF}"><strong>p. 1</strong></a></p>`;
   const section = new Component();
@@ -121,7 +123,7 @@ describe("AnnotationLinkReading", () => {
     await using stack = new AsyncDisposableStack();
     const run = await harness(stack);
 
-    await run.service[Symbol.asyncDispose]();
+    run.service[Symbol.dispose]();
     enter(run.anchor);
 
     expect(run.opened()).toBe(false);

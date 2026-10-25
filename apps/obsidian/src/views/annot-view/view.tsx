@@ -13,7 +13,8 @@ import {
 import type { AnnotViewAttachment } from "@zotlit/db";
 
 import { registerMigratingWindowEvent } from "@/lib/disposables";
-import { Effect } from "@/lib/effect";
+import { Effect, Stream } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
@@ -31,7 +32,7 @@ import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type {
-  LocalServerService,
+  LocalServer,
   ReaderTarget,
 } from "@/services/local-server/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
@@ -40,7 +41,7 @@ import type { PdfAnnotationEditor } from "@/services/pdf-annotation-editor/servi
 import type { ReaderSession } from "@/services/reader-session/session";
 import { ZoteroReaderSession } from "@/services/reader-session/zotero";
 import type { ZoteroReaderResolution } from "@/services/reader-session/zotero";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { readerText } from "@/views/query-view/reader-diagnostic";
 import { QueryView } from "@/views/query-view/view";
@@ -126,6 +127,7 @@ const VIEW_MENU_SECTIONS = [
  */
 export interface AnnotViewDeps extends QueryViewDeps {
   runtime: SubscriptionRuntime;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
   reads: Pick<
     PlainZoteroReads,
     | "reads"
@@ -143,8 +145,13 @@ export interface AnnotViewDeps extends QueryViewDeps {
     "libraryRows" | "changed" | "libraries-changed" | "current"
   >;
   liveUpdate: Pick<
-    LocalServerService,
-    "available" | "readerTarget" | "readerClosed" | "on"
+    LocalServer["Service"],
+    | "available"
+    | "availableChanges"
+    | "readerTarget"
+    | "readerTargetChanges"
+    | "readerClosed"
+    | "readerClosedChanges"
   >;
   /** Every open Obsidian PDF view, as the Reader Session it exposes. */
   pdfReaders: Pick<PdfAnnotationEditor, "sessionFor" | "on">;
@@ -155,7 +162,7 @@ export interface AnnotViewDeps extends QueryViewDeps {
   >;
   noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey">;
   itemLookup: Pick<ItemLookup, "openSession">;
-  settings: Pick<PlainPluginSettings, "current" | "update">;
+  settings: Pick<PluginSettings["Service"], "current" | "update">;
 }
 
 export class AnnotationView extends ItemView implements HistorySurface {
@@ -437,6 +444,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
   protected override async onOpen(): Promise<void> {
     this.#zoteroReader = new ZoteroReaderSession({
       liveUpdate: this.#deps.liveUpdate,
+      bridge: this.#deps.bridge,
       resolve: (target, signal) => this.#resolveZoteroReader(target, signal),
       navigate: (annotationKey) => this.#openInZotero(annotationKey),
     });
@@ -458,9 +466,11 @@ export class AnnotationView extends ItemView implements HistorySurface {
     );
 
     this.#store.setState({
-      liveUpdatesOn: this.#deps.liveUpdate.available,
-      zoteroReaderClosed: this.#deps.liveUpdate.readerClosed,
-      capability: this.#deps.annotations.capability,
+      liveUpdatesOn: this.#deps.bridge.runSync(this.#deps.liveUpdate.available),
+      zoteroReaderClosed: this.#deps.bridge.runSync(
+        this.#deps.liveUpdate.readerClosed,
+      ),
+      capability: this.#deps.bridge.runSync(this.#deps.annotations.capability),
     });
 
     this.#layout.render(this.contentEl, <AnnotView />);
@@ -531,23 +541,30 @@ export class AnnotationView extends ItemView implements HistorySurface {
     );
 
     this.register(
-      this.#deps.liveUpdate.on("available", (available) => {
-        // The mode is the user's, so it stands: only the reason the view shows
-        // in place changes with the listener.
-        this.#store.setState({ liveUpdatesOn: available });
-        if (this.#followMode === "zotero-reader") this.#reload();
-      }),
+      this.#deps.bridge.subscribe(
+        Stream.drop(this.#deps.liveUpdate.availableChanges, 1),
+        (available) => {
+          // The mode is the user's, so it stands: only the reason the view
+          // shows in place changes with the listener.
+          this.#store.setState({ liveUpdatesOn: available });
+          if (this.#followMode === "zotero-reader") this.#reload();
+        },
+      ),
     );
 
     this.register(
-      this.#deps.liveUpdate.on("reader/closed", (closed) => {
-        this.#store.setState({ zoteroReaderClosed: closed });
-      }),
+      this.#deps.bridge.subscribe(
+        Stream.drop(this.#deps.liveUpdate.readerClosedChanges, 1),
+        (closed) => {
+          this.#store.setState({ zoteroReaderClosed: closed });
+        },
+      ),
     );
 
     this.register(
-      this.#deps.annotations.on("capability-changed", () =>
-        this.#syncCapability(),
+      this.#deps.bridge.subscribe(
+        this.#deps.annotations.capabilityChanges,
+        () => this.#syncCapability(),
       ),
     );
     // The capability the header reports is the Attachment's, so it moves with
@@ -627,6 +644,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
         app: this.#deps.app,
         lookup: this.#deps.itemLookup,
         settings: this.#deps.settings,
+        bridge: this.#deps.bridge,
       },
       m.annot_view_pin_placeholder(),
     ).then((hit) => {
@@ -665,10 +683,12 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   #enableLiveUpdates(): void {
-    this.#deps.settings.update({
-      "server.enabled": true,
-      "server.live-update": true,
-    });
+    this.#deps.bridge.runSync(
+      this.#deps.settings.update({
+        "server.enabled": true,
+        "server.live-update": true,
+      }),
+    );
   }
 
   // #endregion
@@ -1141,8 +1161,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.#store.setState({
       capability:
         selectedAttachmentKey === null
-          ? this.#deps.annotations.capability
-          : this.#deps.annotations.capabilityFor(selectedAttachmentKey),
+          ? this.#deps.bridge.runSync(this.#deps.annotations.capability)
+          : this.#deps.bridge.runSync(
+              this.#deps.annotations.capabilityFor(selectedAttachmentKey),
+            ),
     });
   }
 

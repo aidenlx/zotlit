@@ -14,10 +14,9 @@ import {
   Scope,
   Stream,
 } from "@/lib/effect";
-import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 
-import { settingsOf, plainSettingsOf, settingsRuntimeOf } from "./__fixtures__";
+import { settingsOf, settingsRuntimeOf } from "./__fixtures__";
 import { layerPluginSettings, PluginSettings } from "./service";
 
 // A pending edit must reach disk before the settings scope finishes closing.
@@ -123,10 +122,10 @@ it.effect(
 );
 
 it.effect(
-  "the adapter supplies snapshots, Promises, and an idempotent unsubscribe",
+  "the bridge supplies snapshots, Promises, and an idempotent unsubscribe",
   () =>
     Effect.gen(function* () {
-      const settings = yield* plainSettingsOf({
+      const { settings, bridge } = yield* settingsRuntimeOf({
         plugin: {
           loadData: async () => ({
             __VERSION__: 11,
@@ -137,23 +136,30 @@ it.effect(
       });
       const seen: (string | null)[] = [];
       const changed = Promise.withResolvers<void>();
-      const stop = subscribe(settings.runtime, settings.changes, (value) => {
+      const stop = bridge.subscribe(settings.changes, (value) => {
         seen.push(value?.["server.hostname"] ?? null);
         if (value?.["server.hostname"] === "/edited") changed.resolve();
       });
       expect(seen).toEqual(["/saved"]);
-      yield* Effect.promise(() => settings.loaded);
-      const latest = settings.loaded;
-      settings.update({ "server.hostname": "/edited" });
-      expect(settings.current?.["server.hostname"]).toBe("/edited");
-      expect((yield* Effect.promise(() => latest))["server.hostname"]).toBe(
+      yield* Effect.promise(() => bridge.runPromise(settings.loaded));
+      bridge.runSync(settings.update({ "server.hostname": "/edited" }));
+      expect(bridge.runSync(settings.current)?.["server.hostname"]).toBe(
         "/edited",
       );
+      // `loaded` takes its snapshot when it runs, so a run after the edit
+      // answers the edited value.
+      expect(
+        (yield* Effect.promise(() => bridge.runPromise(settings.loaded)))[
+          "server.hostname"
+        ],
+      ).toBe("/edited");
       yield* Effect.promise(() => changed.promise);
       stop();
       stop();
-      settings.update({ "server.hostname": "/after-unsubscribe" });
-      yield* Effect.promise(() => settings.flush());
+      bridge.runSync(
+        settings.update({ "server.hostname": "/after-unsubscribe" }),
+      );
+      yield* Effect.promise(() => bridge.runPromise(settings.flush()));
       expect(seen).toEqual(["/saved", "/edited"]);
     }),
 );
@@ -320,28 +326,28 @@ it.effect("#1705 migration failures log the original error and stage", () =>
 
 it.effect("#1705 a throwing subscriber receives both immediate edits", () =>
   Effect.gen(function* () {
-    const settings = yield* plainSettingsOf({
+    const { settings, bridge } = yield* settingsRuntimeOf({
       plugin: { loadData: async () => null, saveData: async () => {} },
     });
     const seen: string[] = [];
     const delivered = Promise.withResolvers<void>();
-    const stop = subscribe(settings.runtime, settings.changes, (value) => {
+    const stop = bridge.subscribe(settings.changes, (value) => {
       seen.push(value["server.hostname"]);
       if (value["server.hostname"] === "/a") throw new Error("listener failed");
       if (value["server.hostname"] === "/b") delivered.resolve();
     });
-    settings.update({ "server.hostname": "/a" });
-    settings.update({ "server.hostname": "/b" });
+    yield* settings.update({ "server.hostname": "/a" });
+    yield* settings.update({ "server.hostname": "/b" });
     yield* Effect.promise(() => delivered.promise);
     stop();
     expect(seen.slice(-2)).toEqual(["/a", "/b"]);
   }),
 );
 
-it.effect("#1705 adapter calls are safe after whole-runtime disposal", () =>
+it.effect("#1705 bridge calls are safe after whole-runtime disposal", () =>
   Effect.gen(function* () {
     const writes: unknown[] = [];
-    const { settings, close } = yield* settingsRuntimeOf({
+    const { settings, bridge, close } = yield* settingsRuntimeOf({
       plugin: {
         loadData: async () => ({
           __VERSION__: 11,
@@ -352,31 +358,37 @@ it.effect("#1705 adapter calls are safe after whole-runtime disposal", () =>
         },
       },
     });
-    const snapshot = settings.current;
-    const loading = settings.loaded;
+    const snapshot = bridge.runSync(settings.current);
+    const loading = bridge.runPromise(settings.loaded);
     yield* Effect.promise(close);
     expect(yield* Effect.promise(() => loading)).toEqual(snapshot);
-    expect(settings.current).toEqual(snapshot);
-    expect(yield* Effect.promise(() => settings.loaded)).toEqual(snapshot);
-    expect(settings.diagnostics).toEqual([]);
-    expect(settings.hydrationOrigin).toBe("current");
-    expect(settings.update({ "server.hostname": "/late" })).toEqual(snapshot);
-    expect(settings.reset()).toEqual(snapshot);
-    settings.updateDefaultLiteratureNoteProfileBindings({
-      "note.import-colored-highlights": true,
-    });
-    const stop = subscribe(settings.runtime, settings.changes, () => {});
+    expect(bridge.runSync(settings.current)).toEqual(snapshot);
+    expect(
+      yield* Effect.promise(() => bridge.runPromise(settings.loaded)),
+    ).toEqual(snapshot);
+    expect(bridge.runSync(settings.diagnostics)).toEqual([]);
+    expect(bridge.runSync(settings.hydrationOrigin)).toBe("current");
+    expect(
+      bridge.runSync(settings.update({ "server.hostname": "/late" })),
+    ).toEqual(snapshot);
+    expect(bridge.runSync(settings.reset())).toEqual(snapshot);
+    bridge.runSync(
+      settings.updateDefaultLiteratureNoteProfileBindings({
+        "note.import-colored-highlights": true,
+      }),
+    );
+    const stop = bridge.subscribe(settings.changes, () => {});
     stop();
     stop();
-    settings.release();
-    yield* Effect.promise(() => settings.flush());
+    bridge.runSync(settings.release());
+    yield* Effect.promise(() => bridge.runPromise(settings.flush()));
     expect(writes).toEqual([]);
   }),
 );
 
 it.effect("#1705 a failed write leaves flush safe after runtime disposal", () =>
   Effect.gen(function* () {
-    const { settings, close } = yield* settingsRuntimeOf({
+    const { settings, bridge, close } = yield* settingsRuntimeOf({
       plugin: {
         loadData: async () => null,
         saveData: () => {
@@ -384,11 +396,15 @@ it.effect("#1705 a failed write leaves flush safe after runtime disposal", () =>
         },
       },
     });
-    settings.update({ "server.hostname": "/edited" });
-    yield* Effect.promise(() => settings.flush().catch(() => {}));
+    bridge.runSync(settings.update({ "server.hostname": "/edited" }));
+    yield* Effect.promise(() =>
+      bridge.runPromise(
+        settings.flush().pipe(Effect.catchCause(() => Effect.void)),
+      ),
+    );
     yield* Effect.promise(close);
     yield* Effect.promise(() =>
-      expect(settings.flush()).resolves.toBeUndefined(),
+      expect(bridge.runPromise(settings.flush())).resolves.toBeUndefined(),
     );
   }),
 );

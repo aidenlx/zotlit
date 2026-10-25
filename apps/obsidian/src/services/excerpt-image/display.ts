@@ -4,9 +4,14 @@
 import { hashKey } from "@tanstack/query-core";
 import type { QueryFunctionContext, QueryKey } from "@tanstack/query-core";
 
-import { getLogger } from "@/lib/log";
-import type { PlainQueryClients } from "@/services/query-client/plain";
+import { Context, Effect } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
+import { scopedBridge, valueOr } from "@/lib/effect-bridge";
+import { bridgeLog } from "@/lib/effect-log";
+import { QueryClients } from "@/services/query-client/service";
+import type { Held } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
+import { serviceLayer } from "@/services/service-layer";
 
 import {
   excerptAnnotationIdentity,
@@ -15,10 +20,9 @@ import {
 } from "./contract";
 import type { ExcerptRequest } from "./contract";
 import type { ExcerptImage } from "./format";
+import { ExcerptImages } from "./layer";
 import { supersedes } from "./service";
 import type { AvailableExcerpt, ExcerptImageService } from "./service";
-
-const logger = getLogger("excerpt-image");
 
 /** The key prefix every live display read lives under. */
 export const EXCERPT_DISPLAY = "excerpt-image-display";
@@ -105,9 +109,11 @@ interface Card {
 export interface ExcerptDisplayDeps {
   /** The plugin's one query client, where every display read is held. */
   queries: Pick<
-    PlainQueryClients,
+    QueryClients["Service"],
     "client" | "invalidate" | "peek" | "read" | "watch"
   >;
+  /** The Effect boundary for the query client's Effect-native operations. */
+  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
   /** One resolution of one request, through the shared PDF queue. */
   resolve: ExcerptImageService["resolve"];
   /**
@@ -247,12 +253,14 @@ export class ExcerptDisplayService extends Service<void> {
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
     stack.defer(
-      this.#deps.queries.watch([EXCERPT_DISPLAY], {
-        settled: (key) => {
-          const slot = this.#slots.get(hashKey(key));
-          if (slot) this.#notify(slot);
-        },
-      }),
+      this.#deps.bridge.runSync(
+        this.#deps.queries.watch([EXCERPT_DISPLAY], {
+          settled: (key) => {
+            const slot = this.#slots.get(hashKey(key));
+            if (slot) this.#notify(slot);
+          },
+        }),
+      ),
     );
     // The display holds no image of its own: a slot that no card demands goes,
     // and the bytes stay in the device-local store the capability owns.
@@ -314,12 +322,12 @@ export class ExcerptDisplayService extends Service<void> {
   async #seed(slot: Slot): Promise<void> {
     // A Held Read that already answers the key needs no fallback: the store
     // read below would be discarded, so it never starts.
-    if (this.#deps.queries.peek(slot.key) !== null) return;
+    if (this.#peek(slot) !== null) return;
     const stored = await this.#deps.stored(slot.latest);
     if (!stored) return;
     if (this.#slots.get(slot.hash) !== slot) return;
     // A publication that landed while the store read ran is the answer now.
-    if (this.#deps.queries.peek(slot.key) !== null) return;
+    if (this.#peek(slot) !== null) return;
     this.#deps.queries.client.setQueryData<AvailableExcerpt>(slot.key, stored);
     this.#notify(slot);
   }
@@ -343,7 +351,7 @@ export class ExcerptDisplayService extends Service<void> {
       await this.#deps.resolve(request, refresh.signal);
     } catch (error) {
       if (!refresh.signal.aborted)
-        logger.debug("Stored excerpt replacement failed", {
+        this.#logDebug("Stored excerpt replacement failed", {
           annotationKey: request.annotation.key,
           error,
         });
@@ -401,15 +409,16 @@ export class ExcerptDisplayService extends Service<void> {
    */
   #start(slot: Slot): void {
     const wanted = excerptKey(slot.latest);
-    this.#deps.queries.invalidate(slot.key);
+    this.#deps.bridge.runSync(this.#deps.queries.invalidate(slot.key));
     // Query Core's own garbage collection can drop the Held Read of a card that
     // is still mounted, so a read that starts with nothing under its key paints
     // what the device persists — the previous image — rather than nothing while
     // it replaces it, and after the replacement fails.
     void this.#seed(slot);
-    const settled = this.#deps.queries.read<AvailableExcerpt>(
-      slot.key,
-      (context) => this.#resolve(slot, context),
+    const settled = this.#heldRead(
+      this.#deps.queries.read<AvailableExcerpt>(slot.key, (context) =>
+        this.#resolve(slot, context),
+      ),
     );
     const reading = { excerpt: wanted, settled };
     slot.read = reading;
@@ -422,10 +431,7 @@ export class ExcerptDisplayService extends Service<void> {
 
   /** The excerpt key of what the slot holds, `null` where it holds nothing. */
   #held(slot: Slot): string | null {
-    return (
-      this.#deps.queries.peek<AvailableExcerpt>(slot.key)?.value.identity.key ??
-      null
-    );
+    return this.#peek(slot)?.value.identity.key ?? null;
   }
 
   /**
@@ -443,7 +449,7 @@ export class ExcerptDisplayService extends Service<void> {
     const request = slot.latest;
     const outcome = await this.#deps.resolve(request, context.signal);
     if (outcome.kind === "unavailable") {
-      logger.debug("Excerpt display has no image", {
+      this.#logDebug("Excerpt display has no image", {
         annotationKey: request.annotation.key,
       });
       throw new ExcerptUnavailable(request.annotation.key);
@@ -465,7 +471,7 @@ export class ExcerptDisplayService extends Service<void> {
         status: card.demand ? "cleared" : card.stated ? "absent" : "reading",
       };
     const request = card.demand;
-    const held = this.#deps.queries.peek<AvailableExcerpt>(slot.key);
+    const held = this.#peek(slot);
     if (!held)
       return {
         image: null,
@@ -492,4 +498,45 @@ export class ExcerptDisplayService extends Service<void> {
     card.held = null;
     for (const listener of card.listeners) listener();
   }
+
+  #logDebug(message: string, fields: Record<string, unknown>): void {
+    bridgeLog(this.#deps.bridge, "excerpt-image").debug(message, fields);
+  }
+
+  /** What the slot's Held Read answers now, `null` where it holds nothing. */
+  #peek(slot: Slot): Held<AvailableExcerpt> | null {
+    return this.#deps.bridge.runSync(
+      this.#deps.queries.peek<AvailableExcerpt>(slot.key),
+    );
+  }
+
+  /**
+   * One Held Read; a read the released query client interrupts answers
+   * `null`: no image.
+   */
+  async #heldRead(
+    read: Effect.Effect<AvailableExcerpt | null, unknown>,
+  ): Promise<AvailableExcerpt | null> {
+    return valueOr(await this.#deps.bridge.runPromiseExit(read), null);
+  }
 }
+
+export class ExcerptDisplays extends Context.Service<
+  ExcerptDisplays,
+  ExcerptDisplayService
+>()("zotlit/excerpt-image/ExcerptDisplays") {}
+
+export const layerExcerptDisplays = serviceLayer(ExcerptDisplays, {
+  key: "excerptDisplay",
+  make: Effect.gen(function* () {
+    const images = yield* ExcerptImages;
+    const queries = yield* QueryClients;
+    const bridge = yield* scopedBridge;
+    return new ExcerptDisplayService({
+      queries,
+      bridge,
+      resolve: (request, signal) => images.resolve(request, signal),
+      stored: (request) => images.stored(request),
+    });
+  }),
+});

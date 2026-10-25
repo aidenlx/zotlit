@@ -22,7 +22,7 @@ import type {
   WireAnnotation,
   ZoteroAnswers,
 } from "./__fixtures__";
-import type { ZoteroLocalApiClient } from "./service";
+import type { LocalApiPort } from "./port";
 
 it("probes lazily on the first demand and names the server the probe answered", async () => {
   await using stack = new AsyncDisposableStack();
@@ -705,9 +705,7 @@ it("announces a capability change only when a probe changes what it learned", as
   expect(announced).toBe(1);
 });
 
-function read(
-  result: Awaited<ReturnType<ZoteroLocalApiClient["listAnnotations"]>>,
-) {
+function read(result: Awaited<ReturnType<LocalApiPort["listAnnotations"]>>) {
   if ("failure" in result) {
     throw new Error(`Expected a list, got ${result.failure.kind}`);
   }
@@ -743,7 +741,7 @@ function pageKey(index: number): string {
   return `PAGE${tail}`;
 }
 
-function nextChange(client: ZoteroLocalApiClient): Promise<void> {
+function nextChange(client: LocalApiPort): Promise<void> {
   return new Promise<void>((resolve) => {
     const off = client.on("changed", () => {
       off();
@@ -757,8 +755,7 @@ async function setup(
   answers: ZoteroAnswers = {},
   options: ClientOptions = {},
 ) {
-  const harness = localApiClient(answers, options);
+  const harness = await localApiClient(answers, options);
   stack.use(harness.client);
-  await harness.client.ready;
   return harness;
 }

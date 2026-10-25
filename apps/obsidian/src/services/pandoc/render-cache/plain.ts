@@ -9,6 +9,7 @@ import type { RenderedCitation } from "@/services/pandoc/engine";
 import {
   BibliographyRender,
   missingStyleChanges,
+  renderInvalidated,
 } from "@/services/pandoc/render-cache";
 import type {
   BibliographyRenderEvents,
@@ -165,10 +166,7 @@ export function plainBibliographyRender(
       Stream.filter((event) => event._tag === "settled"),
       Stream.map((event) => [event.key, event.held] as const),
     ),
-    invalidated: service.events.pipe(
-      Stream.filter((event) => event._tag === "invalidated"),
-      Stream.map(() => undefined),
-    ),
+    invalidated: renderInvalidated(service),
     "style-missing": service.changes.pipe(
       Stream.map((state) => state.missingStyle),
       Stream.changes,

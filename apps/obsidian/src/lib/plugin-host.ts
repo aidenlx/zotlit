@@ -4,8 +4,11 @@ import type { Plugin } from "obsidian";
 import type { CliHost } from "@/lib/cli-command";
 import { Context } from "@/lib/effect";
 
-/** What a layer registers on: Obsidian commands, zotlit:* commands, and the manifest. */
-export type PluginHostShape = Pick<Plugin, "addCommand" | "app" | "manifest"> &
+/** What a layer registers on: Obsidian commands, post-processors, zotlit:* commands, and the manifest. */
+export type PluginHostShape = Pick<
+  Plugin,
+  "addCommand" | "app" | "manifest" | "registerMarkdownPostProcessor"
+> &
   CliHost;
 
 /** The plugin the layer graph runs in. */

@@ -231,7 +231,9 @@ describe("LibraryScope", () => {
   it.effect("emits a change when a repair clears the broken value", () =>
     Effect.gen(function* () {
       const f = yield* makeService({ broken: true });
-      f.settings.update({ [LIBRARY_SCOPE_KEY]: { mode: "all" } });
+      f.bridge.runSync(
+        f.settings.update({ [LIBRARY_SCOPE_KEY]: { mode: "all" } }),
+      );
       yield* changedScope(f, (scope) => scope?.invalid === false);
       expect(f.plain.invalid).toBe(false);
       expect(f.plain.current?.mode).toBe("all");
@@ -244,12 +246,14 @@ describe("LibraryScope", () => {
   it.effect("emits a change when the user selects a different scope", () =>
     Effect.gen(function* () {
       const f = yield* makeService();
-      f.settings.update({
-        [LIBRARY_SCOPE_KEY]: {
-          mode: "selected",
-          libraries: [{ type: "group", groupID: 200 }],
-        },
-      });
+      f.bridge.runSync(
+        f.settings.update({
+          [LIBRARY_SCOPE_KEY]: {
+            mode: "selected",
+            libraries: [{ type: "group", groupID: 200 }],
+          },
+        }),
+      );
       yield* changedScope(f, (scope) => scope?.mode === "selected");
       expect(f.plain.current?.available).toEqual([
         {

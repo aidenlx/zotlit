@@ -7,6 +7,7 @@ import { parse } from "yaml";
 import { getItemsByKey } from "@zotlit/db";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import { Effect } from "@/lib/effect";
 import type { NoteFeatureDeps } from "@/services/note-feature/context";
 import { createNoteFeature } from "@/services/note-feature/operations";
 import type { CreateNoteResult } from "@/services/note-feature/operations";
@@ -97,9 +98,10 @@ async function realCreate(
     },
     zoteroPref: { dataDir: "/Zotero", baseAttachmentPath: null },
     settings: {
-      current,
-      update: () => current,
+      current: Effect.succeed(current),
+      update: () => Effect.succeed(current),
     },
+    bridge: { runSync: Effect.runSync },
     attachmentImport: {
       prepare: async () => ({
         decide: (path: string, origin: string) => ({

@@ -1134,7 +1134,8 @@ function secondInkView(open: ImageReader) {
     page: page as unknown as OverlayPageView,
     records: open.store.getState().records,
     structure: open.structure as never,
-    annotations: open.repository,
+    annotations: open.service,
+    bridge: open.bridge,
   });
   arm(surfaces.store, "ink");
   const pointer = pointerOn(page.div, containerEl);

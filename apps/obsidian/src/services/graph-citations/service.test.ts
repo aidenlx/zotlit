@@ -21,9 +21,11 @@ import type {
 } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeProperty } from "@/lib/theme-hooks";
@@ -615,7 +617,15 @@ async function makeFixture(options: FixtureOptions = {}) {
   );
   const openCitekey = vi.fn(() => Promise.resolve());
   const openIndexedKey = vi.fn(() => Promise.resolve());
-  const citationPopover = { show: vi.fn(), showWork: vi.fn(), hide: vi.fn() };
+  const citationPopover = stubService<
+    import("@/services/citation-popover/service").CitationPopover["Service"] & {
+      showWork: ReturnType<typeof vi.fn>;
+    }
+  >("CitationPopover", {
+    showWork: vi.fn(() => Effect.void),
+    hide: vi.fn(() => Effect.void),
+  });
+  const bridge = owned.use(openTestBridge());
   const readsEvents = testEvents<ZoteroReadsEvents>(["changed", "degraded"]);
   const reads = {
     reads: {
@@ -665,6 +675,7 @@ async function makeFixture(options: FixtureOptions = {}) {
     noteIndex,
     citekeyEditor: { openCitekey, openIndexedKey },
     citationPopover,
+    bridge,
     settings,
   });
   const engines: FakeEngine[] = [];
@@ -800,8 +811,12 @@ describe("GraphCitations installation", () => {
     const engine = fixture.addLeaf("graph");
     await fixture.layoutReady();
     engine.setOptions({ "zotlit-citation-popover": true });
-    fixture.settings.update({ "citation.graph-citations": false });
-    fixture.settings.update({ "citation.graph-citations": true });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.graph-citations": false }),
+    );
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.graph-citations": true }),
+    );
     expect(engine.getOptions()["zotlit-citation-popover"]).toBe(true);
   });
 
@@ -1368,7 +1383,9 @@ describe("GraphCitations hovers", () => {
     expect(fixture.citationPopover.showWork).toHaveBeenCalledTimes(2);
 
     fixture.citationPopover.showWork.mockClear();
-    fixture.settings.update({ "citation.hover-require-mod-graph": false });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.hover-require-mod-graph": false }),
+    );
     hoverEach(engine);
     expect(fixture.citationPopover.showWork).toHaveBeenCalledTimes(2);
   });
@@ -2060,7 +2077,9 @@ describe("GraphCitations node colours", () => {
     engine.nodes = grouped;
     await fixture.layoutReady();
 
-    fixture.settings.update({ "citation.graph-citations": false });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.graph-citations": false }),
+    );
 
     expect(colorsOf(engine.handedOff)).toEqual({
       "Literature/Doe 2024.md": GROUP,
@@ -2093,7 +2112,9 @@ describe("GraphCitations teardown", () => {
     expect(global.renderer.onNodeClick).not.toBe(nativeClick);
     expect(global.renderer.onNodeRightClick).not.toBe(nativeRightClick);
 
-    fixture.settings.update({ "citation.graph-citations": false });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.graph-citations": false }),
+    );
 
     for (const engine of [global, local]) {
       expect(Object.hasOwn(engine, "render")).toBe(false);
@@ -2130,7 +2151,9 @@ describe("GraphCitations teardown", () => {
       }),
     );
 
-    fixture.settings.update({ "citation.graph-citations": false });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.graph-citations": false }),
+    );
     engine.render();
 
     expect(otherPlugin).toHaveBeenCalledTimes(2);
@@ -2147,12 +2170,16 @@ describe("GraphCitations teardown", () => {
     const nativeRightClick = engine.renderer.onNodeRightClick;
     await fixture.layoutReady();
     expect(fixture.citationIndex.lookupCount).toBe(1);
-    fixture.settings.update({ "citation.graph-citations": false });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.graph-citations": false }),
+    );
     expect(fixture.citationIndex.lookupCount).toBe(0);
     expect(engine.renderer.onNodeClick).toBe(nativeClick);
     expect(engine.renderer.onNodeRightClick).toBe(nativeRightClick);
 
-    fixture.settings.update({ "citation.graph-citations": true });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.graph-citations": true }),
+    );
 
     expect(fixture.citationIndex.lookupCount).toBe(1);
     expect(engine.renders).toHaveLength(3);
@@ -2170,14 +2197,20 @@ describe("GraphCitations teardown", () => {
     // What the view would run on its own unload, from the installation the
     // feature going off is about to end.
     const [stale] = fixture.viewCallbacks("hovered");
-    fixture.settings.update({ "citation.graph-citations": false });
-    fixture.settings.update({ "citation.graph-citations": true });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.graph-citations": false }),
+    );
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.graph-citations": true }),
+    );
 
     stale!();
 
     // The installation the re-enable made is the service's still, so the next
     // feature-off restores its leaf.
-    fixture.settings.update({ "citation.graph-citations": false });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.graph-citations": false }),
+    );
     expect(rowNames(engine)).toEqual([]);
     expect(Object.hasOwn(engine, "render")).toBe(false);
   });
@@ -2253,7 +2286,9 @@ describe("GraphCitations Filters rows", () => {
     const engine = fixture.addLeaf("graph");
     await fixture.layoutReady();
 
-    fixture.settings.update({ "citation.wikilink-citations": true });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.wikilink-citations": true }),
+    );
 
     expect(rowNames(engine)).toEqual([
       m.graph_option_pandoc_citations_name(),
@@ -2261,7 +2296,9 @@ describe("GraphCitations Filters rows", () => {
       m.graph_option_citation_connected_only_name(),
     ]);
 
-    fixture.settings.update({ "citation.wikilink-citations": false });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.wikilink-citations": false }),
+    );
 
     expect(rowNames(engine)).toEqual([
       m.graph_option_pandoc_citations_name(),
@@ -2461,7 +2498,9 @@ describe("GraphCitations Filters rows", () => {
     await fixture.layoutReady();
     const drawn = engine.renders.length;
 
-    fixture.settings.update({ "citation.wikilink-citations": true });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.wikilink-citations": true }),
+    );
 
     expect(engine.renders.slice(drawn).map((render) => render.facaded)).toEqual(
       [true],
@@ -2480,7 +2519,9 @@ describe("GraphCitations Filters rows", () => {
     const engine = fixture.addLeaf("graph");
     await fixture.layoutReady();
 
-    fixture.settings.update({ "citation.graph-citations": false });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.graph-citations": false }),
+    );
 
     expect(rowNames(engine)).toEqual([]);
     expect(engine.filterOptions.optionListeners).toEqual({});
@@ -2534,14 +2575,18 @@ describe("GraphCitations Groups button", () => {
     const engine = fixture.addLeaf("graph");
     await fixture.layoutReady();
 
-    fixture.settings.update({ "citation.graph-citations": false });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.graph-citations": false }),
+    );
 
     expect(groupsButtons(engine)).toEqual(["New group"]);
     expect(Object.hasOwn(engine.colorGroupOptions, "setColorQueries")).toBe(
       false,
     );
 
-    fixture.settings.update({ "citation.graph-citations": true });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.graph-citations": true }),
+    );
 
     expect(groupsButtons(engine)).toEqual([
       "New group",
@@ -2637,7 +2682,9 @@ describe("GraphCitations Display row", () => {
       engine.displayOptions,
     ).toggle(true);
 
-    fixture.settings.update({ "citation.wikilink-citations": true });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.wikilink-citations": true }),
+    );
 
     expect(rowNames(engine, engine.displayOptions)).toEqual([
       m.graph_option_color_citation_links_name(),
@@ -2654,7 +2701,9 @@ describe("GraphCitations Display row", () => {
     const engine = fixture.addLeaf("graph");
     await fixture.layoutReady();
 
-    fixture.settings.update({ "citation.graph-citations": false });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.graph-citations": false }),
+    );
 
     expect(rowNames(engine, engine.displayOptions)).toEqual([]);
     expect(engine.displayOptions.optionListeners).toEqual({});
@@ -2891,7 +2940,9 @@ describe("GraphCitations citation edge colour", () => {
       "Alias.md -> Literature/Doe 2024.md": NATIVE_LINE,
     });
 
-    fixture.settings.update({ "citation.graph-citations": false });
+    fixture.settings.bridge.runSync(
+      fixture.settings.update({ "citation.graph-citations": false }),
+    );
 
     expect(paint(engine.renderer)).toEqual({
       "Reading.md -> Literature/Doe 2024.md": NATIVE_LINE,

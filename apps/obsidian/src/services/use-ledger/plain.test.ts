@@ -2,7 +2,6 @@ import { expect } from "vitest";
 
 import { Stream } from "@/lib/effect";
 import { Effect } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 
@@ -12,8 +11,8 @@ import type { Ledger } from "./service";
 // #1705: a throwing subscriber stays registered and sees both immediate Uses.
 it.effect("keeps a throwing listener subscribed for later Uses", () =>
   Effect.gen(function* () {
-    const stack = yield* acquireAsyncDisposable(
-      async () => new AsyncDisposableStack(),
+    const stack = yield* Effect.acquireDisposable(
+      Effect.tryPromise(async () => new AsyncDisposableStack()),
     );
     const ledger = buildUseLedger(fakeApp({ load: () => undefined }), stack);
     const received: Ledger[] = [];

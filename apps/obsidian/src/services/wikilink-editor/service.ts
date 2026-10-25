@@ -5,6 +5,7 @@ import type { App, Plugin } from "obsidian";
 // draw again when something outside their documents changed the answer.
 
 import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
@@ -21,7 +22,7 @@ import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 
 import {
   wikilinkDecorationsChanged,
@@ -43,8 +44,9 @@ export interface WikilinkEditorDeps {
   /** The open-or-create flow every citation surface shares. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
   /** What a hovered citation shows. */
-  citationPopover: CitationPopover;
-  settings: Pick<PlainPluginSettings, "current" | "changes">;
+  citationPopover: Pick<CitationPopover["Service"], "show">;
+  bridge: Pick<EffectBridge, "runSync">;
+  settings: Pick<PluginSettings["Service"], "current" | "changes">;
   citationLookup: {
     observe(changed: () => void): CitationLookupObservation;
   };
@@ -74,6 +76,7 @@ export class WikilinkEditor extends Service<void> {
   readonly #citationText;
   readonly #citekeyEditor;
   readonly #citationPopover;
+  readonly #bridge;
   readonly #settings;
   readonly #citationLookup;
   readonly #extension: Extension;
@@ -95,6 +98,7 @@ export class WikilinkEditor extends Service<void> {
     this.#citationText = deps.citationText;
     this.#citekeyEditor = deps.citekeyEditor;
     this.#citationPopover = deps.citationPopover;
+    this.#bridge = deps.bridge;
     this.#settings = deps.settings;
     this.#citationLookup = deps.citationLookup;
     this.#extension = wikilinkEditorExtension({
@@ -106,7 +110,8 @@ export class WikilinkEditor extends Service<void> {
       open: (citekey, pane) => {
         void this.#citekeyEditor.openCitekey(citekey, pane);
       },
-      showPopover: (request) => this.#citationPopover.show(request),
+      showPopover: (request) =>
+        this.#bridge.runSync(this.#citationPopover.show(request)),
       hoverPreferences: () => this.#display.hover,
       popoverHover: () => this.#display.popoverHover,
       clickIntercepted: () => this.#display.clickIntercepted,

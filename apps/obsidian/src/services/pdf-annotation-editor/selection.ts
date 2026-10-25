@@ -24,6 +24,7 @@ import type {
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { registerDomEvent } from "@/lib/disposables";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
@@ -176,7 +177,7 @@ const logger = getLogger("pdf-annotation-editor");
 
 /** What the selection reads and writes one Annotation through. */
 export type AnnotationEdits = Pick<
-  AnnotationRepository,
+  AnnotationRepository["Service"],
   | "textDraftFor"
   | "deleteAnnotation"
   | "deleteAnnotations"
@@ -264,6 +265,7 @@ export interface MarkSelectionDeps {
   /** Announces the selection to whoever follows this reader. */
   report: (annotationKeys: readonly string[]) => void;
   annotations: AnnotationEdits;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
   /** The colours used last, which a recolour puts a colour first in. */
   colors: ToolColorStore;
   /** What this view's surfaces draw from, the Editing Capability among it. */
@@ -674,10 +676,17 @@ export class MarkSelection implements Disposable {
       if (locked) this.#deps.gestures.blockedPress(locked);
       else if (selected.length === 1) this.#erase(selected);
       else
-        void confirmDelete(this.#deps.app, this.#deps.annotations, {
-          annotationKeys: selected,
-          now: () => this.#deps.now(),
-        });
+        void confirmDelete(
+          this.#deps.app,
+          {
+            annotations: this.#deps.annotations,
+            bridge: this.#deps.bridge,
+          },
+          {
+            annotationKeys: selected,
+            now: () => this.#deps.now(),
+          },
+        );
       return;
     }
     const selected = this.#selectedKeys();
@@ -1048,14 +1057,16 @@ export class MarkSelection implements Disposable {
       end();
       return;
     }
-    const outcome = this.#deps.annotations.patchGeometry(
-      key,
-      {
-        position: proposal,
-        sortIndex,
-        ...(text !== undefined && { text }),
-      },
-      input,
+    const outcome = this.#deps.bridge.runPromise(
+      this.#deps.annotations.patchGeometry(
+        key,
+        {
+          position: proposal,
+          sortIndex,
+          ...(text !== undefined && { text }),
+        },
+        input,
+      ),
     );
     // The write's proposal is drawn from here on.
     end();
@@ -1142,7 +1153,7 @@ export class MarkSelection implements Disposable {
           !state.tagDrafts.has(annotation.key)
         )
           return;
-        annotations.editTags(annotation.key, names);
+        this.#deps.bridge.runSync(annotations.editTags(annotation.key, names));
       },
       onClose: () => setTagging(surfaceState, false),
       within: content,
@@ -1180,7 +1191,9 @@ export class MarkSelection implements Disposable {
    */
   #submitTags(annotationKey: string): void {
     this.#write(
-      this.#deps.annotations.submitTags(annotationKey, { automatic: true }),
+      this.#deps.bridge.runPromise(
+        this.#deps.annotations.submitTags(annotationKey, { automatic: true }),
+      ),
     );
   }
 
@@ -1208,7 +1221,9 @@ export class MarkSelection implements Disposable {
     // shows the held draft in the stored comment's place.
     const held = heldTextDraft(
       "comment",
-      this.#deps.annotations.textDraftFor("comment", annotation.key),
+      this.#deps.bridge.runSync(
+        this.#deps.annotations.textDraftFor("comment", annotation.key),
+      ),
       { block: input.blocks.comment, now: input.now },
     );
     if (held) {
@@ -1250,9 +1265,8 @@ export class MarkSelection implements Disposable {
    */
   #conflictSlot(input: SelectedRowInput): SelectedMarkPopupProps["conflict"] {
     const { annotation } = input;
-    const draft = this.#deps.annotations.textDraftFor(
-      "comment",
-      annotation.key,
+    const draft = this.#deps.bridge.runSync(
+      this.#deps.annotations.textDraftFor("comment", annotation.key),
     );
     if (input.commenting || draft?.state.kind !== "conflict") return null;
     return {
@@ -1270,14 +1284,24 @@ export class MarkSelection implements Disposable {
   #draftActions(annotation: AnnotationRecord): TextDraftActions {
     const { annotations, gestures } = this.#deps;
     const discard = () =>
-      annotations.discardTextDraft("comment", annotation.key);
+      this.#deps.bridge.runSync(
+        annotations.discardTextDraft("comment", annotation.key),
+      );
     return {
       save: () =>
-        this.#write(annotations.submitTextField("comment", annotation.key)),
+        this.#write(
+          this.#deps.bridge.runPromise(
+            annotations.submitTextField("comment", annotation.key),
+          ),
+        ),
       allowEditing: () => gestures.allowEditing(),
       discard,
       applyAgain: () =>
-        this.#write(annotations.retryTextDraft("comment", annotation.key)),
+        this.#write(
+          this.#deps.bridge.runPromise(
+            annotations.retryTextDraft("comment", annotation.key),
+          ),
+        ),
       discardConflict: discard,
     };
   }
@@ -1287,9 +1311,13 @@ export class MarkSelection implements Disposable {
     const { annotations, gestures } = this.#deps;
     return {
       // Save tags is the explicit save, never the editor's automatic one.
-      save: () => this.#write(annotations.submitTags(annotation.key)),
+      save: () =>
+        this.#write(
+          this.#deps.bridge.runPromise(annotations.submitTags(annotation.key)),
+        ),
       allowEditing: () => gestures.allowEditing(),
-      discard: () => annotations.discardTagDraft(annotation.key),
+      discard: () =>
+        this.#deps.bridge.runSync(annotations.discardTagDraft(annotation.key)),
     };
   }
 
@@ -1309,7 +1337,9 @@ export class MarkSelection implements Disposable {
       standing ??
       (this.#sheet.current
         ? null
-        : this.#deps.annotations.editTextField("comment", annotation.key));
+        : this.#deps.bridge.runSync(
+            this.#deps.annotations.editTextField("comment", annotation.key),
+          ));
     if (!draft && !this.#sheet.current) {
       // Closed in the state too, so a later refresh does not try again.
       setCommenting(this.#deps.surfaceState, false);
@@ -1332,7 +1362,13 @@ export class MarkSelection implements Disposable {
         text: standing?.text,
         status: this.#commentControls(input),
         onChange: (text) =>
-          this.#deps.annotations.editTextField("comment", annotation.key, text),
+          this.#deps.bridge.runSync(
+            this.#deps.annotations.editTextField(
+              "comment",
+              annotation.key,
+              text,
+            ),
+          ),
         onSubmit: () => this.#submitCommentEditor(annotation),
         onSave: () => this.#submitCommentEditor(annotation),
         onCancel: close,
@@ -1348,7 +1384,9 @@ export class MarkSelection implements Disposable {
   #commentControls({ annotation, blocks, now }: SelectedRowInput) {
     return fieldEditorControls(
       blocks.comment,
-      this.#deps.annotations.textDraftFor("comment", annotation.key),
+      this.#deps.bridge.runSync(
+        this.#deps.annotations.textDraftFor("comment", annotation.key),
+      ),
       now,
     );
   }
@@ -1356,15 +1394,19 @@ export class MarkSelection implements Disposable {
   #submitCommentEditor(annotation: AnnotationRecord, automatic = false): void {
     const editor = this.#sheet.current;
     if (!editor) return;
-    this.#deps.annotations.editTextField(
-      "comment",
-      annotation.key,
-      editor.text(),
+    this.#deps.bridge.runSync(
+      this.#deps.annotations.editTextField(
+        "comment",
+        annotation.key,
+        editor.text(),
+      ),
     );
     this.#write(
-      this.#deps.annotations.submitTextField("comment", annotation.key, {
-        automatic,
-      }),
+      this.#deps.bridge.runPromise(
+        this.#deps.annotations.submitTextField("comment", annotation.key, {
+          automatic,
+        }),
+      ),
     );
   }
 
@@ -1424,7 +1466,11 @@ export class MarkSelection implements Disposable {
   /** Opens the comment editor where a draft starts. */
   #openComment(annotation: AnnotationRecord, caretAt?: CaretPoint): void {
     this.#caretAt = caretAt;
-    if (this.#deps.annotations.editTextField("comment", annotation.key))
+    if (
+      this.#deps.bridge.runSync(
+        this.#deps.annotations.editTextField("comment", annotation.key),
+      )
+    )
       setCommenting(this.#deps.surfaceState, true);
   }
 
@@ -1438,7 +1484,12 @@ export class MarkSelection implements Disposable {
       this.#endTagSession();
       return;
     }
-    if (!this.#deps.annotations.editTags(annotation.key)) return;
+    if (
+      !this.#deps.bridge.runSync(
+        this.#deps.annotations.editTags(annotation.key),
+      )
+    )
+      return;
     this.#submitCommentEditor(annotation, true);
     setTagging(this.#deps.surfaceState, true);
   }
@@ -1457,7 +1508,7 @@ export class MarkSelection implements Disposable {
    */
   #recolor(annotationKeys: readonly string[], color: string): void {
     recordColorUse(this.#deps.surfaceState, this.#deps.colors, color);
-    void recolor(this.#deps.annotations, {
+    void recolor(this.#deps.annotations, this.#deps.bridge, {
       annotationKeys,
       color,
       now: () => this.#deps.now(),
@@ -1469,7 +1520,7 @@ export class MarkSelection implements Disposable {
    * View's delete settles through.
    */
   #erase(annotationKeys: readonly string[]): void {
-    void erase(this.#deps.annotations, {
+    void erase(this.#deps.annotations, this.#deps.bridge, {
       annotationKeys,
       now: () => this.#deps.now(),
     });

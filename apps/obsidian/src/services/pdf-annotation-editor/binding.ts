@@ -22,6 +22,7 @@ import {
   registerDomEvent,
   registerMigratingWindowEvent,
 } from "@/lib/disposables";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -135,9 +136,12 @@ const COUNTDOWN_INTERVAL = Temporal.Duration.from({ seconds: 1 });
  * hears both of their changes on.
  */
 export type AnnotationReads = Pick<
-  AnnotationRepository,
+  AnnotationRepository["Service"],
   | "annotationState"
+  | "annotationChanged"
+  | "annotationsChanged"
   | "capability"
+  | "capabilityChanges"
   | "capabilityFor"
   | "closeHistory"
   | "textDraftFor"
@@ -149,7 +153,6 @@ export type AnnotationReads = Pick<
   | "editTextField"
   | "editTags"
   | "hold"
-  | "on"
   | "openHistory"
   | "patchColor"
   | "patchColors"
@@ -197,6 +200,7 @@ export interface PdfViewBindingDeps {
   adapter: FileSystemAdapter;
   attachments: AttachmentReads;
   annotations: AnnotationReads;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
   capabilityGestures: CapabilityGestures;
   /**
    * The gestures the Mark Popup reaches outside the reader's own surfaces:
@@ -237,6 +241,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   readonly #adapter;
   readonly #attachments;
   readonly #annotations;
+  readonly #bridge;
   readonly #gestures;
   readonly #markGestures;
   readonly #toolColors;
@@ -348,6 +353,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     adapter,
     attachments,
     annotations,
+    bridge,
     capabilityGestures,
     markGestures,
     toolColors,
@@ -361,6 +367,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     this.#adapter = adapter;
     this.#attachments = attachments;
     this.#annotations = annotations;
+    this.#bridge = bridge;
     this.#gestures = capabilityGestures;
     this.#markGestures = markGestures;
     this.#toolColors = toolColors;
@@ -526,7 +533,9 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   /** Revalidates this PDF surface when Obsidian activates its leaf. */
   activate(): void {
     if (this.#attachment.kind === "resolved") {
-      void this.#annotations.refresh(this.#attachment.attachmentKey);
+      void this.#bridge.runPromise(
+        this.#annotations.refresh(this.#attachment.attachmentKey),
+      );
     }
   }
 
@@ -636,34 +645,43 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     const { attachmentKey } = this.#attachment;
     // The view holds its list while it is open. The hold is released after
     // the history closes, so the list goes as the view closes.
-    this.#surfaces.use(this.#annotations.hold([attachmentKey]));
+    this.#surfaces.use(
+      this.#bridge.runSync(this.#annotations.hold([attachmentKey])),
+    );
     // Two views of one Attachment share one history, and the last of them to
     // close ends it, so the open is matched on the surfaces stack.
-    this.#annotations.openHistory(attachmentKey);
-    this.#surfaces.defer(() => this.#annotations.closeHistory(attachmentKey));
+    this.#bridge.runSync(this.#annotations.openHistory(attachmentKey));
+    this.#surfaces.defer(() =>
+      this.#bridge.runSync(this.#annotations.closeHistory(attachmentKey)),
+    );
     this.#mountSelection(attachmentKey);
     this.#mountToolbar();
     this.#surfaces.defer(
-      this.#annotations.on("annotations-changed", (changedKey) => {
-        if (changedKey !== attachmentKey) return;
-        // What the repository holds now, a write's Pending Proposal among it,
-        // is drawn in the same task; the read that follows replaces it.
-        const held = this.#read ? this.#annotations.peek(attachmentKey) : null;
-        if (held) this.#draw(held.value);
-        this.#refresh();
-      }),
+      this.#bridge.subscribe(
+        this.#annotations.annotationsChanged,
+        (changedKey) => {
+          if (changedKey !== attachmentKey) return;
+          // What the repository holds now, a write's Pending Proposal among it,
+          // is drawn in the same task; the read that follows replaces it.
+          const held = this.#read
+            ? this.#bridge.runSync(this.#annotations.peek(attachmentKey))
+            : null;
+          if (held) this.#draw(held.value);
+          this.#refresh();
+        },
+      ),
     );
     this.#surfaces.use(
       registerDomEvent(this.#view.containerEl, "focusin", (event) => {
         // The Text Draft focuses itself as it opens; a read started then would
         // race the create its finish sends.
         if (event.target === this.#draftArea) return;
-        void this.#annotations.refresh(attachmentKey);
+        void this.#bridge.runPromise(this.#annotations.refresh(attachmentKey));
       }),
     );
     this.#surfaces.use(
       registerMigratingWindowEvent(this.#view.containerEl, "focus", () => {
-        void this.#annotations.refresh(attachmentKey);
+        void this.#bridge.runPromise(this.#annotations.refresh(attachmentKey));
       }),
     );
     this.#surfaces.defer(() => this.#unpaint());
@@ -834,12 +852,14 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     this.#surfaceState = state;
     // The one listener the reader surfaces hear the Editing Capability through.
     this.#surfaces.defer(
-      this.#annotations.on("capability-changed", () =>
+      this.#bridge.subscribe(this.#annotations.capabilityChanges, () =>
         this.#ingestCapability(),
       ),
     );
     // The per-Annotation facts the Mark Popup reads come in the same way.
-    this.#surfaces.use(listenAnnotationEvents(state, this.#annotations));
+    this.#surfaces.use(
+      listenAnnotationEvents(state, this.#annotations, this.#bridge),
+    );
     const popup = {
       contains: (node: Node | null) => host.contains(node),
       sync: () => host.sync(),
@@ -876,6 +896,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       colors: this.#toolColors,
       surfaceState: state,
       annotations: this.#annotations,
+      bridge: this.#bridge,
       now: this.#now,
     });
     this.#creation = creation;
@@ -898,6 +919,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       navigate: (annotationKey) => this.#navigate(annotationKey),
       report: (annotationKeys) => this.#session.reportSelection(annotationKeys),
       annotations: this.#annotations,
+      bridge: this.#bridge,
       colors: this.#toolColors,
       surfaceState: state,
       gestures: {
@@ -1248,8 +1270,10 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   /** What this view may do to its Attachment's Annotations right now. */
   #capability(): EditingCapability {
     return this.#attachment.kind === "resolved"
-      ? this.#annotations.capabilityFor(this.#attachment.attachmentKey)
-      : this.#annotations.capability;
+      ? this.#bridge.runSync(
+          this.#annotations.capabilityFor(this.#attachment.attachmentKey),
+        )
+      : this.#bridge.runSync(this.#annotations.capability);
   }
 
   /**
@@ -1262,11 +1286,13 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     // the edit was blocked would contradict it. No gesture opens Zotero's
     // dialog; only Allow editing does.
     if (editingLive(this.#capability())) return;
-    this.#gesturing = this.#annotations.probe().then(() => {
-      if (this.#surfaces.disposed) return;
-      if (this.#attachment.kind !== "resolved") return;
-      this.#gestures.reportBlockedGesture(this.#attachment.attachmentKey);
-    });
+    this.#gesturing = this.#bridge
+      .runPromise(this.#annotations.probe())
+      .then(() => {
+        if (this.#surfaces.disposed) return;
+        if (this.#attachment.kind !== "resolved") return;
+        this.#gestures.reportBlockedGesture(this.#attachment.attachmentKey);
+      });
   }
 
   /**
@@ -1283,8 +1309,8 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     const { attachmentKey } = this.#attachment;
     const stepping =
       direction === "undo"
-        ? this.#annotations.undo(attachmentKey)
-        : this.#annotations.redo(attachmentKey);
+        ? this.#bridge.runPromise(this.#annotations.undo(attachmentKey))
+        : this.#bridge.runPromise(this.#annotations.redo(attachmentKey));
     const answered = stepping.then((outcome) => {
       if (this.#surfaces.disposed) return;
       const notice = historyOutcomeNotice(outcome, this.#now());
@@ -1459,8 +1485,8 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     if (this.#attachment.kind !== "resolved") return;
     const { attachmentKey } = this.#attachment;
     const serial = ++this.#refreshSerial;
-    this.#refreshing = this.#annotations
-      .read(attachmentKey)
+    this.#refreshing = this.#bridge
+      .runPromise(this.#annotations.read(attachmentKey))
       .then((list) => {
         if (this.#surfaces.disposed || serial !== this.#refreshSerial) return;
         if (list === null) {
@@ -1488,11 +1514,10 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     this.#records = list.annotations;
     this.#marks = groupAnnotationsByPage(list.annotations);
     if (this.#surfaceState)
-      ingestAnnotations(
-        this.#surfaceState,
-        list.annotations,
-        this.#annotations,
-      );
+      ingestAnnotations(this.#surfaceState, list.annotations, {
+        annotations: this.#annotations,
+        bridge: this.#bridge,
+      });
     logger.debug("Annotation marks rebuilt for a PDF view", {
       path: this.filePath,
       source: list.source.kind,

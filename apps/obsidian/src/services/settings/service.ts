@@ -79,7 +79,6 @@ import * as v from "valibot";
 import {
   Cause,
   Context,
-  Deferred,
   Effect,
   Exit,
   Fiber,
@@ -91,7 +90,6 @@ import {
   SubscriptionRef,
 } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
-import { changesUntil } from "@/lib/effect-stream";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 
 import {
@@ -270,14 +268,9 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     migrateV10,
   } = { ...settingsMigrations, ...options };
   const handoff = (options.handoff ?? plugin.app) as Handoff | undefined;
-  const stopped = yield* Deferred.make<void>();
   const state = yield* Effect.acquireRelease(
     SubscriptionRef.make<Readonly<Settings>>(defaults),
-    (state) =>
-      Effect.andThen(
-        Deferred.succeed(stopped, undefined),
-        PubSub.shutdown(state.pubsub),
-      ),
+    (state) => PubSub.shutdown(state.pubsub),
   );
   let overrides: Partial<Settings> = {};
   let broken: BrokenOverrides = new Map();
@@ -790,7 +783,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
   return PluginSettings.of({
     current,
     loaded: current,
-    changes: changesUntil(state, Deferred.await(stopped)).pipe(
+    changes: SubscriptionRef.changes(state).pipe(
       Stream.map((value) => ({ ...value })),
     ),
     diagnostics: Effect.sync(() =>

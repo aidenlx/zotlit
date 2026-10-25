@@ -28,6 +28,7 @@ import {
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
+import { defaults } from "@/services/settings/schema";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import {
   inProcessReadsService,
@@ -139,7 +140,11 @@ function setup(
   } as unknown as WorkspaceLeaf;
   const view = new TestTemplateWorkbenchView(leaf, {
     app,
-    settings: { changes: Stream.empty },
+    settings: {
+      current: Effect.succeed(defaults),
+      changes: Stream.empty,
+    },
+    bridge: { runSync: Effect.runSync },
     pluginVersion: "2.1.3",
     zoteroReads: { state: "ready" },
     zoteroPref: { dataDir: null },

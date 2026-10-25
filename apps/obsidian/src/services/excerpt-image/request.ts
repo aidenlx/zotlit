@@ -15,14 +15,17 @@ import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 
 import { Cause, Data, Effect } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
+import type { ZoteroPref } from "@/services/zotero-pref/service";
+import { acquireReadLease } from "@/services/zotero-reads/lease";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
+import type { ZoteroReads } from "@/services/zotero-reads/service";
 
 import type { ExcerptRequest } from "./contract";
 
@@ -46,6 +49,8 @@ export function savedExcerptRequest(options: {
   sourceScope: string | null;
   zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   paths: AttachmentPathContext;
+  /** Runs the read on the plugin's runtime, so its log reaches the plugin logger. */
+  bridge: Pick<EffectBridge, "runPromise">;
 }): Promise<ExcerptRequest | null> {
   const { annotation, source, sourceScope } = options;
   // The paths as they stand now: a request belongs to the data directory its
@@ -55,12 +60,11 @@ export function savedExcerptRequest(options: {
     baseAttachmentPath: options.paths.baseAttachmentPath,
   };
   if (!source || sourceScope !== paths.dataDir) return Promise.resolve(null);
-  // Callers outside Effect: the one run of this read.
-  return Effect.runPromise(
+  return options.bridge.runPromise(
     Effect.gen(function* () {
       // One Snapshot, so the identity and the attachment come from one database.
-      const lease = yield* acquireAsyncDisposable(() =>
-        options.zoteroReads.acquireRead(),
+      const lease = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() => options.zoteroReads.acquireRead()),
       );
       const request = yield* excerptRequest({
         annotation,
@@ -87,6 +91,41 @@ export function savedExcerptRequest(options: {
       withLogCategory("excerpt-image"),
     ),
   );
+}
+
+/** `savedExcerptRequest` over the Effect services, for a layer's own callbacks. */
+export function savedExcerptRequestOver(services: {
+  readonly reads: Pick<ZoteroReads["Service"], "snapshot">;
+  readonly pref: Pick<ZoteroPref["Service"], "current">;
+  readonly bridge: Pick<
+    EffectBridge,
+    "runSync" | "runPromise" | "runPromiseExit" | "closed"
+  >;
+}): (input: {
+  annotation: AnnotationRecord;
+  source: AnnotationSource | null;
+}) => Promise<ExcerptRequest | null> {
+  return ({ annotation, source }) => {
+    const pref = services.bridge.runSync(services.pref.current);
+    return savedExcerptRequest({
+      annotation,
+      source,
+      sourceScope: pref.dataDir,
+      bridge: services.bridge,
+      zoteroReads: {
+        acquireRead: () => acquireReadLease(services.reads, services.bridge),
+      },
+      paths: {
+        get dataDir() {
+          return services.bridge.runSync(services.pref.current).dataDir;
+        },
+        get baseAttachmentPath() {
+          return services.bridge.runSync(services.pref.current)
+            .baseAttachmentPath;
+        },
+      },
+    });
+  };
 }
 
 /**

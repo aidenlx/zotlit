@@ -5,8 +5,9 @@
 import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 
 import { CurrentAnswer, takeEnter } from "./current-answer";
 import { FirstAnswerGate } from "./first-answer";
@@ -22,7 +23,8 @@ import type {
 export interface ItemSearchDeps {
   app: App;
   lookup: Pick<ItemLookup, "openSession">;
-  settings: Pick<PlainPluginSettings, "current">;
+  settings: Pick<PluginSettings["Service"], "current">;
+  bridge: Pick<EffectBridge, "runSync">;
 }
 
 export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
@@ -104,7 +106,7 @@ export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
   }
 
   override renderSuggestion(hit: SearchHit, el: HTMLElement): void {
-    renderSearchHit(this.#search.settings, hit, el);
+    renderSearchHit(this.#search.settings, this.#search.bridge, hit, el);
     // Rows of Items that share a title read the same; the key tells them apart.
     el.setAttribute("data-indexed-key", hit.item.indexedKey);
   }

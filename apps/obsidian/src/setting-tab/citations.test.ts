@@ -5,6 +5,7 @@ import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
 import { Effect } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { defaults } from "@/services/settings/schema";
@@ -28,10 +29,12 @@ beforeAll(() => {
 describe("hover settings", () => {
   /** The Hover group's rows for a given saved hover action. */
   const hoverRows = (settings: Settings) => {
+    const runtime = testRuntime();
     const ctx = {
-      runtime: testRuntime(),
+      runtime,
+      bridge: effectBridge(runtime),
       app: { internalPlugins: { getEnabledPluginById: () => null } },
-      settings: { current: settings },
+      settings: { current: Effect.succeed(settings) },
       pandocEngine: {
         binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
           "PandocEngine",
@@ -71,10 +74,12 @@ describe("hover settings", () => {
 
 describe("citation source settings", () => {
   it("offers each citation syntax as a source", () => {
+    const runtime = testRuntime();
     const ctx = {
-      runtime: testRuntime(),
+      runtime,
+      bridge: effectBridge(runtime),
       app: { internalPlugins: { getEnabledPluginById: () => null } },
-      settings: { current: defaults },
+      settings: { current: Effect.succeed(defaults) },
       pandocEngine: {
         binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
           "PandocEngine",

@@ -3,8 +3,10 @@ import { describe, it } from "vitest";
 
 import {
   cliCommandRegistration,
+  clockTime,
   effectNativeResources,
   interruptPredicate,
+  noDefaultRuntime,
   noLegacyService,
   noNanoevents,
   layerStreamConsumer,
@@ -12,7 +14,6 @@ import {
   plainAdapterStreams,
   scopeClosed,
   serviceTagId,
-  stateStream,
   workerRpc,
 } from "../../scripts/oxlint-plugin-services";
 
@@ -36,7 +37,7 @@ tester.run("effect-native-resources", effectNativeResources, {
     }`,
     // A generator Effect does not run.
     `function* items() { using lock = take(); yield lock; }`,
-    `Effect.fnUntraced(function* () { yield* acquireDisposable(() => registerEvent(ref)); })`,
+    `Effect.fnUntraced(function* () { yield* Effect.acquireDisposable(Effect.sync(() => registerEvent(ref))); })`,
   ],
   invalid: [
     {
@@ -265,25 +266,6 @@ tester.run("scope-closed", scopeClosed, {
   ],
 });
 
-tester.run("state-stream", stateStream, {
-  valid: [
-    "const changes = changesUntil(state, Deferred.await(stopped));",
-    "const changes = changesUntil(state, (value) => value.stopped);",
-    // A Stream's own changes operator is not the SubscriptionRef one.
-    "const next = Stream.changes(values);",
-  ],
-  invalid: [
-    {
-      code: "const changes = SubscriptionRef.changes(state);",
-      errors: [{ messageId: "changesUntil" }],
-    },
-    {
-      code: "return { changes: SubscriptionRef.changes(state).pipe(Stream.map(clone)) };",
-      errors: [{ messageId: "changesUntil" }],
-    },
-  ],
-});
-
 tester.run("obsidian-events-intake", obsidianEventsIntake, {
   valid: [
     // Legacy services keep registerEvent on their stack until they convert.
@@ -301,9 +283,148 @@ tester.run("obsidian-events-intake", obsidianEventsIntake, {
     {
       // The acquire callback is nested, but it still runs inside the layer.
       code: `Effect.fnUntraced(function* () {
-        yield* acquireDisposable(() => registerEvent(workspace.on("file-open", open)));
+        yield* Effect.acquireDisposable(Effect.sync(() => registerEvent(workspace.on("file-open", open))));
       })`,
       errors: [{ messageId: "intake" }],
+    },
+  ],
+});
+
+tester.run("no-default-runtime", noDefaultRuntime, {
+  valid: [
+    'import { Effect } from "@/lib/effect";\nruntime.runSync(x);',
+    'import { Effect } from "@/lib/effect";\nbridge.runPromise(x);',
+    'import { Effect } from "@/lib/effect";\nEffect.runSyncWith(ctx)(x);',
+    'import { Effect } from "effect";\nEffect.runPromiseWith(ctx)(x);',
+    // A local name that is not the Effect module.
+    "const Effect = { runSync: () => 0 };\nEffect.runSync(x);",
+    'import { Effect } from "./not-effect";\nEffect.runSync(x);',
+    // Not the Effect namespace of this module.
+    'import { Effect } from "@/lib/effect";\nStream.runSync(x);',
+  ],
+  invalid: [
+    {
+      code: 'import { Effect } from "@/lib/effect";\nEffect.runSync(x);',
+      errors: [{ messageId: "empty" }],
+    },
+    {
+      code: 'import { Effect } from "@/lib/effect";\nEffect.runPromise(x);',
+      errors: [{ messageId: "empty" }],
+    },
+    {
+      code: 'import { Effect } from "effect";\nvoid Effect.runFork(x);',
+      errors: [{ messageId: "empty" }],
+    },
+    {
+      code: 'import { Effect as E } from "@/lib/effect";\nawait E.runPromiseExit(x);',
+      errors: [{ messageId: "empty" }],
+    },
+  ],
+});
+
+const services = "/repo/apps/obsidian/src/services/example/layer.ts";
+const library = "/repo/apps/obsidian/src/lib/example.ts";
+const effectImport = 'import { Effect } from "@/lib/effect";\n';
+const instantOption = { messageId: "option" };
+
+tester.run("clock-time", clockTime, {
+  valid: [
+    // No Effect in the file: the legacy clock stays.
+    { code: "const at = Date.now();", filename: library },
+    { code: "const at = Temporal.Now.instant();", filename: library },
+    { code: "const at = performance.now();", filename: library },
+    {
+      code: "const at = new Date();",
+      filename: library,
+    },
+    // A type-only import of the bridge is not Effect code.
+    {
+      code: 'import type { EffectBridge } from "@/lib/effect-bridge";\nconst at = Date.now();\nconst instant = Temporal.Now.instant();',
+      filename: library,
+    },
+    // Reading time through Clock, and building a Date from a value.
+    {
+      code: `${effectImport}const read = Effect.gen(function* () {\n  const at = yield* Clock.currentTimeMillis;\n  return new Date(at);\n});`,
+      filename: library,
+    },
+    // Another object's `now`.
+    { code: `${effectImport}const at = clock.now();`, filename: library },
+    {
+      code: `${effectImport}const at = Temporal.Instant.from(text);`,
+      filename: library,
+    },
+    // A layer that reads Clock takes no `now`.
+    {
+      code: `${effectImport}export const layer = (options: { readonly root: string }) => Layer.empty;`,
+      filename: services,
+    },
+    // `now` as a value, not a function, and a non-layer function.
+    {
+      code: `${effectImport}export const layerFor = (options: { readonly now: string }) => Layer.empty;`,
+      filename: services,
+    },
+    {
+      code: `${effectImport}export function build(options: { now?: () => Temporal.Instant }) {}`,
+      filename: services,
+    },
+    // Outside src/services the option part does not apply.
+    {
+      code: `${effectImport}export const layer = (options: { now?: () => number }) => Layer.empty;`,
+      filename: library,
+    },
+  ],
+  invalid: [
+    {
+      code: `${effectImport}const at = Date.now();`,
+      filename: library,
+      errors: [{ messageId: "clock" }],
+    },
+    {
+      code: `${effectImport}const at = Temporal.Now.instant();`,
+      filename: library,
+      errors: [{ messageId: "clock" }],
+    },
+    {
+      code: `${effectImport}const zone = Temporal.Now.timeZoneId();`,
+      filename: library,
+      errors: [{ messageId: "clock" }],
+    },
+    {
+      code: 'import { Clock } from "effect";\nconst at = performance.now();',
+      filename: library,
+      errors: [{ messageId: "clock" }],
+    },
+    {
+      code: `${effectImport}const at = new Date();`,
+      filename: library,
+      errors: [{ messageId: "clock" }],
+    },
+    {
+      code: `${effectImport}export const layer = (options: { readonly now?: () => Temporal.Instant } = {}) => Layer.empty;`,
+      filename: services,
+      errors: [instantOption],
+    },
+    {
+      code: `${effectImport}export function layerLive(options: { now: () => number }) { return Layer.empty; }`,
+      filename: services,
+      errors: [instantOption],
+    },
+    {
+      // The options type is declared in the same file.
+      code: `${effectImport}interface LayerOptions { readonly now?: () => Temporal.Instant }\nexport const layer = (options: LayerOptions = {}) => Layer.empty;`,
+      filename: services,
+      errors: [instantOption],
+    },
+    {
+      code: `${effectImport}export type LayerOptions = Base & { now(): number };\nexport const layer = ({ now }: LayerOptions) => Layer.empty;`,
+      filename: services,
+      errors: [instantOption],
+    },
+    {
+      // A plain parameter named `now`.
+      code: `${effectImport}export const layerSessions = (now: () => Temporal.Instant = () => Temporal.Instant.from(zero)) => Layer.empty;`,
+      filename: services,
+      errors: [instantOption],
     },
   ],
 });

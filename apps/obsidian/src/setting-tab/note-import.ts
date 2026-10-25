@@ -75,7 +75,9 @@ export function highlightMappingItems(
     (color) => {
       const current = () =>
         getHighlightMapping(
-          ctx.settings.current?.["note.import-highlight-mappings"] ?? {},
+          ctx.bridge.runSync(ctx.settings.current)[
+            "note.import-highlight-mappings"
+          ],
           color,
         );
       return [
@@ -134,13 +136,15 @@ function updateMapping(
   color: AnnotationColorName,
   patch: Partial<HighlightMapping>,
 ): void {
-  ctx.settings.update((settings) => {
-    const mappings = settings["note.import-highlight-mappings"];
-    return {
-      "note.import-highlight-mappings": {
-        ...mappings,
-        [color]: { ...getHighlightMapping(mappings, color), ...patch },
-      },
-    };
-  });
+  ctx.bridge.runSync(
+    ctx.settings.update((settings) => {
+      const mappings = settings["note.import-highlight-mappings"];
+      return {
+        "note.import-highlight-mappings": {
+          ...mappings,
+          [color]: { ...getHighlightMapping(mappings, color), ...patch },
+        },
+      };
+    }),
+  );
 }

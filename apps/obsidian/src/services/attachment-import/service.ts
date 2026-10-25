@@ -12,8 +12,7 @@ import type {
   AttachmentCopyItem,
   AttachmentCopyResult,
 } from "@/lib/copy-attachments";
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import {
   ensureFolder,
   joinFolderPath,
@@ -23,7 +22,7 @@ import {
 import { getLogger } from "@/lib/log";
 import { fileUrlLink, syntheticFile } from "@/lib/markdown-link";
 import { Service } from "@/services/service-base";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import { loadApprovedFolders, saveApprovedFolders } from "./approved-folders";
@@ -60,9 +59,9 @@ const logger = getLogger("attachment-import");
 const SKIP_SUMMARY_DEBOUNCE_MS = 1500;
 
 export interface AttachmentImportServiceDeps {
-  runtime: SubscriptionRuntime;
+  bridge: Pick<EffectBridge, "runSync" | "subscribe">;
   app: App;
-  settings: Pick<PlainPluginSettings, "current" | "changes">;
+  settings: Pick<PluginSettings["Service"], "current" | "changes">;
   zoteroPref: Pick<
     PlainZoteroPref,
     "dataDir" | "baseAttachmentPath" | "resolved-changed"
@@ -127,7 +126,7 @@ export interface AttachmentImport {
 }
 
 export class AttachmentImportService extends Service<void> {
-  readonly #runtime;
+  readonly #bridge;
   readonly #app;
   readonly #settings;
   readonly #zoteroPref;
@@ -157,7 +156,7 @@ export class AttachmentImportService extends Service<void> {
 
   constructor(deps: AttachmentImportServiceDeps) {
     super();
-    this.#runtime = deps.runtime;
+    this.#bridge = deps.bridge;
     this.#app = deps.app;
     this.#settings = deps.settings;
     this.#zoteroPref = deps.zoteroPref;
@@ -238,7 +237,7 @@ export class AttachmentImportService extends Service<void> {
     notePath: string,
     opts?: { folderCache?: Map<string, string> },
   ): Promise<AttachmentImport> {
-    const settings = this.#settings.current;
+    const settings = this.#bridge.runSync(this.#settings.current);
     const importEnabled = settings["attachment.import"];
     let folderPath: string | null = null;
     if (importEnabled) {
@@ -284,15 +283,15 @@ export class AttachmentImportService extends Service<void> {
       this.#announceSkips.cancel();
     });
     stack.defer(
-      subscribe(this.#runtime, this.#settings.changes, (value) => {
-        if (value?.["attachment.import"]) void this.#rebuildRoots();
+      this.#bridge.subscribe(this.#settings.changes, (value) => {
+        if (value["attachment.import"]) void this.#rebuildRoots();
       }),
     );
     // Every root reads from Zotero's prefs — the data directory the storage and
     // annotation-cache roots are joined onto, and the base attachment path — so
     // a profile re-read or a data-dir override moves them all.
     stack.defer(
-      subscribe(this.#runtime, this.#zoteroPref["resolved-changed"], () => {
+      this.#bridge.subscribe(this.#zoteroPref["resolved-changed"], () => {
         void this.#rebuildRoots();
       }),
     );

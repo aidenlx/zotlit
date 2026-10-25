@@ -623,7 +623,7 @@ async function executeBatchActions(
     deps.noteFeature.reportExcerptImages(summary),
   );
   await deps.noteFeature.ready;
-  const settings = deps.settings.current;
+  const settings = deps.bridge.runSync(deps.settings.current);
   // The whole run is one initiating batch, so every row's notes — including the
   // Child Notes they import — reuse one retention; it is released as soon as
   // the run's last admitted consumer settles.

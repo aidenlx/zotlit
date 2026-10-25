@@ -7,6 +7,7 @@ import type {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import { Layer, Stream } from "@/lib/effect";
@@ -288,8 +289,12 @@ async function makeHarness({
         },
       },
       citationPopover: {
-        show: (request: CitationHoverRequest) => popoverRequests.push(request),
+        show: (request: CitationHoverRequest) => {
+          popoverRequests.push(request);
+          return Effect.void;
+        },
       },
+      bridge: stack.use(openTestBridge()),
       settings: settingsStub(overrides),
     } as never),
   );
@@ -358,9 +363,10 @@ describe("CitekeyReading", () => {
       citationText: { changed: Stream.empty, invalidated: Stream.empty },
       citekeyEditor: {},
       settings: {
-        current: defaults,
+        current: Effect.succeed(defaults),
         changes: settingsChanged.stream.pipe(Stream.prepend([defaults])),
       },
+      bridge: { runSync: Effect.runSync },
     } as never);
     await service.ready;
     expect(rerender).not.toHaveBeenCalled();

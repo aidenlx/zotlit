@@ -7,24 +7,28 @@ import type {
   DbUpdated,
   ImportMode,
   NotifyEvent,
-  ReaderActive,
-  ReaderAnnotSelect,
   UpdateScope,
 } from "@zotlit/protocol";
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
-import { getLogger } from "@/lib/log";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
-import { Service } from "@/services/service-base";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import {
+  Cause,
+  Context,
+  Effect,
+  Layer,
+  PubSub,
+  Stream,
+  SubscriptionRef,
+} from "@/lib/effect";
+import { valueOr } from "@/lib/effect-bridge";
+import { withLogCategory } from "@/lib/effect-log";
+import { forkEach } from "@/lib/effect-stream";
+import { NoteIndex } from "@/services/note-index/service";
+import { PluginSettings } from "@/services/settings/service";
 import type { Settings } from "@/services/settings/service";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 
 import { createLiveUpdateApp } from "./live-update-app";
-
-const logger = getLogger("local-server");
+import type { NoteStatusSource } from "./live-update-app";
 
 /**
  * How many consecutive ports the listener tries, starting at the configured
@@ -40,7 +44,8 @@ type BindResult = { server: ServerType; port: number } | "in-use" | "failed";
 /**
  * Live state of the Zotero reader, derived from the companion's reader pushes.
  * The service is the authoritative holder; views sync from {@link
- * LocalServerService.readerTarget} on mount and the reader events thereafter.
+ * LocalServer.readerTarget} on mount and {@link LocalServer.readerTargetChanges}
+ * thereafter.
  */
 export interface ReaderTarget {
   /** Parent (regular) item the open attachment belongs to. */
@@ -51,67 +56,15 @@ export interface ReaderTarget {
   selected: readonly number[];
 }
 
-export interface LocalServerEvents {
-  /**
-   * The companion's Freshness Signal: the Zotero database changed and the
-   * main database file is as current as the companion can make it.
-   * Payload-free by design — subscribers treat it as a refresh trigger,
-   * never as data.
-   */
-  "db/updated": (event: DbUpdated) => void;
-  /**
-   * A batch literature-note update requested over `PUT /literature-notes` —
-   * the companion's fallback when the id list is too long for an `obsidian://`
-   * URL. Carries the raw item ids; the subscriber owns resolution and the modal.
-   */
-  "update-many": (event: {
-    items: number[];
-    scope: UpdateScope;
-    profileId?: string;
-  }) => void;
-  /**
-   * A batch note-import requested over `PUT /zotero-notes` — the companion's
-   * fallback when the id list is too long for an `obsidian://` URL.
-   */
-  "import-notes": (event: { items: number[]; mode: ImportMode }) => void;
-  /**
-   * Aggregated reader state: fired whenever the companion reports a reader
-   * switch or a selection change, carrying the new {@link ReaderTarget}.
-   * Consumers diff `attachmentID` to tell a document switch from a re-select.
-   */
-  "reader/target": (target: ReaderTarget) => void;
-  /**
-   * Edge transitions of {@link LocalServerService.readerClosed}: `true` once
-   * the companion reports that the focused Zotero tab or window is no longer a
-   * reader, `false` again on the next reader push. The held
-   * {@link ReaderTarget} stays put either way, so a surface can keep the last
-   * attachment on screen and say that the reader closed.
-   *
-   * Named with a slash rather than the dash `policies/event-naming.md` asks
-   * for, because the channels on this emitter that relay a wire event keep the
-   * wire's own name — `db/updated` and `reader/target` already do, and one
-   * emitter speaking two conventions would read worse than this one departure.
-   */
-  "reader/closed": (closed: boolean) => void;
-  /**
-   * Edge transitions of {@link LocalServerService.available} — fired when the
-   * listener starts answering Live Update or stops (either toggle off, a port
-   * rebind, or a bind error). Consumers gate reader-follow features on this.
-   */
-  available: (available: boolean) => void;
-  /**
-   * The port the listener is bound to, or `null` once it stops. Fired on every
-   * bind and every close, so a settings row can show the effective port
-   * without polling.
-   */
-  listening: (port: number | null) => void;
+export interface UpdateManyRequest {
+  readonly items: number[];
+  readonly scope: UpdateScope;
+  readonly profileId?: string;
 }
 
-export interface LocalServerServiceDeps {
-  runtime: SubscriptionRuntime;
-  settings: Pick<PlainPluginSettings, "current" | "changes">;
-  zoteroPref: Pick<PlainZoteroPref, "sourceId">;
-  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getIndexedItemKeys">;
+export interface ImportNotesRequest {
+  readonly items: number[];
+  readonly mode: ImportMode;
 }
 
 /**
@@ -125,296 +78,381 @@ export interface LocalServerServiceDeps {
  * Start/stop and rebinding follow the `server.*` settings; lifecycle
  * transitions are serialized so a port change can't race a half-closed server.
  */
-export class LocalServerService extends Service<void> {
-  readonly #runtime;
-  readonly #settings;
-  readonly #zoteroPref;
-  readonly #noteIndex;
-  readonly #emitter = createNanoEvents<LocalServerEvents>();
-  /** The one Hono app every hosted service's routes are mounted on. */
-  readonly #app = new Hono();
+export class LocalServer extends Context.Service<
+  LocalServer,
+  {
+    /** `true` only while Live Update is on and the listener accepts connections. */
+    readonly available: Effect.Effect<boolean>;
+    /**
+     * Edge transitions of {@link available} — fired when the listener starts
+     * answering Live Update or stops (either toggle off, a port rebind, or a
+     * bind error). Consumers gate reader-follow features on this.
+     */
+    readonly availableChanges: Stream.Stream<boolean>;
+    /**
+     * The port the listener is bound to, or `null` while it is down. It differs
+     * from the `server.port` setting when that port was busy — see
+     * {@link PORT_RANGE}.
+     */
+    readonly effectivePort: Effect.Effect<number | null>;
+    /**
+     * The port the listener is bound to, or `null` once it stops. Fires on
+     * every bind and every close, so a settings row can show the effective port
+     * without polling.
+     */
+    readonly effectivePortChanges: Stream.Stream<number | null>;
+    /**
+     * Latest reader state pushed by the companion; `null` until the first push.
+     * It is held past a closed reader and past a listener that stopped
+     * answering, so a surface following the Zotero reader keeps the attachment
+     * it last had open rather than emptying.
+     */
+    readonly readerTarget: Effect.Effect<ReaderTarget | null>;
+    /**
+     * Aggregated reader state: emitted whenever the companion reports a reader
+     * switch or a selection change, carrying the new {@link ReaderTarget}.
+     * Consumers diff `attachmentID` to tell a document switch from a re-select.
+     */
+    readonly readerTargetChanges: Stream.Stream<ReaderTarget | null>;
+    /**
+     * `true` while the companion's last word was that the focused Zotero tab or
+     * window is no longer a reader. {@link readerTarget} still names the
+     * attachment that reader had open.
+     */
+    readonly readerClosed: Effect.Effect<boolean>;
+    /**
+     * Edge transitions of {@link readerClosed}: `true` once the companion
+     * reports that the focused Zotero tab or window is no longer a reader,
+     * `false` again on the next reader push. The held {@link readerTarget}
+     * stays put either way, so a surface can keep the last attachment on
+     * screen and say that the reader closed.
+     */
+    readonly readerClosedChanges: Stream.Stream<boolean>;
+    /**
+     * The companion's Freshness Signal: the Zotero database changed and the
+     * main database file is as current as the companion can make it.
+     * Payload-free by design — subscribers treat it as a refresh trigger,
+     * never as data.
+     */
+    readonly dbUpdated: Stream.Stream<DbUpdated>;
+    /**
+     * A batch literature-note update requested over `PUT /literature-notes` —
+     * the companion's fallback when the id list is too long for an `obsidian://`
+     * URL. Carries the raw item ids; the subscriber owns resolution and the
+     * modal.
+     */
+    readonly updateManyRequests: Stream.Stream<UpdateManyRequest>;
+    /**
+     * A batch note-import requested over `PUT /zotero-notes` — the companion's
+     * fallback when the id list is too long for an `obsidian://` URL.
+     */
+    readonly importNotesRequests: Stream.Stream<ImportNotesRequest>;
+    /**
+     * Mounts a hosted service's routes on the Local Server's one Hono app,
+     * under `basePath`. Routes stay mounted for the plugin's lifetime; the
+     * hosted service gates its own routes on its own toggle. Safe to call while
+     * the listener runs — mounted routes answer the next request.
+     */
+    mount<E extends Env>(
+      basePath: string,
+      routes: Hono<E>,
+    ): Effect.Effect<void>;
+  }
+>()("zotlit/local-server/LocalServer") {}
 
-  #server: ServerType | null = null;
-  #chain: Promise<void> = Promise.resolve();
+export const layerLocalServer: Layer.Layer<
+  LocalServer,
+  never,
+  PluginSettings | ZoteroPref | NoteIndex
+> = Layer.effect(
+  LocalServer,
+  Effect.gen(function* () {
+    const settings = yield* PluginSettings;
+    const zoteroPref = yield* ZoteroPref;
+    const noteIndex = yield* NoteIndex;
 
-  #enabled = false;
-  #liveUpdateEnabled = false;
-  #port = 0;
-  #hostname = "";
-  #boundPort: number | null = null;
-  #available = false;
-  #readerTarget: ReaderTarget | null = null;
-  #readerClosed = false;
+    // Node callbacks and Hono handlers run outside Effect.
+    const context = yield* Effect.context<never>();
+    const run = Effect.runSyncWith(context);
+    const runPromiseExit = Effect.runPromiseExitWith(context);
 
-  ready: Promise<void>;
+    const available = yield* SubscriptionRef.make(false);
+    const boundPort = yield* SubscriptionRef.make<number | null>(null);
+    const readerTarget = yield* SubscriptionRef.make<ReaderTarget | null>(null);
+    const readerClosed = yield* SubscriptionRef.make(false);
 
-  constructor(deps: LocalServerServiceDeps) {
-    super();
-    this.#runtime = deps.runtime;
-    this.#settings = deps.settings;
-    this.#zoteroPref = deps.zoteroPref;
-    this.#noteIndex = deps.noteIndex;
-    this.#app.route(
+    const dbUpdated = yield* PubSub.unbounded<DbUpdated>();
+    const updateMany = yield* PubSub.unbounded<UpdateManyRequest>();
+    const importNotes = yield* PubSub.unbounded<ImportNotesRequest>();
+
+    let server: ServerType | null = null;
+    let enabled = false;
+    let liveUpdateEnabled = false;
+    let port = -1;
+    let hostname = "";
+    let stoppedFlag = false;
+    const app = new Hono();
+
+    /** Recompute availability from the toggles and the bind. */
+    const refreshAvailability = Effect.fn("LocalServer.refreshAvailability")(
+      function* () {
+        const next =
+          enabled &&
+          liveUpdateEnabled &&
+          (yield* SubscriptionRef.get(boundPort)) !== null;
+        if (next === (yield* SubscriptionRef.get(available))) return;
+        yield* SubscriptionRef.set(available, next);
+        yield* Effect.logDebug("Server availability changed").pipe(
+          Effect.annotateLogs({ available: next }),
+        );
+      },
+    );
+
+    const setReaderClosed = Effect.fn("LocalServer.setReaderClosed")(function* (
+      closed: boolean,
+    ) {
+      if (closed === (yield* SubscriptionRef.get(readerClosed))) return;
+      yield* SubscriptionRef.set(readerClosed, closed);
+      yield* Effect.logDebug("Zotero reader presence changed").pipe(
+        Effect.annotateLogs({ closed }),
+      );
+    });
+
+    /** Fan a parsed notify event out to its typed channel. */
+    function dispatch(event: NotifyEvent): void {
+      switch (event.event) {
+        case "db/updated":
+          PubSub.publishUnsafe(dbUpdated, event);
+          break;
+        case "reader/annot-select":
+        case "reader/active": {
+          const target: ReaderTarget = {
+            itemID: event.itemID,
+            attachmentID: event.attachmentID,
+            selected: event.selected,
+          };
+          run(SubscriptionRef.set(readerTarget, target));
+          run(setReaderClosed(false));
+          break;
+        }
+        case "reader/inactive":
+          run(setReaderClosed(true));
+          break;
+      }
+    }
+
+    /**
+     * One bind attempt. Resolves the listening server, `"in-use"` when the port
+     * is taken so the caller tries the next one, or `"failed"` when the bind is
+     * hopeless — a bad hostname, say, which every port in the range repeats.
+     */
+    const listen = (port: number): Effect.Effect<BindResult> =>
+      Effect.callback<BindResult>((resume) => {
+        let bound = false;
+        try {
+          const listener = serve(
+            {
+              fetch: app.fetch,
+              port,
+              hostname,
+              // The listener swaps its own `Request`/`Response` classes into
+              // the globals unless told otherwise, and those globals belong to
+              // the whole Obsidian window. WebAssembly streaming brand-checks
+              // the native `Response`, so a swapped-in class stops the Pandoc
+              // engine from instantiating. The listener keeps the native
+              // classes instead.
+              overrideGlobalObjects: false,
+            },
+            (info) => {
+              bound = true;
+              run(
+                Effect.logInfo("Server listening").pipe(
+                  Effect.annotateLogs({
+                    address: info.address,
+                    port: info.port,
+                  }),
+                ),
+              );
+              resume(Effect.succeed({ server: listener, port: info.port }));
+            },
+          );
+          listener.on("error", (error: NodeJS.ErrnoException) => {
+            if (!bound) {
+              bound = true;
+              if (error.code === "EADDRINUSE") {
+                run(
+                  Effect.logDebug("Port taken, trying the next one").pipe(
+                    Effect.annotateLogs({ port }),
+                  ),
+                );
+                resume(Effect.succeed("in-use"));
+              } else {
+                run(
+                  Effect.logError("Failed to bind server").pipe(
+                    Effect.annotateLogs({ port, error }),
+                  ),
+                );
+                resume(Effect.succeed("failed"));
+              }
+              return;
+            }
+            // A failure past the bind: the listener is gone, so report it down.
+            if (server !== listener) return;
+            run(
+              Effect.gen(function* () {
+                yield* SubscriptionRef.set(boundPort, null);
+                yield* refreshAvailability();
+                yield* Effect.logError("Server error").pipe(
+                  Effect.annotateLogs({ error }),
+                );
+              }),
+            );
+          });
+        } catch (error) {
+          // `serve` throws synchronously on an unusable listen option; without
+          // this the promise never settles and disposal waits on it forever.
+          run(
+            Effect.logError("Failed to start server").pipe(
+              Effect.annotateLogs({ port, error }),
+            ),
+          );
+          resume(Effect.succeed("failed"));
+        }
+      });
+
+    /**
+     * Binds the first free port in the range that starts at the configured one,
+     * so a second vault sharing the setting still gets a listener.
+     */
+    const startServer = Effect.fn("LocalServer.startServer")(function* () {
+      for (let offset = 0; offset < PORT_RANGE; offset++) {
+        const candidate = port + offset;
+        if (candidate > MAX_PORT) break;
+        const result = yield* listen(candidate);
+        // A port held by someone else is the case the range exists for; any
+        // other bind failure repeats on every port, so stop after the first.
+        if (result === "in-use") continue;
+        if (result === "failed") return;
+        server = result.server;
+        yield* SubscriptionRef.set(boundPort, result.port);
+        yield* refreshAvailability();
+        return;
+      }
+      yield* Effect.logError("No free port for the local server").pipe(
+        Effect.annotateLogs({ port, range: PORT_RANGE }),
+      );
+    });
+
+    const stopServer = Effect.fn("LocalServer.stopServer")(function* () {
+      const current = server;
+      const wasBound = (yield* SubscriptionRef.get(boundPort)) !== null;
+      server = null;
+      if (wasBound) yield* SubscriptionRef.set(boundPort, null);
+      yield* refreshAvailability();
+      if (!current) return;
+      yield* Effect.callback<void, Error>((resume) => {
+        current.close((error) => {
+          resume(error ? Effect.fail(error) : Effect.void);
+        });
+      });
+      yield* Effect.logInfo("Server stopped");
+    });
+
+    const reconcile = Effect.gen(function* () {
+      yield* stopServer();
+      if (enabled) yield* startServer();
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.interrupt
+          : Effect.logError("Failed to reconcile server", cause),
+      ),
+      Effect.uninterruptible,
+    );
+
+    const noteStatus: NoteStatusSource = {
+      getIndexedItemKeys: () => run(noteIndex.getIndexedItemKeys()),
+      whenIndexed: async () => {
+        if (stoppedFlag) return;
+        valueOr(await runPromiseExit(noteIndex.whenIndexed()), undefined);
+      },
+    };
+
+    app.route(
       "/",
       createLiveUpdateApp({
-        enabled: () => this.#liveUpdateEnabled,
-        sourceId: () => this.#zoteroPref.sourceId,
-        noteIndex: this.#noteIndex,
-        onNotify: (event) => this.#dispatch(event),
-        onUpdateMany: (event) => this.#emitter.emit("update-many", event),
-        onImportNotes: (event) => this.#emitter.emit("import-notes", event),
-      }),
-    );
-    this.ready = this.#load();
-  }
-
-  /** `true` only while Live Update is on and the listener accepts connections. */
-  get available(): boolean {
-    return this.#available;
-  }
-
-  /**
-   * The port the listener is bound to, or `null` while it is down. It differs
-   * from the `server.port` setting when that port was busy — see
-   * {@link PORT_RANGE}.
-   */
-  get effectivePort(): number | null {
-    return this.#boundPort;
-  }
-
-  /**
-   * Mounts a hosted service's routes on the Local Server's one Hono app, under
-   * `basePath`. Routes stay mounted for the plugin's lifetime; the hosted
-   * service gates its own routes on its own toggle. Safe to call while the
-   * listener runs — mounted routes answer the next request.
-   */
-  mount<E extends Env>(basePath: string, routes: Hono<E>): void {
-    this.#app.route(basePath, routes);
-  }
-
-  /**
-   * Latest reader state pushed by the companion; `null` until the first push.
-   * It is held past a closed reader and past a listener that stopped
-   * answering, so a surface following the Zotero reader keeps the attachment
-   * it last had open rather than emptying.
-   */
-  get readerTarget(): ReaderTarget | null {
-    return this.#readerTarget;
-  }
-
-  /**
-   * `true` while the companion's last word was that the focused Zotero tab or
-   * window is no longer a reader. {@link readerTarget} still names the
-   * attachment that reader had open.
-   */
-  get readerClosed(): boolean {
-    return this.#readerClosed;
-  }
-
-  on<K extends keyof LocalServerEvents>(
-    event: K,
-    cb: LocalServerEvents[K],
-  ): () => void {
-    return this.#emitter.on(event, cb);
-  }
-
-  /** Recompute {@link available} from the toggles and the bind, emitting on change. */
-  #refreshAvailability(): void {
-    const next =
-      this.#enabled && this.#liveUpdateEnabled && this.#boundPort !== null;
-    if (next === this.#available) return;
-    this.#available = next;
-    logger.debug("Server availability changed", { available: next });
-    this.#emitter.emit("available", next);
-  }
-
-  /** Fan a parsed notify event out to its typed channel. */
-  #dispatch(event: NotifyEvent): void {
-    switch (event.event) {
-      case "db/updated":
-        this.#emitter.emit(event.event, event);
-        break;
-      case "reader/annot-select":
-      case "reader/active":
-        this.#emitter.emit("reader/target", this.#trackReader(event));
-        break;
-      case "reader/inactive":
-        this.#setReaderClosed(true);
-        break;
-    }
-  }
-
-  /** Refresh the authoritative reader target from a reader push. */
-  #trackReader(event: ReaderActive | ReaderAnnotSelect): ReaderTarget {
-    const target: ReaderTarget = {
-      itemID: event.itemID,
-      attachmentID: event.attachmentID,
-      selected: event.selected,
-    };
-    this.#readerTarget = target;
-    this.#setReaderClosed(false);
-    return target;
-  }
-
-  #setReaderClosed(closed: boolean): void {
-    if (closed === this.#readerClosed) return;
-    this.#readerClosed = closed;
-    logger.debug("Zotero reader presence changed", { closed });
-    this.#emitter.emit("reader/closed", closed);
-  }
-
-  async #load(): Promise<void> {
-    const settings = this.#settings.current;
-    await using stack = new AsyncDisposableStack();
-
-    this.#enabled = settings["server.enabled"];
-    this.#liveUpdateEnabled = settings["server.live-update"];
-    this.#port = settings["server.port"];
-    this.#hostname = settings["server.hostname"];
-
-    // The stack unwinds last-registered-first, so the subscription goes last:
-    // a settings emit arriving after the listener closed would otherwise
-    // rebind a port on a disposed service.
-    stack.defer(async () => {
-      await this.#chain;
-      await this.#stopServer();
-    });
-    stack.defer(
-      subscribe(this.#runtime, this.#settings.changes, (value) => {
-        if (value) this.#onSettingsChanged(value);
+        enabled: () => liveUpdateEnabled,
+        sourceId: () => run(zoteroPref.current).sourceId,
+        noteIndex: noteStatus,
+        onNotify: dispatch,
+        onUpdateMany: (event) => void PubSub.publishUnsafe(updateMany, event),
+        onImportNotes: (event) => void PubSub.publishUnsafe(importNotes, event),
       }),
     );
 
-    this.#reconcile();
-    this.commit(stack.move());
-  }
-
-  #onSettingsChanged(settings: Readonly<Settings>): void {
-    const enabled = settings["server.enabled"];
-    const liveUpdate = settings["server.live-update"];
-    const port = settings["server.port"];
-    const hostname = settings["server.hostname"];
-    const rebind =
-      enabled !== this.#enabled ||
-      port !== this.#port ||
-      hostname !== this.#hostname;
-    if (!rebind && liveUpdate === this.#liveUpdateEnabled) return;
-    this.#enabled = enabled;
-    this.#liveUpdateEnabled = liveUpdate;
-    this.#port = port;
-    this.#hostname = hostname;
-    // The Live updates toggle gates its own routes, so flipping it alone
-    // leaves the listener where it is — the Workbench keeps its port.
-    if (rebind) this.#reconcile();
-    else this.#refreshAvailability();
-  }
-
-  /** Serialize start/stop so the latest desired state always wins cleanly. */
-  #reconcile(): void {
-    this.#chain = this.#chain
-      .then(async () => {
-        await this.#stopServer();
-        if (this.#enabled) await this.#startServer();
-      })
-      .catch((error) => {
-        logger.error("Failed to reconcile server", { error });
-      });
-  }
-
-  /**
-   * Binds the first free port in the range that starts at the configured one,
-   * so a second vault sharing the setting still gets a listener.
-   */
-  async #startServer(): Promise<void> {
-    for (let offset = 0; offset < PORT_RANGE; offset++) {
-      const port = this.#port + offset;
-      if (port > MAX_PORT) break;
-      const result = await this.#listen(port);
-      // A port held by someone else is the case the range exists for; any
-      // other bind failure repeats on every port, so stop after the first.
-      if (result === "in-use") continue;
-      if (result === "failed") return;
-      this.#server = result.server;
-      this.#boundPort = result.port;
-      this.#refreshAvailability();
-      this.#emitter.emit("listening", result.port);
-      return;
-    }
-    logger.error("No free port for the local server", {
-      port: this.#port,
-      range: PORT_RANGE,
-    });
-  }
-
-  /**
-   * One bind attempt. Resolves the listening server, `"in-use"` when the port
-   * is taken so the caller tries the next one, or `"failed"` when the bind is
-   * hopeless — a bad hostname, say, which every port in the range repeats.
-   */
-  #listen(port: number): Promise<BindResult> {
-    return new Promise<BindResult>((resolve) => {
-      let bound = false;
-      try {
-        const server = serve(
-          {
-            fetch: this.#app.fetch,
-            port,
-            hostname: this.#hostname,
-            // The listener swaps its own `Request`/`Response` classes into the
-            // globals unless told otherwise, and those globals belong to the
-            // whole Obsidian window. WebAssembly streaming brand-checks the
-            // native `Response`, so a swapped-in class stops the Pandoc engine
-            // from instantiating. The listener keeps the native classes instead.
-            overrideGlobalObjects: false,
-          },
-          (info) => {
-            bound = true;
-            logger.info("Server listening", {
-              address: info.address,
-              port: info.port,
-            });
-            resolve({ server, port: info.port });
-          },
+    // This runs after the settings consumer stops: its finalizer registers
+    // later, and Scope finalizers run in reverse order.
+    yield* Effect.addFinalizer(() =>
+      Effect.gen(function* () {
+        stoppedFlag = true;
+        yield* stopServer().pipe(
+          Effect.catchCause((cause) =>
+            Effect.logError("Failed to stop server", cause),
+          ),
         );
-        server.on("error", (error: NodeJS.ErrnoException) => {
-          if (!bound) {
-            bound = true;
-            if (error.code === "EADDRINUSE") {
-              logger.debug("Port taken, trying the next one", { port });
-              resolve("in-use");
-            } else {
-              logger.error("Failed to bind server", { port, error });
-              resolve("failed");
-            }
-            return;
-          }
-          // A failure past the bind: the listener is gone, so report it down.
-          if (this.#server !== server) return;
-          this.#boundPort = null;
-          this.#refreshAvailability();
-          this.#emitter.emit("listening", null);
-          logger.error("Server error", { error });
-        });
-      } catch (error) {
-        // `serve` throws synchronously on an unusable listen option; without
-        // this the promise never settles and disposal waits on it forever.
-        logger.error("Failed to start server", { port, error });
-        resolve("failed");
-      }
-    });
-  }
+        yield* PubSub.shutdown(available.pubsub);
+        yield* PubSub.shutdown(boundPort.pubsub);
+        yield* PubSub.shutdown(readerTarget.pubsub);
+        yield* PubSub.shutdown(readerClosed.pubsub);
+        yield* PubSub.shutdown(dbUpdated);
+        yield* PubSub.shutdown(updateMany);
+        yield* PubSub.shutdown(importNotes);
+      }),
+    );
 
-  async #stopServer(): Promise<void> {
-    const server = this.#server;
-    const wasBound = this.#boundPort !== null;
-    this.#server = null;
-    this.#boundPort = null;
-    this.#refreshAvailability();
-    if (wasBound) this.#emitter.emit("listening", null);
-    if (!server) return;
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()));
+    const onSettingsChanged = Effect.fn("LocalServer.onSettingsChanged")(
+      function* (value: Readonly<Settings>) {
+        const nextEnabled = value["server.enabled"];
+        const nextLiveUpdate = value["server.live-update"];
+        const nextPort = value["server.port"];
+        const nextHostname = value["server.hostname"];
+        const rebind =
+          nextEnabled !== enabled ||
+          nextPort !== port ||
+          nextHostname !== hostname;
+        if (!rebind && nextLiveUpdate === liveUpdateEnabled) return;
+        enabled = nextEnabled;
+        liveUpdateEnabled = nextLiveUpdate;
+        port = nextPort;
+        hostname = nextHostname;
+        // Live Update's toggle gates its own routes, so flipping it alone
+        // leaves the listener where it is — the Workbench keeps its port.
+        if (rebind) yield* reconcile;
+        else yield* refreshAvailability();
+      },
+    );
+
+    // Settings replay the current snapshot first. The sentinel port makes that
+    // first event rebind, and `forkEach` handles one event at a time so binds
+    // never overlap.
+    yield* forkEach(settings.changes, (value) => onSettingsChanged(value));
+
+    return LocalServer.of({
+      available: SubscriptionRef.get(available),
+      availableChanges: SubscriptionRef.changes(available),
+      effectivePort: SubscriptionRef.get(boundPort),
+      effectivePortChanges: SubscriptionRef.changes(boundPort),
+      readerTarget: SubscriptionRef.get(readerTarget),
+      readerTargetChanges: SubscriptionRef.changes(readerTarget),
+      readerClosed: SubscriptionRef.get(readerClosed),
+      readerClosedChanges: SubscriptionRef.changes(readerClosed),
+      dbUpdated: Stream.fromPubSub(dbUpdated),
+      updateManyRequests: Stream.fromPubSub(updateMany),
+      importNotesRequests: Stream.fromPubSub(importNotes),
+      mount: (basePath, routes) =>
+        Effect.sync(() => {
+          app.route(basePath, routes);
+        }),
     });
-    logger.info("Server stopped");
-  }
-}
+  }).pipe(withLogCategory("local-server")),
+);

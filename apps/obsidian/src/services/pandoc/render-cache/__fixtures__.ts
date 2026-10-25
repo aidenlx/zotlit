@@ -14,7 +14,6 @@ import {
   layerQueryClients,
 } from "@/services/query-client/service";
 import type { HeldReadChange } from "@/services/query-client/service";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import { ZoteroPref } from "@/services/zotero-pref/service";
@@ -39,7 +38,7 @@ export interface BibliographyRenderFixtureOptions {
     PlainZoteroPref,
     "dataDir" | "changed" | "data-dir-changed" | "resolved-changed"
   >;
-  settings: Pick<PlainPluginSettings, "current" | "changes">;
+  settings: Pick<PluginSettings["Service"], "current" | "changes">;
   queryClient?: Pick<
     PlainQueryClients,
     "ask" | "readFresh" | "peek" | "invalidate" | "watch"
@@ -152,7 +151,7 @@ export async function bibliographyRenderFixture(
         Layer.succeed(
           PluginSettings,
           stubService<PluginSettings["Service"]>("PluginSettings", {
-            current: Effect.sync(() => options.settings.current),
+            current: options.settings.current,
             changes: options.settings.changes,
           }),
         ),

@@ -6,6 +6,7 @@ import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 
 import { buildColorMenu } from "@/lib/annotation-colors";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
@@ -254,7 +255,7 @@ export interface AnnotActionDeps {
    * repository holds the record a write stamps its precondition off.
    */
   annotations: Pick<
-    AnnotationRepository,
+    AnnotationRepository["Service"],
     | "deleteAnnotation"
     | "deleteAnnotations"
     | "discardTextDraft"
@@ -269,6 +270,7 @@ export interface AnnotActionDeps {
     | "submitTextField"
     | "submitTags"
   >;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
   /** The clock a failure notice reads a cooldown's remaining seconds against. */
   now?: () => Temporal.Instant;
   /**
@@ -357,7 +359,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     annots: readonly AnnotationRecord[],
     color: string,
   ): void =>
-    void recolor(deps.annotations, {
+    void recolor(deps.annotations, deps.bridge, {
       annotationKeys: annots.map(({ key }) => key),
       color,
       now,
@@ -431,42 +433,54 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   const onOpenField = (annot: AnnotationRecord, field: TextField): boolean => {
     deps.selectAlone(annot);
     deps.closeEditors();
-    return deps.annotations.editTextField(field, annot.key) !== null;
+    return (
+      deps.bridge.runSync(deps.annotations.editTextField(field, annot.key)) !==
+      null
+    );
   };
   const onEditField = (
     annot: AnnotationRecord,
     field: TextField,
     text: string,
   ): void => {
-    deps.annotations.editTextField(field, annot.key, text);
+    deps.bridge.runSync(deps.annotations.editTextField(field, annot.key, text));
   };
   const onSaveField = (
     annot: AnnotationRecord,
     field: TextField,
     { text, automatic = false }: { text: string; automatic?: boolean },
   ): void => {
-    deps.annotations.editTextField(field, annot.key, text);
-    report(deps.annotations.submitTextField(field, annot.key, { automatic }));
+    deps.bridge.runSync(deps.annotations.editTextField(field, annot.key, text));
+    report(
+      deps.bridge.runPromise(
+        deps.annotations.submitTextField(field, annot.key, { automatic }),
+      ),
+    );
   };
   const onDiscardDraft = (annot: AnnotationRecord, field: TextField): void =>
-    deps.annotations.discardTextDraft(field, annot.key);
+    deps.bridge.runSync(deps.annotations.discardTextDraft(field, annot.key));
   const onOpenTags = (annot: AnnotationRecord): boolean => {
     deps.selectAlone(annot);
     deps.closeEditors();
-    return deps.annotations.editTags(annot.key) !== null;
+    return deps.bridge.runSync(deps.annotations.editTags(annot.key)) !== null;
   };
   const onEditTags = (
     annot: AnnotationRecord,
     names: readonly string[],
   ): void => {
-    deps.annotations.editTags(annot.key, names);
+    deps.bridge.runSync(deps.annotations.editTags(annot.key, names));
   };
   const onSaveTags = (
     annot: AnnotationRecord,
     { automatic = false }: { automatic?: boolean } = {},
-  ): void => report(deps.annotations.submitTags(annot.key, { automatic }));
+  ): void =>
+    report(
+      deps.bridge.runPromise(
+        deps.annotations.submitTags(annot.key, { automatic }),
+      ),
+    );
   const onDiscardTags = (annot: AnnotationRecord): void =>
-    deps.annotations.discardTagDraft(annot.key);
+    deps.bridge.runSync(deps.annotations.discardTagDraft(annot.key));
   /**
    * The delete over these cards, after the one confirmation that says what an
    * erase costs.
@@ -476,23 +490,29 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   const deleteCards = (
     annots: readonly AnnotationRecord[],
   ): Promise<readonly string[]> =>
-    confirmDelete(deps.app, deps.annotations, {
-      annotationKeys: annots.map(({ key }) => key),
-      now,
-    });
+    confirmDelete(
+      deps.app,
+      { annotations: deps.annotations, bridge: deps.bridge },
+      {
+        annotationKeys: annots.map(({ key }) => key),
+        now,
+      },
+    );
   const onApplyAgain = (annot: AnnotationRecord, field?: TextField): void =>
     report(
       field
-        ? deps.annotations.retryTextDraft(field, annot.key)
-        : deps.annotations.retryWrite(annot.key),
+        ? deps.bridge.runPromise(
+            deps.annotations.retryTextDraft(field, annot.key),
+          )
+        : deps.bridge.runPromise(deps.annotations.retryWrite(annot.key)),
     );
   const onDiscardConflict = (
     annot: AnnotationRecord,
     field?: TextField,
   ): void =>
     field
-      ? deps.annotations.discardTextDraft(field, annot.key)
-      : deps.annotations.discardConflict(annot.key);
+      ? deps.bridge.runSync(deps.annotations.discardTextDraft(field, annot.key))
+      : deps.bridge.runSync(deps.annotations.discardConflict(annot.key));
   // Every key on a record is an Indexed Key, so the library it names travels
   // with it: the Zotero URI and the cache path both want the bare key beside
   // the group the key already carries.

@@ -291,11 +291,13 @@ function renderReadModeRow(
       .addOption("reflink", modeLabel("reflink"))
       .addOption("copy", modeLabel("copy"))
       .addOption("immutable", modeLabel("immutable"))
-      .setValue(ctx.settings.current!["zotero.read-mode"])
+      .setValue(ctx.bridge.runSync(ctx.settings.current)["zotero.read-mode"])
       .onChange((value) => {
-        ctx.settings.update({
-          "zotero.read-mode": value as ConfiguredReadMode,
-        });
+        ctx.bridge.runSync(
+          ctx.settings.update({
+            "zotero.read-mode": value as ConfiguredReadMode,
+          }),
+        );
       });
   });
 

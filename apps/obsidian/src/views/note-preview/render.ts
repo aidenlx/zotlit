@@ -36,6 +36,8 @@ import type {
 
 import { annotationCitation as renderAnnotationCitation } from "@/lib/annotation-render";
 import { FIELD_DOCUMENT_LANGUAGE } from "@/lib/constants";
+import { Effect } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { isLanguageTag } from "@/lib/language-tag";
@@ -67,6 +69,7 @@ import type { NativeCitationDeps, PreviewCitation } from "./citations";
 
 export interface NativeRenderDeps extends TemplateDataDeps, NativeCitationDeps {
   runtime: SubscriptionRuntime;
+  bridge: Pick<EffectBridge, "runSync">;
   zoteroReads: Pick<
     PlainZoteroReads,
     | "acquireRead"
@@ -214,7 +217,7 @@ async function partialRootData(
 ): Promise<
   { kind: "data"; data: object } | { kind: "unavailable"; message: string }
 > {
-  const settings = deps.settings.current;
+  const settings = deps.bridge.runSync(deps.settings.current);
   const chosen =
     selection.profile === null
       ? undefined
@@ -230,7 +233,10 @@ async function partialRootData(
       ? bindUnvalidatedDraftProfile(settings, draft)
       : bindProfile(settings, { selector: DEFAULT_PROFILE }));
   return partialContextData(
-    { ...deps, settings: { current: profile.settings } },
+    {
+      ...deps,
+      settings: { current: Effect.succeed(profile.settings) },
+    },
     request,
     selection.context,
   );
@@ -396,12 +402,12 @@ export async function renderNativeProfile(
     const document = deps.templates.prepareLiteratureNoteTemplateSource(
       request.source,
     );
-    const settings = deps.settings.current;
+    const settings = deps.bridge.runSync(deps.settings.current);
     const manifest = document.manifest;
     const profile = bindUnvalidatedDraftProfile(settings, manifest);
     const dataDeps = {
       ...deps,
-      settings: { current: profile.settings },
+      settings: { current: Effect.succeed(profile.settings) },
     };
     const indexedKey = request.snapshot.item.indexedKey;
     const sample = request.snapshot.provenance.kind === "sample";

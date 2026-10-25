@@ -1,9 +1,9 @@
 // The Note Index for callers outside Effect.
 import type { TFile } from "obsidian";
 
-import { Cause, Effect, Exit, Stream } from "@/lib/effect";
+import { Effect, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
-import { isScopeClosed } from "@/lib/effect-scope";
+import { effectBridge, valueOr } from "@/lib/effect-bridge";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 
 import { NoteIndex } from "./service";
@@ -33,22 +33,17 @@ export function plainNoteIndex(
     "runSync" | "runPromiseExit" | "runFork" | "scope"
   >,
 ): PlainNoteIndex {
+  // The legacy service retained its maps after release. The bridge keeps the
+  // runtime's context for those reads: ManagedRuntime rejects new work after
+  // disposal.
+  const bridge = effectBridge(runtime);
   const index = runtime.runSync(NoteIndex.use(Effect.succeed));
-  // The legacy service retained its maps after release. Keep the runtime's
-  // context for those reads: ManagedRuntime rejects new work after disposal.
-  const readReleased = Effect.runSyncWith(
-    runtime.runSync(Effect.context<never>()),
-  );
-  const closed = () => isScopeClosed(runtime.scope);
-  const read = <A>(effect: Effect.Effect<A>): A =>
-    closed() ? readReleased(effect) : runtime.runSync(effect);
+  const read = bridge.runSync;
   const wait = async (effect: Effect.Effect<void>) => {
-    if (closed()) return;
+    if (bridge.closed()) return;
     // Runtime disposal interrupts callers before closing the layer. Both
     // scan and rename waiters settle when the legacy service is released.
-    const exit = await runtime.runPromiseExit(effect);
-    if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
-      throw Cause.squash(exit.cause);
+    valueOr(await bridge.runPromiseExit(effect), undefined);
   };
   return {
     getNotesByItemKey: (key) => read(index.getNotesByItemKey(key)),

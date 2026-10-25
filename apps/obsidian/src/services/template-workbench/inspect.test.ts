@@ -6,7 +6,6 @@ import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Stream } from "@/lib/effect";
 import { Effect, Exit, Fiber } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 
@@ -57,6 +56,7 @@ async function fixture(
     app: f.app,
     templates: f.template,
     settings: f.settings,
+    bridge: f.bridge,
     profile: f.profile,
     zoteroPref: {
       sourceId: "fixture-source",
@@ -93,7 +93,7 @@ async function fixture(
 
 /** {@link fixture}, closed when the test's scope closes. */
 const scopedFixture = (files?: Record<string, string>) =>
-  acquireAsyncDisposable(() => fixture(files));
+  Effect.acquireDisposable(Effect.tryPromise(() => fixture(files)));
 
 /** The parsed answer, once it holds that every refusal carries a hint. */
 function assertRefusalsHint(output: string) {

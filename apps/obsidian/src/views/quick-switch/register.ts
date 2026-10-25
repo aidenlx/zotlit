@@ -1,11 +1,12 @@
 import type { App, Plugin } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { TargetOpener } from "@/services/attachment-open/open-target";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { NoteFeature } from "@/services/note-feature";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
@@ -20,7 +21,8 @@ export interface QuickSwitchDeps {
   lookup: ItemLookup;
   noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByItemKey">;
   noteFeature: Pick<NoteFeature, "createNote" | "planCreations">;
-  settings: Pick<PlainPluginSettings, "current">;
+  settings: Pick<PluginSettings["Service"], "current">;
+  bridge: Pick<EffectBridge, "runSync">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   /** Opens the PDF a result asks for. */
   opener: Pick<TargetOpener, "open">;

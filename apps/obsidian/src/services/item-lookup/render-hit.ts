@@ -4,10 +4,11 @@ import type { SearchMatches } from "obsidian";
 import { isChildItemFields } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { libraryLabel } from "@/services/library-scope/label";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 
 import type { SearchHit } from "./service";
 
@@ -63,8 +64,10 @@ export function appendTrailingFlair(el: HTMLElement, label: string): void {
   });
 }
 
+// oxlint-disable-next-line max-params -- settings and bridge are separate injected dependencies.
 export function renderSuggestion(
-  settings: Pick<PlainPluginSettings, "current">,
+  settings: Pick<PluginSettings["Service"], "current">,
+  bridge: Pick<EffectBridge, "runSync">,
   hit: SearchHit,
   el: HTMLElement,
 ): void {
@@ -92,7 +95,10 @@ export function renderSuggestion(
     match.classList.add("zt:text-accent-foreground");
   }
 
-  if (settings.current?.["citation.show-citekey-in-suggester"] && citationKey) {
+  if (
+    bridge.runSync(settings.current)["citation.show-citekey-in-suggester"] &&
+    citationKey
+  ) {
     titleEl.createSpan({ cls: CITEKEY_CHIP_CLASS, text: citationKey });
   }
 

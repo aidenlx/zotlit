@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
 import { Menu } from "@mock/obsidian";
 import type { MouseEvent } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import * as confirmation from "@/lib/confirm";
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import { annotation } from "@/services/pdf-annotation-editor/__fixtures__";
@@ -44,6 +46,9 @@ const LOCKED: CardControl = {
   },
 };
 
+const bridge = openTestBridge();
+afterAll(() => bridge[Symbol.asyncDispose]());
+
 /**
  * The actions over a Card Selection, with every other dependency inert. The
  * view's own seams are the fakes: what it holds selected, and the select a
@@ -57,14 +62,14 @@ function setup(
   const selectAlone = vi.fn();
   const openEditor = vi.fn();
   const annotations = {
-    editTextField: vi.fn(() => ({})),
-    deleteAnnotation: vi.fn(async () => ({ kind: "idle" as const })),
-    deleteAnnotations: vi.fn(async (keys: readonly string[]) =>
-      keys.map(() => ({ kind: "idle" as const })),
+    editTextField: vi.fn(() => Effect.succeed({})),
+    deleteAnnotation: vi.fn(() => Effect.succeed({ kind: "idle" as const })),
+    deleteAnnotations: vi.fn((keys: readonly string[]) =>
+      Effect.succeed(keys.map(() => ({ kind: "idle" as const }))),
     ),
-    patchColor: vi.fn(async () => ({ kind: "idle" as const })),
-    patchColors: vi.fn(async (keys: readonly string[]) =>
-      keys.map(() => ({ kind: "idle" as const })),
+    patchColor: vi.fn(() => Effect.succeed({ kind: "idle" as const })),
+    patchColors: vi.fn((keys: readonly string[]) =>
+      Effect.succeed(keys.map(() => ({ kind: "idle" as const }))),
     ),
   };
   const controls: CardControls = {
@@ -83,6 +88,7 @@ function setup(
       },
     },
     annotations,
+    bridge,
     // Only a highlight or underline has a Quoted Text, as `cardControls` rules.
     controls: (annot: AnnotationRecord) => ({
       ...controls,
@@ -424,9 +430,13 @@ describe("opening a card editor", () => {
       selectAlone: () => calls.push("select alone"),
       closeEditors: () => calls.push("close editors"),
       annotations: {
-        editTextField: (field: string) => (calls.push(`open ${field}`), draft),
-        editTags: () => (calls.push("open tags"), draft),
+        editTextField: (field: string) => (
+          calls.push(`open ${field}`),
+          Effect.succeed(draft)
+        ),
+        editTags: () => (calls.push("open tags"), Effect.succeed(draft)),
       },
+      bridge,
     } as unknown as AnnotActionDeps;
     return { actions: createAnnotActions(deps), calls };
   }
@@ -463,7 +473,7 @@ describe("the verbs that end a text field's draft", () => {
       (...args: string[]) => {
         // A field's verb names its field first; a write's verb takes the key.
         calls.push(args.length > 1 ? `${name} ${args[0]} draft` : name);
-        return Promise.resolve({ kind: "idle" as const });
+        return Effect.succeed({ kind: "idle" as const });
       };
     const deps = {
       annotations: {
@@ -472,6 +482,7 @@ describe("the verbs that end a text field's draft", () => {
         discardTextDraft: call("discard"),
         discardConflict: call("discard conflict"),
       },
+      bridge,
     } as unknown as AnnotActionDeps;
     return { actions: createAnnotActions(deps), calls };
   }

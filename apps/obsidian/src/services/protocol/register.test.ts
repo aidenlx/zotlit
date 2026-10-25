@@ -4,8 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Attachment, getItemDisplayRefByID } from "@zotlit/db";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { openAttachments } from "@/lib/attachment-open";
+import { effectBridge } from "@/lib/effect-bridge";
 import { toObsidianOpenableAttachments } from "@/services/attachment-open/resolve";
+import type { LocalServer } from "@/services/local-server/service";
 import { openCompanionNote } from "@/services/note-feature";
 import { runBatchUpdateAll } from "@/services/note-feature/update-batch";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
@@ -110,7 +114,11 @@ function register(overrides: Partial<ProtocolDeps> = {}): Disposable {
     webWorkbenchEnabled: true,
     zoteroPref: { sourceId: SOURCE_ID },
     batchImport: { runBatchImport: vi.fn(), runBatchImportAll },
-    liveUpdate: { on: () => () => {} },
+    liveUpdate: stubService<LocalServer["Service"]>("LocalServer", {
+      updateManyRequests: Stream.empty,
+      importNotesRequests: Stream.empty,
+    }),
+    bridge: effectBridge(testRuntime()),
     ...overrides,
   } as unknown as ProtocolDeps;
   deps.profile = profileReader(

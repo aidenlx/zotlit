@@ -9,7 +9,6 @@ import { ItemQueryScheduler } from "@zotlit/item-query";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { Deferred, Effect, Fiber, Scheduler } from "@/lib/effect";
-import { acquireDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 import type { LibraryScope } from "@/services/library-scope/scope";
@@ -86,7 +85,7 @@ function answerOf(
 
 /** The scenario database, held for the case's scope. */
 const scenarioOf = (options?: Parameters<typeof openScenarioDatabase>[0]) =>
-  acquireDisposable(() => openScenarioDatabase(options));
+  Effect.acquireDisposable(Effect.sync(() => openScenarioDatabase(options)));
 
 describe("zotlit:query-cancel", () => {
   function cancelOf(active: readonly string[]) {

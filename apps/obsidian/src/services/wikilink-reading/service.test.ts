@@ -7,6 +7,7 @@ import {
 } from "vitest";
 import { describe, expect, it, vi } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
@@ -23,7 +24,7 @@ import { openNoteVault } from "@/services/note-index/__fixtures__";
 import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import type { Held } from "@/services/query-client/service";
 import { buildSeededSettings } from "@/services/settings/__fixtures__";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { SettingsFixture } from "@/services/settings/__fixtures__";
 import type { Settings } from "@/services/settings/schema";
 
 import { internalLink, section } from "./__fixtures__/internal-link";
@@ -48,7 +49,8 @@ function held(source: string, works: string[] = [WANG_KEY]): string {
 }
 
 interface Harness extends AsyncDisposable {
-  settings: PlainPluginSettings;
+  settings: SettingsFixture;
+  bridge: SettingsFixture["bridge"];
   /** Gives the vault's one Literature Note another Item key, or none. */
   writeNote: (itemKey: string | undefined) => Promise<void>;
   citationText: CitationTextStub;
@@ -164,8 +166,12 @@ async function harness({
         opened.push([citekey, pane]),
     },
     citationPopover: {
-      show: (request: CitationHoverRequest) => requests.push(request),
+      show: (request: CitationHoverRequest) => {
+        requests.push(request);
+        return Effect.void;
+      },
     },
+    bridge: stack.use(openTestBridge()),
     citationIndex,
     settings,
   } as never);
@@ -173,6 +179,7 @@ async function harness({
   const owned = stack.move();
   return {
     settings,
+    bridge: settings.bridge,
     writeNote: (itemKey) => notes.writeNote(`${WANG}.md`, itemKey),
     citationText,
     citationIndex,
@@ -559,30 +566,32 @@ describe("WikilinkReading rerender", () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": false,
     });
-    const { settings, rerenders } = harnessed;
+    const { bridge, settings, rerenders } = harnessed;
 
-    settings.update({ "citation.wikilink-citations": true });
+    bridge.runSync(settings.update({ "citation.wikilink-citations": true }));
     expect(rerenders()).toBe(1);
 
-    settings.update({ "citation.show-formatted": false });
+    bridge.runSync(settings.update({ "citation.show-formatted": false }));
     expect(rerenders()).toBe(2);
   });
 
   it("renders again when a setting changes who answers a gesture", async () => {
     await using harnessed = await harness();
-    const { settings, rerenders } = harnessed;
+    const { bridge, settings, rerenders } = harnessed;
 
-    settings.update({ "citation.hover-action": "off" });
+    bridge.runSync(settings.update({ "citation.hover-action": "off" }));
     expect(rerenders()).toBe(1);
 
-    settings.update({ "citation.open-as-links": true });
+    bridge.runSync(settings.update({ "citation.open-as-links": true }));
     expect(rerenders()).toBe(2);
-    settings.update({ "citation.open-as-links": false });
+    bridge.runSync(settings.update({ "citation.open-as-links": false }));
     expect(rerenders()).toBe(3);
 
     // Which mode holds a hover back for a modifier is read at hover time, so
     // nothing rendered depends on it.
-    settings.update({ "citation.hover-require-mod-reading": true });
+    bridge.runSync(
+      settings.update({ "citation.hover-require-mod-reading": true }),
+    );
     expect(rerenders()).toBe(3);
   });
 
@@ -599,7 +608,9 @@ describe("WikilinkReading rerender", () => {
   it("leaves the reading views alone when an unrelated setting changes", async () => {
     await using harnessed = await harness();
 
-    harnessed.settings.update({ "citation.open-as-links": false });
+    harnessed.bridge.runSync(
+      harnessed.settings.update({ "citation.open-as-links": false }),
+    );
     expect(harnessed.rerenders()).toBe(0);
   });
 

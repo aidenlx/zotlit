@@ -7,6 +7,7 @@ import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
 // The citekey editor treatment service: it follows the settings that switch the
 // CodeMirror extension on and owns the click that opens a citekey's note.
 import { Effect } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
@@ -37,9 +38,9 @@ import { createNoteInteractively } from "@/services/note-feature";
 import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { Service } from "@/services/service-base";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
@@ -62,10 +63,11 @@ export interface CitekeyEditorDeps {
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<PlainCitationText, "peek" | "changed" | "invalidated">;
   /** What a hovered citation shows. */
-  citationPopover: CitationPopover;
+  citationPopover: Pick<CitationPopover["Service"], "show">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
   /** What a hovered Durable Annotation Link shows. */
-  annotationPopover: Pick<AnnotationPopover, "show">;
-  settings: Pick<PlainPluginSettings, "current" | "changes">;
+  annotationPopover: Pick<AnnotationPopover["Service"], "show">;
+  settings: Pick<PluginSettings["Service"], "current" | "changes">;
   citationLookup: Pick<PlainCitationLookup, "read"> & {
     observe(changed: () => void): CitationLookupObservation;
   };
@@ -113,6 +115,7 @@ export class CitekeyEditor extends Service<void> {
   readonly #db;
   readonly #citationText;
   readonly #citationPopover;
+  readonly #bridge;
   readonly #annotationPopover;
   readonly #settings;
   readonly #citationLookup;
@@ -145,6 +148,7 @@ export class CitekeyEditor extends Service<void> {
     this.#db = deps.db;
     this.#citationText = deps.citationText;
     this.#citationPopover = deps.citationPopover;
+    this.#bridge = deps.bridge;
     this.#annotationPopover = deps.annotationPopover;
     this.#settings = deps.settings;
     this.#citationLookup = deps.citationLookup;
@@ -154,7 +158,8 @@ export class CitekeyEditor extends Service<void> {
       open: (citekey, pane) => {
         void this.openCitekey(citekey, pane);
       },
-      showPopover: (request) => this.#citationPopover.show(request),
+      showPopover: (request) =>
+        this.#bridge.runSync(this.#citationPopover.show(request)),
       hoverPreferences: () => this.#hover,
       hoverNotePath: (citekey, lookup) => this.hoverNotePath(citekey, lookup),
       observeLookup: (changed) => this.#citationLookup.observe(changed),
@@ -164,7 +169,8 @@ export class CitekeyEditor extends Service<void> {
     });
     // A Durable Annotation Link shows its Annotation on every hover.
     this.#annotationLinkHover = annotationLinkHoverExtension({
-      showAnnotation: (request) => this.#annotationPopover.show(request),
+      showAnnotation: (request) =>
+        void this.#bridge.runPromise(this.#annotationPopover.show(request)),
     });
     this.ready = this.#load();
   }

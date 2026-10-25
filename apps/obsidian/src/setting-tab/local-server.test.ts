@@ -8,8 +8,12 @@ import type {
 import { expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { Effect, Stream } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { WorkbenchConnection } from "@/services/local-bridge/service";
+import type { LocalServer } from "@/services/local-server/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -28,11 +32,16 @@ function setup({
   disconnect = () => {},
 }: Options = {}) {
   const current: Settings = { ...defaults, ...settings };
+  const runtime = testRuntime();
   const ctx = {
-    runtime: testRuntime(),
+    runtime,
+    bridge: effectBridge(runtime),
     webWorkbenchEnabled: true,
-    settings: { current },
-    localServer: { effectivePort: null, on: () => () => {} },
+    settings: { current: Effect.succeed(current) },
+    localServer: stubService<LocalServer["Service"]>("LocalServer", {
+      effectivePort: Effect.succeed(null),
+      effectivePortChanges: Stream.empty,
+    }),
     localBridge: { connection, disconnect, on: () => () => {} },
   } as unknown as SettingTabContext;
   return localServerItems(ctx);

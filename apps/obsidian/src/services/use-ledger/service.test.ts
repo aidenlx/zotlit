@@ -1,7 +1,15 @@
 import { TestClock } from "effect/testing";
 import { expect, vi } from "vitest";
 
-import { Effect, Logger } from "@/lib/effect";
+import {
+  Effect,
+  Exit,
+  Fiber,
+  Logger,
+  Queue,
+  Scope,
+  Stream,
+} from "@/lib/effect";
 import { LogCategory } from "@/lib/effect-log";
 import { it } from "@/lib/effect-vitest";
 
@@ -98,5 +106,31 @@ it.effect(
 
       expect(yield* ledger.current).toEqual({});
       expect(logged).toEqual([{ level: "Warn", category: ["use-ledger"] }]);
+    }),
+);
+
+// #1705: a state subscriber sees the current value, then each update, and its
+// stream ends when the service stops.
+it.effect(
+  "changes replays the current Uses, delivers updates and ends when the scope closes",
+  () =>
+    Effect.gen(function* () {
+      const app = fakeApp({ load: () => undefined, save: () => {} });
+      const scope = yield* Scope.make();
+      const ledger = yield* useLedgerOf(app).pipe(Scope.provide(scope));
+      const delivered = yield* Queue.unbounded<number>();
+      const listening = yield* Stream.runForEach(ledger.changes, (entries) =>
+        Queue.offer(delivered, Object.keys(entries).length),
+      ).pipe(Effect.forkScoped({ startImmediately: true }));
+      yield* ledger.record("AAAAAAAA", "opened");
+      yield* ledger.record("BBBBBBBB", "opened");
+      expect(yield* Queue.take(delivered)).toBe(0);
+      expect(yield* Queue.take(delivered)).toBe(1);
+      expect(yield* Queue.take(delivered)).toBe(2);
+      const late = yield* Stream.runCollect(Stream.take(ledger.changes, 1));
+      expect(Object.keys(late[0]!)).toHaveLength(2);
+      yield* Scope.close(scope, Exit.void);
+      yield* Fiber.join(listening);
+      expect(yield* Queue.size(delivered)).toBe(0);
     }),
 );

@@ -7,6 +7,7 @@ import type { App } from "obsidian";
 
 import { confirm } from "@/lib/confirm";
 import type { ConfirmOptions } from "@/lib/confirm";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -54,16 +55,22 @@ export function deleteConfirmation(count: number): ConfirmOptions {
  */
 export async function confirmDelete(
   app: App,
-  annotations: Pick<
-    AnnotationRepository,
-    "deleteAnnotation" | "deleteAnnotations"
-  >,
+  {
+    annotations,
+    bridge,
+  }: {
+    annotations: Pick<
+      AnnotationRepository["Service"],
+      "deleteAnnotation" | "deleteAnnotations"
+    >;
+    bridge: Pick<EffectBridge, "runPromise">;
+  },
   options: { annotationKeys: readonly string[]; now: () => Temporal.Instant },
 ): Promise<readonly string[]> {
   if (options.annotationKeys.length === 0) return [];
   if (!(await confirm(deleteConfirmation(options.annotationKeys.length), app)))
     return [];
-  return await erase(annotations, options);
+  return await erase(annotations, bridge, options);
 }
 
 /**
@@ -78,9 +85,10 @@ export async function confirmDelete(
  */
 export async function erase(
   annotations: Pick<
-    AnnotationRepository,
+    AnnotationRepository["Service"],
     "deleteAnnotation" | "deleteAnnotations"
   >,
+  bridge: Pick<EffectBridge, "runPromise">,
   {
     annotationKeys,
     now,
@@ -91,8 +99,10 @@ export async function erase(
   return await settleWrites(
     async () =>
       annotationKeys.length === 1
-        ? [await annotations.deleteAnnotation(first)]
-        : await annotations.deleteAnnotations(annotationKeys),
+        ? [await bridge.runPromise(annotations.deleteAnnotation(first))]
+        : await bridge.runPromise(
+            annotations.deleteAnnotations(annotationKeys),
+          ),
     { what: "delete", count: annotationKeys.length, now },
   );
 }
@@ -108,7 +118,11 @@ export async function erase(
  * @returns the failure notices raised, once per reason.
  */
 export async function recolor(
-  annotations: Pick<AnnotationRepository, "patchColor" | "patchColors">,
+  annotations: Pick<
+    AnnotationRepository["Service"],
+    "patchColor" | "patchColors"
+  >,
+  bridge: Pick<EffectBridge, "runPromise">,
   {
     annotationKeys,
     color,
@@ -124,8 +138,10 @@ export async function recolor(
   return await settleWrites(
     async () =>
       annotationKeys.length === 1
-        ? [await annotations.patchColor(first, color)]
-        : await annotations.patchColors(annotationKeys, color),
+        ? [await bridge.runPromise(annotations.patchColor(first, color))]
+        : await bridge.runPromise(
+            annotations.patchColors(annotationKeys, color),
+          ),
     { what: "recolour", count: annotationKeys.length, now },
   );
 }

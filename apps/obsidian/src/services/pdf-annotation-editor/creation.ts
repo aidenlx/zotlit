@@ -28,6 +28,7 @@ import type { PdfTextStructure, SelectedText } from "@zotlit/pdf-structure";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { registerDomEvent } from "@/lib/disposables";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
@@ -186,7 +187,10 @@ export interface ReaderPage {
 }
 
 /** What the creation surfaces write Annotations through. */
-export type AnnotationCreates = Pick<AnnotationRepository, "createAnnotation">;
+export type AnnotationCreates = Pick<
+  AnnotationRepository["Service"],
+  "createAnnotation"
+>;
 
 /**
  * The gestures the reader's own listeners hand to the creation surfaces. One
@@ -310,6 +314,7 @@ export interface MarkCreationDeps {
   /** What this view's surfaces draw from; the toolbar redraws off it alone. */
   surfaceState: ReaderSurfaceStore;
   annotations: AnnotationCreates;
+  bridge: Pick<EffectBridge, "runPromise">;
   now: () => Temporal.Instant;
 }
 
@@ -1071,18 +1076,20 @@ export class MarkCreation implements CreationGestures, Disposable {
           previousAnnotations(this.#deps.records()),
         ),
       ]);
-      const outcome = await this.#deps.annotations.createAnnotation(
-        this.#deps.attachmentKey,
-        {
-          type,
-          color,
-          comment,
-          text,
-          pageLabel,
-          sortIndex,
-          position,
-        },
-        { group },
+      const outcome = await this.#deps.bridge.runPromise(
+        this.#deps.annotations.createAnnotation(
+          this.#deps.attachmentKey,
+          {
+            type,
+            color,
+            comment,
+            text,
+            pageLabel,
+            sortIndex,
+            position,
+          },
+          { group },
+        ),
       );
       if (outcome.kind === "failed") {
         this.#deps.reportCreateFailure(

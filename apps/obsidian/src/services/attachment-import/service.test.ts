@@ -15,7 +15,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { copyAttachments } from "@/lib/copy-attachments";
-import { Stream } from "@/lib/effect";
+import { Effect, Stream } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
+import { defaults } from "@/services/settings/schema";
 
 import { AttachmentImportService } from "./service";
 import type { AttachmentSkipSummary } from "./service";
@@ -67,7 +69,7 @@ function makeSettings(value: {
   "attachment.folder-path": string | null;
 }) {
   return {
-    current: value,
+    current: Effect.succeed({ ...defaults, ...value }),
     changes: Stream.empty,
   };
 }
@@ -98,13 +100,14 @@ async function makeService(options?: {
   baseAttachmentPath?: string | null;
   app?: App;
 }): Promise<AttachmentImportService> {
+  const runtime = testRuntime();
   const service = new AttachmentImportService({
-    runtime: testRuntime(),
+    bridge: effectBridge(runtime),
     app: options?.app ?? makeApp(),
     settings: makeSettings({
       "attachment.import": options?.importEnabled ?? true,
       "attachment.folder-path": options?.folderPath ?? "Attachments",
-    }) as any,
+    }),
     zoteroPref: makeZoteroPref({
       dataDir,
       baseAttachmentPath:
@@ -253,13 +256,14 @@ describe("AttachmentImportService", () => {
       dataDir,
       baseAttachmentPath: baseDir,
     });
+    const runtime = testRuntime();
     const service = new AttachmentImportService({
-      runtime: testRuntime(),
+      bridge: effectBridge(runtime),
       app: makeApp(),
       settings: makeSettings({
         "attachment.import": true,
         "attachment.folder-path": "Attachments",
-      }) as any,
+      }),
       zoteroPref,
     });
     await service.ready;
@@ -282,13 +286,14 @@ describe("AttachmentImportService", () => {
     const movedDataDir = join(dataDir, "moved-data");
     await mkdir(join(movedDataDir, "storage"), { recursive: true });
     const zoteroPref = makeZoteroPref({ dataDir, baseAttachmentPath: null });
+    const runtime = testRuntime();
     const service = new AttachmentImportService({
-      runtime: testRuntime(),
+      bridge: effectBridge(runtime),
       app: makeApp(),
       settings: makeSettings({
         "attachment.import": true,
         "attachment.folder-path": "Attachments",
-      }) as any,
+      }),
       zoteroPref,
     });
     await service.ready;
@@ -373,13 +378,14 @@ describe("AttachmentImportService", () => {
     await writeFile(stored, "bytes");
     await symlink(realDataDir, linkedDataDir);
 
+    const runtime = testRuntime();
     const service = new AttachmentImportService({
-      runtime: testRuntime(),
+      bridge: effectBridge(runtime),
       app: makeApp(),
       settings: makeSettings({
         "attachment.import": true,
         "attachment.folder-path": "Attachments",
-      }) as any,
+      }),
       zoteroPref: makeZoteroPref({
         dataDir: linkedDataDir,
         baseAttachmentPath: null,

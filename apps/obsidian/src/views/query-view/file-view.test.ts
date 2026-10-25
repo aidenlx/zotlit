@@ -9,7 +9,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Stream } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
+import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 
 import { noLiteratureNotes } from "./__fixtures__/literature-notes";
@@ -53,9 +55,10 @@ async function openTab() {
   setMockPlatform({ isMacOS: true });
   cleanup.defer(resetMockPlatform);
   const host = createObsidianHost({});
-  const off = () => () => {};
+  const runtime = testRuntime();
   const deps = {
-    runtime: testRuntime(),
+    runtime,
+    bridge: effectBridge(runtime),
     app: {
       ...host.app,
       scope: undefined,
@@ -72,7 +75,7 @@ async function openTab() {
     libraryScope: { changed: Stream.empty, "libraries-changed": Stream.empty },
     query: fakeQuery(() => Promise.resolve(EMPTY)),
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
-    annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
+    annotations: annotationReads(),
     literatureNotes: noLiteratureNotes(),
   } as unknown as QueryViewDeps;
   const tab = new QueryFileView(

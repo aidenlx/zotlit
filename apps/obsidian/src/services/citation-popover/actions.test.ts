@@ -54,6 +54,7 @@ function actions() {
       open: (entry, pane) => opened.push([entry.citekey!, pane]),
       hide,
       switchProfile: vi.fn(),
+      log: vi.fn(),
     }),
   };
 }

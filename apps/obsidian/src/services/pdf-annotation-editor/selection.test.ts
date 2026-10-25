@@ -1109,10 +1109,13 @@ it("opens no tag editor while no tag session can start", async () => {
   await using h = await setup();
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
-  // Zotero quits, and the repository learns it before the reader does.
-  h.zotero.quit();
+  // The repository forgets this device's write authorization before the reader
+  // hears that editing is no longer writable.
+  await h.bridge.runPromise(h.localApiService.forgetAuthorization());
   await h.repository.probe();
 
+  expect(h.popup()).not.toBeNull();
+  expect(h.repository.capabilityFor("RGRPDF24").kind).not.toBe("writable");
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!.click();
 
   expect(h.store.getState().floating).toMatchObject({ tagging: false });
@@ -1186,9 +1189,13 @@ it("binds the held tags panel to Save tags and Discard, and keeps it through a r
 it("falls back to the comment field, and closes the editor, when no draft can be started", async () => {
   await using h = await setup();
   click(h.page.div, ON_WORD);
-  // Zotero quits, and the repository learns it before the reader does.
-  h.zotero.quit();
+  // The repository forgets this device's write authorization before the reader
+  // hears that editing is no longer writable.
+  await h.bridge.runPromise(h.localApiService.forgetAuthorization());
   await h.repository.probe();
+
+  expect(h.popup()).not.toBeNull();
+  expect(h.repository.capabilityFor("RGRPDF24").kind).not.toBe("writable");
 
   setCommenting(h.store, true);
 

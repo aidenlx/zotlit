@@ -272,19 +272,27 @@ describe("CitekeyEditor settings lifecycle", () => {
 
     expect(registered).toEqual([]);
     expect(service.navigationEnabled).toBe(false);
-    settings.update({ "citation.show-formatted": true });
+    settings.bridge.runSync(
+      settings.update({ "citation.show-formatted": true }),
+    );
     expect(registered).toHaveLength(1);
     expect(service.navigationEnabled).toBe(false);
 
-    settings.update({ "citation.open-as-links": true });
+    settings.bridge.runSync(
+      settings.update({ "citation.open-as-links": true }),
+    );
     expect(registered).toHaveLength(1);
     expect(service.navigationEnabled).toBe(true);
     expect(reconfigures).toBe(1);
 
-    settings.update({ "citation.show-formatted": false });
+    settings.bridge.runSync(
+      settings.update({ "citation.show-formatted": false }),
+    );
     expect(registered).toHaveLength(1);
     expect(service.navigationEnabled).toBe(true);
-    settings.update({ "citation.open-as-links": false });
+    settings.bridge.runSync(
+      settings.update({ "citation.open-as-links": false }),
+    );
     expect(registered).toEqual([]);
     expect(service.navigationEnabled).toBe(false);
 
@@ -315,9 +323,13 @@ describe("CitekeyEditor settings lifecycle", () => {
     await service.ready;
 
     expect(registered).toEqual([]);
-    settings.update({ "citation.pandoc-citations": true });
+    settings.bridge.runSync(
+      settings.update({ "citation.pandoc-citations": true }),
+    );
     expect(registered).toHaveLength(1);
-    settings.update({ "citation.pandoc-citations": false });
+    settings.bridge.runSync(
+      settings.update({ "citation.pandoc-citations": false }),
+    );
     expect(registered).toEqual([]);
   });
 });

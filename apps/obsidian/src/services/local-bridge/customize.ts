@@ -7,15 +7,17 @@
 import type { App, TFile } from "obsidian";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
+import { Effect, Stream } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
+import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import type { LocalServerService } from "@/services/local-server/service";
+import type { LocalServer } from "@/services/local-server/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { PlainProfile } from "@/services/profile/plain";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainTemplate } from "@/services/template/plain";
 import {
   profileCustomization,
@@ -27,8 +29,6 @@ import type { LocalBridgeService } from "./service";
 import type { SelectedItemIdentity } from "./sessions";
 import { unsupportedProfileSourceReason } from "./unsupported";
 
-const logger = getLogger("local-bridge");
-
 /** How long a launch waits for the listener it just turned on. */
 const SERVER_START_TIMEOUT_MS = 10_000;
 
@@ -37,9 +37,10 @@ const SERVER_START_TIMEOUT_MS = 10_000;
  * enabling it for a web launch.
  */
 export function workbenchEnabled(
-  settings: Pick<PlainPluginSettings, "current">,
+  settings: Pick<PluginSettings["Service"], "current">,
+  effect: Pick<EffectBridge, "runSync">,
 ): boolean {
-  return settings.current?.["server.workbench"] ?? false;
+  return effect.runSync(settings.current)["server.workbench"];
 }
 
 /** What an entry action asks Customize to open. */
@@ -82,10 +83,14 @@ export type ConfirmLaunch = (
 export interface CustomizeDeps {
   webWorkbenchEnabled: boolean;
   app: App;
-  settings: Pick<PlainPluginSettings, "current" | "update">;
+  settings: Pick<PluginSettings["Service"], "current" | "update">;
   profile: Pick<PlainProfile, "profiles" | "defaultDocumentPath" | "getSource">;
   template: Pick<PlainTemplate, "exportLiteratureNotePackSource">;
-  localServer: Pick<LocalServerService, "effectivePort" | "on">;
+  localServer: Pick<
+    LocalServer["Service"],
+    "effectivePort" | "effectivePortChanges"
+  >;
+  effect: Pick<EffectBridge, "runSync" | "subscribe">;
   bridge: Pick<LocalBridgeService, "launchUrl">;
   /** This build's version, which a Profile's `minAppVersion` is read against. */
   pluginVersion: string;
@@ -113,7 +118,12 @@ export function createCustomize(deps: CustomizeDeps): CustomizeAction {
       deps.pluginVersion,
     );
     if (reason !== null) {
-      logger.debug("Customize kept the Profile in Obsidian", { reason });
+      deps.effect.runSync(
+        Effect.logDebug("Customize kept the Profile in Obsidian").pipe(
+          Effect.annotateLogs({ reason }),
+          withLogCategory("local-bridge"),
+        ),
+      );
       await deps.openNative(nativeRequest);
       new BaseNotice(m.notice_workbench_unsupported_profile());
       return;
@@ -127,8 +137,9 @@ export function createCustomize(deps: CustomizeDeps): CustomizeAction {
       return;
     }
 
-    const turnServerOn = deps.settings.current?.["server.enabled"] !== true;
-    const turnWorkbenchOn = !workbenchEnabled(deps.settings);
+    const turnServerOn =
+      deps.effect.runSync(deps.settings.current)["server.enabled"] !== true;
+    const turnWorkbenchOn = !workbenchEnabled(deps.settings, deps.effect);
     if (turnServerOn || turnWorkbenchOn || preference !== "web") {
       const consent = await deps.confirmLaunch({
         website: new URL(DOCS_SITE_URL).host,
@@ -145,12 +156,21 @@ export function createCustomize(deps: CustomizeDeps): CustomizeAction {
         return;
       }
       if (turnServerOn || turnWorkbenchOn)
-        deps.settings.update({
-          ...(turnServerOn ? { "server.enabled": true } : {}),
-          ...(turnWorkbenchOn ? { "server.workbench": true } : {}),
-        });
-      if (turnServerOn && !(await whenListening(deps.localServer))) {
-        logger.warn("Customize gave up waiting for the local server");
+        deps.effect.runSync(
+          deps.settings.update({
+            ...(turnServerOn ? { "server.enabled": true } : {}),
+            ...(turnWorkbenchOn ? { "server.workbench": true } : {}),
+          }),
+        );
+      if (
+        turnServerOn &&
+        !(await whenListening(deps.localServer, deps.effect))
+      ) {
+        deps.effect.runSync(
+          Effect.logWarning(
+            "Customize gave up waiting for the local server",
+          ).pipe(withLogCategory("local-bridge")),
+        );
         new BaseNotice(m.notice_workbench_server_failed());
         return;
       }
@@ -186,20 +206,29 @@ async function withDependencies(
 
 /** `true` once the listener binds, `false` once the wait runs out. */
 function whenListening(
-  localServer: Pick<LocalServerService, "effectivePort" | "on">,
+  localServer: Pick<
+    LocalServer["Service"],
+    "effectivePort" | "effectivePortChanges"
+  >,
+  effect: Pick<EffectBridge, "runSync" | "subscribe">,
 ): Promise<boolean> {
-  if (localServer.effectivePort !== null) return Promise.resolve(true);
+  if (effect.runSync(localServer.effectivePort) !== null)
+    return Promise.resolve(true);
   const { promise, resolve } = Promise.withResolvers<boolean>();
+  let off = () => {};
   const timer = window.setTimeout(() => {
-    unsubscribe();
+    off();
     resolve(false);
   }, SERVER_START_TIMEOUT_MS);
-  const unsubscribe = localServer.on("listening", (port) => {
-    if (port === null) return;
-    window.clearTimeout(timer);
-    unsubscribe();
-    resolve(true);
-  });
+  off = effect.subscribe(
+    Stream.drop(localServer.effectivePortChanges, 1),
+    (port) => {
+      if (port === null) return;
+      window.clearTimeout(timer);
+      off();
+      resolve(true);
+    },
+  );
   return promise;
 }
 

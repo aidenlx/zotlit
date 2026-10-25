@@ -10,7 +10,6 @@ import {
   Queue,
   Stream,
 } from "@/lib/effect";
-import { acquireDisposable } from "@/lib/effect-scope";
 import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -49,14 +48,14 @@ it.effect(
   "#1705: a plain subscription attaches before two immediate settings changes",
   () =>
     Effect.gen(function* () {
-      const { profile, settings } =
+      const { bridge, profile, settings } =
         yield* profileRuntimeOf(createTemplateHost());
       const received = yield* Queue.unbounded<string>();
       subscribe(profile.runtime, profile.changes, (state) =>
         Queue.offerUnsafe(received, state.defaultDocumentPath),
       );
-      settings.update({ "template.folder": "First" });
-      settings.update({ "template.folder": "Second" });
+      bridge.runSync(settings.update({ "template.folder": "First" }));
+      bridge.runSync(settings.update({ "template.folder": "Second" }));
       expect(yield* Queue.take(received)).toBe(
         "templates/zotlit-profile.default.md",
       );
@@ -74,10 +73,12 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const host = createTemplateHost();
-      yield* acquireDisposable(() =>
-        vi.spyOn(host.vault, "getFolderByPath").mockImplementationOnce(() => {
-          throw new Error("Vault unavailable");
-        }),
+      yield* Effect.acquireDisposable(
+        Effect.sync(() =>
+          vi.spyOn(host.vault, "getFolderByPath").mockImplementationOnce(() => {
+            throw new Error("Vault unavailable");
+          }),
+        ),
       );
       const profile = Context.get(
         yield* Layer.build(profileOver(host)),
@@ -103,10 +104,12 @@ it.effect(
       const path = "templates/zotlit-profile.default.md";
       const source = "The researcher's existing Default document";
       const host = createTemplateHost({ [path]: source });
-      yield* acquireDisposable(() =>
-        vi.spyOn(host.vault, "getFolderByPath").mockImplementationOnce(() => {
-          throw new Error("Vault unavailable");
-        }),
+      yield* Effect.acquireDisposable(
+        Effect.sync(() =>
+          vi.spyOn(host.vault, "getFolderByPath").mockImplementationOnce(() => {
+            throw new Error("Vault unavailable");
+          }),
+        ),
       );
       const { profile } = yield* profileRuntimeOf(host);
       expect(profile.loaded).toBe(false);
@@ -122,10 +125,12 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const host = createTemplateHost();
-      yield* acquireDisposable(() =>
-        vi.spyOn(host.vault, "getFolderByPath").mockImplementationOnce(() => {
-          throw new Error("Vault unavailable");
-        }),
+      yield* Effect.acquireDisposable(
+        Effect.sync(() =>
+          vi.spyOn(host.vault, "getFolderByPath").mockImplementationOnce(() => {
+            throw new Error("Vault unavailable");
+          }),
+        ),
       );
       const { profile } = yield* profileRuntimeOf(host);
       yield* Effect.promise(() =>
@@ -143,7 +148,8 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const host = createTemplateHost();
-      const { runtime, profile, settings } = yield* profileRuntimeOf(host);
+      const { bridge, runtime, profile, settings } =
+        yield* profileRuntimeOf(host);
       const received: unknown[] = [];
       const unsubscribe = subscribe(profile.runtime, profile.changes, (state) =>
         received.push(state),
@@ -152,7 +158,7 @@ it.effect(
       const source = yield* Effect.promise(() => profile.getSource("default"));
       const retained = profile.profiles;
       yield* Effect.promise(() => runtime.dispose());
-      settings.update({ "template.folder": "Released" });
+      bridge.runSync(settings.update({ "template.folder": "Released" }));
       host.vault.addFile("templates/zotlit-profile.late.md", source);
       yield* TestClock.adjust(500);
       expect(received).toHaveLength(1);

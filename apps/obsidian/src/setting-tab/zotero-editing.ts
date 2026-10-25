@@ -3,6 +3,7 @@
 import type { ButtonComponent, Setting, SettingGroupItem } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
@@ -10,6 +11,8 @@ import type { CapabilityCopy } from "@/services/annotation-repository/capability
 import { countdownInterval } from "@/services/annotation-repository/cooldown";
 
 import type { SettingsKey, SettingTabContext } from "./context";
+
+const logger = getLogger(["setting-tab", "zotero-editing"]);
 
 /** Whether one action is offered at all, and whether it can be selected now. */
 export interface ActionState {
@@ -121,7 +124,7 @@ function renderEditingRow(
 
   const apply = (): void => {
     const model = editingRowModel({
-      capability: ctx.annotations.capability,
+      capability: ctx.bridge.runSync(ctx.annotations.capability),
       checking,
       remembered,
       now: Temporal.Now.instant(),
@@ -131,7 +134,8 @@ function renderEditingRow(
     detailEl.textContent = model.status.detail ?? "";
     detailEl.toggle(model.status.detail !== null);
     rememberedEl.toggle(
-      remembered && ctx.annotations.capability.kind === "read-only",
+      remembered &&
+        ctx.bridge.runSync(ctx.annotations.capability).kind === "read-only",
     );
     applyAction(checkButton, model.check);
     applyAction(enableButton, model.enable);
@@ -151,11 +155,18 @@ function renderEditingRow(
    */
   const refreshRemembered = (): void => {
     const read = ++reads;
-    void ctx.writeAuthorization.remembered().then((value) => {
-      if (read !== reads) return;
-      remembered = value;
-      apply();
-    });
+    void ctx.bridge
+      .runPromise(ctx.writeAuthorization.remembered())
+      .then((value) => {
+        if (read !== reads) return;
+        remembered = value;
+        apply();
+      })
+      .catch((error: unknown) => {
+        logger.warn("Cannot read the Remembered Write Authorization", {
+          error,
+        });
+      });
   };
 
   setting
@@ -177,9 +188,9 @@ function renderEditingRow(
           checking = true;
           apply();
           try {
-            await ctx.annotations.probe();
+            await ctx.bridge.runPromise(ctx.annotations.probe());
             const result = editingCapabilityCopy(
-              ctx.annotations.capability,
+              ctx.bridge.runSync(ctx.annotations.capability),
               Temporal.Now.instant(),
             );
             new BaseNotice(
@@ -198,20 +209,25 @@ function renderEditingRow(
     .addButton((button) => {
       forgetButton = button;
       button.setButtonText(m.settings_zotero_editing_forget()).onClick(() => {
-        void ctx.writeAuthorization
-          .forgetAuthorization()
-          .then(refreshRemembered);
+        void ctx.bridge
+          .runPromise(ctx.writeAuthorization.forgetAuthorization())
+          .then(refreshRemembered)
+          .catch((error: unknown) => {
+            logger.warn("Cannot forget the Remembered Write Authorization", {
+              error,
+            });
+          });
       });
     });
 
   apply();
   refreshRemembered();
-  void ctx.annotations.probe();
+  void ctx.bridge.runPromise(ctx.annotations.probe());
   // An Allow editing from outside this row, such as a notice's button, can
   // save or drop a key, and the capability moves with it. The status redraws
   // at once; the key's line follows when the keystore answers.
   stack.defer(
-    ctx.annotations.on("capability-changed", () => {
+    ctx.bridge.subscribe(ctx.annotations.capabilityChanges, () => {
       apply();
       refreshRemembered();
     }),

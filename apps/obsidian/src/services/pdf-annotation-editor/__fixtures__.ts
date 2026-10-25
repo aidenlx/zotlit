@@ -12,6 +12,8 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { dispatchKey } from "@/lib/__fixtures__/keymap";
 import { withRecentColor } from "@/lib/annotation-colors";
+import { Effect, PubSub, Stream } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import {
   markExternal,
   nextChange,
@@ -22,7 +24,7 @@ import type { EditingCapability } from "@/services/annotation-repository/capabil
 import type {
   AnnotationList,
   AnnotationRecord,
-  AnnotationRepositoryEvents,
+  AnnotationRepositoryEvent,
   AnnotationState,
   HistoryOutcome,
 } from "@/services/annotation-repository/service";
@@ -32,9 +34,9 @@ import type {
   AttachmentResolverEvents,
 } from "@/services/attachment-resolver/service";
 import { ReaderSessionHost } from "@/services/reader-session/session";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 import { freshnessSignal } from "@/services/zotero-local-api/__fixtures__";
 import type { WireAnnotation } from "@/services/zotero-local-api/__fixtures__";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
@@ -326,7 +328,7 @@ export function annotationReads(
   records: readonly AnnotationRecord[] = [],
   capability: EditingCapability = { kind: "writable" },
 ) {
-  const emitter = createNanoEvents<AnnotationRepositoryEvents>();
+  const events = Effect.runSync(PubSub.unbounded<AnnotationRepositoryEvent>());
   const databaseSource = {
     kind: "zotero-db" as const,
     database: { userID: null, localUserKey: null, serverID: null },
@@ -340,80 +342,119 @@ export function annotationReads(
   let current = capability;
   /** How many PDF views hold each Attachment's Annotation History open. */
   const histories = new Map<string, number>();
+  const eventStream = Stream.fromPubSub(events);
   return {
-    read: vi.fn(() => Promise.resolve(list)),
-    peek: vi.fn(() => ({
-      value: list,
-      status: "fresh" as const,
-      settled: Promise.resolve(list),
-    })),
-    refresh: vi.fn(() => Promise.resolve(list)),
-    capabilityFor: vi.fn(() => current),
-    annotationState: vi.fn((): AnnotationState => ({
-      mutation: IDLE,
-      textDrafts: { comment: null, text: null },
-      tagDraft: null,
-      hidden: false,
-      gone: false,
-    })),
-    textDraftFor: vi.fn(() => null),
-    editTextField: vi.fn(() => null),
-    submitTextField: vi.fn(() => Promise.resolve(IDLE)),
-    editTags: vi.fn(() => null),
-    submitTags: vi.fn(() => Promise.resolve(IDLE)),
-    discardTextDraft: vi.fn(),
-    discardTagDraft: vi.fn(),
-    retryTextDraft: vi.fn(() => Promise.resolve(IDLE)),
-    patchColor: vi.fn(() => Promise.resolve(IDLE)),
-    patchColors: vi.fn((keys: readonly string[]) =>
-      Promise.resolve(keys.map(() => IDLE)),
+    read: vi.fn(() => Effect.succeed(list)),
+    peek: vi.fn(() =>
+      Effect.succeed({
+        value: list,
+        status: "fresh" as const,
+        settled: Promise.resolve(list),
+      }),
     ),
-    patchGeometry: vi.fn(() => Promise.resolve(IDLE)),
-    deleteAnnotation: vi.fn(() => Promise.resolve(IDLE)),
+    refresh: vi.fn(() => Effect.succeed(list)),
+    capabilityFor: vi.fn(() => Effect.sync(() => current)),
+    annotationState: vi.fn(() =>
+      Effect.sync((): AnnotationState => ({
+        mutation: IDLE,
+        textDrafts: { comment: null, text: null },
+        tagDraft: null,
+        hidden: false,
+        gone: false,
+      })),
+    ),
+    textDraftFor: vi.fn(() => Effect.succeed(null)),
+    editTextField: vi.fn(() => Effect.succeed(null)),
+    submitTextField: vi.fn(() => Effect.succeed(IDLE)),
+    editTags: vi.fn(() => Effect.succeed(null)),
+    submitTags: vi.fn(() => Effect.succeed(IDLE)),
+    discardTextDraft: vi.fn(() => Effect.void),
+    discardTagDraft: vi.fn(() => Effect.void),
+    retryTextDraft: vi.fn(() => Effect.succeed(IDLE)),
+    patchColor: vi.fn(() => Effect.succeed(IDLE)),
+    patchColors: vi.fn((keys: readonly string[]) =>
+      Effect.succeed(keys.map(() => IDLE)),
+    ),
+    patchGeometry: vi.fn(() => Effect.succeed(IDLE)),
+    deleteAnnotation: vi.fn(() => Effect.succeed(IDLE)),
     deleteAnnotations: vi.fn((keys: readonly string[]) =>
-      Promise.resolve(keys.map(() => IDLE)),
+      Effect.succeed(keys.map(() => IDLE)),
     ),
     createAnnotation: vi.fn(() =>
-      Promise.resolve({ kind: "created" as const, annotationKey: "MADE2345" }),
+      Effect.succeed({ kind: "created" as const, annotationKey: "MADE2345" }),
     ),
-    get capability() {
-      return current;
-    },
-    probe: vi.fn(() => Promise.resolve()),
-    hold: vi.fn((_attachmentKeys: Iterable<string>): Disposable => ({
-      [Symbol.dispose]: () => {},
-    })),
-    openHistory: vi.fn((attachmentKey: string) => {
-      histories.set(attachmentKey, (histories.get(attachmentKey) ?? 0) + 1);
-    }),
-    closeHistory: vi.fn((attachmentKey: string) => {
-      const left = (histories.get(attachmentKey) ?? 1) - 1;
-      if (left > 0) histories.set(attachmentKey, left);
-      else histories.delete(attachmentKey);
-    }),
-    undo: vi.fn((_attachmentKey: string): Promise<HistoryOutcome> =>
-      Promise.resolve({ kind: "idle" }),
+    capability: Effect.sync(() => current),
+    probe: vi.fn(() => Effect.void),
+    hold: vi.fn(() =>
+      Effect.succeed<Disposable>({ [Symbol.dispose]: () => {} }),
     ),
-    redo: vi.fn((_attachmentKey: string): Promise<HistoryOutcome> =>
-      Promise.resolve({ kind: "idle" }),
+    openHistory: vi.fn((attachmentKey: string) =>
+      Effect.sync(() => {
+        histories.set(attachmentKey, (histories.get(attachmentKey) ?? 0) + 1);
+      }),
+    ),
+    closeHistory: vi.fn((attachmentKey: string) =>
+      Effect.sync(() => {
+        const left = (histories.get(attachmentKey) ?? 1) - 1;
+        if (left > 0) histories.set(attachmentKey, left);
+        else histories.delete(attachmentKey);
+      }),
+    ),
+    undo: vi.fn((_attachmentKey: string): Effect.Effect<HistoryOutcome> =>
+      Effect.succeed({ kind: "idle" }),
+    ),
+    redo: vi.fn((_attachmentKey: string): Effect.Effect<HistoryOutcome> =>
+      Effect.succeed({ kind: "idle" }),
     ),
     /** The Attachments a history stands open for, and how many views hold each. */
     get histories(): ReadonlyMap<string, number> {
       return histories;
     },
-    on: <K extends keyof AnnotationRepositoryEvents>(
-      event: K,
-      cb: AnnotationRepositoryEvents[K],
-    ) => emitter.on(event, cb),
+    annotationsChanged: eventStream.pipe(
+      Stream.filter(
+        (
+          event,
+        ): event is Extract<
+          AnnotationRepositoryEvent,
+          { _tag: "annotations-changed" }
+        > => event._tag === "annotations-changed",
+      ),
+      Stream.map(({ attachmentKey }) => attachmentKey),
+    ),
+    annotationChanged: eventStream.pipe(
+      Stream.filter(
+        (
+          event,
+        ): event is Extract<
+          AnnotationRepositoryEvent,
+          { _tag: "annotation-changed" }
+        > => event._tag === "annotation-changed",
+      ),
+      Stream.map(({ annotationKey }) => annotationKey),
+    ),
+    capabilityChanges: eventStream.pipe(
+      Stream.filter(
+        (
+          event,
+        ): event is Extract<
+          AnnotationRepositoryEvent,
+          { _tag: "capability-changed" }
+        > => event._tag === "capability-changed",
+      ),
+      Stream.as(undefined),
+    ),
     /** What a landed Capability Probe does: another capability, announced. */
     setCapability(next: EditingCapability): void {
       current = next;
-      emitter.emit("capability-changed");
+      PubSub.publishUnsafe(events, { _tag: "capability-changed" });
     },
     /** What a dropped Zotero DB partition does: a whole new list, announced. */
     replace(attachmentKey: string, next: readonly AnnotationRecord[]): void {
       list = { source: databaseSource, annotations: next };
-      emitter.emit("annotations-changed", attachmentKey);
+      PubSub.publishUnsafe(events, {
+        _tag: "annotations-changed",
+        attachmentKey,
+      });
     },
   };
 }
@@ -436,22 +477,21 @@ export function markGestures() {
  * with a write held in memory the way a save holds it on disk.
  */
 export function readerSettings(): Pick<
-  PlainPluginSettings,
+  PluginSettings["Service"],
   "current" | "update"
 > {
   let current: Settings = { ...defaults };
   return {
-    get current() {
-      return current;
-    },
-    update: (patchOrUpdater) => {
-      const patch =
-        typeof patchOrUpdater === "function"
-          ? patchOrUpdater(current)
-          : patchOrUpdater;
-      current = { ...current, ...patch } as Settings;
-      return current;
-    },
+    current: Effect.sync(() => current),
+    update: (patchOrUpdater) =>
+      Effect.sync(() => {
+        const patch =
+          typeof patchOrUpdater === "function"
+            ? patchOrUpdater(current)
+            : patchOrUpdater;
+        current = { ...current, ...patch } as Settings;
+        return current;
+      }),
   };
 }
 
@@ -502,6 +542,7 @@ export interface ReaderSurfacesOptions {
   records: readonly AnnotationRecord[];
   capability?: EditingCapability;
   annotations: AnnotationEdits & AnnotationCreates & AnnotationFacts;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
   /**
    * This document's Structured Characters; `null` until one is open. As a
    * function, read on each ask, as the viewer is.
@@ -534,6 +575,7 @@ export function readerSurfaces({
   records,
   capability = { kind: "writable" },
   annotations,
+  bridge,
   structure = null,
   sortIndex = async () => null,
   adjustRange = async () => null,
@@ -548,8 +590,8 @@ export function readerSurfaces({
     now: READER_NOW,
   });
   let held = records;
-  ingestAnnotations(store, held, annotations);
-  const listening = listenAnnotationEvents(store, annotations);
+  ingestAnnotations(store, held, { annotations, bridge });
+  const listening = listenAnnotationEvents(store, annotations, bridge);
   const gestures = {
     revealAnnotation: vi.fn(),
     blockedPress: vi.fn(),
@@ -596,6 +638,7 @@ export function readerSurfaces({
     colors,
     surfaceState: store,
     annotations,
+    bridge,
     now: () => READER_NOW,
   });
   const selection = new MarkSelection({
@@ -616,6 +659,7 @@ export function readerSurfaces({
     navigate: (key) => navigated.push(key),
     report: (keys) => reported.push(keys),
     annotations,
+    bridge,
     colors,
     surfaceState: store,
     gestures,
@@ -675,7 +719,7 @@ export function readerSurfaces({
     /** What a refresh does once the read answers: the records, replaced. */
     replace(next: readonly AnnotationRecord[]) {
       held = next;
-      ingestAnnotations(store, next, annotations);
+      ingestAnnotations(store, next, { annotations, bridge });
     },
     /** What the binding does once a page re-rendered. */
     sync() {
@@ -731,14 +775,25 @@ export async function repositoryOver(
   { external }: { external?: readonly string[] } = {},
 ) {
   const zotero = zoteroLibrary(records.map(wireOf));
-  const { repository, requests, client, dbEvents, serverEvents } =
-    await writable(stack, zotero.answers, { external });
+  const {
+    repository,
+    service,
+    bridge,
+    requests,
+    client,
+    dbEvents,
+    serverEvents,
+    localApiService,
+  } = await writable(stack, zotero.answers, { external });
   const list = await repository.read("RGRPDF24");
   return {
     repository,
+    service,
+    bridge,
     zotero,
     requests,
     list,
+    localApiService,
     /**
      * Zotero imports one Annotation from the PDF file, and a database refresh
      * tells the repository, which locks it.
@@ -776,7 +831,7 @@ export async function readerOverZotero(
   {
     external,
     ...options
-  }: Omit<ReaderSurfacesOptions, "annotations"> & {
+  }: Omit<ReaderSurfacesOptions, "annotations" | "bridge"> & {
     /** The Annotations Zotero imported from the PDF file, by key. */
     external?: readonly string[];
   },
@@ -784,12 +839,13 @@ export async function readerOverZotero(
   const zoteroSide = await repositoryOver(stack, options.records, {
     external,
   });
-  const { repository, list } = zoteroSide;
+  const { repository, service, bridge, list } = zoteroSide;
   const reader = stack.use(
     readerSurfaces({
       ...options,
       records: list?.annotations ?? [],
-      annotations: repository,
+      annotations: service,
+      bridge,
     }),
   );
   let open = true;
@@ -802,7 +858,7 @@ export async function readerOverZotero(
     reader.sync();
   };
   stack.defer(
-    repository.on("annotations-changed", (attachmentKey) => {
+    repository.listen("annotations-changed", (attachmentKey) => {
       draw(repository.peek(attachmentKey)?.value);
       void repository.read(attachmentKey).then(draw);
     }),

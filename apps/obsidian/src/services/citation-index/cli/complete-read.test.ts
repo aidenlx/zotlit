@@ -5,7 +5,6 @@ import { expect } from "vitest";
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { effectTestParse } from "@/lib/__fixtures__/parse-client";
 import { Effect, Fiber } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import {
   annotationRows,
@@ -43,24 +42,29 @@ it.effect.each(["annotation-uses", "cited-by"])(
       const entered = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
       let held = false;
-      const h = yield* acquireAsyncDisposable(() =>
-        createCitationIndexHarness(
-          { "draft.md": `[](${annotationUri})` },
-          {
-            zoteroRows: annotationRows,
-            settings: { "citation.annotation-citations": true },
-            parseClient: {
-              parse: effectTestParse(async (request, signal) => {
-                if (held) {
-                  entered.resolve();
-                  await release.promise;
-                }
-                return Effect.runPromise(inProcessParseClient.parse(request), {
-                  signal,
-                });
-              }),
+      const h = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          createCitationIndexHarness(
+            { "draft.md": `[](${annotationUri})` },
+            {
+              zoteroRows: annotationRows,
+              settings: { "citation.annotation-citations": true },
+              parseClient: {
+                parse: effectTestParse(async (request, signal) => {
+                  if (held) {
+                    entered.resolve();
+                    await release.promise;
+                  }
+                  return Effect.runPromise(
+                    inProcessParseClient.parse(request),
+                    {
+                      signal,
+                    },
+                  );
+                }),
+              },
             },
-          },
+          ),
         ),
       );
       h.workspace.layoutReady();
@@ -90,13 +94,15 @@ it.effect(
   "#1683 keeps the captured annotation keys when a note changes during lookup",
   () =>
     Effect.gen(function* () {
-      const h = yield* acquireAsyncDisposable(() =>
-        createCitationIndexHarness(
-          { "draft.md": `[](${annotationUri})` },
-          {
-            zoteroRows: annotationRows,
-            settings: { "citation.annotation-citations": true },
-          },
+      const h = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          createCitationIndexHarness(
+            { "draft.md": `[](${annotationUri})` },
+            {
+              zoteroRows: annotationRows,
+              settings: { "citation.annotation-citations": true },
+            },
+          ),
         ),
       );
       h.workspace.layoutReady();
@@ -127,13 +133,15 @@ it.effect(
   "#1683 captures References entries, omissions and source choices together",
   () =>
     Effect.gen(function* () {
-      const h = yield* acquireAsyncDisposable(() =>
-        createCitationIndexHarness(
-          { "draft.md": `[](${annotationUri})` },
-          {
-            zoteroRows: annotationRows,
-            settings: { "citation.annotation-citations": true },
-          },
+      const h = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          createCitationIndexHarness(
+            { "draft.md": `[](${annotationUri})` },
+            {
+              zoteroRows: annotationRows,
+              settings: { "citation.annotation-citations": true },
+            },
+          ),
         ),
       );
       h.workspace.layoutReady();
@@ -144,7 +152,9 @@ it.effect(
         .handler({ file: "draft.md" })
         .pipe(Effect.forkChild);
       yield* Effect.promise(() => held.entered);
-      h.settings.update({ "citation.annotation-citations": false });
+      h.settingsBridge.runSync(
+        h.settings.update({ "citation.annotation-citations": false }),
+      );
       held.release();
       const answer = JSON.parse(yield* Fiber.join(fiber));
       expect(answer.entries).toMatchObject([
@@ -168,22 +178,27 @@ it.effect(
       const entered = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
       let held = false;
-      const h = yield* acquireAsyncDisposable(() =>
-        createCitationIndexHarness(
-          { "draft.md": "@doe2024" },
-          {
-            parseClient: {
-              parse: effectTestParse(async (request, signal) => {
-                if (held) {
-                  entered.resolve();
-                  await release.promise;
-                }
-                return Effect.runPromise(inProcessParseClient.parse(request), {
-                  signal,
-                });
-              }),
+      const h = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          createCitationIndexHarness(
+            { "draft.md": "@doe2024" },
+            {
+              parseClient: {
+                parse: effectTestParse(async (request, signal) => {
+                  if (held) {
+                    entered.resolve();
+                    await release.promise;
+                  }
+                  return Effect.runPromise(
+                    inProcessParseClient.parse(request),
+                    {
+                      signal,
+                    },
+                  );
+                }),
+              },
             },
-          },
+          ),
         ),
       );
       h.workspace.layoutReady();
@@ -209,13 +224,15 @@ it.effect.each(["references", "cited-by", "annotation-uses"])(
   "#1683 refreshes saved text before its metadata event for %s",
   (command) =>
     Effect.gen(function* () {
-      const h = yield* acquireAsyncDisposable(() =>
-        createCitationIndexHarness(
-          { "draft.md": `[@doe2024] [](${annotationUri})` },
-          {
-            zoteroRows: annotationRows,
-            settings: { "citation.annotation-citations": true },
-          },
+      const h = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          createCitationIndexHarness(
+            { "draft.md": `[@doe2024] [](${annotationUri})` },
+            {
+              zoteroRows: annotationRows,
+              settings: { "citation.annotation-citations": true },
+            },
+          ),
         ),
       );
       h.workspace.layoutReady();
@@ -242,13 +259,15 @@ it.effect.each(["references", "cited-by", "annotation-uses"])(
   "#1683 bounds a stale saved scan refresh for %s",
   (command) =>
     Effect.gen(function* () {
-      const h = yield* acquireAsyncDisposable(() =>
-        createCitationIndexHarness(
-          { "draft.md": `[@doe2024] [](${annotationUri})` },
-          {
-            zoteroRows: annotationRows,
-            settings: { "citation.annotation-citations": true },
-          },
+      const h = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          createCitationIndexHarness(
+            { "draft.md": `[@doe2024] [](${annotationUri})` },
+            {
+              zoteroRows: annotationRows,
+              settings: { "citation.annotation-citations": true },
+            },
+          ),
         ),
       );
       h.workspace.layoutReady();

@@ -5,6 +5,7 @@ import type { App, Command, Plugin, WorkspaceLeaf } from "obsidian";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { registerFileMenu } from "@/services/file-menu";
 import {
@@ -96,7 +97,10 @@ function setup() {
     webWorkbenchEnabled: true,
     app,
     // The classifier reads a filename only inside the template folder.
-    settings: { current: { "template.folder": "templates" } },
+    settings: {
+      current: Effect.succeed({ "template.folder": "templates" }),
+    },
+    bridge: { runSync: Effect.runSync },
     profile: {
       profiles: [],
       defaultDocumentPath: "templates/zotlit-profile.default.md",

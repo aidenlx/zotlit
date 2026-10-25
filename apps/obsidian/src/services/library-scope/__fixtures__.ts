@@ -2,10 +2,9 @@
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Context, Effect, Layer, Stream } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import { layerQueryClients } from "@/services/query-client/service";
-import type { PlainPluginSettings } from "@/services/settings/plain";
-import { plainPluginSettings } from "@/services/settings/plain";
 import {
   layerPluginSettings,
   PluginSettings,
@@ -54,7 +53,8 @@ export async function openLibraryScope(
   await runtime.context();
   const service = runtime.runSync(LibraryScope);
   const plain = plainLibraryScope(runtime);
-  const settings = plainPluginSettings(runtime);
+  const settings = runtime.runSync(PluginSettings);
+  const bridge = effectBridge(runtime);
   const reads = plainZoteroReads(runtime);
   const owned = stack.move();
   return {
@@ -62,6 +62,7 @@ export async function openLibraryScope(
     service,
     plain,
     settings,
+    bridge,
     reads,
     close: () => owned.disposeAsync(),
   };
@@ -80,7 +81,7 @@ export async function buildLibraryScope(
       | "db-file-missing"
       | "refresh-requested"
     >;
-    settings: PlainPluginSettings;
+    settings: PluginSettings["Service"];
   },
   stack: AsyncDisposableStack,
 ) {
@@ -93,8 +94,8 @@ export async function buildLibraryScope(
           Layer.succeed(
             PluginSettings,
             stubService<PluginSettings["Service"]>("PluginSettings", {
-              current: Effect.sync(() => settings.current),
-              diagnostics: Effect.sync(() => settings.diagnostics),
+              current: settings.current,
+              diagnostics: settings.diagnostics,
               changes: settings.changes,
             }),
           ),

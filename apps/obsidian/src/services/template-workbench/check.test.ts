@@ -15,7 +15,6 @@ import { TemplateError } from "@zotlit/templates/facade";
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Deferred, Effect, Exit, Fiber } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import { getProfileBinding } from "@/services/profile/bindings";
@@ -99,6 +98,7 @@ async function fixture(
     app: f.app,
     templates: f.template,
     settings: f.settings,
+    bridge: f.bridge,
     profile: f.profile,
     zoteroPref,
     noteIndex,
@@ -125,7 +125,7 @@ async function fixture(
 
 /** {@link fixture}, closed when the test's scope closes. */
 const scopedFixture = (...args: Parameters<typeof fixture>) =>
-  acquireAsyncDisposable(() => fixture(...args));
+  Effect.acquireDisposable(Effect.tryPromise(() => fixture(...args)));
 
 /** The parsed answer, once it holds that every refusal carries a hint. */
 function assertRefusalsHint(output: string) {
@@ -420,9 +420,12 @@ describe("plain document checks", () => {
           selectedProfile: { id: "Bk3Qn7XvT2Lp" },
           outputs: { partial: "Paper" },
         });
-        expect(
-          vi.mocked(readTemplateData).mock.calls.at(-1)?.[0].settings.current,
-        ).toMatchObject({ "note.literature-folder": "Selected folder" });
+        const loadedSettings = yield* vi
+          .mocked(readTemplateData)
+          .mock.calls.at(-1)![0].settings.current;
+        expect(loadedSettings).toMatchObject({
+          "note.literature-folder": "Selected folder",
+        });
         yield* f.draft("---\nlanguage: liquid\n---\n{% render 'missing' %}");
         const failed = yield* f.check({
           document: "partial:new",
@@ -774,10 +777,12 @@ describe("registered template-check", () => {
             "contract: 5\nfolder: Installed\ncitationStyle: installed-style",
           ),
         );
-        f.settings.updateDefaultLiteratureNoteProfileBindings({
-          "note.literature-folder": "Inherited",
-          "citation.references-style": "inherited-style",
-        });
+        f.bridge.runSync(
+          f.settings.updateDefaultLiteratureNoteProfileBindings({
+            "note.literature-folder": "Inherited",
+            "citation.references-style": "inherited-style",
+          }),
+        );
         const draft = yield* f.draft(
           SOURCE.replace(
             "contract: 5",
@@ -822,10 +827,9 @@ describe("registered template-check", () => {
           },
         });
         expect(inherited.outputs.fold["zotlit-csl"]).toBeUndefined();
-        const loadedSettings = yield* Effect.sync(
-          () =>
-            vi.mocked(readTemplateData).mock.calls.at(-1)![0].settings.current,
-        );
+        const loadedSettings = yield* vi
+          .mocked(readTemplateData)
+          .mock.calls.at(-1)![0].settings.current;
         expect(
           getProfileBinding(loadedSettings, "citation.references-style"),
         ).toBe("inherited-style");

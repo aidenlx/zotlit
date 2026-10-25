@@ -1,5 +1,6 @@
 import type { App, PluginManifest } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import type { LanguagePackLifecycle } from "@/lib/i18n";
 import type { CapabilityNotices } from "@/services/annotation-repository/notices";
@@ -12,14 +13,14 @@ import type { ExcerptImageService } from "@/services/excerpt-image/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { LocalBridgeService } from "@/services/local-bridge/service";
-import type { LocalServerService } from "@/services/local-server/service";
+import type { LocalServer } from "@/services/local-server/service";
 import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
 import type { PlainProfile } from "@/services/profile/plain";
-import type { ReleaseService } from "@/services/release/service";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { Release } from "@/services/release/service";
 import type { Settings } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainTemplate } from "@/services/template/plain";
-import type { ZoteroLocalApiClient } from "@/services/zotero-local-api/service";
+import type { ZoteroLocalApi } from "@/services/zotero-local-api/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
@@ -33,7 +34,7 @@ export type SettingsControlKey = SettingsKey | ProfileControlKey;
 
 /** The release-service surface the setting tab needs — reused by both render paths. */
 export type ReleaseTabActions = Pick<
-  ReleaseService,
+  Release["Service"],
   "openReleaseNote" | "acknowledgeMigration"
 >;
 
@@ -45,8 +46,8 @@ export type ManagedBinaryActions = Pick<
 
 /** The Local Server surface the setting tab needs: the bound port and its edges. */
 export type LocalServerActions = Pick<
-  LocalServerService,
-  "effectivePort" | "on"
+  LocalServer["Service"],
+  "effectivePort" | "effectivePortChanges"
 >;
 
 /** The Local Bridge surface the setting tab needs: the live connection and its end. */
@@ -63,8 +64,8 @@ export type CitationIndexActions = Pick<PlainCitationIndex, "reset">;
  * it moved.
  */
 export type AnnotationCapabilityActions = Pick<
-  AnnotationRepository,
-  "capability" | "on" | "probe"
+  AnnotationRepository["Service"],
+  "capability" | "capabilityChanges" | "probe"
 >;
 
 /**
@@ -72,7 +73,7 @@ export type AnnotationCapabilityActions = Pick<
  * Allow editing every entry shares, and forgets.
  */
 export type WriteAuthorizationActions = Pick<
-  ZoteroLocalApiClient,
+  ZoteroLocalApi["Service"],
   "forgetAuthorization" | "remembered"
 > &
   Pick<CapabilityNotices, "allowEditing">;
@@ -91,6 +92,7 @@ export type AttachmentImportActions = Pick<
  */
 export interface SettingTabContext {
   runtime: SubscriptionRuntime;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
   webWorkbenchEnabled: boolean;
   app: App;
   importProfile: ImportProfile;
@@ -102,7 +104,7 @@ export interface SettingTabContext {
    */
   manifest: PluginManifest;
   settings: Pick<
-    PlainPluginSettings,
+    PluginSettings["Service"],
     | "current"
     | "update"
     | "updateDefaultLiteratureNoteProfileBindings"

@@ -9,6 +9,8 @@ import {
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { Effect } from "@/lib/effect";
 import { themeHook } from "@/lib/theme-hooks";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 import { openNoteVault } from "@/services/note-index/__fixtures__";
@@ -32,8 +34,12 @@ beforeEach(() => {
   setMockPlatform({ isMacOS: false });
 });
 
+let bridge = openTestBridge();
+
 afterEach(async () => {
   resetMockPlatform();
+  await bridge[Symbol.asyncDispose]();
+  bridge = openTestBridge();
   await noteIndexes.disposeAsync();
   noteIndexes = new AsyncDisposableStack();
 });
@@ -144,6 +150,7 @@ async function emptyNoteIndex() {
 /** The service's deps that every test here builds the same way. */
 async function standingDeps() {
   return {
+    bridge,
     markGestures: markGestures(),
     settings: readerSettings(),
     noteIndex: await emptyNoteIndex(),
@@ -1235,10 +1242,12 @@ it("lands on the Annotation an undo changed, and reports one Zotero moved", asyn
   reader.renderFirstPage();
   await binding.probed;
 
-  annotations.undo.mockResolvedValueOnce({
-    kind: "stepped",
-    annotationKey: "PUPR5FG5",
-  });
+  annotations.undo.mockReturnValueOnce(
+    Effect.succeed({
+      kind: "stepped",
+      annotationKey: "PUPR5FG5",
+    }),
+  );
   dispatchKey(view.scope, { key: "z", ctrlKey: true }, view.containerEl);
   await binding.stepped;
 
@@ -1248,7 +1257,7 @@ it("lands on the Annotation an undo changed, and reports one Zotero moved", asyn
 
   // Editing that is not allowed now reports itself the way every other
   // blocked edit gesture does.
-  annotations.redo.mockResolvedValueOnce({ kind: "blocked" });
+  annotations.redo.mockReturnValueOnce(Effect.succeed({ kind: "blocked" }));
   annotations.setCapability({
     kind: "read-only",
     reason: "local-api-disabled",

@@ -5,7 +5,6 @@ import { planItemFilter, queryItemFrom } from "@zotlit/item-query";
 import type { LanguagePack } from "@zotlit/obsidian-i18n";
 
 import { Effect, Fiber } from "@/lib/effect";
-import { acquireAsyncDisposable, acquireDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
@@ -47,8 +46,10 @@ it.effect.each([true, false, undefined])(
   (includeMatch) =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
-      const f = yield* acquireAsyncDisposable(() =>
-        profileServiceFixture({ [path]: source }, undefined, context),
+      const f = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          profileServiceFixture({ [path]: source }, undefined, context),
+        ),
       );
       const plan = yield* Effect.promise(() => f.profile.prepareShare(id));
       const output = plan.render({
@@ -72,8 +73,10 @@ it.effect.each([true, false])(
   (includeMatch) =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
-      const f = yield* acquireAsyncDisposable(() =>
-        profileServiceFixture({ [path]: source }, undefined, context),
+      const f = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          profileServiceFixture({ [path]: source }, undefined, context),
+        ),
       );
       const plan = yield* Effect.promise(() => f.profile.prepareShare(id));
       expect(
@@ -103,11 +106,13 @@ it.effect.each([
   ({ held, includeMatch }) =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
-      const f = yield* acquireAsyncDisposable(() =>
-        profileServiceFixture(
-          held ? { [path]: source.replace("1.0.0", "0.9.0") } : {},
-          undefined,
-          context,
+      const f = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          profileServiceFixture(
+            held ? { [path]: source.replace("1.0.0", "0.9.0") } : {},
+            undefined,
+            context,
+          ),
         ),
       );
       const before = new Map(f.vault.contents);
@@ -133,8 +138,10 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
-      const f = yield* acquireAsyncDisposable(() =>
-        profileServiceFixture(undefined, undefined, context),
+      const f = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          profileServiceFixture(undefined, undefined, context),
+        ),
       );
       const absent = beforeMatch + afterMatch;
       expect(
@@ -169,8 +176,10 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
-      const f = yield* acquireAsyncDisposable(() =>
-        profileServiceFixture(undefined, undefined, context),
+      const f = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          profileServiceFixture(undefined, undefined, context),
+        ),
       );
       const source = `${beforeMatch}match: 'collections.within("Foreign/Reading") && tags.contains("Unfamiliar tag")'\r\n${afterMatch}`;
       const imported = yield* settled(async () =>
@@ -211,8 +220,10 @@ it.effect(
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
       const source = `${beforeMatch}author: &condition 'tags.contains("Reading")'\r\nmatch: *condition\r\n${afterMatch}`;
-      const f = yield* acquireAsyncDisposable(() =>
-        profileServiceFixture({ [path]: source }, undefined, context),
+      const f = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          profileServiceFixture({ [path]: source }, undefined, context),
+        ),
       );
       const plan = yield* Effect.promise(() => f.profile.prepareShare(id));
       const options = {
@@ -243,8 +254,10 @@ it.effect.each([true, false])(
         ) +
         match +
         afterMatch;
-      const f = yield* acquireAsyncDisposable(() =>
-        profileServiceFixture(undefined, undefined, context),
+      const f = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          profileServiceFixture(undefined, undefined, context),
+        ),
       );
       const plan = yield* Effect.promise(() =>
         f.profile.prepareImport(source, {
@@ -267,12 +280,16 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
-      const cleanup = yield* acquireDisposable(() => new DisposableStack());
+      const cleanup = yield* Effect.acquireDisposable(
+        Effect.sync(() => new DisposableStack()),
+      );
       cleanup.defer(() => runtime.reset());
       runtime.install(chinesePack as LanguagePack);
       const source = `${beforeMatch}author: &condition 'tags.contains("Reading")'\r\nmatch: *condition\r\n${afterMatch}`;
-      const f = yield* acquireAsyncDisposable(() =>
-        profileServiceFixture({ [path]: source }, undefined, context),
+      const f = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          profileServiceFixture({ [path]: source }, undefined, context),
+        ),
       );
       const plan = yield* Effect.promise(() => f.profile.prepareShare(id));
       expect(runtime.getLocale()).toBe("zh-CN");
@@ -305,8 +322,10 @@ it.effect(
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
       const source = `${beforeMatch}match: &condition "true"\r\nauthor: *condition\r\n${afterMatch}`;
-      const f = yield* acquireAsyncDisposable(() =>
-        profileServiceFixture({ [path]: source }, undefined, context),
+      const f = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          profileServiceFixture({ [path]: source }, undefined, context),
+        ),
       );
       const plan = yield* Effect.promise(() => f.profile.prepareShare(id));
       expect(

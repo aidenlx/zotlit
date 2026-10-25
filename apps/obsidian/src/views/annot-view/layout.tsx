@@ -12,6 +12,7 @@ import type { Root } from "react-dom/client";
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { AppContext } from "@/lib/app-context";
 import { registerKeymap } from "@/lib/disposables";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { historyOutcomeNotice } from "@/services/annotation-repository/actions";
@@ -119,9 +120,12 @@ export interface AnnotationsLayoutDeps {
    * than two, and an edit stamps its precondition off the record they show.
    */
   annotations: Pick<
-    AnnotationRepository,
+    AnnotationRepository["Service"],
     | "annotationState"
+    | "annotationChanged"
+    | "annotationsChanged"
     | "capability"
+    | "capabilityChanges"
     | "capabilityFor"
     | "textDraftFor"
     | "deleteAnnotation"
@@ -129,7 +133,6 @@ export interface AnnotationsLayoutDeps {
     | "discardTextDraft"
     | "discardTagDraft"
     | "discardConflict"
-    | "on"
     | "patchColor"
     | "patchColors"
     | "editTextField"
@@ -146,6 +149,7 @@ export interface AnnotationsLayoutDeps {
     | "tagDraftFor"
     | "undo"
   >;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
   /** Allow editing, from every entry the cards offer, which the UI seam owns. */
   allowEditing: () => void;
   /**
@@ -243,10 +247,11 @@ type Landed = { list: AnnotationList; scope: string | null } | null;
 
 /** The keys of the Annotations the repository holds for an Attachment now. */
 function annotationKeys(
-  annotations: Pick<AnnotationRepository, "peek">,
+  annotations: Pick<AnnotationRepository["Service"], "peek">,
+  bridge: Pick<EffectBridge, "runSync">,
   attachmentKey: string,
 ): ReadonlySet<string> | null {
-  const held = annotations.peek(attachmentKey);
+  const held = bridge.runSync(annotations.peek(attachmentKey));
   return held ? new Set(held.value.annotations.map(({ key }) => key)) : null;
 }
 
@@ -375,6 +380,7 @@ export class AnnotationsLayout extends Component {
       excerptDisplay: deps.excerptDisplay,
       excerptImageRequest: (target) => this.#excerptRequest(target),
       annotations: deps.annotations,
+      bridge: deps.bridge,
       controls: (annot) => this.#cardControls(annot),
       selectedCards: () => this.#selectedCards(),
       libraryTagNames: (annot) => deps.libraryTagNames(annot.key),
@@ -496,7 +502,9 @@ export class AnnotationsLayout extends Component {
       ...new Set([...rows.map((row) => row.attachmentKey), ...also]),
     ];
     const previous = this.#hold;
-    this.#hold = this.#deps.annotations.hold(attachmentKeys);
+    this.#hold = this.#deps.bridge.runSync(
+      this.#deps.annotations.hold(attachmentKeys),
+    );
     if (!sameKeys(attachmentKeys, this.#shown)) {
       this.#shown = [...attachmentKeys];
       for (const key of this.#landed.keys())
@@ -515,7 +523,11 @@ export class AnnotationsLayout extends Component {
       previous?.[Symbol.dispose]();
       if (this.#rows !== rows) return;
       for (const attachmentKey of attachmentKeys) {
-        const keys = annotationKeys(this.#deps.annotations, attachmentKey);
+        const keys = annotationKeys(
+          this.#deps.annotations,
+          this.#deps.bridge,
+          attachmentKey,
+        );
         if (keys) this.#listKeys.set(attachmentKey, keys);
       }
     });
@@ -547,7 +559,11 @@ export class AnnotationsLayout extends Component {
     for (const [key, attachmentKey] of this.#listAdded) {
       if (
         named.has(key) ||
-        !annotationKeys(this.#deps.annotations, attachmentKey)?.has(key)
+        !annotationKeys(
+          this.#deps.annotations,
+          this.#deps.bridge,
+          attachmentKey,
+        )?.has(key)
       )
         this.#listAdded.delete(key);
     }
@@ -608,14 +624,19 @@ export class AnnotationsLayout extends Component {
   async refresh(): Promise<void> {
     const shown = this.#shown;
     if (shown.length === 0) return;
-    await Promise.all(shown.map((key) => this.#deps.annotations.refresh(key)));
+    await Promise.all(
+      shown.map((key) =>
+        this.#deps.bridge.runPromise(this.#deps.annotations.refresh(key)),
+      ),
+    );
     await this.#reading;
     if (sameKeys(this.#shown, shown)) this.#deps.excerptDisplay.refresh();
   }
 
   /** Revalidate every Attachment shown, without waiting for the answer. */
   revalidate(): void {
-    for (const key of this.#shown) void this.#deps.annotations.refresh(key);
+    for (const key of this.#shown)
+      void this.#deps.bridge.runPromise(this.#deps.annotations.refresh(key));
   }
 
   /**
@@ -632,8 +653,8 @@ export class AnnotationsLayout extends Component {
     const current = () =>
       this.#latest.get(attachmentKey) === read &&
       this.#shown.includes(attachmentKey);
-    return this.#deps.annotations
-      .read(attachmentKey)
+    return this.#deps.bridge
+      .runPromise(this.#deps.annotations.read(attachmentKey))
       .then((list) => {
         // A slower read never overwrites a later one. A null answer is a read
         // an invalidation cancelled; the same invalidation announces the
@@ -748,14 +769,18 @@ export class AnnotationsLayout extends Component {
       (field) =>
         new Map(
           annotations.flatMap((annotation) => {
-            const draft = repository.textDraftFor(field, annotation.key);
+            const draft = this.#deps.bridge.runSync(
+              repository.textDraftFor(field, annotation.key),
+            );
             return draft ? [[annotation.key, draft] as const] : [];
           }),
         ),
     );
     const tagDrafts = new Map(
       annotations.flatMap((annotation) => {
-        const draft = repository.tagDraftFor(annotation.key);
+        const draft = this.#deps.bridge.runSync(
+          repository.tagDraftFor(annotation.key),
+        );
         return draft ? [[annotation.key, draft] as const] : [];
       }),
     );
@@ -778,7 +803,9 @@ export class AnnotationsLayout extends Component {
     attachmentKey: string,
   ): Pick<AnnotState, "annotations" | "sources"> | null {
     if (!this.#shown.includes(attachmentKey)) return null;
-    const held = this.#deps.annotations.peek(attachmentKey);
+    const held = this.#deps.bridge.runSync(
+      this.#deps.annotations.peek(attachmentKey),
+    );
     if (!held) return null;
     const scope =
       this.#landed.get(attachmentKey)?.scope ?? this.#deps.zoteroPref.dataDir;
@@ -790,7 +817,11 @@ export class AnnotationsLayout extends Component {
   #listChanged(attachmentKey: string): void {
     const before = this.#listKeys.get(attachmentKey);
     if (!before) return;
-    const now = annotationKeys(this.#deps.annotations, attachmentKey);
+    const now = annotationKeys(
+      this.#deps.annotations,
+      this.#deps.bridge,
+      attachmentKey,
+    );
     if (
       now === null ||
       (now.size === before.size && [...now].every((key) => before.has(key)))
@@ -812,7 +843,7 @@ export class AnnotationsLayout extends Component {
       capabilities: new Map(
         this.#shown.map((key) => [
           key,
-          this.#deps.annotations.capabilityFor(key),
+          this.#deps.bridge.runSync(this.#deps.annotations.capabilityFor(key)),
         ]),
       ),
     });
@@ -823,53 +854,63 @@ export class AnnotationsLayout extends Component {
   #subscribe(subscriptions: DisposableStack): void {
     const { annotations } = this.#deps;
     subscriptions.defer(
-      annotations.on("capability-changed", () => this.#syncCapabilities()),
+      this.#deps.bridge.subscribe(annotations.capabilityChanges, () =>
+        this.#syncCapabilities(),
+      ),
     );
     // The repository's own event is the only word that a list was superseded;
     // a held read says nothing about an invalidation of its own.
     subscriptions.defer(
-      annotations.on("annotations-changed", (attachmentKey) => {
-        if (!this.#shown.includes(attachmentKey)) return;
-        // What the repository holds now, a write's Pending Proposal among
-        // it, stands in the same task; the read that follows replaces it.
-        const held = this.#heldList(attachmentKey);
-        if (held) this.store.setState(held);
-        this.#reading = this.#readAttachment(attachmentKey).then(() => {});
-        // An Annotation added to or removed from a list the rows hold runs
-        // the query again, so it takes its place.
-        this.#listChanged(attachmentKey);
-      }),
+      this.#deps.bridge.subscribe(
+        annotations.annotationsChanged,
+        (attachmentKey) => {
+          if (!this.#shown.includes(attachmentKey)) return;
+          // What the repository holds now, a write's Pending Proposal among
+          // it, stands in the same task; the read that follows replaces it.
+          const held = this.#heldList(attachmentKey);
+          if (held) this.store.setState(held);
+          this.#reading = this.#readAttachment(attachmentKey).then(() => {});
+          // An Annotation added to or removed from a list the rows hold runs
+          // the query again, so it takes its place.
+          this.#listChanged(attachmentKey);
+        },
+      ),
     );
     // One snapshot per Annotation: what a write left on it, its drafts, and
     // whether a complete read found it gone, which ends its editors.
     subscriptions.defer(
-      annotations.on("annotation-changed", (annotationKey) => {
-        const state = this.store.getState();
-        const now = annotations.annotationState(annotationKey);
-        const mutations = new Map(state.mutations);
-        mutations.set(annotationKey, now.mutation);
-        const fieldDrafts = byTextField((field) => {
-          const drafts = new Map(state.fieldDrafts[field]);
-          const draft = now.textDrafts[field];
-          if (draft) drafts.set(annotationKey, draft);
-          else drafts.delete(annotationKey);
-          return drafts;
-        });
-        const tagDrafts = new Map(state.tagDrafts);
-        const ended = now.tagDraft ? undefined : tagDrafts.get(annotationKey);
-        if (now.tagDraft) tagDrafts.set(annotationKey, now.tagDraft);
-        else tagDrafts.delete(annotationKey);
-        this.store.setState({
-          mutations,
-          fieldDrafts,
-          tagDrafts,
-          ...(ended && this.#heldList(ended.attachmentKey)),
-          ...(now.gone &&
-            state.editing?.annotationKey === annotationKey && {
-              editing: null,
-            }),
-        });
-      }),
+      this.#deps.bridge.subscribe(
+        annotations.annotationChanged,
+        (annotationKey) => {
+          const state = this.store.getState();
+          const now = this.#deps.bridge.runSync(
+            annotations.annotationState(annotationKey),
+          );
+          const mutations = new Map(state.mutations);
+          mutations.set(annotationKey, now.mutation);
+          const fieldDrafts = byTextField((field) => {
+            const drafts = new Map(state.fieldDrafts[field]);
+            const draft = now.textDrafts[field];
+            if (draft) drafts.set(annotationKey, draft);
+            else drafts.delete(annotationKey);
+            return drafts;
+          });
+          const tagDrafts = new Map(state.tagDrafts);
+          const ended = now.tagDraft ? undefined : tagDrafts.get(annotationKey);
+          if (now.tagDraft) tagDrafts.set(annotationKey, now.tagDraft);
+          else tagDrafts.delete(annotationKey);
+          this.store.setState({
+            mutations,
+            fieldDrafts,
+            tagDrafts,
+            ...(ended && this.#heldList(ended.attachmentKey)),
+            ...(now.gone &&
+              state.editing?.annotationKey === annotationKey && {
+                editing: null,
+              }),
+          });
+        },
+      ),
     );
     // A filter, a search, or a list that lost an Annotation drops the cards it
     // no longer shows. It only prunes: a reader selection is never applied
@@ -1073,8 +1114,12 @@ export class AnnotationsLayout extends Component {
   stepHistory(direction: HistoryDirection, attachmentKey: string): void {
     const stepping =
       direction === "undo"
-        ? this.#deps.annotations.undo(attachmentKey)
-        : this.#deps.annotations.redo(attachmentKey);
+        ? this.#deps.bridge.runPromise(
+            this.#deps.annotations.undo(attachmentKey),
+          )
+        : this.#deps.bridge.runPromise(
+            this.#deps.annotations.redo(attachmentKey),
+          );
     void stepping.then((outcome) => {
       // The layout can unload while the step is away, and an unloaded one
       // neither scrolls nor speaks.
@@ -1117,6 +1162,7 @@ export class AnnotationsLayout extends Component {
       ...input,
       zoteroReads: this.#deps.reads,
       paths: this.#deps.zoteroPref,
+      bridge: this.#deps.bridge,
     });
   }
 
@@ -1367,10 +1413,12 @@ export class AnnotationsLayout extends Component {
     // The tag editor saves its session as it unmounts. A text field's text is
     // already its draft, which this submits as the editor's own close would.
     if (!editing || editing.field === "tags") return;
-    const submitting = this.#deps.annotations.submitTextField(
-      editing.field,
-      editing.annotationKey,
-      { automatic: true },
+    const submitting = this.#deps.bridge.runPromise(
+      this.#deps.annotations.submitTextField(
+        editing.field,
+        editing.annotationKey,
+        { automatic: true },
+      ),
     );
     void submitting.then((outcome) => {
       if (outcome.kind === "failed")

@@ -64,6 +64,7 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { parseFrontMatter } from "@/lib/live-text";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -103,14 +104,15 @@ import {
 
 import type { NoteFeatureDeps } from "./context";
 /** The note feature's deps, with the fixture database its reads serve. */
-type TestDeps = Omit<NoteFeatureDeps, "profile" | "query"> &
-  Partial<Pick<NoteFeatureDeps, "profile" | "query">> & {
+type TestDeps = Omit<NoteFeatureDeps, "bridge" | "profile" | "query"> &
+  Partial<Pick<NoteFeatureDeps, "bridge" | "profile" | "query">> & {
     db: { client: NodeDatabaseClient };
   };
 import { createNoteFeature as createFeature } from "./operations";
 function createNoteFeature(deps: TestDeps) {
   const feature = createFeature({
     ...deps,
+    bridge: deps.bridge ?? { runSync: Effect.runSync },
     // These Profiles name no Match, so creation runs no query.
     query: deps.query ?? {
       run: () => Promise.reject(new Error("This test runs no query.")),
@@ -118,7 +120,7 @@ function createNoteFeature(deps: TestDeps) {
     profile:
       deps.profile ??
       profileReader(
-        () => deps.settings.current ?? settingsDefaults,
+        () => Effect.runSync(deps.settings.current) ?? settingsDefaults,
         deps.app.metadataCache,
       ),
   });
@@ -423,7 +425,9 @@ describe("Profile source selection", () => {
     await app.vault.create("Reading/Paper.md", "Occupied");
     const feature = createNoteFeature(deps);
     const preview = feature.prepareProfileNote({
-      profile: profileReader(deps.settings.current!).resolveProfile(id)!,
+      profile: profileReader(
+        deps.bridge!.runSync(deps.settings.current),
+      ).resolveProfile(id)!,
       document,
       note: updateContext(),
       filename: {},
@@ -918,7 +922,7 @@ describe("createNote", () => {
           materializeExcerpt({
             app: app as unknown as App,
             notePath: file.path,
-            settings: deps.settings.current!,
+            settings: Effect.runSync(deps.settings.current),
             request,
             outcome: availableOutcome({
               bytes,
@@ -960,7 +964,7 @@ describe("createNote", () => {
         fallbackService.resolve(request),
       );
     if (mode === "retain-disabled")
-      deps.settings.update({ "attachment.import": false });
+      Effect.runSync(deps.settings.update({ "attachment.import": false }));
     if (mode === "retain-throw")
       resolver.resolve.mockRejectedValue(new Error("Resolver failed"));
     if (mode === "retain-write")
@@ -2383,6 +2387,7 @@ function makeUpdateHarness(options: {
         renameFile: vi.fn(),
       },
     },
+    bridge: { runSync: Effect.runSync },
     template,
     ...makeDbDeps(),
     noteIndex: {
@@ -4015,7 +4020,7 @@ describe("updateNote", () => {
       });
       harness.deps.profile = profileReader(
         {
-          ...makeSettings().current!,
+          ...Effect.runSync(makeSettings().current),
           profiles: [
             { id: books, label: "Books" },
             { id: papers, label: "Papers" },
@@ -4940,14 +4945,15 @@ function makeSettings(
     },
   };
   return {
-    current,
-    update: (patch) => {
-      Object.assign(
-        current,
-        typeof patch === "function" ? patch(current) : patch,
-      );
-      return current;
-    },
+    current: Effect.sync(() => current),
+    update: (patch) =>
+      Effect.sync(() => {
+        Object.assign(
+          current,
+          typeof patch === "function" ? patch(current) : patch,
+        );
+        return current;
+      }),
   };
 }
 
@@ -4959,7 +4965,9 @@ function seedRememberedProfile(
   settings: NoteFeatureDeps["settings"],
   selector: ProfileId,
 ): void {
-  Object.assign(settings.current!, { "note.last-used-profile": selector });
+  Object.assign(Effect.runSync(settings.current), {
+    "note.last-used-profile": selector,
+  });
 }
 
 /**

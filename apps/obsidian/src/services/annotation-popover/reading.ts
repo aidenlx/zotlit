@@ -1,24 +1,27 @@
 import { MarkdownRenderChild } from "obsidian";
-import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
+import type { MarkdownPostProcessorContext } from "obsidian";
 // The reading-mode surface of annotation hover: a rendered Durable Annotation
 // Link shows the Annotation it names.
 
 import { parseAnnotationOpenUri } from "@zotlit/db";
 import type { AnnotationOpenUriOptions } from "@zotlit/db";
 
+import { Effect, Layer } from "@/lib/effect";
+import { scopedBridge } from "@/lib/effect-bridge";
+import { PluginHost } from "@/lib/plugin-host";
+import type { PluginHostShape } from "@/lib/plugin-host";
 import { isDraftMarkdown, markdownViewOf } from "@/lib/reading-view";
-import { Service } from "@/services/service-base";
 
-import type { AnnotationPopover } from "./service";
+import { AnnotationPopover } from "./service";
+import type { AnnotationHoverRequest } from "./service";
 
 /** Obsidian renders a link to another scheme as an external link. */
 const LINK_SELECTOR = 'a.external-link[href^="zotero://open/"]';
 
 export interface AnnotationLinkReadingDeps {
-  app: App;
-  plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
+  host: Pick<PluginHostShape, "app" | "registerMarkdownPostProcessor">;
   /** What a hovered Durable Annotation Link shows. */
-  annotationPopover: Pick<AnnotationPopover, "show">;
+  show: (request: AnnotationHoverRequest) => void;
 }
 
 /**
@@ -31,29 +34,23 @@ export interface AnnotationLinkReadingDeps {
  * unloads every child it still holds when it goes, so a section that stays
  * rendered no longer reaches the service.
  */
-export class AnnotationLinkReading extends Service<void> {
+export class AnnotationLinkReadingCore implements Disposable {
   readonly #deps;
   /** The render children holding a section's hover listeners. */
   readonly #sections = new Set<MarkdownRenderChild>();
   /** Set once the service goes; the post-processor stays registered after. */
   #disposed = false;
-  ready: Promise<void>;
 
   constructor(deps: AnnotationLinkReadingDeps) {
-    super();
     this.#deps = deps;
-    this.ready = this.#load();
+    deps.host.registerMarkdownPostProcessor((el, ctx) =>
+      this.#process(el, ctx),
+    );
   }
 
-  async #load(): Promise<void> {
-    await using stack = new AsyncDisposableStack();
-    const { plugin } = this.#deps;
-    plugin.registerMarkdownPostProcessor((el, ctx) => this.#process(el, ctx));
-    stack.defer(() => {
-      this.#disposed = true;
-      for (const section of [...this.#sections]) section.unload();
-    });
-    this.commit(stack.move());
+  [Symbol.dispose](): void {
+    this.#disposed = true;
+    for (const section of [...this.#sections]) section.unload();
   }
 
   #process(el: HTMLElement, ctx: MarkdownPostProcessorContext): void {
@@ -95,9 +92,9 @@ export class AnnotationLinkReading extends Service<void> {
     // within one link hovers it once.
     const related = event.relatedTarget as Node | null;
     if (related?.instanceOf(Node) && anchor.contains(related)) return;
-    const hoverParent = markdownViewOf(this.#deps.app, anchor);
+    const hoverParent = markdownViewOf(this.#deps.host.app, anchor);
     if (hoverParent === null) return;
-    void this.#deps.annotationPopover.show({
+    this.#deps.show({
       event,
       hoverParent,
       targetEl: anchor,
@@ -106,3 +103,21 @@ export class AnnotationLinkReading extends Service<void> {
     });
   }
 }
+
+/** Annotation hover on every Durable Annotation Link a reading view renders. */
+export const layerAnnotationLinkReading = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const host = yield* PluginHost;
+    const popover = yield* AnnotationPopover;
+    const bridge = yield* scopedBridge;
+    yield* Effect.acquireDisposable(
+      Effect.sync(
+        () =>
+          new AnnotationLinkReadingCore({
+            host,
+            show: (request) => void bridge.runPromise(popover.show(request)),
+          }),
+      ),
+    );
+  }),
+);

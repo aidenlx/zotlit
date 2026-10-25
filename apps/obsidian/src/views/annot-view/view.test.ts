@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import { Menu, setMockPlatform } from "@mock/obsidian";
 import { delay } from "@std/async";
-import { Effect } from "effect";
 import type { Menu as ObsidianMenu, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { expect, it, vi } from "vitest";
@@ -10,7 +9,9 @@ import type { AnnotViewAttachment } from "@zotlit/db";
 
 import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Stream } from "@/lib/effect";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { Effect, Stream, SubscriptionRef } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationList,
@@ -22,6 +23,11 @@ import type {
   QueryViewRequest,
   QueryViewRow,
 } from "@/services/item-query/query-view";
+import type {
+  LocalServer,
+  ReaderTarget,
+} from "@/services/local-server/service";
+import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { requested } from "@/views/query-view/__fixtures__/query-run";
 import { serializeQueryFile } from "@/views/query-view/query-file";
@@ -43,8 +49,10 @@ it("settles a pending attachment load without restarting a closed view", async (
   const started = Promise.withResolvers<void>();
   const subscribe = vi.fn(() => vi.fn());
   const read = vi.fn(() => Promise.resolve({ annotations: [], source: null }));
+  const runtime = testRuntime();
   const deps = {
-    runtime: testRuntime(),
+    runtime,
+    bridge: effectBridge(runtime),
     app: {
       scope: {},
       loadLocalStorage: () => null,
@@ -151,23 +159,6 @@ function rows(list: QueryViewRow[]): QueryViewOutcome {
   };
 }
 
-type Listener = (...args: unknown[]) => void;
-
-function emitter() {
-  const listeners = new Map<string, Set<Listener>>();
-  return {
-    on: (event: string, cb: Listener) => {
-      const set = listeners.get(event) ?? new Set();
-      set.add(cb);
-      listeners.set(event, set);
-      return () => set.delete(cb);
-    },
-    emit: (event: string, ...args: unknown[]) => {
-      for (const cb of listeners.get(event) ?? []) cb(...args);
-    },
-  };
-}
-
 class OpenView extends AnnotationView {
   override readonly containerEl = document.createElement("div");
   open(): Promise<void> {
@@ -222,9 +213,33 @@ async function openSidebar(
     },
     metadataCache: { on: () => ({}), getFileCache: () => null },
   });
-  const repository = emitter();
+  const events = annotationReads();
+  const repository = {
+    emit(event: "annotations-changed", attachmentKey: string): void {
+      events.replace(
+        attachmentKey,
+        (listOf?.(attachmentKey) ?? list).annotations,
+      );
+    },
+  };
+  const runtime = testRuntime();
+  const bridge = effectBridge(runtime);
+  const available = Effect.runSync(SubscriptionRef.make(false));
+  const readerTarget = Effect.runSync(
+    SubscriptionRef.make<ReaderTarget | null>(null),
+  );
+  const readerClosed = Effect.runSync(SubscriptionRef.make(false));
+  const liveUpdate = stubService<LocalServer["Service"]>("LocalServer", {
+    available: SubscriptionRef.get(available),
+    availableChanges: SubscriptionRef.changes(available),
+    readerTarget: SubscriptionRef.get(readerTarget),
+    readerTargetChanges: SubscriptionRef.changes(readerTarget),
+    readerClosed: SubscriptionRef.get(readerClosed),
+    readerClosedChanges: SubscriptionRef.changes(readerClosed),
+  });
   const deps = {
-    runtime: testRuntime(),
+    runtime,
+    bridge,
     app,
     reads: {
       state: readsState,
@@ -241,35 +256,32 @@ async function openSidebar(
       "libraries-changed": Stream.empty,
       current: null,
     },
-    liveUpdate: {
-      available: false,
-      readerClosed: false,
-      readerTarget: null,
-      on: () => () => {},
-    },
+    liveUpdate,
     pdfReaders: { on: () => () => {}, sessionFor: () => null },
     query: { run, on: () => () => {} },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: {
-      capability: { kind: "writable" },
-      read: async (attachmentKey: string) => {
-        await listRead?.(attachmentKey);
-        return listOf?.(attachmentKey) ?? list;
-      },
-      peek: () => ({ value: list }),
-      refresh: () => Promise.resolve(),
-      capabilityFor: (): EditingCapability => ({ kind: "writable" }),
-      textDraftFor: () => null,
-      tagDraftFor: () => null,
-      annotationState: () => ({
-        mutation: IDLE,
-        textDrafts: {},
-        tagDraft: null,
-        hidden: false,
-        gone: false,
-      }),
-      on: repository.on,
-      hold: () => ({ [Symbol.dispose]: () => {} }),
+      ...events,
+      capability: Effect.succeed({ kind: "writable" }),
+      read: (attachmentKey: string) =>
+        Effect.promise(async () => {
+          await listRead?.(attachmentKey);
+          return listOf?.(attachmentKey) ?? list;
+        }),
+      peek: () => Effect.succeed({ value: list }),
+      refresh: () => Effect.void,
+      capabilityFor: (): Effect.Effect<EditingCapability> =>
+        Effect.succeed({ kind: "writable" }),
+      textDraftFor: () => Effect.succeed(null),
+      tagDraftFor: () => Effect.succeed(null),
+      annotationState: () =>
+        Effect.succeed({
+          mutation: IDLE,
+          textDrafts: { comment: null, text: null },
+          tagDraft: null,
+          hidden: false,
+          gone: false,
+        }),
     },
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     excerptDisplay: { open: vi.fn(), refresh: vi.fn(), revalidate: vi.fn() },

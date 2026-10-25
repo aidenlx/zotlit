@@ -16,9 +16,9 @@ import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
-import { ReleaseService } from "@/services/release/service";
+import { buildRelease } from "@/services/release/__fixtures__";
 import { buildSettings } from "@/services/settings/__fixtures__";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { SettingsFixture } from "@/services/settings/__fixtures__";
 
 import { WelcomeBanner } from "./banner";
 import type { WelcomeBannerDeps } from "./banner";
@@ -45,24 +45,24 @@ async function setup(
   Object.assign(app, { internalPlugins: { getEnabledPluginById: () => null } });
   const plugin = new PluginStub(app, { __VERSION__: 10, ...data });
   const settings = await loadSettings(plugin);
-  await settings.loaded;
-  const deps = bannerDeps(app, settings);
+  await settings.bridge.runPromise(settings.loaded);
+  const deps = await bannerDeps(app, settings);
   /**
    * Obsidian reloads: plugin data, written to disk, is read again by a new
    * instance of the plugin.
    */
   let latest = settings;
   const reload = async () => {
-    await latest.flush();
+    await latest.bridge.runPromise(latest.flush());
     latest = await loadSettings(plugin);
-    await latest.loaded;
+    await latest.bridge.runPromise(latest.loaded);
     return bannerDeps(app, latest);
   };
   return { deps, host, settings, reload };
 }
 
 /** The settings of plugin data that `plugin` holds. */
-async function loadSettings(plugin: PluginStub): Promise<PlainPluginSettings> {
+async function loadSettings(plugin: PluginStub): Promise<SettingsFixture> {
   const identity = (raw: unknown) => raw;
   return cleanup.use(
     await buildSettings({
@@ -82,10 +82,10 @@ async function loadSettings(plugin: PluginStub): Promise<PlainPluginSettings> {
 }
 
 /** What the banner reads, over `settings`, beside a Zotero database of 3 Items. */
-function bannerDeps(
+async function bannerDeps(
   app: App,
-  settings: PlainPluginSettings,
-): WelcomeBannerDeps {
+  settings: SettingsFixture,
+): Promise<WelcomeBannerDeps> {
   const events = testEvents<Record<string, () => void>>([
     "changed",
     "degraded",
@@ -93,8 +93,21 @@ function bannerDeps(
     "db-file-missing",
     "refreshing",
   ]);
+  const release = cleanup.use(
+    await buildRelease({
+      app,
+      layoutReady: () => {},
+      current: () => settings.bridge.runSync(settings.current),
+      origin: settings.bridge.runSync(settings.hydrationOrigin),
+      update: (patch) => {
+        settings.bridge.runSync(settings.update(patch));
+      },
+      version: "2.2.0",
+    }),
+  );
   const deps: WelcomeBannerDeps = {
     runtime: testRuntime(),
+    bridge: release.bridge,
     app,
     reads: {
       state: "ready",
@@ -111,9 +124,7 @@ function bannerDeps(
       locateZotero: vi.fn(),
     },
     templateMigration: { convert: vi.fn(), retryCleanup: vi.fn() },
-    release: cleanup.use(
-      new ReleaseService({ app, version: "2.2.0", settings }),
-    ),
+    release: release.release,
   };
   return deps;
 }
@@ -163,7 +174,7 @@ it("keeps the Migration Prompt of a v1 upgrade on screen until a dismissal ackno
     { "literatures/Paper.md": "", "templates/zt-note.eta.md": "" },
   );
   // A v1 upgrader's templates live in the folder their settings name.
-  settings.update({ "template.folder": "templates" });
+  settings.bridge.runSync(settings.update({ "template.folder": "templates" }));
   const el = await open(deps);
   expect(heading(el, m.welcome_migration_title())).toBe(true);
   // An upgrade from v1 on Zotero 10 needs ZotLit Companion to read recent changes.
@@ -175,7 +186,9 @@ it("keeps the Migration Prompt of a v1 upgrade on screen until a dismissal ackno
   );
   await act(() => dismissButton(el).click());
   expect(el.textContent).toBe("");
-  expect(settings.current?.["release.migration-pending"]).toBe(false);
+  expect(
+    settings.bridge.runSync(settings.current)?.["release.migration-pending"],
+  ).toBe(false);
 });
 
 it("announces an update until What's new acknowledges it, beside the Help Links", async () => {
@@ -199,7 +212,9 @@ it("announces an update until What's new acknowledges it, beside the Help Links"
   expect(opened.mock.calls).toEqual([
     ["https://zotlit.aidenlx.site/changelog/2.2.0"],
   ]);
-  expect(settings.current?.["release.update-pending"]).toBe(false);
+  expect(
+    settings.bridge.runSync(settings.current)?.["release.update-pending"],
+  ).toBe(false);
   expect(el.textContent).toBe("");
 });
 
@@ -214,7 +229,9 @@ it("acknowledges an update on dismissal, so it stays away when the view opens ag
   expect(heading(el, m.welcome_update_title({ version: "2.2.0" }))).toBe(true);
   await act(() => dismissButton(el).click());
   expect(el.textContent).toBe("");
-  expect(settings.current?.["release.update-pending"]).toBe(false);
+  expect(
+    settings.bridge.runSync(settings.current)?.["release.update-pending"],
+  ).toBe(false);
   expect((await open(deps)).textContent).toBe("");
 });
 
@@ -262,7 +279,9 @@ it("shows the banner it was asked for again after Obsidian reloads, and keeps it
   expect(el.textContent).toBe("");
   await act(() => banner.request());
   expect(heading(el, m.welcome_step_folder_title())).toBe(true);
-  expect(settings.current?.["welcome.requested"]).toBe(true);
+  expect(settings.bridge.runSync(settings.current)?.["welcome.requested"]).toBe(
+    true,
+  );
 
   const again = await openBanner(await reload());
   expect(again.banner.shown).toBe(true);
@@ -292,7 +311,7 @@ it("keeps Show steps open after Obsidian reloads, until the banner is dismissed"
 
   const after = await reload();
   // The conversion offer shows again, as a request would show it.
-  after.settings.update({ "welcome.dismissed": false });
+  after.bridge.runSync(after.settings.update({ "welcome.dismissed": false }));
   const last = await open(after);
   expect(stepsToggle(last).getAttribute("aria-expanded")).toBe("false");
 });
@@ -300,7 +319,11 @@ it("keeps Show steps open after Obsidian reloads, until the banner is dismissed"
 it("reads plugin data of an earlier build, which kept no request, as no request and steps folded", async () => {
   const { deps, host, settings } = await setup({ "welcome.dismissed": false });
   host.vault.addFile("literatures/Paper.md", "");
-  expect(settings.current?.["welcome.requested"]).toBe(false);
-  expect(settings.current?.["welcome.steps-shown"]).toBe(false);
+  expect(settings.bridge.runSync(settings.current)?.["welcome.requested"]).toBe(
+    false,
+  );
+  expect(
+    settings.bridge.runSync(settings.current)?.["welcome.steps-shown"],
+  ).toBe(false);
   expect((await open(deps)).textContent).toBe("");
 });

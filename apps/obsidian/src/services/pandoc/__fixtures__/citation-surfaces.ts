@@ -29,6 +29,7 @@ import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { spliceFrontMatter } from "@/lib/live-text";
+import { citationPopoverFixture } from "@/services/citation-popover/__fixtures__";
 import {
   createCitationIndexHarness,
   GROUP_LIBRARY_ID,
@@ -39,7 +40,6 @@ import {
   personalLibrary,
 } from "@/services/citation-index/test-harness";
 import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
-import { CitationPopover } from "@/services/citation-popover/service";
 import { firstText } from "@/services/citation-text/__fixtures__";
 import { citationTextFixture } from "@/services/citation-text/__fixtures__";
 import { createCitationEngine } from "@/services/pandoc/engine";
@@ -48,7 +48,7 @@ import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { bibliographyRenderFixture } from "@/services/pandoc/render-cache/__fixtures__";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { applySettings, buildSeededSettings } from "@/services/settings/__fixtures__";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { SettingsFixture } from "@/services/settings/__fixtures__";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 
 type ProfileFixture = Pick<Settings, "profiles" | "defaultDocument">;
@@ -308,7 +308,7 @@ export async function openCitationVault({
   const profileChanged = testEvent<void>();
   const settings = stack.use(await buildSeededSettings(persisted));
   const profileSettings = (): Settings => ({
-    ...settings.current,
+    ...settings.bridge.runSync(settings.current),
     ...profileFixture,
   });
   const harness = stack.use(
@@ -418,7 +418,7 @@ export async function openCitationVault({
     document.body.replaceChildren();
   });
 
-  const popover = stack.use(new CitationPopover({ runtime: cache.runtime,
+  const popover = stack.use(citationPopoverFixture({
     profile: profileReader(profileSettings, harness.metadataCache),
     app: {
       metadataCache: harness.metadataCache,
@@ -446,7 +446,7 @@ export async function openCitationVault({
   const showPopover = (citekey: string = CITATION_KEY): OpenPopover => {
     const parent: HoverParent = { hoverPopover: null };
     const targetEl = document.body.appendChild(document.createElement("span"));
-    popover.show({
+    popover.runtime.runSync(popover.service.show({
       event: new MouseEvent("mouseover"),
       hoverParent: parent,
       sourcePath: DRAFT,
@@ -460,7 +460,7 @@ export async function openCitationVault({
       // The occurrence the pointer is on, as a rendered surface names it.
       shown: { citation: { source: `@${citekey}`, keys: [] } },
       open: () => undefined,
-    });
+    }));
     return {
       async text(after) {
         let shown = "";
@@ -568,7 +568,7 @@ export async function openCitationVault({
     },
     async setSettings(next) {
       const { profiles, defaultDocument, ...persisted } = next;
-      applySettings(settings, persisted);
+      applySettings(settings, settings.bridge, persisted);
       if ("profiles" in next || "defaultDocument" in next) {
         profileFixture = { ...profileFixture, profiles, defaultDocument };
         profileChanged.emit();
@@ -629,7 +629,7 @@ function exportAdapter({
   dataDir: string;
   engine: Awaited<ReturnType<typeof createCitationEngine>>;
   harness: CitationIndexHarness;
-  settings: PlainPluginSettings;
+  settings: SettingsFixture;
   profileSettings: () => Settings;
 }): PandocExportDeps {
   return {
@@ -651,6 +651,7 @@ function exportAdapter({
       get: () => true,
     } as unknown as PandocExportDeps["zoteroPref"],
     settings,
+    bridge: settings.bridge,
     openSettings: () => undefined,
   };
 }

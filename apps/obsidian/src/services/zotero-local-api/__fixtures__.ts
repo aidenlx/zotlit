@@ -1,8 +1,9 @@
+import { TestClock } from "effect/testing";
 import { vi } from "vitest";
 
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
+import type { DbUpdated } from "@zotlit/protocol";
 
-import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 // Zotero Local API answers, and the transport that replays them.
 //
 // PROVENANCE, in two halves.
@@ -27,12 +28,16 @@ import { testEvent } from "@/lib/__fixtures__/event-stream";
 //
 // @see docs/fixture.md — "Trial the Zotero Local API"
 // @see https://github.com/aidenlx/zotlit/issues/1143
-import { Layer, Stream } from "@/lib/effect";
+import { Effect, Layer, PubSub, Stream } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import type { FetchLike, NodeFetchInit } from "@/lib/node-fetch";
-import type { LocalServerEvents } from "@/services/local-server/service";
+import { LocalServer } from "@/services/local-server/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 
-import { ZoteroLocalApiClient } from "./service";
+import { localApiPort } from "./port";
+import { layerZoteroLocalApi, ZoteroLocalApi } from "./service";
 import type { WireTag } from "./wire";
 
 /**
@@ -713,66 +718,114 @@ export interface ClientOptions {
   key?: string;
   /** The deadline a Capability Probe runs under. @default one that never fires */
   probeDeadline?: () => AbortSignal;
-  /** The clock the dialog cooldown is read against. @default {@link NOW} */
-  now?: () => Temporal.Instant;
 }
 
-/** The instant a test's clock stands at unless it says otherwise. */
+/** The instant a fixture's TestClock stands at until a test moves it. */
 export const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
+
+/**
+ * One TestClock for a fixture's runtime, standing at {@link NOW} before any
+ * layer above it reads time. A test moves it with
+ * `await runtime.runPromise(TestClock.adjust(duration))`.
+ */
+export const testClockAtNow = Layer.provideMerge(
+  Layer.effectDiscard(TestClock.setTime(NOW.epochMilliseconds)),
+  TestClock.layer(),
+);
 
 /**
  * The client over a fake transport, with the two event sources it subscribes to
  * in the caller's hands. The probe's own deadline never fires unless a test
  * hands one over, so no test waits on a real clock.
  */
-export function localApiClient(
+export async function localApiClient(
   answers: ZoteroAnswers = {},
   options: ClientOptions = {},
 ) {
   const { fetch, requests } = fakeZotero(answers);
-  const resolvedChanged = testEvent<void>();
-  const prefEvents = {
-    emit: (_event: "resolved-changed") => resolvedChanged.emit(),
+  const stack = new AsyncDisposableStack();
+  const dbUpdated = Effect.runSync(PubSub.unbounded<DbUpdated>());
+  stack.defer(() => {
+    Effect.runSync(PubSub.shutdown(dbUpdated));
+  });
+  const serverEvents = {
+    emit: () => {
+      PubSub.publishUnsafe(dbUpdated, { event: "db/updated" });
+    },
   };
-  const serverEvents = createNanoEvents<LocalServerEvents>();
+  const prefChanges = Effect.runSync(PubSub.unbounded<ZoteroPrefSnapshot>());
+  stack.defer(() => {
+    Effect.runSync(PubSub.shutdown(prefChanges));
+  });
   const credentials = inMemoryCredentials(
     options.key === undefined
       ? null
       : { serverID: SERVER_ID, key: options.key },
   );
   // Mutable, so a test can move the port the way a new profile does.
-  const zoteroPref = {
-    httpPort: PORT as number | null,
-    changed: Stream.empty,
-    "data-dir-changed": Stream.empty,
-    "resolved-changed": resolvedChanged.stream,
+  let snapshot: ZoteroPrefSnapshot = {
+    state: "ready",
+    prefs: new Map(),
+    resolvedProfileDir: null,
+    profileDirOverride: null,
+    dataDirOverride: null,
+    dataDir: "/Zotero",
+    databasePath: "/Zotero/zotero.sqlite",
+    sourceId: "fixture-source",
+    baseAttachmentPath: null,
+    httpPort: PORT,
   };
-  const stack = new AsyncDisposableStack();
-  const runtime = buildRuntime(Layer.empty, stack);
-  const client = new ZoteroLocalApiClient({
-    runtime,
-    fetch,
-    zoteroPref,
-    localServer: {
-      on: <K extends keyof LocalServerEvents>(
-        event: K,
-        cb: LocalServerEvents[K],
-      ) => serverEvents.on(event, cb),
+  const zoteroPref = {
+    get httpPort(): number | null {
+      return snapshot.httpPort;
     },
+    set httpPort(port: number | null) {
+      snapshot = { ...snapshot, httpPort: port };
+    },
+  };
+  const prefEvents = {
+    emit: (_event: "resolved-changed") => {
+      snapshot = { ...snapshot, prefs: new Map(snapshot.prefs) };
+      PubSub.publishUnsafe(prefChanges, snapshot);
+    },
+  };
+  const pref = stubService<ZoteroPref["Service"]>("ZoteroPref", {
+    current: Effect.sync(() => snapshot),
+    changes: Stream.concat(
+      Stream.succeed(snapshot),
+      Stream.fromPubSub(prefChanges),
+    ),
+  });
+  const server = stubService<LocalServer["Service"]>("LocalServer", {
+    dbUpdated: Stream.fromPubSub(dbUpdated),
+  });
+  const localApiLayer = layerZoteroLocalApi({
+    fetch,
     credentials,
     probeDeadline:
       options.probeDeadline ?? (() => new AbortController().signal),
-    now: options.now ?? (() => NOW),
-  });
-  const dispose = client[Symbol.asyncDispose].bind(client);
-  Object.assign(client, {
-    [Symbol.asyncDispose]: async () => {
-      await dispose();
-      await stack.disposeAsync();
-    },
+  }).pipe(
+    Layer.provideMerge(testClockAtNow),
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.succeed(ZoteroPref, pref),
+        Layer.succeed(LocalServer, server),
+      ),
+    ),
+  );
+  const runtime = buildRuntime(localApiLayer, stack);
+  await runtime.context();
+  const service = runtime.runSync(ZoteroLocalApi);
+  const bridge = effectBridge(runtime);
+  const port = localApiPort(service, bridge);
+  const client = Object.assign(port, {
+    [Symbol.asyncDispose]: () => stack.disposeAsync(),
   });
   return {
     client,
+    service,
+    runtime,
+    bridge,
     requests,
     credentials,
     zoteroPref,
@@ -783,9 +836,9 @@ export function localApiClient(
 
 /** The Companion's Freshness Signal, as the Local Server delivers it. */
 export function freshnessSignal(
-  serverEvents: ReturnType<typeof localApiClient>["serverEvents"],
+  serverEvents: Awaited<ReturnType<typeof localApiClient>>["serverEvents"],
 ): void {
-  serverEvents.emit("db/updated", { event: "db/updated" });
+  serverEvents.emit();
 }
 
 /**

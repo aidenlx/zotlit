@@ -22,7 +22,6 @@ import { ObsidianApp } from "@/lib/obsidian-app";
 import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
-import type { SettingsPatch } from "@/services/settings/service";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import type {
@@ -110,13 +109,7 @@ export interface LiteratureNoteTemplateMigrationDataDeps {
     getNotesByItemKey(indexedKey: string): TFile[];
     getImportedNoteByNoteKey(noteKey: string): TFile[];
   };
-  settings: {
-    readonly current: Readonly<Settings>;
-    update(
-      patch: SettingsPatch | ((current: Readonly<Settings>) => SettingsPatch),
-    ): Readonly<Settings>;
-    flush(): Promise<void>;
-  };
+  settings: Pick<PluginSettings["Service"], "current">;
   templates: Pick<TemplateOperations, "render" | "renderCitation">;
   zoteroPref: Pick<ZoteroPrefSnapshot, "dataDir" | "baseAttachmentPath">;
 }

@@ -10,6 +10,7 @@ import type { Item } from "@zotlit/db";
 import type { SnapshotVaultTargets } from "@zotlit/workbench/snapshot";
 
 import { Effect } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import {
   joinFolderPath,
   resolveAttachmentFolderPath,
@@ -20,13 +21,14 @@ import {
 } from "@/services/excerpt-image/materialize";
 import { referencedExcerptPaths } from "@/services/excerpt-image/references";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 export interface VaultTargetDeps {
   app: App;
-  settings: Pick<PlainPluginSettings, "current">;
+  settings: Pick<PluginSettings["Service"], "current">;
+  bridge: Pick<EffectBridge, "runSync">;
   noteIndex: Pick<
     PlainNoteIndex,
     "getNotesByItemKey" | "getImportedNoteByNoteKey"
@@ -87,7 +89,7 @@ async function annotationImageTargets(
   item: Item,
   deps: VaultTargetDeps & { notePath: string | undefined },
 ): Promise<Record<string, string>> {
-  const settings = deps.settings.current;
+  const settings = deps.bridge.runSync(deps.settings.current);
   if (!settings["attachment.import"]) return {};
   const folder = await resolveAttachmentFolderPath(
     deps.app,

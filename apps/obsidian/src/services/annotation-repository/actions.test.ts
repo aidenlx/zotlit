@@ -1,12 +1,17 @@
 import { createMockPlugin } from "@mock/obsidian";
 import type { Command } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { addAnnotationHistoryActions, historyOutcomeNotice } from "./actions";
 import type { HistorySurface } from "./actions";
 import type { HistoryDirection } from "./history";
+
+const bridge = openTestBridge();
+afterAll(() => bridge[Symbol.asyncDispose]());
 
 interface Surface extends HistorySurface {
   /** Every step this surface was asked to take, in the order asked. */
@@ -34,10 +39,11 @@ function setup({
   redo?: boolean;
 } = {}) {
   const plugin = createMockPlugin();
-  const canUndo = vi.fn(() => undo);
-  const canRedo = vi.fn(() => redo);
+  const canUndo = vi.fn(() => Effect.succeed(undo));
+  const canRedo = vi.fn(() => Effect.succeed(redo));
   addAnnotationHistoryActions(plugin, {
     annotations: { canUndo, canRedo },
+    bridge,
     activeSurface: () => active,
   });
   const command = (id: string): Command => {

@@ -4,16 +4,15 @@ import type { Library } from "@zotlit/db";
 import {
   Cause,
   Context,
-  Deferred,
   Effect,
   Layer,
+  PubSub,
   Scope,
   Stream,
   SubscriptionRef,
 } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
-import { changesUntil } from "@/lib/effect-stream";
 import { QueryClients } from "@/services/query-client/service";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -88,7 +87,6 @@ export const layerLibraryScope = Layer.effect(
     const scope = yield* Scope.Scope;
     const context = yield* Effect.context<never>();
     const runPromise = Effect.runPromiseWith(context);
-    const stopped = yield* Deferred.make<void>();
     let closed = false;
     const state = yield* SubscriptionRef.make<LibraryScopeState>({
       current: null,
@@ -216,7 +214,7 @@ export const layerLibraryScope = Layer.effect(
       Effect.gen(function* () {
         closed = true;
         queries.client.removeQueries({ queryKey: LIBRARIES_KEY });
-        yield* Deferred.succeed(stopped, undefined);
+        yield* PubSub.shutdown(state.pubsub);
       }),
     );
 
@@ -234,7 +232,7 @@ export const layerLibraryScope = Layer.effect(
     );
     return LibraryScope.of({
       state: SubscriptionRef.get(state),
-      changes: changesUntil(state, Deferred.await(stopped)),
+      changes: SubscriptionRef.changes(state),
       current: Effect.andThen(
         heldLibraries(),
         Effect.map(SubscriptionRef.get(state), (snapshot) => snapshot.current),

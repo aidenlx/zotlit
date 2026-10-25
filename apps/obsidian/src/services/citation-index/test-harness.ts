@@ -29,7 +29,7 @@ import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 import { testClock } from "@/services/query-client/test-clock";
 import { buildSeededSettings } from "@/services/settings/__fixtures__";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { SettingsFixture } from "@/services/settings/__fixtures__";
 import type { Settings } from "@/services/settings/schema";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
@@ -608,7 +608,8 @@ export interface CitationIndexHarness extends AsyncDisposable {
   lookup: Awaited<ReturnType<typeof citationLookupFixture>>;
   metadataCache: MockMetadataCache;
   noteIndex: PlainNoteIndex;
-  settings: PlainPluginSettings;
+  settings: SettingsFixture;
+  settingsBridge: SettingsFixture["bridge"];
   store: MemoryStore;
   vault: MockVault;
   workspace: MockWorkspace;
@@ -635,7 +636,7 @@ export interface CitationIndexHarnessOptions {
    */
   zoteroRows?: string;
   notes?: boolean;
-  settingsService?: PlainPluginSettings;
+  settingsService?: SettingsFixture;
   awaitReady?: boolean;
   libraryScope?: LibraryScopeStub;
 }
@@ -751,6 +752,7 @@ export async function createCitationIndexHarness(
     metadataCache,
     noteIndex,
     settings,
+    settingsBridge: settings.bridge,
     store,
     vault,
     workspace,

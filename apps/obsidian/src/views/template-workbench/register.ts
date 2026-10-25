@@ -45,7 +45,8 @@ function workbenchTargets(app: App, deps: RegistrationDeps) {
    *  view opens on its own tab without any Profile flow. */
   const isPlainDocument = (file: TFile | null): file is TFile =>
     file !== null &&
-    templateDocumentKind(file, templateFolderOf(deps.settings)) !== "profile";
+    templateDocumentKind(file, templateFolderOf(deps.settings, deps.bridge)) !==
+      "profile";
   const isProfile = (file: TFile | null): file is TFile =>
     file !== null &&
     file.extension === "md" &&

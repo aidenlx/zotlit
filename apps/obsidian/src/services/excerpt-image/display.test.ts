@@ -6,11 +6,15 @@ import type { FileHandle } from "node:fs/promises";
 import { loadPdfJs } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
-import { queryClientsFixture } from "@/services/query-client/__fixtures__";
+import {
+  queryClientsFixture,
+  taggedQueryClients,
+} from "@/services/query-client/__fixtures__";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 
 import { settledDisplay } from "./__fixtures__/display-state";
@@ -148,10 +152,12 @@ function harness(): Live {
     }),
   );
   const queries = stack.use(queryClientsFixture());
+  const bridge = stack.use(openTestBridge());
   const storedReads: Promise<void>[] = [];
   const display = stack.use(
     new ExcerptDisplayService({
-      queries,
+      queries: taggedQueryClients(queries),
+      bridge,
       resolve: (resolveRequest, signal) =>
         service.resolve(resolveRequest, signal),
       stored: (storedRequest) => {
@@ -316,9 +322,11 @@ function resident(): Resident {
     }),
   );
   const queries = stack.use(queryClientsFixture());
+  const bridge = stack.use(openTestBridge());
   const display = stack.use(
     new ExcerptDisplayService({
-      queries,
+      queries: taggedQueryClients(queries),
+      bridge,
       resolve: (request, signal) => service.resolve(request, signal),
       stored: (storedRequest) => service.stored(storedRequest),
     }),
@@ -738,9 +746,11 @@ describe("Excerpt Image live display", () => {
   it("leaves the stored fallback unread when the Held Read holds an image", async () => {
     await using service = new ExcerptImageService({ read: async () => redPng });
     await using queries = queryClientsFixture();
+    await using bridge = openTestBridge();
     const stored = vi.fn(async () => null);
     await using display = new ExcerptDisplayService({
-      queries,
+      queries: taggedQueryClients(queries),
+      bridge,
       resolve: (resolveRequest, signal) =>
         service.resolve(resolveRequest, signal),
       stored,

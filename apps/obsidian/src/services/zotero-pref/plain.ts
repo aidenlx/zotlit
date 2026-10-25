@@ -1,10 +1,10 @@
 /** Zotero preferences for settings, views, and legacy services. */
 import { Effect, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
-import { isScopeClosed } from "@/lib/effect-scope";
+import { effectBridge } from "@/lib/effect-bridge";
 
 import type { PrefValue } from "./prefs-file";
-import { ZoteroPref } from "./service";
+import { resolvedChanged, ZoteroPref } from "./service";
 import type { ZoteroPrefSnapshot, ZoteroProfileInfo } from "./service";
 
 export interface PlainZoteroPref extends Omit<ZoteroPrefSnapshot, "prefs"> {
@@ -22,19 +22,12 @@ export interface PlainZoteroPref extends Omit<ZoteroPrefSnapshot, "prefs"> {
 export function plainZoteroPref(
   runtime: ManagedRuntime.ManagedRuntime<ZoteroPref, never>,
 ): PlainZoteroPref {
+  // The bridge keeps the runtime's context, so the held service still answers
+  // snapshot and file reads after disposal, and its closed guard makes setters
+  // no-ops.
+  const bridge = effectBridge(runtime);
   const pref = runtime.runSync(ZoteroPref.use(Effect.succeed));
-  const context = runtime.runSync(Effect.context<ZoteroPref>());
-  const closed = () => isScopeClosed(runtime.scope);
-  // ManagedRuntime rejects runs after disposal. The held service still permits
-  // snapshot and file reads, and its closed guard makes setters no-ops. Keep the
-  // runtime's context for those released calls (Effect's run*With boundary).
-  const runReleasedSync = Effect.runSyncWith(context);
-  const runReleasedPromise = Effect.runPromiseWith(context);
-  const runSync = <A>(effect: Effect.Effect<A>): A =>
-    closed() ? runReleasedSync(effect) : runtime.runSync(effect);
-  const runPromise = <A>(effect: Effect.Effect<A>): Promise<A> =>
-    closed() ? runReleasedPromise(effect) : runtime.runPromise(effect);
-  const current = () => runSync(pref.current);
+  const current = () => bridge.runSync(pref.current);
   return {
     get state() {
       return current().state;
@@ -63,11 +56,11 @@ export function plainZoteroPref(
     get httpPort() {
       return current().httpPort;
     },
-    get: (name) => runSync(pref.get(name)),
-    setProfileDir: (dir) => runSync(pref.setProfileDir(dir)),
-    setDataDir: (dir) => runSync(pref.setDataDir(dir)),
-    companionInstalled: () => runPromise(pref.companionInstalled()),
-    listProfiles: () => runPromise(pref.listProfiles()),
+    get: (name) => bridge.runSync(pref.get(name)),
+    setProfileDir: (dir) => bridge.runSync(pref.setProfileDir(dir)),
+    setDataDir: (dir) => bridge.runSync(pref.setDataDir(dir)),
+    companionInstalled: () => bridge.runPromise(pref.companionInstalled()),
+    listProfiles: () => bridge.runPromise(pref.listProfiles()),
     changes: pref.changes,
     changed: pref.changes.pipe(
       Stream.changesWith((a, b) => a.prefs === b.prefs),
@@ -79,13 +72,6 @@ export function plainZoteroPref(
       Stream.drop(1),
       Stream.map(() => undefined),
     ),
-    "resolved-changed": pref.changes.pipe(
-      Stream.changesWith(
-        (a, b) =>
-          a.prefs === b.prefs && a.dataDirOverride === b.dataDirOverride,
-      ),
-      Stream.drop(1),
-      Stream.map(() => undefined),
-    ),
+    "resolved-changed": resolvedChanged(pref),
   };
 }

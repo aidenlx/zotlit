@@ -12,8 +12,10 @@ import { expect, it, vi } from "vitest";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Effect, Stream } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
+import type { LocalServer } from "@/services/local-server/service";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 
 import { advancedPageItems } from "./advanced";
@@ -32,8 +34,10 @@ vi.mock("@/views/template-workbench/register", () => ({
 }));
 
 function ctx(): SettingTabContext {
+  const runtime = testRuntime();
   return {
-    runtime: testRuntime(),
+    runtime,
+    bridge: effectBridge(runtime),
     webWorkbenchEnabled: true,
     app: {
       vault: { getFileByPath: () => null, adapter: {} },
@@ -42,7 +46,11 @@ function ctx(): SettingTabContext {
       saveLocalStorage: () => {},
     },
     manifest: { version: "0.0.0", dir: "plugins/zotlit" },
-    settings: { current: {}, update: () => {}, changes: Stream.empty },
+    settings: {
+      current: Effect.succeed({}),
+      update: () => Effect.void,
+      changes: Stream.empty,
+    },
     profile: {
       loaded: true,
       profiles: [],
@@ -56,7 +64,10 @@ function ctx(): SettingTabContext {
       invalid: false,
     },
     zoteroPref: { databasePath: "", dataDir: null },
-    localServer: { effectivePort: null },
+    localServer: stubService<LocalServer["Service"]>("LocalServer", {
+      effectivePort: Effect.succeed(null),
+      effectivePortChanges: Stream.empty,
+    }),
     localBridge: { connection: null, disconnect: () => {}, on: () => () => {} },
     customize: async () => {},
     attachmentImport: {
@@ -99,6 +110,11 @@ function ctx(): SettingTabContext {
     languagePack: {
       getSituation: () => ({ kind: "unavailable" }),
       endonym: "English",
+    },
+    writeAuthorization: {
+      allowEditing: () => {},
+      forgetAuthorization: () => Effect.void,
+      remembered: () => Effect.succeed(false),
     },
     requestUpdate: () => {},
   } as unknown as SettingTabContext;

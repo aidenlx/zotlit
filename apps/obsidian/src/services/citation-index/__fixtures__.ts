@@ -5,7 +5,6 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { Scope } from "@/lib/effect";
 import { Context, Effect, Layer, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import type { ParseClient } from "@/services/citation-parse/client";
 import { CitationParse } from "@/services/citation-parse/service";
@@ -22,7 +21,6 @@ import {
   layerQueryClients,
   QueryClients,
 } from "@/services/query-client/service";
-import type { Settings } from "@/services/settings/schema";
 import {
   layerPluginSettings,
   PluginSettings,
@@ -210,8 +208,8 @@ export function citationIndexFixture(
     libraryScope: Pick<PlainLibraryScope, "current">;
     noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey">;
     settings: {
-      readonly current: Readonly<Settings>;
-      readonly changes: Stream.Stream<Readonly<Settings>>;
+      readonly current: PluginSettings["Service"]["current"];
+      readonly changes: PluginSettings["Service"]["changes"];
     };
     lookup: CitationLookup["Service"];
     parseClient: ParseClient;
@@ -233,7 +231,9 @@ export function citationIndexFixture(
                 state: deps.db.state,
               })),
               snapshot: Effect.map(
-                acquireAsyncDisposable(() => deps.db.acquireRead()).pipe(
+                Effect.acquireDisposable(
+                  Effect.tryPromise(() => deps.db.acquireRead()),
+                ).pipe(
                   Effect.mapError(
                     (error) =>
                       new DbUnavailable({ message: String(error.cause) }),
@@ -259,7 +259,7 @@ export function citationIndexFixture(
           Layer.succeed(
             PluginSettings,
             stubService<PluginSettings["Service"]>("PluginSettings", {
-              current: Effect.sync(() => deps.settings.current),
+              current: deps.settings.current,
               changes: deps.settings.changes,
             }),
           ),

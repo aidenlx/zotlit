@@ -417,12 +417,15 @@ it("drops a deleted Annotation, its selection, and what was held on it at once",
 it("takes a read's records with the drafts and write states that stood before it", async () => {
   await using stack = new AsyncDisposableStack();
   const store = reader();
-  const { repository, zotero } = await repositoryOver(stack, [PARAGRAPH, WORD]);
+  const { repository, service, bridge, zotero } = await repositoryOver(stack, [
+    PARAGRAPH,
+    WORD,
+  ]);
   zotero.holdWrites();
   void repository.patchColor("PARA7777", "#ff6666");
   repository.editTextField("comment", "WRDS2222", "worth quoting");
 
-  ingestAnnotations(store, [PARAGRAPH, WORD], repository);
+  ingestAnnotations(store, [PARAGRAPH, WORD], { annotations: service, bridge });
 
   const { records, mutations, commentDrafts } = store.getState();
   expect(records).toEqual([PARAGRAPH, WORD]);
@@ -435,8 +438,11 @@ it("takes a read's records with the drafts and write states that stood before it
 it("takes a write's state and a comment draft as the repository announces them", async () => {
   await using stack = new AsyncDisposableStack();
   const store = reader();
-  const { repository, zotero } = await repositoryOver(stack, [PARAGRAPH, WORD]);
-  using _listening = listenAnnotationEvents(store, repository);
+  const { repository, service, bridge, zotero } = await repositoryOver(stack, [
+    PARAGRAPH,
+    WORD,
+  ]);
+  using _listening = listenAnnotationEvents(store, service, bridge);
   const release = zotero.holdWrites();
 
   const saving = repository.patchColor("PARA7777", "#ff6666");
@@ -458,8 +464,11 @@ it("drops the selected mark Zotero erased while it held a draft", async () => {
   await using stack = new AsyncDisposableStack();
   const store = reader();
   selectMark(store, "WRDS2222");
-  const { repository, zotero } = await repositoryOver(stack, [PARAGRAPH, WORD]);
-  using _listening = listenAnnotationEvents(store, repository);
+  const { repository, service, bridge, zotero } = await repositoryOver(stack, [
+    PARAGRAPH,
+    WORD,
+  ]);
+  using _listening = listenAnnotationEvents(store, service, bridge);
   repository.editTextField("comment", "WRDS2222", "worth quoting");
 
   zotero.eraseInZotero("WRDS2222");
@@ -474,8 +483,11 @@ it("drops the selected mark Zotero erased while it held a draft", async () => {
 it("takes no announcement once disposed", async () => {
   await using stack = new AsyncDisposableStack();
   const store = reader();
-  const { repository } = await repositoryOver(stack, [PARAGRAPH, WORD]);
-  const listening = listenAnnotationEvents(store, repository);
+  const { repository, service, bridge } = await repositoryOver(stack, [
+    PARAGRAPH,
+    WORD,
+  ]);
+  const listening = listenAnnotationEvents(store, service, bridge);
 
   listening[Symbol.dispose]();
   repository.editTextField("comment", "WRDS2222", "worth quoting");
@@ -596,8 +608,8 @@ it("closes the editors when a database switch hides their drafts", async () => {
   const store = reader();
   selectMark(store, "WRDS2222");
   const zotero = await repositoryOver(stack, [PARAGRAPH, WORD]);
-  const { repository } = zotero;
-  using _listening = listenAnnotationEvents(store, repository);
+  const { repository, service, bridge } = zotero;
+  using _listening = listenAnnotationEvents(store, service, bridge);
   repository.editTextField("comment", "WRDS2222", "worth quoting");
   setCommenting(store, true);
   repository.editTags("WRDS2222", ["to read"]);

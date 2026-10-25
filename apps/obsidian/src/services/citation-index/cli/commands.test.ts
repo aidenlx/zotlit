@@ -3,7 +3,6 @@ import { expect } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { Effect } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import {
   annotationRows,
@@ -22,8 +21,10 @@ const setup = Effect.fn("CitationsCliTest.setup")(function* (
     settings: { "citation.annotation-citations": true },
   },
 ) {
-  const h = yield* acquireAsyncDisposable(() =>
-    createCitationIndexHarness({ "draft.md": body }, options),
+  const h = yield* Effect.acquireDisposable(
+    Effect.tryPromise(() =>
+      createCitationIndexHarness({ "draft.md": body }, options),
+    ),
   );
   h.workspace.layoutReady();
   yield* Effect.promise(() => h.index.whenIndexed());

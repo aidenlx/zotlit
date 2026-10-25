@@ -2,7 +2,6 @@
 
 import {
   Cause,
-  Deferred,
   Effect,
   Exit,
   Fiber,
@@ -14,7 +13,6 @@ import {
 import type { Context, Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
-import { changesUntil } from "@/lib/effect-stream";
 
 import type { BinaryPin } from "./pin";
 import { ManagedBinaryPlatform } from "./platform";
@@ -141,7 +139,6 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   const name = cachedBinaryName(binary.pin);
   const location = { directory: binary.id, name };
   const declinedKey = `zotlit-${binary.id}-declined`;
-  const stopped = yield* Deferred.make<void>();
   const status = yield* SubscriptionRef.make<ManagedBinaryStatus>(
     Object.freeze(
       (yield* consent.loadLocalStorage(declinedKey))
@@ -400,13 +397,12 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   yield* Effect.addFinalizer(() =>
     Effect.gen(function* () {
       closed = true;
-      yield* Deferred.succeed(stopped, undefined);
       yield* PubSub.shutdown(status.pubsub);
     }),
   );
   return {
     getStatus: () => SubscriptionRef.get(status),
-    changes: changesUntil(status, Deferred.await(stopped)),
+    changes: SubscriptionRef.changes(status),
     getEngine,
     install,
     uninstall,

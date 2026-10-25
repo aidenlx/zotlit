@@ -9,6 +9,8 @@ import type {
 import { describe, expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Effect } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import { highlightEmoji } from "@/lib/highlight-mapping";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
@@ -27,13 +29,14 @@ function setup() {
       ...(typeof patch === "function" ? patch(current) : patch),
     };
   };
+  const runtime = testRuntime();
   const ctx = {
-    runtime: testRuntime(),
+    runtime,
+    bridge: effectBridge(runtime),
     settings: {
-      get current() {
-        return current;
-      },
-      update,
+      current: Effect.sync(() => current),
+      update: (patch: Parameters<typeof update>[0]) =>
+        Effect.sync(() => update(patch)),
     },
     requestUpdate: vi.fn(),
   } as unknown as SettingTabContext;
@@ -117,7 +120,9 @@ describe("highlight mapping page", () => {
     const emoji = () =>
       highlightEmoji(
         "blue",
-        ctx.settings.current!["note.import-highlight-mappings"],
+        ctx.bridge.runSync(ctx.settings.current)[
+          "note.import-highlight-mappings"
+        ],
       );
     expect(setting.errorMessage).toBeTruthy();
     expect(emoji()).toBeNull();

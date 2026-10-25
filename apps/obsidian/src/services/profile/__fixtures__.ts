@@ -1,10 +1,12 @@
 import { Effect, Layer } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerNoteIndex } from "@/services/note-index/service";
-import { plainPluginSettings } from "@/services/settings/plain";
-import { layerPluginSettings } from "@/services/settings/service";
+import {
+  layerPluginSettings,
+  PluginSettings,
+} from "@/services/settings/service";
 import type { createTemplateHost } from "@/services/template/__fixtures__";
 import { plainTemplate } from "@/services/template/plain";
 import { layerTemplate } from "@/services/template/service";
@@ -24,8 +26,8 @@ export function profileOver(host: ReturnType<typeof createTemplateHost>) {
 export const profileRuntimeOf = Effect.fnUntraced(function* (
   host: ReturnType<typeof createTemplateHost>,
 ) {
-  const stack = yield* acquireAsyncDisposable(
-    async () => new AsyncDisposableStack(),
+  const stack = yield* Effect.acquireDisposable(
+    Effect.tryPromise(async () => new AsyncDisposableStack()),
   );
   const context = yield* Effect.context<never>();
   const runtime = buildRuntime(
@@ -37,6 +39,7 @@ export const profileRuntimeOf = Effect.fnUntraced(function* (
     runtime,
     profile: Object.assign(plainProfile(runtime), { runtime }),
     template: plainTemplate(runtime),
-    settings: plainPluginSettings(runtime),
+    settings: runtime.runSync(PluginSettings),
+    bridge: effectBridge(runtime),
   };
 });

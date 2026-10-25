@@ -9,6 +9,7 @@ import type {
 // citations show formatted in the reading view, navigate like links, and are
 // rewritten in place while Obsidian shows their section.
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
@@ -59,9 +60,9 @@ import type {
 } from "@/services/citekey-navigation";
 import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import { Service } from "@/services/service-base";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 
 import { replaceCitations, sectionCitations } from "./render";
 import type { SectionCitation } from "./render";
@@ -115,8 +116,9 @@ export interface CitekeyReadingDeps {
   /** The open-or-create flow every citekey surface shares, and what hover previews. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "hoverNotePath">;
   /** What a hovered citation shows. */
-  citationPopover: CitationPopover;
-  settings: Pick<PlainPluginSettings, "current" | "changes">;
+  citationPopover: Pick<CitationPopover["Service"], "show">;
+  bridge: Pick<EffectBridge, "runSync">;
+  settings: Pick<PluginSettings["Service"], "current" | "changes">;
 }
 
 /**
@@ -153,6 +155,7 @@ export class CitekeyReading extends Service<void> {
   readonly #citationLookup;
   readonly #citekeyEditor;
   readonly #citationPopover;
+  readonly #bridge;
   readonly #settings;
 
   /** `undefined` until the first settings snapshot decides the treatment. */
@@ -174,6 +177,7 @@ export class CitekeyReading extends Service<void> {
     this.#citationLookup = deps.citationLookup;
     this.#citekeyEditor = deps.citekeyEditor;
     this.#citationPopover = deps.citationPopover;
+    this.#bridge = deps.bridge;
     this.#settings = deps.settings;
     this.ready = this.#load();
   }
@@ -420,7 +424,8 @@ export class CitekeyReading extends Service<void> {
       open: (citekey, pane) => {
         void this.#citekeyEditor.openCitekey(citekey, pane);
       },
-      showPopover: (request) => this.#citationPopover.show(request),
+      showPopover: (request) =>
+        this.#bridge.runSync(this.#citationPopover.show(request)),
       hoverPreferences: () => this.#hover,
       hoverNotePath: (citekey) =>
         this.#citekeyEditor.hoverNotePath(citekey, lookup),

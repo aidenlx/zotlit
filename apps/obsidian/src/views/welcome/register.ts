@@ -6,12 +6,13 @@
 import type { App, Plugin } from "obsidian";
 
 import { Stream } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import type { PlainQueryClients } from "@/services/query-client/plain";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { openLibraryView } from "@/views/library/register";
 import { LIBRARY_VIEW_TYPE } from "@/views/library/view";
@@ -34,7 +35,8 @@ export interface WelcomeRegistrationDeps {
     | "dbFileMissing"
   >;
   queries: Pick<PlainQueryClients, "invalidate">;
-  settings: Pick<PlainPluginSettings, "update">;
+  settings: Pick<PluginSettings["Service"], "update">;
+  bridge: Pick<EffectBridge, "runSync">;
 }
 
 export function registerWelcomeView(
@@ -52,7 +54,8 @@ export function registerWelcomeView(
   plugin.addCommand({
     id: "open-welcome-view",
     name: m.command_open_welcome_name(),
-    callback: () => void openWelcomeView(plugin.app, deps.settings),
+    callback: () =>
+      void openWelcomeView(plugin.app, deps.settings, deps.bridge),
   });
 
   // The missing-file state survives startup, so a view registered after the
@@ -109,9 +112,10 @@ function notFoundNotice(locate: () => void): BaseNotice {
 /** Show the Welcome View banner again, above the Library View brought forward. */
 export async function openWelcomeView(
   app: App,
-  settings: Pick<PlainPluginSettings, "update">,
+  settings: Pick<PluginSettings["Service"], "update">,
+  bridge: Pick<EffectBridge, "runSync">,
 ): Promise<void> {
-  settings.update({ "welcome.dismissed": false });
+  bridge.runSync(settings.update({ "welcome.dismissed": false }));
   const view = await openLibraryView(app);
   view?.welcome.request();
 }

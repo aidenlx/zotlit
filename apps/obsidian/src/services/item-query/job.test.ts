@@ -12,7 +12,6 @@ import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 import { ItemQuerySliceObserver } from "@zotlit/item-query";
 
 import { Deferred, Effect, Fiber } from "@/lib/effect";
-import { acquireDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 
@@ -82,7 +81,7 @@ const run = (scenario: ScenarioDatabase, job: QueryJob) =>
 
 /** The scenario database, held for the case's scope. */
 const scenarioOf = (options?: Parameters<typeof openScenarioDatabase>[0]) =>
-  acquireDisposable(() => openScenarioDatabase(options));
+  Effect.acquireDisposable(Effect.sync(() => openScenarioDatabase(options)));
 
 /** The text of the file at `path`. */
 const textOf = (path: string) => Effect.promise(() => readFile(path, "utf8"));

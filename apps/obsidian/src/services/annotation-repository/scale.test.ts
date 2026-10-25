@@ -1,6 +1,7 @@
 // The Annotation Repository at library scale: one batch read for many
 // Attachments, and a published list kept only while a surface holds it.
 
+import { TestClock } from "effect/testing";
 import { expect, it, vi } from "vitest";
 
 import { yieldToMain } from "@/lib/yield-to-main";
@@ -14,16 +15,18 @@ import {
   nextChange,
   REMEMBERED_KEY,
   setup,
-  NOW,
   switchToLocalApi,
+  batchReads,
+  clearReads,
 } from "./__fixtures__";
+import type { RepositoryClient } from "./__fixtures__";
 import { UNHELD_RETENTION } from "./service";
-import type { AnnotationRepository } from "./service";
 
 it("reads the Annotations of several Attachments in one batch read", async () => {
   await using stack = new AsyncDisposableStack();
-  const { repository, acquireRead } = await setup(stack);
-  acquireRead.mockClear();
+  const reads = await setup(stack);
+  const { repository } = reads;
+  clearReads(reads);
 
   // A view reads each Attachment it shows in the same task.
   const [pdf, epub] = await Promise.all([
@@ -31,24 +34,25 @@ it("reads the Annotations of several Attachments in one batch read", async () =>
     repository.read("EPUBBKS2"),
   ]);
 
-  expect(acquireRead).toHaveBeenCalledTimes(1);
+  expect(batchReads(reads)).toBe(1);
   expect(pdf?.annotations).toHaveLength(7);
   expect(epub?.annotations.map(({ key }) => key)).toEqual(["EPUBMRK2"]);
 });
 
 it("drops a list no surface holds, and reads it fresh for the next surface that holds it", async () => {
   await using stack = new AsyncDisposableStack();
-  const { repository, acquireRead } = await setup(stack);
+  const reads = await setup(stack);
+  const { repository } = reads;
 
   const view = repository.hold(["RGRPDF24"]);
   await repository.read("RGRPDF24");
   view[Symbol.dispose]();
   expect(repository.peek("RGRPDF24")).toBeNull();
 
-  acquireRead.mockClear();
+  clearReads(reads);
   using _again = repository.hold(["RGRPDF24"]);
   const list = await repository.read("RGRPDF24");
-  expect(acquireRead).toHaveBeenCalledTimes(1);
+  expect(batchReads(reads)).toBe(1);
   expect(list?.annotations).toHaveLength(7);
 });
 
@@ -122,21 +126,22 @@ async function settled(): Promise<void> {
 }
 
 /** The Attachments of `keys` whose list the repository still publishes. */
-function published(repository: AnnotationRepository, keys: readonly string[]) {
+function published(repository: RepositoryClient, keys: readonly string[]) {
   return keys.filter((key) => repository.peek(key) !== null);
 }
 
 it("lets the lists go as views over many Attachments close", async () => {
   await using stack = new AsyncDisposableStack();
-  const { repository, client, acquireRead, dbEvents } = await setup(stack);
+  const reads = await setup(stack);
+  const { repository, client, acquireRead, dbEvents } = reads;
   const keys = seedAttachments(client, 40);
 
   // Two views over overlapping sets of Attachments: one batch read each.
   const first = repository.hold(keys.slice(0, 25));
   const second = repository.hold(keys.slice(15));
-  acquireRead.mockClear();
+  clearReads(reads);
   const lists = await Promise.all(keys.map((key) => repository.read(key)));
-  expect(acquireRead).toHaveBeenCalledTimes(1);
+  expect(batchReads(reads)).toBe(1);
   expect(lists[39]?.annotations).toHaveLength(1);
   expect(published(repository, keys)).toHaveLength(40);
 
@@ -172,22 +177,25 @@ it("reads again on a database change only the lists that surfaces hold", async (
 
 it("lets go at a database change a list read with no hold and not asked for a while", async () => {
   await using stack = new AsyncDisposableStack();
-  let now = NOW;
-  const { repository, acquireRead, dbEvents } = await setup(stack, undefined, {
-    repositoryNow: () => now,
-  });
+  const { repository, acquireRead, dbEvents, runtime } = await setup(stack);
   const tick = Temporal.Duration.from({ milliseconds: 1 });
 
   await repository.read("RGRPDF24");
   // A reader that asks without a hold keeps its list while no change comes,
   // so a card it shows still finds its record however long it stood idle.
-  now = now.add(UNHELD_RETENTION).add(UNHELD_RETENTION);
+  await runtime.runPromise(
+    TestClock.adjust(
+      UNHELD_RETENTION.add(UNHELD_RETENTION).total("milliseconds"),
+    ),
+  );
   expect(repository.peek("RGRPDF24")).not.toBeNull();
 
   // Asked again within the retention, a change reads it again; that read is
   // the repository's own and no ask.
   await repository.read("RGRPDF24");
-  now = now.add(UNHELD_RETENTION).subtract(tick);
+  await runtime.runPromise(
+    TestClock.adjust(UNHELD_RETENTION.subtract(tick).total("milliseconds")),
+  );
   acquireRead.mockClear();
   dbEvents.emit("changed");
   await settled();
@@ -195,7 +203,7 @@ it("lets go at a database change a list read with no hold and not asked for a wh
   expect(repository.peek("RGRPDF24")).not.toBeNull();
 
   // Unasked past the retention, the next change lets it go unread.
-  now = now.add(tick);
+  await runtime.runPromise(TestClock.adjust(tick.total("milliseconds")));
   acquireRead.mockClear();
   dbEvents.emit("changed");
   await settled();

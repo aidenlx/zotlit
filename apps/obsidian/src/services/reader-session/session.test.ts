@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import type { ReaderTarget } from "@/services/local-server/service";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { Effect, SubscriptionRef } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
+import type {
+  LocalServer,
+  ReaderTarget,
+} from "@/services/local-server/service";
 
 import { ReaderSessionHost } from "./session";
 import type { ReaderSessionTarget } from "./session";
@@ -112,27 +119,36 @@ const PUSHED: ReaderTarget = { itemID: 1, attachmentID: 2, selected: [7] };
 type LiveUpdatePort = ZoteroReaderSessionDeps["liveUpdate"];
 
 function liveUpdate(initial: ReaderTarget | null) {
-  let pushed = initial;
-  const listeners = new Set<(target: ReaderTarget) => void>();
-  const stub: LiveUpdatePort = {
-    get readerTarget() {
-      return pushed;
+  const pushed = Effect.runSync(SubscriptionRef.make(initial));
+  const bridge = effectBridge(testRuntime());
+  let subscribers = 0;
+  const stub: LiveUpdatePort = stubService<LocalServer["Service"]>(
+    "LocalServer",
+    {
+      readerTarget: SubscriptionRef.get(pushed),
+      readerTargetChanges: SubscriptionRef.changes(pushed),
     },
-    on: ((event: string, cb: (target: ReaderTarget) => void) => {
-      expect(event).toBe("reader/target");
-      listeners.add(cb);
-      return () => listeners.delete(cb);
-    }) as LiveUpdatePort["on"],
+  );
+  const trackedBridge: ZoteroReaderSessionDeps["bridge"] = {
+    runSync: bridge.runSync,
+    subscribe: (stream, callback) => {
+      subscribers += 1;
+      const off = bridge.subscribe(stream, callback);
+      return () => {
+        subscribers -= 1;
+        off();
+      };
+    },
   };
   return {
     stub,
-    push(target: ReaderTarget) {
-      pushed = target;
-      for (const cb of listeners) cb(target);
+    push(next: ReaderTarget) {
+      Effect.runSync(SubscriptionRef.set(pushed, next));
     },
     get subscribers() {
-      return listeners.size;
+      return subscribers;
     },
+    bridge: trackedBridge,
   };
 }
 
@@ -154,6 +170,7 @@ describe("ZoteroReaderSession", () => {
     const navigated: string[] = [];
     const session = new ZoteroReaderSession({
       liveUpdate: live.stub,
+      bridge: live.bridge,
       navigate: (key) => navigated.push(key),
       resolve,
     });

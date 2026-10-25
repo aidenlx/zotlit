@@ -36,18 +36,22 @@ it.effect("a throwing subscriber receives both immediate changes (#1705)", () =>
         if (changes.length === 1) throw new Error("listener failed");
       },
     );
-    f.settings.update({
-      [LIBRARY_SCOPE_KEY]: {
-        mode: "selected",
-        libraries: [{ type: "personal" }],
-      },
-    });
-    f.settings.update({
-      [LIBRARY_SCOPE_KEY]: {
-        mode: "selected",
-        libraries: [{ type: "group", groupID: 200 }],
-      },
-    });
+    f.bridge.runSync(
+      f.settings.update({
+        [LIBRARY_SCOPE_KEY]: {
+          mode: "selected",
+          libraries: [{ type: "personal" }],
+        },
+      }),
+    );
+    f.bridge.runSync(
+      f.settings.update({
+        [LIBRARY_SCOPE_KEY]: {
+          mode: "selected",
+          libraries: [{ type: "group", groupID: 200 }],
+        },
+      }),
+    );
     yield* Effect.promise(() => expect.poll(() => changes.length).toBe(2));
     expect(
       changes.map((state) =>
@@ -55,7 +59,9 @@ it.effect("a throwing subscriber receives both immediate changes (#1705)", () =>
       ),
     ).toEqual([[1], [3]]);
     off();
-    f.settings.update({ [LIBRARY_SCOPE_KEY]: { mode: "all" } });
+    f.bridge.runSync(
+      f.settings.update({ [LIBRARY_SCOPE_KEY]: { mode: "all" } }),
+    );
     yield* Effect.promise(() =>
       expect.poll(() => f.plain.current?.mode).toBe("all"),
     );
@@ -80,9 +86,11 @@ it.effect("all adapter methods remain safe after whole-runtime disposal", () =>
     subscribe(f.runtime, Stream.drop(f.plain.changes, 1), listener)();
     subscribe(f.runtime, f.plain["changed"], listener)();
     subscribe(f.runtime, f.plain["libraries-changed"], listener)();
-    f.settings.update({
-      [LIBRARY_SCOPE_KEY]: { mode: "selected", libraries: [] },
-    });
+    f.bridge.runSync(
+      f.settings.update({
+        [LIBRARY_SCOPE_KEY]: { mode: "selected", libraries: [] },
+      }),
+    );
     expect(listener).not.toHaveBeenCalled();
   }),
 );

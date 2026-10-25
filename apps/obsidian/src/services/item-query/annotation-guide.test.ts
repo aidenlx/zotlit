@@ -7,7 +7,6 @@ import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 import { ItemQueryScheduler } from "@zotlit/item-query";
 
 import { Effect, Scheduler } from "@/lib/effect";
-import { acquireDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 
@@ -51,8 +50,8 @@ describe("zotlit:query-guide", () => {
     "shows only query examples and Filter Expressions that execute",
     () =>
       Effect.gen(function* () {
-        const scenario = yield* acquireDisposable(() =>
-          openScenarioDatabase({ annotations: true }),
+        const scenario = yield* Effect.acquireDisposable(
+          Effect.sync(() => openScenarioDatabase({ annotations: true })),
         );
         const failures: object[] = [];
 

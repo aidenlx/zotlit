@@ -10,7 +10,6 @@ import type { CslItemData } from "@zotlit/db";
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Context, Effect, Fiber, Layer, Queue, Stream } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
@@ -19,7 +18,7 @@ import type { Held } from "@/services/query-client/service";
 import { layerQueryClients } from "@/services/query-client/service";
 import { buildSeededSettings } from "@/services/settings/__fixtures__";
 import type { SettingsOverrides } from "@/services/settings/__fixtures__";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { SettingsFixture } from "@/services/settings/__fixtures__";
 import { createTemplateHost } from "@/services/template/__fixtures__";
 import { zoteroPrefFixture } from "@/services/zotero-pref/__fixtures__";
 import { ZoteroPref } from "@/services/zotero-pref/service";
@@ -87,12 +86,16 @@ it.effect.each(["Profile", "preference override"] as const)(
         Effect.sync(() => invalidated.push(event._tag)),
       ).pipe(Effect.forkScoped({ startImmediately: true }));
       if (dependency === "Profile") {
-        profile.settings.updateDefaultLiteratureNoteProfileBindings({
-          "note.literature-folder": "First",
-        });
-        profile.settings.updateDefaultLiteratureNoteProfileBindings({
-          "note.literature-folder": "Second",
-        });
+        profile.bridge.runSync(
+          profile.settings.updateDefaultLiteratureNoteProfileBindings({
+            "note.literature-folder": "First",
+          }),
+        );
+        profile.bridge.runSync(
+          profile.settings.updateDefaultLiteratureNoteProfileBindings({
+            "note.literature-folder": "Second",
+          }),
+        );
       } else {
         yield* pref.setDataDir("/other-data");
         yield* pref.setDataDir(null);
@@ -114,8 +117,12 @@ it.effect(
         harness.cache.changes,
         (state) => locales.push(state.vaultPresentation.locale),
       );
-      harness.settings.update({ "citation.locale": "fr-FR" });
-      harness.settings.update({ "citation.locale": "de-DE" });
+      harness.bridge.runSync(
+        harness.settings.update({ "citation.locale": "fr-FR" }),
+      );
+      harness.bridge.runSync(
+        harness.settings.update({ "citation.locale": "de-DE" }),
+      );
       yield* TestClock.adjust(0);
       expect(locales).toEqual(["en-US", "fr-FR", "de-DE"]);
       stop();
@@ -226,7 +233,7 @@ it.effect(
       yield* Effect.promise(() => h.cache.runtime.dispose());
       yield* Fiber.join(stream);
       yield* Effect.promise(() => pending);
-      h.settings.update({ "citation.locale": "fr-FR" });
+      h.bridge.runSync(h.settings.update({ "citation.locale": "fr-FR" }));
       h.db.notifyChanged();
       h.profileEvents.emit("changed");
       h.zoteroPref.resolvedChanged();
@@ -439,7 +446,8 @@ interface Harness extends AsyncDisposable {
   pandocEngine: PandocEngineStub;
   db: DatabaseStub;
   zoteroPref: ZoteroPrefStub;
-  settings: PlainPluginSettings;
+  settings: SettingsFixture;
+  bridge: SettingsFixture["bridge"];
   /** Every `invalidated` the cache announced. */
   invalidations: number[];
   profileEvents: {
@@ -504,6 +512,7 @@ async function openHarness(
     db,
     zoteroPref,
     settings,
+    bridge: settings.bridge,
     invalidations,
     profileEvents,
     missingStyles,
@@ -701,14 +710,18 @@ describe("BibliographyRenderCache", () => {
         const items = [item("alpha")];
 
         yield* Effect.promise(() => cache.render(items));
-        settings.updateDefaultLiteratureNoteProfileBindings({
-          "citation.references-style": IEEE,
-        });
+        harness.bridge.runSync(
+          settings.updateDefaultLiteratureNoteProfileBindings({
+            "citation.references-style": IEEE,
+          }),
+        );
         const changed = yield* Effect.promise(() => cache.render(items));
         // The same style again is no change at all.
-        settings.updateDefaultLiteratureNoteProfileBindings({
-          "citation.references-style": IEEE,
-        });
+        harness.bridge.runSync(
+          settings.updateDefaultLiteratureNoteProfileBindings({
+            "citation.references-style": IEEE,
+          }),
+        );
 
         expect(invalidations).toHaveLength(1);
         expect(changed).toEqual({
@@ -795,8 +808,8 @@ describe("BibliographyRenderCache", () => {
     "stops a document that cites nothing under a style it cannot reach",
     () =>
       Effect.gen(function* () {
-        const installed = yield* acquireAsyncDisposable(() =>
-          installStyle(APA),
+        const installed = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => installStyle(APA)),
         );
         const harness = yield* harnessOf(
           { "citation.references-style": APA },
@@ -1055,7 +1068,9 @@ describe("BibliographyRenderCache", () => {
         subscribe(cache.runtime, cache["style-missing"], (styleId) =>
           newMissingStyles.push(styleId),
         );
-        harness.settings.update({ "citation.locale": "fr-FR" });
+        harness.bridge.runSync(
+          harness.settings.update({ "citation.locale": "fr-FR" }),
+        );
         yield* TestClock.adjust(0);
         expect(newMissingStyles).toEqual([]);
       }),
@@ -1069,11 +1084,11 @@ describe("BibliographyRenderCache", () => {
 
       yield* Effect.promise(() => cache.render(items));
       yield* Effect.promise(() => cache.renderCitations(["[@alpha]"], items));
-      settings.update({ "citation.locale": "de-DE" });
+      harness.bridge.runSync(settings.update({ "citation.locale": "de-DE" }));
       yield* Effect.promise(() => cache.render(items));
       yield* Effect.promise(() => cache.renderCitations(["[@alpha]"], items));
       // The same locale again is no change at all.
-      settings.update({ "citation.locale": "de-DE" });
+      harness.bridge.runSync(settings.update({ "citation.locale": "de-DE" }));
 
       expect(invalidations).toHaveLength(1);
       expect(engine.requests).toHaveLength(2);
@@ -1087,8 +1102,8 @@ describe("BibliographyRenderCache", () => {
     "renders the embedded default style for a request that names Default",
     () =>
       Effect.gen(function* () {
-        const installed = yield* acquireAsyncDisposable(() =>
-          installStyle(APA),
+        const installed = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => installStyle(APA)),
         );
         const harness = yield* harnessOf(
           { "citation.references-style": APA },
@@ -1106,8 +1121,8 @@ describe("BibliographyRenderCache", () => {
 
   it.effect("renders again when a dependent style names another parent", () =>
     Effect.gen(function* () {
-      const installed = yield* acquireAsyncDisposable(() =>
-        installDependent(APA),
+      const installed = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() => installDependent(APA)),
       );
       const harness = yield* harnessOf(
         { "citation.references-style": DEPENDENT },
@@ -1128,7 +1143,9 @@ describe("BibliographyRenderCache", () => {
 
   it.effect("renders again when the selected style's own content changes", () =>
     Effect.gen(function* () {
-      const installed = yield* acquireAsyncDisposable(() => installStyle(APA));
+      const installed = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() => installStyle(APA)),
+      );
       const harness = yield* harnessOf(
         { "citation.references-style": APA },
         installed.dataDir,
@@ -1151,7 +1168,9 @@ describe("BibliographyRenderCache", () => {
 
   it.effect("holds one render per Citation Presentation", () =>
     Effect.gen(function* () {
-      const installed = yield* acquireAsyncDisposable(() => installStyle(APA));
+      const installed = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() => installStyle(APA)),
+      );
       const harness = yield* harnessOf(
         { "citation.references-style": APA },
         installed.dataDir,
@@ -1171,7 +1190,9 @@ describe("BibliographyRenderCache", () => {
 
   it.effect("blames the vault for its own selection alone", () =>
     Effect.gen(function* () {
-      const installed = yield* acquireAsyncDisposable(() => installStyle(APA));
+      const installed = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() => installStyle(APA)),
+      );
       const harness = yield* harnessOf(
         { "citation.references-style": APA },
         installed.dataDir,
@@ -1236,9 +1257,11 @@ describe("BibliographyRenderCache citations", () => {
       const { cache, engine, settings } = harness;
 
       yield* Effect.promise(() => cache.renderCitations(["[@alpha]"], items));
-      settings.updateDefaultLiteratureNoteProfileBindings({
-        "citation.references-style": IEEE,
-      });
+      harness.bridge.runSync(
+        settings.updateDefaultLiteratureNoteProfileBindings({
+          "citation.references-style": IEEE,
+        }),
+      );
       const changed = yield* Effect.promise(() =>
         cache.renderCitations(["[@alpha]"], items),
       );
@@ -1314,7 +1337,9 @@ const harnessOf = Effect.fnUntraced(function* (
   profile?: BibliographyRenderFixtureOptions["profile"],
 ) {
   const context = yield* Effect.context<never>();
-  return yield* acquireAsyncDisposable(() =>
-    openHarness(overrides, dataDir, { profile, context }),
+  return yield* Effect.acquireDisposable(
+    Effect.tryPromise(() =>
+      openHarness(overrides, dataDir, { profile, context }),
+    ),
   );
 });

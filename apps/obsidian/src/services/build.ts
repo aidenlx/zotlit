@@ -3,8 +3,8 @@ import type { FileSystemAdapter } from "obsidian";
 import { cliRunner } from "@/lib/cli-command";
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
+import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
-import { nodeFetch } from "@/lib/node-fetch";
 import { revealSetting } from "@/lib/open-settings";
 import { libraryTagNamesOf } from "@/services/database/library-tag-names";
 import {
@@ -12,16 +12,13 @@ import {
   createProfileImporter,
 } from "@/setting-tab/profiles";
 import { blockedNotice } from "@/views/annot-view/card-verbs";
-import { createCommentRenderer } from "@/views/annot-view/comment-render";
 import {
   annotationCardShown,
   revealAnnotationInView,
 } from "@/views/annot-view/register";
-import { openLibraryView } from "@/views/library/register";
 import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
-import { AnnotationLinkReading } from "./annotation-popover/reading";
 import { AnnotationPopover } from "./annotation-popover/service";
 import { CapabilityNotices } from "./annotation-repository/notices";
 import { AnnotationRepository } from "./annotation-repository/service";
@@ -40,19 +37,18 @@ import { CitationPopover } from "./citation-popover/service";
 import { plainCitationText } from "./citation-text/plain";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
-import { ExcerptDisplayService } from "./excerpt-image/display";
+import { ExcerptDisplays } from "./excerpt-image/display";
+import { ExcerptImages } from "./excerpt-image/layer";
 import { createExcerptPreparation } from "./excerpt-image/prepare";
 import { prepareSingleExcerpt } from "./excerpt-image/prepare-single";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
-import { savedExcerptRequest } from "./excerpt-image/request";
-import { ExcerptImageService } from "./excerpt-image/service";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
 import { ItemLookup } from "./item-lookup/service";
 import { QueryService } from "./item-query/service";
 import { plainLibraryScope } from "./library-scope/plain";
 import { LocalBridgeService } from "./local-bridge/service";
-import { LocalServerService } from "./local-server/service";
+import { LocalServer } from "./local-server/service";
 import { bindManagedBinary } from "./managed-binary/handle";
 import { createNoteFeature } from "./note-feature";
 import type { NoteFeature } from "./note-feature";
@@ -68,9 +64,9 @@ import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
 import { pluginLayer } from "./plugin-layer";
 import { plainProfile } from "./profile/plain";
 import { plainQueryClients } from "./query-client/plain";
-import { ReleaseService } from "./release/service";
+import { Release } from "./release/service";
 import { ServiceContainer } from "./service-base";
-import { plainPluginSettings } from "./settings/plain";
+import { PluginSettings } from "./settings/service";
 import { loadLiteratureNoteTemplateMigrationData } from "./template/migration";
 import type { TemplateMigrationOptions } from "./template/migration";
 import { plainTemplate, plainTemplateMigration } from "./template/plain";
@@ -78,10 +74,11 @@ import { plainUseLedger } from "./use-ledger/plain";
 import { WikilinkEditor } from "./wikilink-editor/service";
 import { WikilinkReading } from "./wikilink-reading/service";
 import { writeReadUse } from "./zotero-local-api/last-read";
-import { ZoteroLocalApiClient } from "./zotero-local-api/service";
-import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
+import { localApiPort } from "./zotero-local-api/port";
+import { ZoteroLocalApi } from "./zotero-local-api/service";
 import { plainZoteroPref } from "./zotero-pref/plain";
 import { plainZoteroReads } from "./zotero-reads/plain";
+import { ZoteroReads } from "./zotero-reads/service";
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -91,8 +88,9 @@ import { plainZoteroReads } from "./zotero-reads/plain";
  *
  * The runtime over {@link pluginLayer} finishes acquisition first, including
  * each layer's asynchronous first load. The container then
- * injects its services with `useValue`: a converted service through its plain
- * adapter, a bridged one as it is. The runtime's disposal sits under every
+ * injects its services with `useValue`: a graph service as the tag's service
+ * (`() => runtime.runSync(Tag)`), which legacy consumers run through the
+ * container's `bridge`, a bridged one as it is. The runtime's disposal sits under every
  * container registration on `stack`, so the whole graph closes after the last
  * container service has disposed: a container service never outlives a layer
  * it uses. A service leaves the container for the graph as it converts or is
@@ -108,19 +106,6 @@ export async function buildServices(
   const migrationActions = new Promise<TemplateMigrationOptions>((resolve) => {
     bindMigration = resolve;
   });
-  const runtime = buildRuntime(
-    pluginLayer(plugin, {
-      loadVerificationData: async (options) =>
-        (await migrationActions).loadVerificationData(options),
-      openPrompt: async () => (await migrationActions).openPrompt(),
-    }),
-    stack,
-  );
-  await runtime.context();
-  const container = new ServiceContainer(stack, (key, error) => {
-    console.error(`Service "${key}" failed to initialize`, error);
-  });
-
   // The excerpt service is registered before the PDF reader, so the reader
   // hands its documents over through this one holder. A crop asks for a reader
   // document per resolution, and answers detached while the holder is empty.
@@ -128,11 +113,35 @@ export async function buildServices(
   const readers: ExcerptReaderDocuments = {
     borrow: (path) => reader?.borrowDocument(path) ?? null,
   };
+  const runtime = buildRuntime(
+    pluginLayer(
+      plugin,
+      {
+        loadVerificationData: async (options) =>
+          (await migrationActions).loadVerificationData(options),
+        openPrompt: async () => (await migrationActions).openPrompt(),
+      },
+      {
+        openStore: () => openExcerptStore(plugin.app.appId),
+        readers,
+      },
+    ),
+    stack,
+  );
+  await runtime.context();
+  const bridge = effectBridge(runtime);
+  const zoteroReadsService = runtime.runSync(ZoteroReads);
+  const zoteroLocalApiService = runtime.runSync(ZoteroLocalApi);
+  const localApi = localApiPort(zoteroLocalApiService, bridge);
+  const container = new ServiceContainer(stack, (key, error) => {
+    console.error(`Service "${key}" failed to initialize`, error);
+  });
 
   return container
     .useValue({ runtime: () => runtime })
+    .useValue({ bridge: () => bridge })
     .useValue({
-      settings: () => plainPluginSettings(runtime),
+      settings: () => runtime.runSync(PluginSettings),
     })
     .useValue({
       useLedger: () => plainUseLedger(runtime),
@@ -146,19 +155,7 @@ export async function buildServices(
     .useValue({
       queryClient: () => plainQueryClients(runtime),
     })
-    .use({
-      release: ({ settings }) =>
-        new ReleaseService({
-          app: plugin.app,
-          version: plugin.manifest.version,
-          settings,
-          // A first install or an update opens the Library View, in place of
-          // the empty tab or beside the open note.
-          openFirstScreen: async () => {
-            await openLibraryView(plugin.app, { pane: "first-screen" });
-          },
-        }),
-    })
+    .useValue({ release: () => runtime.runSync(Release) })
     .useValue({
       template: () => plainTemplate(runtime),
     })
@@ -168,13 +165,10 @@ export async function buildServices(
     .useValue({
       zoteroPref: () => plainZoteroPref(runtime),
     })
-    .use({
-      localServer: ({ settings, zoteroPref, noteIndex }) =>
-        new LocalServerService({ runtime, settings, zoteroPref, noteIndex }),
-    })
+    .useValue({ localServer: () => runtime.runSync(LocalServer) })
     .useValue({
       chineseSegmenter: () =>
-        bindManagedBinary(runtime, runtime.runSync(ChineseSegmenter)),
+        bindManagedBinary(bridge, runtime.runSync(ChineseSegmenter)),
     })
     .useValue({
       zoteroReads: () => plainZoteroReads(runtime),
@@ -182,21 +176,8 @@ export async function buildServices(
     .useValue({
       libraryTagNames: () => libraryTagNamesOf(runtime),
     })
-    .use({
-      excerptImage: () =>
-        new ExcerptImageService({
-          openStore: () => openExcerptStore(plugin.app.appId),
-          readers,
-        }),
-    })
-    .use({
-      excerptDisplay: ({ queryClient, excerptImage }) =>
-        new ExcerptDisplayService({
-          queries: queryClient,
-          resolve: (request, signal) => excerptImage.resolve(request, signal),
-          stored: (request) => excerptImage.stored(request),
-        }),
-    })
+    .useValue({ excerptImage: () => runtime.runSync(ExcerptImages) })
+    .useValue({ excerptDisplay: () => runtime.runSync(ExcerptDisplays) })
     .use({
       attachmentResolver: ({ zoteroReads, queryClient, zoteroPref }) =>
         new AttachmentResolver({
@@ -212,67 +193,26 @@ export async function buildServices(
       targetOpener: ({ attachmentResolver, settings }) =>
         createTargetOpener({
           attachments: attachmentResolver,
-          reader: createPdfReader({ app: plugin.app, settings }),
+          reader: createPdfReader({ app: plugin.app, settings, bridge }),
           native: openWithSystem,
           settings,
+          bridge,
           // Desktop-only plugin: the adapter is always a `FileSystemAdapter`.
           vaultBasePath: (
             plugin.app.vault.adapter as FileSystemAdapter
           ).getBasePath(),
         }),
     })
-    .use({
-      zoteroLocalApi: ({ zoteroPref, localServer }) =>
-        new ZoteroLocalApiClient({
-          runtime,
-          fetch: nodeFetch,
-          zoteroPref,
-          localServer,
-          // The Remembered Write Authorization lives in Obsidian's Keychain,
-          // where the user can see and delete it — never in synced settings.
-          credentials: new SecretWriteAuthorizationStore({
-            secrets: plugin.app.secretStorage,
-          }),
-        }),
+    .useValue({ zoteroLocalApi: () => zoteroLocalApiService })
+    .useValue({
+      annotationRepository: () => runtime.runSync(AnnotationRepository),
     })
     .use({
-      annotationRepository: ({
-        zoteroReads,
-        queryClient,
-        zoteroLocalApi,
-        zoteroPref,
-        excerptImage,
-      }) =>
-        new AnnotationRepository({
-          runtime,
-          db: zoteroReads,
-          queryClient,
-          localApi: zoteroLocalApi,
-          // A session's first read of an Attachment has no list that stood
-          // before it to compare against, so it is compared against the image
-          // this device persists for the Annotation instead — the display's own
-          // stored-outcome read, so an Annotation this device never cached has
-          // no baseline here exactly as it has no image to replace there.
-          persistedExcerpt: async (annotation, source) => {
-            const request = await savedExcerptRequest({
-              annotation,
-              source,
-              sourceScope: zoteroPref.dataDir,
-              zoteroReads,
-              paths: zoteroPref,
-            });
-            if (!request) return null;
-            return (
-              (await excerptImage.stored(request))?.identity.fingerprint ?? null
-            );
-          },
-        }),
-    })
-    .use({
-      capabilityNotices: ({ annotationRepository, zoteroLocalApi }) =>
+      capabilityNotices: ({ annotationRepository }) =>
         new CapabilityNotices({
           capabilities: annotationRepository,
-          writes: zoteroLocalApi,
+          bridge,
+          writes: localApi,
           openEditingSettings: () =>
             revealSetting(
               plugin.app,
@@ -292,7 +232,6 @@ export async function buildServices(
         attachmentResolver,
         annotationRepository,
         capabilityNotices,
-        zoteroReads,
         libraryTagNames,
         noteIndex,
         settings,
@@ -301,13 +240,18 @@ export async function buildServices(
           recordRead: ({ attachmentKey, itemKey, serverID, instant }) => {
             useLedger.record(itemKey, "read", instant);
             void writeReadUse(
-              { reads: zoteroReads, api: zoteroLocalApi },
+              {
+                reads: zoteroReadsService,
+                bridge,
+                api: zoteroLocalApi,
+              },
               { attachmentKey, instant, serverID },
             );
           },
           app: plugin.app,
           attachments: attachmentResolver,
           annotations: annotationRepository,
+          bridge,
           noteIndex,
           libraryTagNames,
           settings,
@@ -334,7 +278,7 @@ export async function buildServices(
     .use({
       attachmentImport: ({ settings, zoteroPref }) =>
         new AttachmentImportService({
-          runtime,
+          bridge,
           app: plugin.app,
           settings,
           zoteroPref,
@@ -365,7 +309,7 @@ export async function buildServices(
         zoteroPref,
       }) =>
         new LocalBridgeService({
-          runtime,
+          bridge,
           webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
           app: plugin.app,
           settings,
@@ -428,7 +372,7 @@ export async function buildServices(
               },
               options,
             ),
-          openPrompt: () => openWelcomeView(plugin.app, settings),
+          openPrompt: () => openWelcomeView(plugin.app, settings, bridge),
         });
         return plainTemplateMigration(runtime);
       },
@@ -478,6 +422,7 @@ export async function buildServices(
           noteIndex,
           zoteroPref,
           settings,
+          bridge,
           attachmentImport,
         }),
     })
@@ -550,6 +495,7 @@ export async function buildServices(
           noteFeature,
           zoteroReads,
           settings,
+          bridge,
           libraryScope,
           noteImport,
           noteIndex,
@@ -565,60 +511,14 @@ export async function buildServices(
     .useValue({ citationIndex: () => plainCitationIndex(runtime) })
     .useValue({
       pandocEngine: () =>
-        bindManagedBinary(runtime, runtime.runSync(PandocEngine)),
+        bindManagedBinary(bridge, runtime.runSync(PandocEngine)),
     })
     .useValue({
       bibliographyRender: () => plainBibliographyRender(runtime),
     })
     .useValue({ citationText: () => plainCitationText(runtime) })
-    .use({
-      citationPopover: ({
-        profile,
-        zoteroReads,
-        citationIndex,
-        citationLookup,
-        citationText,
-        bibliographyRender,
-        libraryScope,
-      }): CitationPopover =>
-        new CitationPopover({
-          runtime,
-          profile,
-          app: plugin.app,
-          db: zoteroReads,
-          citationIndex,
-          citationLookup,
-          citationText,
-          bibliographyRender,
-          libraryScope,
-        }),
-    })
-    .use({
-      annotationPopover: ({
-        annotationRepository,
-        excerptDisplay,
-        zoteroReads,
-        zoteroPref,
-      }) =>
-        new AnnotationPopover({
-          annotations: annotationRepository,
-          excerptDisplay,
-          excerptRequest: ({ annotation, source }) =>
-            savedExcerptRequest({
-              annotation,
-              source,
-              sourceScope: zoteroPref.dataDir,
-              zoteroReads,
-              paths: zoteroPref,
-            }),
-          commentRenderer: (owner, sourcePath) =>
-            createCommentRenderer({
-              app: plugin.app,
-              component: owner,
-              getSourcePath: () => sourcePath,
-            }),
-        }),
-    })
+    .useValue({ citationPopover: () => runtime.runSync(CitationPopover) })
+    .useValue({ annotationPopover: () => runtime.runSync(AnnotationPopover) })
     .use({
       citekeyEditor: ({
         noteIndex,
@@ -633,6 +533,7 @@ export async function buildServices(
         settings,
         citationLookup,
         libraryScope,
+        bridge,
       }) =>
         new CitekeyEditor({
           runtime,
@@ -650,14 +551,7 @@ export async function buildServices(
           settings,
           citationLookup,
           libraryScope,
-        }),
-    })
-    .use({
-      annotationLinkReading: ({ annotationPopover }) =>
-        new AnnotationLinkReading({
-          app: plugin.app,
-          plugin,
-          annotationPopover,
+          bridge,
         }),
     })
     .use({
@@ -668,6 +562,7 @@ export async function buildServices(
         citationPopover,
         settings,
         citationLookup,
+        bridge,
       }) =>
         new WikilinkEditor({
           runtime,
@@ -679,6 +574,7 @@ export async function buildServices(
           citationPopover,
           settings,
           citationLookup,
+          bridge,
         }),
     })
     .use({
@@ -688,6 +584,7 @@ export async function buildServices(
         citekeyEditor,
         citationPopover,
         settings,
+        bridge,
       }) =>
         new WikilinkReading({
           runtime,
@@ -698,6 +595,7 @@ export async function buildServices(
           citekeyEditor,
           citationPopover,
           settings,
+          bridge,
         }),
     })
     .use({
@@ -707,6 +605,7 @@ export async function buildServices(
         citationPopover,
         citekeyEditor,
         settings,
+        bridge,
       }) =>
         new CitekeyReading({
           runtime,
@@ -717,6 +616,7 @@ export async function buildServices(
           citationPopover,
           citekeyEditor,
           settings,
+          bridge,
         }),
     })
     .use({
@@ -729,6 +629,7 @@ export async function buildServices(
         citekeyEditor,
         citationPopover,
         settings,
+        bridge,
       }) =>
         new GraphCitations({
           runtime,
@@ -741,6 +642,7 @@ export async function buildServices(
           citekeyEditor,
           citationPopover,
           settings,
+          bridge,
         }),
     });
 }

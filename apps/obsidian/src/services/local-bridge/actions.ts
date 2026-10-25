@@ -15,13 +15,13 @@ import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { FileMenuSegment } from "@/services/file-menu";
 import { isLiteratureNote } from "@/services/note-index/service";
 import type { PlainProfile } from "@/services/profile/plain";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 
 import { noteItem } from "./customize";
 import type { CustomizeAction, CustomizeRequest } from "./customize";
 
 export interface CustomizeActionDeps {
-  settings: Pick<PlainPluginSettings, "current">;
+  settings: Pick<PluginSettings["Service"], "current">;
   /** The stamp reader: which Profile this note belongs to, if any. */
   profile: Pick<PlainProfile, "loaded" | "profileOf">;
   /** The shared Customize flow, the same one the settings rows open. */

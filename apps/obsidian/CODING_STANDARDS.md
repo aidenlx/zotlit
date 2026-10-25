@@ -30,7 +30,7 @@ Review Effect code against the docs of the installed `effect` package, the versi
 
 Check in particular:
 
-- **Service methods** return Effects, and callers outside Effect go through the service's plain adapter ([Services](policies/services.md) → Plain adapter). A method written as a generator is `Effect.fn("<Tag>.<method>")` (`01_effect/01_basics/02_effect-fn.ts`, `01_effect/03_services/01_service.ts`); a read derived from state (`Effect.map` over a `SubscriptionRef`) or a single combinator call (`Effect.acquireUseRelease`) stays a plain expression.
+- **Service methods** return Effects, and callers outside Effect go through the container's `bridge` ([Services](policies/services.md) → Bridge). A method written as a generator is `Effect.fn("<Tag>.<method>")` (`01_effect/01_basics/02_effect-fn.ts`, `01_effect/03_services/01_service.ts`); a read derived from state (`Effect.map` over a `SubscriptionRef`) or a single combinator call (`Effect.acquireUseRelease`) stays a plain expression.
 - **Crossing in** from plain code runs through the plugin's `ManagedRuntime` (`buildRuntime` in `src/lib/effect-layer.ts`). An Obsidian event registered inside a layer enters through `obsidianEvents` ([Events](policies/events.md)); any other Obsidian callback registered there runs through a runner made from the layer's own context (`Effect.runSyncWith(yield* Effect.context<never>())`), so it keeps the layer's services and Clock.
 - **Failures** are typed in the error channel and handled where a decision is made; a boundary that must not fail catches the whole `Cause` (`catchCause`) and logs it. Unknown persisted data decodes through `Schema` (`decodeUnknownOption` to degrade).
 - **Time** comes from `Clock` (`instantClock` for a `Temporal.Instant`), so `TestClock` drives it.
@@ -47,7 +47,7 @@ Effect.logWarning("Could not read the saved Uses; starting empty").pipe(
 );
 ```
 
-`getLogger` from `@/lib/log` is the legacy LogTape logger, for files that have no Effect in them yet.
+`getLogger` from `@/lib/log` is the legacy LogTape logger, for files that have no Effect in them yet. A type-only import of `EffectBridge` does not count: a legacy file that holds the bridge keeps LogTape until it converts (`policies/services.md` → Bridge).
 
 `layerLogging` in `src/services/log/service.ts` owns LogTape's configuration; the dev-only `enableStartupLogging` is the one other caller. The ZoteroReads worker logs through Effect and posts each record over a port (`lib/effect-log-port.ts`); the host re-emits it into the renderer's Effect logger at the plugin's log level. The citation-parse worker has no logger.
 

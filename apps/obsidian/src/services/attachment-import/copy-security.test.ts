@@ -19,8 +19,10 @@ import type { App } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Stream } from "@/lib/effect";
+import { Effect, Stream } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import { reflink } from "@/lib/reflink";
+import { defaults } from "@/services/settings/schema";
 
 import { AttachmentImportService } from "./service";
 import type { SourceOrigin } from "./source";
@@ -114,17 +116,21 @@ function makeSettings(value: {
   "attachment.import": boolean;
   "attachment.folder-path": string | null;
 }) {
-  return { current: value, changes: Stream.empty };
+  return {
+    current: Effect.succeed({ ...defaults, ...value }),
+    changes: Stream.empty,
+  };
 }
 
 async function makeService(): Promise<AttachmentImportService> {
+  const runtime = testRuntime();
   const service = new AttachmentImportService({
-    runtime: testRuntime(),
+    bridge: effectBridge(runtime),
     app: makeApp(vaultDir),
     settings: makeSettings({
       "attachment.import": true,
       "attachment.folder-path": "Attachments",
-    }) as any,
+    }),
     zoteroPref: {
       dataDir,
       baseAttachmentPath: baseDir,

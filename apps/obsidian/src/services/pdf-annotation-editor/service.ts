@@ -10,11 +10,12 @@ import type {
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { getLogger } from "@/lib/log";
 import type { BorrowedExcerptDocument } from "@/services/excerpt-image/reader-borrow";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { Service } from "@/services/service-base";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 
 import { registerAnnotationAnchorCapture } from "./anchor-capture";
 import { PdfViewBinding } from "./binding";
@@ -53,6 +54,7 @@ export interface PdfAnnotationEditorDeps {
   app: App;
   attachments: AttachmentReads;
   annotations: AnnotationReads;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
   /** What the Editing Capability affordance and a blocked keystroke reach. */
   capabilityGestures: CapabilityGestures;
   /**
@@ -65,7 +67,7 @@ export interface PdfAnnotationEditorDeps {
   /** The tag names of an Annotation's Library, which the tag editor suggests. */
   libraryTagNames: (annotationKey: string) => Promise<readonly string[]>;
   /** Where each annotation tool's colour is kept, so it holds across PDFs. */
-  settings: Pick<PlainPluginSettings, "current" | "update">;
+  settings: Pick<PluginSettings["Service"], "current" | "update">;
   /** Records an accepted read locally; also retains its Attachment for live write-back. */
   recordRead?: (read: PdfRead) => void;
   /** The clock each binding's cooldown countdown is read against. */
@@ -90,6 +92,7 @@ export class PdfAnnotationEditor extends Service<void> {
   readonly #app;
   readonly #attachments;
   readonly #annotations;
+  readonly #bridge;
   readonly #capabilityGestures;
   readonly #markGestures;
   readonly #toolColors;
@@ -109,6 +112,7 @@ export class PdfAnnotationEditor extends Service<void> {
     app,
     attachments,
     annotations,
+    bridge,
     capabilityGestures,
     markGestures,
     noteIndex,
@@ -121,9 +125,10 @@ export class PdfAnnotationEditor extends Service<void> {
     this.#app = app;
     this.#attachments = attachments;
     this.#annotations = annotations;
+    this.#bridge = bridge;
     this.#capabilityGestures = capabilityGestures;
     this.#markGestures = markGestures;
-    this.#toolColors = toolColorStore(settings);
+    this.#toolColors = toolColorStore(settings, bridge);
     this.#noteIndex = noteIndex;
     this.#libraryTagNames = libraryTagNames;
     this.#now = now;
@@ -286,6 +291,7 @@ export class PdfAnnotationEditor extends Service<void> {
         adapter,
         attachments: this.#attachments,
         annotations: this.#annotations,
+        bridge: this.#bridge,
         capabilityGestures: this.#capabilityGestures,
         markGestures: this.#markGestures,
         toolColors: this.#toolColors,

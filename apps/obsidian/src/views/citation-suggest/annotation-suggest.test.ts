@@ -2,6 +2,7 @@
 import type { App, Editor, EditorSuggestContext } from "obsidian";
 import { describe, expect, it } from "vitest";
 
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -107,7 +108,8 @@ describe("AnnotationEditorSuggest", () => {
   ) {
     const suggest = new AnnotationEditorSuggest({
       app: {} as App,
-      settings: { current: settings as Settings | undefined },
+      settings: { current: Effect.succeed(settings ?? defaults) },
+      bridge: { runSync: Effect.runSync },
       query: { run },
       commentRenderer,
     } as AnnotationSuggestDeps);

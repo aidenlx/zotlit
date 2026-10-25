@@ -12,6 +12,7 @@ import type {
 
 import { disposable, registerEvent } from "@/lib/disposables";
 import { Effect, Exit, Fiber } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import { workLabel } from "@/lib/item-summary";
@@ -32,8 +33,8 @@ import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { WorkLabelSource } from "@/services/zotero-reads/rpc";
 
@@ -115,8 +116,9 @@ export interface GraphCitationsDeps {
   >;
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "openIndexedKey">;
   /** The entries a hovered Literature Note or Cited Work Node shows. */
-  citationPopover: Pick<CitationPopover, "showWork" | "hide">;
-  settings: Pick<PlainPluginSettings, "current" | "changes">;
+  citationPopover: Pick<CitationPopover["Service"], "showWork" | "hide">;
+  bridge: Pick<EffectBridge, "runPromise" | "runSync">;
+  settings: Pick<PluginSettings["Service"], "current" | "changes">;
 }
 
 /** What one installed leaf holds. */
@@ -196,6 +198,7 @@ export class GraphCitations extends Service<void> {
   readonly #noteIndex;
   readonly #citekeyEditor;
   readonly #citationPopover;
+  readonly #bridge;
   readonly #settings;
   /** The Citekey Navigation open action, which every node surface runs. */
   readonly #open = (citekey: string, pane: NavigationPane): void => {
@@ -241,6 +244,7 @@ export class GraphCitations extends Service<void> {
     this.#noteIndex = deps.noteIndex;
     this.#citekeyEditor = deps.citekeyEditor;
     this.#citationPopover = deps.citationPopover;
+    this.#bridge = deps.bridge;
     this.#settings = deps.settings;
     this.ready = this.#load();
   }
@@ -762,6 +766,7 @@ export class GraphCitations extends Service<void> {
       app: this.#app,
       settings: this.#settings,
       citationPopover: this.#citationPopover,
+      bridge: this.#bridge,
       open: (indexedKey, pane) => {
         void this.#citekeyEditor.openIndexedKey(indexedKey, pane);
       },

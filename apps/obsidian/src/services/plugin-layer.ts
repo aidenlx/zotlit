@@ -3,9 +3,16 @@ import type { Plugin } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
 import { Layer } from "@/lib/effect";
+import { nodeFetch } from "@/lib/node-fetch";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { PluginHost } from "@/lib/plugin-host";
+import { openLibraryView } from "@/views/library/register";
 
+import { layerAnnotationLinkReading } from "./annotation-popover/reading";
+import { layerAnnotationPopover } from "./annotation-popover/service";
+import type { AnnotationPopover } from "./annotation-popover/service";
+import { layerAnnotationRepository } from "./annotation-repository/service";
+import type { AnnotationRepository } from "./annotation-repository/service";
 import { layerChineseSegmenter } from "./chinese-segmenter/service";
 import type { ChineseSegmenter } from "./chinese-segmenter/service";
 import { layerCitationsCli } from "./citation-index/cli/register";
@@ -15,13 +22,23 @@ import { layerCitationIndex } from "./citation-index/service";
 import type { CitationIndex } from "./citation-index/service";
 import { layerCitationParse } from "./citation-parse/service";
 import type { CitationParse } from "./citation-parse/service";
+import { layerCitationPopover } from "./citation-popover/service";
+import type { CitationPopover } from "./citation-popover/service";
 import { layerCitationText } from "./citation-text/service";
 import type { CitationText } from "./citation-text/service";
 import { layerDatabaseActions } from "./database/actions";
+import { layerExcerptDisplays } from "./excerpt-image/display";
+import type { ExcerptDisplays } from "./excerpt-image/display";
+import { layerExcerptImages } from "./excerpt-image/layer";
+import type { ExcerptImages } from "./excerpt-image/layer";
+import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
+import type { ExcerptStore } from "./excerpt-image/store";
 import { layerLibraryScopeCli } from "./library-scope/cli";
 import { layerLibraryScopeNotices } from "./library-scope/notices";
 import { layerLibraryScope } from "./library-scope/service";
 import type { LibraryScope } from "./library-scope/service";
+import { layerLocalServer } from "./local-server/service";
+import type { LocalServer } from "./local-server/service";
 import { layerLogging, layerLogOutput } from "./log/service";
 import { layerManagedBinaryPlatform } from "./managed-binary/service";
 import { layerNoteIndex } from "./note-index/service";
@@ -36,6 +53,9 @@ import { layerProfile } from "./profile/service";
 import type { Profile } from "./profile/service";
 import { layerQueryClients } from "./query-client/service";
 import type { QueryClients } from "./query-client/service";
+import { layerReleaseActions } from "./release/actions";
+import { layerRelease } from "./release/service";
+import type { Release } from "./release/service";
 import { layerPluginSettings } from "./settings/service";
 import type { PluginSettings } from "./settings/service";
 import { startingAs } from "./startup-failure";
@@ -49,6 +69,9 @@ import { layerTemplate } from "./template/service";
 import type { Template } from "./template/service";
 import { layerUseLedger } from "./use-ledger/service";
 import type { UseLedger } from "./use-ledger/service";
+import { layerZoteroLocalApi } from "./zotero-local-api/service";
+import type { ZoteroLocalApi } from "./zotero-local-api/service";
+import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
 import { layerZoteroPref, layerZoteroPrefFiles } from "./zotero-pref/service";
 import type { ZoteroPref } from "./zotero-pref/service";
 import { layerZoteroReads } from "./zotero-reads/service";
@@ -70,8 +93,17 @@ import { workerClient } from "./zotero-reads/worker-client";
 export function pluginLayer(
   plugin: Plugin & CliHost,
   migration: TemplateMigrationOptions,
+  excerpt: {
+    readonly openStore: () => Promise<ExcerptStore>;
+    readonly readers: ExcerptReaderDocuments;
+  },
 ): Layer.Layer<
+  | AnnotationRepository
+  | AnnotationPopover
+  | ExcerptDisplays
+  | ExcerptImages
   | CitationText
+  | CitationPopover
   | CitationIndex
   | BibliographyRender
   | CitationLookup
@@ -79,6 +111,7 @@ export function pluginLayer(
   | LibraryScope
   | ZoteroReads
   | PluginSettings
+  | Release
   | UseLedger
   | QueryClients
   | CitationParse
@@ -86,11 +119,16 @@ export function pluginLayer(
   | ChineseSegmenter
   | PandocEngine
   | NoteIndex
+  | LocalServer
+  | ZoteroLocalApi
   | Template
   | TemplateMigration
 > {
-  const services = layerCitationText().pipe(
-    startingAs("CitationText"),
+  const services = Layer.mergeAll(
+    layerCitationPopover.pipe(startingAs("CitationPopover")),
+    layerAnnotationPopover.pipe(startingAs("AnnotationPopover")),
+  ).pipe(
+    Layer.provideMerge(layerCitationText().pipe(startingAs("CitationText"))),
     Layer.provideMerge(layerCitationIndex().pipe(startingAs("CitationIndex"))),
     Layer.provideMerge(
       Layer.mergeAll(
@@ -105,11 +143,39 @@ export function pluginLayer(
       ),
     ),
     Layer.provideMerge(
+      layerAnnotationRepository({}).pipe(startingAs("AnnotationRepository")),
+    ),
+    Layer.provideMerge(
+      layerExcerptDisplays.pipe(startingAs("ExcerptDisplays")),
+    ),
+    Layer.provideMerge(
+      layerExcerptImages(excerpt).pipe(startingAs("ExcerptImages")),
+    ),
+    Layer.provideMerge(
       layerZoteroReads(workerClient()).pipe(startingAs("ZoteroReads")),
     ),
     Layer.provideMerge(
+      // The Remembered Write Authorization lives in Obsidian's Keychain,
+      // where the user can see and delete it — never in synced settings.
+      layerZoteroLocalApi({
+        fetch: nodeFetch,
+        credentials: new SecretWriteAuthorizationStore({
+          secrets: plugin.app.secretStorage,
+        }),
+      }).pipe(startingAs("ZoteroLocalApi")),
+    ),
+    Layer.provideMerge(layerLocalServer.pipe(startingAs("LocalServer"))),
+    Layer.provideMerge(
       Layer.mergeAll(
         layerUseLedger.pipe(startingAs("UseLedger")),
+        layerRelease({
+          version: plugin.manifest.version,
+          // A first install or an update opens the Library View, in place of
+          // the empty tab or beside the open note.
+          openFirstScreen: async () => {
+            await openLibraryView(plugin.app, { pane: "first-screen" });
+          },
+        }).pipe(startingAs("Release")),
         layerTemplateMigration(migration).pipe(
           startingAs("TemplateMigration"),
           Layer.provideMerge(layerTemplate.pipe(startingAs("Template"))),
@@ -139,6 +205,7 @@ export function pluginLayer(
     ),
   );
   const registrations = Layer.mergeAll(
+    layerAnnotationLinkReading.pipe(startingAs("AnnotationLinkReading")),
     layerCitationsCli.pipe(startingAs("CitationsCli")),
     layerCitationStyleNotice.pipe(startingAs("CitationStyleNotice")),
     layerCitationTemplateActions.pipe(startingAs("CitationTemplateActions")),
@@ -146,6 +213,7 @@ export function pluginLayer(
     layerLibraryScopeCli.pipe(startingAs("LibraryScopeCli")),
     layerLibraryScopeNotices.pipe(startingAs("LibraryScopeNotices")),
     layerPandocResolve.pipe(startingAs("PandocResolve")),
+    layerReleaseActions.pipe(startingAs("ReleaseActions")),
   ).pipe(Layer.provide(Layer.succeed(PluginHost, plugin)));
   return registrations.pipe(Layer.provideMerge(services));
 }

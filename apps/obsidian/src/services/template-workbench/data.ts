@@ -24,12 +24,11 @@ import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { annotationCitation } from "@/lib/annotation-render";
 import { Data, Effect, Stream } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { creatorSummary } from "@/lib/item-summary";
 import { itemFacets } from "@/services/note-feature/context";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 import { CITATION_TEMPLATE_NAME } from "@/services/template/defaults";
 import { InertTemplateError } from "@/services/template/errors";
 import {
@@ -70,7 +69,7 @@ export interface TemplateDataDeps {
     PlainNoteIndex,
     "getNotesByItemKey" | "getImportedNoteByNoteKey" | "whenIndexed"
   >;
-  settings: Pick<PlainPluginSettings, "current">;
+  settings: Pick<PluginSettings["Service"], "current">;
   templates: Pick<PlainTemplate, "render" | "renderCitation">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
 }
@@ -99,7 +98,9 @@ const build = <A>(evaluate: () => A) =>
 
 /** Reads under one Snapshot, released when the caller's scope closes. */
 const readLease = (deps: Pick<TemplateDataDeps, "zoteroReads">) =>
-  acquireAsyncDisposable(() => deps.zoteroReads.acquireRead()).pipe(
+  Effect.acquireDisposable(
+    Effect.tryPromise(() => deps.zoteroReads.acquireRead()),
+  ).pipe(
     Effect.map((lease) => lease.reads),
     Effect.mapError((error) => failed(error.cause)),
   );
@@ -139,10 +140,7 @@ export const readTemplateData = Effect.fn("TemplateData.read")(function* (
     return yield* readCitationData(deps, { key: indexedKey }, "main");
   }
   const [settings] = yield* Effect.all(
-    [
-      Effect.sync(() => deps.settings.current),
-      attempt(() => deps.noteIndex.whenIndexed()),
-    ],
+    [deps.settings.current, attempt(() => deps.noteIndex.whenIndexed())],
     { concurrency: "unbounded" },
   );
   if (root === "annotation") {

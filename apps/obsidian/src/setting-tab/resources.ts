@@ -6,6 +6,7 @@ import type {
   SettingDefinitionGroup,
 } from "obsidian";
 
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { languagePackSettingCopy } from "@/lib/i18n/settings-copy";
 import {
@@ -52,7 +53,9 @@ export function templateConversionReminderItem(
         button
           .setButtonText(m.settings_template_conversion_reminder_action())
           .setCta()
-          .onClick(() => void openWelcomeView(ctx.app, ctx.settings)),
+          .onClick(
+            () => void openWelcomeView(ctx.app, ctx.settings, ctx.bridge),
+          ),
       );
     },
   };
@@ -73,7 +76,18 @@ function renderMigrationReminderButtons(
       // See the blur comment in templates.ts's renderJsTemplatesButton: the
       // reconciler skips re-rendering the row containing document.activeElement.
       btn.buttonEl.blur();
-      ctx.release.acknowledgeMigration();
+      void ctx.bridge.runPromise(
+        ctx.release
+          .acknowledgeMigration()
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning(
+                "Cannot mark the migration reminder done",
+                cause,
+              ),
+            ),
+          ),
+      );
     }),
   );
 }
@@ -86,9 +100,10 @@ function renderMigrationReminderButtons(
 export function resourcesGroup(
   ctx: SettingTabContext,
 ): SettingDefinitionGroup<SettingsKey> {
-  const pending = ctx.settings.current?.["release.migration-pending"] === true;
+  const current = ctx.bridge.runSync(ctx.settings.current);
+  const pending = current["release.migration-pending"] === true;
   const templateConversionPending =
-    ctx.settings.current?.["note.template-conversion-pending"] === true;
+    current["note.template-conversion-pending"] === true;
   const languagePack = languagePackSettingCopy(ctx.languagePack);
   return {
     type: "group",
@@ -118,7 +133,9 @@ function resourcesItems(
         setting.addButton((btn) =>
           btn
             .setButtonText(m.settings_resources_whats_new_button())
-            .onClick(() => void ctx.release.openReleaseNote()),
+            .onClick(
+              () => void ctx.bridge.runPromise(ctx.release.openReleaseNote()),
+            ),
         );
       },
     },
