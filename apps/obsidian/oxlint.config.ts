@@ -24,15 +24,6 @@ const obsidianImportPaths = [
   ...uniqueIdPaths,
 ];
 
-// Effect tests run with the services the plugin's entry points add.
-const effectTestPaths = [
-  {
-    name: "@effect/vitest",
-    message:
-      "Use @/lib/effect-vitest: its Effect tests run with the plugin's browser scheduler and loggers.",
-  },
-];
-
 const commonImports = {
   patterns: [
     parentImportPattern,
@@ -55,28 +46,22 @@ const runtimeImports = {
   ...commonImports,
   paths: [
     {
-      name: "@/lib/effect",
+      name: "effect",
       importNames: ["ManagedRuntime", "Scheduler"],
       allowTypeImports: true,
       message:
-        "Start Effects through Effect in @/lib/effect; its entry points supply the browser scheduler.",
-    },
-    {
-      name: "effect",
-      allowTypeImports: true,
-      message:
-        "Use @/lib/effect: Obsidian's renderer and workers default to Chromium MessageChannel scheduling. Node setImmediate can starve browser tasks.",
+        "Start Effects through Effect from effect; its entry points supply the browser scheduler.",
     },
     {
       name: "effect/Effect",
       allowTypeImports: true,
-      message: "Use Effect from @/lib/effect for Chromium scheduling.",
+      message: "Import Effect from effect.",
     },
     {
       name: "effect/ManagedRuntime",
       allowTypeImports: true,
       message:
-        "Use the Effect entry points in @/lib/effect for Chromium scheduling.",
+        "Use the Effect entry points from effect for Chromium scheduling.",
     },
     {
       name: "effect/Scheduler",
@@ -84,7 +69,13 @@ const runtimeImports = {
       message:
         "Obsidian scheduling is owned by @/lib/effect-runtime and @/lib/browser-scheduler.",
     },
-    ...effectTestPaths,
+    {
+      name: "@/lib/effect",
+      importNames: ["ManagedRuntime", "Scheduler"],
+      allowTypeImports: true,
+      message:
+        "Start Effects through Effect from effect; its entry points supply the browser scheduler.",
+    },
     ...commonImports.paths,
   ],
 };
@@ -505,7 +496,7 @@ export default defineConfig({
           "error",
           {
             patterns: [parentImportPattern],
-            paths: [...effectTestPaths, ...obsidianImportPaths],
+            paths: obsidianImportPaths,
           },
         ],
       },
