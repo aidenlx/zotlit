@@ -28,17 +28,20 @@ import type {
   GraphTextContainer,
   GraphTextDisplay,
   HoverPopover,
+  Plugin,
   WorkspaceLeaf,
 } from "obsidian";
 import { afterEach, describe, expect, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { layerTestObsidianEnv } from "@/lib/__fixtures__/obsidian-env";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import type { CliHost } from "@/lib/cli-command";
 import * as m from "@/lib/i18n/generated/messages";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerMetadataCacheFrom } from "@/lib/obsidian-metadata-cache";
 import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
+import { makePluginHost, PluginHost } from "@/lib/plugin-host";
 import { themeProperty } from "@/lib/theme-hooks";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
 import { lookupAnswerFor } from "@/services/citation-index/__fixtures__/lookup";
@@ -69,6 +72,7 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsEvent } from "@/services/zotero-reads/service";
 
 import type { LinkMap } from "./adapter";
+import { GRAPH_CORE_PLUGIN_ID } from "./install";
 import { GraphCitations, layerGraphCitations } from "./service";
 import { FakeColorGroupSection, FakeControlSection } from "./test-double";
 import { graphNode, themeStates, themeStatesNothing } from "./test-stub";
@@ -636,6 +640,8 @@ interface FixtureOptions {
   notes?: Record<string, string>;
   /** The serialized layout Obsidian restored this session's leaves from. */
   savedLayout?: unknown;
+  /** The workspace file read rejects with this error instead. */
+  workspaceFileError?: Error;
   /** What the vault-wide settings say beyond the Wikilink Citations choice. */
   settings?: Partial<Settings>;
 }
@@ -682,7 +688,10 @@ const makeFixture = Effect.fnUntraced(function* (options: FixtureOptions = {}) {
     },
     getLeavesOfType: (type: string) =>
       leaves.filter((leaf) => leaf.view.getViewType() === type),
-    readWorkspaceFile: () => Promise.resolve(options.savedLayout ?? {}),
+    readWorkspaceFile: () =>
+      options.workspaceFileError
+        ? Promise.reject(options.workspaceFileError)
+        : Promise.resolve(options.savedLayout ?? {}),
     trigger,
     requestSaveLayout: debounce(() => Promise.resolve()),
   });
@@ -701,13 +710,6 @@ const makeFixture = Effect.fnUntraced(function* (options: FixtureOptions = {}) {
           });
           return made.leaf.view;
         },
-      },
-    ),
-    internalPlugins: stubService<NonNullable<App["internalPlugins"]>>(
-      "InternalPlugins",
-      {
-        getEnabledPluginById: (id: string) =>
-          id === "graph" && (options.graphEnabled ?? true) ? graphPlugin : null,
       },
     ),
     metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
@@ -803,7 +805,15 @@ const makeFixture = Effect.fnUntraced(function* (options: FixtureOptions = {}) {
         Layer.mergeAll(
           layerWorkspaceFrom(workspace),
           layerMetadataCacheFrom(app.metadataCache),
-          Layer.succeed(ObsidianApp, app),
+          layerTestObsidianEnv({
+            corePlugins: new Set(
+              (options.graphEnabled ?? true) ? [GRAPH_CORE_PLUGIN_ID] : [],
+            ),
+          }),
+          Layer.succeed(
+            PluginHost,
+            makePluginHost(stubService<Plugin & CliHost>("Plugin", { app })),
+          ),
           Layer.mock(ZoteroReads, { reads, events: readsEvents.stream }),
           Layer.mock(LibraryScope, {
             current: Effect.succeed({
@@ -2592,6 +2602,34 @@ describe("GraphCitations Filters rows", () => {
           facaded: true,
           resolved: VAULT_LINKS,
           unresolved: {},
+        });
+      }),
+  );
+
+  it.effect(
+    "starts the rows fresh, and says so, when the workspace file cannot be read",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture({
+          workspaceFileError: new Error("EACCES: workspace.json"),
+        });
+        const engine = fixture.addLeaf("localgraph", "local-1");
+
+        yield* fixture.layoutReady;
+
+        expect(warn).toHaveBeenCalledWith(
+          "Workspace file unreadable; local graph rows start fresh",
+          expect.objectContaining({ cause: expect.anything() }),
+        );
+        expect(
+          rowToggle(engine, m.graph_option_pandoc_citations_name()).getValue(),
+        ).toBe(true);
+        // The fresh Pandoc row is on, so the citations are drawn.
+        expect(engine.renders.at(-1)).toMatchObject({
+          facaded: true,
+          unresolved: {
+            "Draft.md": expect.objectContaining({ "@pine2023": 1 }),
+          },
         });
       }),
   );
