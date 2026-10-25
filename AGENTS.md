@@ -72,6 +72,10 @@ Write reports to the user in ASD-STE100 Simplified Technical English.
 
 Every changed line traces to the user's request. Leave adjacent code, comments, and formatting as found. Remove only the orphans your own changes created; mention pre-existing dead code, don't delete it.
 
+## Speculative robustness
+
+Spend complexity on failures that happen. Before you add a guard, retry, lock or check for a race or security edge case that is speculative or very unlikely, tell the user the concrete failure, how likely it is and what the guard costs in complexity, and build it once they agree. A guard of this kind that is already in code you touch stays in place: report where it is, its failure, likelihood and cost, and the user decides. Keep the task's scope to what was asked.
+
 ## i18n
 
 User-facing strings are sourced from `messages/{locale}.json` and consumed through the generated Language Pack facade; ZotLit Companion copy lives in the same catalogs under the `zotero` object and compiles to Fluent at Companion build time. Run `/inlang-i18n` for message-format and runtime mechanics. Wording follows Obsidian's developer-guideline style (sentence case, terminology, phrasing) — run `/i18n-ui-text` before authoring or editing a string.
