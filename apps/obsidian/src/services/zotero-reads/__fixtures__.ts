@@ -3,6 +3,7 @@ import { Context, Effect, Layer, Stream } from "effect";
 import type { Scope } from "effect";
 import { RpcSchema } from "effect/rpc";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
 
 import type { ZoteroReadsClient } from "./in-process";
@@ -169,4 +170,28 @@ export function testReads(
       await stack.disposeAsync();
     },
   };
+}
+
+/** One answer per read a test calls: the read's input in, its result out. */
+export type ReadsAnswers = {
+  readonly [K in keyof ZoteroReadsApi]?: (
+    input: Parameters<ZoteroReadsApi[K]>[0],
+  ) => ReturnType<ZoteroReadsApi[K]>;
+};
+
+/**
+ * A {@link ZoteroReadsApi} that answers the reads in `answers`; any other read
+ * throws. Each answer gets the read's input, without the RPC call options.
+ */
+export function readsAnswering(answers: ReadsAnswers): ZoteroReadsApi {
+  const members: Record<string, unknown> = {};
+  for (const [tag, answer] of Object.entries(answers))
+    members[tag] = (input: unknown) =>
+      (answer as (input: unknown) => unknown)(input);
+  // The RPC client's methods are generic over their call options, which a
+  // plain function cannot state; each answer above is checked per read.
+  return stubService<ZoteroReadsApi>(
+    "ZoteroReadsApi",
+    members as Partial<ZoteroReadsApi>,
+  );
 }
