@@ -2018,6 +2018,36 @@ describe("CitationIndex one-shot reads", () => {
   );
 });
 
+describe("CitationIndex parsed notes", () => {
+  it.effect("parses a note's current source", () =>
+    Effect.promise(async () => {
+      const { index, draft } = await makeHarness({
+        "draft.md": "See @doe2024.",
+      });
+
+      const parsed = await index.getParsedNote(draft);
+
+      expect(parsed.source).toBe("See @doe2024.");
+      expect(
+        parsed.record.citations.flatMap(({ items }) =>
+          items.map(({ citationKey }) => citationKey),
+        ),
+      ).toEqual(["doe2024"]);
+    }),
+  );
+
+  it.effect("rejects with the read failure of an unreadable note", () =>
+    Effect.promise(async () => {
+      const { index, draft, vault } = await makeHarness({
+        "draft.md": "See @doe2024.",
+      });
+      vault.fail("draft.md");
+
+      await expect(index.getParsedNote(draft)).rejects.toThrow("read failed");
+    }),
+  );
+});
+
 describe("CitationIndex ambiguous citation keys", () => {
   it.effect(
     "keeps an ambiguous literal citation under its own Citation Key",

@@ -1,10 +1,12 @@
 // Keeps one source generation with its parsed syntax, rendering input and valid occurrences.
-import type { TFile, Vault } from "obsidian";
+import { Effect } from "effect";
+import type { TFile } from "obsidian";
 
 import { rewriteScannedPandocCitation } from "@zotlit/templates/pandoc-citation";
 import type { ScannedPandocCitation } from "@zotlit/templates/pandoc-citation";
 
-import type { PlainCitationParse } from "@/services/citation-parse/plain";
+import { Vault } from "@/lib/obsidian-vault";
+import { CitationParse } from "@/services/citation-parse/service";
 
 import { occurrencesEqual } from "./scan";
 import type { CitationOccurrence } from "./scan";
@@ -74,29 +76,26 @@ export class ParsedNote {
   }
 }
 
-export async function readParsedNote(
+/**
+ * The note's current source with its parse. A note saved during the parse is
+ * read again, so the source and the record are of one generation.
+ */
+export const readParsedNote = Effect.fn("readParsedNote")(function* (
   file: TFile,
-  {
-    vault,
-    parser,
-    signal,
-  }: {
-    vault: Pick<Vault, "cachedRead">;
-    parser: Pick<PlainCitationParse, "parse">;
-    signal: AbortSignal;
-  },
-): Promise<ParsedNote> {
+) {
+  const vault = yield* Vault;
+  const parser = yield* CitationParse;
   for (;;) {
-    signal.throwIfAborted();
     const {
       path,
       stat: { mtime, size },
     } = file;
-    const source = await vault.cachedRead(file);
-    const { record } = await parser.parse(
-      { path, generation: 0, text: source },
-      signal,
-    );
+    const source = yield* vault.cachedRead(file);
+    const { record } = yield* parser.parse({
+      path,
+      generation: 0,
+      text: source,
+    });
     if (
       file.path === path &&
       file.stat.mtime === mtime &&
@@ -104,7 +103,7 @@ export async function readParsedNote(
     )
       return new ParsedNote(source, record);
   }
-}
+});
 
 export function currentOccurrence({
   scan,
