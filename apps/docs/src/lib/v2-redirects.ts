@@ -55,13 +55,11 @@ export function buildV2Redirects(moves = V2_MOVES): RedirectRule[] {
       { source: contentRouteUrl(old), destination: contentRouteUrl(moved) },
     ];
     return i18n.languages.flatMap((locale) =>
-      pairs.map(
-        ({ source, destination }): RedirectRule => ({
-          source: localizedPath(source, locale),
-          destination: localizedPath(destination, locale),
-          status: 308,
-        }),
-      ),
+      pairs.map(({ source, destination }): RedirectRule => ({
+        source: localizedPath(source, locale),
+        destination: localizedPath(destination, locale),
+        status: 308,
+      })),
     );
   });
 }

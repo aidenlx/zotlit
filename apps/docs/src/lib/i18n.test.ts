@@ -168,8 +168,8 @@ it("dates a sitemap's Chinese entry only from a native Chinese file", () => {
       ),
     },
   });
-  const [native, englishOnly] = ["native", "english-only"].map(
-    (slug) => fixture.getPage([slug], "en")!,
+  const [native, englishOnly] = ["native", "english-only"].map((slug) =>
+    fixture.getPage([slug], "en")!,
   );
   expect(nativeChinese(fixture, native!)?.path).toBe("native.zh-CN.mdx");
   expect(nativeChinese(fixture, englishOnly!)).toBeUndefined();

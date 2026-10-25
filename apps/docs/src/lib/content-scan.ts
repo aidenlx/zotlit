@@ -50,13 +50,10 @@ export function scanContent(
       const cwd = resolve(packageRoot, dir);
       const entries = globSync(files, { cwd })
         .filter((file) => chineseFile.test(file) === (locale === "zh-CN"))
-        .map(
-          (file): ContentEntry => ({
-            slugs: getSlugs(file.replace(chineseFile, "")),
-            frontmatter: frontmatter(readFileSync(join(cwd, file), "utf8"))
-              .data,
-          }),
-        );
+        .map((file): ContentEntry => ({
+          slugs: getSlugs(file.replace(chineseFile, "")),
+          frontmatter: frontmatter(readFileSync(join(cwd, file), "utf8")).data,
+        }));
       return [section, entries];
     }),
   ) as Record<MarkdownSection, ContentEntry[]>;
