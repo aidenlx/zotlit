@@ -3,24 +3,24 @@
 // rewritten in place while Obsidian shows their section.
 import { Effect, Layer } from "effect";
 import { MarkdownRenderChild, setTooltip } from "obsidian";
-import type {
-  MarkdownPostProcessorContext,
-  Workspace as ObsidianWorkspace,
-} from "obsidian";
+import type { MarkdownPostProcessorContext } from "obsidian";
 
 import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { Vault } from "@/lib/obsidian-vault";
-import { Workspace } from "@/lib/obsidian-workspace";
+import { Workspace, workspaceTrigger } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
 import { renderProfileRecovery } from "@/lib/profile-recovery";
+import {
+  rerenderReadingViewsIn,
+  retireReadingSurface,
+} from "@/lib/reading-surface";
 import {
   LiveSections,
   isDraftMarkdown,
   markdownViewOf,
-  rerenderReadingViews,
   sectionRange,
 } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
@@ -149,17 +149,9 @@ export const layerCitekeyReading = Layer.effectDiscard(
     /** The sections this surface rendered into and Obsidian still shows. */
     const sections = new LiveSections();
     /** What a hover raises its `hover-link` on, and a recovery button its Profile switch. */
-    const hoverWorkspace: Pick<ObsidianWorkspace, "trigger"> = {
-      trigger: (name, ...data) => run(workspace.trigger(name, ...data)),
-    };
-
+    const hoverWorkspace = workspaceTrigger(workspace, run);
     /** A reading view holds what a post-processor produced until it renders again. */
-    const rerender = Effect.gen(function* () {
-      const count = rerenderReadingViews(yield* workspace.markdownViews);
-      yield* Effect.logDebug("Rerendering reading views").pipe(
-        Effect.annotateLogs({ count }),
-      );
-    });
+    const rerender = rerenderReadingViewsIn(workspace);
 
     const applySettings = Effect.fnUntraced(function* (
       next: Readonly<Settings>,
@@ -430,13 +422,9 @@ export const layerCitekeyReading = Layer.effectDiscard(
       else if (event.type === "invalidated") sections.refresh();
     });
     // A rendered citation carries this layer's own click and hover handlers,
-    // so the reading views render again without it once it is gone. The flag
-    // goes first: the post-processor stays registered while this runs.
-    yield* Effect.addFinalizer(() =>
-      Effect.suspend(() => {
-        active = false;
-        return rerender;
-      }),
-    );
+    // so the reading views render again without it once it is gone.
+    yield* retireReadingSurface(workspace, () => {
+      active = false;
+    });
   }).pipe(withLogCategory("citekey-reading")),
 );
