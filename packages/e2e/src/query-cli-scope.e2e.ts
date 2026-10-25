@@ -124,7 +124,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     {
       // The load spawned one database worker, and it serves.
       expect(
-        await obEval(run.vaultId, workers("String(record.spawned.length)")),
+        await obEval(
+          run.vaultId,
+          workers(
+            "String(record.spawned.filter(function(entry){return entry.name==='zotlit-zotero-reads';}).length)",
+          ),
+        ),
       ).toBe("1");
       expect(
         await obEvalUntil(
