@@ -7,6 +7,8 @@ import { expect, vi } from "vitest";
 
 import type { Item, ItemRef } from "@zotlit/db";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
+import type { RecordedNotice } from "@/lib/__fixtures__/notifier";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
@@ -16,8 +18,9 @@ import type { ProfileId } from "@/lib/profile-stamp";
 import { UseLedger } from "@/services/use-ledger/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
+import type { ReadsAnswers } from "@/services/zotero-reads/__fixtures__";
 import { ZoteroReads } from "@/services/zotero-reads/service";
-import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
 import { companionNoteNotice, openCompanionNote } from "./index";
@@ -28,23 +31,6 @@ import type {
   PreparedCreationProfile,
 } from "./index";
 import type { CreationPlan } from "./operations";
-
-/** Every text notice the flow showed, in order. */
-const notices = vi.hoisted(() => ({ shown: [] as string[] }));
-vi.mock("@/lib/notice", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/notice")>();
-  return {
-    ...actual,
-    BaseNotice: class extends actual.BaseNotice {
-      constructor(message: string | DocumentFragment, duration?: number) {
-        super(message, duration);
-        notices.shown.push(
-          typeof message === "string" ? message : (message.textContent ?? ""),
-        );
-      }
-    },
-  };
-});
 
 vi.mock("@/views/quick-switch/profile-picker", () => ({
   chooseLiteratureNoteProfile: vi.fn(),
@@ -73,21 +59,21 @@ interface FlowServices {
   readonly workspace: MemoryWorkspace;
   /** The path of each note the Use Ledger was told not to count, in order. */
   readonly excluded: string[];
-  readonly readItems?: ZoteroReadsApi["ItemsByIndexedKeys"];
+  readonly readItems?: ReadsAnswers["ItemsByIndexedKeys"];
+  /** Records each notice the flow shows. */
+  readonly notifier: ReturnType<typeof testNotifier>;
 }
 
-function flowLayer({ workspace, excluded, readItems }: FlowServices) {
+function flowLayer({ workspace, excluded, readItems, notifier }: FlowServices) {
   return Layer.mergeAll(
     layerWorkspaceFrom(workspace),
+    notifier.layer,
     Layer.mock(UseLedger, {
       withoutNoteUse: (file, open) =>
         Effect.sync(() => excluded.push(file.path)).pipe(Effect.andThen(open)),
     }),
     Layer.mock(ZoteroReads, {
-      reads: stubService<ZoteroReadsApi>(
-        "ZoteroReadsApi",
-        readItems ? { ItemsByIndexedKeys: readItems } : {},
-      ),
+      reads: readsAnswering(readItems ? { ItemsByIndexedKeys: readItems } : {}),
     }),
     Layer.mock(ZoteroPref, {
       current: Effect.succeed(
@@ -149,7 +135,7 @@ function creationHarness(selection: CreationProfileSelection) {
   };
   const workspace = new MemoryWorkspace({ layoutReady: true });
   const excluded: string[] = [];
-  notices.shown.length = 0;
+  const notifier = testNotifier();
   return {
     deps,
     file,
@@ -159,11 +145,8 @@ function creationHarness(selection: CreationProfileSelection) {
     planCreations,
     workspace,
     excluded,
-    layer: flowLayer({
-      workspace,
-      excluded,
-      readItems: readItems as unknown as ZoteroReadsApi["ItemsByIndexedKeys"],
-    }),
+    notices: notifier.notices,
+    layer: flowLayer({ workspace, excluded, readItems, notifier }),
   };
 }
 
@@ -326,7 +309,9 @@ it.effect(
       expect(harness.planCreations).not.toHaveBeenCalled();
       expect(harness.create).not.toHaveBeenCalled();
       expect(harness.workspace.opened).toEqual([]);
-      expect(notices.shown).toEqual([m.notice_update_metadata_no_note()]);
+      expect(texts(harness.notices)).toEqual([
+        m.notice_update_metadata_no_note(),
+      ]);
     }),
 );
 
@@ -350,7 +335,7 @@ it.effect(
         action: "open",
         profile: PAPERS,
       }).pipe(Effect.provide(harness.layer));
-      expect(notices.shown).toEqual([
+      expect(texts(harness.notices)).toEqual([
         m.notice_literature_note_profile_unknown({ stamp: PAPERS }),
       ]);
       expect(harness.workspace.opened).toEqual([]);
@@ -511,10 +496,10 @@ it.effect.each(["open", "update"] as const)(
       };
       const workspace = new MemoryWorkspace({ layoutReady: true });
       vi.mocked(chooseLiteratureNoteProfile).mockClear();
-      notices.shown.length = 0;
+      const notifier = testNotifier();
 
       yield* openCompanionNote(deps, REF, { action, profile: PAPERS }).pipe(
-        Effect.provide(flowLayer({ workspace, excluded: [] })),
+        Effect.provide(flowLayer({ workspace, excluded: [], notifier })),
       );
 
       expect(workspace.opened).toEqual([openedAt("Books/Paper.md", false)]);
@@ -524,7 +509,7 @@ it.effect.each(["open", "update"] as const)(
       expect(updateNote).not.toHaveBeenCalled();
       expect(createNote).not.toHaveBeenCalled();
       expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
-      expect(notices.shown).toEqual([
+      expect(texts(notifier.notices)).toEqual([
         m.notice_literature_note_profile_kept({ label: "Books" }),
       ]);
     }),
@@ -534,4 +519,11 @@ function noteAt(path: string): TFile {
   const file = new TFile();
   file.path = path;
   return file;
+}
+
+/** The text of each notice, in the order the flow showed them. */
+function texts(notices: readonly RecordedNotice[]): string[] {
+  return notices.map(({ messages: [message] }) =>
+    typeof message === "string" ? message : (message?.textContent ?? ""),
+  );
 }

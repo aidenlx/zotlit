@@ -6,7 +6,7 @@ import type { Item, ItemRef } from "@zotlit/db";
 import type { ProtocolAction } from "@zotlit/protocol";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { BaseNotice } from "@/lib/notice";
+import { Notifier } from "@/lib/notifier";
 import { Workspace } from "@/lib/obsidian-workspace";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
@@ -53,6 +53,7 @@ export const openCompanionNote = Effect.fn("openCompanionNote")(function* (
 ) {
   const workspace = yield* Workspace;
   const useLedger = yield* UseLedger;
+  const notifier = yield* Notifier;
   const open = (file: TFile) => {
     const navigate = workspace.openLinkText(file.path, "", {
       newLeaf: options.paneType ?? false,
@@ -69,14 +70,14 @@ export const openCompanionNote = Effect.fn("openCompanionNote")(function* (
   );
   const notice = companionNoteNotice(deps.app, target);
   if (target.outcome === "refused") {
-    new BaseNotice(notice!);
+    yield* notifier.show(notice!);
     return;
   }
   if (target.outcome === "existing") {
     const file = resolveLiteratureNoteWithWarning(target.files)!;
     yield* open(file);
     if (target.keptProfile || target.diagnostic) {
-      new BaseNotice(notice!);
+      yield* notifier.show(notice!);
     } else if (options.action === "update") {
       const scope = options.scope ?? "full";
       yield* Effect.promise(() =>
@@ -92,7 +93,7 @@ export const openCompanionNote = Effect.fn("openCompanionNote")(function* (
     return;
   }
   if (options.action === "update" && options.scope === "metadata") {
-    new BaseNotice(m.notice_update_metadata_no_note());
+    yield* notifier.show(m.notice_update_metadata_no_note());
     return;
   }
   const { reads } = yield* ZoteroReads;

@@ -44,7 +44,7 @@ import {
 } from "./services/note-feature/actions";
 import { runBatchUpdateAll } from "./services/note-feature/update-batch";
 import { addProfileActions } from "./services/profile/actions";
-import { registerProtocolHandlers } from "./services/protocol/register";
+import { startProtocolHandlers } from "./services/protocol/register";
 import { ServiceStartupFailed } from "./services/startup-failure";
 import { registerTemplateWorkbench } from "./services/template-workbench/register";
 import { ZotLitSettingTab } from "./setting-tab";
@@ -417,24 +417,22 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     void stack.use(
-      services.runtime.runSync(
-        registerProtocolHandlers(this, {
-          webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-          createProfile: services.createProfile,
-          importProfile: services.importProfile,
-          profile: services.profile,
-          app: this.app,
-          settings: services.settings,
-          zoteroReads: services.zoteroReads,
-          libraryScope: services.libraryScope,
-          zoteroPref: services.zoteroPref,
-          noteFeature: services.noteFeature,
-          noteIndex: services.noteIndex,
-          batchImport: services.batchImport,
-          bridge: services.bridge,
-          opener: services.targetOpener,
-        }),
-      ),
+      startProtocolHandlers(services.runtime, this, {
+        webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
+        createProfile: services.createProfile,
+        importProfile: services.importProfile,
+        profile: services.profile,
+        app: this.app,
+        settings: services.settings,
+        zoteroReads: services.zoteroReads,
+        libraryScope: services.libraryScope,
+        zoteroPref: services.zoteroPref,
+        noteFeature: services.noteFeature,
+        noteIndex: services.noteIndex,
+        batchImport: services.batchImport,
+        bridge: services.bridge,
+        opener: services.targetOpener,
+      }),
     );
 
     const queryCardFocus = new QueryCardFocus(this.app);
