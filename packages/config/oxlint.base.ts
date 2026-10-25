@@ -62,34 +62,32 @@ export function testBaselineOverrides(directory?: string) {
 }
 
 /**
- * `@effect/tsgo` rules the tree already satisfies: errors, so no change adds
- * the first finding. The rest of the `recommended` preset stays at warn until
- * its findings are fixed; then the rule moves here.
+ * `@effect/tsgo` rules that are off by default and that this repository turns
+ * on (an opt-in): `global-date`, `global-date-in-effect`,
+ * `global-fetch-in-effect`, `global-timers-in-effect`, `process-env-in-effect`
+ * here, and `global-console`, `global-console-in-effect` in
+ * apps/obsidian/oxlint.config.ts. Every other rule keeps the level of the
+ * `recommended` preset.
  */
-const effectErrorRules = [
-  "catch-unfailable-effect",
-  "class-self-mismatch",
-  "effect-fn-iife",
-  "effect-fn-opportunity",
-  "effect-in-failure",
-  "effect-in-void-success",
-  "floating-effect",
-  "generic-effect-services",
+const effectOptInRules = [
   "global-date",
   "global-date-in-effect",
   "global-fetch-in-effect",
   "global-timers-in-effect",
-  "layer-merge-all-with-dependencies",
-  "leaking-requirements",
-  "missing-return-yield-star",
-  "missing-star-in-yield-effect-gen",
-  "multiple-effect-provide",
   "process-env-in-effect",
-  "return-effect-in-gen",
-  "run-effect-inside-effect",
-  "schema-sync-in-effect",
-  "scope-in-layer-effect",
 ].map((rule) => [`effecttsgo/${rule}`, "error"] as const);
+
+/**
+ * `@effect/tsgo` rules that support Effect v3 only (`SupportedEffect: ["v3"]`):
+ * they never report on the Effect v4 this repository uses, so they are off.
+ */
+const effectV3OnlyRules = [
+  "generic-effect-services",
+  "missing-effect-service-dependency",
+  "non-object-effect-service-type",
+  "schema-union-of-literals",
+  "scope-in-layer-effect",
+].map((rule) => [`effecttsgo/${rule}`, "off"] as const);
 
 export default defineConfig({
   extends: [recommended],
@@ -111,7 +109,8 @@ export default defineConfig({
   jsPlugins: [join(import.meta.dirname, "oxlint-plugin-build.ts")],
   rules: {
     "zotlit-build/no-undeclared-env": "error",
-    ...Object.fromEntries(effectErrorRules),
+    ...Object.fromEntries(effectOptInRules),
+    ...Object.fromEntries(effectV3OnlyRules),
     "typescript/no-non-null-assertion": "off",
     "typescript/no-explicit-any": "off",
     "typescript/ban-ts-comment": "off",
