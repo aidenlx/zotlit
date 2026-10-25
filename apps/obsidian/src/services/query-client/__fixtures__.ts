@@ -4,7 +4,6 @@ import { TestClock } from "effect/testing";
 
 import { Clock, Context, Effect, Exit, Layer, Scope } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 
 import { plainQueryClients } from "./plain";
 import type { PlainQueryClients } from "./plain";
@@ -80,8 +79,8 @@ export const queryClientsOf = Effect.fn("queryClientsOf")(function* () {
     Scope.close(scope, Exit.void),
   );
   const services = yield* Layer.buildWithScope(layerQueryClients, scope);
-  const { runtime } = yield* acquireAsyncDisposable(() =>
-    openTestRuntime(Context.merge(context, services)),
+  const { runtime } = yield* Effect.acquireDisposable(
+    Effect.tryPromise(() => openTestRuntime(Context.merge(context, services))),
   );
   return Object.assign(plainQueryClients(runtime), {
     runtime,

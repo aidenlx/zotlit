@@ -224,7 +224,6 @@ export default defineConfig({
         "zotlit-services/no-legacy-service": "error",
         "zotlit-services/obsidian-events-intake": "error",
         "zotlit-services/scope-closed": "error",
-        "zotlit-services/state-stream": "error",
       },
     },
     {

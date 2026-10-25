@@ -141,6 +141,30 @@ export const logServices = Context.make(
   new Set([logTapeLogger]),
 ).pipe(Context.add(References.MinimumLogLevel, "All"));
 
+/**
+ * The failure boundary of a consumer that outlives one bad element: log the
+ * cause under `category`, with `annotations` on that record, and carry on.
+ * Interruption passes through, so shutdown still stops the consumer.
+ */
+export const logAndContinue =
+  (
+    message: string,
+    category: string,
+    annotations?: Readonly<Record<string, unknown>>,
+  ) =>
+  <A, E, R>(
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A | void, never, R> =>
+    effect.pipe(
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
+        const logged = Effect.logError(message, cause);
+        return (
+          annotations ? Effect.annotateLogs(logged, annotations) : logged
+        ).pipe(withLogCategory(category));
+      }),
+    );
+
 /** One level's log call for plain code: the message and the fields it carries. */
 type BridgeLogMethod = (
   message: string,

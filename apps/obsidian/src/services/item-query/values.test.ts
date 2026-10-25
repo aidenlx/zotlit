@@ -7,7 +7,6 @@ import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import { CliRejection } from "@/lib/cli-params";
 import { Effect } from "@/lib/effect";
-import { acquireDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
@@ -88,7 +87,9 @@ const listingOf = (
   );
 
 /** The scenario database, held for the case's scope. */
-const scenarioOf = acquireDisposable(() => openScenarioDatabase());
+const scenarioOf = Effect.acquireDisposable(
+  Effect.sync(() => openScenarioDatabase()),
+);
 
 it.effect(
   "lists sorted live Collection paths per Library, including empty Collections",

@@ -15,15 +15,14 @@ import { COMPANION_ADDON_ID, ZOTERO_DB_FILENAME } from "@/lib/constants";
 import {
   Cause,
   Context,
-  Deferred,
   Effect,
   Layer,
+  PubSub,
   Stream,
   SubscriptionRef,
 } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
-import { changesUntil } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import {
@@ -134,7 +133,6 @@ export const layerZoteroPref = Layer.effect(
     const current = SubscriptionRef.get(state);
     let generation = 0;
     let closed = false;
-    const stopped = yield* Deferred.make<void>();
 
     const readProfiles = Effect.fn("ZoteroPref.readProfiles")(function* () {
       const root = getZoteroProfilesRoot();
@@ -257,12 +255,12 @@ export const layerZoteroPref = Layer.effect(
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         closed = true;
-      }).pipe(Effect.andThen(Deferred.succeed(stopped, undefined))),
+      }).pipe(Effect.andThen(PubSub.shutdown(state.pubsub))),
     );
 
     return ZoteroPref.of({
       current,
-      changes: changesUntil(state, Deferred.await(stopped)),
+      changes: SubscriptionRef.changes(state),
       get: Effect.fn("ZoteroPref.get")(function* (name: string) {
         return (yield* current).prefs.get(PREF_BRANCH + name);
       }),

@@ -4,7 +4,6 @@ import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Effect, SubscriptionRef } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
-import { changesUntil } from "@/lib/effect-stream";
 import type {
   LocalServer,
   ReaderTarget,
@@ -127,7 +126,7 @@ function liveUpdate(initial: ReaderTarget | null) {
     "LocalServer",
     {
       readerTarget: SubscriptionRef.get(pushed),
-      readerTargetChanges: changesUntil(pushed, Effect.never),
+      readerTargetChanges: SubscriptionRef.changes(pushed),
     },
   );
   const trackedBridge: ZoteroReaderSessionDeps["bridge"] = {

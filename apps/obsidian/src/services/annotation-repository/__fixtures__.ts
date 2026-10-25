@@ -8,8 +8,6 @@ import { createClient } from "@zotlit/db/client/node";
 // repository itself produces.
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
-import { manualClock } from "@/lib/__fixtures__/manual-clock";
-import type { ManualClock } from "@/lib/__fixtures__/manual-clock";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   Context,
@@ -38,6 +36,7 @@ import {
   rootOk,
   ROUGIER_ANNOTATIONS,
   SERVER_ID,
+  testClockAtNow,
   unreachable,
   writeAccepted,
 } from "@/services/zotero-local-api/__fixtures__";
@@ -142,13 +141,11 @@ export async function writable(
   options: {
     key?: string;
     writeToken?: () => string;
-    /** The Clock the repository reads, moved by the test. @default a Clock standing at {@link NOW} */
-    clock?: ManualClock;
     /** The Annotations Zotero imported from the PDF file, by key. */
     external?: readonly string[];
   } = {},
 ) {
-  const { writeToken, clock, external } = options;
+  const { writeToken, external } = options;
   // Named as `undefined` means "no Remembered Authorization", which is not the
   // same as leaving it out.
   const key = "key" in options ? options.key : REMEMBERED_KEY;
@@ -159,7 +156,7 @@ export async function writable(
       item: () => annotationItem(afterWrite("PUPR5FG5", { color: "#ff6666" })),
       ...answers,
     },
-    { key, writeToken, clock, external },
+    { key, writeToken, external },
   );
   await switchToLocalApi(harness.repository);
   await harness.repository.read("RGRPDF24");
@@ -198,8 +195,6 @@ export async function setup(
   answers: ZoteroAnswers = { root: unreachable },
   options: ClientOptions & {
     writeToken?: () => string;
-    /** The repository's own Clock, which the `dateAdded` window is read against. @default a Clock standing at {@link NOW} */
-    clock?: ManualClock;
     /** What this device's persisted Excerpt Images were made from, by Annotation. */
     persistedExcerpt?: AnnotationRepositoryCoreDeps["persistedExcerpt"];
     /** The Annotations Zotero imported from the PDF file, by key. */
@@ -210,7 +205,6 @@ export async function setup(
 ) {
   const {
     writeToken,
-    clock = manualClock(NOW),
     persistedExcerpt,
     external = [],
     group,
@@ -292,6 +286,8 @@ export async function setup(
     },
   );
 
+  // One TestClock for every layer in this runtime, which `dateAdded` windows
+  // and retention are read against; a test moves it through `runtime`.
   const runtime = buildRuntime(
     Layer.mergeAll(
       Layer.succeed(ZoteroReads, readsService),
@@ -299,7 +295,7 @@ export async function setup(
       Layer.succeed(ZoteroLocalApi, localApiService),
       Layer.succeed(ExcerptImages, excerptImages),
       pref,
-    ),
+    ).pipe(Layer.provideMerge(testClockAtNow)),
     stack,
   );
   const dependencies = await runtime.context();
@@ -311,7 +307,6 @@ export async function setup(
     Layer.buildWithScope(
       layerAnnotationRepository({ writeToken }).pipe(
         Layer.provide(Layer.succeedContext(dependencies)),
-        Layer.provide(clock.layer),
       ),
       repositoryScope,
     ),
@@ -323,6 +318,7 @@ export async function setup(
   return {
     repository,
     service,
+    runtime,
     client,
     db: { acquireRead, refresh },
     dbEvents,

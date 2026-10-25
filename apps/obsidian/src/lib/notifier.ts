@@ -3,7 +3,6 @@ import { AbortError } from "@/lib/abort-error";
 import { Cause, Context, Effect, Exit, Layer, Option } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
-import { acquireDisposable } from "@/lib/effect-scope";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
 
 /** What a notice shows: plain text, or a fragment from `BaseNotice.render`. */
@@ -51,7 +50,7 @@ export const layerNotifier: Layer.Layer<Notifier> = Layer.succeed(
         };
       }),
     progress: Effect.map(
-      acquireDisposable(() => new LazyNotice()),
+      Effect.acquireDisposable(Effect.sync(() => new LazyNotice())),
       (notice) => ({
         setMessage: (message) => Effect.sync(() => notice.setMessage(message)),
       }),

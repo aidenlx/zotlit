@@ -14,9 +14,9 @@ import type {
   WorkspaceLeaf,
 } from "obsidian";
 
-import { Cause, Context, Effect, Layer, SubscriptionRef } from "@/lib/effect";
+import { Context, Effect, Layer, SubscriptionRef } from "@/lib/effect";
 import type { Scope, Stream } from "@/lib/effect";
-import { withLogCategory } from "@/lib/effect-log";
+import { logAndContinue } from "@/lib/effect-log";
 import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import {
@@ -123,12 +123,7 @@ export const makeWorkspace = Effect.fnUntraced(function* (
       yield* obsidianListener(source, name, (...args) => {
         run(
           toEffect(...(args as Args)).pipe(
-            Effect.catchCause((cause) =>
-              Effect.logError("Menu handler failed").pipe(
-                Effect.annotateLogs({ menu: name, error: Cause.squash(cause) }),
-                withLogCategory("workspace"),
-              ),
-            ),
+            logAndContinue("Menu handler failed", "workspace", { menu: name }),
           ),
         );
       });

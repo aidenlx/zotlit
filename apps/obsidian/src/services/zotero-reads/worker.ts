@@ -3,8 +3,8 @@
 // load here through the worker's `require`.
 import { RpcServer, RpcWorker } from "effect/rpc";
 
-import { Effect, Layer, Ref } from "@/lib/effect";
-import { layerLibraryLogPort, layerPortLogger } from "@/lib/effect-log-port";
+import { Effect, Layer, Logger, Ref } from "@/lib/effect";
+import { layerLibraryLogPort, makePortLogger } from "@/lib/effect-log-port";
 import { prepareRead } from "@/services/database/read-source";
 
 import { handlersLayer } from "./handlers";
@@ -39,7 +39,7 @@ const HandlersLive = Layer.unwrap(
             },
           }),
         ),
-        Layer.provide(layerPortLogger(logs, level)),
+        Layer.provide(Logger.layer([makePortLogger(logs, level)])),
         Layer.provide(layerLibraryLogPort),
       );
     }),

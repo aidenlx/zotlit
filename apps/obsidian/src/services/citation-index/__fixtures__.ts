@@ -6,7 +6,6 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { Scope } from "@/lib/effect";
 import { Context, Effect, Layer, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import type { ParseClient } from "@/services/citation-parse/client";
 import { CitationParse } from "@/services/citation-parse/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
@@ -232,7 +231,9 @@ export function citationIndexFixture(
                 state: deps.db.state,
               })),
               snapshot: Effect.map(
-                acquireAsyncDisposable(() => deps.db.acquireRead()).pipe(
+                Effect.acquireDisposable(
+                  Effect.tryPromise(() => deps.db.acquireRead()),
+                ).pipe(
                   Effect.mapError(
                     (error) =>
                       new DbUnavailable({ message: String(error.cause) }),

@@ -1,10 +1,10 @@
+import { TestClock } from "effect/testing";
 import { expect, it, vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
-import { manualClock } from "@/lib/__fixtures__/manual-clock";
 import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import { excerptFingerprint } from "@/services/excerpt-image/contract";
@@ -4751,21 +4751,6 @@ function movedGeometry(annotationKey: string, step = 0) {
   return { position, sortIndex };
 }
 
-/**
- * A clock the test moves itself, for the window a run of keyboard nudges joins
- * inside. Nothing waits on real time.
- */
-function clock() {
-  const hand = manualClock(NOW);
-  return {
-    clock: hand,
-    /** The pause between two presses. */
-    pass(milliseconds: number): void {
-      hand.advance({ milliseconds });
-    },
-  };
-}
-
 it("puts the position, Sort Index and quoted text back when a drag is undone", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
@@ -4803,14 +4788,11 @@ it("puts the position, Sort Index and quoted text back when a drag is undone", a
 it("undoes a run of keyboard nudges inside the window as one step", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
-  const time = clock();
-  const { repository } = await writable(stack, zotero.answers, {
-    clock: time.clock,
-  });
+  const { repository, runtime } = await writable(stack, zotero.answers);
   repository.openHistory("RGRPDF24");
 
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
-  time.pass(200);
+  await runtime.runPromise(TestClock.adjust(200));
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
   expect(zotero.held("PUPR5FG5")).toMatchObject(movedGeometry("PUPR5FG5", 1));
 
@@ -4826,14 +4808,11 @@ it("undoes a run of keyboard nudges inside the window as one step", async () => 
 it("redoes a joined run of nudges as the one step it became", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
-  const time = clock();
-  const { repository } = await writable(stack, zotero.answers, {
-    clock: time.clock,
-  });
+  const { repository, runtime } = await writable(stack, zotero.answers);
   repository.openHistory("RGRPDF24");
 
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
-  time.pass(200);
+  await runtime.runPromise(TestClock.adjust(200));
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
   await repository.undo("RGRPDF24");
 
@@ -4847,10 +4826,7 @@ it("redoes a joined run of nudges as the one step it became", async () => {
 it("discards the redo steps when a nudge joins the run on top", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
-  const time = clock();
-  const { repository } = await writable(stack, zotero.answers, {
-    clock: time.clock,
-  });
+  const { repository, runtime } = await writable(stack, zotero.answers);
   repository.openHistory("RGRPDF24");
 
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
@@ -4861,7 +4837,7 @@ it("discards the redo steps when a nudge joins the run on top", async () => {
   // A nudge on the Annotation the step under the undone one names joins that
   // step, and a joined edit is a new edit: what a redo would have put back is
   // discarded, as it is for a step of its own.
-  time.pass(200);
+  await runtime.runPromise(TestClock.adjust(200));
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
 
   expect(repository.canRedo("RGRPDF24")).toBe(false);
@@ -4871,14 +4847,11 @@ it("discards the redo steps when a nudge joins the run on top", async () => {
 it("keeps a keyboard nudge made after the window as its own step", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
-  const time = clock();
-  const { repository } = await writable(stack, zotero.answers, {
-    clock: time.clock,
-  });
+  const { repository, runtime } = await writable(stack, zotero.answers);
   repository.openHistory("RGRPDF24");
 
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
-  time.pass(600);
+  await runtime.runPromise(TestClock.adjust(600));
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
 
   expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
@@ -4893,15 +4866,12 @@ it("keeps a keyboard nudge made after the window as its own step", async () => {
 it("keeps a keyboard nudge made at the window's own edge as its own step", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
-  const time = clock();
-  const { repository } = await writable(stack, zotero.answers, {
-    clock: time.clock,
-  });
+  const { repository, runtime } = await writable(stack, zotero.answers);
   repository.openHistory("RGRPDF24");
 
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
   // Exactly the window: the run ends at it rather than inside it.
-  time.pass(JOIN_WINDOW_MS);
+  await runtime.runPromise(TestClock.adjust(JOIN_WINDOW_MS));
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
 
   expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
@@ -4912,14 +4882,11 @@ it("keeps a keyboard nudge made at the window's own edge as its own step", async
 it("keeps a keyboard nudge on another Annotation as its own step", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
-  const time = clock();
-  const { repository } = await writable(stack, zotero.answers, {
-    clock: time.clock,
-  });
+  const { repository, runtime } = await writable(stack, zotero.answers);
   repository.openHistory("RGRPDF24");
 
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5"), "keyboard");
-  time.pass(100);
+  await runtime.runPromise(TestClock.adjust(100));
   await repository.patchGeometry("K3JRFLFQ", moved("K3JRFLFQ"), "keyboard");
 
   expect(await repository.undo("RGRPDF24")).toEqual({
@@ -4938,14 +4905,11 @@ it("keeps a keyboard nudge on another Annotation as its own step", async () => {
 it("keeps a pointer Geometry Edit out of a run of keyboard nudges", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
-  const time = clock();
-  const { repository } = await writable(stack, zotero.answers, {
-    clock: time.clock,
-  });
+  const { repository, runtime } = await writable(stack, zotero.answers);
   repository.openHistory("RGRPDF24");
 
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
-  time.pass(100);
+  await runtime.runPromise(TestClock.adjust(100));
   // A handle drag, inside the window a nudge would have joined in.
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "pointer");
 
@@ -4957,16 +4921,13 @@ it("keeps a pointer Geometry Edit out of a run of keyboard nudges", async () => 
 it("keeps a colour pick out of a run of keyboard nudges", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroHoldingMarks();
-  const time = clock();
-  const { repository } = await writable(stack, zotero.answers, {
-    clock: time.clock,
-  });
+  const { repository, runtime } = await writable(stack, zotero.answers);
   repository.openHistory("RGRPDF24");
 
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
-  time.pass(100);
+  await runtime.runPromise(TestClock.adjust(100));
   await repository.patchColor("PUPR5FG5", "#ff6666");
-  time.pass(100);
+  await runtime.runPromise(TestClock.adjust(100));
   await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
 
   // Steps of different kinds never merge, so the nudge after the pick is its

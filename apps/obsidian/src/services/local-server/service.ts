@@ -13,7 +13,6 @@ import type {
 import {
   Cause,
   Context,
-  Deferred,
   Effect,
   Layer,
   PubSub,
@@ -22,7 +21,7 @@ import {
 } from "@/lib/effect";
 import { valueOr } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
-import { changesUntil, forkEach } from "@/lib/effect-stream";
+import { forkEach } from "@/lib/effect-stream";
 import { NoteIndex } from "@/services/note-index/service";
 import { PluginSettings } from "@/services/settings/service";
 import type { Settings } from "@/services/settings/service";
@@ -181,7 +180,6 @@ export const layerLocalServer: Layer.Layer<
     const boundPort = yield* SubscriptionRef.make<number | null>(null);
     const readerTarget = yield* SubscriptionRef.make<ReaderTarget | null>(null);
     const readerClosed = yield* SubscriptionRef.make(false);
-    const stopped = yield* Deferred.make<void>();
 
     const dbUpdated = yield* PubSub.unbounded<DbUpdated>();
     const updateMany = yield* PubSub.unbounded<UpdateManyRequest>();
@@ -402,7 +400,10 @@ export const layerLocalServer: Layer.Layer<
             Effect.logError("Failed to stop server", cause),
           ),
         );
-        yield* Deferred.succeed(stopped, undefined);
+        yield* PubSub.shutdown(available.pubsub);
+        yield* PubSub.shutdown(boundPort.pubsub);
+        yield* PubSub.shutdown(readerTarget.pubsub);
+        yield* PubSub.shutdown(readerClosed.pubsub);
         yield* PubSub.shutdown(dbUpdated);
         yield* PubSub.shutdown(updateMany);
         yield* PubSub.shutdown(importNotes);
@@ -438,13 +439,13 @@ export const layerLocalServer: Layer.Layer<
 
     return LocalServer.of({
       available: SubscriptionRef.get(available),
-      availableChanges: changesUntil(available, Deferred.await(stopped)),
+      availableChanges: SubscriptionRef.changes(available),
       effectivePort: SubscriptionRef.get(boundPort),
-      effectivePortChanges: changesUntil(boundPort, Deferred.await(stopped)),
+      effectivePortChanges: SubscriptionRef.changes(boundPort),
       readerTarget: SubscriptionRef.get(readerTarget),
-      readerTargetChanges: changesUntil(readerTarget, Deferred.await(stopped)),
+      readerTargetChanges: SubscriptionRef.changes(readerTarget),
       readerClosed: SubscriptionRef.get(readerClosed),
-      readerClosedChanges: changesUntil(readerClosed, Deferred.await(stopped)),
+      readerClosedChanges: SubscriptionRef.changes(readerClosed),
       dbUpdated: Stream.fromPubSub(dbUpdated),
       updateManyRequests: Stream.fromPubSub(updateMany),
       importNotesRequests: Stream.fromPubSub(importNotes),

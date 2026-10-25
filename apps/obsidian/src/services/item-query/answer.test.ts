@@ -14,7 +14,6 @@ import { ItemQueryScheduler } from "@zotlit/item-query";
 
 import { Cause, Effect, Exit, Fiber, Scheduler } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
-import { acquireDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import {
   DEFAULT_LIBRARY_SCOPE,
@@ -140,7 +139,7 @@ function exitOf<A>(
 
 /** The scenario database, held for the case's scope. */
 const scenarioOf = (options?: Parameters<typeof openScenarioDatabase>[0]) =>
-  acquireDisposable(() => openScenarioDatabase(options));
+  Effect.acquireDisposable(Effect.sync(() => openScenarioDatabase(options)));
 
 /** The run ended by interruption alone. */
 function expectInterrupted<A, E>(exit: Exit.Exit<A, E>): void {

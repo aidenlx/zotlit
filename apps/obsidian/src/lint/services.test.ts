@@ -14,7 +14,6 @@ import {
   plainAdapterStreams,
   scopeClosed,
   serviceTagId,
-  stateStream,
   workerRpc,
 } from "../../scripts/oxlint-plugin-services";
 
@@ -38,7 +37,7 @@ tester.run("effect-native-resources", effectNativeResources, {
     }`,
     // A generator Effect does not run.
     `function* items() { using lock = take(); yield lock; }`,
-    `Effect.fnUntraced(function* () { yield* acquireDisposable(() => registerEvent(ref)); })`,
+    `Effect.fnUntraced(function* () { yield* Effect.acquireDisposable(Effect.sync(() => registerEvent(ref))); })`,
   ],
   invalid: [
     {
@@ -267,25 +266,6 @@ tester.run("scope-closed", scopeClosed, {
   ],
 });
 
-tester.run("state-stream", stateStream, {
-  valid: [
-    "const changes = changesUntil(state, Deferred.await(stopped));",
-    "const changes = changesUntil(state, (value) => value.stopped);",
-    // A Stream's own changes operator is not the SubscriptionRef one.
-    "const next = Stream.changes(values);",
-  ],
-  invalid: [
-    {
-      code: "const changes = SubscriptionRef.changes(state);",
-      errors: [{ messageId: "changesUntil" }],
-    },
-    {
-      code: "return { changes: SubscriptionRef.changes(state).pipe(Stream.map(clone)) };",
-      errors: [{ messageId: "changesUntil" }],
-    },
-  ],
-});
-
 tester.run("obsidian-events-intake", obsidianEventsIntake, {
   valid: [
     // Legacy services keep registerEvent on their stack until they convert.
@@ -303,7 +283,7 @@ tester.run("obsidian-events-intake", obsidianEventsIntake, {
     {
       // The acquire callback is nested, but it still runs inside the layer.
       code: `Effect.fnUntraced(function* () {
-        yield* acquireDisposable(() => registerEvent(workspace.on("file-open", open)));
+        yield* Effect.acquireDisposable(Effect.sync(() => registerEvent(workspace.on("file-open", open))));
       })`,
       errors: [{ messageId: "intake" }],
     },

@@ -54,7 +54,6 @@ import {
 import { RESERVED_KEYS } from "@/lib/constants";
 import {
   Context,
-  Deferred,
   Effect,
   Fiber,
   Layer,
@@ -66,7 +65,7 @@ import {
 import type { Cause } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
-import { changesUntil, forkEach } from "@/lib/effect-stream";
+import { forkEach } from "@/lib/effect-stream";
 import { ensureFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { processLiveText, readLiveText } from "@/lib/live-text";
@@ -2883,7 +2882,6 @@ export const layerTemplate = Layer.effect(
     const scope = yield* Scope.fork(yield* Scope.Scope);
     const context = yield* Effect.context<never>();
     const runSync = Effect.runSyncWith(context);
-    const stopped = yield* Deferred.make<void>();
     const status = yield* SubscriptionRef.make<TemplateStatus>({
       state: "loading",
       compileErrors: new Map(),
@@ -3021,11 +3019,11 @@ export const layerTemplate = Layer.effect(
       Effect.sync(() => {
         closed = true;
         engine.close();
-      }).pipe(Effect.andThen(Deferred.succeed(stopped, undefined))),
+      }).pipe(Effect.andThen(PubSub.shutdown(status.pubsub))),
     );
     return Template.of({
       status: SubscriptionRef.get(status),
-      changes: changesUntil(status, Deferred.await(stopped)),
+      changes: SubscriptionRef.changes(status),
       compileEvents: Stream.fromPubSub(compileEvents),
       compileErrors: attempt(() => engine.compileErrors),
       getLoadedDocumentSource: Effect.fn("Template.getLoadedDocumentSource")(

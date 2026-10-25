@@ -10,7 +10,6 @@ import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Effect, SubscriptionRef } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
-import { changesUntil } from "@/lib/effect-stream";
 import type { LocalServer } from "@/services/local-server/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -170,7 +169,7 @@ function harness({
     } as unknown as CustomizeDeps["template"],
     localServer: stubService<LocalServer["Service"]>("LocalServer", {
       effectivePort: SubscriptionRef.get(portRef),
-      effectivePortChanges: changesUntil(portRef, Effect.never),
+      effectivePortChanges: SubscriptionRef.changes(portRef),
     }),
     effect,
     pluginVersion: PLUGIN_VERSION,

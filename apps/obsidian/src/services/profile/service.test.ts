@@ -5,7 +5,6 @@ import { describe, expect, vi } from "vitest";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { Effect } from "@/lib/effect";
-import { acquireAsyncDisposable, acquireDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import { PROFILE_ID_LENGTH } from "@/lib/profile-stamp";
@@ -42,8 +41,8 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const f = yield* acquireAsyncDisposable(() =>
-          harness(undefined, undefined, context),
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => harness(undefined, undefined, context)),
         );
         f.bridge.runSync(
           f.settings.updateDefaultLiteratureNoteProfileBindings({
@@ -109,15 +108,17 @@ describe("PlainProfile", () => {
           "Managed",
           '{% render "summary" %}',
         );
-        const f = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-profile.default.md": defaultSource,
-              "templates/zotlit-profile.books.md": booksSource,
-              "templates/zotlit-partial.summary.md": "Shared partial",
-            },
-            undefined,
-            context,
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-profile.default.md": defaultSource,
+                "templates/zotlit-profile.books.md": booksSource,
+                "templates/zotlit-partial.summary.md": "Shared partial",
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const before = new Map(f.vault.contents);
@@ -157,18 +158,20 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const f = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-profile.books.md": document(BOOKS).replace(
-                "Managed",
-                '{% render "scripted" %}',
-              ),
-              "templates/zotlit-partial.scripted.md":
-                "---\nlanguage: eta\n---\nScripted partial",
-            },
-            undefined,
-            context,
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-profile.books.md": document(BOOKS).replace(
+                  "Managed",
+                  '{% render "scripted" %}',
+                ),
+                "templates/zotlit-partial.scripted.md":
+                  "---\nlanguage: eta\n---\nScripted partial",
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const plan = yield* Effect.promise(() => f.profile.prepareShare(BOOKS));
@@ -191,19 +194,21 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-profile.books.md": document(
-                BOOKS,
-                "folder: Books\ncitationStyle: null",
-              ),
-              "templates/other.md": document("Other1234567"),
-              "templates/nested/zotlit-profile.nested.md":
-                document("Nested123456"),
-            },
-            undefined,
-            context,
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-profile.books.md": document(
+                  BOOKS,
+                  "folder: Books\ncitationStyle: null",
+                ),
+                "templates/other.md": document("Other1234567"),
+                "templates/nested/zotlit-profile.nested.md":
+                  document("Nested123456"),
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const { bridge, profile, settings } = fixture;
@@ -234,18 +239,20 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-profile.books.md": document(),
-            },
-            undefined,
-            context,
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-profile.books.md": document(),
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const { vault, profile } = fixture;
-        const update = yield* acquireDisposable(() =>
-          vi.spyOn(fixture.settings, "update"),
+        const update = yield* Effect.acquireDisposable(
+          Effect.sync(() => vi.spyOn(fixture.settings, "update")),
         );
         vault.renameFile(
           "templates/zotlit-profile.books.md",
@@ -290,11 +297,11 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const f = yield* acquireAsyncDisposable(() =>
-          harness(undefined, undefined, context),
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => harness(undefined, undefined, context)),
         );
-        const write = yield* acquireDisposable(() =>
-          vi.spyOn(f.vault, "process"),
+        const write = yield* Effect.acquireDisposable(
+          Effect.sync(() => vi.spyOn(f.vault, "process")),
         );
         const source = document(
           BOOKS,
@@ -353,15 +360,17 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const f = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-partial.summary.md":
-                "---\nlanguage: liquid\n---\nShared body",
-              "templates/zotlit-partial.authors.md": "Mine",
-            },
-            undefined,
-            context,
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-partial.summary.md":
+                  "---\nlanguage: liquid\n---\nShared body",
+                "templates/zotlit-partial.authors.md": "Mine",
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const source = document(
@@ -421,13 +430,15 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const f = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-partial.authors.md": "Mine",
-            },
-            undefined,
-            context,
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-partial.authors.md": "Mine",
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const source = document(
@@ -463,13 +474,15 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const f = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-partial.authors.md": "Mine",
-            },
-            undefined,
-            context,
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-partial.authors.md": "Mine",
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const source = document(
@@ -515,15 +528,17 @@ describe("PlainProfile", () => {
           { "zotero-note-key": "NTE23456", "zotlit-profile": BOOKS },
           "Note",
         );
-        const f = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-profile.renamed.md": document(),
-              "Books/Paper.md": paper,
-              "Imports/Note.md": note,
-            },
-            undefined,
-            context,
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-profile.renamed.md": document(),
+                "Books/Paper.md": paper,
+                "Imports/Note.md": note,
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const source = document(BOOKS, "folder: New", "Books revised").replace(
@@ -557,8 +572,8 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const f = yield* acquireAsyncDisposable(() =>
-          harness(undefined, undefined, context),
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => harness(undefined, undefined, context)),
         );
         const source = document(
           BOOKS,
@@ -608,13 +623,15 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const f = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-profile.books.md": document(),
-            },
-            undefined,
-            context,
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-profile.books.md": document(),
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const plan = yield* Effect.promise(() =>
@@ -638,8 +655,8 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const f = yield* acquireAsyncDisposable(() =>
-          harness(undefined, undefined, context),
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => harness(undefined, undefined, context)),
         );
         const plan = yield* Effect.promise(() =>
           f.profile.prepareImport(document()),
@@ -663,8 +680,8 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(undefined, undefined, context),
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => harness(undefined, undefined, context)),
         );
         const { profile, vault } = fixture;
         const created = profile.create({
@@ -698,13 +715,15 @@ describe("PlainProfile", () => {
     (name) =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              [`templates/zotlit-profile.${name}.md`]: document(),
-            },
-            undefined,
-            context,
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                [`templates/zotlit-profile.${name}.md`]: document(),
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const { profile, vault } = fixture;
@@ -729,13 +748,15 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-profile.books.md": document(),
-            },
-            undefined,
-            context,
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-profile.books.md": document(),
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const unknown = "Qw8Er5Ty2Ui9" as ProfileId;
@@ -758,8 +779,8 @@ describe("PlainProfile", () => {
   it.effect("reports creation constraints separately from saving", () =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
-      const fixture = yield* acquireAsyncDisposable(() =>
-        harness(undefined, undefined, context),
+      const fixture = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() => harness(undefined, undefined, context)),
       );
       const unnamed = yield* Effect.promise(() =>
         fixture.profile.prepareCreate({ label: "" }),
@@ -779,15 +800,17 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-profile.default.md": document(
-                "default",
-              ).replace("# {{", "# Default {{"),
-            },
-            undefined,
-            context,
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-profile.default.md": document(
+                  "default",
+                ).replace("# {{", "# Default {{"),
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const { profile, vault } = fixture;
@@ -822,17 +845,19 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-profile.default.md": document("default"),
-              "templates/zotlit-profile.books.md": document(
-                BOOKS,
-                "folder: Books",
-              ),
-            },
-            undefined,
-            context,
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-profile.default.md": document("default"),
+                "templates/zotlit-profile.books.md": document(
+                  BOOKS,
+                  "folder: Books",
+                ),
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const draft = yield* Effect.promise(() =>
@@ -856,13 +881,15 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-profile.default.md": document("default"),
-            },
-            undefined,
-            context,
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-profile.default.md": document("default"),
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const source = document("default");
@@ -887,8 +914,8 @@ describe("PlainProfile", () => {
   it.effect("gives the built-in Default document a create-once body", () =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
-      const fixture = yield* acquireAsyncDisposable(() =>
-        harness(undefined, undefined, context),
+      const fixture = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() => harness(undefined, undefined, context)),
       );
       const document = parseLiteratureNoteTemplate(
         yield* Effect.promise(() => fixture.profile.getSource("default")),
@@ -906,8 +933,8 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(undefined, undefined, context),
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => harness(undefined, undefined, context)),
         );
         const source = yield* Effect.promise(() =>
           fixture.profile.getSource("default"),
@@ -930,8 +957,8 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(undefined, undefined, context),
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => harness(undefined, undefined, context)),
         );
         const { profile, vault } = fixture;
         const pending = profile.create({
@@ -960,18 +987,20 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-profile.books.md": document(),
-              "templates/zotlit-profile.copy.md": document(
-                "Rz9Wm4YfH6Kd",
-                "",
-                "books copy",
-              ),
-            },
-            undefined,
-            context,
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-profile.books.md": document(),
+                "templates/zotlit-profile.copy.md": document(
+                  "Rz9Wm4YfH6Kd",
+                  "",
+                  "books copy",
+                ),
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const pending = fixture.profile.duplicate(BOOKS);
@@ -991,15 +1020,17 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-profile.one.md": document(),
-              "templates/zotlit-profile.two.md": document("Rz9Wm4YfH6Kd"),
-              "templates/zotlit-profile.broken.md": document("invalid"),
-            },
-            undefined,
-            context,
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-profile.one.md": document(),
+                "templates/zotlit-profile.two.md": document("Rz9Wm4YfH6Kd"),
+                "templates/zotlit-profile.broken.md": document("invalid"),
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const { profile } = fixture;
@@ -1021,16 +1052,18 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-profile.books.md": document(
-                BOOKS,
-                "folder: Library\ncitationStyle: apa",
-              ),
-            },
-            undefined,
-            context,
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-profile.books.md": document(
+                  BOOKS,
+                  "folder: Library\ncitationStyle: apa",
+                ),
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const { profile, vault } = fixture;
@@ -1062,8 +1095,8 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(undefined, undefined, context),
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => harness(undefined, undefined, context)),
         );
         const { bridge, profile, vault, settings } = fixture;
         expect(profile.resolveProfile("default")?.document).toBeUndefined();
@@ -1094,8 +1127,8 @@ describe("PlainProfile", () => {
   it.effect("creates Default atomically and preserves a competing file", () =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
-      const fixture = yield* acquireAsyncDisposable(() =>
-        harness(undefined, undefined, context),
+      const fixture = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() => harness(undefined, undefined, context)),
       );
       const { profile, vault } = fixture;
       const source = yield* Effect.promise(() => profile.getSource("default"));
@@ -1135,8 +1168,8 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(undefined, undefined, context),
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => harness(undefined, undefined, context)),
         );
         const { bridge, profile, vault, settings } = fixture;
         bridge.runSync(
@@ -1168,13 +1201,15 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-profile.default.md": document("default"),
-            },
-            undefined,
-            context,
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-profile.default.md": document("default"),
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const { vault, profile } = fixture;
@@ -1208,13 +1243,15 @@ describe("PlainProfile", () => {
   ])("excludes an invalid renamed Default from a cold scan", (source) =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
-      const fixture = yield* acquireAsyncDisposable(() =>
-        harness(
-          {
-            "templates/zotlit-profile.custom.md": source,
-          },
-          undefined,
-          context,
+      const fixture = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          harness(
+            {
+              "templates/zotlit-profile.custom.md": source,
+            },
+            undefined,
+            context,
+          ),
         ),
       );
       expect(fixture.profile.resolveProfile("default")).toBeUndefined();
@@ -1233,14 +1270,16 @@ describe("PlainProfile", () => {
   it.effect("refuses default resolution while two documents claim its ID", () =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
-      const fixture = yield* acquireAsyncDisposable(() =>
-        harness(
-          {
-            "templates/zotlit-profile.default.md": document("default"),
-            "templates/zotlit-profile.copy.md": document("default"),
-          },
-          undefined,
-          context,
+      const fixture = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          harness(
+            {
+              "templates/zotlit-profile.default.md": document("default"),
+              "templates/zotlit-profile.copy.md": document("default"),
+            },
+            undefined,
+            context,
+          ),
         ),
       );
       const { profile } = fixture;
@@ -1257,25 +1296,27 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-profile.books.md": document(),
-              "Books/Paper.md": noteText(
-                {
-                  "zotero-key": "PAPER234",
-                  "zotlit-profile": "Books (Bk3Qn7XvT2Lp)",
-                },
-                "Paper",
-              ),
-              "Imports/Note.md": noteText(
-                { "zotero-note-key": "NTE23456", "zotlit-profile": BOOKS },
-                "Note",
-              ),
-              "Scratch.md": noteText({ "zotlit-profile": BOOKS }, "Scratch"),
-            },
-            undefined,
-            context,
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-profile.books.md": document(),
+                "Books/Paper.md": noteText(
+                  {
+                    "zotero-key": "PAPER234",
+                    "zotlit-profile": "Books (Bk3Qn7XvT2Lp)",
+                  },
+                  "Paper",
+                ),
+                "Imports/Note.md": noteText(
+                  { "zotero-note-key": "NTE23456", "zotlit-profile": BOOKS },
+                  "Note",
+                ),
+                "Scratch.md": noteText({ "zotlit-profile": BOOKS }, "Scratch"),
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const { profile, vault } = fixture;
@@ -1300,24 +1341,28 @@ describe("PlainProfile", () => {
   it.effect("keeps the document when a note cannot be re-stamped", () =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
-      const fixture = yield* acquireAsyncDisposable(() =>
-        harness(
-          {
-            "templates/zotlit-profile.books.md": document(),
-            "Paper.md": noteText(
-              { "zotero-key": "PAPER234", "zotlit-profile": BOOKS },
-              "Paper",
-            ),
-          },
-          undefined,
-          context,
+      const fixture = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          harness(
+            {
+              "templates/zotlit-profile.books.md": document(),
+              "Paper.md": noteText(
+                { "zotero-key": "PAPER234", "zotlit-profile": BOOKS },
+                "Paper",
+              ),
+            },
+            undefined,
+            context,
+          ),
         ),
       );
       const { profile, vault } = fixture;
-      const _write = yield* acquireDisposable(() =>
-        vi
-          .spyOn(vault, "process")
-          .mockRejectedValue(new Error("Read-only note")),
+      const _write = yield* Effect.acquireDisposable(
+        Effect.sync(() =>
+          vi
+            .spyOn(vault, "process")
+            .mockRejectedValue(new Error("Read-only note")),
+        ),
       );
       yield* Effect.promise(() =>
         expect(profile.delete(BOOKS, "default")).rejects.toThrow(
@@ -1334,30 +1379,32 @@ describe("PlainProfile", () => {
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
         const papers = "Rz9Wm4YfH6Kd" as ProfileId;
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-profile.books.md": document(
-                BOOKS,
-                "folder: Books\nimportFolder: Imports",
-              ),
-              "templates/zotlit-profile.papers.md": document(
-                papers,
-                "folder: Papers\nimportFolder: Imported/Papers",
-                "Papers",
-              ),
-              "templates/shared.liquid.md": "Shared partial",
-              "Books/2024/My title.md": noteText(
-                { "zotero-key": "PAPER234", "zotlit-profile": BOOKS },
-                "My reading text",
-              ),
-              "Imports/2024/Child.md": noteText(
-                { "zotero-note-key": "NTE23456", "zotlit-profile": BOOKS },
-                "Imported text",
-              ),
-            },
-            undefined,
-            context,
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-profile.books.md": document(
+                  BOOKS,
+                  "folder: Books\nimportFolder: Imports",
+                ),
+                "templates/zotlit-profile.papers.md": document(
+                  papers,
+                  "folder: Papers\nimportFolder: Imported/Papers",
+                  "Papers",
+                ),
+                "templates/shared.liquid.md": "Shared partial",
+                "Books/2024/My title.md": noteText(
+                  { "zotero-key": "PAPER234", "zotlit-profile": BOOKS },
+                  "My reading text",
+                ),
+                "Imports/2024/Child.md": noteText(
+                  { "zotero-note-key": "NTE23456", "zotlit-profile": BOOKS },
+                  "Imported text",
+                ),
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const { profile, vault, app } = fixture;
@@ -1368,13 +1415,15 @@ describe("PlainProfile", () => {
           order.push(path);
           vault.renameFile(file.path, path);
         };
-        const _trash = yield* acquireDisposable(() =>
-          vi
-            .spyOn(app.fileManager, "trashFile")
-            .mockImplementation(async (file) => {
-              order.push(file.path);
-              vault.deleteFile(file.path);
-            }),
+        const _trash = yield* Effect.acquireDisposable(
+          Effect.sync(() =>
+            vi
+              .spyOn(app.fileManager, "trashFile")
+              .mockImplementation(async (file) => {
+                order.push(file.path);
+                vault.deleteFile(file.path);
+              }),
+          ),
         );
         const plan = yield* Effect.promise(() => profile.prepareDelete(BOOKS));
         expect(plan.literatureNotes).toEqual([literature]);
@@ -1433,13 +1482,15 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const fixture = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              "templates/zotlit-profile.books.md": document(),
-            },
-            undefined,
-            context,
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                "templates/zotlit-profile.books.md": document(),
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const { profile, vault } = fixture;
@@ -1456,14 +1507,16 @@ describe("PlainProfile", () => {
         { "zotero-key": "PAPER234", "zotlit-profile": BOOKS },
         "User text",
       );
-      const fixture = yield* acquireAsyncDisposable(() =>
-        harness(
-          {
-            "templates/zotlit-profile.books.md": document(),
-            "Books/Paper.md": note,
-          },
-          undefined,
-          context,
+      const fixture = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          harness(
+            {
+              "templates/zotlit-profile.books.md": document(),
+              "Books/Paper.md": note,
+            },
+            undefined,
+            context,
+          ),
         ),
       );
       const { profile, vault, app } = fixture;
@@ -1495,8 +1548,10 @@ describe("Profile Match document writes", () => {
         )
           .replace("name: Books", "name :  Books  # Keep spacing")
           .replaceAll("\n", eol);
-        const f = yield* acquireAsyncDisposable(() =>
-          harness({ [path]: source }, undefined, context),
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness({ [path]: source }, undefined, context),
+          ),
         );
         const save = f.profile.setMatch(BOOKS, { or: [] });
         yield* TestClock.adjust(500);
@@ -1536,13 +1591,15 @@ describe("Profile Match document writes", () => {
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
         const path = "templates/zotlit-profile.books.md";
-        const f = yield* acquireAsyncDisposable(() =>
-          harness(
-            {
-              [path]: document(BOOKS, "match: 'title ==' "),
-            },
-            undefined,
-            context,
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness(
+              {
+                [path]: document(BOOKS, "match: 'title ==' "),
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         expect(f.profile.profiles[0]!.match.state).toBe("unevaluable");
@@ -1575,8 +1632,10 @@ describe("Profile Match document writes", () => {
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
         const path = "templates/zotlit-profile.books.md";
-        const f = yield* acquireAsyncDisposable(() =>
-          harness({ [path]: document() }, undefined, context),
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            harness({ [path]: document() }, undefined, context),
+          ),
         );
         const replacement = document("Other1234567");
         f.vault.modifyFile(path, replacement);

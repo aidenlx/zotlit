@@ -9,7 +9,6 @@ import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 
 import type { PlainNoteIndex } from "./plain";
 import { plainNoteIndex } from "./plain";
@@ -175,7 +174,9 @@ export const makeHarness = Effect.fn("fixture.makeHarness")(function* (
     files,
     options,
   );
-  const resource = yield* acquireAsyncDisposable(async () => makeResource(app));
+  const resource = yield* Effect.acquireDisposable(
+    Effect.tryPromise(async () => makeResource(app)),
+  );
   return {
     app,
     metadataCache,

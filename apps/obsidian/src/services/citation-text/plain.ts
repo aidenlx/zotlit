@@ -1,7 +1,7 @@
 /** Document citation text for the editor and reading surfaces. */
-import { Cause, Effect, Exit, Stream } from "@/lib/effect";
+import { Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
-import { isScopeClosed } from "@/lib/effect-scope";
+import { effectBridge, valueOr } from "@/lib/effect-bridge";
 
 import { CitationText } from "./service";
 
@@ -10,12 +10,11 @@ export type PlainCitationText = ReturnType<typeof plainCitationText>;
 export function plainCitationText(
   runtime: ManagedRuntime.ManagedRuntime<CitationText, never>,
 ) {
+  const bridge = effectBridge(runtime);
   const service = runtime.runSync(CitationText);
-  const run = Effect.runSyncWith(runtime.runSync(Effect.context<never>()));
-  const closed = () => isScopeClosed(runtime.scope);
   return {
     get current() {
-      return run(service.current);
+      return bridge.runSync(service.current);
     },
     changes: service.changes,
     events: service.events,
@@ -31,13 +30,13 @@ export function plainCitationText(
       Stream.map(() => undefined),
     ),
     peek: (path: string) =>
-      closed() ? null : runtime.runSync(service.peek(path)),
+      bridge.closed() ? null : bridge.runSync(service.peek(path)),
     async read(path: string, options?: { signal?: AbortSignal }) {
-      if (closed()) return null;
-      const exit = await runtime.runPromiseExit(service.read(path, options));
-      if (Exit.isSuccess(exit)) return exit.value;
-      if (Cause.hasInterruptsOnly(exit.cause)) return null;
-      throw Cause.squash(exit.cause);
+      if (bridge.closed()) return null;
+      return valueOr(
+        await bridge.runPromiseExit(service.read(path, options)),
+        null,
+      );
     },
   };
 }
