@@ -351,7 +351,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         zoteroReads: services.zoteroReads,
         settings: services.settings,
         bridge: services.bridge,
-        libraryScope: services.libraryScope,
+        batchScope: services.batchScope,
         noteFeature: services.noteFeature,
         noteIndex: services.noteIndex,
       });
@@ -424,7 +424,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         app: this.app,
         settings: services.settings,
         zoteroReads: services.zoteroReads,
-        libraryScope: services.libraryScope,
+        batchScope: services.batchScope,
         zoteroPref: services.zoteroPref,
         noteFeature: services.noteFeature,
         noteIndex: services.noteIndex,

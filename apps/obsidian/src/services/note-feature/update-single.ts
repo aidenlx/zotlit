@@ -10,7 +10,6 @@ import { profileRecoveryNotice } from "@/lib/profile-recovery";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
 import { missingPartialNotice } from "@/lib/workbench-recovery";
-import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import { EmptyFilenameError } from "@/services/note-feature/filename";
 import type {
   CreateNoteResult,
@@ -45,8 +44,6 @@ export interface SingleUpdateDeps {
   bridge: Pick<EffectBridge, "runSync">;
   noteFeature: NoteFeature;
   noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey" | "whenIndexed">;
-  /** Which Libraries an unqualified library-wide update covers. */
-  libraryScope: Pick<PlainLibraryScope, "resolveLibraries">;
 }
 
 /**

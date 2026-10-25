@@ -44,11 +44,6 @@ function noteLessDeps(): SingleUpdateDeps {
     },
     settings: stubService<SingleUpdateDeps["settings"]>("PluginSettings", {}),
     bridge: { runSync: Effect.runSync },
-    libraryScope: {
-      resolveLibraries: () => {
-        throw new Error("create path reached: library scope resolved");
-      },
-    },
     noteFeature: stubService<SingleUpdateDeps["noteFeature"]>("NoteFeature", {
       createNote: () => {
         throw new Error("create path reached: createNote called");

@@ -10,6 +10,7 @@ import { createFixtureSchema, rowInstant } from "@zotlit/db/test-utils";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { batchScopeOver } from "@/services/__fixtures__/batch-scope";
 import { excerptReuseProbe } from "@/services/excerpt-image/__fixtures__/reuse";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type {
@@ -259,6 +260,12 @@ function makeDeps(
   const importNote = vi.fn(
     async () => options.importNoteResult ?? ("created" as const),
   );
+  const zoteroReads = withState(
+    caseResources.use(
+      inProcessReadsService(sharedClientOpener(db), { wrap: options.wrap }),
+    ),
+    options.dbState ?? "ready",
+  );
   const deps: NoteImportDeps = {
     profile: profileReader(),
     noteFeature: {
@@ -269,12 +276,7 @@ function makeDeps(
         shouldAsk: false,
       }),
     },
-    zoteroReads: withState(
-      caseResources.use(
-        inProcessReadsService(sharedClientOpener(db), { wrap: options.wrap }),
-      ),
-      options.dbState ?? "ready",
-    ),
+    zoteroReads,
     settings: {
       current: Effect.succeed({ ...defaults, ...settings }),
       update: ((patch) =>
@@ -287,7 +289,7 @@ function makeDeps(
         })) as PluginSettings["Service"]["update"],
     },
     bridge: { runSync: Effect.runSync },
-    libraryScope: { resolveLibraries: () => currentScope },
+    batchScope: batchScopeOver(zoteroReads, () => currentScope),
     noteImport: {
       importNote,
       prepareExplicitImport: vi.fn<NoteImporter["prepareExplicitImport"]>(),

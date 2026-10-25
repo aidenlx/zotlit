@@ -91,7 +91,8 @@ export type ProtocolServices =
  * The legacy values the handlers still hold. Note Feature, batch import, the
  * Profile factories and the Attachment opener convert in later slices, and the
  * batch runners still take the whole {@link BatchUpdateDeps} bundle, plain
- * adapters included.
+ * adapters included. The bundle plans a library-wide run through the
+ * `batchScope` edge handle.
  */
 export interface ProtocolDeps extends BatchUpdateDeps {
   webWorkbenchEnabled: boolean;

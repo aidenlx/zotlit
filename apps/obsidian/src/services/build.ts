@@ -33,6 +33,7 @@ import { createPdfReader } from "./attachment-open/actions";
 import { openWithSystem } from "./attachment-open/capture";
 import { createTargetOpener } from "./attachment-open/open-target";
 import { AttachmentResolver } from "./attachment-resolver/service";
+import { bindBatchScope } from "./batch-scope-handle";
 import { ChineseSegmenter } from "./chinese-segmenter/service";
 import {
   plainCitationIndex,
@@ -315,6 +316,13 @@ export async function buildServices(
     })
     .useValue({ libraryScope: () => plainLibraryScope(runtime) })
     .useValue({
+      batchScope: () =>
+        bindBatchScope(bridge, {
+          libraryScope: runtime.runSync(LibraryScope),
+          zoteroReads: zoteroReadsService,
+        }),
+    })
+    .useValue({
       query: () => bindQuery(bridge, runtime.runSync(QueryService)),
     })
     .useValue({ profile: () => plainProfile(runtime) })
@@ -496,7 +504,7 @@ export async function buildServices(
         zoteroPref,
         zoteroReads,
         settings,
-        libraryScope,
+        batchScope,
         noteImport,
         noteIndex,
       }): BatchImport =>
@@ -511,7 +519,7 @@ export async function buildServices(
           zoteroReads,
           settings,
           bridge,
-          libraryScope,
+          batchScope,
           noteImport,
           noteIndex,
           metadataCache: plugin.app.metadataCache,
