@@ -26,6 +26,7 @@ import type { RenderedCitation } from "@/services/pandoc/engine";
 import { inlineText } from "@/services/pandoc/inline-content";
 import { BibliographyRender } from "@/services/pandoc/render-cache";
 import type { BibliographyRenderEvent } from "@/services/pandoc/render-cache";
+import { renderFailure } from "@/services/pandoc/render-cache/__fixtures__";
 import type { PlainBibliographyRender } from "@/services/pandoc/render-cache/plain";
 import { Profile } from "@/services/profile/service";
 import type { ProfileReader } from "@/services/profile/service";
@@ -259,7 +260,7 @@ export function citationTextFixture(
                       ...options,
                       signal,
                     }),
-                  catch: (error) => error,
+                  catch: renderFailure,
                 }),
               readBibliography: (items, options) =>
                 Effect.tryPromise({
@@ -268,7 +269,7 @@ export function citationTextFixture(
                       ...options,
                       signal,
                     }),
-                  catch: (error) => error,
+                  catch: renderFailure,
                 }),
               changes: Stream.empty,
               events: deps.bibliographyRender.invalidated.pipe(

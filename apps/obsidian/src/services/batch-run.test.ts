@@ -29,6 +29,7 @@ import {
   executeBatchRun,
   runBatch,
   runBatchWrite,
+  TaskRejected,
 } from "./batch-run";
 import type {
   BatchClassifyControls,
@@ -535,8 +536,73 @@ describe("runBatchWrite", () => {
         }),
       );
 
-      expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(failure);
+      const error = Exit.isFailure(exit) && Cause.squash(exit.cause);
+      expect(error).toBeInstanceOf(TaskRejected);
+      expect(error instanceof TaskRejected && error.cause).toBe(failure);
       expect(dispose).toHaveBeenCalledTimes(1);
+    }),
+  );
+
+  it("rejects a halted run with the task's own rejection through runBatch", async () => {
+    const { zoteroReads } = makeSnapshotReads();
+    const { controls } = makeRunControls();
+    const failure = new Error("bad config");
+    const onTaskFailed = vi.fn();
+
+    await expect(
+      runBatch(
+        runBatchWrite({
+          zoteroReads,
+          tasks: [task(1)],
+          controls,
+          concurrency: 4,
+          run: async () => {
+            throw failure;
+          },
+          onTaskFailed,
+          haltOn: (error) => error === failure,
+        }),
+      ),
+    ).rejects.toBe(failure);
+    expect(onTaskFailed).not.toHaveBeenCalled();
+  });
+
+  it.effect("reports a rejected task's own error on its failure row", () =>
+    Effect.gen(function* () {
+      const { zoteroReads } = makeSnapshotReads();
+      const { controls, settled } = makeRunControls();
+      const failure = new NoteImportProfileError("Missing", {
+        path: "Reading/Paper.md",
+      });
+      const onTaskFailed = vi.fn();
+
+      const result = yield* runBatchWrite({
+        zoteroReads,
+        tasks: [task(1)],
+        controls,
+        concurrency: 1,
+        run: async () => {
+          throw failure;
+        },
+        onTaskFailed,
+      });
+
+      expect(result).toMatchObject({ failed: 1 });
+      expect(settled).toEqual([
+        {
+          id: 1,
+          status: "failed",
+          failure: {
+            label: "Item 1",
+            message: failure.message,
+            recovery: { action: "switch-profile", path: "Reading/Paper.md" },
+          },
+        },
+      ]);
+      expect(onTaskFailed).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 1 }),
+        failure,
+      );
     }),
   );
 

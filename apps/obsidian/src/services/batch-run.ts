@@ -1,5 +1,5 @@
 // Snapshot-pinned batch write runner over the concurrent classify/execute primitives.
-import { Cause, Effect, Exit, Ref, Stream } from "effect";
+import { Cause, Effect, Exit, Ref, Schema, Stream } from "effect";
 
 import { AbortError } from "@/lib/abort-error";
 import { formatErrorMessage } from "@/lib/toast";
@@ -7,6 +7,21 @@ import type {
   ZoteroReads,
   ZoteroReadsApi,
 } from "@/services/zotero-reads/service";
+
+/**
+ * A batch task's `run` callback rejected. `cause` holds the rejection; the
+ * executor reads it for the failure row, the halt test and the logs, and
+ * {@link runBatch} rethrows it, so callers see the original.
+ */
+export class TaskRejected extends Schema.TaggedError<
+  TaskRejected,
+  { readonly brand: unique symbol }
+>()("TaskRejected", { cause: Schema.Defect() }) {}
+
+/** What a task failed with: a {@link TaskRejected}'s rejection, else the error. */
+function taskFailure(error: unknown): unknown {
+  return error instanceof TaskRejected ? error.cause : error;
+}
 
 /** A failed-item payload the run reports; rendered by the modal's failure row. */
 export interface BatchFailure {
@@ -120,14 +135,14 @@ export type RunOutcome = "created" | "updated" | "skipped";
  *
  * @returns an Effect that fails with a task error or the first halting error.
  */
-export function executeBatchRun<T extends BatchRunTask>(opts: {
+export function executeBatchRun<T extends BatchRunTask, E>(opts: {
   tasks: readonly T[];
   controls: BatchRunControls;
   concurrency: number;
-  run: (task: T) => Effect.Effect<RunOutcome, unknown>;
+  run: (task: T) => Effect.Effect<RunOutcome, E>;
   onTaskFailed?: (task: T, error: unknown) => void;
   haltOn?: (error: unknown) => boolean;
-}): Effect.Effect<BatchRunResult, unknown> {
+}): Effect.Effect<BatchRunResult, E> {
   const { tasks, controls, concurrency, run, onTaskFailed, haltOn } = opts;
 
   return Effect.gen(function* () {
@@ -138,10 +153,7 @@ export function executeBatchRun<T extends BatchRunTask>(opts: {
       failed: 0,
       cancelled: false,
     });
-    const halt = yield* Ref.make<{
-      halted: boolean;
-      error: unknown;
-    }>({ halted: false, error: undefined });
+    const halt = yield* Ref.make<Cause.Cause<E> | null>(null);
     const settled = yield* Effect.forEach(
       tasks,
       (task) =>
@@ -149,14 +161,13 @@ export function executeBatchRun<T extends BatchRunTask>(opts: {
           Effect.uninterruptible(
             Effect.gen(function* () {
               if (controls.signal.aborted) return yield* Effect.interrupt;
-              if ((yield* Ref.get(halt)).halted) return yield* Effect.interrupt;
+              if ((yield* Ref.get(halt)) !== null)
+                return yield* Effect.interrupt;
               const exit = yield* Effect.exit(run(task));
               if (Exit.isFailure(exit)) {
-                const error = Cause.squash(exit.cause);
+                const error = taskFailure(Cause.squash(exit.cause));
                 if (haltOn?.(error)) {
-                  yield* Ref.update(halt, (current) =>
-                    current.halted ? current : { halted: true, error },
-                  );
+                  yield* Ref.update(halt, (current) => current ?? exit.cause);
                   return yield* Effect.interrupt;
                 }
                 if (!AbortError.test(error)) {
@@ -173,7 +184,7 @@ export function executeBatchRun<T extends BatchRunTask>(opts: {
                     }),
                   );
                 }
-                return yield* Effect.fail(error);
+                return yield* Effect.failCause(exit.cause);
               }
 
               const outcome = exit.value;
@@ -197,7 +208,7 @@ export function executeBatchRun<T extends BatchRunTask>(opts: {
       if (Exit.isSuccess(entry)) {
         completed += 1;
       } else if (!Cause.hasInterruptsOnly(entry.cause)) {
-        const error = Cause.squash(entry.cause);
+        const error = taskFailure(Cause.squash(entry.cause));
         if (!AbortError.test(error)) {
           yield* Ref.update(result, (current) => ({
             ...current,
@@ -210,7 +221,7 @@ export function executeBatchRun<T extends BatchRunTask>(opts: {
     }
 
     const halted = yield* Ref.get(halt);
-    if (halted.halted) return yield* Effect.fail(halted.error);
+    if (halted !== null) return yield* Effect.failCause(halted);
     yield* Ref.update(result, (current) => ({
       ...current,
       cancelled: controls.signal.aborted && completed < tasks.length,
@@ -244,7 +255,8 @@ function profileRecovery(error: unknown): BatchFailure["recovery"] {
  * Callers create their per-run caches before this call and close over them in
  * `run`; the Snapshot-bound `reads` is threaded to each task.
  *
- * @returns an Effect that fails with the Snapshot or task error. An abort
+ * @returns an Effect that fails with the Snapshot error or a
+ *   {@link TaskRejected} that holds the halting task's rejection. An abort
  *   interrupts the Effect; it is not a typed failure.
  */
 export function runBatchWrite<T extends BatchRunTask>(opts: {
@@ -255,7 +267,10 @@ export function runBatchWrite<T extends BatchRunTask>(opts: {
   run: (task: T, reads: ZoteroReadsApi) => Promise<RunOutcome>;
   onTaskFailed?: (task: T, error: unknown) => void;
   haltOn?: (error: unknown) => boolean;
-}): Effect.Effect<BatchRunResult, unknown> {
+}): Effect.Effect<
+  BatchRunResult,
+  TaskRejected | Effect.Error<ZoteroReads["Service"]["snapshot"]>
+> {
   return Effect.scoped(
     Effect.gen(function* () {
       const reads = yield* opts.zoteroReads.snapshot;
@@ -266,7 +281,7 @@ export function runBatchWrite<T extends BatchRunTask>(opts: {
         run: (task) =>
           Effect.tryPromise({
             try: () => opts.run(task, reads),
-            catch: (error) => error,
+            catch: (cause) => new TaskRejected({ cause }),
           }),
         onTaskFailed: opts.onTaskFailed,
         haltOn: opts.haltOn,
@@ -277,8 +292,9 @@ export function runBatchWrite<T extends BatchRunTask>(opts: {
 
 /**
  * Run an Effect-native batch operation from a Promise caller. This is the
- * caller boundary: typed failures and defects keep their identity, while an
- * aborted signal rejects with the signal's own abort reason.
+ * caller boundary: typed failures and defects keep their identity, a
+ * {@link TaskRejected} rejects with the task's own rejection, and an aborted
+ * signal rejects with the signal's own abort reason.
  */
 export async function runBatch<A, E>(
   effect: Effect.Effect<A, E>,
@@ -293,7 +309,7 @@ export async function runBatch<A, E>(
   if (Exit.isFailure(exit)) {
     if (signal?.aborted && Cause.hasInterruptsOnly(exit.cause))
       throw signal.reason;
-    throw Cause.squash(exit.cause);
+    throw taskFailure(Cause.squash(exit.cause));
   }
   return exit.value;
 }
