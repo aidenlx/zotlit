@@ -15,14 +15,14 @@ import {
   SubscriptionRef,
 } from "effect";
 import { TFile } from "obsidian";
-import type { App, TAbstractFile } from "obsidian";
+import type { TAbstractFile } from "obsidian";
 
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { isScopeClosed } from "@/lib/effect-scope";
 import { startupBarrier } from "@/lib/effect-startup";
 import { filterTag, forkEach } from "@/lib/effect-stream";
-import { ObsidianApp } from "@/lib/obsidian-app";
+import { ObsidianEnv } from "@/lib/obsidian-env";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
@@ -30,7 +30,10 @@ import type { VaultEvent } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { CitationParse } from "@/services/citation-parse/service";
 import { LibraryScope } from "@/services/library-scope/service";
-import { NoteIndex, resolveIndexedKey } from "@/services/note-index/service";
+import {
+  NoteIndex,
+  resolveLiteratureNoteIn,
+} from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
@@ -202,9 +205,11 @@ export class CitationIndex extends Context.Service<
 export const layerCitationIndex = (openStore = openCitekeyStore) =>
   Layer.effect(CitationIndex, makeCitationIndex(openStore));
 
-function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
+function makeCitationIndex(
+  openStore: (appId: string) => Promise<CitekeyStore>,
+) {
   return Effect.gen(function* () {
-    const app = yield* ObsidianApp;
+    const { appId } = yield* ObsidianEnv;
     const metadata = yield* MetadataCache;
     const workspace = yield* Workspace;
     const vault = yield* Vault;
@@ -218,6 +223,14 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
     const context = yield* Effect.context<never>();
     const run = Effect.runSyncWith(context);
     const runPromise = Effect.runPromiseWith(context);
+    /** The vault's Markdown files now, for the plain code below. */
+    const markdownFiles = () => run(vault.getMarkdownFiles);
+    /** The file at `path` now, `null` when the vault has none. */
+    const fileAt = (path: string) => run(vault.getFileByPath(path));
+    /** The Indexed Key of the Literature Note a wikilink target points at. */
+    const indexedKeyOf = (linkpath: string, sourcePath: string) =>
+      run(resolveLiteratureNoteIn(metadata, linkpath, sourcePath))
+        ?.indexedKey ?? null;
     const runner = {
       scope,
       runFork: <A, E>(effect: Effect.Effect<A, E>) =>
@@ -739,7 +752,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       for (;;) {
         const remaining = deadline - (yield* Clock.currentTimeMillis);
         if ((yield* settle(remaining)) === "timeout") return null;
-        const files = app.vault.getMarkdownFiles();
+        const files = yield* vault.getMarkdownFiles;
         const stale = files.filter(
           (file) => !covered(file) && !failedPaths.has(file.path),
         );
@@ -791,7 +804,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
     ) {
       const captured = yield* capture(timeoutMs);
       if (!captured) return { kind: "timeout", coverage: "indexing" } as const;
-      const file = app.vault.getFileByPath(path);
+      const file = yield* vault.getFileByPath(path);
       const scan = captured.scans.get(path) ?? null;
       const document =
         file?.extension === "md"
@@ -991,7 +1004,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       const wantWikilinks = syntaxes.includes("wikilink");
       const wantAnnotations = syntaxes.includes("annotation");
       const byPath = new Map<string, readonly CitationOccurrence[]>();
-      for (const file of app.vault.getMarkdownFiles()) {
+      for (const file of markdownFiles()) {
         const selected = admitted(covered(file));
         const citekeys = wantCitekeys ? selected.citekeys : [];
         const occurrences = [
@@ -1054,7 +1067,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
     }
 
     async function backfill(build: number): Promise<void> {
-      const files = app.vault.getMarkdownFiles()[Symbol.iterator]();
+      const files = markdownFiles()[Symbol.iterator]();
       await Promise.all(
         Array.from({ length: BACKFILL_CONCURRENCY }, async () => {
           for (const file of files) {
@@ -1073,9 +1086,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         }),
       );
       if (stale(build)) return;
-      const present = new Set(
-        app.vault.getMarkdownFiles().map((file) => file.path),
-      );
+      const present = new Set(markdownFiles().map((file) => file.path));
       for (const path of scans.keys().toArray()) {
         if (!present.has(path)) drop(path);
       }
@@ -1192,7 +1203,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       build = activeBuildNumber,
     ): Promise<FileScan | null> {
       while (!stale(build)) {
-        if (!app.vault.getFileByPath(file.path)) return null;
+        if (!fileAt(file.path)) return null;
         const known = covered(file);
         // A grammar update keeps the last scan available while its replacement runs.
         if (!fresh && known && known.scannerRevision !== SCANNER_REVISION)
@@ -1205,12 +1216,15 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         if (failedPaths.has(file.path)) return known;
         if (known && (!fresh || known.scannerRevision === SCANNER_REVISION))
           return known;
-        if (!app.vault.getFileByPath(file.path)) return null;
+        if (!fileAt(file.path)) return null;
         const path = file.path;
         const generation = generations.get(path);
         const { mtime, size } = file.stat;
         const body = await abortable(
-          app.vault.cachedRead(file),
+          // Reject with what Obsidian threw, as the read did on the App.
+          runPromise(
+            vault.cachedRead(file).pipe(Effect.mapError(({ cause }) => cause)),
+          ),
           lifetimeSignal,
         );
         if (stale(build)) return null;
@@ -1221,7 +1235,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
           file.stat.size !== size
         )
           continue;
-        if (!app.vault.getFileByPath(path)) return null;
+        if (!fileAt(path)) return null;
         await scan(file, body);
       }
       return null;
@@ -1382,8 +1396,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       },
     ): CitedBySnapshot {
       const groups: CitedByGroup[] = [];
-      const files = app.vault
-        .getMarkdownFiles()
+      const files = markdownFiles()
         .filter(includeNote)
         .sort((a, b) => comparePaths(a.path, b.path));
       for (const file of files) {
@@ -1424,7 +1437,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       indexedKey: string,
       answer?: CitationLookupAnswer,
     ): Promise<CitationSyntax[]> {
-      const files = app.vault.getMarkdownFiles();
+      const files = markdownFiles();
       const omitted: CitationSyntax[] = [];
       const citekeys = files.flatMap((file) => covered(file)?.citekeys ?? []);
       const lookup =
@@ -1489,7 +1502,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       sourcePath: string,
       indexedKey: string,
     ): boolean {
-      return resolveIndexedKey(occurrence.raw, sourcePath, app) === indexedKey;
+      return indexedKeyOf(occurrence.raw, sourcePath) === indexedKey;
     }
 
     function resolve(
@@ -1498,7 +1511,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       lookup?: CitationLookupAnswer,
     ): ResolvedNote | null {
       if (occurrence.kind === "wikilink") {
-        const indexedKey = resolveIndexedKey(occurrence.raw, sourcePath, app);
+        const indexedKey = indexedKeyOf(occurrence.raw, sourcePath);
         return indexedKey ? { indexedKey, linkpath: occurrence.raw } : null;
       }
       if (occurrence.kind === "annotation") {
@@ -1599,7 +1612,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
     // restore writes them through.
     const restore = Effect.gen(function* () {
       const opened = yield* Effect.acquireRelease(
-        Effect.tryPromise(() => openStore(app)),
+        Effect.tryPromise(() => openStore(appId)),
         (opened) => Effect.try(() => opened[Symbol.dispose]()).pipe(recover),
       ).pipe(Scope.provide(scope));
       store = opened;

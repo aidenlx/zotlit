@@ -682,7 +682,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
 
 /** One CitationText over a harness, formatting through the real engine. */
 function openText(
-  { app, index, lookup, noteIndex, queryClient }: CitationIndexHarness,
+  { host, index, lookup, noteIndex, queryClient }: CitationIndexHarness,
   engine: CitationEngine,
   style:
     | string
@@ -693,7 +693,7 @@ function openText(
   return citationTextFixture({
     openDocuments: new OpenDocumentsStub(),
     profile: profileReader(),
-    app,
+    host,
     citationIndex: index,
     citationLookup: lookup,
     noteIndex,

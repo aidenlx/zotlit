@@ -133,7 +133,7 @@ function harness(read: () => Promise<DocumentCitations | null>) {
       ),
   );
   const popover = citationPopoverFixture({
-    app: {
+    host: {
       vault: MemoryVault.with({
         getFileByPath: () => file,
       }),
@@ -285,7 +285,7 @@ describe("source-less Citation Popover", () => {
       hasEntryMarkers: true,
     }));
     await using popover = citationPopoverFixture({
-      app: {},
+      host: {},
       db: reads([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]),
       citationLookup: {
         status: "pending",
@@ -385,7 +385,7 @@ function workHarness(options: { logs?: Layer.Layer<never> } = {}) {
   const open = vi.fn();
   const popover = citationPopoverFixture(
     {
-      app: {},
+      host: {},
       db,
       citationLookup,
       libraryScope: { current: [] },
@@ -840,7 +840,7 @@ it.each([false, true])(
       },
     );
     await using popover = citationPopoverFixture({
-      app: h.app,
+      host: h.host,
       db: h.db,
       citationIndex: h.index,
       citationLookup: h.lookup,

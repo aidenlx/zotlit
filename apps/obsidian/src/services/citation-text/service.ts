@@ -24,11 +24,14 @@ import type { ScannedPandocCitation } from "@zotlit/templates/pandoc-citation";
 
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
-import { forkEach } from "@/lib/effect-stream";
+import { filterTag, forkEach } from "@/lib/effect-stream";
 import { mapsEqual } from "@/lib/maps-equal";
-import { ObsidianApp } from "@/lib/obsidian-app";
-import { MetadataCache } from "@/lib/obsidian-metadata-cache";
-import { workspaceOpenDocuments } from "@/lib/open-documents";
+import {
+  MetadataCache,
+  metadataCacheReads,
+} from "@/lib/obsidian-metadata-cache";
+import { Vault } from "@/lib/obsidian-vault";
+import { Workspace } from "@/lib/obsidian-workspace";
 import type { OpenDocuments } from "@/lib/open-documents";
 import { settleAtEdge } from "@/lib/signal-edge";
 import {
@@ -143,8 +146,9 @@ export const layerCitationText = (open?: OpenDocuments) =>
   Layer.effect(
     CitationText,
     Effect.gen(function* () {
-      const app = yield* ObsidianApp;
       const metadata = yield* MetadataCache;
+      const vault = yield* Vault;
+      const workspace = yield* Workspace;
       const index = yield* CitationIndex;
       const lookup = yield* CitationLookup;
       const notes = yield* NoteIndex;
@@ -177,7 +181,21 @@ export const layerCitationText = (open?: OpenDocuments) =>
       };
       /** The Literature Note Profiles a document's presentation property names. */
       const profile = profileReaderOf(profiles, run);
-      const openDocuments = open ?? workspaceOpenDocuments(app);
+      /** The file at `path` now, `null` when the vault has none. */
+      const fileAt = (path: string) => run(vault.getFileByPath(path));
+      /**
+       * Vault paths shown in at least one Markdown leaf. A deferred background
+       * tab counts once its view loads, which is also when it first asks for
+       * anything.
+       */
+      const openPaths = (): ReadonlySet<string> =>
+        open
+          ? open.paths()
+          : new Set(
+              run(workspace.markdownViews).flatMap(({ file }) =>
+                file ? [file.path] : [],
+              ),
+            );
       /** Releases for the pins that keep each open document's text held. */
       const pins = new Map<string, () => void>();
       let stopped = false;
@@ -239,7 +257,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
        */
       function peek(path: string): Held<DocumentCitations> | null {
         if (stopped) return null;
-        if (app.vault.getFileByPath(path) === null) {
+        if (fileAt(path) === null) {
           drop(path);
           return null;
         }
@@ -276,7 +294,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
         // A file deleted while its read ran holds nothing: the path is resolved
         // again here, because the read may have started before the file went.
         if (stopped) return null;
-        if (app.vault.getFileByPath(path) !== null) return text;
+        if (fileAt(path) !== null) return text;
         drop(path);
         return null;
       }
@@ -318,7 +336,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
        */
       function pinOpenDocuments(): void {
         if (stopped) return;
-        const open = openDocuments.paths();
+        const open = openPaths();
         for (const [path, release] of pins) {
           if (open.has(path)) continue;
           release();
@@ -349,7 +367,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
       ): Promise<DocumentCitations> {
         const signal = AbortSignal.any([querySignal, lifetime]);
         signal.throwIfAborted();
-        const file = app.vault.getFileByPath(path);
+        const file = fileAt(path);
         if (file === null) {
           throw new Error(`No document to read the citations of at ${path}`);
         }
@@ -473,7 +491,11 @@ export const layerCitationText = (open?: OpenDocuments) =>
         // nothing: its citations keep the source the author wrote, rather than
         // reading as though a vault selection were what the note declared.
         const presented = documentCitationPresentation(
-          documentPresentation(app.metadataCache, file, profile),
+          documentPresentation(
+            metadataCacheReads(metadata, run),
+            file,
+            profile,
+          ),
           run(renders.state).vaultPresentation,
           { citations: set.citations, works },
         );
@@ -618,9 +640,8 @@ export const layerCitationText = (open?: OpenDocuments) =>
               ? []
               : citation.occurrences.flatMap((occurrence) => {
                   if (occurrence.kind !== "wikilink") return [];
-                  const note = app.metadataCache.getFirstLinkpathDest(
-                    occurrence.raw,
-                    file.path,
+                  const note = run(
+                    metadata.firstLinkpathDest(occurrence.raw, file.path),
                   );
                   return note
                     ? [
@@ -698,9 +719,20 @@ export const layerCitationText = (open?: OpenDocuments) =>
           if (event._tag === "changed") invalidate(event.file.path);
           else if (event._tag === "deleted") drop(event.file.path);
         });
-        yield* Effect.acquireDisposable(
-          Effect.sync(() => openDocuments.subscribe(intake.callback("open"))),
-        );
+        const reopen = intake.callback("open");
+        if (open) {
+          yield* Effect.acquireDisposable(
+            Effect.sync(() => open.subscribe(reopen)),
+          );
+        } else {
+          // A leaf opening, closing or moving can change the open documents;
+          // a rename moves one to a new path without a layout change.
+          yield* forkEach(
+            filterTag(workspace.changes, "layout-change", "file-open"),
+            () => reopen(),
+          );
+          yield* forkEach(filterTag(vault.changes, "rename"), () => reopen());
+        }
         yield* forkEach(queries.changes, (change) => {
           if (change.key[0] !== CITATION_TEXT) return;
           const path = pathOf(change.key);

@@ -285,12 +285,8 @@ export default defineConfig({
     },
     {
       // Calls `vault.getMarkdownFiles` on the App, which the Vault tag now
-      // has. citation-index/service.ts also calls `vault.getFileByPath` and
-      // `vault.cachedRead`, which the Vault tag has.
-      files: [
-        "src/services/citation-index/service.ts",
-        "src/services/template-workbench/inspect.ts",
-      ],
+      // has.
+      files: ["src/services/template-workbench/inspect.ts"],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
@@ -312,14 +308,11 @@ export default defineConfig({
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
-      // No tag member yet: `metadataCache.getCache`. Both files also call
+      // No tag member yet: `metadataCache.getCache`. The file also calls
       // `metadataCache.getFirstLinkpathDest` (the MetadataCache tag's
-      // `firstLinkpathDest`), and citation-text/service.ts calls
-      // `vault.getFileByPath`, which the Vault tag has.
-      files: [
-        "src/services/citation-text/service.ts",
-        "src/views/query-view/table-notes.ts",
-      ],
+      // `firstLinkpathDest`) and `vault.getFileByPath`, which the Vault tag
+      // has.
+      files: ["src/views/query-view/table-notes.ts"],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
@@ -343,7 +336,6 @@ export default defineConfig({
       // in `parsedCache` through a local alias, which the rule does not see.
       files: [
         "src/services/build.ts",
-        "src/services/citation-popover/service.tsx",
         "src/services/note-feature/operations.ts",
         "src/services/pandoc/register.ts",
         "src/services/template-workbench/data.ts",

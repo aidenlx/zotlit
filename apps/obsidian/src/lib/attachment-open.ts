@@ -1,7 +1,7 @@
 // Sending a reader to one Item's Attachments, shared by every surface that offers the action.
 
 import { Keymap, Menu, SuggestModal } from "obsidian";
-import type { App, PaneType } from "obsidian";
+import type { App, PaneType, Workspace } from "obsidian";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
 import { ATTACHMENT_ANCHOR_KEY, attachmentOpenUri } from "@zotlit/db";
@@ -62,17 +62,22 @@ export type AttachmentOpenClickEvent =
   | MouseEvent
   | KeyboardEvent;
 
+/** What the Attachment menu reads of the host: the workspace it raises its menu event on. */
+export interface AttachmentMenuHost {
+  readonly workspace: Pick<Workspace, "trigger">;
+}
+
 /**
  * A pointer event shows a context menu at the click; no event (the protocol
  * handler, the command palette, the quick switcher) shows a Suggest modal
- * picker instead. The picker differs by invocation, not by reader. Either
- * picker takes the `App`: the modal is hosted on it, and the menu raises
- * `zotlit:attachments-menu` on its workspace.
+ * picker instead. The picker differs by invocation, not by reader. The modal
+ * is hosted on the `App`; the menu needs only the workspace it raises
+ * `zotlit:attachments-menu` on.
  */
 export type OpenAttachmentsOptions<T extends OpenableRow> =
   | {
       reader: AttachmentReader<T>;
-      app: App;
+      app: AttachmentMenuHost;
       event: AttachmentOpenClickEvent;
       /**
        * The box and window the picker anchors to when the trigger cannot be
@@ -196,7 +201,11 @@ function namingAttachment({
 function showAttachmentMenu<T extends OpenableRow>(
   attachments: readonly T[],
   reader: AttachmentReader<T>,
-  click: { app: App; event: AttachmentOpenClickEvent; anchor?: MenuAnchor },
+  click: {
+    app: AttachmentMenuHost;
+    event: AttachmentOpenClickEvent;
+    anchor?: MenuAnchor;
+  },
 ): void {
   const menu = new Menu();
   for (const attachment of attachments) {

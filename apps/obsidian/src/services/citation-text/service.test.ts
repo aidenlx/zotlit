@@ -4,11 +4,13 @@ import { Context } from "effect";
 import { Effect, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
-import type { App, EventRef, LinkCache, MetadataCache } from "obsidian";
+import type { EventRef, LinkCache } from "obsidian";
 import { describe, expect, vi } from "vitest";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
+import type { HostSources } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
@@ -16,6 +18,7 @@ import {
   FIELD_ZOTERO_NOTE_KEY,
 } from "@/lib/constants";
 import { subscribe } from "@/lib/effect-stream";
+import type { MetadataCacheSource } from "@/lib/obsidian-metadata-cache";
 import { annotationRows } from "@/services/citation-index/__fixtures__/annotations";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 // @vitest-environment happy-dom
@@ -77,17 +80,6 @@ import type { DocumentCitations, FormattedOccurrence } from "./present";
 
 const NOTE = Object.assign(new TFile(), { path: "note.md" });
 
-/** A typed facade over a test source, so its methods keep the source as `this`. */
-function capability<T extends object>(name: string, source: object): T {
-  const typed = stubService<T>(name, {});
-  return new Proxy(typed, {
-    get(_target, key) {
-      const value = Reflect.get(source, key, source);
-      return typeof value === "function" ? value.bind(source) : value;
-    },
-  });
-}
-
 /**
  * The Indexed Key a Literature Note stand-in carries. It names an Item of its
  * own, so a wikilink and a literal citekey are told apart by what they reach.
@@ -133,7 +125,8 @@ async function makeHarness({
   documentCitationSet,
   bibliographyRender,
   queryClient = queryClientsFixture(),
-  openDocuments = new OpenDocumentsStub(),
+  workspace,
+  openDocuments = workspace ? undefined : new OpenDocumentsStub(),
   context = Context.empty(),
 }: {
   body: string;
@@ -164,6 +157,8 @@ async function makeHarness({
   >;
   bibliographyRender?: CitationTextDeps["bibliographyRender"];
   queryClient?: PlainQueryClients & AsyncDisposable;
+  /** The workspace whose Markdown leaves are the open documents, in place of `openDocuments`. */
+  workspace?: MemoryWorkspace;
   openDocuments?: OpenDocumentsStub;
   context?: Context.Context<never>;
 }): Promise<Harness> {
@@ -205,34 +200,30 @@ async function makeHarness({
     ],
     errors: [],
   };
-  const metadataCacheSource = {
-    getFileCache: (file: { path: string }) =>
+  const metadataCache: MetadataCacheSource = {
+    getFileCache: (file) =>
       file.path === NOTE.path
         ? { links, frontmatter }
         : { frontmatter: { "zotero-key": LIT_KEY } },
-    getFirstLinkpathDest: (linkpath: string) =>
+    getFirstLinkpathDest: (linkpath) =>
       Object.hasOwn(notes, linkpath)
         ? Object.assign(new TFile(), { path: `${linkpath}.md` })
         : null,
-    on: (name: string, callback: (...args: unknown[]) => void) => {
-      listeners.set(`metadata:${name}`, callback);
+    onCleanCache: (callback) => callback(),
+    on: (name, callback) => {
+      listeners.set(`metadata:${name}`, (...args) =>
+        Reflect.apply(callback, undefined, args),
+      );
       return stubService<EventRef>("EventRef", {});
     },
     offref: () => {},
   };
-  const metadataCache = capability<MetadataCache>(
-    "MetadataCache",
-    metadataCacheSource,
-  );
   const vault = MemoryVault.with({
     cachedRead: () => Promise.resolve(body),
     getFileByPath: (path: string) =>
       present && path === NOTE.path ? NOTE : null,
   });
-  const app = stubService<App>("App", {
-    vault: capability<App["vault"]>("Vault", vault),
-    metadataCache,
-  });
+  const host: HostSources = { metadataCache, vault, workspace };
 
   let present = true;
   let itemReads = 0;
@@ -268,7 +259,7 @@ async function makeHarness({
       citationLookup: {
         changed: stream("lookup:changed"),
       },
-      app,
+      host,
       citationIndex: {
         getParsedDocument: async () => ({
           facts: new ParsedNote(
@@ -464,7 +455,7 @@ describe("CitationText", () => {
         const service = cleanup.use(
           citationTextFixture({
             openDocuments: new OpenDocumentsStub(),
-            app: h.app,
+            host: h.host,
             citationIndex: h.index,
             citationLookup: h.lookup,
             noteIndex: h.noteIndex,
@@ -1551,6 +1542,31 @@ describe("CitationText staleness", () => {
         await h.dispose();
       }),
     );
+
+    it.effect(
+      "pins a document a workspace Markdown leaf shows, until the leaf closes",
+      () =>
+        Effect.promise(async () => {
+          const workspace = new MemoryWorkspace();
+          const h = await makeHarness({ body: "Blah [@alpha].", workspace });
+          const observers = () =>
+            h.queryClient.client
+              .getQueryCache()
+              .find({ queryKey: ["citation-text", NOTE.path], exact: true })
+              ?.getObserversCount() ?? 0;
+
+          workspace.openMarkdownEditor(NOTE.path);
+          workspace.trigger("layout-change");
+          await vi.waitFor(() => expect(held(h)?.fetchStatus).toBe("idle"));
+          expect(observers()).toBe(1);
+          expect(h.citationRequests).toHaveLength(0);
+
+          workspace.leaves.delete("markdown");
+          workspace.open(null);
+          await vi.waitFor(() => expect(observers()).toBe(0));
+          await h.dispose();
+        }),
+    );
   });
 });
 
@@ -1682,7 +1698,7 @@ it.effect("#1683 renders a document with one source read", () =>
       { zoteroRows: annotationRows },
     );
     await using service = citationTextFixture({
-      app: h.app,
+      host: h.host,
       citationIndex: h.index,
       citationLookup: h.lookup,
       noteIndex: h.noteIndex,

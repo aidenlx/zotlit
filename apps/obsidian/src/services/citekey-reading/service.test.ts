@@ -3,7 +3,6 @@ import { it } from "@effect/vitest";
 import { Effect, Exit, Fiber, Layer, Scope, Stream } from "effect";
 import { Keymap, MarkdownView } from "obsidian";
 import type {
-  App,
   MarkdownPostProcessor,
   MarkdownPostProcessorContext,
   MarkdownRenderChild,
@@ -55,17 +54,6 @@ import {
 } from "@/services/zotero-reads/test-utils";
 
 import { layerCitekeyReading } from "./service";
-
-/** A typed facade over a test source, so its methods keep the source as `this`. */
-function capability<T extends object>(name: string, source: object): T {
-  const typed = stubService<T>(name, {});
-  return new Proxy(typed, {
-    get(_target, key) {
-      const value = Reflect.get(source, key, source);
-      return typeof value === "function" ? value.bind(source) : value;
-    },
-  });
-}
 
 /** The fakes Citekey Reading reads its tags from; a member a case leaves out fails when read. */
 interface ReadingFakes {
@@ -227,14 +215,7 @@ const makeHarness = Effect.fnUntraced(function* ({
         profile: profileReader(defaults, {
           getFileCache: () => ({ frontmatter }),
         }),
-        // The CitationText layer still reads the host's `app`.
-        app: stubService<App>("App", {
-          vault: capability<App["vault"]>("Vault", vault),
-          metadataCache: capability<App["metadataCache"]>(
-            "MetadataCache",
-            metadata,
-          ),
-        }),
+        host: { vault, metadataCache: metadata },
         citationIndex: {
           getParsedDocument: async () => ({
             facts: new ParsedNote(

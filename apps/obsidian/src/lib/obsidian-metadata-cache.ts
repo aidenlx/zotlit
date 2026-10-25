@@ -145,3 +145,19 @@ export const layerMetadataCache: Layer.Layer<
     return yield* makeMetadataCache(app.metadataCache);
   }),
 );
+
+/**
+ * Obsidian's metadata cache reads over the tag, for plain code that takes
+ * them, such as a presentation helper: each call runs the tag's read with
+ * `run`, the runner of the caller's layer.
+ */
+export function metadataCacheReads(
+  metadata: Pick<MetadataCacheShape, "fileCache" | "firstLinkpathDest">,
+  run: <A>(effect: Effect.Effect<A>) => A,
+): Pick<ObsidianMetadataCache, "getFileCache" | "getFirstLinkpathDest"> {
+  return {
+    getFileCache: (file) => run(metadata.fileCache(file)),
+    getFirstLinkpathDest: (linkpath, sourcePath) =>
+      run(metadata.firstLinkpathDest(linkpath, sourcePath)),
+  };
+}

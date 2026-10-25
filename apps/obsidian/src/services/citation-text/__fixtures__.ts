@@ -1,8 +1,7 @@
 import { Context, Effect, Layer, PubSub, Stream } from "effect";
-import type { App } from "obsidian";
 
-import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
-import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
+import type { HostSources } from "@/lib/__fixtures__/obsidian-host-app";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
 import type { OpenDocuments } from "@/lib/open-documents";
@@ -137,7 +136,8 @@ export function firstText(
 
 /** The real CitationText layer over already-owned consumer fixture dependencies. */
 export interface CitationTextFixtureDeps {
-  app: App;
+  /** The Obsidian objects the capability tags read; a missing one is empty. */
+  host: HostSources;
   citationIndex: Pick<
     PlainCitationIndex,
     "getParsedDocument" | "changed" | "membership-changed"
@@ -153,7 +153,8 @@ export interface CitationTextFixtureDeps {
     PlainQueryClients,
     "client" | "ask" | "read" | "peek" | "invalidate" | "watch"
   >;
-  openDocuments: OpenDocuments;
+  /** The documents open in the workspace; without it, the layer reads the host's workspace. */
+  openDocuments?: OpenDocuments;
 }
 
 export function citationTextFixture(
@@ -177,10 +178,7 @@ export function citationTextFixture(
     layerCitationText(deps.openDocuments).pipe(
       Layer.provide(
         Layer.mergeAll(
-          // A host without a workspace gets an empty in-memory one.
-          layerHostApp(
-            Object.assign({ workspace: new MemoryWorkspace() }, deps.app),
-          ),
+          layerHost(deps.host),
           Layer.succeed(
             CitationIndex,
             stubService<CitationIndex["Service"]>("CitationIndex", {
