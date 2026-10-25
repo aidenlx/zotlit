@@ -4,6 +4,7 @@ import { Effect } from "effect";
 
 import { valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
+import { settleAtEdge } from "@/lib/signal-edge";
 import type { QueryClients } from "@/services/query-client/service";
 import type {
   LocalApiAnnotation,
@@ -42,8 +43,9 @@ export function readAll<A, B, C, E>(
 
 /**
  * The Zotero Local API list of one Attachment, interrupted when `signal`
- * aborts. An interrupted read answers `unknown-outcome`, which says nothing
- * about the session: it stays standing.
+ * aborts, which rejects with `signal.reason`. A read the runtime's close
+ * interrupted answers `unknown-outcome`. Neither says anything about the
+ * session: it stays standing.
  */
 export async function listLocalApi(
   {
@@ -56,8 +58,9 @@ export async function listLocalApi(
   attachmentKey: string,
   signal: AbortSignal,
 ): Promise<LocalApiResult<readonly LocalApiAnnotation[]>> {
-  return valueOr(
+  return settleAtEdge(
     await bridge.runPromiseExit(api.listAnnotations(attachmentKey), { signal }),
-    { failure: { kind: "unknown-outcome" } },
+    signal,
+    () => ({ failure: { kind: "unknown-outcome" } }),
   );
 }
