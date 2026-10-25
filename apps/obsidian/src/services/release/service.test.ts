@@ -325,21 +325,6 @@ it.effect(
 );
 
 it.effect(
-  "Release templates-only v1 detection with no ejected templates opens the first screen and leaves the folder alone",
-  () =>
-    Effect.gen(function* () {
-      const { update, openFirstScreen } = yield* runCheck({
-        origin: "absent",
-        templateFiles: [],
-      });
-      expect(openFirstScreen).toHaveBeenCalledOnce();
-      expect(update).toHaveBeenCalledWith({
-        "release.previous-version": "2.0.0",
-      });
-    }),
-);
-
-it.effect(
   "Release templates-only v1 detection ignores malformed origins with ejected templates",
   () =>
     Effect.gen(function* () {

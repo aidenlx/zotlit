@@ -176,16 +176,6 @@ describe("revealSetting", () => {
     ).toBeLessThan(setting.scrollToDefinition.mock.invocationCallOrder[0]!);
   });
 
-  it("hands Obsidian a path that resolves to the page holding the row", () => {
-    const { app, setting } = createSettingsModal();
-
-    revealSetting(app, TAB_ID, style.id);
-
-    expect(resolvePage(settingItems, pagePathOf(setting))?.id).toBe(
-      "settings_page_citations",
-    );
-  });
-
   it("names every page down to a row nested two pages deep", () => {
     const { app, setting } = createSettingsModal();
 

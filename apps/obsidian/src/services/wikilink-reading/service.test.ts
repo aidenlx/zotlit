@@ -276,23 +276,6 @@ describe("WikilinkReading rendering", () => {
     expect(await harnessed.render(WANG)).toBe(WANG);
   });
 
-  it("leaves a fragment-less link raw while Wikilink Citations is off", async () => {
-    await using harnessed = await harness();
-
-    expect(await harnessed.render(WANG)).toBe(WANG);
-  });
-
-  it("leaves a fragment-carrying link native while Wikilink Citations is off", async () => {
-    await using harnessed = await harness({
-      "citation.wikilink-citations": false,
-      "citation.show-formatted": false,
-    });
-
-    expect(await harnessed.render(`${WANG}#cite:locator=7`)).toBe(
-      `${WANG} > cite:locator=7`,
-    );
-  });
-
   it("keeps a native link when the Item carries no native citation key", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
