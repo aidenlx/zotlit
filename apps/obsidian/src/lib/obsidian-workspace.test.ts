@@ -194,3 +194,23 @@ it.effect("logs a failed menu handler and keeps the menu", () =>
     expect(logged).toEqual(["Error: Menu handler failed"]);
   }),
 );
+
+it.effect("streams each file-open from when the consumer starts", () =>
+  Effect.gen(function* () {
+    const source = new MemoryWorkspace();
+    source.activeFile = file("a.md");
+    const { workspace } = yield* open(layerWorkspaceFrom(source));
+    const opened = yield* workspace.changes.pipe(
+      Stream.map((event) => `${event._tag} ${event.file?.path ?? null}`),
+      Stream.take(2),
+      Stream.runCollect,
+      Effect.forkChild({ startImmediately: true }),
+    );
+    source.open(file("b.md"));
+    source.open(null);
+    expect(yield* Fiber.join(opened)).toEqual([
+      "file-open b.md",
+      "file-open null",
+    ]);
+  }),
+);

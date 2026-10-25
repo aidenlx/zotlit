@@ -2,7 +2,6 @@ import type { App, TFile } from "obsidian";
 
 import { isIndexedKey } from "@zotlit/db";
 
-import { registerEvent } from "@/lib/disposables";
 import {
   Clock,
   Context,
@@ -15,7 +14,6 @@ import {
 } from "@/lib/effect";
 import type { Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
-import { acquireDisposable } from "@/lib/effect-scope";
 import { changesUntil, filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
@@ -70,10 +68,7 @@ export class UseLedger extends Context.Service<
 const makeUseLedger = Effect.gen(function* () {
   const app = yield* ObsidianApp;
   const metadata = yield* MetadataCache;
-  // The tag gives layout-ready. `file-open` and the active-leaf flush stay on
-  // `app.workspace`: the ledger counts each open event, and the tag's
-  // `activeFile` replays the current file on subscribe, a file nobody opened.
-  const layout = yield* Workspace;
+  const workspace = yield* Workspace;
   const ledger = yield* SubscriptionRef.make(newest(yield* readSaved(app)));
   const stopped = yield* Deferred.make<void>();
   const excludedOpens = new Map<TFile, number>();
@@ -109,13 +104,9 @@ const makeUseLedger = Effect.gen(function* () {
     return use;
   });
 
-  // Obsidian's callbacks run outside Effect; they run with the layer's own
-  // services, its Clock among them.
-  const run = Effect.runSyncWith(yield* Effect.context<never>());
-  const { workspace } = app;
   let enabled = false;
   let pending: { file: TFile; instant: Temporal.Instant } | null = null;
-  yield* layout.layoutReady.pipe(
+  yield* workspace.layoutReady.pipe(
     Effect.andThen(
       Effect.sync(() => {
         if (!closed) enabled = true;
@@ -123,28 +114,34 @@ const makeUseLedger = Effect.gen(function* () {
     ),
     Effect.forkScoped({ startImmediately: true }),
   );
-  yield* acquireDisposable(() =>
-    registerEvent(
-      workspace.on("file-open", (file) => {
-        if (!enabled || closed) return;
-        pending = null;
-        if (!file || file.extension !== "md" || excludedOpens.has(file)) return;
-        const instant = run(now);
-        const cache = run(metadata.fileCache(file));
-        const key = itemKeyFromFrontmatter(cache);
-        if (key) run(record(key, "opened", instant));
-        else if (!cache) pending = { file, instant };
-      }),
-    ),
+  // Each `file-open` counts, from `changes`, which does not replay: the file
+  // active when the ledger builds is not an open. forkEach hands each over
+  // inside Obsidian's callback, so an open the flush below delivers lands
+  // inside or outside an operation's scope as it happened.
+  yield* forkEach(
+    filterTag(workspace.changes, "file-open"),
+    Effect.fnUntraced(function* ({ file }) {
+      if (!enabled || closed) return;
+      pending = null;
+      if (!file || file.extension !== "md" || excludedOpens.has(file)) return;
+      const instant = yield* now;
+      const cache = yield* metadata.fileCache(file);
+      const key = itemKeyFromFrontmatter(cache);
+      if (key) yield* record(key, "opened", instant);
+      else if (!cache) pending = { file, instant };
+    }),
   );
-  yield* forkEach(filterTag(metadata.changes, "changed"), ({ file, cache }) => {
-    if (!pending || pending.file !== file || workspace.getActiveFile() !== file)
-      return;
-    const { instant } = pending;
-    pending = null;
-    const key = itemKeyFromFrontmatter(cache);
-    if (key) return record(key, "opened", instant);
-  });
+  yield* forkEach(
+    filterTag(metadata.changes, "changed"),
+    Effect.fnUntraced(function* ({ file, cache }) {
+      if (!pending || pending.file !== file) return;
+      if ((yield* SubscriptionRef.get(workspace.activeFile)) !== file) return;
+      const { instant } = pending;
+      pending = null;
+      const key = itemKeyFromFrontmatter(cache);
+      if (key) yield* record(key, "opened", instant);
+    }),
+  );
   // Runs first on close: a Use recorded during teardown is not kept.
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
@@ -154,7 +151,7 @@ const makeUseLedger = Effect.gen(function* () {
 
   // Obsidian defers file-open: deliver a pending open, so it lands inside or
   // outside an operation's scope as it happened.
-  const flush = () => workspace.requestActiveLeafEvents.run();
+  const flush = () => app.workspace.requestActiveLeafEvents.run();
 
   return UseLedger.of({
     current,

@@ -15,10 +15,14 @@ import type {
 } from "obsidian";
 
 import { Cause, Context, Effect, Layer, SubscriptionRef } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
+import type { Scope, Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
+import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
-import { obsidianListener } from "@/lib/obsidian-event-source";
+import {
+  obsidianEventSource,
+  obsidianListener,
+} from "@/lib/obsidian-event-source";
 import type { ObsidianEventEmitter } from "@/lib/obsidian-event-source";
 
 /** The Obsidian object the tag reads: what `app.workspace` gives. */
@@ -27,6 +31,11 @@ export type WorkspaceSource = Pick<
   "onLayoutReady" | "getActiveFile" | "getActiveViewOfType"
 > &
   ObsidianEventEmitter;
+
+/** One workspace event, tagged with its Obsidian event name. */
+export type WorkspaceEvent =
+  /** The active file changed; `null` when no file is active. */
+  { readonly _tag: "file-open"; readonly file: TFile | null };
 
 /** Where a file menu opened: Obsidian's `source` name, and the leaf of a view's own menu. */
 export interface FileMenuOrigin {
@@ -43,6 +52,8 @@ export interface WorkspaceShape {
    * callback in place, inert.
    */
   readonly layoutReady: Effect.Effect<void>;
+  /** Each workspace event, in Obsidian's order, from when the consumer's Stream starts. */
+  readonly changes: Stream.Stream<WorkspaceEvent>;
   /**
    * The active file: Obsidian's `getActiveFile()` when the layer builds, then
    * the file of each `file-open`. Its `changes` replay the current value.
@@ -57,6 +68,10 @@ export interface WorkspaceShape {
    * the caller. It must not suspend; only an entry's `onClick` may wait. A
    * failure is logged and the menu shows without the handler's remaining
    * entries.
+   *
+   * ZotLit keeps one `file-menu` listener (the obsidian-actions skill):
+   * `services/file-menu.ts` registers its own today and must move onto this
+   * hook, in place of that listener, when it converts.
    */
   onFileMenu<R = never>(
     handler: (
@@ -84,21 +99,28 @@ export class Workspace extends Context.Service<Workspace, WorkspaceShape>()(
 export const makeWorkspace = Effect.fnUntraced(function* (
   source: WorkspaceSource,
 ) {
+  const events = yield* obsidianEventSource<WorkspaceEvent>();
+  yield* events.listen(source, "file-open", (file: TFile | null) => ({
+    _tag: "file-open",
+    file,
+  }));
   const activeFile = yield* SubscriptionRef.make(source.getActiveFile());
-  yield* obsidianListener(source, "file-open", (file) => {
-    Effect.runSync(SubscriptionRef.set(activeFile, file as TFile | null));
-  });
+  // Hands each `file-open` over inside Obsidian's callback.
+  yield* forkEach(filterTag(events.stream, "file-open"), ({ file }) =>
+    SubscriptionRef.set(activeFile, file),
+  );
 
   /** Register `name` on the current Scope; each call runs `toEffect` synchronously with the caller's context. */
-  const menuHook = <R>(
+  const menuHook = <Args extends unknown[], R>(
     name: string,
-    toEffect: (args: unknown[]) => Effect.Effect<void, never, R>,
+    toEffect: (...args: Args) => Effect.Effect<void, never, R>,
   ) =>
     Effect.gen(function* () {
       const run = Effect.runSyncWith(yield* Effect.context<R>());
+      // Obsidian's base Events API erases event-specific argument types.
       yield* obsidianListener(source, name, (...args) => {
         run(
-          toEffect(args).pipe(
+          toEffect(...(args as Args)).pipe(
             Effect.catchCause((cause) =>
               Effect.logError("Menu handler failed").pipe(
                 Effect.annotateLogs({ menu: name, error: Cause.squash(cause) }),
@@ -114,24 +136,27 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     layoutReady: Effect.callback<void>((resume) => {
       source.onLayoutReady(() => resume(Effect.void));
     }),
+    changes: events.stream,
     activeFile,
     activeMarkdownView: Effect.sync(() =>
       source.getActiveViewOfType(MarkdownView),
     ),
     onFileMenu: (handler) =>
-      menuHook("file-menu", ([menu, file, from, leaf]) =>
-        handler(menu as Menu, file as TAbstractFile, {
-          source: from as string,
-          leaf: leaf as WorkspaceLeaf | undefined,
-        }),
+      menuHook(
+        "file-menu",
+        // oxlint-disable-next-line max-params -- Obsidian's own `file-menu` shape.
+        (
+          menu: Menu,
+          file: TAbstractFile,
+          from: string,
+          leaf: WorkspaceLeaf | undefined,
+        ) => handler(menu, file, { source: from, leaf }),
       ),
     onEditorMenu: (handler) =>
-      menuHook("editor-menu", ([menu, editor, info]) =>
-        handler(
-          menu as Menu,
-          editor as Editor,
-          info as MarkdownView | MarkdownFileInfo,
-        ),
+      menuHook(
+        "editor-menu",
+        (menu: Menu, editor: Editor, info: MarkdownView | MarkdownFileInfo) =>
+          handler(menu, editor, info),
       ),
   });
 });

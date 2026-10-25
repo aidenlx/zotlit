@@ -138,3 +138,48 @@ it.effect("records an opened Item note only once the layout is ready", () =>
     expect((yield* ledger.get("AAAAAAAA"))?.kind).toBe("opened");
   }),
 );
+
+// Failure modes: an open Obsidian deferred from before a Companion update is
+// dropped as the update's own, or the update's own navigation counts as a Use.
+it.effect(
+  "counts a deferred open before an update and not the update's own",
+  () =>
+    Effect.gen(function* () {
+      const metadataCache = new MemoryMetadataCache();
+      const deferred: TFile[] = [];
+      const workspace = Object.assign(
+        new MemoryWorkspace({ layoutReady: true }),
+        {
+          // Obsidian's debounced active-leaf events: `run` delivers now.
+          requestActiveLeafEvents: {
+            run: () => {
+              for (const file of deferred.splice(0)) workspace.open(file);
+            },
+          },
+        },
+      );
+      const note = new TFile();
+      note.path = "Paper.md";
+      note.extension = "md";
+      metadataCache.setCache(note.path, {
+        frontmatter: { [FIELD_ZOTERO_KEY]: "AAAAAAAA" },
+      });
+      const ledger = yield* useLedgerOf(
+        fakeApp({ load: () => undefined, workspace, metadataCache }),
+      );
+
+      yield* TestClock.adjust(1);
+      deferred.push(note);
+      yield* ledger.withoutNoteUse(
+        note,
+        Effect.gen(function* () {
+          yield* TestClock.adjust(1);
+          workspace.open(note);
+        }),
+      );
+
+      expect((yield* ledger.get("AAAAAAAA"))?.instant.epochMilliseconds).toBe(
+        1,
+      );
+    }),
+);
