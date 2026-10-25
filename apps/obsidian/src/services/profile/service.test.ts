@@ -651,6 +651,54 @@ describe("PlainProfile", () => {
   );
 
   it.effect(
+    "refuses a fresh import when another file took its path while consent was open",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => harness(undefined, undefined, context)),
+        );
+        const plan = yield* Effect.promise(() =>
+          f.profile.prepareImport(document()),
+        );
+        f.vault.createFile(plan.path, "User file");
+        const rejected = expect(plan.import()).rejects.toThrow(
+          m.profile_import_changed(),
+        );
+        yield* Effect.all(
+          [TestClock.adjust(500), Effect.promise(() => rejected)],
+          { concurrency: "unbounded" },
+        );
+        expect(f.vault.contents.get(plan.path)).toBe("User file");
+      }),
+  );
+
+  it.effect(
+    "refuses to save the Default where a folder holds its document path",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => harness(undefined, undefined, context)),
+        );
+        yield* Effect.promise(() =>
+          f.vault.createFolder("templates/zotlit-profile.default.md"),
+        );
+        const source = yield* Effect.promise(() =>
+          f.profile.getSource("default"),
+        );
+        const saving = f.profile.saveSource("default", source, {
+          state: "absent",
+        });
+        yield* TestClock.adjust(500);
+        expect(yield* Effect.promise(() => saving)).toEqual({
+          state: "refused",
+          reason: "document-exists",
+        });
+      }),
+  );
+
+  it.effect(
     "refuses a fresh import if its ID arrived while consent was open",
     () =>
       Effect.gen(function* () {

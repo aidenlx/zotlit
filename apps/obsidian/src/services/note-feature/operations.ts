@@ -1,4 +1,3 @@
-import { basename, dirname, join } from "node:path/posix";
 import { getFrontMatterInfo } from "obsidian";
 import type { CachedMetadata, TFile } from "obsidian";
 
@@ -42,7 +41,6 @@ import type {
   ProfileSelector,
   UnknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
-import { isFileExistsError } from "@/lib/vault-errors";
 import type { AttachmentImport } from "@/services/attachment-import/service";
 import { classifyStream, runBatch } from "@/services/batch-run";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
@@ -282,13 +280,6 @@ const NO_BODY_UPDATE: UpdateResult = {
   duplicateRegionCount: 0,
 };
 
-/**
- * Concurrent/batch creation can land a sibling between resolve and write. Each
- * retry forces a fresh `suffix()`, so even one almost always frees the name;
- * the bound just stops an unbounded loop.
- */
-const MAX_CREATE_RETRIES = 5;
-
 /** Per-batch inputs threaded through a multi-item create run. */
 export interface CreateNoteOptions {
   /** A batch collects used outcomes here and reports once when the run settles. */
@@ -318,7 +309,7 @@ export interface CreateNoteOptions {
 
 interface CreateNoteInternalOptions extends CreateNoteOptions {
   onFileCreated?: (file: TFile) => void;
-  preparedPath?: { path: string; canSuffix: boolean };
+  preparedPath?: { path: string };
 }
 
 /**
@@ -702,7 +693,7 @@ async function prepareCreationPreviews(
     { profile, document, reserved }: (typeof profiles)[number],
   ): PreparedCreationProfile => {
     const { selector } = profile;
-    let preparedPath: { path: string; canSuffix: boolean } | undefined;
+    let preparedPath: { path: string } | undefined;
     let unavailable: string | undefined;
     try {
       if (document === null)
@@ -957,7 +948,7 @@ async function createNote(
   if (!source) throw new Error(`Zotero item not found: ${item.indexedKey}`);
   // The filename renders from the Snapshot's Item, as the body does.
   const { itemTags, itemCollections } = itemFacets(source);
-  let { path, canSuffix } =
+  const { path } =
     options.preparedPath ??
     resolveNotePath(ctx, source.item, {
       itemTags,
@@ -965,8 +956,6 @@ async function createNote(
       settings: profile.settings,
       document,
     });
-
-  const parentFolder = dirname(path);
   return await writeNewNote(ctx, item, {
     reads,
     source,
@@ -977,43 +966,21 @@ async function createNote(
     onFileCreated: options.onFileCreated,
     reportExcerpts: options.reportExcerpts,
     outcomes: options.outcomes,
+    // The path was found free in the vault cache when it was resolved; a
+    // note that took it since fails the create with `FileExists`.
     createFile: async (content) => {
-      for (let attempt = 0; ; attempt++) {
-        try {
-          await ensureParentFolder(ctx.app, path);
-          return await ctx.app.vault.create(path, content);
-        } catch (error) {
-          if (
-            !isFileExistsError(error) ||
-            !canSuffix ||
-            attempt >= MAX_CREATE_RETRIES
-          )
-            throw error;
-          logger.debug("Filename collided on create; retrying with suffix", {
-            path,
-            attempt,
-            itemKey: item.indexedKey,
-          });
-          ({ path, canSuffix } = resolveNotePath(ctx, source.item, {
-            itemTags,
-            itemCollections,
-            settings: profile.settings,
-            forceSuffix: true,
-            document,
-          }));
-          // Prepared relative links belong to the original parent folder.
-          path = join(parentFolder, basename(path));
-        }
-      }
+      await ensureParentFolder(ctx.app, path);
+      return await ctx.bridge.runPromise(ctx.vault.create(path, content));
     },
   });
 }
 
 /**
- * Prepare and render once; the supplied create boundary retries filename
- * collisions with these same composed bytes.
+ * Prepare and render once; the supplied create boundary writes these composed
+ * bytes in one create.
  *
- * @throws an Obsidian vault error (e.g. a file already exists at `path`).
+ * @throws `FileExists` when a note took the path since it was resolved, or
+ *   `VaultError` when Obsidian refuses the create.
  */
 async function writeNewNote(
   ctx: OpsContext,
@@ -1386,7 +1353,7 @@ async function switchNoteProfile(
   const move = options.move && targetPath !== previousPath;
   if (move) {
     await ensureParentFolder(ctx.app, targetPath);
-    await ctx.app.fileManager.renameFile(file, targetPath);
+    await ctx.bridge.runPromise(ctx.fileManager.renameFile(file, targetPath));
   }
   try {
     await stampNoteFamily(
@@ -1397,7 +1364,9 @@ async function switchNoteProfile(
   } catch (error) {
     if (move) {
       try {
-        await ctx.app.fileManager.renameFile(file, previousPath);
+        await ctx.bridge.runPromise(
+          ctx.fileManager.renameFile(file, previousPath),
+        );
       } catch (rollbackError) {
         throw new AggregateError(
           [error, rollbackError],

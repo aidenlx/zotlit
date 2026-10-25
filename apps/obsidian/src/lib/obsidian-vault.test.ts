@@ -1,6 +1,6 @@
 import { TFile } from "obsidian";
 import type { Vault as VaultApi } from "obsidian";
-import { expect } from "vitest";
+import { assert, expect, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
@@ -18,7 +18,6 @@ import { it } from "@/lib/effect-vitest";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerVault, layerVaultFrom, Vault } from "@/lib/obsidian-vault";
 import type { VaultEvent } from "@/lib/obsidian-vault";
-import { isFileExistsError } from "@/lib/vault-errors";
 
 import { MemoryVault } from "./__fixtures__/obsidian-vault";
 
@@ -83,17 +82,40 @@ it.effect("writes through process, create and trash", () =>
 );
 
 it.effect(
+  "fails create with FileExists when the vault cache holds the path",
+  () =>
+    Effect.gen(function* () {
+      const source = new MemoryVault();
+      source.add("a.md", "held");
+      source.addFolder("Folder");
+      const { vault } = yield* open(layerVaultFrom(source));
+      const create = vi.spyOn(source, "create");
+      const file = yield* Effect.flip(vault.create("a.md", ""));
+      const folder = yield* Effect.flip(vault.create("Folder", ""));
+      expect([file._tag, file.path]).toEqual(["FileExists", "a.md"]);
+      expect([folder._tag, folder.path]).toEqual(["FileExists", "Folder"]);
+      expect(create).not.toHaveBeenCalled();
+      expect(source.contents.get("a.md")).toBe("held");
+    }),
+);
+
+it.effect(
   "fails a rejected call with VaultError, keeping Obsidian's error",
   () =>
     Effect.gen(function* () {
       const source = new MemoryVault();
-      source.add("a.md");
+      // The cache does not hold `A.md`; a case-insensitive disk still refuses it.
+      const refused = new Error("File already exists.");
+      vi.spyOn(source, "create").mockRejectedValueOnce(refused);
       const { vault } = yield* open(layerVaultFrom(source));
-      const error = yield* Effect.flip(vault.create("a.md", ""));
-      expect(error._tag).toBe("VaultError");
-      expect(error.operation).toBe("create");
-      expect(error.path).toBe("a.md");
-      expect(isFileExistsError(error.cause)).toBe(true);
+      const error = yield* Effect.flip(vault.create("A.md", ""));
+      assert(error._tag === "VaultError");
+      expect([error.operation, error.path, error.message]).toEqual([
+        "create",
+        "A.md",
+        "File already exists.",
+      ]);
+      expect(error.cause).toBe(refused);
       const missing = new TFile();
       missing.path = "gone.md";
       const read = yield* Effect.flip(vault.read(missing));
@@ -151,5 +173,15 @@ it.effect("carries Obsidian's arguments on each event", () =>
       { _tag: "create", file: note },
       { _tag: "rename", file: note, oldPath: "a.md" },
     ]);
+  }),
+);
+
+it.effect("gives FileExists Obsidian's own message", () =>
+  Effect.gen(function* () {
+    const source = new MemoryVault();
+    source.add("a.md");
+    const { vault } = yield* open(layerVaultFrom(source));
+    const error = yield* Effect.flip(vault.create("a.md", ""));
+    expect(error.message).toBe("File already exists.");
   }),
 );

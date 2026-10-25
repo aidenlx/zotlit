@@ -33,6 +33,7 @@ import {
   stringifyInstant,
 } from "@/lib/constants";
 import { Effect } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import {
   ensureFolder,
   joinFolderPath,
@@ -41,12 +42,12 @@ import {
 import * as m from "@/lib/i18n/generated/messages";
 import { processLiveText } from "@/lib/live-text";
 import { getLogger } from "@/lib/log";
+import type { Vault as VaultTag } from "@/lib/obsidian-vault";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type {
   ProfileSelector,
   UnknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
-import { isFileExistsError } from "@/lib/vault-errors";
 import type {
   AttachmentImport,
   AttachmentImportService,
@@ -109,7 +110,6 @@ export type ImportVaultApp = {
     | "getRoot"
     | "getAbstractFileByPath"
     | "createFolder"
-    | "create"
     | "process"
   >;
   fileManager: Pick<FileManager, "generateMarkdownLink">;
@@ -120,6 +120,9 @@ export type ImportVaultApp = {
 interface NoteImporterDeps {
   profile: Pick<PlainProfile, "resolveProfile" | "profileOf">;
   app: ImportVaultApp;
+  /** Creates each note; a taken path fails as `FileExists`. */
+  vault: Pick<VaultTag["Service"], "create">;
+  bridge: Pick<EffectBridge, "runPromise">;
   noteIndex: Pick<
     PlainNoteIndex,
     "getImportedNoteByNoteKey" | "getNotesByItemKey"
@@ -477,16 +480,17 @@ async function writeNote(
 
   let outcome: WriteOutcome;
   if (mode.action === "create") {
-    try {
-      await ctx.app.vault.create(mode.path, content);
-      outcome = "created";
-    } catch (error) {
-      if (isFileExistsError(error)) {
-        logger.warn("Imported note already exists; skipped", { path });
-        return "skipped";
-      }
-      throw error;
+    const created = await ctx.bridge.runPromise(
+      ctx.vault.create(mode.path, content).pipe(
+        Effect.as(true),
+        Effect.catchTag("FileExists", () => Effect.succeed(false)),
+      ),
+    );
+    if (!created) {
+      logger.warn("Imported note already exists; skipped", { path });
+      return "skipped";
     }
+    outcome = "created";
   } else {
     await processLiveText(ctx.app, mode.file, () => content);
     outcome = "overwritten";

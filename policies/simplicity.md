@@ -6,3 +6,4 @@ KISS — minimum code that solves the problem.
 - Avoid defensive fallback code for APIs or invariants we depend on. Validate the boundary once, then use it directly.
 - If you write 200 lines and it could be 50, rewrite it.
 - When reviewing: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+- No new code for a speculative or very unlikely race or security case without the user's agreement. List a guard that already exists for such a case, with its failure, likelihood and cost, for the user to decide.

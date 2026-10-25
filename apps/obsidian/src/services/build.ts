@@ -5,6 +5,8 @@ import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
+import { FileManager } from "@/lib/obsidian-file-manager";
+import { Vault } from "@/lib/obsidian-vault";
 import { revealSetting } from "@/lib/open-settings";
 import { ZoteroHttp } from "@/lib/zotero-http";
 import { libraryTagNamesOf } from "@/services/database/library-tag-names";
@@ -134,6 +136,8 @@ export async function buildServices(
   const zoteroReadsService = runtime.runSync(ZoteroReads);
   const zoteroLocalApiService = runtime.runSync(ZoteroLocalApi);
   const localApi = localApiPort(zoteroLocalApiService, bridge);
+  const vault = runtime.runSync(Vault);
+  const fileManager = runtime.runSync(FileManager);
   const container = new ServiceContainer(stack, (key, error) => {
     console.error(`Service "${key}" failed to initialize`, error);
   });
@@ -336,6 +340,8 @@ export async function buildServices(
         createNoteImporter({
           profile,
           app: plugin.app,
+          vault,
+          bridge,
           noteIndex,
           template,
           zoteroPref,
@@ -401,6 +407,8 @@ export async function buildServices(
         attachmentImport,
       }): NoteFeature =>
         createNoteFeature({
+          vault,
+          fileManager,
           singleExcerpt: (options) =>
             prepareSingleExcerpt({
               ...options,

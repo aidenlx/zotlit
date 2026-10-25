@@ -20,9 +20,11 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
+import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Effect, Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
+import type { VaultSource } from "@/lib/obsidian-vault";
 import { AttachmentImportService } from "@/services/attachment-import/service";
 import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import { bluePng, redPng } from "@/services/excerpt-image/__fixtures__/png";
@@ -150,6 +152,8 @@ async function fixture(mode = "normal") {
   );
   const importer = createNoteImporter({
     app,
+    vault: vaultOver(app.vault as unknown as VaultSource),
+    bridge: effectBridge(runtime),
     profile: profileReader(settings),
     noteIndex: {
       getImportedNoteByNoteKey: () => [],

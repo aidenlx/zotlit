@@ -1,6 +1,7 @@
 // The vault as a capability tag: the file reads and writes ZotLit makes and
 // the events it follows, without the Obsidian `App`. A rejected call fails
-// with `VaultError` (`@/lib/vault-errors`). It copies the shape of
+// with `VaultError` (`@/lib/vault-errors`); an expected outcome is a tagged
+// error the tag decides from the vault cache first. It copies the shape of
 // `MetadataCache`; policies/events.md (Capability tags) describes it.
 import type {
   DataWriteOptions,
@@ -14,7 +15,7 @@ import type { Stream } from "@/lib/effect";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { obsidianEventSource } from "@/lib/obsidian-event-source";
 import type { ObsidianEventEmitter } from "@/lib/obsidian-event-source";
-import { vaultError } from "@/lib/vault-errors";
+import { FileExists, vaultError } from "@/lib/vault-errors";
 import type { VaultError } from "@/lib/vault-errors";
 
 /** One vault event, tagged with its Obsidian event name. */
@@ -35,7 +36,13 @@ export type VaultEvent =
 /** The Obsidian object the tag reads: what `app.vault` gives. */
 export type VaultSource = Pick<
   ObsidianVault,
-  "read" | "cachedRead" | "process" | "create" | "trash" | "getFileByPath"
+  | "read"
+  | "cachedRead"
+  | "process"
+  | "create"
+  | "trash"
+  | "getFileByPath"
+  | "getAbstractFileByPath"
 > &
   ObsidianEventEmitter;
 
@@ -50,16 +57,22 @@ export interface VaultShape {
     fn: (data: string) => string,
     options?: DataWriteOptions,
   ): Effect.Effect<string, VaultError>;
-  /** Create a file at `path` with `data`. */
+  /**
+   * Create a file at `path` with `data`. Fails with `FileExists` when the
+   * vault cache holds a file or folder at `path` (case-sensitive), without
+   * calling Obsidian.
+   */
   create(
     path: string,
     data: string,
     options?: DataWriteOptions,
-  ): Effect.Effect<TFile, VaultError>;
+  ): Effect.Effect<TFile, FileExists | VaultError>;
   /** Move the file to the system trash, or to the vault's `.trash` when `system` is false. */
   trash(file: TAbstractFile, system: boolean): Effect.Effect<void, VaultError>;
   /** The file at `path` now, `null` when there is none. */
   getFileByPath(path: string): Effect.Effect<TFile | null>;
+  /** The file or folder at `path` in the vault cache (case-sensitive), `null` when there is none. */
+  getAbstractFileByPath(path: string): Effect.Effect<TAbstractFile | null>;
   /** Each vault event, in Obsidian's order, from when the consumer's Stream starts. */
   readonly changes: Stream.Stream<VaultEvent>;
 }
@@ -108,10 +121,16 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
     process: (file, fn, options) =>
       call("process", file.path, () => source.process(file, fn, options)),
     create: (path, data, options) =>
-      call("create", path, () => source.create(path, data, options)),
+      Effect.suspend((): Effect.Effect<TFile, FileExists | VaultError> =>
+        source.getAbstractFileByPath(path) === null
+          ? call("create", path, () => source.create(path, data, options))
+          : Effect.fail(new FileExists({ path })),
+      ),
     trash: (file, system) =>
       call("trash", file.path, () => source.trash(file, system)),
     getFileByPath: (path) => Effect.sync(() => source.getFileByPath(path)),
+    getAbstractFileByPath: (path) =>
+      Effect.sync(() => source.getAbstractFileByPath(path)),
     changes: events.stream,
   });
 });

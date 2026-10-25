@@ -18,13 +18,15 @@ import type {
   TemplateCollection,
   TemplateFilenameItemData,
 } from "@zotlit/db";
-import { hasSuffixMarker, joinNotePath } from "@zotlit/templates";
+import { joinNotePath } from "@zotlit/templates";
 
 import { buildAnnotationResolvers } from "@/lib/annotation-render";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { creatorSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
+import type { FileManager as FileManagerTag } from "@/lib/obsidian-file-manager";
+import type { Vault as VaultTag } from "@/lib/obsidian-vault";
 import type {
   AttachmentImport,
   AttachmentImportService,
@@ -55,9 +57,9 @@ const logger = getLogger("note-feature");
 interface NoteVaultApp {
   vault: Pick<
     Vault,
-    "getAbstractFileByPath" | "getRoot" | "createFolder" | "create" | "process"
+    "getAbstractFileByPath" | "getRoot" | "createFolder" | "process"
   >;
-  fileManager: Pick<FileManager, "generateMarkdownLink" | "renameFile">;
+  fileManager: Pick<FileManager, "generateMarkdownLink">;
   metadataCache: Pick<MetadataCache, "getFileCache" | "offref"> & {
     /** A note the cache has parsed, as one just created is once it does. */
     on(
@@ -105,7 +107,11 @@ export interface NoteFeatureDeps {
   >;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   settings: Pick<PluginSettings["Service"], "current" | "update">;
-  bridge: Pick<EffectBridge, "runSync">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
+  /** Creates each note; a taken path fails as `FileExists`. */
+  vault: Pick<VaultTag["Service"], "create">;
+  /** Moves a note to its Profile's folder; a taken path fails as `FileExists`. */
+  fileManager: Pick<FileManagerTag["Service"], "renameFile">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
   excerptImages?: ExcerptPreparation;
   singleExcerpt?: (
@@ -144,8 +150,7 @@ export function itemFacets(
 }
 
 /**
- * No DB reads — `itemTags` are passed in. `canSuffix` in the return tells the
- * caller whether a retry with `forceSuffix` can disambiguate a collision.
+ * No DB reads — `itemTags` are passed in.
  *
  * @throws {@link EmptyFilenameError} when the rendered filename is empty.
  */
@@ -156,11 +161,10 @@ export function resolveNotePath(
     itemTags: readonly ItemTag[];
     itemCollections: readonly TemplateCollection[];
     settings: ProfileBindingSettings;
-    forceSuffix?: boolean;
     document?: Pick<ResolvedLiteratureNoteTemplate, "renderFilename">;
     reservedPaths?: ReadonlySet<string>;
   },
-): { path: string; canSuffix: boolean } {
+): { path: string } {
   const folderSetting = getProfileBinding(
     options.settings,
     "note.literature-folder",
@@ -178,7 +182,6 @@ export function resolveNotePath(
     exists: (path) =>
       options.reservedPaths?.has(path) === true ||
       ctx.app.vault.getAbstractFileByPath(path) !== null,
-    forceSuffix: options.forceSuffix,
   });
 }
 
@@ -247,24 +250,19 @@ export function buildNoteResolvers(
 export function resolveRenderedNotePath(
   folder: string,
   rendered: string,
-  options: { exists: (path: string) => boolean; forceSuffix?: boolean },
-): { path: string; canSuffix: boolean } {
+  options: { exists: (path: string) => boolean },
+): { path: string } {
   const rel = resolveRenderedRelPath(folder, rendered, options);
-  return {
-    path: joinNotePath(folder, rel),
-    canSuffix: hasSuffixMarker(rendered),
-  };
+  return { path: joinNotePath(folder, rel) };
 }
 
 function resolveRenderedRelPath(
   folderSetting: string,
   rendered: string,
-  options: { exists: (path: string) => boolean; forceSuffix?: boolean },
+  options: { exists: (path: string) => boolean },
 ): string {
-  return resolveFreeNotePath(
-    rendered,
-    (rel) => options.exists(joinNotePath(folderSetting, rel)),
-    options.forceSuffix,
+  return resolveFreeNotePath(rendered, (rel) =>
+    options.exists(joinNotePath(folderSetting, rel)),
   );
 }
 
