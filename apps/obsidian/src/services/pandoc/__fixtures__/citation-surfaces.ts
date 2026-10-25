@@ -2,7 +2,6 @@ import { DateTime, Effect, Stream } from "effect";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { subscribe } from "@/lib/effect-stream";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
-import { plainTestParseClient } from "@/lib/__fixtures__/parse-client";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 // One vault, read at once through every Citation Presentation surface: the
 // Document Citation Text, the References Sidebar, the Citation Popover, the
@@ -641,7 +640,7 @@ function exportAdapter({
   profileSettings: () => Settings;
 }): PandocExportDeps {
   return {
-    citationParse: plainTestParseClient(inProcessParseClient),
+    citationParse: inProcessParseClient,
     profile: profileReader(profileSettings, harness.metadataCache),
     app: stubService<App>("App", {
       metadataCache: harness.metadataCache as unknown as MetadataCache,

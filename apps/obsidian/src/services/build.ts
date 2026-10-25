@@ -39,6 +39,7 @@ import {
   plainCitationLookup,
 } from "./citation-index/plain";
 import { plainCitationParse } from "./citation-parse/plain";
+import { CitationParse } from "./citation-parse/service";
 import { CitationPopover } from "./citation-popover/service";
 import { plainCitationText } from "./citation-text/plain";
 import { CitekeyEditor } from "./citekey-editor/service";
@@ -529,6 +530,7 @@ export async function buildServices(
     .useValue({
       citationParse: () => plainCitationParse(runtime),
     })
+    .useValue({ citationParser: () => runtime.runSync(CitationParse) })
     .useValue({ citationIndex: () => plainCitationIndex(runtime) })
     .useValue({
       pandocEngine: () =>

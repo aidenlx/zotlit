@@ -1,13 +1,14 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { unzipSync } from "fflate";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import type { LinkCache } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
-import { plainTestParseClient } from "@/lib/__fixtures__/parse-client";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/snapshot";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
@@ -129,7 +130,7 @@ function ports(fixture: Fixture): ExportPorts & {
     return Promise.resolve({ source: "local-api" as const, items });
   });
   return {
-    citationParse: plainTestParseClient(inProcessParseClient),
+    citationParse: inProcessParseClient,
     prepareDocument,
     renderPrepared,
     fetchBibliography,
@@ -174,7 +175,7 @@ function run(
   request: Partial<Parameters<typeof exportCitedDocument>[0]> = {},
 ): Promise<ExportResult> & { ports: ReturnType<typeof ports> } {
   const wired = ports(fixture);
-  const promise = exportCitedDocument(
+  const effect = exportCitedDocument(
     {
       document: { sourcePath: SOURCE, links: fixture.links ?? [] },
       markdown: (fixture.links ?? []).map((link) => link.original).join(" "),
@@ -183,7 +184,7 @@ function run(
     },
     wired,
   );
-  return Object.assign(promise, { ports: wired });
+  return Object.assign(Effect.runPromise(effect), { ports: wired });
 }
 
 function failure(result: ExportResult): ExportFailure | undefined {
@@ -552,11 +553,18 @@ function docxParagraphs(
   }));
 }
 
+/** The bundled Pandoc engine, disposed with the test's Scope. */
+const realEngine = Effect.acquireDisposable(
+  Effect.promise(async () =>
+    createCitationEngine(new Blob([await readFile(WASM_PATH)])),
+  ),
+);
+
 describe(
   "exportCitedDocument over the real engine",
   { timeout: 60_000 },
   () => {
-    it.each([
+    it.effect.each([
       {
         name: "a valid citation link only inside a comment",
         markdown: "%% [paper](./Note#cite:locator=2) %%",
@@ -707,88 +715,89 @@ describe(
       },
     ])(
       "preserves $name (#1694 review)",
-      async ({ markdown, styleXml, contains, absent, ibids = 0 }) => {
-        await using engine = await createCitationEngine(
-          new Blob([await readFile(WASM_PATH)]),
-        );
-        const result = await exportCitedDocument(
+      ({ markdown, styleXml, contains, absent, ibids = 0 }) =>
+        Effect.gen(function* () {
+          const engine = yield* realEngine;
+          const result = yield* exportCitedDocument(
+            {
+              document: { sourcePath: SOURCE, links: [] },
+              markdown,
+              format: "html",
+              styleXml,
+            },
+            {
+              ...ports({
+                citekeys: { a: "ZETA1234", b: "ADAM5678g5" },
+                notes: { Note: "ADAM5678g5", "./Note": "ADAM5678g5" },
+                placed: CITED.placed,
+                items: CITED.items,
+              }),
+              engine,
+            },
+          );
+          expect(result).toHaveProperty("output");
+          if (!("output" in result)) return;
+          const html = new TextDecoder()
+            .decode(result.output)
+            .replaceAll(/\s+/g, " ");
+          for (const text of contains) expect(html).toContain(text);
+          for (const text of absent) expect(html).not.toContain(text);
+          expect(html.split("Ibid.").length - 1).toBe(ibids);
+        }),
+    );
+
+    it.effect(
+      "leaves a commented wikilink uncited beside the same visible link (#1694)",
+      () =>
+        Effect.gen(function* () {
+          const engine = yield* realEngine;
+          const result = yield* exportCitedDocument(
+            {
+              document: { sourcePath: SOURCE, links: [link("Zeta 2020")] },
+              markdown: "%% [[Zeta 2020]] %%\n\nVisible [[Zeta 2020]].",
+              format: "html",
+            },
+            { ...ports({ ...CITED, links: [link("Zeta 2020")] }), engine },
+          );
+          expect(result).toHaveProperty("output");
+          const html = new TextDecoder().decode(
+            (result as { output: Uint8Array }).output,
+          );
+          expect(html.split('data-cites="zeta2020"').length - 1).toBe(1);
+          expect(html).not.toContain("[[Zeta 2020]]");
+          expect(html).not.toContain("%%");
+        }),
+    );
+
+    it.effect("exports a citation after a currency opener (#1694)", () =>
+      Effect.gen(function* () {
+        const engine = yield* realEngine;
+        const result = yield* exportCitedDocument(
           {
             document: { sourcePath: SOURCE, links: [] },
-            markdown,
+            markdown: "$5 [@zeta2020] x$",
             format: "html",
-            styleXml,
           },
           {
             ...ports({
-              citekeys: { a: "ZETA1234", b: "ADAM5678g5" },
-              notes: { Note: "ADAM5678g5", "./Note": "ADAM5678g5" },
-              placed: CITED.placed,
-              items: CITED.items,
+              citekeys: { zeta2020: "ZETA1234" },
+              placed: { ZETA1234: ref("ZETA1234") },
+              items: { ZETA1234: ZETA },
             }),
             engine,
           },
         );
         expect(result).toHaveProperty("output");
-        if (!("output" in result)) return;
-        const html = new TextDecoder()
-          .decode(result.output)
-          .replaceAll(/\s+/g, " ");
-        for (const text of contains) expect(html).toContain(text);
-        for (const text of absent) expect(html).not.toContain(text);
-        expect(html.split("Ibid.").length - 1).toBe(ibids);
-      },
+        const html = new TextDecoder().decode(
+          (result as { output: Uint8Array }).output,
+        );
+        expect(html).toContain('data-cites="zeta2020"');
+        expect(html).toContain("$5");
+        expect(html).toContain("x$");
+      }),
     );
 
-    it("leaves a commented wikilink uncited beside the same visible link (#1694)", async () => {
-      await using engine = await createCitationEngine(
-        new Blob([await readFile(WASM_PATH)]),
-      );
-      const result = await exportCitedDocument(
-        {
-          document: { sourcePath: SOURCE, links: [link("Zeta 2020")] },
-          markdown: "%% [[Zeta 2020]] %%\n\nVisible [[Zeta 2020]].",
-          format: "html",
-        },
-        { ...ports({ ...CITED, links: [link("Zeta 2020")] }), engine },
-      );
-      expect(result).toHaveProperty("output");
-      const html = new TextDecoder().decode(
-        (result as { output: Uint8Array }).output,
-      );
-      expect(html.split('data-cites="zeta2020"').length - 1).toBe(1);
-      expect(html).not.toContain("[[Zeta 2020]]");
-      expect(html).not.toContain("%%");
-    });
-
-    it("exports a citation after a currency opener (#1694)", async () => {
-      await using engine = await createCitationEngine(
-        new Blob([await readFile(WASM_PATH)]),
-      );
-      const result = await exportCitedDocument(
-        {
-          document: { sourcePath: SOURCE, links: [] },
-          markdown: "$5 [@zeta2020] x$",
-          format: "html",
-        },
-        {
-          ...ports({
-            citekeys: { zeta2020: "ZETA1234" },
-            placed: { ZETA1234: ref("ZETA1234") },
-            items: { ZETA1234: ZETA },
-          }),
-          engine,
-        },
-      );
-      expect(result).toHaveProperty("output");
-      const html = new TextDecoder().decode(
-        (result as { output: Uint8Array }).output,
-      );
-      expect(html).toContain('data-cites="zeta2020"');
-      expect(html).toContain("$5");
-      expect(html).toContain("x$");
-    });
-
-    it.each([
+    it.effect.each([
       {
         name: "a fence on a numbered list marker, retaining three items",
         markdown:
@@ -824,14 +833,71 @@ describe(
       },
     ])(
       "excludes $name from exported citations (#1694)",
-      async ({ markdown, contains }) => {
-        await using engine = await createCitationEngine(
-          new Blob([await readFile(WASM_PATH)]),
+      ({ markdown, contains }) =>
+        Effect.gen(function* () {
+          const engine = yield* realEngine;
+          const result = yield* exportCitedDocument(
+            {
+              document: { sourcePath: SOURCE, links: [] },
+              markdown,
+              format: "html",
+            },
+            {
+              ...ports({
+                citekeys: { zeta2020: "ZETA1234" },
+                placed: { ZETA1234: ref("ZETA1234") },
+                items: { ZETA1234: ZETA },
+              }),
+              engine,
+            },
+          );
+          expect(result).toHaveProperty("output");
+          const html = new TextDecoder().decode(
+            (result as { output: Uint8Array }).output,
+          );
+          expect(html.split('data-cites="zeta2020"').length - 1).toBe(1);
+          expect(html).not.toContain('id="ref-hidden"');
+          for (const text of contains ?? []) expect(html).toContain(text);
+        }),
+    );
+
+    it.effect("cites the demo note through the bundled sandbox filter", () =>
+      Effect.gen(function* () {
+        const engine = yield* realEngine;
+        const result = yield* exportCitedDocument(
+          {
+            document: { sourcePath: SOURCE, links: DEMO.links ?? [] },
+            markdown: DEMO_MARKDOWN,
+            format: "html",
+          },
+          { ...ports(DEMO), engine },
         );
-        const result = await exportCitedDocument(
+
+        expect(result).toHaveProperty("output");
+        // Pandoc's HTML writer wraps lines, so match on collapsed whitespace.
+        const html = new TextDecoder()
+          .decode((result as { output: Uint8Array }).output)
+          .replaceAll(/\s+/g, " ");
+        // The fragment's locator, the run's two keys, and the literal key.
+        expect(html).toContain("(Adams 2018, 33)");
+        expect(html).toContain(`data-cites="${ZETA.id} ${ADAMS.id}"`);
+        expect(html).toContain(`data-cites="${ZETA.id}">Zeta (2020)`);
+        expect(html).toContain('<a href="Some Note" class="wikilink">');
+        expect(html).toContain(`id="ref-${ZETA.id}"`);
+        expect(html).toContain(`id="ref-${ADAMS.id}"`);
+        // One entry for Zeta, under the key the note writes rather than under the
+        // item URI its source answered with.
+        expect(html).not.toContain(ZETA_URI.id);
+      }),
+    );
+
+    it.effect("keeps export's explicit nocite membership (#1694)", () =>
+      Effect.gen(function* () {
+        const engine = yield* realEngine;
+        const result = yield* exportCitedDocument(
           {
             document: { sourcePath: SOURCE, links: [] },
-            markdown,
+            markdown: '---\nnocite: "[@zeta2020]"\n---\n\nNo body citations.',
             format: "html",
           },
           {
@@ -847,223 +913,172 @@ describe(
         const html = new TextDecoder().decode(
           (result as { output: Uint8Array }).output,
         );
-        expect(html.split('data-cites="zeta2020"').length - 1).toBe(1);
-        expect(html).not.toContain('id="ref-hidden"');
-        for (const text of contains ?? []) expect(html).toContain(text);
-      },
+        expect(html).toContain('id="ref-zeta2020"');
+      }),
     );
 
-    it("cites the demo note through the bundled sandbox filter", async () => {
-      await using engine = await createCitationEngine(
-        new Blob([await readFile(WASM_PATH)]),
-      );
-      const result = await exportCitedDocument(
-        {
-          document: { sourcePath: SOURCE, links: DEMO.links ?? [] },
-          markdown: DEMO_MARKDOWN,
-          format: "html",
-        },
-        { ...ports(DEMO), engine },
-      );
+    it.effect(
+      "keeps the outer citation of a Literature Note link in its suffix (#1699)",
+      () =>
+        Effect.gen(function* () {
+          const engine = yield* realEngine;
+          const result = yield* exportCitedDocument(
+            {
+              document: { sourcePath: SOURCE, links: [link("Adams 2018")] },
+              markdown: "Read [@zeta2020 with [[Adams 2018]]].",
+              format: "html",
+            },
+            { ...ports(DEMO), engine },
+          );
 
-      expect(result).toHaveProperty("output");
-      // Pandoc's HTML writer wraps lines, so match on collapsed whitespace.
-      const html = new TextDecoder()
-        .decode((result as { output: Uint8Array }).output)
-        .replaceAll(/\s+/g, " ");
-      // The fragment's locator, the run's two keys, and the literal key.
-      expect(html).toContain("(Adams 2018, 33)");
-      expect(html).toContain(`data-cites="${ZETA.id} ${ADAMS.id}"`);
-      expect(html).toContain(`data-cites="${ZETA.id}">Zeta (2020)`);
-      expect(html).toContain('<a href="Some Note" class="wikilink">');
-      expect(html).toContain(`id="ref-${ZETA.id}"`);
-      expect(html).toContain(`id="ref-${ADAMS.id}"`);
-      // One entry for Zeta, under the key the note writes rather than under the
-      // item URI its source answered with.
-      expect(html).not.toContain(ZETA_URI.id);
-    });
+          expect(result).toHaveProperty("output");
+          const html = new TextDecoder()
+            .decode((result as { output: Uint8Array }).output)
+            .replaceAll(/\s+/g, " ");
+          // The link reads as its text, and its work still takes an entry.
+          expect(html).toContain(
+            `data-cites="${ZETA.id}">(Zeta 2020 with Adams 2018)`,
+          );
+          expect(html).toContain(`id="ref-${ZETA.id}"`);
+          expect(html).toContain(`id="ref-${ADAMS.id}"`);
+        }),
+    );
 
-    it("keeps export's explicit nocite membership (#1694)", async () => {
-      await using engine = await createCitationEngine(
-        new Blob([await readFile(WASM_PATH)]),
-      );
-      const result = await exportCitedDocument(
-        {
-          document: { sourcePath: SOURCE, links: [] },
-          markdown: '---\nnocite: "[@zeta2020]"\n---\n\nNo body citations.',
-          format: "html",
-        },
-        {
-          ...ports({
-            citekeys: { zeta2020: "ZETA1234" },
-            placed: { ZETA1234: ref("ZETA1234") },
-            items: { ZETA1234: ZETA },
-          }),
-          engine,
-        },
-      );
-      expect(result).toHaveProperty("output");
-      const html = new TextDecoder().decode(
-        (result as { output: Uint8Array }).output,
-      );
-      expect(html).toContain('id="ref-zeta2020"');
-    });
+    it.effect(
+      "keeps the outer citation of a literal citation key in its suffix (#1699)",
+      () =>
+        Effect.gen(function* () {
+          const engine = yield* realEngine;
+          const result = yield* exportCitedDocument(
+            {
+              document: { sourcePath: SOURCE, links: [] },
+              markdown: "Read [@zeta2020 with @adams2018].",
+              format: "html",
+            },
+            {
+              ...ports({
+                ...DEMO,
+                links: [],
+                citekeys: { zeta2020: "ZETA1234", adams2018: "ADAM5678g5" },
+              }),
+              engine,
+            },
+          );
 
-    it("keeps the outer citation of a Literature Note link in its suffix (#1699)", async () => {
-      await using engine = await createCitationEngine(
-        new Blob([await readFile(WASM_PATH)]),
-      );
-      const result = await exportCitedDocument(
-        {
-          document: { sourcePath: SOURCE, links: [link("Adams 2018")] },
-          markdown: "Read [@zeta2020 with [[Adams 2018]]].",
-          format: "html",
-        },
-        { ...ports(DEMO), engine },
-      );
+          expect(result).toHaveProperty("output");
+          const html = new TextDecoder()
+            .decode((result as { output: Uint8Array }).output)
+            .replaceAll(/\s+/g, " ");
+          expect(html).toContain(
+            `data-cites="${ZETA.id}">(Zeta 2020 with @adams2018)`,
+          );
+          expect(html).toContain('id="ref-adams2018"');
+        }),
+    );
 
-      expect(result).toHaveProperty("output");
-      const html = new TextDecoder()
-        .decode((result as { output: Uint8Array }).output)
-        .replaceAll(/\s+/g, " ");
-      // The link reads as its text, and its work still takes an entry.
-      expect(html).toContain(
-        `data-cites="${ZETA.id}">(Zeta 2020 with Adams 2018)`,
-      );
-      expect(html).toContain(`id="ref-${ZETA.id}"`);
-      expect(html).toContain(`id="ref-${ADAMS.id}"`);
-    });
+    it.effect("keeps Pandoc's nocite wildcard whole", () =>
+      Effect.gen(function* () {
+        const engine = yield* realEngine;
+        const result = yield* exportCitedDocument(
+          {
+            document: { sourcePath: SOURCE, links: DEMO.links ?? [] },
+            markdown: `---\nnocite: "@*"\n---\n\n${DEMO_MARKDOWN}`,
+            format: "html",
+          },
+          { ...ports(DEMO), engine },
+        );
 
-    it("keeps the outer citation of a literal citation key in its suffix (#1699)", async () => {
-      await using engine = await createCitationEngine(
-        new Blob([await readFile(WASM_PATH)]),
-      );
-      const result = await exportCitedDocument(
-        {
-          document: { sourcePath: SOURCE, links: [] },
-          markdown: "Read [@zeta2020 with @adams2018].",
-          format: "html",
-        },
-        {
-          ...ports({
-            ...DEMO,
-            links: [],
-            citekeys: { zeta2020: "ZETA1234", adams2018: "ADAM5678g5" },
-          }),
-          engine,
-        },
-      );
+        // The wildcard names no work, so it resolves to nothing and stops nothing.
+        expect(result).toHaveProperty("output");
+        const html = new TextDecoder()
+          .decode((result as { output: Uint8Array }).output)
+          .replaceAll(/\s+/g, " ");
+        expect(html).toContain(`id="ref-${ZETA.id}"`);
+        expect(html).toContain(`id="ref-${ADAMS.id}"`);
+      }),
+    );
 
-      expect(result).toHaveProperty("output");
-      const html = new TextDecoder()
-        .decode((result as { output: Uint8Array }).output)
-        .replaceAll(/\s+/g, " ");
-      expect(html).toContain(
-        `data-cites="${ZETA.id}">(Zeta 2020 with @adams2018)`,
-      );
-      expect(html).toContain('id="ref-adams2018"');
-    });
+    it.effect(
+      "cites a note whose only Citation is a literal citation key",
+      () =>
+        Effect.gen(function* () {
+          const engine = yield* realEngine;
+          const result = yield* exportCitedDocument(
+            {
+              document: { sourcePath: SOURCE, links: [] },
+              markdown:
+                "Plain [@zeta2020]. Locator [@zeta2020, p. 12]. Suppressed [-@zeta2020].\n",
+              format: "html",
+            },
+            {
+              ...ports({
+                links: [],
+                citekeys: { zeta2020: "ZETA1234" },
+                placed: { ZETA1234: ref("ZETA1234") },
+                items: { ZETA1234: ZETA },
+              }),
+              engine,
+            },
+          );
 
-    it("keeps Pandoc's nocite wildcard whole", async () => {
-      await using engine = await createCitationEngine(
-        new Blob([await readFile(WASM_PATH)]),
-      );
-      const result = await exportCitedDocument(
-        {
-          document: { sourcePath: SOURCE, links: DEMO.links ?? [] },
-          markdown: `---\nnocite: "@*"\n---\n\n${DEMO_MARKDOWN}`,
-          format: "html",
-        },
-        { ...ports(DEMO), engine },
-      );
+          expect(result).toHaveProperty("output");
+          const html = new TextDecoder()
+            .decode((result as { output: Uint8Array }).output)
+            .replaceAll(/\s+/g, " ");
+          // Every form the reported note wrote, formatted rather than left as a key.
+          expect(html).toContain("(Zeta 2020)");
+          // The default style writes a bare locator, the `p.` label included in it.
+          expect(html).toContain("(Zeta 2020, 12)");
+          expect(html).toContain("(2020)");
+          // Pandoc's undefined-citation output, which is what the defect wrote.
+          expect(html).not.toContain("zeta2020?");
+          // The bibliography the note earns, which the defect left out entirely.
+          expect(html).toContain('id="ref-zeta2020"');
+          expect(html).toContain("A Study of Nothing");
+        }),
+    );
 
-      // The wildcard names no work, so it resolves to nothing and stops nothing.
-      expect(result).toHaveProperty("output");
-      const html = new TextDecoder()
-        .decode((result as { output: Uint8Array }).output)
-        .replaceAll(/\s+/g, " ");
-      expect(html).toContain(`id="ref-${ZETA.id}"`);
-      expect(html).toContain(`id="ref-${ADAMS.id}"`);
-    });
+    it.effect("cites the same note in the docx it writes", () =>
+      Effect.gen(function* () {
+        const engine = yield* realEngine;
+        const result = yield* exportCitedDocument(
+          {
+            document: { sourcePath: SOURCE, links: DEMO.links ?? [] },
+            markdown: DEMO_MARKDOWN,
+            format: "docx",
+          },
+          { ...ports(DEMO), engine },
+        );
 
-    it("cites a note whose only Citation is a literal citation key", async () => {
-      await using engine = await createCitationEngine(
-        new Blob([await readFile(WASM_PATH)]),
-      );
-      const result = await exportCitedDocument(
-        {
-          document: { sourcePath: SOURCE, links: [] },
-          markdown:
-            "Plain [@zeta2020]. Locator [@zeta2020, p. 12]. Suppressed [-@zeta2020].\n",
-          format: "html",
-        },
-        {
-          ...ports({
-            links: [],
-            citekeys: { zeta2020: "ZETA1234" },
-            placed: { ZETA1234: ref("ZETA1234") },
-            items: { ZETA1234: ZETA },
-          }),
-          engine,
-        },
-      );
+        expect(result).toHaveProperty("output");
+        const output = (result as { output: Uint8Array }).output;
+        // docx is a zip container; its local file header starts every archive.
+        expect(output.slice(0, 4)).toEqual(
+          new Uint8Array([0x50, 0x4b, 0x03, 0x04]),
+        );
 
-      expect(result).toHaveProperty("output");
-      const html = new TextDecoder()
-        .decode((result as { output: Uint8Array }).output)
-        .replaceAll(/\s+/g, " ");
-      // Every form the reported note wrote, formatted rather than left as a key.
-      expect(html).toContain("(Zeta 2020)");
-      // The default style writes a bare locator, the `p.` label included in it.
-      expect(html).toContain("(Zeta 2020, 12)");
-      expect(html).toContain("(2020)");
-      // Pandoc's undefined-citation output, which is what the defect wrote.
-      expect(html).not.toContain("zeta2020?");
-      // The bibliography the note earns, which the defect left out entirely.
-      expect(html).toContain('id="ref-zeta2020"');
-      expect(html).toContain("A Study of Nothing");
-    });
-
-    it("cites the same note in the docx it writes", async () => {
-      await using engine = await createCitationEngine(
-        new Blob([await readFile(WASM_PATH)]),
-      );
-      const result = await exportCitedDocument(
-        {
-          document: { sourcePath: SOURCE, links: DEMO.links ?? [] },
-          markdown: DEMO_MARKDOWN,
-          format: "docx",
-        },
-        { ...ports(DEMO), engine },
-      );
-
-      expect(result).toHaveProperty("output");
-      const output = (result as { output: Uint8Array }).output;
-      // docx is a zip container; its local file header starts every archive.
-      expect(output.slice(0, 4)).toEqual(
-        new Uint8Array([0x50, 0x4b, 0x03, 0x04]),
-      );
-
-      const text = docxText(output);
-      // Every citation shape renders, and the ordinary link stays plain text.
-      expect(text).toContain(
-        "Plain (Zeta 2020) and fragment (Adams 2018, 33).",
-      );
-      expect(text).toContain("A run (Zeta 2020; Adams 2018) here.");
-      expect(text).toContain("Literal Zeta (2020) too.");
-      expect(text).toContain("Ordinary Some Note stays a link.");
-      // Both cited Items reach the bibliography, and nothing else does.
-      expect(text).toContain("Zeta, Ann. 2020. A Study of Nothing.");
-      expect(text).toContain("Adams, Bob. 2018. Beta and Beyond.");
-    });
+        const text = docxText(output);
+        // Every citation shape renders, and the ordinary link stays plain text.
+        expect(text).toContain(
+          "Plain (Zeta 2020) and fragment (Adams 2018, 33).",
+        );
+        expect(text).toContain("A run (Zeta 2020; Adams 2018) here.");
+        expect(text).toContain("Literal Zeta (2020) too.");
+        expect(text).toContain("Ordinary Some Note stays a link.");
+        // Both cited Items reach the bibliography, and nothing else does.
+        expect(text).toContain("Zeta, Ann. 2020. A Study of Nothing.");
+        expect(text).toContain("Adams, Bob. 2018. Beta and Beyond.");
+      }),
+    );
 
     /** Export `markdown`, citing Zeta once, to docx paragraphs. */
-    async function exportDocx(markdown: string, locale?: string) {
-      await using engine = await createCitationEngine(
-        new Blob([await readFile(WASM_PATH)]),
-      );
+    const exportDocx = Effect.fnUntraced(function* (
+      markdown: string,
+      locale?: string,
+    ) {
+      const engine = yield* realEngine;
       const fixture: Fixture = { ...CITED, links: [link("Zeta 2020")] };
-      const result = await exportCitedDocument(
+      const result = yield* exportCitedDocument(
         {
           document: { sourcePath: SOURCE, links: fixture.links ?? [] },
           markdown,
@@ -1074,94 +1089,108 @@ describe(
       );
       expect(result).toHaveProperty("output");
       return docxParagraphs((result as { output: Uint8Array }).output);
-    }
-
-    it("writes a callout as a block quote under its bold title", async () => {
-      // An annotation dropped under a sentence, as Obsidian renders it: the
-      // callout starts on the next line, with no blank line between.
-      const paragraphs = await exportDocx(
-        "Each figure states one message [[Zeta 2020]].\n> [!note] Page 1\n>\n> A figure is meant to express an idea.\n",
-      );
-
-      expect(paragraphs.map((p) => p.text).join("\n")).not.toContain("[!");
-      expect(paragraphs[0]!.text).toBe(
-        "Each figure states one message (Zeta 2020).",
-      );
-      const quoted = paragraphs.filter((p) => p.style === "BlockText");
-      expect(quoted.map((p) => p.text)).toEqual([
-        "Page 1",
-        "A figure is meant to express an idea.",
-      ]);
-      expect(quoted[0]!.bold).toBe("Page 1");
     });
 
-    it("writes a callout without a title, a folded one, and a nested one", async () => {
-      const paragraphs = await exportDocx(
-        [
-          "Cited [[Zeta 2020]].",
-          "",
-          "> [!quote]",
-          "> Untitled body.",
-          "",
-          "> [!tip]- Folded title",
-          "> Folded body.",
-          ">",
-          "> > [!warning]+ Inner title",
-          "> > Inner body.",
-          "",
-          "> A plain quote.",
-          "",
-        ].join("\n"),
-      );
+    it.effect("writes a callout as a block quote under its bold title", () =>
+      Effect.gen(function* () {
+        // An annotation dropped under a sentence, as Obsidian renders it: the
+        // callout starts on the next line, with no blank line between.
+        const paragraphs = yield* exportDocx(
+          "Each figure states one message [[Zeta 2020]].\n> [!note] Page 1\n>\n> A figure is meant to express an idea.\n",
+        );
 
-      expect(paragraphs.map((p) => p.text).join("\n")).not.toContain("[!");
-      const quoted = paragraphs.filter((p) => p.style === "BlockText");
-      expect(quoted.map((p) => p.text)).toEqual([
-        "Untitled body.",
-        "Folded title",
-        "Folded body.",
-        "Inner title",
-        "Inner body.",
-        "A plain quote.",
-      ]);
-      expect(quoted.map((p) => p.bold)).toEqual([
-        "",
-        "Folded title",
-        "",
-        "Inner title",
-        "",
-        "",
-      ]);
-    });
+        expect(paragraphs.map((p) => p.text).join("\n")).not.toContain("[!");
+        expect(paragraphs[0]!.text).toBe(
+          "Each figure states one message (Zeta 2020).",
+        );
+        const quoted = paragraphs.filter((p) => p.style === "BlockText");
+        expect(quoted.map((p) => p.text)).toEqual([
+          "Page 1",
+          "A figure is meant to express an idea.",
+        ]);
+        expect(quoted[0]!.bold).toBe("Page 1");
+      }),
+    );
 
-    it("heads the bibliography in the citation language", async () => {
-      const markdown = "Cited [[Zeta 2020]].\n";
-      const english = await exportDocx(markdown);
-      const headingAt = english.findIndex((p) => p.text === "References");
-      expect(english[headingAt]?.style).toMatch(/^Heading/);
-      expect(english[headingAt + 1]?.text).toContain("A Study of Nothing");
+    it.effect(
+      "writes a callout without a title, a folded one, and a nested one",
+      () =>
+        Effect.gen(function* () {
+          const paragraphs = yield* exportDocx(
+            [
+              "Cited [[Zeta 2020]].",
+              "",
+              "> [!quote]",
+              "> Untitled body.",
+              "",
+              "> [!tip]- Folded title",
+              "> Folded body.",
+              ">",
+              "> > [!warning]+ Inner title",
+              "> > Inner body.",
+              "",
+              "> A plain quote.",
+              "",
+            ].join("\n"),
+          );
 
-      const chinese = await exportDocx(markdown, "zh-CN");
-      expect(chinese.some((p) => p.text === "参考文献")).toBe(true);
+          expect(paragraphs.map((p) => p.text).join("\n")).not.toContain("[!");
+          const quoted = paragraphs.filter((p) => p.style === "BlockText");
+          expect(quoted.map((p) => p.text)).toEqual([
+            "Untitled body.",
+            "Folded title",
+            "Folded body.",
+            "Inner title",
+            "Inner body.",
+            "A plain quote.",
+          ]);
+          expect(quoted.map((p) => p.bold)).toEqual([
+            "",
+            "Folded title",
+            "",
+            "Inner title",
+            "",
+            "",
+          ]);
+        }),
+    );
 
-      // A document's own `lang` names its citation language.
-      const declared = await exportDocx(`---\nlang: de-DE\n---\n\n${markdown}`);
-      expect(declared.some((p) => p.text === "Literatur")).toBe(true);
-    });
+    it.effect("heads the bibliography in the citation language", () =>
+      Effect.gen(function* () {
+        const markdown = "Cited [[Zeta 2020]].\n";
+        const english = yield* exportDocx(markdown);
+        const headingAt = english.findIndex((p) => p.text === "References");
+        expect(english[headingAt]?.style).toMatch(/^Heading/);
+        expect(english[headingAt + 1]?.text).toContain("A Study of Nothing");
 
-    it("keeps the heading a document names for its bibliography", async () => {
-      const paragraphs = await exportDocx(
-        "---\nreference-section-title: Works cited\n---\n\nCited [[Zeta 2020]].\n",
-      );
-      const texts = paragraphs.map((p) => p.text);
-      expect(texts).toContain("Works cited");
-      expect(texts).not.toContain("References");
+        const chinese = yield* exportDocx(markdown, "zh-CN");
+        expect(chinese.some((p) => p.text === "参考文献")).toBe(true);
 
-      // A closing section heading is the one Pandoc heads the bibliography with.
-      const closing = await exportDocx("Cited [[Zeta 2020]].\n\n## Sources\n");
-      const closingTexts = closing.map((p) => p.text);
-      expect(closingTexts).toContain("Sources");
-      expect(closingTexts).not.toContain("References");
-    });
+        // A document's own `lang` names its citation language.
+        const declared = yield* exportDocx(
+          `---\nlang: de-DE\n---\n\n${markdown}`,
+        );
+        expect(declared.some((p) => p.text === "Literatur")).toBe(true);
+      }),
+    );
+
+    it.effect("keeps the heading a document names for its bibliography", () =>
+      Effect.gen(function* () {
+        const paragraphs = yield* exportDocx(
+          "---\nreference-section-title: Works cited\n---\n\nCited [[Zeta 2020]].\n",
+        );
+        const texts = paragraphs.map((p) => p.text);
+        expect(texts).toContain("Works cited");
+        expect(texts).not.toContain("References");
+
+        // A closing section heading is the one Pandoc heads the bibliography with.
+        const closing = yield* exportDocx(
+          "Cited [[Zeta 2020]].\n\n## Sources\n",
+        );
+        const closingTexts = closing.map((p) => p.text);
+        expect(closingTexts).toContain("Sources");
+        expect(closingTexts).not.toContain("References");
+      }),
+    );
   },
 );

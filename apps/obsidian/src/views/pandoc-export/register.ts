@@ -9,6 +9,7 @@ import { parseIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
 import type { Library } from "@zotlit/db";
 
 import { citationStyleLabel } from "@/lib/citation-style";
+import { valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -16,7 +17,7 @@ import { BaseNotice, LazyNotice } from "@/lib/notice";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
 import type { ZoteroHttp } from "@/lib/zotero-http";
 import type { PlainCitationLookup } from "@/services/citation-index/plain";
-import type { PlainCitationParse } from "@/services/citation-parse/plain";
+import type { CitationParse } from "@/services/citation-parse/service";
 import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import {
@@ -46,7 +47,7 @@ import { showEngineMissing, showExportFailure } from "./notices";
 const logger = getLogger(["views", "pandoc-export"]);
 
 export interface PandocExportDeps {
-  citationParse: Pick<PlainCitationParse, "parse">;
+  citationParse: Pick<CitationParse["Service"], "parse">;
   app: App;
   db: Pick<PlainZoteroReads, "reads">;
   /** Resolves the literal citation keys of the exported document. */
@@ -169,18 +170,25 @@ export async function runPandocExport(
   try {
     const engine = await pandocEngine.runPromise(pandocEngine.binary.getEngine);
     if (!engine) return;
-    const result = await exportCitedDocument(
-      {
-        document: {
-          sourcePath: file.path,
-          links: app.metadataCache.getFileCache(file)?.links ?? [],
-        },
-        markdown: await app.vault.cachedRead(file),
-        format: choices.format,
-        ...engineStyle,
-      },
-      exportPorts(deps, engine),
+    const result = valueOr(
+      await bridge.runPromiseExit(
+        exportCitedDocument(
+          {
+            document: {
+              sourcePath: file.path,
+              links: app.metadataCache.getFileCache(file)?.links ?? [],
+            },
+            markdown: await app.vault.cachedRead(file),
+            format: choices.format,
+            ...engineStyle,
+          },
+          exportPorts(deps, engine),
+        ),
+      ),
+      null,
     );
+    // The plugin unloaded during the export.
+    if (!result) return;
     if ("error" in result) {
       showExportFailure(result.error);
       return;
