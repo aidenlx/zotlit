@@ -22,9 +22,9 @@ export function taggedQueryClients(
     client: queries.client,
     invalidate: (key) => Effect.sync(() => queries.invalidate(key)),
     peek: <T>(key: QueryKey) => Effect.sync(() => queries.peek<T>(key)),
-    read: <T>(key: QueryKey, queryFn: QueryFunction<T>, signal?: AbortSignal) =>
+    read: <T>(key: QueryKey, queryFn: QueryFunction<T>) =>
       Effect.tryPromise({
-        try: () => queries.read(key, queryFn, signal),
+        try: (signal) => queries.read(key, queryFn, signal),
         catch: (error) => error,
       }),
     watch: <T>(prefix: QueryKey, on: HeldReadEvents<T>) =>

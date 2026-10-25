@@ -102,9 +102,9 @@ export async function bibliographyRenderFixture(
               catch: (error) => error,
             }),
           peek: (key) => Effect.sync(() => query.peek(key)),
-          readFresh: (key, fn, signal) =>
+          readFresh: (key, fn) =>
             Effect.tryPromise({
-              try: () => query.readFresh(key, fn, signal),
+              try: (signal) => query.readFresh(key, fn, signal),
               catch: (error) => error,
             }),
           invalidate: (key) => Effect.sync(() => query.invalidate(key)),

@@ -736,7 +736,7 @@ async function prepareCreationPreviews(
             })),
           }),
       },
-      { signal: options.signal, onProgress: () => {} },
+      { onProgress: () => {} },
       (slice) => {
         for (const { itemID, facets } of slice) {
           const item = itemsByID.get(itemID)!;

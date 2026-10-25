@@ -4,7 +4,7 @@ import type { RpcMessage } from "effect/rpc";
 import { TestClock } from "effect/testing";
 import { expect, vi } from "vitest";
 
-import { makeParseHarness } from "./__fixtures__";
+import { cancellableParse, makeParseHarness } from "./__fixtures__";
 import { ParseWorkerDied } from "./client";
 import { makeRecoveringParseClient } from "./recovering-client";
 import { connectParseWorker } from "./worker-host";
@@ -222,10 +222,11 @@ it.effect.each([false, true])(
       }
       const worker = yield* Queue.take(spawned);
       worker.dispatchEvent(new MessageEvent("message", { data: [0] }));
-      const pending = parser.parse(
-        { path: "draft.md", generation: 1, text: "" },
-        new AbortController().signal,
-      );
+      const { pending } = cancellableParse(parser, {
+        path: "draft.md",
+        generation: 1,
+        text: "",
+      });
       const request = yield* Queue.take(worker.sent);
       if (request._tag !== "Request") throw new Error("Expected parse request");
       worker.reply(request.id, "draft.md", 1);

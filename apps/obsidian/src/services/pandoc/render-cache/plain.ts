@@ -22,6 +22,11 @@ import type {
   RenderPresentation,
 } from "@/services/pandoc/render-cache";
 
+/** A plain read's options: the caller's signal interrupts its wait. */
+export interface PlainReadOptions extends ReadOptions {
+  signal?: AbortSignal;
+}
+
 export interface PlainBibliographyRender {
   readonly state: BibliographyRenderState;
   /**
@@ -84,7 +89,7 @@ export interface PlainBibliographyRender {
    */
   readBibliography(
     items: readonly CslItemData[],
-    options?: ReadOptions,
+    options?: PlainReadOptions,
   ): Promise<BibliographyRenderResult | null>;
   /**
    * One document's in-text citations once the render behind them stands, for a
@@ -101,7 +106,7 @@ export interface PlainBibliographyRender {
   readCitations(
     citations: readonly string[],
     items: readonly CslItemData[],
-    options?: ReadOptions,
+    options?: PlainReadOptions,
   ): Promise<readonly RenderedCitation[] | null>;
   readonly changes: Stream.Stream<BibliographyRenderState>;
   readonly changed: Stream.Stream<
@@ -134,13 +139,18 @@ export function plainBibliographyRender(
   const run = async <A>(
     effect: Effect.Effect<A, unknown>,
     released: () => A,
+    signal?: AbortSignal,
   ): Promise<A> => {
     // Retain the legacy read surface after release, including unavailable
     // engine/style outcomes. A disposed ManagedRuntime cannot run it itself.
+    // The caller's signal interrupts the wait and rejects with its reason.
+    const options = signal === undefined ? undefined : { signal };
     const exit = await (isScopeClosed(runtime.scope)
-      ? runReleased(effect)
-      : runtime.runPromiseExit(effect));
+      ? runReleased(effect, options)
+      : runtime.runPromiseExit(effect, options));
     if (Exit.isSuccess(exit)) return exit.value;
+    if (signal?.aborted && Cause.hasInterruptsOnly(exit.cause))
+      throw signal.reason;
     if (Cause.hasInterruptsOnly(exit.cause)) return released();
     throw Cause.squash(exit.cause);
   };
@@ -154,10 +164,14 @@ export function plainBibliographyRender(
     render: (...args) => run(service.render(...args), releasedRender),
     renderCitations: (...args) =>
       run(service.renderCitations(...args), releasedRender),
-    readBibliography: (...args) =>
-      run(service.readBibliography(...args), releasedRead),
-    readCitations: (...args) =>
-      run(service.readCitations(...args), releasedRead),
+    readBibliography: (items, { signal, ...options } = {}) =>
+      run(service.readBibliography(items, options), releasedRead, signal),
+    readCitations: (citations, items, { signal, ...options } = {}) =>
+      run(
+        service.readCitations(citations, items, options),
+        releasedRead,
+        signal,
+      ),
     changes: service.changes,
     changed: service.events.pipe(
       Stream.filter((event) => event._tag === "changed"),

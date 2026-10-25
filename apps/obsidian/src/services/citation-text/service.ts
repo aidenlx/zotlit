@@ -135,7 +135,6 @@ export class CitationText extends Context.Service<
     peek(path: string): Effect.Effect<Held<DocumentCitations> | null>;
     read(
       path: string,
-      options?: { signal?: AbortSignal },
     ): Effect.Effect<DocumentCitations | null, Cause.UnknownError>;
   }
 >()("zotlit/citation-text/CitationText") {}
@@ -158,15 +157,22 @@ export const layerCitationText = (open?: OpenDocuments) =>
       const runExit = Effect.runPromiseExitWith(context);
       /**
        * Runs a sibling service's read from the Promise code TanStack queries
-       * call. Interruption means this layer is closing, so the read answers
+       * call. `signal` interrupts the read and rejects with its reason. Any
+       * other interruption means this layer is closing, so the read answers
        * `released`; any other failure rethrows its cause.
        */
       const settle = async <A>(
         effect: Effect.Effect<A, unknown>,
         released: () => A,
+        signal?: AbortSignal,
       ): Promise<A> => {
-        const exit = await runExit(effect);
+        const exit = await runExit(
+          effect,
+          signal === undefined ? undefined : { signal },
+        );
         if (Exit.isSuccess(exit)) return exit.value;
+        if (signal?.aborted && Cause.hasInterruptsOnly(exit.cause))
+          throw signal.reason;
         if (Cause.hasInterruptsOnly(exit.cause)) return released();
         throw Cause.squash(exit.cause);
       };
@@ -179,7 +185,11 @@ export const layerCitationText = (open?: OpenDocuments) =>
       /** Releases for the pins that keep each open document's text held. */
       const pins = new Map<string, () => void>();
       let stopped = false;
-      const lifetime = new AbortController();
+      // Aborted as the layer stops, before the child scope closes.
+      const lifetimeScope = yield* Scope.fork(yield* Scope.Scope);
+      const lifetime = yield* Effect.abortSignal.pipe(
+        Scope.provide(lifetimeScope),
+      );
       const state = yield* SubscriptionRef.make<CitationTextState>({
         startup: "ready",
         stopped: false,
@@ -206,15 +216,20 @@ export const layerCitationText = (open?: OpenDocuments) =>
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           stopped = true;
-          lifetime.abort();
-          queries.client.removeQueries({ queryKey: [CITATION_TEXT] });
-          run(
+        }).pipe(
+          Effect.andThen(Scope.close(lifetimeScope, Exit.void)),
+          Effect.andThen(
+            Effect.sync(() =>
+              queries.client.removeQueries({ queryKey: [CITATION_TEXT] }),
+            ),
+          ),
+          Effect.andThen(
             SubscriptionRef.update(state, (value) => ({
               ...value,
               stopped: true,
             })),
-          );
-        }),
+          ),
+        ),
       );
 
       /**
@@ -256,12 +271,11 @@ export const layerCitationText = (open?: OpenDocuments) =>
       ): Promise<DocumentCitations | null> {
         if (stopped) return null;
         const text = await settle(
-          queries.read(
-            documentKey(path),
-            ({ signal }) => readPath(path, signal),
-            signal,
+          queries.read(documentKey(path), ({ signal }) =>
+            readPath(path, signal),
           ),
           () => null,
+          signal,
         );
         // A file deleted while its read ran holds nothing: the path is resolved
         // again here, because the read may have started before the file went.
@@ -337,7 +351,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
         path: string,
         querySignal: AbortSignal,
       ): Promise<DocumentCitations> {
-        const signal = AbortSignal.any([querySignal, lifetime.signal]);
+        const signal = AbortSignal.any([querySignal, lifetime]);
         signal.throwIfAborted();
         const file = app.vault.getFileByPath(path);
         if (file === null) {
@@ -378,8 +392,9 @@ export const layerCitationText = (open?: OpenDocuments) =>
         );
         signal.throwIfAborted();
         const { facts, set } = await settle(
-          index.getParsedDocument(file, signal),
+          index.getParsedDocument(file),
           releasedRead,
+          signal,
         );
         signal.throwIfAborted();
         const { source: body, record } = facts;
@@ -472,11 +487,9 @@ export const layerCitationText = (open?: OpenDocuments) =>
           presentation === null
             ? null
             : await settle(
-                renders.readCitations(sources, items, {
-                  presentation,
-                  signal,
-                }),
+                renders.readCitations(sources, items, { presentation }),
                 releasedRead,
+                signal,
               );
         signal.throwIfAborted();
         // A style whose citations are footnotes leaves a note in the rendered
@@ -572,8 +585,9 @@ export const layerCitationText = (open?: OpenDocuments) =>
       ): Promise<ReadonlyMap<string, number>> {
         const serials = new Map<string, number>();
         const rendered = await settle(
-          renders.readBibliography(items, { presentation, signal }),
+          renders.readBibliography(items, { presentation }),
           releasedRead,
+          signal,
         );
         signal.throwIfAborted();
         if (rendered === null) {
@@ -751,11 +765,8 @@ export const layerCitationText = (open?: OpenDocuments) =>
         peek: Effect.fn("CitationText.peek")(function* (path: string) {
           return yield* Effect.sync(() => peek(path));
         }),
-        read: Effect.fn("CitationText.read")(function* (
-          path: string,
-          options?: { signal?: AbortSignal },
-        ) {
-          return yield* Effect.tryPromise(() => read(path, options));
+        read: Effect.fn("CitationText.read")(function* (path: string) {
+          return yield* Effect.tryPromise((signal) => read(path, { signal }));
         }),
       };
     }),

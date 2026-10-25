@@ -10,7 +10,7 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
-import { Effect, Result, Schema } from "effect";
+import { Effect, Exit, Result, Schema, Scope } from "effect";
 import type { CliData, CliFlags } from "obsidian";
 
 import type { ItemQueryReader } from "@zotlit/db/item-query";
@@ -224,16 +224,19 @@ const measureRun = Effect.fn("QueryCli.measureRun")(function* ({
           document.removeEventListener("visibilitychange", onVisibility),
         ),
     );
-    const timer = new AbortController();
+    // The timer cancels the run by closing this scope, which aborts its
+    // signal; the run still settles, so the report holds the cancel times.
+    const timerScope = yield* Scope.fork(yield* Scope.Scope);
+    const timer = yield* Effect.abortSignal.pipe(Scope.provide(timerScope));
     if (measured.cancelAfterMs !== undefined)
       yield* Effect.forkScoped(
         Effect.sleep(measured.cancelAfterMs).pipe(
-          Effect.andThen(Effect.sync(() => timer.abort())),
+          Effect.andThen(Scope.close(timerScope, Exit.void)),
         ),
       );
     return yield* Effect.result(
       Effect.tryPromise((signal) =>
-        queryService.measure(query, AbortSignal.any([signal, timer.signal]), {
+        queryService.measure(query, AbortSignal.any([signal, timer]), {
           completed: (report) => {
             measurement = report;
           },

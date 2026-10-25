@@ -145,7 +145,6 @@ export class BibliographyRender extends Context.Service<
 
 export interface ReadOptions {
   presentation?: RenderPresentation;
-  signal?: AbortSignal;
 }
 
 /** Each bibliography render invalidation. */
@@ -425,33 +424,29 @@ export const layerBibliographyRender = Layer.effect(
         },
       ),
       readBibliography: Effect.fn("BibliographyRender.readBibliography")(
-        function* (items, { presentation, signal } = {}) {
+        function* (items, { presentation } = {}) {
           const prepared = yield* prepare(presentation);
           if (prepared.reason !== undefined) return null;
           return yield* queries.readFresh(
             [BIBLIOGRAPHY_RENDER, renderKey({ ...prepared, items })],
-            ({ signal: querySignal }) =>
-              runPromise(runBibliography(items, prepared.style), {
-                signal: querySignal,
-              }),
-            signal,
+            ({ signal }) =>
+              runPromise(runBibliography(items, prepared.style), { signal }),
           );
         },
       ),
       readCitations: Effect.fn("BibliographyRender.readCitations")(function* (
         citations,
         items,
-        { presentation, signal } = {},
+        { presentation } = {},
       ) {
         const prepared = yield* prepare(presentation);
         if (prepared.reason !== undefined) return null;
         return yield* queries.readFresh(
           [CITATION_RENDER, renderKey({ ...prepared, items, citations })],
-          ({ signal: querySignal }) =>
+          ({ signal }) =>
             runPromise(runCitations(citations, items, prepared.style), {
-              signal: querySignal,
+              signal,
             }),
-          signal,
         );
       }),
     });

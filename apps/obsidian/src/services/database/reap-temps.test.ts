@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Effect, Fiber } from "effect";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -109,14 +109,15 @@ describe("reapReadClonesEffect", () => {
     }),
   );
 
-  it.effect(
-    "leaves every clone in place when the signal is already aborted",
-    () =>
-      Effect.gen(function* () {
-        const dead = yield* Effect.promise(() => readClone(DEAD_PID));
-        yield* reapReadClonesEffect({ parent, signal: AbortSignal.abort() });
-        expect(yield* Effect.promise(names)).toEqual([dead]);
-      }),
+  it.effect("leaves every clone in place when interrupted before it runs", () =>
+    Effect.gen(function* () {
+      const dead = yield* Effect.promise(() => readClone(DEAD_PID));
+      const reap = yield* Effect.forkChild(reapReadClonesEffect({ parent }), {
+        startImmediately: false,
+      });
+      yield* Fiber.interrupt(reap);
+      expect(yield* Effect.promise(names)).toEqual([dead]);
+    }),
   );
 });
 

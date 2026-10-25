@@ -183,8 +183,8 @@ export function citationTextFixture(
           Layer.succeed(
             CitationIndex,
             stubService<CitationIndex["Service"]>("CitationIndex", {
-              getParsedDocument: (file, signal) =>
-                Effect.tryPromise(() =>
+              getParsedDocument: (file) =>
+                Effect.tryPromise((signal) =>
                   deps.citationIndex.getParsedDocument(file, signal),
                 ),
               changes: Stream.empty,
@@ -252,14 +252,22 @@ export function citationTextFixture(
                 vaultPresentation: deps.bibliographyRender.vaultPresentation,
                 missingStyle: null,
               })),
-              readCitations: (...args) =>
+              readCitations: (citations, items, options) =>
                 Effect.tryPromise({
-                  try: () => deps.bibliographyRender.readCitations(...args),
+                  try: (signal) =>
+                    deps.bibliographyRender.readCitations(citations, items, {
+                      ...options,
+                      signal,
+                    }),
                   catch: (error) => error,
                 }),
-              readBibliography: (...args) =>
+              readBibliography: (items, options) =>
                 Effect.tryPromise({
-                  try: () => deps.bibliographyRender.readBibliography(...args),
+                  try: (signal) =>
+                    deps.bibliographyRender.readBibliography(items, {
+                      ...options,
+                      signal,
+                    }),
                   catch: (error) => error,
                 }),
               changes: Stream.empty,
@@ -293,9 +301,9 @@ export function citationTextFixture(
                   try: () => queries.ask(key, fn),
                   catch: (error) => error,
                 }),
-              read: (key, fn, signal) =>
+              read: (key, fn) =>
                 Effect.tryPromise({
-                  try: () => queries.read(key, fn, signal),
+                  try: (signal) => queries.read(key, fn, signal),
                   catch: (error) => error,
                 }),
               peek: (key) => Effect.sync(() => queries.peek(key)),

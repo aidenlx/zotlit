@@ -5,13 +5,18 @@ import { describe, expect } from "vitest";
 import { cliRunner } from "./cli-command";
 import { buildRuntime } from "./effect-layer";
 
+/** The plugin's unload, which a CLI runner hears through its signal. */
+function pluginUnload(): AbortController {
+  return new AbortController();
+}
+
 /** A runner over an empty runtime, and the controller standing in for unload. */
 const runnerFixture = Effect.gen(function* () {
   const stack = yield* Effect.acquireDisposable(
     Effect.tryPromise(async () => new AsyncDisposableStack()),
   );
   const runtime = buildRuntime(Layer.empty, stack);
-  const unload = new AbortController();
+  const unload = pluginUnload();
   return { run: cliRunner(runtime, unload.signal), unload };
 });
 
