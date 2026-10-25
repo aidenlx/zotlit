@@ -1,5 +1,5 @@
 // Snapshot-pinned batch write runner over the concurrent classify/execute primitives.
-import { Cause, Effect, Exit, Ref, Schema, Stream } from "effect";
+import { Cause, Deferred, Effect, Exit, Ref, Schema, Stream } from "effect";
 
 import { AbortError } from "@/lib/abort-error";
 import { formatErrorMessage } from "@/lib/toast";
@@ -41,14 +41,37 @@ export interface BatchClassifyControls {
 
 export interface BatchRunControls {
   /** Reports a single row reaching a terminal state. The shell owns the running
-   * counts and flips the row in place; aborted queued work never settles. */
+   * counts and flips the row in place; queued work a stop skips never settles. */
   onItemSettled: (
     event:
       | { id: number; status: "done" }
       | { id: number; status: "skipped" }
       | { id: number; status: "failed"; failure: BatchFailure },
   ) => void;
-  signal: AbortSignal;
+  /**
+   * The run's stop request, completed by the modal's cancel or dismissal. Once
+   * it is done, queued tasks never start and admitted tasks finish; the run
+   * still returns its {@link BatchRunResult}, with `cancelled` set when tasks
+   * were left.
+   */
+  stop: Deferred.Deferred<void>;
+}
+
+/**
+ * A new stop request for {@link BatchRunControls.stop}, for a plain caller (the
+ * batch modal): `request` completes it, and a second call does nothing.
+ */
+export function makeStopRequest(): {
+  stop: BatchRunControls["stop"];
+  request: () => void;
+} {
+  const stop = Deferred.makeUnsafe<void>();
+  return {
+    stop,
+    request: () => {
+      Deferred.doneUnsafe(stop, Exit.void);
+    },
+  };
 }
 
 export interface BatchRunResult {
@@ -113,16 +136,16 @@ export interface BatchRunTask {
 export type RunOutcome = "created" | "updated" | "skipped";
 
 /**
- * Concurrent Effect executor that owns the abort/settle/error contract between
+ * Concurrent Effect executor that owns the stop/settle/error contract between
  * a modal's `onRun` callback and its shell. Each task returns a
  * {@link RunOutcome} (tallied into {@link BatchRunResult} and reported via
  * {@link BatchRunControls.onItemSettled}) or fails (reported as `"failed"` with
  * a formatted error message). Abort errors are suppressed from the failure
- * count; cancelled tasks are those that never ran, and an abort interrupts
- * task scheduling rather than producing a typed failure.
+ * count; cancelled tasks are those that never ran, and a stop request
+ * interrupts task scheduling rather than producing a typed failure.
  *
- * The executor never takes the caller's signal: cancellation stops queued tasks
- * when they start and leaves admitted work running to its own completion.
+ * The executor polls {@link BatchRunControls.stop} as each task starts: a stop
+ * skips queued tasks and leaves admitted work running to its own completion.
  *
  * @param opts.onTaskFailed Optional per-failure callback (non-abort only),
  *   called after the task is reported as failed; use for structured logging.
@@ -160,7 +183,8 @@ export function executeBatchRun<T extends BatchRunTask, E>(opts: {
         Effect.exit(
           Effect.uninterruptible(
             Effect.gen(function* () {
-              if (controls.signal.aborted) return yield* Effect.interrupt;
+              if (yield* Deferred.isDone(controls.stop))
+                return yield* Effect.interrupt;
               if ((yield* Ref.get(halt)) !== null)
                 return yield* Effect.interrupt;
               const exit = yield* Effect.exit(run(task));
@@ -222,9 +246,10 @@ export function executeBatchRun<T extends BatchRunTask, E>(opts: {
 
     const halted = yield* Ref.get(halt);
     if (halted !== null) return yield* Effect.failCause(halted);
+    const stopped = yield* Deferred.isDone(controls.stop);
     yield* Ref.update(result, (current) => ({
       ...current,
-      cancelled: controls.signal.aborted && completed < tasks.length,
+      cancelled: stopped && completed < tasks.length,
     }));
     return yield* Ref.get(result);
   });
@@ -256,8 +281,8 @@ function profileRecovery(error: unknown): BatchFailure["recovery"] {
  * `run`; the Snapshot-bound `reads` is threaded to each task.
  *
  * @returns an Effect that fails with the Snapshot error or a
- *   {@link TaskRejected} that holds the halting task's rejection. An abort
- *   interrupts the Effect; it is not a typed failure.
+ *   {@link TaskRejected} that holds the halting task's rejection. A stop
+ *   request is not a failure: the run returns with `cancelled` set.
  */
 export function runBatchWrite<T extends BatchRunTask>(opts: {
   zoteroReads: Pick<ZoteroReads["Service"], "snapshot">;

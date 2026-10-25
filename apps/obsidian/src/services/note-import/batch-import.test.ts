@@ -1,4 +1,4 @@
-import { Effect, Exit, Stream } from "effect";
+import { Deferred, Effect, Exit, Stream } from "effect";
 import type { TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -83,7 +83,7 @@ async function driveLastModal(): Promise<{
   const onItemSettled = vi.fn();
   const controls: BatchRunControls = {
     onItemSettled,
-    signal: new AbortController().signal,
+    stop: Deferred.makeUnsafe<void>(),
   };
   await opts.onRun(controls);
   return { manifest, onItemSettled };
@@ -387,7 +387,7 @@ it("lets the batch chip change only orphans while existing and parent stamps rem
   expect(settingsUpdate).not.toHaveBeenCalled();
   const result = await options.onRun({
     onItemSettled: vi.fn(),
-    signal: new AbortController().signal,
+    stop: Deferred.makeUnsafe<void>(),
   });
   expect(result).toMatchObject({
     created: 2,
@@ -439,7 +439,7 @@ it("keeps parent-only imports read-only without a settings write", async () => {
   expect(
     await options.onRun({
       onItemSettled: vi.fn(),
-      signal: new AbortController().signal,
+      stop: Deferred.makeUnsafe<void>(),
     }),
   ).toMatchObject({ created: 2, failed: 0 });
   expect(chooseProfile).not.toHaveBeenCalled();
@@ -479,7 +479,7 @@ it.each([true, false])(
     expect(
       await options.onRun({
         onItemSettled,
-        signal: new AbortController().signal,
+        stop: Deferred.makeUnsafe<void>(),
       }),
     ).toMatchObject({ created: 0, updated: 0, failed: 1 });
     expect(onItemSettled).toHaveBeenCalledExactlyOnceWith({
@@ -528,7 +528,7 @@ describe("classify through the NoteRefs stream", () => {
     })) as any;
     const result = await modal.onRun({
       onItemSettled: vi.fn(),
-      signal: new AbortController().signal,
+      stop: Deferred.makeUnsafe<void>(),
     });
 
     expect(progress).toEqual([3]);
@@ -925,7 +925,7 @@ describe("note-mode modal classify + run", () => {
     });
   });
 
-  it("keeps admitted writes and their pooled report alive when the modal's signal aborts mid-run", async () => {
+  it("keeps admitted writes and their pooled report alive when the modal requests the stop mid-run", async () => {
     seedNotes([50, 51]);
     const { deps } = makeDeps({});
     const started = Promise.withResolvers<void>();
@@ -940,15 +940,14 @@ describe("note-mode modal classify + run", () => {
     await createBatchImport(deps).runBatchImport("note", [50, 51]);
     const options = openedModals.at(-1)!;
     await options.onClassify(classifyControls());
-    const abort = new AbortController();
+    const stop = Deferred.makeUnsafe<void>();
     const onItemSettled = vi.fn();
-    const running = options.onRun({ onItemSettled, signal: abort.signal });
+    const running = options.onRun({ onItemSettled, stop });
     await started.promise;
-    // The modal's signal is the only one this run observes, so an observer
-    // giving up — a host observation timeout — arrives here. The write it
-    // admitted keeps running: it is neither cancelled, nor settled, nor
+    // The modal's stop request is the only stop this run observes. The write
+    // it admitted keeps running: it is neither cancelled, nor settled, nor
     // reported before it lands.
-    abort.abort(new Error("host observation timeout"));
+    Deferred.doneUnsafe(stop, Exit.void);
     expect(onItemSettled).not.toHaveBeenCalled();
     expect(deps.noteFeature.reportExcerptImages).not.toHaveBeenCalled();
     finish.resolve();
@@ -1111,7 +1110,7 @@ describe("note-mode modal classify + run", () => {
     const onItemSettled = vi.fn();
     await options.onRun({
       onItemSettled,
-      signal: new AbortController().signal,
+      stop: Deferred.makeUnsafe<void>(),
     });
 
     expect(importNote).not.toHaveBeenCalled();

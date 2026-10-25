@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { Deferred } from "effect";
 import { ButtonComponent } from "obsidian";
 import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
@@ -10,7 +11,7 @@ import { batchGroups } from "@/services/batch-scope";
 import { section } from "./dom";
 import { BatchModal, FlatManifest, HierarchyManifest } from "./index";
 import type { BatchProfileChoice } from "./index";
-import type { BatchRunResult } from "./index";
+import type { BatchRunControls, BatchRunResult } from "./index";
 
 function observeButtons() {
   using stack = new DisposableStack();
@@ -449,6 +450,66 @@ it("offers note recovery in both the live failure panel and the completed summar
   summaryButton.click();
   expect(trigger).toHaveBeenCalledTimes(2);
 });
+
+it.each(["cancel", "dismiss"] as const)(
+  "requests the run's stop on %s and still shows its summary",
+  async (how) => {
+    using buttons = observeButtons();
+    const finished = Promise.withResolvers<BatchRunResult>();
+    let controls: BatchRunControls | undefined;
+    const runSummary = vi.fn(() => "summary");
+    const modal = new BatchModal({} as App, {
+      total: 1,
+      text: {
+        title: m.batch_update_title(),
+        loadingLabel: m.batch_update_loading_label(),
+        loadFailed: m.batch_update_load_failed(),
+        runFailed: m.batch_update_run_failed(),
+        progressLabel: m.batch_update_progress_label(),
+        confirmIntro: ({ actionable }) =>
+          m.batch_update_confirm_intro({ count: actionable }),
+        confirmButton: m.batch_update_confirm_button(),
+        runSummary,
+      },
+      onClassify: async () => ({
+        counts: { actionable: 2, notFound: 0 },
+        renderList: () => {},
+        setRowStatus: () => {},
+        renderSummary: () => {},
+      }),
+      onRun: async (given) => {
+        controls = given;
+        return finished.promise;
+      },
+    });
+    modal.contentEl = document.createElement("div");
+    modal.onOpen();
+    await vi.waitFor(() =>
+      expect(buttons.has(m.batch_update_confirm_button())).toBe(true),
+    );
+    buttons.click(m.batch_update_confirm_button());
+    expect(Deferred.isDoneUnsafe(controls!.stop)).toBe(false);
+
+    if (how === "cancel") buttons.click(m.modal_cancel());
+    else modal.onClose();
+    expect(Deferred.isDoneUnsafe(controls!.stop)).toBe(true);
+
+    const result = {
+      created: 1,
+      updated: 0,
+      skipped: 0,
+      failed: 0,
+      cancelled: true,
+    };
+    finished.resolve(result);
+    await vi.waitFor(() =>
+      expect(runSummary).toHaveBeenCalledWith(result, {
+        cancelled: true,
+        aborted: how === "dismiss",
+      }),
+    );
+  },
+);
 
 const papers = (count: number) =>
   Array.from({ length: count }, (_, index) => ({
