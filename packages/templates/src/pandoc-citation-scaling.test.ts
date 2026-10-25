@@ -33,15 +33,16 @@ it("scans dense Pandoc Citations in linear time (#1688)", () => {
     }
     indices.reverse();
   }
-  const medians = samples.map(
-    (times) => times.toSorted((a, b) => a - b)[Math.floor(sampleCount / 2)]!,
-  );
+  // Compare the minimum sample of each size: machine load only adds time to a
+  // sample, so the fastest one is the most stable estimate. The median failed
+  // once, at a ratio of 3.05, on a busy machine.
+  const minimums = samples.map((times) => Math.min(...times));
   // Only the upper bound: linear growth doubles per step and quadratic growth
   // quadruples. Fixed overhead, JIT and GC can make growth sub-linear.
-  for (let index = 1; index < medians.length; index++) {
+  for (let index = 1; index < minimums.length; index++) {
     expect(
-      medians[index]! / medians[index - 1]!,
-      `${counts[index - 1]} → ${counts[index]} Citations: ${medians[index - 1]} → ${medians[index]} ms`,
+      minimums[index]! / minimums[index - 1]!,
+      `${counts[index - 1]} → ${counts[index]} Citations: ${minimums[index - 1]} → ${minimums[index]} ms`,
     ).toBeLessThan(3);
   }
 }, 60_000);
