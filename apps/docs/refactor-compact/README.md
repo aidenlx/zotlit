@@ -15,6 +15,63 @@ and the generated template-data page are excluded on purpose.
 Compacted 2026-10-20 from the `docs/workflow-navigation` branch, 57 pages,
 8,664 source lines → 1,778 lines.
 
+Refreshed 2026-10-26 (#1677) against `origin/next` for #1626, #1679, #1687,
+#1696, #1712, #1721 and #1722. Eleven of the dropped pages changed on next
+after this branch removed them; for their current verbatim text use
+`git show origin/next:apps/docs/content/docs/<path>`, not the deleted copy.
+Facts these PRs changed carry a tag with the PR number, so a writer can grep
+them like `VERIFY:`: `CHANGED (#n)` (the page on next says this now),
+`NEW (#n)` (new behavior), `STALE on next` (the page on next still says the
+old thing; the tagged fact is the code's truth), `CONTRADICTION` (docs and
+code disagree), `HIDDEN, DO NOT TEACH` and `NOT TAUGHT IN USER DOCS`. Where
+several PRs touched one fact, the final state on next wins.
+
+## What changed since the compaction (#1677)
+
+- **The default literature note body is written once (#1687).** The built-in
+  Default profile has no managed block and no child-note list. Update note
+  refreshes properties only; the Annotations query block reads Zotero live.
+  Notes with old `%%zt-managed%%` markers keep working; deleting the two
+  marker lines stops management. A customized or duplicated Default document
+  has no managed block either. Facts in A (first-note, fix-stale-data), B
+  (managed region, keep-notes-updated), D and E.
+- **Child notes import only on request (#1687).** Rendering `noteLink` never
+  imports: it links the imported file, or else a `zotero://` link that opens
+  the note in Zotero. Facts in B (import-zotero-notes) and E (migrate v1 Eta).
+- **Durable annotation links (#1626, final state #1721).** ZotLit writes
+  `zotero://open/library/items/<attachmentKey>?annotation=<key>&page=<label>`
+  for every annotation (`zt.backlink`); annotation `fileLink` / `file_link`
+  is deprecated. Hover always shows the Annotation Popover. Click opens the
+  ZotLit reader while Reader > "Open annotation links in ZotLit reader"
+  (`reader.open-annotation-links`, default on) and "Open PDF file links in
+  Obsidian" are on; otherwise Zotero opens it. New default annotation template
+  with the page label linked to `zt.backlink` and `zt.citation` after the
+  quote. Facts in B (open-pdf, annotation view), C, D (tutorial), E.
+- **Citations settings (#1626 → #1696 → #1721 → #1722).** #1626 added
+  "Zotero annotation links" and "Open annotation links in Obsidian" on the
+  Citations page; #1721 removed both. #1696 added "Annotation citations"
+  (default on); #1721 removed it; #1722 restored it, default OFF. Final:
+  Citations > Citation sources has Pandoc citations (on), Wikilink citations
+  (off), Annotation citations (off). While it is on, an empty-text
+  `[](zotero://…)` link counts as a citation of its item in the references
+  sidebar and in-text features, never in export or the graph view. Settings
+  schema v10 → v11 migration drops `citation.annotation-links` and moves a
+  stored `citation.open-annotation-links` value to
+  `reader.open-annotation-links`.
+- **Nested citations in export (#1712, ADR 0081).** A citation inside another
+  citation's prefix or suffix exports as its written text and is cited through
+  `nocite`. No user doc on next; the source is the ADR. Facts in C.
+
+## Hidden or not taught (record only)
+
+- `[>` Annotation Suggester and its "Annotation trigger" setting: out of 2.2.0
+  (#1678), built only with `ANNOTATION_SUGGESTER_ENABLED=true` (#1679). Its
+  messages remain in `messages/en.json`.
+- Annotation uses (#1696): the Citation Index records every annotation link;
+  the only surface is the CLI command
+  `obsidian zotlit:annotation-uses key=<annotation-key>`. No UI.
+- The Citation Index parses in its own worker (#1696): performance only.
+
 ## Which file for which ticket
 
 | File | Pages | Feature tickets |
@@ -50,7 +107,11 @@ Compacted 2026-10-20 from the `docs/workflow-navigation` branch, 57 pages,
 - Companion "can push live events" vs "does not run a background server".
 - Tutorials disagree on whether Wikilink citations must be on.
 - `write-and-export-cited-note` prose uses key `doe2024`; screenshots show Rougier 2014.
-- Managed region spelled `%%zt-managed%%` in v1 migration pages vs `{% managed %}` in 2.2.
+- RESOLVED: `%%zt-managed%%` (markers in the note) and `{% managed %}` (block in the profile document) are both correct.
+- NEW (#1677) `tutorial/customize-template` on next: "Update this note" runs an ordinary update, so a current default note keeps its body, and its query-block cards never use the annotation template. The "annotations now use quote callouts" result and its screenshots no longer hold (D).
+- NEW (#1677) `collect-debug-logs` on next says imported child notes give `$inert` placeholders; the Explorer code now gives a real link (A).
+- NEW (#1677) pages #1687 did not edit still assume Update re-renders the body: `fix-stale-data` (A), `customize-a-template` and `use-query-files` (D), `profiles` and `migrate-from-zotero-integration` (E), the how-to and concepts hub card texts (E).
+- NEW (#1677) `review-copy-troubleshoot-references` on next lacks the annotation Reference Error messages that #1696 added to `messages/en.json` (C).
 - Unrenamed v1 templates "fall back to defaults" vs inert Eta document "fails with no fallback".
 - `configure-frontmatter-properties` says "Update note metadata"; other pages say "Update note".
 - `use-query-files` links "Filter Expression" to `how-zotlit-query-works#steps`, which does not define it; no page defines the expression language.
