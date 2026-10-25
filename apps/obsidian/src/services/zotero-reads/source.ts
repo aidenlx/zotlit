@@ -167,8 +167,8 @@ export function layerSource(
   return Layer.effect(Connection)(
     Effect.gen(function* () {
       const lifetime = yield* Scope.Scope;
-      // The sweeps fork on `lifetime` from refresh code that runs outside
-      // the layer's context, so they take the runtime's file system from here.
+      // The refresh lane's Effects carry no requirement, so the snapshot sweep
+      // it starts takes the file system this layer was built with.
       const fs = yield* FileSystem.FileSystem;
       const state = yield* Ref.make<{
         config: ReadsConfig | null;
