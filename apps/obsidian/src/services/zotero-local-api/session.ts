@@ -8,9 +8,9 @@ import {
   Exit,
   Fiber,
   PubSub,
-  RcRef,
   Ref,
   Semaphore,
+  SynchronizedRef,
 } from "effect";
 import * as v from "valibot";
 
@@ -250,10 +250,13 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
     stale: false,
   });
   /**
-   * The request at Zotero's dialog now, by its own token, so that a request
-   * clears only the flag that is still its own; null while none runs.
+   * The authorization request at Zotero's dialog now; null while none runs.
+   * Starting one forks a fiber, so the slot is a `SynchronizedRef`: the request
+   * clears it only after the start has stored it.
    */
-  const authorizing = yield* Ref.make<symbol | null>(null);
+  const authorizing = yield* SynchronizedRef.make<Fiber.Fiber<
+    LocalApiResult<void>
+  > | null>(null);
   /**
    * The libraries Zotero refused a write to this session, as the route names
    * them. Cleared by the next Capability Probe.
@@ -646,10 +649,9 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
    * One authorization gesture, from the probe it starts with to the grant or
    * the refusal it ends on.
    */
-  const authorizeBody = (token: symbol): Effect.Effect<LocalApiResult<void>> =>
-    Effect.gen(function* () {
+  const authorizeBody: Effect.Effect<LocalApiResult<void>> = Effect.gen(
+    function* () {
       const probing = yield* startProbe("authorization gesture");
-      yield* Ref.set(authorizing, token);
       yield* publish({ _tag: "capability-changed" });
       yield* Deferred.await(probing);
       const current = yield* Ref.get(state);
@@ -678,29 +680,33 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
       const grant = readGrant(reply.value.text);
       if ("failure" in grant) return grant;
       return yield* granted(serverID, grant.value);
-    });
+    },
+  );
 
   /**
    * The one authorization request in flight, shared by the gestures waiting on
-   * it, so two presses of Allow editing raise one dialog between them. The
-   * last gesture to leave interrupts it; a press after it settled starts a new
-   * one. Zotero's dialog waits for the user, so the request itself is unbounded.
+   * it, so two presses of Allow editing raise one dialog between them. A press
+   * after it ended starts a new one. Zotero's dialog waits for the user, so the
+   * request itself is unbounded, and it runs on the Scope of the session: a
+   * gesture that leaves does not cancel it.
    *
    * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
    */
-  const request = yield* RcRef.make({
-    acquire: Effect.suspend(() => {
-      const mine = Symbol("write-authorization-request");
-      return authorizeBody(mine).pipe(
-        Effect.ensuring(
-          Ref.update(authorizing, (token) =>
-            token === mine ? null : token,
-          ).pipe(Effect.andThen(publish({ _tag: "capability-changed" }))),
+  const request = SynchronizedRef.modifyEffect(authorizing, (flight) =>
+    flight !== null
+      ? Effect.succeed([flight, flight] as const)
+      : authorizeBody.pipe(
+          // The request leaves the slot before it announces its end, and a
+          // fiber's finalizers run before the waiters that join it resume.
+          Effect.ensuring(
+            SynchronizedRef.set(authorizing, null).pipe(
+              Effect.andThen(publish({ _tag: "capability-changed" })),
+            ),
+          ),
+          Effect.forkIn(scope, { startImmediately: true }),
+          Effect.map((started) => [started, started] as const),
         ),
-        Effect.forkScoped({ startImmediately: true }),
-      );
-    }),
-  });
+  );
 
   /**
    * What a refused write says about the session: a key Zotero no longer honours
@@ -1011,7 +1017,7 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
     ): Effect.fn.Return<WriteAuthorizationState> {
       const parsed =
         attachmentKey === null ? null : parseIndexedKey(attachmentKey);
-      const authorizingNow = (yield* Ref.get(authorizing)) !== null;
+      const authorizingNow = (yield* SynchronizedRef.get(authorizing)) !== null;
       const libraryReadOnly =
         parsed !== null &&
         (yield* Ref.get(readOnlyLibraries)).has(libraryPath(parsed));
@@ -1049,9 +1055,7 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
      *
      * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
      */
-    authorize: Effect.scoped(
-      RcRef.get(request).pipe(Effect.flatMap((fiber) => Fiber.join(fiber))),
-    ).pipe(
+    authorize: Effect.flatMap(request, (fiber) => Fiber.join(fiber)).pipe(
       Effect.withSpan("ZoteroLocalApi.authorize"),
       withLogCategory(LOG_CATEGORY),
     ),

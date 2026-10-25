@@ -427,6 +427,39 @@ it("serves two presses of Allow editing with one request", async () => {
   expect(bridge.runSync(service.writeStateFor(null)).authorizing).toBe(false);
 });
 
+it("starts a new request for a press after the last one settled", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { requests, service, bridge } = await setup(stack, {
+    authorize: () => authorized({ remember: false }),
+  });
+
+  const first = await bridge.runPromise(service.authorize);
+  const second = await bridge.runPromise(service.authorize);
+
+  expect(first).toEqual({ failure: { kind: "not-remembered" } });
+  expect(second).toEqual({ failure: { kind: "not-remembered" } });
+  expect(
+    requests.filter(({ url }) => url.pathname === "/api/local/authorize"),
+  ).toHaveLength(2);
+});
+
+it("says a request is in flight only while Zotero's dialog waits", async () => {
+  await using stack = new AsyncDisposableStack();
+  const pending = Promise.withResolvers<Response>();
+  const { requests, service, bridge } = await setup(stack, {
+    authorize: () => pending.promise,
+  });
+  expect(bridge.runSync(service.writeStateFor(null)).authorizing).toBe(false);
+
+  const gesture = bridge.runPromise(service.authorize);
+  await atTheDialog(requests);
+  expect(bridge.runSync(service.writeStateFor(null)).authorizing).toBe(true);
+
+  pending.resolve(denied());
+  await gesture;
+  expect(bridge.runSync(service.writeStateFor(null)).authorizing).toBe(false);
+});
+
 it("answers a write with no session without reaching Zotero", async () => {
   await using stack = new AsyncDisposableStack();
   const { requests, service, bridge } = await setup(stack, {
