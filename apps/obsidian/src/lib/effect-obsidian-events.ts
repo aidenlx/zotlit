@@ -61,7 +61,7 @@ export const obsidianEvents = Effect.fnUntraced(function* <
           }),
         ),
     );
-    yield* Stream.runForEach(stream, dispatch);
+    yield* Stream.runForEach(stream, (event) => dispatch(event));
   });
 
   return {
