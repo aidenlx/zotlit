@@ -371,10 +371,10 @@ export const layerLocalServer: Layer.Layer<
     );
 
     const noteStatus: NoteStatusSource = {
-      getIndexedItemKeys: () => run(noteIndex.getIndexedItemKeys()),
+      getIndexedItemKeys: () => run(noteIndex.getIndexedItemKeys),
       whenIndexed: async () => {
         if (stoppedFlag) return;
-        valueOr(await runPromiseExit(noteIndex.whenIndexed()), undefined);
+        valueOr(await runPromiseExit(noteIndex.whenIndexed), undefined);
       },
     };
 

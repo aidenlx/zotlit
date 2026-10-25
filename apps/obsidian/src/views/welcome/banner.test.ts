@@ -53,7 +53,7 @@ async function setup(
    */
   let latest = settings;
   const reload = async () => {
-    await latest.bridge.runPromise(latest.flush());
+    await latest.bridge.runPromise(latest.flush);
     latest = await loadSettings(plugin);
     await latest.bridge.runPromise(latest.loaded);
     return bannerDeps(app, latest);

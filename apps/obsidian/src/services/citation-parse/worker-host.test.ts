@@ -178,7 +178,7 @@ it.effect(
         const client = yield* makeRecoveringParseClient(
           connectParseWorker("worker source"),
         );
-        yield* client.start();
+        yield* client.start;
         const pending = yield* client
           .parse({ path: "draft.md", generation: 1, text: "" })
           .pipe(Effect.forkChild);
@@ -272,7 +272,7 @@ it.effect(
       const client = yield* makeRecoveringParseClient(
         connectParseWorker("worker source"),
       );
-      yield* client.start();
+      yield* client.start;
       const pending = yield* client
         .parse({ path: "draft.md", generation: 1, text: "" })
         .pipe(Effect.forkChild);

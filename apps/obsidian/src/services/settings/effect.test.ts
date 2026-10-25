@@ -121,7 +121,7 @@ it.effect(
       expect(writes).toEqual([]);
       yield* TestClock.adjust(1);
       yield* Effect.promise(() => saved.promise);
-      yield* settings.flush();
+      yield* settings.flush;
       expect(writes).toEqual([{ __VERSION__: 11, "server.hostname": "/last" }]);
     }),
 );
@@ -164,7 +164,7 @@ it.effect(
       bridge.runSync(
         settings.update({ "server.hostname": "/after-unsubscribe" }),
       );
-      yield* Effect.promise(() => bridge.runPromise(settings.flush()));
+      yield* Effect.promise(() => bridge.runPromise(settings.flush));
       expect(seen).toEqual(["/saved", "/edited"]);
     }),
 );
@@ -202,7 +202,7 @@ it.effect("flush preserves a synchronous storage failure", () =>
     });
     yield* settings.loaded;
     yield* settings.update({ "server.hostname": "/failure" });
-    const exit = yield* Effect.exit(settings.flush());
+    const exit = yield* Effect.exit(settings.flush);
     expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({
       _tag: "SettingsPersistenceError",
       cause: failure,
@@ -227,8 +227,8 @@ it.effect("#1705 a failed read blocks the release check's save", () =>
     });
     yield* settings.loaded;
     yield* settings.update({ "release.previous-version": "2.2.0" });
-    yield* Effect.exit(settings.flush());
-    yield* settings.release();
+    yield* Effect.exit(settings.flush);
+    yield* settings.release;
     expect(data).toBe(original);
   }),
 );
@@ -251,7 +251,7 @@ it.effect("#1705 reload drains an edit queued after it starts waiting", () =>
     const before = yield* settingsOf({ plugin, handoff });
     yield* before.loaded;
     yield* before.update({ "server.hostname": "/a" });
-    yield* before.release();
+    yield* before.release;
     const reopening = yield* Effect.forkChild(
       Effect.gen(function* () {
         const after = yield* settingsOf({ plugin, handoff });
@@ -385,8 +385,8 @@ it.effect("#1705 bridge calls are safe after whole-runtime disposal", () =>
     const stop = bridge.subscribe(settings.changes, () => {});
     stop();
     stop();
-    bridge.runSync(settings.release());
-    yield* Effect.promise(() => bridge.runPromise(settings.flush()));
+    bridge.runSync(settings.release);
+    yield* Effect.promise(() => bridge.runPromise(settings.flush));
     expect(writes).toEqual([]);
   }),
 );
@@ -403,11 +403,11 @@ it.effect("#1705 a failed write leaves flush safe after runtime disposal", () =>
     });
     bridge.runSync(settings.update({ "server.hostname": "/edited" }));
     yield* Effect.promise(() =>
-      bridge.runPromise(settings.flush().pipe(Effect.ignoreCause)),
+      bridge.runPromise(settings.flush.pipe(Effect.ignoreCause)),
     );
     yield* Effect.promise(close);
     yield* Effect.promise(() =>
-      expect(bridge.runPromise(settings.flush())).resolves.toBeUndefined(),
+      expect(bridge.runPromise(settings.flush)).resolves.toBeUndefined(),
     );
   }),
 );

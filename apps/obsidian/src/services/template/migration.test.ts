@@ -90,12 +90,13 @@ async function makeHarness(
         return snapshot();
       }),
   );
-  const flush = vi.fn(() => Effect.void);
+  /** Called once per run of the `flush` Effect, so a test orders the flushes. */
+  const flushRuns = vi.fn(() => Effect.void);
   const settings = Object.assign(
     stubService<PluginSettings["Service"]>("PluginSettings", {
       current: Effect.sync(snapshot),
     }),
-    { update, flush },
+    { update, flush: Effect.suspend(flushRuns) },
   );
   const bridge = { runSync: Effect.runSync, runPromise: Effect.runPromise };
   const template = {
@@ -173,6 +174,7 @@ async function makeHarness(
     bridge,
     service,
     settings,
+    flushRuns,
     template,
     trashFile,
   };
@@ -297,9 +299,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         expect(harness.settings.update).toHaveBeenCalledWith({
           "note.template-conversion-pending": false,
         });
-        expect(harness.settings.flush).toHaveBeenCalledBefore(
-          harness.trashFile,
-        );
+        expect(harness.flushRuns).toHaveBeenCalledBefore(harness.trashFile);
         expect(harness.trashFile).toHaveBeenCalledTimes(3);
         expect(harness.files.has("templates/zotlit-profile.default.md")).toBe(
           true,
@@ -314,7 +314,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           pendingCleanup: [],
         });
         expect(
-          harness.settings.flush.mock.invocationCallOrder.at(-1),
+          harness.flushRuns.mock.invocationCallOrder.at(-1),
         ).toBeGreaterThan(harness.trashFile.mock.invocationCallOrder.at(-1)!);
       }),
   );
@@ -621,9 +621,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           filename: { citationKey: "doePaper" },
           annotation: { text: "Excerpt" },
         });
-        expect(harness.settings.flush).toHaveBeenCalledBefore(
-          harness.trashFile,
-        );
+        expect(harness.flushRuns).toHaveBeenCalledBefore(harness.trashFile);
       }),
   );
 
@@ -1416,13 +1414,13 @@ async function buildMigration(
         Layer.succeed(
           Template,
           stubService<Template["Service"]>("Template", {
-            refresh: () => Effect.promise(() => template.refresh()),
-            getLegacyLiteratureNoteTemplateFiles: () =>
-              Effect.sync(() =>
-                template.getLegacyLiteratureNoteTemplateFiles(),
-              ),
-            getLegacyTemplateDocuments: () =>
-              Effect.sync(() => template.getLegacyTemplateDocuments()),
+            refresh: Effect.promise(() => template.refresh()),
+            getLegacyLiteratureNoteTemplateFiles: Effect.sync(() =>
+              template.getLegacyLiteratureNoteTemplateFiles(),
+            ),
+            getLegacyTemplateDocuments: Effect.sync(() =>
+              template.getLegacyTemplateDocuments(),
+            ),
             // The fake template converts to the fields migration reads only.
             convertLegacyLiteratureNoteTemplates: ((data: {
               note: object;

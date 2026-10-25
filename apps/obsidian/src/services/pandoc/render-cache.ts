@@ -221,7 +221,7 @@ export const layerBibliographyRender = Layer.effect(
     yield* listen(reads.events, (event) =>
       event._tag === "changed" ? invalidate() : Effect.void,
     );
-    const initialEngine = yield* engine.getStatus();
+    const initialEngine = yield* engine.getStatus;
     yield* listen(
       Stream.dropWhile(engine.changes, (next) => next === initialEngine),
       () => invalidate(),
@@ -289,7 +289,7 @@ export const layerBibliographyRender = Layer.effect(
 
     const prepare = Effect.fn("BibliographyRender.prepare")(
       function* (presentation: RenderPresentation | undefined) {
-        if ((yield* engine.getStatus()).kind !== "installed")
+        if ((yield* engine.getStatus).kind !== "installed")
           return { reason: "engine-absent" } as const;
         const selected = (yield* SubscriptionRef.get(state)).vaultPresentation;
         const request = effectivePresentation(presentation ?? {}, selected);
@@ -323,7 +323,7 @@ export const layerBibliographyRender = Layer.effect(
       function* (items: readonly CslItemData[], style: RenderStyle) {
         if (items.length === 0) return { entries: [], hasEntryMarkers: false };
         const presentation = enginePresentation(style);
-        const active = yield* engine.getEngine();
+        const active = yield* engine.getEngine;
         if (!active) return { entries: [], hasEntryMarkers: false };
         const entries = yield* Effect.tryPromise({
           try: () => active.renderBibliography({ items, ...presentation }),
@@ -350,7 +350,7 @@ export const layerBibliographyRender = Layer.effect(
         style: RenderStyle,
       ) {
         if (citations.length === 0) return [];
-        const active = yield* engine.getEngine();
+        const active = yield* engine.getEngine;
         if (!active) return [];
         const rendered = yield* Effect.tryPromise({
           try: () =>

@@ -371,9 +371,8 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         annotations: services.annotationRepository,
         writeAuthorization: {
           allowEditing: () => services.capabilityNotices.allowEditing(),
-          forgetAuthorization: () =>
-            services.zoteroLocalApi.forgetAuthorization(),
-          remembered: () => services.zoteroLocalApi.remembered(),
+          forgetAuthorization: services.zoteroLocalApi.forgetAuthorization,
+          remembered: services.zoteroLocalApi.remembered,
         },
         template: services.template,
         release: services.release,
@@ -830,7 +829,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     // an instance enabled straight after reads it; a view that saves as it
     // closes after this hands its write on the same way.
     if (this.#services)
-      this.#services.bridge.runSync(this.#services.settings.release());
+      this.#services.bridge.runSync(this.#services.settings.release);
     // Drop the service bag before async disposal so late callers fail clearly.
     this.#services = undefined;
 

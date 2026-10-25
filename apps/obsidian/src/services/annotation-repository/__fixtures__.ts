@@ -241,11 +241,10 @@ export async function setup(
         catch: unavailable,
       }),
     ).pipe(Effect.map((lease) => lease.reads)),
-    refresh: () =>
-      Effect.tryPromise({
-        try: () => refresh(),
-        catch: unavailable,
-      }),
+    refresh: Effect.tryPromise({
+      try: () => refresh(),
+      catch: unavailable,
+    }),
     events: Stream.fromPubSub(dbBus),
   });
 
@@ -422,6 +421,7 @@ export function repositoryClient(
         };
       }
       if (property === "capability") return bridge.runSync(service.capability);
+      if (property === "probe") return () => bridge.runPromise(service.probe);
       if (property === "refresh") {
         return (attachmentKey: string): Promise<AnnotationList | null> => {
           const running = refreshes.get(attachmentKey);

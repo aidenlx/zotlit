@@ -214,7 +214,7 @@ it.effect(
         dataDir: "/research-data",
         httpPort: 45678,
       });
-      expect(yield* f.pref.listProfiles()).toEqual([
+      expect(yield* f.pref.listProfiles).toEqual([
         { name: "Research", dir: "/research-profile", isDefault: true },
       ]);
       yield* f.pref.setDataDir("/override");
@@ -231,7 +231,7 @@ it.effect(
         dataDir: join(homedir(), "Zotero"),
       });
       expect(yield* f.pref.get("useDataDir")).toBeUndefined();
-      expect(yield* f.pref.companionInstalled()).toBe(false);
+      expect(yield* f.pref.companionInstalled).toBe(false);
     }),
 );
 

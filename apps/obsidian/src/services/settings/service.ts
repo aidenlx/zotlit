@@ -245,8 +245,8 @@ export class PluginSettings extends Context.Service<
     updateDefaultLiteratureNoteProfileBindings(
       patch: Partial<ResolvedLiteratureNoteProfileBindings>,
     ): Effect.Effect<void, SettingsMutationError>;
-    flush(): Effect.Effect<void, SettingsPersistenceError>;
-    release(): Effect.Effect<void>;
+    readonly flush: Effect.Effect<void, SettingsPersistenceError>;
+    readonly release: Effect.Effect<void>;
   }
 >()("zotlit/settings/PluginSettings") {}
 
@@ -342,7 +342,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     return fiber;
   });
 
-  const flush = Effect.fn("PluginSettings.flush")(function* () {
+  const flush = Effect.gen(function* () {
     while (dirty || pendingWrite) {
       if (timer) {
         timer.interruptUnsafe();
@@ -351,13 +351,13 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
       const pending = dirty ? yield* performSave() : pendingWrite;
       if (pending) yield* Fiber.join(pending);
     }
-  }, Effect.uninterruptible);
+  }).pipe(Effect.uninterruptible, Effect.withSpan("PluginSettings.flush"));
 
   // Obsidian unload is synchronous. The Promise is also the reload handoff;
   // the save it waits for belongs to `writes`, which scope close drains.
   const handOff = Effect.fn("PluginSettings.handOff")(function* () {
     const write = runPromise(
-      flush().pipe(
+      flush.pipe(
         Effect.catchCause((cause) =>
           reportFailure("settings save on unload failed", cause),
         ),
@@ -385,7 +385,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     if (timer) timer.interruptUnsafe();
     timer = yield* Effect.forkIn(
       Effect.sleep(SAVE_DEBOUNCE_MS).pipe(
-        Effect.andThen(flush()),
+        Effect.andThen(flush),
         Effect.ignoreCause,
       ),
       writes,
@@ -785,7 +785,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     Effect.sync(() => {
       closed = true;
     }).pipe(
-      Effect.andThen(flush()),
+      Effect.andThen(flush),
       Effect.catchCause((cause) =>
         reportFailure("settings save on close failed", cause),
       ),
@@ -818,11 +818,11 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
       }));
     }),
     flush,
-    release: Effect.fn("PluginSettings.release")(function* () {
+    release: Effect.gen(function* () {
       if (closed) return;
       released = true;
       yield* handOff();
-    }),
+    }).pipe(Effect.withSpan("PluginSettings.release")),
   });
 }, withLogCategory("settings"));
 

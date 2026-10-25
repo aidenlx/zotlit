@@ -79,7 +79,7 @@ it.effect(
       expect(tab.getControlValue("note-profile:default:folder")).toBe(
         "Research",
       );
-      yield* settings.flush();
+      yield* settings.flush;
       expect(disk).toMatchObject({
         __VERSION__: 11,
         "citation.at-trigger": true,

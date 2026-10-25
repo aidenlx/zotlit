@@ -218,8 +218,7 @@ export function citationTextFixture(
           Layer.succeed(
             NoteIndex,
             stubService<NoteIndex["Service"]>("NoteIndex", {
-              whenIndexed: () =>
-                Effect.promise(() => deps.noteIndex.whenIndexed()),
+              whenIndexed: Effect.promise(() => deps.noteIndex.whenIndexed()),
               changes: Stream.merge(
                 deps.noteIndex.changed.pipe(
                   Stream.map((file): NoteIndexChange => ({

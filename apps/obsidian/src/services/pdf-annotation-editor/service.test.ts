@@ -1170,25 +1170,25 @@ it("probes before a blocked keystroke is answered, and stays out of the way othe
   };
 
   await press("h");
-  expect(annotations.probe).toHaveBeenCalledOnce();
+  expect(annotations.probeRuns).toHaveBeenCalledOnce();
   expect(gestures.reportBlockedGesture).toHaveBeenCalledExactlyOnceWith(
     "ABCD2345",
   );
 
   // A keystroke that is not an edit gesture never reaches the seam.
   await press("Escape");
-  expect(annotations.probe).toHaveBeenCalledOnce();
+  expect(annotations.probeRuns).toHaveBeenCalledOnce();
 
   // Editing works again, so the keystroke belongs to the reader alone.
   annotations.setCapability({ kind: "writable" });
   await press("u");
-  expect(annotations.probe).toHaveBeenCalledOnce();
+  expect(annotations.probeRuns).toHaveBeenCalledOnce();
   expect(gestures.reportBlockedGesture).toHaveBeenCalledOnce();
 
   // Unauthorized editing remains blocked until explicit approval.
   annotations.setCapability({ kind: "authorization-required" });
   await press("h");
-  expect(annotations.probe).toHaveBeenCalledTimes(2);
+  expect(annotations.probeRuns).toHaveBeenCalledTimes(2);
   expect(gestures.reportBlockedGesture).toHaveBeenCalledTimes(2);
 });
 

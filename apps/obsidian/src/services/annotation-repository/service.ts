@@ -84,7 +84,7 @@ export type AnnotationRepositoryShape = {
    * affordance's click, and a keystroke that met a block. A probe that changes
    * anything announces itself through `capability-changed`.
    */
-  probe(): Effect.Effect<void>;
+  readonly probe: Effect.Effect<void>;
   /**
    * What a write left on one Annotation, for the card that draws its verbs:
    * `pending` from the moment a write is asked for until the last write queued
@@ -417,8 +417,8 @@ export function layerAnnotationRepository(options: {
             Effect.sync(() => core.capabilityFor(attachmentKey)),
         ),
         capability: Effect.sync(() => core.capability),
-        probe: Effect.fn("AnnotationRepository.probe")(() =>
-          Effect.promise(() => core.probe()),
+        probe: Effect.promise(() => core.probe()).pipe(
+          Effect.withSpan("AnnotationRepository.probe"),
         ),
         mutationFor: Effect.fn("AnnotationRepository.mutationFor")(
           (annotationKey) => Effect.sync(() => core.mutationFor(annotationKey)),

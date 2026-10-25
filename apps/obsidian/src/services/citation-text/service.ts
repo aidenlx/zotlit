@@ -373,7 +373,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
         signal: AbortSignal,
       ): Promise<DocumentCitations> {
         await abortable(
-          settle(notes.whenIndexed(), () => undefined),
+          settle(notes.whenIndexed, () => undefined),
           signal,
         );
         signal.throwIfAborted();

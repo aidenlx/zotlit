@@ -27,7 +27,7 @@ export const workerClient = Effect.fn("ZoteroReads.workerClient")(function* () {
   const { language } = yield* ObsidianEnv;
   const configuration = Effect.gen(function* () {
     const current = yield* settings.current;
-    const status = yield* segmenter.getStatus();
+    const status = yield* segmenter.getStatus;
     return {
       databasePath: (yield* pref.current).databasePath,
       readMode: current["zotero.read-mode"],

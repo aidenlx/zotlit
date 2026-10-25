@@ -38,9 +38,9 @@ export const layerDatabaseActions: Layer.Layer<
         }),
         layerScope,
       );
-      yield* reads
-        .refresh()
-        .pipe(Effect.onExit((exit) => Deferred.succeed(outcome, exit)));
+      yield* reads.refresh.pipe(
+        Effect.onExit((exit) => Deferred.succeed(outcome, exit)),
+      );
     });
     yield* host.addCommand({
       id: "refresh-zotero-data",

@@ -42,7 +42,7 @@ export const layerCitationTemplateActions: Layer.Layer<
     yield* addCitationTemplateActions(host, {
       template: {
         materializeCitationTemplate: () =>
-          runPromise(template.materializeCitationTemplate()),
+          runPromise(template.materializeCitationTemplate),
       },
     });
   }),

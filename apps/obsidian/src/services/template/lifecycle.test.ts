@@ -402,10 +402,10 @@ it.effect(
         ),
       );
       const migration = Context.get(services, TemplateMigration);
-      expectTypeOf<
-        Effect.Error<ReturnType<typeof migration.convert>>
-      >().toExtend<{ readonly _tag: string }>();
-      expect(yield* Effect.flip(migration.convert())).toMatchObject({
+      expectTypeOf<Effect.Error<typeof migration.convert>>().toExtend<{
+        readonly _tag: string;
+      }>();
+      expect(yield* Effect.flip(migration.convert)).toMatchObject({
         _tag: "TemplateOperationError",
         cause,
       });

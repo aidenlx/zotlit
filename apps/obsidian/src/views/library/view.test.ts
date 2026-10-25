@@ -1033,7 +1033,7 @@ it("keeps the nodes the researcher opens and closes in the document, and opens o
       "[data-library-expand]",
     )!,
   );
-  await act(() => settings.bridge.runPromise(settings.flush()));
+  await act(() => settings.bridge.runPromise(settings.flush));
   expect(
     settings.bridge.runSync(settings.current)?.["library.document"]?.expanded,
   ).toEqual([
@@ -1052,7 +1052,7 @@ it("keeps the nodes the researcher opens and closes in the document, and opens o
     "Lab 2",
   ]);
   await press(view, row(view, THESIS).querySelector("[data-library-expand]")!);
-  await act(() => settings.bridge.runPromise(settings.flush()));
+  await act(() => settings.bridge.runPromise(settings.flush));
   expect(
     settings.bridge.runSync(settings.current)?.["library.document"]?.expanded,
   ).toEqual([`closed:${JSON.stringify(["group:4815"])}`]);
@@ -1070,7 +1070,7 @@ it("drops the open nodes Zotero no longer has from the document, and keeps the r
   });
   const view = await openTab(deps);
   expect(tree(view)).toContain("    Chapter 1 1");
-  await act(() => settings.bridge.runPromise(settings.flush()));
+  await act(() => settings.bridge.runPromise(settings.flush));
   expect(
     settings.bridge.runSync(settings.current)?.["library.document"]?.expanded,
   ).toEqual([
@@ -1089,7 +1089,7 @@ it("lists a Collection with its subcollections' Items, names it in the header, a
   });
   expect(row(view, THESIS).getAttribute("aria-selected")).toBe("true");
   expect(header(view)).toBe("My Library› | Thesis | 3 papers · 1 unread");
-  await settings.bridge.runPromise(settings.flush());
+  await settings.bridge.runPromise(settings.flush);
   expect(
     settings.bridge.runSync(settings.current)?.["library.document"]?.node,
   ).toEqual(THESIS);
@@ -1209,7 +1209,7 @@ it("moves the selection up to its library where Zotero no longer has the Collect
   await act(() => view.query.settled);
   expect(listRuns(run).at(-1)).not.toHaveProperty("filter");
   expect(header(view)).toBe("My Library | 5 papers · 2 unread");
-  await settings.bridge.runPromise(settings.flush());
+  await settings.bridge.runPromise(settings.flush);
   expect(
     settings.bridge.runSync(settings.current)?.["library.document"]?.node,
   ).toEqual({
@@ -1420,7 +1420,7 @@ it("keeps Recent selected through a sort change, and selecting it again sorts ne
     sort: [{ field: "lastActivity", direction: "desc" }],
   });
   expect(header(view)).toBe("Recent | 7 papers");
-  await settings.bridge.runPromise(settings.flush());
+  await settings.bridge.runPromise(settings.flush);
   expect(
     settings.bridge.runSync(settings.current)?.["library.document"],
   ).toMatchObject({
@@ -1458,7 +1458,7 @@ it("marks the Sort button as set only for a sort other than the one the selected
   await press(view, row(view, { kind: "library", library: LAB }));
   expect(sort()).toEqual({ set: false, text: "Sort" });
   expect(listRuns(run).at(-1)).not.toHaveProperty("sort");
-  await settings.bridge.runPromise(settings.flush());
+  await settings.bridge.runPromise(settings.flush);
   expect(
     settings.bridge.runSync(settings.current)?.["library.document"],
   ).toMatchObject({
@@ -1486,7 +1486,7 @@ it("keeps a sort the researcher changed on Recent once they leave it", async () 
   expect(listRuns(run).at(-1)!.sort).toEqual([
     { field: "title", direction: "asc" },
   ]);
-  await settings.bridge.runPromise(settings.flush());
+  await settings.bridge.runPromise(settings.flush);
   expect(
     settings.bridge.runSync(settings.current)?.["library.document"],
   ).toMatchObject({
@@ -1541,7 +1541,7 @@ it("selects Recent with its own sort after two quick sorts, on screen and in plu
   expect(listRuns(run).at(-1)!.sort).toEqual([
     { field: "lastActivity", direction: "desc" },
   ]);
-  await settings.bridge.runPromise(settings.flush());
+  await settings.bridge.runPromise(settings.flush);
   expect(
     settings.bridge.runSync(settings.current)?.["library.document"],
   ).toMatchObject({
@@ -1564,7 +1564,7 @@ it("keeps the last of two quick sorts once the search is cleared", async () => {
   expect(listRuns(run).at(-1)!.sort).toEqual([
     { field: "title", direction: "desc" },
   ]);
-  await settings.bridge.runPromise(settings.flush());
+  await settings.bridge.runPromise(settings.flush);
   expect(
     settings.bridge.runSync(settings.current)?.["library.document"],
   ).toMatchObject({
@@ -1683,7 +1683,7 @@ describe("Reading State facets", () => {
     const first = await openTab(deps);
     await press(first, facet(first, "pdf"));
     await press(first, facet(first, "annotated"));
-    await settings.bridge.runPromise(settings.flush());
+    await settings.bridge.runPromise(settings.flush);
     expect(
       settings.bridge.runSync(settings.current)?.["library.document"]?.facets,
     ).toEqual(["annotated", "pdf"]);
@@ -1972,7 +1972,7 @@ it("turns the Reading State facets off to show an Item they leave out", async ()
   expect(facet(view, "unread").getAttribute("aria-pressed")).toBe("false");
   expect(facet(view, "pdf").getAttribute("aria-pressed")).toBe("false");
   expect(itemRows(view)).toContain(`${A} *`);
-  await settings.bridge.runPromise(settings.flush());
+  await settings.bridge.runPromise(settings.flush);
   expect(
     settings.bridge.runSync(settings.current)?.["library.document"]?.facets,
   ).toEqual([]);
@@ -2601,7 +2601,7 @@ it("opens again on the paper the researcher selected, scrolled into view, with i
   const { deps, settings } = await pluginData();
   const first = await openTab(deps);
   await act(() => itemRow(first, C).click());
-  await act(() => settings.bridge.runPromise(settings.flush()));
+  await act(() => settings.bridge.runPromise(settings.flush));
   expect(
     settings.bridge.runSync(settings.current)?.["library.document"]?.selected,
   ).toBe(C);
@@ -2627,7 +2627,7 @@ it("lets go of the selected paper in the document once the researcher picks anot
   const view = await openTab(deps);
   await act(() => itemRow(view, A).click());
   await press(view, row(view, MY_LIBRARY));
-  await act(() => settings.bridge.runPromise(settings.flush()));
+  await act(() => settings.bridge.runPromise(settings.flush));
   expect(
     settings.bridge.runSync(settings.current)?.["library.document"]?.selected,
   ).toBeNull();
@@ -2641,7 +2641,7 @@ it("opens with no paper selected where the list no longer holds the one it kept,
   const view = await openTab(deps);
   expect(view.selection.getState().key).toBeNull();
   expect(itemRows(view).some((key) => key.endsWith("*"))).toBe(false);
-  await act(() => settings.bridge.runPromise(settings.flush()));
+  await act(() => settings.bridge.runPromise(settings.flush));
   expect(
     settings.bridge.runSync(settings.current)?.["library.document"]?.selected,
   ).toBeNull();
@@ -2881,7 +2881,7 @@ describe("Reading Card", () => {
     expect(document.activeElement).toBe(itemRow(view, B));
     // A pane wide enough for the card beside the list hides it too.
     expect(shownCard(view)).toBeNull();
-    await act(() => settings.bridge.runPromise(settings.flush()));
+    await act(() => settings.bridge.runPromise(settings.flush));
     expect(
       settings.bridge.runSync(settings.current)?.["library.document"]
         ?.cardClosed,
@@ -2908,7 +2908,7 @@ describe("Reading Card", () => {
       await view.card.settled;
     });
     expect(shownCard(view)).not.toBeNull();
-    await act(() => settings.bridge.runPromise(settings.flush()));
+    await act(() => settings.bridge.runPromise(settings.flush));
     expect(
       settings.bridge.runSync(settings.current)?.["library.document"],
     ).not.toHaveProperty("cardClosed");
@@ -3342,7 +3342,7 @@ describe("Reading Card", () => {
     expect(annotationRuns(run).at(-1)?.[0]).toMatchObject({
       context: { item: C },
     });
-    await act(() => settings.bridge.runPromise(settings.flush()));
+    await act(() => settings.bridge.runPromise(settings.flush));
     expect(
       settings.bridge.runSync(settings.current)?.["library.document"],
     ).toMatchObject({
@@ -3698,7 +3698,7 @@ describe("Tag Selector", () => {
     expect(
       view.contentEl.querySelector("[data-library-filter-clear]"),
     ).toBeNull();
-    await act(() => settings.bridge.runPromise(settings.flush()));
+    await act(() => settings.bridge.runPromise(settings.flush));
     expect(
       settings.bridge.runSync(settings.current)?.["library.document"],
     ).toMatchObject({
@@ -3723,7 +3723,7 @@ describe("Tag Selector", () => {
     expect(pressed(view)).toEqual([]);
     expect(facet(view, "pdf").getAttribute("aria-pressed")).toBe("false");
     expect(header(view)).toBe("My Library | 5 papers · 2 unread");
-    await act(() => settings.bridge.runPromise(settings.flush()));
+    await act(() => settings.bridge.runPromise(settings.flush));
     expect(
       settings.bridge.runSync(settings.current)?.["library.document"],
     ).toMatchObject({
@@ -3797,7 +3797,7 @@ describe("Tag Selector", () => {
     expect(
       view.contentEl.querySelector("[data-query-empty]")?.textContent,
     ).toBe(m.library_view_empty_facets());
-    await settings.bridge.runPromise(settings.flush());
+    await settings.bridge.runPromise(settings.flush);
     expect(
       settings.bridge.runSync(settings.current)?.["library.document"]?.tags,
     ).toEqual(["talk"]);

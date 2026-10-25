@@ -78,7 +78,7 @@ it("refuses an Allow, and keeps no key to send", async () => {
   expect(grant).toEqual({ failure: { kind: "not-remembered" } });
   // Nothing was written down, and the session still has to ask.
   expect(credentials.writes).toEqual([]);
-  expect(await bridge.runPromise(service.remembered())).toBe(false);
+  expect(await bridge.runPromise(service.remembered)).toBe(false);
   expect(capabilityInput(client).authorized).toBe(false);
   // The write is refused here: the key from Allow never reaches the wire.
   expect(write).toEqual({ failure: { kind: "unauthorized" } });
@@ -373,7 +373,7 @@ it("invalidates the record keyless when Zotero rejects the key", async () => {
   expect(credentials.writes).toEqual([{ serverID: SERVER_ID }]);
   expect(credentials.record).toEqual({ serverID: SERVER_ID });
   expect(capabilityInput(client).authorized).toBe(false);
-  expect(await bridge.runPromise(service.remembered())).toBe(false);
+  expect(await bridge.runPromise(service.remembered)).toBe(false);
 });
 
 it("serves two presses of Allow editing with one request", async () => {
@@ -460,11 +460,11 @@ it("drops the Remembered Authorization when the settings row forgets it", async 
   await client.probe();
 
   expect(capabilityInput(client).authorized).toBe(true);
-  await bridge.runPromise(service.forgetAuthorization());
+  await bridge.runPromise(service.forgetAuthorization);
 
   expect(credentials.record).toEqual({ serverID: SERVER_ID });
   expect(capabilityInput(client).authorized).toBe(false);
-  expect(await bridge.runPromise(service.remembered())).toBe(false);
+  expect(await bridge.runPromise(service.remembered)).toBe(false);
 });
 
 it("disables editing when a remembered grant was removed outside ZotLit", async () => {

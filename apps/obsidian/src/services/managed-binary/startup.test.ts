@@ -51,11 +51,13 @@ for (const declined of [false, true]) {
                 ports.openStore(directory).pipe(
                   Effect.map((store) => ({
                     ...store,
-                    list: () =>
+                    // Suspended: each run reads the names when the list starts.
+                    list: Effect.suspend(() =>
                       Queue.offer(started, directory).pipe(
                         Effect.andThen(Deferred.await(result)),
                         Effect.as(device.names(directory)),
                       ),
+                    ),
                   })),
                 ),
             }),
@@ -147,8 +149,8 @@ it.effect(
           Effect.gen(function* () {
             const context = yield* Layer.build(layer);
             return [
-              yield* Context.get(context, ChineseSegmenter).getStatus(),
-              yield* Context.get(context, PandocEngine).getStatus(),
+              yield* Context.get(context, ChineseSegmenter).getStatus,
+              yield* Context.get(context, PandocEngine).getStatus,
             ];
           }),
         );

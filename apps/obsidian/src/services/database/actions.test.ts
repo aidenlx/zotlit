@@ -14,12 +14,13 @@ import { layerDatabaseActions } from "./actions";
 
 const REFRESH_COMMAND = "refresh-zotero-data";
 
-function layerCommand(refresh: ZoteroReads["Service"]["refresh"]) {
+/** `refresh` runs each time the refresh Effect runs, so a spy counts the runs. */
+function layerCommand(refresh: () => ZoteroReads["Service"]["refresh"]) {
   return Effect.gen(function* () {
     const host = testPluginHost();
     const notifier = testNotifier();
     const reads = stubService<ZoteroReads["Service"]>("ZoteroReads", {
-      refresh,
+      refresh: Effect.suspend(refresh),
     });
 
     yield* Layer.build(

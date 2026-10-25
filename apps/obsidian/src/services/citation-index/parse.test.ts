@@ -676,7 +676,7 @@ async function recoveringClient(connect: () => PromiseParseConnection) {
       }),
     ).pipe(Scope.provide(scope)),
   );
-  await Effect.runPromiseWith(context)(client.start());
+  await Effect.runPromiseWith(context)(client.start);
   return {
     client: {
       parse: (request: ParseRequest) =>

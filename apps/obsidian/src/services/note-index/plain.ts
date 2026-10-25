@@ -50,10 +50,10 @@ export function plainNoteIndex(
     getImportedNoteByNoteKey: (key) =>
       read(index.getImportedNoteByNoteKey(key)),
     getNotesByProfile: (selector) => read(index.getNotesByProfile(selector)),
-    getPropertyNames: () => read(index.getPropertyNames()),
-    getIndexedItemKeys: () => read(index.getIndexedItemKeys()),
-    whenSettled: () => wait(index.whenSettled()),
-    whenIndexed: () => wait(index.whenIndexed()),
+    getPropertyNames: () => read(index.getPropertyNames),
+    getIndexedItemKeys: () => read(index.getIndexedItemKeys),
+    whenSettled: () => wait(index.whenSettled),
+    whenIndexed: () => wait(index.whenIndexed),
     changes: index.changes,
     changed: index.changes.pipe(
       Stream.filter(
