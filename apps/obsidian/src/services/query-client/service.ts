@@ -1,6 +1,5 @@
 // The one query client every Held Read is realized on, and the Held Read projection of a query's state.
 
-import { abortable } from "@std/async/abortable";
 import {
   CancelledError,
   focusManager,
@@ -90,12 +89,10 @@ export class QueryClients extends Context.Service<
     read<T>(
       key: QueryKey,
       queryFn: QueryFunction<T>,
-      signal?: AbortSignal,
     ): Effect.Effect<T | null, unknown>;
     readFresh<T>(
       key: QueryKey,
       queryFn: QueryFunction<T>,
-      signal?: AbortSignal,
     ): Effect.Effect<T, unknown>;
     watch<T>(
       prefix: QueryKey,
@@ -240,7 +237,7 @@ const makeQueryClients = Effect.gen(function* () {
     key: QueryKey,
     queryFn: QueryFunction<T>,
   ): Effect.fn.Return<T | null, unknown> {
-    const result = yield* settle(key, queryFn, undefined);
+    const result = yield* settle(key, queryFn);
     if (result.kind === "value") return result.value;
     return result.kind === "failed" && result.cooldown ? result.held : null;
   });
@@ -251,17 +248,17 @@ const makeQueryClients = Effect.gen(function* () {
    * with what the key still holds — a surface keeps its last answer on screen
    * rather than dropping to nothing.
    *
-   * @param signal aborts the wait, not the shared read: the read runs on for
-   *   every other caller that joined it.
+   * Interrupting the read ends this wait, not the shared read: the read runs
+   * on for every other caller that joined it.
+   *
    * @returns the settled value, what the key still holds where the read failed,
    *   or null where it holds nothing.
    */
   const read = Effect.fn("QueryClients.read")(function* <T>(
     key: QueryKey,
     queryFn: QueryFunction<T>,
-    signal?: AbortSignal,
   ): Effect.fn.Return<T | null, unknown> {
-    const result = yield* settle(key, queryFn, signal);
+    const result = yield* settle(key, queryFn);
     if (result.kind === "value") return result.value;
     return result.kind === "released" ? null : result.held;
   });
@@ -272,14 +269,13 @@ const makeQueryClients = Effect.gen(function* () {
    *
    * Shares joining, cooldown and cancellation with {@link read}; the original
    * error rejects even during cooldown. Removal or disposal rejects with
-   * AbortError. The caller's signal ends its wait alone.
+   * AbortError. Interrupting the caller ends its wait alone.
    */
   const readFresh = Effect.fn("QueryClients.readFresh")(function* <T>(
     key: QueryKey,
     queryFn: QueryFunction<T>,
-    signal?: AbortSignal,
   ): Effect.fn.Return<T, unknown> {
-    const result = yield* settle(key, queryFn, signal);
+    const result = yield* settle(key, queryFn);
     if (result.kind === "value") return result.value;
     if (result.kind === "failed") return yield* Effect.fail(result.error);
     return yield* Effect.fail(
@@ -350,10 +346,9 @@ const makeQueryClients = Effect.gen(function* () {
   const settle = Effect.fn("QueryClients.settle")(function* <T>(
     key: QueryKey,
     queryFn: QueryFunction<T>,
-    signal: AbortSignal | undefined,
   ): Effect.fn.Return<ReadResult<T>, unknown> {
     if (closed) return { kind: "released" };
-    const reading = attempt(key, queryFn, signal);
+    const reading = fetch(key, queryFn);
     const cache = client.getQueryCache();
     const query = cache.find({ queryKey: key, exact: true });
     const released = () =>
@@ -368,21 +363,11 @@ const makeQueryClients = Effect.gen(function* () {
       Effect.annotateLogs({ queryKey: key }),
     );
     const retried = yield* Effect.tryPromise({
-      try: () => attempt(key, queryFn, signal),
+      try: () => fetch(key, queryFn),
       catch: (error) => error,
     });
     return released() ? { kind: "released" } : retried;
   }, withLogCategory("query-client"));
-
-  /** One ask, raced against the caller's signal where it brought one. */
-  function attempt<T>(
-    key: QueryKey,
-    queryFn: QueryFunction<T>,
-    signal: AbortSignal | undefined,
-  ): Promise<ReadResult<T>> {
-    const reading = fetch(key, queryFn);
-    return signal === undefined ? reading : abortable(reading, signal);
-  }
 
   /**
    * One ask, with the failure cooldown in front of it.

@@ -87,7 +87,11 @@ interface PopoverReads {
   ): Promise<CitationLookupAnswer>;
   getDocumentCitationSet(
     file: TFile,
-    options: Parameters<CitationIndex["Service"]["getDocumentCitationSet"]>[1],
+    options: Parameters<
+      CitationIndex["Service"]["getDocumentCitationSet"]
+    >[1] & {
+      signal: AbortSignal;
+    },
   ): Promise<DocumentCitationSet>;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: {
@@ -265,11 +269,11 @@ export const layerCitationPopover: Layer.Layer<
         if (answer === undefined) throw lookupReleased();
         return answer;
       },
-      async getDocumentCitationSet(file, options) {
+      async getDocumentCitationSet(file, { signal, ...options }) {
         const result = await held(
           index.getDocumentCitationSet(file, options),
           undefined,
-          { signal: options?.signal },
+          { signal },
         ).catch((error: unknown) => {
           // The read is a `tryPromise`: throw what the index rejected with.
           throw Cause.isUnknownError(error) ? error.cause : error;
@@ -287,9 +291,7 @@ export const layerCitationPopover: Layer.Layer<
         if (bridge.closed()) return null;
         return held(
           // The read is a `tryPromise`: reject with what the read rejected with.
-          text
-            .read(path, { signal })
-            .pipe(Effect.mapError(({ cause }) => cause)),
+          text.read(path).pipe(Effect.mapError(({ cause }) => cause)),
           null,
           { signal },
         );
@@ -302,11 +304,9 @@ export const layerCitationPopover: Layer.Layer<
         } as const);
       },
       async readBibliography(items, { signal }) {
-        const result = await held(
-          render.readBibliography(items, { signal }),
-          undefined,
-          { signal },
-        );
+        const result = await held(render.readBibliography(items), undefined, {
+          signal,
+        });
         if (result === undefined)
           throw new DOMException("Held read released", "AbortError");
         return result;

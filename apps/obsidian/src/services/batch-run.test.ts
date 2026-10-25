@@ -118,15 +118,9 @@ describe("executeBatchRun", () => {
         const secondSettled = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         const started = Promise.withResolvers<void>();
-        const abort = new AbortController();
-        const settled: Parameters<BatchRunControls["onItemSettled"]>[0][] = [];
-        const controls: BatchRunControls = {
-          signal: abort.signal,
-          onItemSettled: (event) => {
-            settled.push(event);
-            if (event.id === 2) secondSettled.resolve();
-          },
-        };
+        const { controls, settled } = makeRunControls(() => {
+          if (settled.at(-1)?.id === 2) secondSettled.resolve();
+        });
         const pending = yield* Effect.forkChild(
           executeBatchRun({
             tasks: [task(1), task(2)],
@@ -319,15 +313,7 @@ describe("executeBatchRun", () => {
 
   it.effect("stops issuing new work once aborted mid-run", () =>
     Effect.gen(function* () {
-      const abort = new AbortController();
-      const settled: unknown[] = [];
-      const controls: BatchRunControls = {
-        onItemSettled: (event) => {
-          settled.push(event);
-          abort.abort();
-        },
-        signal: abort.signal,
-      };
+      const { controls, abort, settled } = makeRunControls(() => abort.abort());
       const run = vi.fn(() => Effect.succeed("created" as const));
 
       const result = yield* executeBatchRun({
@@ -579,18 +565,41 @@ describe("runBatch", () => {
 });
 
 describe("classifyStream", () => {
-  function classifyControls(signal?: AbortSignal): {
+  /** The controls a batch modal hands its classify step, and its cancel. */
+  function classifyControls(): {
     controls: BatchClassifyControls;
+    abort: AbortController;
     progress: number[];
   } {
+    const abort = new AbortController();
     const progress: number[] = [];
     return {
       controls: {
         onProgress: (n) => progress.push(n),
-        signal: signal ?? new AbortController().signal,
+        signal: abort.signal,
       },
+      abort,
       progress,
     };
+  }
+
+  /**
+   * Runs `build`'s classification in its own fiber and returns how it ended.
+   * `interrupt` stops that fiber; `early` interrupts it before it starts.
+   */
+  function exitOf<A, E>(
+    build: (interrupt: () => void) => Effect.Effect<A, E>,
+    { early = false }: { early?: boolean } = {},
+  ): Effect.Effect<Exit.Exit<A, E>> {
+    return Effect.gen(function* () {
+      let run: Fiber.Fiber<A, E> | undefined;
+      const interrupt = () => run?.interruptUnsafe();
+      run = yield* Effect.forkChild(build(interrupt), {
+        startImmediately: false,
+      });
+      if (early) interrupt();
+      return yield* Fiber.await(run);
+    });
   }
 
   it.effect(
@@ -626,19 +635,20 @@ describe("classifyStream", () => {
       }),
   );
 
-  it.effect("starts no further request after cancellation", () =>
+  it.effect("starts no further request after interruption", () =>
     Effect.gen(function* () {
-      const abort = new AbortController();
-      const { controls } = classifyControls(abort.signal);
+      const { controls } = classifyControls();
       const read = vi.fn((ids: readonly number[]) => Stream.succeed(ids));
-      const exit = yield* Effect.exit(
+      const exit = yield* exitOf((interrupt) =>
         classifyStream(
           { itemIDs: Array.from({ length: 1001 }, (_, i) => i), read },
           controls,
-          () => abort.abort(),
+          interrupt,
         ),
       );
-      expect(Exit.isFailure(exit)).toBe(true);
+      expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(
+        true,
+      );
       expect(read).toHaveBeenCalledTimes(1);
     }),
   );
@@ -672,18 +682,16 @@ describe("classifyStream", () => {
     }),
   );
 
-  it.effect("interrupts a pre-aborted classification before any read", () =>
+  it.effect("reads nothing when interrupted before it starts", () =>
     Effect.gen(function* () {
-      const abort = new AbortController();
-      abort.abort();
-      const { controls } = classifyControls(abort.signal);
+      const { controls } = classifyControls();
       const read = vi.fn(() => Stream.succeed([1, 2, 3]));
       const processSlice = vi.fn();
 
-      // An empty selection isolates the preflight guard from the stream's
-      // per-slice abort check.
-      const exit = yield* Effect.exit(
-        classifyStream({ itemIDs: [], read }, controls, processSlice),
+      const exit = yield* exitOf(
+        () =>
+          classifyStream({ itemIDs: [1, 2, 3], read }, controls, processSlice),
+        { early: true },
       );
 
       expect(Exit.isFailure(exit)).toBe(true);
@@ -699,9 +707,8 @@ describe("classifyStream", () => {
     "runBatch rejects a pre-aborted classification before any read",
     () =>
       Effect.gen(function* () {
-        const abort = new AbortController();
+        const { controls, abort } = classifyControls();
         abort.abort();
-        const { controls } = classifyControls(abort.signal);
         const read = vi.fn(() => Stream.succeed([1, 2, 3]));
         const processSlice = vi.fn();
 
@@ -726,8 +733,7 @@ describe("classifyStream", () => {
     "interrupts a stream whose slices arrive synchronously at the next slice",
     () =>
       Effect.gen(function* () {
-        const abort = new AbortController();
-        const { controls } = classifyControls(abort.signal);
+        const { controls } = classifyControls();
         let interrupted = false;
         const slices = Stream.fromIterable([[1], [2], [3]], {
           chunkSize: 1,
@@ -740,13 +746,13 @@ describe("classifyStream", () => {
         );
         const seen: number[] = [];
 
-        const exit = yield* Effect.exit(
+        const exit = yield* exitOf((interrupt) =>
           classifyStream(
             { itemIDs: [1, 2, 3], read: () => slices },
             controls,
             (slice) => {
               seen.push(...slice);
-              abort.abort();
+              interrupt();
             },
           ),
         );
@@ -759,8 +765,7 @@ describe("classifyStream", () => {
 
   it.effect("interrupts the read when the signal aborts mid-classify", () =>
     Effect.gen(function* () {
-      const abort = new AbortController();
-      const { controls } = classifyControls(abort.signal);
+      const { controls, abort } = classifyControls();
       const held = Promise.withResolvers<void>();
       let interrupted = false;
       const slices = Stream.concat(

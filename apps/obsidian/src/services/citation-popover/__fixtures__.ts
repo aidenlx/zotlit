@@ -201,12 +201,10 @@ export function citationPopoverFixture(
         Layer.succeed(
           CitationText,
           stubService<CitationText["Service"]>("CitationText", {
-            read: (path, options) =>
-              Effect.promise(() =>
+            read: (path) =>
+              Effect.promise((signal) =>
                 deps.citationText
-                  ? deps.citationText.read(path, {
-                      signal: options?.signal ?? new AbortController().signal,
-                    })
+                  ? deps.citationText.read(path, { signal })
                   : Promise.resolve(null),
               ).pipe(Effect.map((value) => value as DocumentCitations | null)),
           }),
@@ -233,12 +231,10 @@ export function citationPopoverFixture(
                       reason: "engine-absent",
                     } as const),
               ).pipe(Effect.map((value) => value as BibliographyRenderOutcome)),
-            readBibliography: (items, options) =>
-              Effect.promise(() =>
+            readBibliography: (items) =>
+              Effect.promise((signal) =>
                 deps.bibliographyRender.readBibliography
-                  ? deps.bibliographyRender.readBibliography(items, {
-                      signal: options?.signal ?? new AbortController().signal,
-                    })
+                  ? deps.bibliographyRender.readBibliography(items, { signal })
                   : Promise.resolve(null),
               ).pipe(
                 Effect.map((value) => value as BibliographyRenderResult | null),

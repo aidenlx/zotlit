@@ -19,6 +19,8 @@ export interface BatchClassifyControls {
   /** Reports how many ids have been classified, driving the loading bar against
    * the total passed at construction. */
   onProgress: (classified: number) => void;
+  /** The modal's cancel; a Promise caller turns it into an interrupt with
+   * {@link runBatch}. */
   signal: AbortSignal;
 }
 
@@ -48,8 +50,8 @@ export interface BatchRunResult {
  * Classify ids through sequential requests of at most 500 ids. `read` uses
  * the caller's Snapshot so every request sees one database state. Each reply
  * slice advances the loading bar, and the caller's `processSlice` handles the
- * per-id logic. An abort of {@link BatchClassifyControls.signal} interrupts
- * the Effect; it is not a typed failure.
+ * per-id logic. It cancels by interruption only: a Promise caller passes
+ * {@link BatchClassifyControls.signal} to {@link runBatch}, which interrupts it.
  *
  * @returns an Effect that fails with a read error.
  */
@@ -61,12 +63,10 @@ export function classifyStream<A, E>(
     itemIDs: readonly number[];
     read: (itemIDs: readonly number[]) => Stream.Stream<readonly A[], E>;
   },
-  controls: BatchClassifyControls,
+  controls: Pick<BatchClassifyControls, "onProgress">,
   processSlice: (slice: readonly A[]) => void,
 ): Effect.Effect<void, E> {
   return Effect.gen(function* () {
-    // Check before requesting so an already-aborted run starts no read.
-    if (controls.signal.aborted) return yield* Effect.interrupt;
     function* requests() {
       for (let start = 0; start < itemIDs.length; start += 500) {
         yield itemIDs.slice(start, start + 500);
@@ -75,23 +75,15 @@ export function classifyStream<A, E>(
     // Bound request encoding and structured cloning on the renderer as well
     // as the worker's reply slices. Pull one request only after the last ends.
     const slices = Stream.fromIterable(requests(), { chunkSize: 1 }).pipe(
-      Stream.flatMap((ids) =>
-        controls.signal.aborted
-          ? Stream.fromEffect(Effect.interrupt)
-          : read(ids),
-      ),
+      Stream.flatMap((ids) => read(ids)),
     );
     let classified = 0;
     yield* Stream.runForEach(slices, (slice) =>
-      // Slices can arrive synchronously, before the run hears the abort; each
-      // slice checks the signal so an abort interrupts at the next slice.
-      controls.signal.aborted
-        ? Effect.interrupt
-        : Effect.sync(() => {
-            processSlice(slice);
-            classified += slice.length;
-            controls.onProgress(classified);
-          }),
+      Effect.sync(() => {
+        processSlice(slice);
+        classified += slice.length;
+        controls.onProgress(classified);
+      }),
     );
   });
 }
