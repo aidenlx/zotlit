@@ -2,7 +2,8 @@
 // (policies/logging.md). Rule tests: src/lint/logging.test.ts.
 import { dirname, resolve, sep } from "node:path";
 
-import type { AstNode, Rule } from "./oxlint-ast.ts";
+import { hasSource, importsEffect } from "./oxlint-ast.ts";
+import type { ModuleProgram, ModuleStatement, Rule } from "./oxlint-ast.ts";
 
 const LOGTAPE_MODULE = "@logtape/logtape";
 const OBSIDIAN_LOG_MODULE = "@/lib/log";
@@ -18,38 +19,6 @@ const LOG_FILE_SUFFIXES = [
   ".cjs",
 ];
 
-interface ModuleStatement extends AstNode {
-  readonly importKind?: string;
-  readonly source?: {
-    readonly value?: unknown;
-  };
-}
-
-interface ModuleProgram extends AstNode {
-  readonly body?: readonly ModuleStatement[];
-}
-
-function isEffectModule(source: string): boolean {
-  return (
-    source === "effect" ||
-    source.startsWith("effect/") ||
-    source === "@/lib/effect" ||
-    source.startsWith("@/lib/effect-")
-  );
-}
-
-/**
- * A type-only import of the Effect bridge names the seam a legacy file holds,
- * not Effect code in the file (policies/services.md → Bridge).
- */
-function isBridgeType(statement: ModuleStatement, source: string): boolean {
-  return (
-    statement.type === "ImportDeclaration" &&
-    statement.importKind === "type" &&
-    source === "@/lib/effect-bridge"
-  );
-}
-
 function isLogModule(source: string, filename: string): boolean {
   if (source === LOGTAPE_MODULE || source === OBSIDIAN_LOG_MODULE) return true;
   if (!source.startsWith(".")) return false;
@@ -59,14 +28,6 @@ function isLogModule(source: string, filename: string): boolean {
     LOG_FILE_SUFFIXES.some((suffix) =>
       target.endsWith(`${LOG_MODULE_PATH}${suffix}`),
     )
-  );
-}
-
-function hasSource(node: ModuleStatement): boolean {
-  return (
-    node.type === "ImportDeclaration" ||
-    node.type === "ExportNamedDeclaration" ||
-    node.type === "ExportAllDeclaration"
   );
 }
 
@@ -93,17 +54,17 @@ export const noLogTapeInEffectFile: Rule = {
     return {
       Program(program) {
         const statements = (program as ModuleProgram).body ?? [];
-        let effectNative = false;
+        if (!importsEffect(statements)) return;
         const logImports: ModuleStatement[] = [];
         for (const statement of statements) {
           if (!hasSource(statement)) continue;
           const source = statement.source?.value;
-          if (typeof source !== "string") continue;
-          if (isEffectModule(source) && !isBridgeType(statement, source))
-            effectNative = true;
-          if (isLogModule(source, context.filename)) logImports.push(statement);
+          if (
+            typeof source === "string" &&
+            isLogModule(source, context.filename)
+          )
+            logImports.push(statement);
         }
-        if (!effectNative) return;
         for (const node of logImports)
           context.report({ node: node as never, messageId: "logtape" });
       },
