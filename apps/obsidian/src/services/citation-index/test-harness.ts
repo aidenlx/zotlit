@@ -157,10 +157,14 @@ export class MockMetadataCache {
   }
 }
 
+type VaultEventName = "create" | "modify" | "rename" | "delete";
+
 export class MockVault {
   readonly bodies = new Map<string, string>();
   readonly reads: string[] = [];
-  readonly #listeners: Record<"rename" | "delete", Set<Callback>> = {
+  readonly #listeners: Record<VaultEventName, Set<Callback>> = {
+    create: new Set(),
+    modify: new Set(),
     rename: new Set(),
     delete: new Set(),
   };
@@ -209,14 +213,14 @@ export class MockVault {
     file.stat = statOf(body);
   }
 
-  on(name: "rename" | "delete", callback: Callback): EventRef {
+  on(name: VaultEventName, callback: Callback): EventRef {
     this.#listeners[name].add(callback);
     return { e: this, name, callback } as unknown as EventRef;
   }
 
   offref(ref: EventRef): void {
     const { name, callback } = ref as unknown as {
-      name: "rename" | "delete";
+      name: VaultEventName;
       callback: Callback;
     };
     this.#listeners[name].delete(callback);

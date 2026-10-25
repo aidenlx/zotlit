@@ -9,6 +9,7 @@ import type { App, Editor, MarkdownFileInfo, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { setup as repositorySetup } from "@/services/annotation-repository/__fixtures__";
 import type { NoteFeature } from "@/services/note-feature";
 import { buildUseLedger } from "@/services/use-ledger/__fixtures__";
@@ -45,6 +46,7 @@ function host(): App {
       onLayoutReady: () => {},
     },
     metadataCache: new MemoryMetadataCache(),
+    vault: new MemoryVault(),
   } as unknown as App;
 }
 
