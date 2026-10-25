@@ -26,6 +26,9 @@ export const workerClient = Effect.fn("ZoteroReads.workerClient")(function* () {
   const pref = yield* ZoteroPref;
   const segmenter = yield* ChineseSegmenter;
   const { language } = yield* ObsidianEnv;
+  // `makeWorkerReads` takes a connect step with no requirement but its Scope
+  // and reruns it on every respawn, so the step carries the file system its
+  // dead-worker reap reads.
   const fs = yield* FileSystem.FileSystem;
   // Clear the read clones of crashed runs from the system temp folder once a
   // launch. Forked on the layer's Scope: the launch never waits on it, and

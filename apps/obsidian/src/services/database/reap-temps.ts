@@ -76,11 +76,17 @@ function parseTempPid(entry: string): number | null {
   return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
 }
 
-/** Whether a process holds `pid`, probed with signal 0. */
+/**
+ * Whether a process holds `pid`, probed with signal 0. A refused probe fails
+ * with its answer already: EPERM means the PID exists but another user owns
+ * it, so it is still live; any other refusal means no process holds it.
+ */
 function isPidLive(pid: number): Effect.Effect<boolean> {
   return Effect.try({
     try: () => process.kill(pid, 0),
-    // EPERM means the PID exists but is owned by another user — still live.
     catch: (error) => isErrno(error, "EPERM"),
-  }).pipe(Effect.match({ onSuccess: () => true, onFailure: (live) => live }));
+  }).pipe(
+    Effect.as(true),
+    Effect.catch((ownedByAnotherUser) => Effect.succeed(ownedByAnotherUser)),
+  );
 }

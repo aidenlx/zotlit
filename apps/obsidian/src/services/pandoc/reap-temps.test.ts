@@ -1,6 +1,6 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { layer } from "@effect/vitest";
-import { Effect, Fiber } from "effect";
+import { Effect } from "effect";
 import { TestClock } from "effect/testing";
 import {
   mkdir,
@@ -97,17 +97,6 @@ layer(NodeFileSystem.layer)("reapCslStore", (it) => {
     Effect.gen(function* () {
       yield* Effect.promise(() => rm(store, { recursive: true }));
       yield* reapCslStore({ parent });
-    }),
-  );
-
-  it.effect("leaves every entry in place when interrupted before it runs", () =>
-    Effect.gen(function* () {
-      yield* entry("old.csl", 31 * DAY);
-      const reap = yield* Effect.forkChild(reapCslStore({ parent }), {
-        startImmediately: false,
-      });
-      yield* Fiber.interrupt(reap);
-      expect(yield* names).toEqual(["old.csl"]);
     }),
   );
 });

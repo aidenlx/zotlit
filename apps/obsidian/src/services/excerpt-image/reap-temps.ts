@@ -14,7 +14,7 @@ const PNG_MAX_AGE = Duration.days(7);
 /** A `.part` file outlives its write only when the write was abandoned. */
 const PART_MAX_AGE = Duration.hours(1);
 
-/** Evict published PNGs unused for seven days and writes abandoned for an hour. */
+/** Evict the excerpt PNGs and staged writes no CLI caller can still be reading. */
 export const reapExcerptTemps = Effect.fnUntraced(function* ({
   parent = tmpdir(),
 }: ReapTempsOptions = {}) {

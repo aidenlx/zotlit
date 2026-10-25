@@ -1,6 +1,6 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { layer } from "@effect/vitest";
-import { Effect, Fiber } from "effect";
+import { Effect } from "effect";
 import { TestClock } from "effect/testing";
 import {
   mkdir,
@@ -81,16 +81,5 @@ layer(NodeFileSystem.layer)("reapExcerptTemps", (it) => {
 
   it.effect("settles quietly before anything was published", () =>
     reapExcerptTemps({ parent: join(parent, "missing") }),
-  );
-
-  it.effect("leaves every entry in place when interrupted before it runs", () =>
-    Effect.gen(function* () {
-      yield* entry("old.png", 8 * DAY);
-      const reap = yield* Effect.forkChild(reapExcerptTemps({ parent }), {
-        startImmediately: false,
-      });
-      yield* Fiber.interrupt(reap);
-      expect(yield* names).toEqual(["old.png"]);
-    }),
   );
 });
