@@ -114,7 +114,8 @@ it.effect("#1705: published vault edits reconcile on the Effect Clock", () =>
 it.effect("#1705: startup failure settles into the init-failed state", () =>
   Effect.gen(function* () {
     const host = createTemplateHost();
-    vi.spyOn(host.vault, "on").mockImplementationOnce(() => {
+    // The first folder read of startup's template scan throws.
+    vi.spyOn(host.vault, "getFolderByPath").mockImplementationOnce(() => {
       throw new Error("vault unavailable");
     });
     const template = yield* templateOf(host);

@@ -4,6 +4,7 @@ import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { testEvents } from "@/lib/__fixtures__/event-stream";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { Effect } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
@@ -68,7 +69,7 @@ function harness() {
   const db = reads();
   const popover = citationPopoverFixture({
     app: {
-      vault: { getFileByPath: (path: string) => ({ path }) },
+      vault: MemoryVault.with({ getFileByPath: (path: string) => ({ path }) }),
     },
     db,
     citationLookup: {

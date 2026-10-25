@@ -128,7 +128,10 @@ it.effect("reads the live layer's file manager from ObsidianApp", () =>
 // Test hosts that never touch the file manager stub no `fileManager`.
 it.effect("builds over a test host's app that has no file manager", () =>
   Effect.gen(function* () {
-    const app = { metadataCache: { on() {}, offref() {} } } as unknown as App;
+    const app = {
+      metadataCache: { on() {}, offref() {} },
+      vault: { on() {}, offref() {} },
+    } as unknown as App;
     yield* Effect.service(FileManager).pipe(Effect.provide(layerHostApp(app)));
   }),
 );

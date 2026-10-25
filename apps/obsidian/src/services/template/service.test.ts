@@ -1441,6 +1441,31 @@ partials:
       }),
   );
 
+  // Obsidian fires a rename and the edit that follows it in one tick; the
+  // vault tag hands both to the template intake in that order.
+  it.effect("keeps a rename before the edit that follows it in one tick", () =>
+    Effect.gen(function* () {
+      const context = yield* Effect.context<never>();
+      const vault = new MockVault();
+      vault.addFile("templates/zotlit-note.eta.md", "custom {{ zt.title }}");
+      const { service } = yield* Effect.promise(() =>
+        makeHarness({ vault, javascriptTemplates: true }, context),
+      );
+
+      vault.renameFile(
+        "templates/zotlit-note.eta.md",
+        "templates/zotlit-note.liquid.md",
+      );
+      vault.modifyFile(
+        "templates/zotlit-note.liquid.md",
+        "edited {{ zt.title }}",
+      );
+      yield* TestClock.adjust(500);
+
+      expect(service.render("note", { title: "Paper" })).toBe("edited Paper");
+    }),
+  );
+
   it.effect(
     "fails loudly for a broken liquid winner without falling back to a healthy eta file",
     () =>

@@ -646,6 +646,29 @@ describe("CitationIndex", () => {
       }),
   );
 
+  it.effect(
+    "indexes a rename and a change made in one tick under the new path",
+    () =>
+      Effect.promise(async () => {
+        const { draft, index, metadataCache, vault } = await makeHarness({
+          "draft.md": "As @doe2024 wrote.",
+        });
+        await citationsOf(index, draft);
+
+        vault.rename(draft, "Notes/paper.md");
+        metadataCache.change(draft, "As @roe2025 wrote.");
+
+        await expect
+          .poll(() =>
+            [...index.citationsByPath(["citekey"])].map(([path, found]) => [
+              path,
+              found.map(({ raw }) => raw),
+            ]),
+          )
+          .toEqual([["Notes/paper.md", ["roe2025"]]]);
+      }),
+  );
+
   it.effect("drops a deleted document", () =>
     Effect.promise(async () => {
       const { draft, index, vault, workspace } = await makeHarness({

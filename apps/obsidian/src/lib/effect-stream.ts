@@ -4,14 +4,21 @@ import { Cause, Effect, PubSub, Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { isScopeClosed } from "@/lib/effect-scope";
 
-/** The events of one tag from a tagged-union Stream, narrowed to that member. */
+/**
+ * The events of the given tags from a tagged-union Stream, narrowed to those
+ * members. One pass over the Stream, so the order across tags stays.
+ */
 export function filterTag<
   A extends { readonly _tag: string },
   T extends A["_tag"],
->(stream: Stream.Stream<A>, tag: T): Stream.Stream<Extract<A, { _tag: T }>> {
+>(
+  stream: Stream.Stream<A>,
+  ...tags: [T, ...T[]]
+): Stream.Stream<Extract<A, { _tag: T }>> {
+  const wanted = new Set<string>(tags);
   return stream.pipe(
-    Stream.filter(
-      (event): event is Extract<A, { _tag: T }> => event._tag === tag,
+    Stream.filter((event): event is Extract<A, { _tag: T }> =>
+      wanted.has(event._tag),
     ),
   );
 }

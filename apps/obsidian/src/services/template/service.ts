@@ -66,11 +66,13 @@ import {
 import type { Cause } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
-import { changesUntil } from "@/lib/effect-stream";
+import { changesUntil, forkEach } from "@/lib/effect-stream";
 import { ensureFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { processLiveText, readLiveText } from "@/lib/live-text";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { Vault } from "@/lib/obsidian-vault";
+import type { VaultEvent } from "@/lib/obsidian-vault";
 import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { ResolvedProfile } from "@/services/profile/bindings";
@@ -2876,6 +2878,7 @@ export const layerTemplate = Layer.effect(
   Template,
   Effect.gen(function* () {
     const app = yield* ObsidianApp;
+    const vault = yield* Vault;
     const settings = yield* PluginSettings;
     const scope = yield* Scope.fork(yield* Scope.Scope);
     const context = yield* Effect.context<never>();
@@ -2888,10 +2891,7 @@ export const layerTemplate = Layer.effect(
     const compileEvents = yield* PubSub.unbounded<void>();
     yield* Effect.addFinalizer(() => PubSub.shutdown(compileEvents));
     const intake = yield* obsidianEvents<{
-      create: [TAbstractFile];
-      modify: [TAbstractFile];
-      rename: [TAbstractFile, string];
-      delete: [TAbstractFile];
+      vault: [VaultEvent];
       flush: [];
     }>();
     const engine = new TemplateEngine({
@@ -2954,16 +2954,22 @@ export const layerTemplate = Layer.effect(
       .consume((event) =>
         Effect.gen(function* () {
           switch (event.type) {
-            case "create":
-            case "modify":
-              engine.onCreateOrModify(event.args[0]);
+            case "vault": {
+              const [change] = event.args;
+              switch (change._tag) {
+                case "create":
+                case "modify":
+                  engine.onCreateOrModify(change.file);
+                  break;
+                case "rename":
+                  engine.onRename(change.file, change.oldPath);
+                  break;
+                case "delete":
+                  engine.onDelete(change.file);
+                  break;
+              }
               break;
-            case "rename":
-              engine.onRename(...event.args);
-              break;
-            case "delete":
-              engine.onDelete(event.args[0]);
-              break;
+            }
             case "flush":
               yield* attemptPromise(() => engine.flushPending());
               break;
@@ -2972,8 +2978,9 @@ export const layerTemplate = Layer.effect(
       )
       .pipe(Effect.forkScoped({ startImmediately: true }));
     yield* Effect.gen(function* () {
-      for (const event of ["create", "modify", "rename", "delete"] as const)
-        yield* intake.on(event, app.vault, event);
+      // The vault's events join the flush requests in one ordered intake:
+      // forkEach hands each over inside Obsidian's callback.
+      yield* forkEach(vault.changes, intake.callback("vault"));
       yield* attemptPromise(() => engine.load());
       publishStatus();
     }).pipe(

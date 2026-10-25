@@ -69,7 +69,7 @@ export async function openNoteVault(
 }
 
 type Callback = (...args: unknown[]) => void;
-type VaultEvent = "rename" | "delete";
+type VaultEvent = "create" | "modify" | "rename" | "delete";
 
 /** The in-memory metadata cache, following the vault as Obsidian's does. */
 class MockMetadataCache extends MemoryMetadataCache {
@@ -97,6 +97,8 @@ class MockVault {
   readonly files = new Map<string, TFile>();
 
   readonly #listeners: Record<VaultEvent, Set<Callback>> = {
+    create: new Set(),
+    modify: new Set(),
     rename: new Set(),
     delete: new Set(),
   };

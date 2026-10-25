@@ -4,6 +4,7 @@ import type { LinkCache, TFile } from "obsidian";
 import { describe, expect, vi } from "vitest";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
@@ -229,11 +230,11 @@ async function makeHarness({
         changed: stream("lookup:changed"),
       },
       app: {
-        vault: {
+        vault: MemoryVault.with({
           cachedRead: () => Promise.resolve(body),
           getFileByPath: (path: string) =>
             present && path === NOTE.path ? NOTE : null,
-        },
+        }),
         metadataCache: {
           offref: () => {},
           on: (name: string, cb: () => void) => {
