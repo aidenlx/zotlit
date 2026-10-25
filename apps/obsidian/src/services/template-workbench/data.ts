@@ -313,7 +313,7 @@ function renderAnnotationCitation(
  * `sourcePath`: `folderPath`, or Obsidian's own attachment folder when the
  * setting is empty. `"/"` names the vault root.
  */
-const attachmentFolder = (
+export const attachmentFolder = (
   fileManager: FileManager["Service"],
   folderPath: string | null,
   sourcePath?: string,

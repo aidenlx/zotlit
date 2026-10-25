@@ -50,6 +50,16 @@ export async function referencedExcerptPaths(
   file: TFile,
 ): Promise<string[]> {
   const content = await readLiveText(app, file);
+  const paths = new Set<string>();
+  for (const link of linkTargets(content)) {
+    const target = app.metadataCache.getFirstLinkpathDest(link, file.path);
+    if (target) paths.add(target.path);
+  }
+  return [...paths];
+}
+
+/** The link texts a note's `content` points at: wikilinks, links and images. */
+export function linkTargets(content: string): string[] {
   const definitions = new Map<string, string>();
   const targets: string[] = [];
   const labels: string[] = [];
@@ -88,10 +98,5 @@ export async function referencedExcerptPaths(
     const target = definitions.get(label);
     if (target) targets.push(target);
   }
-  const paths = new Set<string>();
-  for (const link of targets) {
-    const target = app.metadataCache.getFirstLinkpathDest(link, file.path);
-    if (target) paths.add(target.path);
-  }
-  return [...paths];
+  return targets;
 }
