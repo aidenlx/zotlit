@@ -59,6 +59,7 @@ import { QueryService } from "./item-query/service";
 import { LanguagePack } from "./language-pack/service";
 import type { LanguagePackStartup } from "./language-pack/service";
 import { plainLibraryScope } from "./library-scope/plain";
+import { LibraryScope } from "./library-scope/service";
 import { LocalBridgeService } from "./local-bridge/service";
 import { LocalServer } from "./local-server/service";
 import { bindManagedBinary } from "./managed-binary/handle";
@@ -373,7 +374,6 @@ export async function buildServices(
     .useValue({
       templateMigration: ({
         zoteroReads,
-        libraryScope,
         noteIndex,
         settings,
         template,
@@ -385,7 +385,7 @@ export async function buildServices(
               {
                 app: plugin.app,
                 zoteroReads,
-                libraryScope,
+                libraryScope: runtime.runSync(LibraryScope),
                 noteIndex,
                 settings,
                 templates: template,
@@ -451,7 +451,6 @@ export async function buildServices(
         noteIndex,
         zoteroPref,
         settings,
-        libraryScope,
         noteFeature,
       }) =>
         createProfileCreator({
@@ -462,7 +461,7 @@ export async function buildServices(
           noteIndex,
           zoteroPref,
           settings,
-          libraryScope,
+          libraryScope: runtime.runSync(LibraryScope),
           noteFeature,
         }),
     })
@@ -474,7 +473,6 @@ export async function buildServices(
         noteIndex,
         zoteroPref,
         settings,
-        libraryScope,
         noteFeature,
       }) =>
         createProfileImporter({
@@ -485,7 +483,7 @@ export async function buildServices(
           noteIndex,
           zoteroPref,
           settings,
-          libraryScope,
+          libraryScope: runtime.runSync(LibraryScope),
           noteFeature,
         }),
     })

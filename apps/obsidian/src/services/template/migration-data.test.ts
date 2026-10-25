@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { expect, it, vi } from "vitest";
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
@@ -82,7 +83,7 @@ it("verifies against the first in-scope item that renders, its Citation read bef
         LiteratureNoteTemplateMigrationDataDeps["libraryScope"]
       >("LibraryScope", {
         resolveLibraries: (libraries: readonly Library[]) =>
-          resolveLibraryScope(libraries, MY_LIBRARY_SCOPE),
+          Effect.sync(() => resolveLibraryScope(libraries, MY_LIBRARY_SCOPE)),
       }),
       noteIndex: stubService<
         LiteratureNoteTemplateMigrationDataDeps["noteIndex"]

@@ -1,4 +1,5 @@
 import { ToggleComponent, controlsOf } from "@mock/obsidian";
+import { Effect } from "effect";
 // @vitest-environment happy-dom
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -391,12 +392,13 @@ async function importerFixture(kind: "fresh" | "replace" = "fresh") {
       libraryScope: stubService<ProfileDialogServices["libraryScope"]>(
         "LibraryScope",
         {
-          resolveLibraries: () => ({
-            mode: "all",
-            invalid: false,
-            available: [],
-            unavailable: [],
-          }),
+          resolveLibraries: () =>
+            Effect.succeed({
+              mode: "all",
+              invalid: false,
+              available: [],
+              unavailable: [],
+            }),
         },
       ),
       zoteroPref: stubService<ProfileDialogServices["zoteroPref"]>(
