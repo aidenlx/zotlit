@@ -22,14 +22,16 @@ import {
   Deferred,
   Effect,
   Exit,
-  Fiber,
   FiberHandle,
   FiberSet,
   Layer,
   Scope,
 } from "effect";
+import type { Fiber } from "effect";
 
+import { awaitOwned } from "@/lib/effect-fiber";
 import { withLogCategory } from "@/lib/effect-log";
+import { isScopeClosed } from "@/lib/effect-scope";
 import { forkEach } from "@/lib/effect-stream";
 import { selectorKey } from "@/services/library-scope/scope";
 import type {
@@ -101,9 +103,14 @@ const logInterrupted = (query: string) =>
  */
 const deferredStart = { startImmediately: false } as const;
 
-/** How `fiber` ended; interrupting the caller interrupts `fiber`. */
-const awaitSearch = (fiber: Fiber.Fiber<SearchHit[]>) =>
-  Fiber.await(fiber).pipe(Effect.onInterrupt(() => Fiber.interrupt(fiber)));
+/**
+ * How the search that `fork` starts ended. No interrupt lands between the
+ * fork and the wait; interrupting the caller interrupts the search.
+ */
+const runSearch = (fork: Effect.Effect<Fiber.Fiber<SearchHit[]>>) =>
+  Effect.uninterruptibleMask((restore) =>
+    Effect.flatMap(fork, (fiber) => awaitOwned(fiber, restore)),
+  );
 
 export const layerItemLookup = Layer.effect(
   ItemLookup,
@@ -194,8 +201,8 @@ export const layerItemLookup = Layer.effect(
     ) {
       const request = yield* requestOf(query, opts);
       if (request === undefined) return [];
-      const exit = yield* awaitSearch(
-        yield* FiberSet.run(oneShots, request, deferredStart),
+      const exit = yield* runSearch(
+        FiberSet.run(oneShots, request, deferredStart),
       );
       if (Exit.isSuccess(exit)) return exit.value;
       // A scope change interrupted this search, or the service closed.
@@ -209,15 +216,10 @@ export const layerItemLookup = Layer.effect(
       const handle = yield* FiberHandle.make<SearchHit[]>().pipe(
         Scope.provide(sessionScope),
       );
-      let closed = false;
       sessions.add(handle);
-      // Added after the handle, so it runs before the handle closes.
       yield* Scope.addFinalizer(
         sessionScope,
-        Effect.sync(() => {
-          closed = true;
-          sessions.delete(handle);
-        }),
+        Effect.sync(() => sessions.delete(handle)),
       );
       /** The answer of the newest search the session runs. */
       let latest: Deferred.Deferred<SearchHit[]> | undefined;
@@ -226,14 +228,14 @@ export const layerItemLookup = Layer.effect(
           query: string,
           opts?: SearchOptions,
         ) {
-          if (closed) return [];
+          if (isScopeClosed(sessionScope)) return [];
           const request = yield* requestOf(query, opts);
           const answer = yield* Deferred.make<SearchHit[]>();
           latest = answer;
           const settled = yield* Effect.gen(function* () {
             if (request === undefined) return [];
-            const exit = yield* awaitSearch(
-              yield* FiberHandle.run(handle, request, deferredStart),
+            const exit = yield* runSearch(
+              FiberHandle.run(handle, request, deferredStart),
             );
             if (Exit.isSuccess(exit)) return exit.value;
             // A newer search interrupted this one, or the session closed.

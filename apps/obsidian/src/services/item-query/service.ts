@@ -22,7 +22,9 @@ import { dirname, join } from "node:path";
 import type { CliData } from "obsidian";
 
 import type { CliRejection } from "@/lib/cli-params";
+import { awaitOwned } from "@/lib/effect-fiber";
 import { withLogCategory } from "@/lib/effect-log";
+import { isScopeClosed } from "@/lib/effect-scope";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { LibraryScope } from "@/services/library-scope/service";
 import { UseLedger } from "@/services/use-ledger/service";
@@ -166,14 +168,6 @@ export function layerQueryService({
       const fs = yield* FileSystem.FileSystem;
       const scope = yield* Scope.Scope;
       const jobs = yield* FiberMap.make<string, unknown, ItemQueryError>();
-      // Added after the map, so it runs first: the jobs the close interrupts
-      // name the unload, not a cancel by id.
-      let closing = false;
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          closing = true;
-        }),
-      );
       const runJob = yield* FiberMap.runtime(jobs)();
       let viewRuns = 0;
 
@@ -203,19 +197,23 @@ export function layerQueryService({
         );
 
       /**
-       * The value of `fiber`, or none when it was interrupted; interrupting
-       * the caller interrupts the job and waits for it.
+       * Fork a job with `fork` and wait until it settles: its value, or none
+       * when it was interrupted; `undefined` when `fork` started no job. No
+       * interrupt lands between the fork and the wait, so the job always has
+       * an owner; interrupting the caller interrupts the job and waits for it.
        */
-      const settle = <A>(fiber: Fiber.Fiber<A, ItemQueryError>) =>
-        Fiber.await(fiber).pipe(
-          Effect.onInterrupt(() => Fiber.interrupt(fiber)),
-          Effect.flatMap((exit) =>
-            Exit.isSuccess(exit)
-              ? Effect.succeedSome(exit.value)
-              : Cause.hasInterruptsOnly(exit.cause)
-                ? Effect.succeedNone
-                : Effect.failCause(exit.cause),
-          ),
+      const settle = <A>(
+        fork: Effect.Effect<Fiber.Fiber<A, ItemQueryError> | undefined>,
+      ): Effect.Effect<Option.Option<A> | undefined, ItemQueryError> =>
+        Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function* () {
+            const fiber = yield* fork;
+            if (fiber === undefined) return undefined;
+            const exit = yield* awaitOwned(fiber, restore);
+            if (Exit.isSuccess(exit)) return Option.some(exit.value);
+            if (Cause.hasInterruptsOnly(exit.cause)) return Option.none();
+            return yield* Effect.failCause(exit.cause);
+          }),
         );
 
       /**
@@ -345,14 +343,16 @@ export function layerQueryService({
         job: Effect.Effect<string, ItemQueryError>,
         id?: string,
       ) {
-        const fiber =
-          id === undefined ? yield* forkUnnamed(job) : yield* claim(job, id);
-        if (fiber === undefined) return queryIdInUseFailure(id ?? "", command);
-        const settled = yield* settle(fiber);
+        const settled = yield* settle(
+          id === undefined ? forkUnnamed(job) : claim(job, id),
+        );
+        if (settled === undefined)
+          return queryIdInUseFailure(id ?? "", command);
         if (Option.isSome(settled)) return settled.value;
+        // A job that the closing layer interrupted names the unload.
         return yield* new QueryCancelled({
           message:
-            id === undefined || closing
+            id === undefined || isScopeClosed(scope)
               ? "The query was cancelled."
               : queryCancelledText(id),
         });
@@ -417,34 +417,40 @@ export function layerQueryService({
             schema: false,
             view: request,
           };
-          const fiber = yield* forkUnnamed(
-            send(command).pipe(
-              Effect.flatMap((answer) =>
-                answer.view
-                  ? Effect.succeed(answer.view)
-                  : Effect.die(
-                      new Error(
-                        "ZotLit Query answered a typed query with text.",
+          const settled = yield* settle(
+            forkUnnamed(
+              send(command).pipe(
+                Effect.flatMap((answer) =>
+                  answer.view
+                    ? Effect.succeed(answer.view)
+                    : Effect.die(
+                        new Error(
+                          "ZotLit Query answered a typed query with text.",
+                        ),
                       ),
-                    ),
+                ),
               ),
             ),
           );
-          const settled = yield* settle(fiber);
-          return Option.getOrElse(settled, (): QueryViewOutcome => ({
-            kind: "cancelled",
-          }));
+          return Option.getOrElse(
+            settled ?? Option.none(),
+            (): QueryViewOutcome => ({ kind: "cancelled" }),
+          );
         }),
         customFieldNames: Effect.gen(function* () {
-          const fiber = yield* forkUnnamed(
-            send({
-              command: QUERY_SCHEMA_COMMAND,
-              schema: false,
-              customFields: true,
-            }).pipe(Effect.map((answer) => answer.customFields ?? [])),
+          const settled = yield* settle(
+            forkUnnamed(
+              send({
+                command: QUERY_SCHEMA_COMMAND,
+                schema: false,
+                customFields: true,
+              }).pipe(Effect.map((answer) => answer.customFields ?? [])),
+            ),
           );
-          const settled = yield* settle(fiber);
-          return Option.getOrElse(settled, (): readonly string[] => []);
+          return Option.getOrElse(
+            settled ?? Option.none(),
+            (): readonly string[] => [],
+          );
         }).pipe(Effect.withSpan("QueryService.customFieldNames")),
         cancel: Effect.fn("QueryService.cancel")(function* (id: string) {
           if (!FiberMap.hasUnsafe(jobs, id)) return false;

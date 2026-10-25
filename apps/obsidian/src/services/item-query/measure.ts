@@ -119,7 +119,7 @@ export interface QueryMeasureReport {
 
 const now = (): number => performance.now();
 const errorText = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
+  Error.isError(error) ? error.message : String(error);
 const round = (ms: number): number => Math.round(ms * 100) / 100;
 
 /**

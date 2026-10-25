@@ -1,8 +1,10 @@
 // The Item search for views and legacy code: the ItemLookup tag behind Promises.
-import { Exit, Scope } from "effect";
+import { Scope } from "effect";
+import type { Exit } from "effect";
 
 import { valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
+import { openScope } from "@/lib/effect-scope";
 
 import type { ItemLookup, SearchHit, SearchOptions } from "./service";
 
@@ -16,7 +18,11 @@ export interface SearchSession extends Disposable {
   close(): void;
 }
 
-/** {@link ItemLookup} for callers outside Effect. A search the unload interrupts answers empty. */
+/**
+ * {@link ItemLookup} for callers outside Effect: an edge handle
+ * (`policies/services.md` → Edge handle). A search the unload interrupts
+ * answers empty.
+ */
 export interface ItemLookupHandle {
   search(query: string, opts?: SearchOptions): Promise<SearchHit[]>;
   openSession(): SearchSession;
@@ -25,28 +31,21 @@ export interface ItemLookupHandle {
 const released = (exit: Exit.Exit<SearchHit[]>) => valueOr(exit, []);
 
 export function bindItemLookup(
-  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "runPromiseExit">,
+  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">,
   lookup: ItemLookup["Service"],
 ): ItemLookupHandle {
   return {
     search: (query, opts) =>
       bridge.runPromiseExit(lookup.search(query, opts)).then(released),
     openSession: () => {
-      const scope = Scope.makeUnsafe();
+      const { scope, close } = openScope();
       const session = bridge.runSync(Scope.provide(lookup.openSession, scope));
-      let closed = false;
-      const close = () => {
-        if (closed) return;
-        closed = true;
-        void bridge.runPromise(Scope.close(scope, Exit.void));
-      };
+      const end = () => void close();
       return {
         search: (query, opts) =>
-          closed
-            ? Promise.resolve([])
-            : bridge.runPromiseExit(session.search(query, opts)).then(released),
-        close,
-        [Symbol.dispose]: close,
+          bridge.runPromiseExit(session.search(query, opts)).then(released),
+        close: end,
+        [Symbol.dispose]: end,
       };
     },
   };
