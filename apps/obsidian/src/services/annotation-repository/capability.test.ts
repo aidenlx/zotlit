@@ -6,9 +6,9 @@ import type {
   WriteAuthorizationState,
 } from "@/services/zotero-local-api/service";
 
+import { cooldownFailureOf, utcAt } from "./__fixtures__/capability";
 import { editingCapabilityOf } from "./capability";
 import type { EditingCapability } from "./capability";
-import { cooldownFailureOf, utcAt } from "./capability-fixtures";
 
 const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 

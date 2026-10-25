@@ -25,7 +25,12 @@ export function fromInstant(instant: Temporal.Instant): DateTime.Utc {
   return DateTime.makeUnsafe(instant.epochMilliseconds);
 }
 
-/** `duration` as the Temporal.Duration of plain code: the same span, in milliseconds. */
+/**
+ * `duration` as the Temporal.Duration of plain code: the same span, in
+ * milliseconds. It carries whole milliseconds and expects a finite Duration of
+ * whole milliseconds; a fractional or infinite Duration throws a RangeError
+ * from Temporal.
+ */
 export function toTemporalDuration(
   duration: Duration.Duration,
 ): Temporal.Duration {

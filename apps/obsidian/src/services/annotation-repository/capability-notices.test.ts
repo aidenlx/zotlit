@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 
+import { cooldownFailureOf } from "./__fixtures__/capability";
 import type { EditingCapability } from "./capability";
 import { editingCapabilityCopy } from "./capability-copy";
-import { cooldownFailureOf } from "./capability-fixtures";
 import {
   allowEditingNotice,
   CapabilityNoticeLedger,

@@ -1,3 +1,4 @@
+import { Duration } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { stringifyInstant } from "./constants";
@@ -19,6 +20,17 @@ describe("effect-clock edge", () => {
     expect(back.total({ unit: "millisecond" })).toBe(
       span.total({ unit: "millisecond" }),
     );
+  });
+
+  it("reads the span of a Duration in each direction", () => {
+    expect(
+      toTemporalDuration(Duration.seconds(97)).total({ unit: "second" }),
+    ).toBe(97);
+    expect(
+      Duration.toMillis(
+        fromTemporalDuration(Temporal.Duration.from({ seconds: 97 })),
+      ),
+    ).toBe(97_000);
   });
 
   it.each([

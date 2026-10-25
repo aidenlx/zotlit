@@ -15,7 +15,6 @@ import {
   libraryReadOnly,
   localApiClient,
   localApiDisabled,
-  NOW,
   rateLimited,
   rootOk,
   serverChanged,
@@ -223,7 +222,7 @@ it("holds Zotero's cooldown, with the Retry-After it named", async () => {
     },
   });
   expect(bridge.runSync(service.writeStateFor(null)).cooldownUntil).toEqual(
-    DateTime.addDuration(NOW, Duration.seconds(60)),
+    DateTime.makeUnsafe("2026-09-16T15:53:21Z"),
   );
   // A second gesture inside the cooldown asks Zotero nothing: the rate limit is
   // what a sixth dialog request in a minute costs.
