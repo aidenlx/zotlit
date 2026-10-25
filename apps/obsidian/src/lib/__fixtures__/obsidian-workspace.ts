@@ -42,6 +42,8 @@ export class MemoryWorkspace implements WorkspaceSource {
     newLeaf: PaneType | boolean | undefined;
     openViewState: OpenViewState | undefined;
   }[] = [];
+  /** The pane of each `getLeaf` call, in order. */
+  readonly leafRequests: (PaneType | boolean | undefined)[] = [];
   readonly #listeners = new Map<string, Set<Callback>>();
   readonly #readyCallbacks: (() => void)[] = [];
   #layoutReady: boolean;
@@ -117,6 +119,12 @@ export class MemoryWorkspace implements WorkspaceSource {
     >
   ): Promise<void> {
     this.opened.push({ linktext, sourcePath, newLeaf, openViewState });
+  }
+
+  /** Records the pane; the leaf shows no view. */
+  getLeaf(newLeaf?: PaneType | boolean): WorkspaceLeaf {
+    this.leafRequests.push(newLeaf);
+    return stubService<WorkspaceLeaf>("WorkspaceLeaf", {});
   }
 
   /** The active file becomes `file`, then `file-open`. */

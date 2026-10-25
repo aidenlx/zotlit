@@ -35,6 +35,7 @@ export type WorkspaceSource = Pick<
   | "getLeavesOfType"
   | "updateOptions"
   | "openLinkText"
+  | "getLeaf"
   | "trigger"
 > &
   ObsidianEventEmitter;
@@ -88,6 +89,11 @@ export interface WorkspaceShape {
       readonly state?: OpenViewState;
     },
   ): Effect.Effect<void>;
+  /**
+   * Obsidian's `getLeaf`: a leaf in the pane `newLeaf` names, for a view to
+   * open in.
+   */
+  getLeaf(newLeaf?: PaneType | boolean): Effect.Effect<WorkspaceLeaf>;
   /** Obsidian's `trigger`: raise the workspace event `name` with `data`. */
   trigger(name: string, ...data: unknown[]): Effect.Effect<void>;
   /**
@@ -178,6 +184,9 @@ export const makeWorkspace = Effect.fnUntraced(function* (
             options.state,
           ),
         ),
+    ),
+    getLeaf: Effect.fn("Workspace.getLeaf")((newLeaf) =>
+      Effect.sync(() => source.getLeaf(newLeaf)),
     ),
     // Untraced: a citation raises its menus from a pointer handler.
     trigger: Effect.fnUntraced(function* (name, ...data) {
