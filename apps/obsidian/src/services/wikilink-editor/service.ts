@@ -12,16 +12,13 @@ import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
 import { WikilinkDisplaySettings } from "@/lib/wikilink-citation";
-import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
-import { heldCitekeyOf } from "@/services/citation-index/lookup";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
-import type { CitationLookupAnswer } from "@/services/citation-index/service";
 import { CitationPopover } from "@/services/citation-popover/service";
 import { CitationText } from "@/services/citation-text/service";
 import { CitekeyEditor } from "@/services/citekey-editor/service";
 import {
   NoteIndex,
-  resolveLiteratureNoteIn,
+  literatureNoteTargetIn,
 } from "@/services/note-index/service";
 import { PluginSettings } from "@/services/settings/service";
 
@@ -63,30 +60,16 @@ export const layerWikilinkEditor = Layer.effectDiscard(
     /** The source and display settings that decide what a link displays. */
     const display = new WikilinkDisplaySettings();
 
-    /** The Literature Note `linkpath` names from `sourcePath`, with its citation key. */
-    const literatureNote = Effect.fnUntraced(function* (
-      linkpath: string,
-      sourcePath: string,
-      answer: CitationLookupAnswer | null,
-    ) {
-      const note = yield* resolveLiteratureNoteIn(
-        metadata,
-        linkpath,
-        sourcePath,
-      );
-      if (!note) return null;
-      const target: LiteratureNoteTarget = {
-        ...note,
-        citationKey: heldCitekeyOf(answer, note.indexedKey) ?? null,
-      };
-      return target;
-    });
-
     /** Registered once; emptied when the layer closes, which retires the treatment. */
     const extensions: Extension[] = [
       wikilinkEditorExtension({
         literatureNote: (linkpath, sourcePath, answer) =>
-          run(literatureNote(linkpath, sourcePath, answer)),
+          run(
+            literatureNoteTargetIn(metadata, linkpath, {
+              sourcePath,
+              lookup: answer,
+            }),
+          ),
         observeLookup: (changed) => run(lookup.observe(changed)),
         enabled: () => display.enabled,
         citationText: (path) => run(citationText.peek(path)),
