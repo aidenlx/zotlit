@@ -1,8 +1,17 @@
-import { TFile } from "@mock/obsidian";
 import { Effect } from "effect";
-import type { Command } from "obsidian";
+import { TFile } from "obsidian";
+import type {
+  App,
+  CachedMetadata,
+  Command,
+  FileSystemAdapter,
+  MetadataCache,
+  Vault,
+  Workspace,
+} from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   createObsidianAttachmentReader,
   openAttachments,
@@ -20,11 +29,8 @@ import {
   createPdfReader,
   resolveLiteratureNoteAttachments,
 } from "./actions";
-import type {
-  AttachmentOpenDeps,
-  AttachmentOpenLookupDeps,
-  PdfReaderDeps,
-} from "./actions";
+import type { AttachmentOpenDeps, PdfReaderDeps } from "./actions";
+import type { TargetOpener } from "./open-target";
 
 vi.mock("@/views/annot-view/register", () => ({
   activateAnnotView: vi.fn(),
@@ -64,18 +70,54 @@ function readsOver(
   return stack.use(inProcessReadsService(memoryOpener(() => seed).open));
 }
 
+/**
+ * An App over a vault at /vault, whose workspace has `active` open and whose
+ * metadata cache answers `cache` for it.
+ */
+function appWith(
+  active: TFile | null = null,
+  cache: CachedMetadata | null = null,
+): App {
+  return stubService<App>("App", {
+    vault: stubService<Vault>("Vault", {
+      adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
+        getBasePath: () => "/vault",
+      }),
+    }),
+    workspace: stubService<Workspace>("Workspace", {
+      getActiveFile: () => active,
+    }),
+    metadataCache: stubService<MetadataCache>("MetadataCache", {
+      getFileCache: () => cache,
+    }),
+  });
+}
+
+/** Reads a case leaves unread: reading one throws. */
+const unreadReads = stubService<Pick<TestReads, "acquireRead">>(
+  "ZoteroReads",
+  {},
+);
+
+/** An opener a case leaves unused: the picker it builds is mocked. */
+const unusedOpener = stubService<Pick<TargetOpener, "open">>(
+  "TargetOpener",
+  {},
+);
+
 function lookupDeps(
   reads: Pick<TestReads, "acquireRead">,
-  overrides: Partial<AttachmentOpenLookupDeps> = {},
-): AttachmentOpenLookupDeps {
+  overrides: Partial<AttachmentOpenDeps & PdfReaderDeps> = {},
+): AttachmentOpenDeps & PdfReaderDeps {
   return {
-    app: { vault: { adapter: { getBasePath: () => "/vault" } } },
+    app: appWith(),
     reads,
     zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
     settings: { current: Effect.succeed(defaults) },
     bridge: { runSync: Effect.runSync },
+    opener: unusedOpener,
     ...overrides,
-  } as unknown as AttachmentOpenLookupDeps;
+  };
 }
 
 /**
@@ -156,22 +198,15 @@ describe("open-pdf command", () => {
   }
 
   it("is unavailable without an active file", () => {
-    const deps = {
-      ...lookupDeps({ ready: new Promise(() => {}) } as never),
-      app: { workspace: { getActiveFile: () => null } },
-    } as unknown as AttachmentOpenDeps;
+    const deps = lookupDeps(unreadReads);
     expect(register(deps).checkCallback?.(true)).toBe(false);
   });
 
   it("is unavailable when the active file carries no item key", () => {
     const file = new TFile();
-    const deps = {
-      ...lookupDeps({ ready: new Promise(() => {}) } as never),
-      app: {
-        workspace: { getActiveFile: () => file },
-        metadataCache: { getFileCache: () => ({ frontmatter: {} }) },
-      },
-    } as unknown as AttachmentOpenDeps;
+    const deps = lookupDeps(unreadReads, {
+      app: appWith(file, { frontmatter: {} }),
+    });
     expect(register(deps).checkCallback?.(true)).toBe(false);
   });
 
@@ -179,18 +214,8 @@ describe("open-pdf command", () => {
     await using stack = new AsyncDisposableStack();
     const file = new TFile();
 
-    const app = {
-      workspace: { getActiveFile: () => file },
-      metadataCache: {
-        getFileCache: () => ({ frontmatter: { "zotero-key": "ABCD2345" } }),
-      },
-      vault: { adapter: { getBasePath: () => "/vault" } },
-    };
-    const deps = {
-      app,
-      reads: readsOver(stack),
-      zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
-    } as unknown as AttachmentOpenDeps;
+    const app = appWith(file, { frontmatter: { "zotero-key": "ABCD2345" } });
+    const deps = lookupDeps(readsOver(stack), { app });
 
     const command = register(deps);
     expect(command.checkCallback?.(true)).toBe(true);
@@ -211,18 +236,8 @@ describe("open-pdf command", () => {
     await using stack = new AsyncDisposableStack();
     const file = new TFile();
 
-    const app = {
-      workspace: { getActiveFile: () => file },
-      metadataCache: {
-        getFileCache: () => ({ frontmatter: { "zotero-key": "ZZZZ2345" } }),
-      },
-      vault: { adapter: { getBasePath: () => "/vault" } },
-    };
-    const deps = {
-      app,
-      reads: readsOver(stack),
-      zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
-    } as unknown as AttachmentOpenDeps;
+    const app = appWith(file, { frontmatter: { "zotero-key": "ZZZZ2345" } });
+    const deps = lookupDeps(readsOver(stack), { app });
 
     const command = register(deps);
     command.checkCallback?.(false);
@@ -238,8 +253,8 @@ describe("open-pdf command", () => {
 
 describe("createPdfReader", () => {
   /** The hook the reader hands back to its caller once a file is on screen. */
-  function onOpenedOf(deps: AttachmentOpenLookupDeps): () => void {
-    createPdfReader(deps as unknown as PdfReaderDeps);
+  function onOpenedOf(deps: PdfReaderDeps): () => void {
+    createPdfReader(deps);
     const [, options] = vi.mocked(createObsidianAttachmentReader).mock
       .calls[0]!;
     const onOpened = options?.onOpened;
@@ -248,7 +263,7 @@ describe("createPdfReader", () => {
   }
 
   it("brings the annotation view forward beside the PDF by default", () => {
-    const deps = lookupDeps({ ready: new Promise(() => {}) } as never);
+    const deps = lookupDeps(unreadReads);
 
     onOpenedOf(deps)();
 
@@ -257,17 +272,14 @@ describe("createPdfReader", () => {
 
   it("leaves the sidebar alone once the user turns the reveal off", () => {
     onOpenedOf(
-      lookupDeps(
-        { ready: new Promise(() => {}) } as never,
-        {
-          settings: {
-            current: Effect.succeed({
-              ...defaults,
-              "reader.focus-annot-view": false,
-            }),
-          },
-        } as unknown as Partial<AttachmentOpenLookupDeps>,
-      ),
+      lookupDeps(unreadReads, {
+        settings: {
+          current: Effect.succeed({
+            ...defaults,
+            "reader.focus-annot-view": false,
+          }),
+        },
+      }),
     )();
 
     expect(activateAnnotView).not.toHaveBeenCalled();

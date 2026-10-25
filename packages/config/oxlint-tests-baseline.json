@@ -104,9 +104,6 @@
   "apps/obsidian/src/services/annotation-popover/reading.test.ts": [
     "zotlit-effect-tests/typed-fake"
   ],
-  "apps/obsidian/src/services/annotation-popover/service.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/services/annotation-repository/menu.test.ts": [
     "zotlit-effect-tests/typed-fake"
   ],
@@ -121,7 +118,6 @@
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/attachment-open/actions.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
@@ -259,9 +255,6 @@
     "zotlit-effect-tests/typed-fake"
   ],
   "apps/obsidian/src/services/item-query/service.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/library-scope/cli.test.ts": [
     "zotlit-effect-tests/typed-fake"
   ],
   "apps/obsidian/src/services/local-bridge/actions.test.ts": [
