@@ -46,21 +46,12 @@ import { libraryScopeWire } from "@/services/library-scope/scope";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import type { Settings, ZoteroReadMode } from "@/services/settings/schema";
 
+import { Instant } from "./instant-codec";
+
 /** Compile-time assert: `T` must be `true`. */
 type Expect<T extends true> = T;
 /** Mutual assignability: the decoded type is the `@zotlit/db` type. */
 type Equals<A, B> = [A, B] extends [B, A] ? true : false;
-
-/**
- * `Temporal.Instant` is not structured-cloneable; it crosses the wire as its
- * ISO string and arrives as an `Instant`.
- */
-export const Instant = Schema.String.pipe(
-  Schema.decodeTo(Schema.instanceOf(Temporal.Instant), {
-    decode: SchemaGetter.transform((s: string) => Temporal.Instant.from(s)),
-    encode: SchemaGetter.transform((i: Temporal.Instant) => i.toString()),
-  }),
-);
 
 /**
  * A raw Zotero integer column typed as its known values. Decoding accepts any

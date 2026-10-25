@@ -1,6 +1,6 @@
 import { defineConfig } from "oxlint";
 
-import baseConfig from "@zotlit/config/oxlint";
+import baseConfig, { datePattern } from "@zotlit/config/oxlint";
 
 export default defineConfig({
   extends: [baseConfig],
@@ -11,7 +11,7 @@ export default defineConfig({
       // bundler, not for `node scripts/*.ts`.
       files: ["scripts/**"],
       rules: {
-        "no-restricted-imports": "off",
+        "no-restricted-imports": ["error", { patterns: [datePattern] }],
       },
     },
   ],

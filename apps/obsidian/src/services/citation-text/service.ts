@@ -3,6 +3,7 @@ import { QueryObserver } from "@tanstack/query-core";
 import {
   Cause,
   Context,
+  Duration,
   Effect,
   Exit,
   Layer,
@@ -79,9 +80,7 @@ export { type DocumentCitations } from "./present";
 const CITATION_TEXT = "citation-text";
 
 /** How long the text of a document no longer open stays held. */
-const TEXT_GC_TIME = Temporal.Duration.from({ minutes: 5 }).total(
-  "milliseconds",
-);
+const TEXT_GC_TIME = Duration.toMillis(Duration.minutes(5));
 
 /** What a citation shows in place of a note where no serial stands for one. */
 const NO_SERIALS: readonly undefined[] = [];

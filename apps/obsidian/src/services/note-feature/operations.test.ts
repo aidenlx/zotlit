@@ -34,7 +34,7 @@ import type {
 } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import { createFixtureSchema } from "@zotlit/db/test-utils";
+import { createFixtureSchema, rowInstant } from "@zotlit/db/test-utils";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import {
   filenameSuffix,
@@ -5073,8 +5073,8 @@ function makeItem(
     libraryID: input.libraryID ?? 1,
     key: input.key,
     indexedKey: input.indexedKey,
-    dateAdded: Temporal.Instant.from("2024-01-15T10:00:00Z"),
-    dateModified: Temporal.Instant.from("2024-01-15T10:00:00Z"),
+    dateAdded: rowInstant("2024-01-15T10:00:00Z"),
+    dateModified: rowInstant("2024-01-15T10:00:00Z"),
     creators: [],
     primaryCreatorType: "author",
     customFields: new Map(),
@@ -5091,8 +5091,8 @@ function makeCreateGateItem(): Item {
     libraryID: 1,
     key: "RTKEY234",
     indexedKey: "RTKEY234",
-    dateAdded: Temporal.Instant.from("2024-01-15T10:00:00Z"),
-    dateModified: Temporal.Instant.from("2024-01-15T10:00:00Z"),
+    dateAdded: rowInstant("2024-01-15T10:00:00Z"),
+    dateModified: rowInstant("2024-01-15T10:00:00Z"),
     creators: [],
     primaryCreatorType: "author",
     customFields: new Map(),

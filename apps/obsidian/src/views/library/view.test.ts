@@ -51,6 +51,7 @@ import {
 } from "@/views/query-view/__fixtures__/query-run";
 import { openWelcomeView } from "@/views/welcome/register";
 
+import { holdNow, useAt } from "./__fixtures__";
 import { nodeKey } from "./document";
 import type { LibraryNode } from "./document";
 import { openLibraryView } from "./register";
@@ -911,18 +912,13 @@ async function recentRow(
   fields: Readonly<Record<string, string>>,
   kind: UseKind | undefined,
 ): Promise<Element> {
-  const now = vi
-    .spyOn(Temporal.Now, "instant")
-    .mockReturnValue(Temporal.Instant.from("2025-01-02T00:00:00Z"));
+  const now = holdNow("2025-01-02T00:00:00Z");
   cleanup.defer(() => now.mockRestore());
   const { deps, change } = await pluginData();
   const item = SEED[0]!;
   change([{ ...item, fields }]);
   deps.useLedger = {
-    get: () =>
-      kind
-        ? { kind, instant: Temporal.Instant.from("2025-01-01T00:00:00Z") }
-        : undefined,
+    get: () => (kind ? useAt(kind, "2025-01-01T00:00:00Z") : undefined),
   };
   const view = await openTab(deps);
   return view.contentEl.querySelector(`[data-query-papers-row="${item.key}"]`)!;

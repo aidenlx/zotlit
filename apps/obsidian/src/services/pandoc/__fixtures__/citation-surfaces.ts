@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect";
+import { DateTime, Effect, Stream } from "effect";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { subscribe } from "@/lib/effect-stream";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
@@ -601,11 +601,11 @@ function sidebarApp({ app, draft }: CitationIndexHarness): App {
  * polls, until `settled` holds.
  */
 async function settle(settled: () => boolean): Promise<void> {
-  const deadline = Temporal.Now.instant().add({
+  const deadline = DateTime.add(DateTime.nowUnsafe(), {
     milliseconds: TIMEOUT / 2,
   });
   while (!settled()) {
-    if (Temporal.Instant.compare(Temporal.Now.instant(), deadline) > 0) {
+    if (DateTime.isGreaterThan(DateTime.nowUnsafe(), deadline)) {
       throw new Error("a surface never settled");
     }
     await act(async () => {

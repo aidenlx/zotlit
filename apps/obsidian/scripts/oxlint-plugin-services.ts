@@ -792,7 +792,8 @@ function isNowMember(member: TypeNode): boolean {
 /**
  * In an Effect-native file time comes from `Clock`, so `TestClock` drives it
  * (CODING_STANDARDS.md → Effect → Time). A direct read of the system clock
- * skips the Clock service. Under `src/services/**`, a layer constructor that
+ * (`Date.now()`, `new Date()`, `performance.now()`) skips the Clock service;
+ * `temporal-in-effect` reports `Temporal.Now`. Under `src/services/**`, a layer constructor that
  * takes a `now` function in its options asks its caller for a second clock;
  * the layer reads `Clock.Clock` instead. The file that converts the Clock for
  * a non-Effect core, and the backlog, are listed in oxlint.config.ts.
@@ -907,13 +908,7 @@ export const clockTime: Rule = {
         const callee = node.callee as TypeNode;
         const system =
           isMemberOf(callee, DATE, (name) => name === "now") ||
-          isMemberOf(callee, PERFORMANCE, (name) => name === "now") ||
-          (callee.type === "MemberExpression" &&
-            callee.object?.type === "MemberExpression" &&
-            !callee.object.computed &&
-            callee.object.object?.type === "Identifier" &&
-            callee.object.object.name === "Temporal" &&
-            callee.object.property?.name === "Now");
+          isMemberOf(callee, PERFORMANCE, (name) => name === "now");
         if (system) context.report({ node, messageId: "clock" });
       },
       NewExpression(node) {
@@ -925,6 +920,55 @@ export const clockTime: Rule = {
           node.arguments.length === 0
         )
           context.report({ node, messageId: "clock" });
+      },
+    };
+  },
+};
+
+/** `Temporal` as the object of a member access or the left of a type name. */
+function isTemporalRoot(node: TypeNode): boolean {
+  const parent = node.parent as TypeNode | null | undefined;
+  return (
+    (parent?.type === "MemberExpression" && parent.object === node) ||
+    (parent?.type === "TSQualifiedName" && parent.left === node)
+  );
+}
+
+/**
+ * Effect code holds dates as Effect's `DateTime` and durations as `Duration`,
+ * and reads the current time through `Clock`, so `TestClock` drives every
+ * date the code makes and one date type crosses each service interface
+ * (CODING_STANDARDS.md → Effect → Time).
+ * `Temporal` belongs to code outside Effect; the edge between the two
+ * converts, and the files that hold that edge are listed in oxlint.config.ts.
+ */
+export const temporalInEffect: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Use Effect's DateTime, not Temporal, in a file that imports Effect.",
+    },
+    messages: {
+      temporal:
+        "use Effect's `DateTime` in Effect code (`DateTime.Utc` for an instant, `DateTime.Zoned` where the zone matters, `DateTime.now` or `Clock` for the current time) and `Duration` for a span; plain code that keeps `Temporal` converts at the edge with `@/lib/effect-clock`",
+    },
+    schema: [],
+  },
+  create(context) {
+    let effectNative = false;
+    return {
+      Program(program) {
+        effectNative = importsEffect((program as ModuleProgram).body ?? []);
+      },
+      Identifier(node) {
+        const identifier = node as unknown as TypeNode;
+        if (
+          effectNative &&
+          identifier.name === "Temporal" &&
+          isTemporalRoot(identifier)
+        )
+          context.report({ node, messageId: "temporal" });
       },
     };
   },
@@ -945,6 +989,7 @@ export default {
     "plain-adapter-streams": plainAdapterStreams,
     "scope-closed": scopeClosed,
     "service-tag-id": serviceTagId,
+    "temporal-in-effect": temporalInEffect,
     "worker-rpc": workerRpc,
   },
 };

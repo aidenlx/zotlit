@@ -2,6 +2,7 @@ import { defineConfig } from "oxlint";
 
 import { testBaselineOverrides } from "@zotlit/config/oxlint";
 import baseConfig, {
+  datePattern,
   itemQuerySchemaPaths,
   parentImportPattern,
 } from "@zotlit/config/oxlint";
@@ -38,7 +39,10 @@ export default defineConfig({
     // base rule without its useId ban:
     "no-restricted-imports": [
       "error",
-      { patterns: [parentImportPattern], paths: itemQuerySchemaPaths },
+      {
+        patterns: [parentImportPattern, datePattern],
+        paths: itemQuerySchemaPaths,
+      },
     ],
   },
   jsPlugins: [
@@ -54,11 +58,19 @@ export default defineConfig({
     ...testBaselineOverrides("apps/docs"),
     {
       // workerd ships no Temporal: the publication-date schema, its date
-      // helpers, and the Date the feed library takes (AGENTS.md → Dates).
-      files: ["src/lib/shared.ts", "src/routes/changelog/rss\\[.\\]xml.ts"],
+      // helpers, the Date the feed library takes, and the git date that
+      // fumadocs hands in (AGENTS.md → Dates).
+      files: [
+        "src/lib/shared.ts",
+        "src/routes/changelog/rss\\[.\\]xml.ts",
+        "src/components/docs-last-updated.tsx",
+        "src/lib/sitemap.ts",
+      ],
       rules: {
         "effecttsgo/global-date": "off",
         "effecttsgo/global-date-in-effect": "off",
+        "no-restricted-globals": "off",
+        "typescript/no-restricted-types": "off",
       },
     },
     {
@@ -66,7 +78,7 @@ export default defineConfig({
       // bundler, not for `node scripts/*.ts`.
       files: ["scripts/**"],
       rules: {
-        "no-restricted-imports": "off",
+        "no-restricted-imports": ["error", { patterns: [datePattern] }],
       },
     },
   ],

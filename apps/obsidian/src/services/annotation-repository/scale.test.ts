@@ -1,6 +1,7 @@
 // The Annotation Repository at library scale: one batch read for many
 // Attachments, and a published list kept only while a surface holds it.
 
+import { Duration } from "effect";
 import { TestClock } from "effect/testing";
 import { expect, it, vi } from "vitest";
 
@@ -178,15 +179,14 @@ it("reads again on a database change only the lists that surfaces hold", async (
 it("lets go at a database change a list read with no hold and not asked for a while", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository, acquireRead, dbEvents, runtime } = await setup(stack);
-  const tick = Temporal.Duration.from({ milliseconds: 1 });
+  const retention = Duration.millis(UNHELD_RETENTION.total("milliseconds"));
+  const tick = Duration.millis(1);
 
   await repository.read("RGRPDF24");
   // A reader that asks without a hold keeps its list while no change comes,
   // so a card it shows still finds its record however long it stood idle.
   await runtime.runPromise(
-    TestClock.adjust(
-      UNHELD_RETENTION.add(UNHELD_RETENTION).total("milliseconds"),
-    ),
+    TestClock.adjust(Duration.sum(retention, retention)),
   );
   expect(repository.peek("RGRPDF24")).not.toBeNull();
 
@@ -194,7 +194,7 @@ it("lets go at a database change a list read with no hold and not asked for a wh
   // the repository's own and no ask.
   await repository.read("RGRPDF24");
   await runtime.runPromise(
-    TestClock.adjust(UNHELD_RETENTION.subtract(tick).total("milliseconds")),
+    TestClock.adjust(Duration.subtract(retention, tick)),
   );
   acquireRead.mockClear();
   dbEvents.emit("changed");
@@ -203,7 +203,7 @@ it("lets go at a database change a list read with no hold and not asked for a wh
   expect(repository.peek("RGRPDF24")).not.toBeNull();
 
   // Unasked past the retention, the next change lets it go unread.
-  await runtime.runPromise(TestClock.adjust(tick.total("milliseconds")));
+  await runtime.runPromise(TestClock.adjust(tick));
   acquireRead.mockClear();
   dbEvents.emit("changed");
   await settled();

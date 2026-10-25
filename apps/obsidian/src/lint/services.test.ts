@@ -14,6 +14,7 @@ import {
   plainAdapterStreams,
   scopeClosed,
   serviceTagId,
+  temporalInEffect,
   workerRpc,
 } from "../../scripts/oxlint-plugin-services";
 
@@ -385,10 +386,6 @@ tester.run("clock-time", clockTime, {
     },
     // Another object's `now`.
     { code: `${effectImport}const at = clock.now();`, filename: library },
-    {
-      code: `${effectImport}const at = Temporal.Instant.from(text);`,
-      filename: library,
-    },
     // A layer that reads Clock takes no `now`.
     {
       code: `${effectImport}export const layer = (options: { readonly root: string }) => Layer.empty;`,
@@ -412,16 +409,6 @@ tester.run("clock-time", clockTime, {
   invalid: [
     {
       code: `${effectImport}const at = Date.now();`,
-      filename: library,
-      errors: [{ messageId: "clock" }],
-    },
-    {
-      code: `${effectImport}const at = Temporal.Now.instant();`,
-      filename: library,
-      errors: [{ messageId: "clock" }],
-    },
-    {
-      code: `${effectImport}const zone = Temporal.Now.timeZoneId();`,
       filename: library,
       errors: [{ messageId: "clock" }],
     },
@@ -461,6 +448,62 @@ tester.run("clock-time", clockTime, {
       code: `${effectImport}export const layerSessions = (now: () => Temporal.Instant = () => Temporal.Instant.from(zero)) => Layer.empty;`,
       filename: services,
       errors: [instantOption],
+    },
+  ],
+});
+
+const temporal = { messageId: "temporal" };
+
+tester.run("temporal-in-effect", temporalInEffect, {
+  valid: [
+    // Outside Effect, Temporal is the date API.
+    { code: "const at = Temporal.Instant.from(text);", filename: library },
+    {
+      code: "let at: Temporal.Instant | undefined;\nconst zone = Temporal.Now.timeZoneId();",
+      filename: library,
+    },
+    // A type-only import of the bridge is not Effect code.
+    {
+      code: 'import type { EffectBridge } from "@/lib/effect-bridge";\nconst at = Temporal.Instant.from(text);',
+      filename: library,
+    },
+    // Effect's DateTime, and a property that only shares the name.
+    {
+      code: `${effectImport}const at = DateTime.makeUnsafe(text);\nconst api = options.Temporal;\nconst names = { Temporal: 1 };`,
+      filename: library,
+    },
+  ],
+  invalid: [
+    {
+      code: `${effectImport}const at = Temporal.Instant.from(text);`,
+      filename: library,
+      errors: [temporal],
+    },
+    {
+      code: `${effectImport}const at = Temporal.Now.instant();`,
+      filename: library,
+      errors: [temporal],
+    },
+    {
+      code: `${effectImport}const wait = Temporal.Duration.from({ seconds: 5 });`,
+      filename: library,
+      errors: [temporal],
+    },
+    {
+      code: `${effectImport}interface Use { readonly instant: Temporal.Instant }`,
+      filename: library,
+      errors: [temporal],
+    },
+    {
+      code: `${effectImport}const is = (u: unknown) => u instanceof Temporal.Instant;`,
+      filename: library,
+      errors: [temporal],
+    },
+    {
+      // An `@/lib/effect-*` module is Effect code too.
+      code: 'import { instantClock } from "@/lib/effect-clock";\nconst spy = vi.spyOn(Temporal.Now, "instant");',
+      filename: library,
+      errors: [temporal],
     },
   ],
 });

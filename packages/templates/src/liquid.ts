@@ -15,25 +15,12 @@ import type {
 import { formatBlockquote } from "./blockquote";
 import { coerceOutput } from "./coerce";
 import { filenameSuffix } from "./filename-suffix";
+import { isItemDateLike, toLiquidDate } from "./liquid-date";
 import { normalizeObsidianTag } from "./obsidian-tag";
 import { formatTemplatePandocCitation } from "./pandoc-citation-adapter";
 import { formatTemplateTexCitation } from "./tex-citation-adapter";
 
 export { ParseError, TokenizationError } from "liquidjs";
-
-/**
- * Minimal structural view of a Zotero multipart date, duck-typed so this
- * package doesn't depend on `@zotlit/db`.
- *
- * @see `packages/db/src/lib/zt-date.ts` `ItemDate` for the full shape
- */
-interface ItemDateLike {
-  kind: "date" | "yearMonth" | "year" | "text";
-  year: number | null;
-  month: number | null;
-  day: number | null;
-  toString(): string;
-}
 
 export const LIQUID_BUILTIN_FILTER_NAMES: readonly string[] = Object.freeze(
   Object.keys(filters).sort(),
@@ -68,21 +55,6 @@ export const ZOTLIT_TAG_NAMES: readonly string[] = Object.freeze([
   "render_annotation",
   "suffix",
 ]);
-
-const ITEM_DATE_KINDS: ReadonlySet<unknown> = new Set([
-  "date",
-  "yearMonth",
-  "year",
-  "text",
-] satisfies ItemDateLike["kind"][]);
-
-function isItemDateLike(value: unknown): value is ItemDateLike {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    ITEM_DATE_KINDS.has((value as { kind?: unknown }).kind)
-  );
-}
 
 /**
  * Registers a link-override filter for a camelCase link-helper method (e.g.
@@ -370,7 +342,7 @@ export function createLiquidEngine({
       // ItemDate "text" carries no parseable date — strftime is meaningless, so
       // render its raw user text and skip the builtin entirely.
       if (isItemDateLike(v) && v.kind === "text") return String(v);
-      return builtinDate.call(this, normalizeDateInput(v), ...args);
+      return builtinDate.call(this, toLiquidDate(v), ...args);
     },
   );
 
@@ -384,34 +356,3 @@ function flatten(items: unknown, depth = 1): unknown[] {
   }
   return items.flat(depth);
 }
-
-/**
- * Normalizes Temporal / ItemDate-shaped values into a local-time JS `Date`
- * before delegating to the builtin `date` filter, which throws on Temporal
- * objects and would otherwise parse a stringified `PlainDate` as UTC via
- * `new Date(string)`.
- */
-/* oxlint-disable effecttsgo/global-date -- LiquidJS's builtin date filter takes a Date. */
-function normalizeDateInput(v: unknown): unknown {
-  if (v instanceof Temporal.Instant) {
-    return new Date(v.epochMilliseconds);
-  }
-  if (v instanceof Temporal.PlainDate) {
-    return new Date(v.year, v.month - 1, v.day);
-  }
-  if (v instanceof Temporal.PlainYearMonth) {
-    return new Date(v.year, v.month - 1, 1);
-  }
-  if (isItemDateLike(v)) {
-    switch (v.kind) {
-      case "date":
-        return new Date(v.year!, v.month! - 1, v.day!);
-      case "yearMonth":
-        return new Date(v.year!, v.month! - 1, 1);
-      case "year":
-        return new Date(v.year!, 0, 1);
-    }
-  }
-  return v;
-}
-/* oxlint-enable effecttsgo/global-date */

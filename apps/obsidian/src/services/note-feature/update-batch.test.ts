@@ -1,4 +1,4 @@
-import { Deferred, Effect, Exit, Stream } from "effect";
+import { DateTime, Deferred, Effect, Exit, Stream } from "effect";
 import type { TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -190,10 +190,13 @@ function seedDatabase(): NodeDatabaseClient {
  */
 function itemsIn(byLibrary: ReadonlyMap<number, number>): void {
   for (const [itemID, libraryID] of byLibrary) {
-    const modified = Temporal.PlainDateTime.from("2024-01-01T00:00")
-      .add({ minutes: 1000 - itemID })
-      .toString({ smallestUnit: "second" })
-      .replace("T", " ");
+    const modified = DateTime.formatIso(
+      DateTime.add(DateTime.makeUnsafe("2024-01-01T00:00:00Z"), {
+        minutes: 1000 - itemID,
+      }),
+    )
+      .replace("T", " ")
+      .slice(0, 19);
     db.$client.exec(`
       insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
         values (${itemID}, 1, '${modified}', '${modified}', ${libraryID}, 'ITEM${itemID}');

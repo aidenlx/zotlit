@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect";
+import { DateTime, Effect, Stream } from "effect";
 import { ItemView, Scope } from "obsidian";
 import type {
   Menu as ObsidianMenu,
@@ -15,6 +15,7 @@ import type { AnnotViewAttachment } from "@zotlit/db";
 
 import { registerMigratingWindowEvent } from "@/lib/disposables";
 import type { EffectBridge } from "@/lib/effect-bridge";
+import { toInstant } from "@/lib/effect-clock";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
@@ -402,7 +403,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     buildPaneMenu(menu, {
       state: this.snapshot,
       actions,
-      now: Temporal.Now.instant(),
+      now: toInstant(this.#deps.bridge.runSync(DateTime.now)),
       query: (target) =>
         addSidebarQueryMenu(target, {
           view: file ? view : null,
