@@ -30,6 +30,7 @@ import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { workspaceOpenDocuments } from "@/lib/open-documents";
 import type { OpenDocuments } from "@/lib/open-documents";
+import { settleAtEdge } from "@/lib/signal-edge";
 import {
   citationOfRun,
   citationRuns,
@@ -169,11 +170,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
           effect,
           signal === undefined ? undefined : { signal },
         );
-        if (Exit.isSuccess(exit)) return exit.value;
-        if (signal?.aborted && Cause.hasInterruptsOnly(exit.cause))
-          throw signal.reason;
-        if (Cause.hasInterruptsOnly(exit.cause)) return released();
-        throw Cause.squash(exit.cause);
+        return settleAtEdge(exit, signal, released);
       };
       const releasedRead = (): never => {
         throw new DOMException("Citation text released", "AbortError");

@@ -8,20 +8,22 @@
 // The sweep is an Effect so the database reads worker, which carries no
 // LogTape, runs the same walk the renderer does.
 //
-// A sweep never throws: a directory that refuses to be listed or emptied is a
-// logged warning, never a failed launch. Interrupting the sweep stops the walk
-// and logs nothing; the Promise calls take a signal that interrupts it.
+// A sweep never fails on the filesystem: a directory that refuses to be
+// listed or emptied is a logged warning, never a failed launch. Interrupting
+// the sweep stops the walk and logs nothing; the Promise calls take a signal
+// that interrupts it and reject with its reason.
 
 // The worker build resolves the specifier `effect` to the worker entry, so a
 // relative import of a wrapper here would pull the renderer's LogTape bridge
 // into the worker.
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Effect } from "effect";
 import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { withLogCategory } from "./effect-log-category";
 import { isErrno, systemCallError } from "./errno";
 import type { SystemCallError } from "./errno";
+import { settleAtEdge } from "./signal-edge";
 
 /** What every reap step accepts, so one startup passes the same thing to each. */
 export interface ReapTempsOptions {
@@ -76,19 +78,18 @@ export const sweepTempDirectoryEffect = Effect.fnUntraced(function* ({
 
 /**
  * The Promise-shaped call for lifecycle code that is not an Effect. An abort of
- * `signal` interrupts the sweep, which then resolves with nothing logged.
+ * `signal` interrupts the sweep, which then rejects with the signal's reason
+ * and logs nothing.
  */
 export async function sweepTempDirectory(
   options: TempSweepOptions,
   signal?: AbortSignal,
 ): Promise<void> {
-  if (signal?.aborted) return;
   const exit = await Effect.runPromiseExit(
     sweepTempDirectoryEffect(options),
     signal === undefined ? undefined : { signal },
   );
-  if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
-    throw Cause.squash(exit.cause);
+  settleAtEdge(exit, signal);
 }
 
 function remove(path: string, kind: string) {

@@ -281,12 +281,20 @@ tester.run("obsidian-capabilities", obsidianCapabilities, {
       const vault = yield* Vault;
       const file = yield* vault.getFileByPath(path);
     })`,
-    `${effect}settings.vault.getName(); emitter.on("change", run); app.workspace.getActiveFile();`,
+    `${effect}settings.vault.getName(); emitter.on("change", run);`,
     `${effect}app["vault"];`,
   ],
   invalid: [
     {
       code: `${effect}const file = app.vault.getFileByPath(path);`,
+      errors: [{ messageId: "capability" }],
+    },
+    {
+      code: `${effect}const file = this.app.workspace.getActiveFile();`,
+      errors: [{ messageId: "capability" }],
+    },
+    {
+      code: `${effect}const renamed = app.fileManager.renameFile(file, to);`,
       errors: [{ messageId: "capability" }],
     },
     {

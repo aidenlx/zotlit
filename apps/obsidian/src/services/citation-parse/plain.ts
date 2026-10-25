@@ -1,6 +1,8 @@
 // boundary: Promise and AbortSignal facade for callers outside Effect.
-import { Cause, Effect, Exit } from "effect";
+import { Effect } from "effect";
 import type { ManagedRuntime } from "effect";
+
+import { settleAtEdge } from "@/lib/signal-edge";
 
 import type { ParseReply } from "./client";
 import { CitationParse } from "./service";
@@ -21,10 +23,7 @@ export function plainCitationParse(
   );
   return {
     async parse(request, signal) {
-      const exit = await run(parser.parse(request), { signal });
-      if (Exit.isSuccess(exit)) return exit.value;
-      if (signal.aborted) throw signal.reason;
-      throw Cause.squash(exit.cause);
+      return settleAtEdge(await run(parser.parse(request), { signal }), signal);
     },
   };
 }

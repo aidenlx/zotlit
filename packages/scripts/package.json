@@ -6,6 +6,7 @@
   "imports": {
     "#format-versions": "./lib/format-versions.ts",
     "#affected-base": "./lib/affected-base.ts",
+    "#agent-docs": "./lib/agent-docs.ts",
     "#ai-attribution": "./lib/ai-attribution.ts",
     "#commit-tree": "./lib/commit-tree.ts",
     "#desktop-slot": "./lib/desktop-slot.ts",

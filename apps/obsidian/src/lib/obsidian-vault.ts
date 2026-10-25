@@ -128,12 +128,11 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
     process: Effect.fn("Vault.process")((file, fn, options) =>
       call("process", file.path, () => source.process(file, fn, options)),
     ),
-    create: Effect.fn("Vault.create")((path, data, options) =>
-      Effect.suspend((): Effect.Effect<TFile, FileExists | VaultError> =>
+    create: Effect.fn("Vault.create")(
+      (path, data, options): Effect.Effect<TFile, FileExists | VaultError> =>
         source.getAbstractFileByPath(path) === null
           ? call("create", path, () => source.create(path, data, options))
           : Effect.fail(new FileExists({ path })),
-      ),
     ),
     trash: Effect.fn("Vault.trash")((file, system) =>
       call("trash", file.path, () => source.trash(file, system)),

@@ -2,6 +2,7 @@
 import { Cause, Deferred, Effect, Exit, Ref, Schema, Stream } from "effect";
 
 import { AbortError } from "@/lib/abort-error";
+import { settleAtEdge } from "@/lib/signal-edge";
 import { formatErrorMessage } from "@/lib/toast";
 import type {
   ZoteroReads,
@@ -331,10 +332,8 @@ export async function runBatch<A, E>(
     effect,
     signal === undefined ? undefined : { signal },
   );
-  if (Exit.isFailure(exit)) {
-    if (signal?.aborted && Cause.hasInterruptsOnly(exit.cause))
-      throw signal.reason;
-    throw taskFailure(Cause.squash(exit.cause));
-  }
-  return exit.value;
+  return settleAtEdge(
+    Exit.mapError(exit, (error) => taskFailure(error)),
+    signal,
+  );
 }

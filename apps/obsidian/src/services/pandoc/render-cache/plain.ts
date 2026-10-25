@@ -1,10 +1,11 @@
 /** Bibliography renders for views and legacy services, on the plugin runtime. */
-import { Cause, Effect, Exit, Stream } from "effect";
+import { Effect, Stream } from "effect";
 import type { ManagedRuntime } from "effect";
 
 import type { CslItemData } from "@zotlit/db";
 
 import { isScopeClosed } from "@/lib/effect-scope";
+import { settleAtEdge } from "@/lib/signal-edge";
 import type { EffectivePresentation } from "@/services/pandoc/document-presentation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import {
@@ -148,11 +149,7 @@ export function plainBibliographyRender(
     const exit = await (isScopeClosed(runtime.scope)
       ? runReleased(effect, options)
       : runtime.runPromiseExit(effect, options));
-    if (Exit.isSuccess(exit)) return exit.value;
-    if (signal?.aborted && Cause.hasInterruptsOnly(exit.cause))
-      throw signal.reason;
-    if (Cause.hasInterruptsOnly(exit.cause)) return released();
-    throw Cause.squash(exit.cause);
+    return settleAtEdge(exit, signal, released);
   };
   return {
     get state() {

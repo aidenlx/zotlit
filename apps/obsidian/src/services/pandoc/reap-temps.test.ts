@@ -78,10 +78,11 @@ describe("reapCslStore", () => {
     await expect(reapCslStore({ parent })).resolves.toBeUndefined();
   });
 
-  it("leaves every entry in place when the signal is already aborted", async () => {
+  it("rejects with an already-aborted signal's reason, leaving every entry", async () => {
     await entry("old.csl", 31 * DAY);
+    const signal = AbortSignal.abort();
 
-    await reapCslStore({ parent, signal: AbortSignal.abort() });
+    await expect(reapCslStore({ parent, signal })).rejects.toBe(signal.reason);
 
     expect(await names()).toEqual(["old.csl"]);
   });

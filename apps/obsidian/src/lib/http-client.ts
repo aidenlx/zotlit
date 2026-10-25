@@ -1,6 +1,6 @@
 // The Effect `HttpClient` over Obsidian's `requestUrl`, for remote calls.
 
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Option } from "effect";
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
 import type { HttpClientRequest } from "effect/http";
 import { requestUrl } from "obsidian";
@@ -23,28 +23,35 @@ export type RequestUrl = (
  * Any status is an answer, as with every `HttpClient`: `throw: false` keeps
  * `requestUrl` from rejecting at `400` and up. Only a failed connection fails.
  * `requestUrl` takes no signal, so an interrupt stops the wait but not the
- * transfer.
+ * transfer. It sends only a text or byte body; a form or stream body is a
+ * defect.
  */
 export function requestUrlHttpClient(
   send: RequestUrl = requestUrl,
 ): HttpClient.HttpClient {
   return HttpClient.make((request, url) =>
-    Effect.tryPromise({
-      try: async () => {
-        const response = await send({
-          url: url.href,
-          method: request.method,
-          headers: { ...request.headers },
-          body: requestBody(request),
-          throw: false,
-        });
-        return HttpClientResponse.fromWeb(
-          request,
-          webResponse(response.status, response.headers, response.arrayBuffer),
-        );
-      },
-      catch: (cause) => transportError(request, cause),
-    }),
+    Effect.flatMap(requestBody(request), (body) =>
+      Effect.tryPromise({
+        try: async () => {
+          const response = await send({
+            url: url.href,
+            method: request.method,
+            headers: { ...request.headers },
+            body: Option.getOrUndefined(body),
+            throw: false,
+          });
+          return HttpClientResponse.fromWeb(
+            request,
+            webResponse(
+              response.status,
+              response.headers,
+              response.arrayBuffer,
+            ),
+          );
+        },
+        catch: (cause) => transportError(request, cause),
+      }),
+    ),
   );
 }
 
@@ -54,17 +61,18 @@ export const layerRequestUrlHttpClient: Layer.Layer<HttpClient.HttpClient> =
 
 function requestBody(
   request: HttpClientRequest.HttpClientRequest,
-): string | ArrayBuffer | undefined {
+): Effect.Effect<Option.Option<string | ArrayBuffer>> {
   const { body } = request;
   switch (body._tag) {
-    case "Raw":
-      return typeof body.body === "string" ? body.body : undefined;
+    case "Empty":
+      return Effect.succeedNone;
     case "Uint8Array":
       // A copy: a text body is a view into Node's shared Buffer pool.
-      return new Uint8Array(body.body).buffer;
-    default:
-      return undefined;
+      return Effect.succeedSome(new Uint8Array(body.body).buffer);
+    case "Raw":
+      if (typeof body.body === "string") return Effect.succeedSome(body.body);
   }
+  return Effect.die(new Error(`requestUrl cannot send a ${body._tag} body`));
 }
 
 function webResponse(

@@ -3,9 +3,10 @@
 // interrupts a run still in flight. ZotLitPlugin.registerCliHandler then
 // turns a failure into the text Obsidian prints (`cli-rejection.ts`).
 
-import { Cause, Exit } from "effect";
 import type { Effect, ManagedRuntime } from "effect";
 import type { CliData, CliFlags, PluginManifest } from "obsidian";
+
+import { settleAtEdge } from "./signal-edge";
 
 /** A command's answer to the caller's parameters: the text it prints. */
 export type CliCommandHandler = (
@@ -43,11 +44,6 @@ export function cliRunner<R>(
   runtime: ManagedRuntime.ManagedRuntime<R, never>,
   signal: AbortSignal,
 ): CliRunner {
-  return async (effect) => {
-    const exit = await runtime.runPromiseExit(effect, { signal });
-    if (Exit.isSuccess(exit)) return exit.value;
-    if (signal.aborted && Cause.hasInterruptsOnly(exit.cause))
-      throw signal.reason;
-    throw Cause.squash(exit.cause);
-  };
+  return async (effect) =>
+    settleAtEdge(await runtime.runPromiseExit(effect, { signal }), signal);
 }
