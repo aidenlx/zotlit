@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { it as effectIt } from "@effect/vitest";
+import { Effect, Fiber } from "effect";
+import { TestClock } from "effect/testing";
+import { describe, expect, it } from "vitest";
 
 import { defaults } from "@/services/settings/schema";
 
@@ -173,29 +176,35 @@ describe("open", () => {
   // An index that never comes must not swallow the click: past the wait, the
   // target opens in Zotero, as it did while the index was pending. A database
   // read that fails leaves the index unbuilt the same way.
-  it("opens in Zotero once the first index outlasts the wait", async () => {
-    await using stack = new AsyncDisposableStack();
-    const { opener, opened, handed, failReads } = await openerHarness(stack, {
-      prime: false,
-    });
-    failReads(true);
-    vi.useFakeTimers();
-    stack.defer(() => {
-      vi.useRealTimers();
-    });
+  effectIt.effect(
+    "opens in Zotero once the first index outlasts the wait",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const stack = yield* Effect.acquireRelease(
+          Effect.sync(() => new AsyncDisposableStack()),
+          (stack) => Effect.promise(() => stack.disposeAsync()),
+        );
+        const { opener, opened, handed, failReads } = yield* Effect.promise(
+          () => openerHarness(stack, { prime: false, context }),
+        );
+        failReads(true);
 
-    const outcome = opener.open(ANNOTATION, false);
-    await vi.advanceTimersByTimeAsync(4_999);
-    expect(handed).toEqual([]);
-    await vi.advanceTimersByTimeAsync(1);
+        const outcome = yield* Effect.promise(() =>
+          opener.open(ANNOTATION, false),
+        ).pipe(Effect.forkScoped({ startImmediately: true }));
+        yield* TestClock.adjust(4_999);
+        expect(handed).toEqual([]);
+        yield* TestClock.adjust(1);
 
-    await expect(outcome).resolves.toEqual({
-      kind: "zotero",
-      url: "zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2",
-    });
-    expect(opened).toEqual([]);
-    expect(handed).toHaveLength(1);
-  });
+        expect(yield* Fiber.join(outcome)).toEqual({
+          kind: "zotero",
+          url: "zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2",
+        });
+        expect(opened).toEqual([]);
+        expect(handed).toHaveLength(1);
+      }),
+  );
 
   it("opens nothing for a key that is no Indexed Key", async () => {
     await using stack = new AsyncDisposableStack();

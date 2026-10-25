@@ -4,7 +4,6 @@
 // read is the only seam: it can be held, failed, or left unopened.
 import { Context, Effect, Layer, Stream, SubscriptionRef } from "effect";
 
-import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import {
@@ -109,10 +108,6 @@ export async function openResolver(
   const paths = Effect.runSync(
     SubscriptionRef.make(prefSnapshot(DATA_DIR, baseAttachmentPath)),
   );
-  const zoteroPref = stubService<ZoteroPref["Service"]>("ZoteroPref", {
-    current: SubscriptionRef.get(paths),
-    changes: SubscriptionRef.changes(paths),
-  });
 
   const runtime = buildRuntime(
     layerAttachmentResolver({ platform: options.platform ?? "linux" }).pipe(
@@ -120,7 +115,10 @@ export async function openResolver(
         Layer.mergeAll(
           layerQueryClients,
           layerZoteroReads(client),
-          Layer.succeed(ZoteroPref, zoteroPref),
+          Layer.mock(ZoteroPref, {
+            current: SubscriptionRef.get(paths),
+            changes: SubscriptionRef.changes(paths),
+          }),
         ),
       ),
       Layer.provideMerge(Layer.succeedContext(context)),
@@ -189,8 +187,9 @@ export const resolverFixture = Effect.fnUntraced(function* (
 export async function resolverHarness(
   stack: AsyncDisposableStack,
   options: ResolverHarnessOptions,
+  context?: Context.Context<never>,
 ): Promise<ResolverHarness> {
-  const harness = await openResolver(options);
+  const harness = await openResolver(options, context);
   stack.defer(() => harness.close());
   return harness;
 }

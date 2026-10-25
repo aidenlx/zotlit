@@ -38,6 +38,7 @@ import { freshnessSignal } from "@/services/zotero-local-api/__fixtures__";
 import type { WireAnnotation } from "@/services/zotero-local-api/__fixtures__";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
+import type { AttachmentReads } from "./binding";
 import { MarkCreation } from "./creation";
 import type { AnnotationCreates } from "./creation";
 import { MarkPopupHost } from "./mark-popup-host";
@@ -297,15 +298,15 @@ export function annotation(
  */
 export function attachmentReads(
   resolution: AttachmentResolution = { kind: "pending" },
-) {
+): AttachmentReads & {
+  resolve: Mock<AttachmentReads["resolve"]>;
+  answer(next: AttachmentResolution): void;
+} {
   const changes = Effect.runSync(PubSub.unbounded<void>());
   let current = resolution;
   return {
-    resolve: vi.fn(
-      (
-        _absolutePath: string,
-        _options?: { attachmentKey?: string | null },
-      ): Effect.Effect<AttachmentResolution> => Effect.sync(() => current),
+    resolve: vi.fn<AttachmentReads["resolve"]>(() =>
+      Effect.sync(() => current),
     ),
     resolutionsChanged: Stream.fromPubSub(changes),
     /** What the resolver does once the database it waited on is readable. */
