@@ -994,10 +994,11 @@ async function createNote(
 }
 
 /**
- * Prepare and render once; the supplied create boundary retries filename
- * collisions with these same composed bytes.
+ * Prepare and render once; the supplied create boundary writes these composed
+ * bytes in one create.
  *
- * @throws an Obsidian vault error (e.g. a file already exists at `path`).
+ * @throws `FileExists` when the path is taken and the filename has no
+ *   `suffix()` marker, or `VaultError` when Obsidian refuses the create.
  */
 async function writeNewNote(
   ctx: OpsContext,

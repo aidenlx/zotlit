@@ -18,9 +18,12 @@ the Scope Case `all`. Delete the notes a case creates before the next case.
 2. In the confirmation modal, find the row for "Standalone personal note".
    Copy the path it shows, such as
    `zotero_notes/Standalone_personal_note_aB3dE9.md`.
-3. Keep the modal open. Create a note at exactly that path, with the text
-   `Mine`.
-4. Select **Import notes**.
+3. Keep the modal open. Outside Obsidian (in Finder, Explorer or a
+   terminal), create a file at exactly that path in the vault folder, with
+   the text `Mine`. For example:
+   `printf Mine > "zotero_notes/Standalone_personal_note_aB3dE9.md"`.
+4. Wait until the file shows in the file explorer behind the modal. Then
+   select **Import notes**.
 
 Expected: the summary counts that note as skipped. The note you created
 still holds only `Mine`. No second file for "Standalone personal note"
@@ -29,7 +32,7 @@ appears in `zotero_notes/`.
 ## Import beside a note that differs only in case
 
 Do the steps above, but in step 3 change the case of one letter of the
-name, for example `standalone_personal_note_aB3dE9.md`.
+file name, for example `zotero_notes/standalone_personal_note_aB3dE9.md`.
 
 Expected on macOS and Windows: the import of that note fails, the summary
 counts it as failed, and the note you created still holds only `Mine`.
