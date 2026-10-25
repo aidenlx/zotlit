@@ -365,7 +365,7 @@ it.effect("#1705 bridge calls are safe after whole-runtime disposal", () =>
     });
     const snapshot = bridge.runSync(settings.current);
     const loading = bridge.runPromise(settings.loaded);
-    yield* Effect.promise(close);
+    yield* Effect.promise(() => close());
     expect(yield* Effect.promise(() => loading)).toEqual(snapshot);
     expect(bridge.runSync(settings.current)).toEqual(snapshot);
     expect(
@@ -405,7 +405,7 @@ it.effect("#1705 a failed write leaves flush safe after runtime disposal", () =>
     yield* Effect.promise(() =>
       bridge.runPromise(settings.flush.pipe(Effect.ignoreCause)),
     );
-    yield* Effect.promise(close);
+    yield* Effect.promise(() => close());
     yield* Effect.promise(() =>
       expect(bridge.runPromise(settings.flush)).resolves.toBeUndefined(),
     );

@@ -3023,7 +3023,7 @@ export const layerTemplate = Layer.effect(
         : Effect.forkIn(effect, scope, {
             startImmediately: true,
             uninterruptible,
-          }).pipe(Effect.flatMap(Fiber.join));
+          }).pipe(Effect.flatMap((fiber) => Fiber.join(fiber)));
     const write = <A, E>(effect: Effect.Effect<A, E>) => owned(effect, true);
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {

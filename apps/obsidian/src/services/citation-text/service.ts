@@ -196,7 +196,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
       });
       const bus = yield* Effect.acquireRelease(
         PubSub.unbounded<CitationTextEvent>(),
-        PubSub.shutdown,
+        (pubsub) => PubSub.shutdown(pubsub),
       ).pipe(Scope.provide(scope));
       const emit = (event: CitationTextEvent) => {
         if (!stopped) PubSub.publishUnsafe(bus, event);

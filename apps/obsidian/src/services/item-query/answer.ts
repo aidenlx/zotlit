@@ -347,7 +347,7 @@ export function answerView(
         }),
       ),
     ),
-    Effect.catchDefect(dieOfDefect),
+    Effect.catchDefect((defect) => dieOfDefect(defect)),
   );
 }
 
@@ -720,7 +720,7 @@ function answerFailure(
           inline(command, failure(command, diagnostic)),
         ),
       ),
-      Effect.catchDefect(dieOfDefect),
+      Effect.catchDefect((defect) => dieOfDefect(defect)),
     );
 }
 

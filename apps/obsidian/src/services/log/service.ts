@@ -126,7 +126,7 @@ export const layerLogging: Layer.Layer<
       );
 
     yield* logSettingsChanges(settings).pipe(
-      Stream.runForEach(apply),
+      Stream.runForEach((next) => apply(next)),
       Effect.forkScoped,
     );
   }),
@@ -149,7 +149,7 @@ function logSettingsChanges(
 ): Stream.Stream<LogSettings> {
   return settings.changes.pipe(
     Stream.filter((value): value is Readonly<Settings> => value !== null),
-    Stream.map(logSettingsOf),
+    Stream.map((value) => logSettingsOf(value)),
     Stream.buffer({ capacity: 1, strategy: "sliding" }),
   );
 }

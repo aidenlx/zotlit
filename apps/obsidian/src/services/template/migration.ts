@@ -717,7 +717,7 @@ export function layerTemplateMigration(options: TemplateMigrationOptions) {
         })
         .pipe(Effect.forkScoped);
       yield* attemptPromise(() => engine.detectTemplates(false)).pipe(
-        Effect.catchCause(report),
+        Effect.catchCause((cause) => report(cause)),
       );
       const owned = <A, E>(effect: Effect.Effect<A, E>) =>
         closed
@@ -725,7 +725,7 @@ export function layerTemplateMigration(options: TemplateMigrationOptions) {
           : Effect.forkIn(effect, scope, {
               startImmediately: true,
               uninterruptible: true,
-            }).pipe(Effect.flatMap(Fiber.join));
+            }).pipe(Effect.flatMap((fiber) => Fiber.join(fiber)));
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           closed = true;

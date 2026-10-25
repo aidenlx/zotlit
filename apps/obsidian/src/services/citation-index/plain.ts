@@ -136,7 +136,7 @@ export function plainCitationIndex(
     backfilled: service.changes.pipe(
       Stream.map((state) => state.backfilled),
       Stream.changes,
-      Stream.filter(Boolean),
+      Stream.filter((backfilled) => backfilled),
       Stream.map(() => undefined),
     ),
     "membership-changed": service.events.pipe(

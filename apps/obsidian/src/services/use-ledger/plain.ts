@@ -38,7 +38,12 @@ export function plainUseLedger(
     record: (itemKey, kind, instant) =>
       runSync(ledger.record(itemKey, kind, instant)),
     withoutNoteUse: (file, open) =>
-      runPromise(ledger.withoutNoteUse(file, Effect.promise(open))),
+      runPromise(
+        ledger.withoutNoteUse(
+          file,
+          Effect.promise(() => open()),
+        ),
+      ),
     changes: ledger.changes,
   };
 }
