@@ -3,7 +3,6 @@ import { Clock, Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { scopedBridge } from "@/lib/effect-bridge";
 import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { filterTag } from "@/lib/effect-stream";
 import { ExcerptImages } from "@/services/excerpt-image/layer";
 import { savedExcerptRequestOver } from "@/services/excerpt-image/request";
@@ -378,20 +377,22 @@ export function layerAnnotationRepository(options: {
           if (!request) return null;
           return (await images.stored(request))?.identity.fingerprint ?? null;
         };
-      const core = yield* acquireAsyncDisposable(() =>
-        Promise.resolve(
-          new AnnotationRepositoryCore({
-            bridge,
-            db: reads,
-            queryClient: queries,
-            localApi: localApiPort(api, bridge),
-            publish: (event) => {
-              void PubSub.publishUnsafe(bus, event);
-            },
-            writeToken: options.writeToken,
-            now,
-            persistedExcerpt,
-          }),
+      const core = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          Promise.resolve(
+            new AnnotationRepositoryCore({
+              bridge,
+              db: reads,
+              queryClient: queries,
+              localApi: localApiPort(api, bridge),
+              publish: (event) => {
+                void PubSub.publishUnsafe(bus, event);
+              },
+              writeToken: options.writeToken,
+              now,
+              persistedExcerpt,
+            }),
+          ),
         ),
       );
       const events = Stream.fromPubSub(bus);

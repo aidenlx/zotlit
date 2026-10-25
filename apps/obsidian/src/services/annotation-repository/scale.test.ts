@@ -1,9 +1,9 @@
 // The Annotation Repository at library scale: one batch read for many
 // Attachments, and a published list kept only while a surface holds it.
 
+import { TestClock } from "effect/testing";
 import { expect, it, vi } from "vitest";
 
-import { manualClock } from "@/lib/__fixtures__/manual-clock";
 import { yieldToMain } from "@/lib/yield-to-main";
 import {
   annotationPage,
@@ -15,7 +15,6 @@ import {
   nextChange,
   REMEMBERED_KEY,
   setup,
-  NOW,
   switchToLocalApi,
   batchReads,
   clearReads,
@@ -178,22 +177,25 @@ it("reads again on a database change only the lists that surfaces hold", async (
 
 it("lets go at a database change a list read with no hold and not asked for a while", async () => {
   await using stack = new AsyncDisposableStack();
-  const time = manualClock(NOW);
-  const { repository, acquireRead, dbEvents } = await setup(stack, undefined, {
-    clock: time,
-  });
+  const { repository, acquireRead, dbEvents, runtime } = await setup(stack);
   const tick = Temporal.Duration.from({ milliseconds: 1 });
 
   await repository.read("RGRPDF24");
   // A reader that asks without a hold keeps its list while no change comes,
   // so a card it shows still finds its record however long it stood idle.
-  time.advance(UNHELD_RETENTION.add(UNHELD_RETENTION));
+  await runtime.runPromise(
+    TestClock.adjust(
+      UNHELD_RETENTION.add(UNHELD_RETENTION).total("milliseconds"),
+    ),
+  );
   expect(repository.peek("RGRPDF24")).not.toBeNull();
 
   // Asked again within the retention, a change reads it again; that read is
   // the repository's own and no ask.
   await repository.read("RGRPDF24");
-  time.advance(UNHELD_RETENTION.subtract(tick));
+  await runtime.runPromise(
+    TestClock.adjust(UNHELD_RETENTION.subtract(tick).total("milliseconds")),
+  );
   acquireRead.mockClear();
   dbEvents.emit("changed");
   await settled();
@@ -201,7 +203,7 @@ it("lets go at a database change a list read with no hold and not asked for a wh
   expect(repository.peek("RGRPDF24")).not.toBeNull();
 
   // Unasked past the retention, the next change lets it go unread.
-  time.advance(tick);
+  await runtime.runPromise(TestClock.adjust(tick.total("milliseconds")));
   acquireRead.mockClear();
   dbEvents.emit("changed");
   await settled();

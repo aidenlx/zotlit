@@ -1,7 +1,6 @@
 import { describe, expect } from "vitest";
 
 import { Deferred, Effect, Layer } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 
 import { cliRunner } from "./cli-command";
@@ -9,8 +8,8 @@ import { buildRuntime } from "./effect-layer";
 
 /** A runner over an empty runtime, and the controller standing in for unload. */
 const runnerFixture = Effect.gen(function* () {
-  const stack = yield* acquireAsyncDisposable(
-    async () => new AsyncDisposableStack(),
+  const stack = yield* Effect.acquireDisposable(
+    Effect.tryPromise(async () => new AsyncDisposableStack()),
   );
   const runtime = buildRuntime(Layer.empty, stack);
   const unload = new AbortController();

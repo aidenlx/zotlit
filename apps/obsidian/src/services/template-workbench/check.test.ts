@@ -15,7 +15,6 @@ import { TemplateError } from "@zotlit/templates/facade";
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Deferred, Effect, Exit, Fiber } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import { getProfileBinding } from "@/services/profile/bindings";
@@ -126,7 +125,7 @@ async function fixture(
 
 /** {@link fixture}, closed when the test's scope closes. */
 const scopedFixture = (...args: Parameters<typeof fixture>) =>
-  acquireAsyncDisposable(() => fixture(...args));
+  Effect.acquireDisposable(Effect.tryPromise(() => fixture(...args)));
 
 /** The parsed answer, once it holds that every refusal carries a hint. */
 function assertRefusalsHint(output: string) {

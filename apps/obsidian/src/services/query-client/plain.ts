@@ -7,7 +7,7 @@ import type {
 
 import { Cause, Effect, Exit } from "@/lib/effect";
 import type { ManagedRuntime, Stream } from "@/lib/effect";
-import { isScopeClosed } from "@/lib/effect-scope";
+import { effectBridge } from "@/lib/effect-bridge";
 
 import { QueryClients } from "./service";
 import type { Held, HeldReadChange, HeldReadEvents } from "./service";
@@ -39,20 +39,20 @@ export function plainQueryClients(
     "runSync" | "runPromiseExit" | "runFork" | "scope"
   >,
 ): PlainQueryClients {
-  const queries = runtime.runSync(QueryClients.use(Effect.succeed));
   // ManagedRuntime cannot be reused after disposal. Its Scope closes before
   // finalizers run, so pending consumers also see the released contract.
-  const closed = () => isScopeClosed(runtime.scope);
+  const bridge = effectBridge(runtime);
+  const queries = runtime.runSync(QueryClients.use(Effect.succeed));
   const runSync = <T>(effect: Effect.Effect<T>, released: () => T): T =>
-    closed() ? released() : runtime.runSync(effect);
+    bridge.closed() ? released() : bridge.runSync(effect);
   // Runtime disposal interrupts callers before closing the layer. Preserve
   // the plain read contract for that release, as for a removed query.
   const runRead = async <T>(
     effect: Effect.Effect<T, unknown>,
     released: () => T,
   ) => {
-    if (closed()) return released();
-    const exit = await runtime.runPromiseExit(effect);
+    if (bridge.closed()) return released();
+    const exit = await bridge.runPromiseExit(effect);
     if (Exit.isSuccess(exit)) return exit.value;
     if (exit.cause.reasons.every(Cause.isInterruptReason)) return released();
     throw Cause.squash(exit.cause);

@@ -10,7 +10,6 @@ import {
   Queue,
   Stream,
 } from "@/lib/effect";
-import { acquireDisposable } from "@/lib/effect-scope";
 import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -74,10 +73,12 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const host = createTemplateHost();
-      yield* acquireDisposable(() =>
-        vi.spyOn(host.vault, "getFolderByPath").mockImplementationOnce(() => {
-          throw new Error("Vault unavailable");
-        }),
+      yield* Effect.acquireDisposable(
+        Effect.sync(() =>
+          vi.spyOn(host.vault, "getFolderByPath").mockImplementationOnce(() => {
+            throw new Error("Vault unavailable");
+          }),
+        ),
       );
       const profile = Context.get(
         yield* Layer.build(profileOver(host)),
@@ -103,10 +104,12 @@ it.effect(
       const path = "templates/zotlit-profile.default.md";
       const source = "The researcher's existing Default document";
       const host = createTemplateHost({ [path]: source });
-      yield* acquireDisposable(() =>
-        vi.spyOn(host.vault, "getFolderByPath").mockImplementationOnce(() => {
-          throw new Error("Vault unavailable");
-        }),
+      yield* Effect.acquireDisposable(
+        Effect.sync(() =>
+          vi.spyOn(host.vault, "getFolderByPath").mockImplementationOnce(() => {
+            throw new Error("Vault unavailable");
+          }),
+        ),
       );
       const { profile } = yield* profileRuntimeOf(host);
       expect(profile.loaded).toBe(false);
@@ -122,10 +125,12 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const host = createTemplateHost();
-      yield* acquireDisposable(() =>
-        vi.spyOn(host.vault, "getFolderByPath").mockImplementationOnce(() => {
-          throw new Error("Vault unavailable");
-        }),
+      yield* Effect.acquireDisposable(
+        Effect.sync(() =>
+          vi.spyOn(host.vault, "getFolderByPath").mockImplementationOnce(() => {
+            throw new Error("Vault unavailable");
+          }),
+        ),
       );
       const { profile } = yield* profileRuntimeOf(host);
       yield* Effect.promise(() =>

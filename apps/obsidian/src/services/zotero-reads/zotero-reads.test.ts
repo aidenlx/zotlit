@@ -24,7 +24,6 @@ import {
   Scope,
   Stream,
 } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 
 import { layerRcRef } from "./connection";
@@ -1511,10 +1510,12 @@ describe("ZoteroReads connection lifetime", () => {
     () =>
       Effect.gen(function* () {
         const { open, statements } = fixtureOpener();
-        const service = yield* acquireAsyncDisposable(async () =>
-          inProcessReadsService(open, {
-            handlers: { sliceSize: 1 },
-          }),
+        const service = yield* Effect.acquireDisposable(
+          Effect.tryPromise(async () =>
+            inProcessReadsService(open, {
+              handlers: { sliceSize: 1 },
+            }),
+          ),
         );
         const { reads } = yield* Effect.promise(() => service.ready);
         const { oneSlice, held } = yield* Effect.gen(function* () {

@@ -7,7 +7,6 @@ import { describe, expect, vi } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { Effect } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ProfileReader } from "@/services/profile/service";
@@ -108,7 +107,7 @@ async function cslVault({
 
 /** {@link cslVault}, removed when the test's scope closes. */
 const scopedCslVault = (options: Parameters<typeof cslVault>[0]) =>
-  acquireAsyncDisposable(() => cslVault(options));
+  Effect.acquireDisposable(Effect.tryPromise(() => cslVault(options)));
 
 describe("zotlit:csl for one note", () => {
   it.effect(

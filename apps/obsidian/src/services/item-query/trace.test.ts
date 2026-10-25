@@ -4,7 +4,6 @@ import { describe, expect, vi } from "vitest";
 import { ItemQueryScheduler } from "@zotlit/item-query";
 
 import { Effect, Exit, Fiber, Scheduler } from "@/lib/effect";
-import { acquireDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 
 import { createTrace, finishTrace } from "./trace";
@@ -71,7 +70,7 @@ describe("Item Query execution slices", () => {
     "keeps a %i ms asynchronous wait out of execution slices",
     (waitMs) =>
       Effect.gen(function* () {
-        const time = yield* acquireDisposable(clock);
+        const time = yield* Effect.acquireDisposable(Effect.sync(clock));
         const trace = createTrace(false);
         yield* trace
           .instrument(
@@ -90,7 +89,7 @@ describe("Item Query execution slices", () => {
 
   it.live("keeps a synchronous stall in its execution slice", () =>
     Effect.gen(function* () {
-      const time = yield* acquireDisposable(clock);
+      const time = yield* Effect.acquireDisposable(Effect.sync(clock));
       const trace = createTrace(false);
       yield* trace
         .instrument(Effect.sync(() => time.work(60)))
@@ -103,7 +102,7 @@ describe("Item Query execution slices", () => {
     "measures synchronous work in a Promise continuation before Effect resumes",
     () =>
       Effect.gen(function* () {
-        const time = yield* acquireDisposable(clock);
+        const time = yield* Effect.acquireDisposable(Effect.sync(clock));
         const trace = createTrace(false);
         yield* trace
           .instrument(
@@ -123,7 +122,7 @@ describe("Item Query execution slices", () => {
     "keeps promise microtasks in one slice until the scheduler releases the host",
     () =>
       Effect.gen(function* () {
-        const time = yield* acquireDisposable(clock);
+        const time = yield* Effect.acquireDisposable(Effect.sync(clock));
         const trace = createTrace(false);
         yield* trace
           .instrument(
@@ -145,7 +144,7 @@ describe("Item Query execution slices", () => {
     "ends a slice at a scheduler pause that async_hooks does not report",
     () =>
       Effect.gen(function* () {
-        const time = yield* acquireDisposable(clock);
+        const time = yield* Effect.acquireDisposable(Effect.sync(clock));
         const trace = createTrace(false);
         yield* trace
           .instrument(
@@ -173,7 +172,7 @@ describe("Item Query execution slices", () => {
     "ends a cancelled wait without counting the wait as synchronous work",
     () =>
       Effect.gen(function* () {
-        const time = yield* acquireDisposable(clock);
+        const time = yield* Effect.acquireDisposable(Effect.sync(clock));
         const trace = createTrace(false);
         // The run interrupts itself once the wait ends, as a cancel would.
         const run: Fiber.Fiber<void> = yield* Effect.forkChild(

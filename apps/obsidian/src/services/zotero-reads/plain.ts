@@ -1,8 +1,6 @@
 /** Database reads for views and legacy services, on the plugin runtime. */
-import { Cause, Effect, Exit } from "@/lib/effect";
 import type { ManagedRuntime, Stream } from "@/lib/effect";
-import { effectBridge } from "@/lib/effect-bridge";
-import { isScopeClosed } from "@/lib/effect-scope";
+import { effectBridge, valueOr } from "@/lib/effect-bridge";
 
 import {
   changed,
@@ -41,36 +39,31 @@ export function plainZoteroReads(
 ): PlainZoteroReads {
   const bridge = effectBridge(runtime);
   const service = runtime.runSync(ZoteroReads);
-  const context = runtime.runSync(Effect.context<never>());
-  const read = Effect.runSyncWith(context);
-  const closed = () => isScopeClosed(runtime.scope);
   return {
     get state() {
-      return read(service.current).state;
+      return bridge.runSync(service.current).state;
     },
     get error() {
-      return read(service.current).error;
+      return bridge.runSync(service.current).error;
     },
     get moved() {
-      return read(service.current).moved;
+      return bridge.runSync(service.current).moved;
     },
     get dbFileMissing() {
-      return read(service.current).dbFileMissing;
+      return bridge.runSync(service.current).dbFileMissing;
     },
     get activeReadMode() {
-      return read(service.current).activeReadMode;
+      return bridge.runSync(service.current).activeReadMode;
     },
     reads: service.reads,
     snapshot: service.snapshot,
     acquireRead: () => acquireReadLease(service, bridge),
     refresh: async () => {
-      if (closed()) return;
-      const exit = await runtime.runPromiseExit(service.refresh());
-      if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
-        throw Cause.squash(exit.cause);
+      if (bridge.closed()) return;
+      valueOr(await bridge.runPromiseExit(service.refresh()), undefined);
     },
     notifyExternalChange: () => {
-      if (!closed()) runtime.runFork(service.notifyExternalChange());
+      if (!bridge.closed()) runtime.runFork(service.notifyExternalChange());
     },
     changes: service.changes,
     "refresh-requested": refreshRequested(service),

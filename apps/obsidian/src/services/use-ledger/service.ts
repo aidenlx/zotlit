@@ -5,16 +5,16 @@ import { isIndexedKey } from "@zotlit/db";
 import {
   Clock,
   Context,
-  Deferred,
   Effect,
   Layer,
   Option,
+  PubSub,
   Schema,
   SubscriptionRef,
 } from "@/lib/effect";
 import type { Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
-import { changesUntil, filterTag, forkEach } from "@/lib/effect-stream";
+import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -70,7 +70,6 @@ const makeUseLedger = Effect.gen(function* () {
   const metadata = yield* MetadataCache;
   const workspace = yield* Workspace;
   const ledger = yield* SubscriptionRef.make(newest(yield* readSaved(app)));
-  const stopped = yield* Deferred.make<void>();
   const excludedOpens = new Map<TFile, number>();
   let closed = false;
 
@@ -146,7 +145,7 @@ const makeUseLedger = Effect.gen(function* () {
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
       closed = true;
-    }).pipe(Effect.andThen(Deferred.succeed(stopped, undefined))),
+    }).pipe(Effect.andThen(PubSub.shutdown(ledger.pubsub))),
   );
 
   // Obsidian defers file-open: deliver a pending open, so it lands inside or
@@ -155,7 +154,7 @@ const makeUseLedger = Effect.gen(function* () {
 
   return UseLedger.of({
     current,
-    changes: changesUntil(ledger, Deferred.await(stopped)),
+    changes: SubscriptionRef.changes(ledger),
     get: (itemKey) => Effect.map(current, (entries) => entries[itemKey]),
     uses: Effect.map(current, (entries) =>
       Object.fromEntries(

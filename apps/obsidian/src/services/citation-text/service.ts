@@ -23,8 +23,7 @@ import {
 } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
-import { acquireDisposable } from "@/lib/effect-scope";
-import { changesUntil, forkEach } from "@/lib/effect-stream";
+import { forkEach } from "@/lib/effect-stream";
 import { mapsEqual } from "@/lib/maps-equal";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
@@ -689,8 +688,8 @@ export const layerCitationText = (open?: OpenDocuments) =>
           if (event._tag === "changed") invalidate(event.file.path);
           else if (event._tag === "deleted") drop(event.file.path);
         });
-        yield* acquireDisposable(() =>
-          openDocuments.subscribe(intake.callback("open")),
+        yield* Effect.acquireDisposable(
+          Effect.sync(() => openDocuments.subscribe(intake.callback("open"))),
         );
         yield* forkEach(queries.changes, (change) => {
           if (change.key[0] !== CITATION_TEXT) return;
@@ -745,7 +744,9 @@ export const layerCitationText = (open?: OpenDocuments) =>
       );
       return {
         current: SubscriptionRef.get(state),
-        changes: changesUntil(state, (value) => value.stopped),
+        changes: SubscriptionRef.changes(state).pipe(
+          Stream.takeUntil((value) => value.stopped),
+        ),
         events: Stream.fromPubSub(bus),
         peek: Effect.fn("CitationText.peek")(function* (path: string) {
           return yield* Effect.sync(() => peek(path));

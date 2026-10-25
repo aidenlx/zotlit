@@ -8,7 +8,6 @@ import type { AnnotationOpenUriOptions } from "@zotlit/db";
 
 import { Effect, Layer } from "@/lib/effect";
 import { scopedBridge } from "@/lib/effect-bridge";
-import { acquireDisposable } from "@/lib/effect-scope";
 import { PluginHost } from "@/lib/plugin-host";
 import type { PluginHostShape } from "@/lib/plugin-host";
 import { isDraftMarkdown, markdownViewOf } from "@/lib/reading-view";
@@ -111,12 +110,14 @@ export const layerAnnotationLinkReading = Layer.effectDiscard(
     const host = yield* PluginHost;
     const popover = yield* AnnotationPopover;
     const bridge = yield* scopedBridge;
-    yield* acquireDisposable(
-      () =>
-        new AnnotationLinkReadingCore({
-          host,
-          show: (request) => void bridge.runPromise(popover.show(request)),
-        }),
+    yield* Effect.acquireDisposable(
+      Effect.sync(
+        () =>
+          new AnnotationLinkReadingCore({
+            host,
+            show: (request) => void bridge.runPromise(popover.show(request)),
+          }),
+      ),
     );
   }),
 );

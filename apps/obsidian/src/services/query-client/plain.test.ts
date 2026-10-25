@@ -1,7 +1,6 @@
 import { expect } from "vitest";
 
 import { Effect } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 
@@ -42,8 +41,8 @@ it.effect(
 
 it.effect("settles pending plain reads when the runtime closes", () =>
   Effect.gen(function* () {
-    const queries = yield* acquireAsyncDisposable(async () =>
-      queryClientsFixture(),
+    const queries = yield* Effect.acquireDisposable(
+      Effect.tryPromise(async () => queryClientsFixture()),
     );
     yield* Effect.promise(async () => {
       const gate = Promise.withResolvers<string>();
@@ -72,8 +71,8 @@ it.effect(
   "keeps released results for calls after runtime disposal (#1705)",
   () =>
     Effect.gen(function* () {
-      const queries = yield* acquireAsyncDisposable(async () =>
-        queryClientsFixture(),
+      const queries = yield* Effect.acquireDisposable(
+        Effect.tryPromise(async () => queryClientsFixture()),
       );
       yield* Effect.promise(async () => {
         await queries.read(["held"], () => Promise.resolve("old"));

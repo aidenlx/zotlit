@@ -18,7 +18,6 @@ import type { CitationExampleId } from "@zotlit/workbench/render";
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Effect } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
@@ -802,7 +801,9 @@ type FixtureDeps = TemplateDataDeps & {
 
 /** {@link createFixture}, closed when the test's scope closes. */
 const scopedFixture = (options?: Parameters<typeof createFixture>[0]) =>
-  acquireAsyncDisposable(async () => createFixture(options));
+  Effect.acquireDisposable(
+    Effect.tryPromise(async () => createFixture(options)),
+  );
 
 function createFixture(options?: {
   renderError?: Error;

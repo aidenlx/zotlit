@@ -30,13 +30,13 @@ import {
   Exit,
   Fiber,
   Layer,
+  PubSub,
   Schema,
   Scope,
   Stream,
   SubscriptionRef,
 } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
-import { changesUntil } from "@/lib/effect-stream";
 import { ensureParentFolder, normalizeFolderPath } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import {
@@ -1603,11 +1603,12 @@ export const layerProfile = Layer.effect(
       Effect.gen(function* () {
         closed = true;
         yield* Deferred.succeed(stopped, undefined);
+        yield* PubSub.shutdown(state.pubsub);
       }),
     );
     return Profile.of({
       state: SubscriptionRef.get(state),
-      changes: changesUntil(state, Deferred.await(stopped)),
+      changes: SubscriptionRef.changes(state),
       loaded: Effect.sync(() => engine.loaded),
       profiles: Effect.sync(() => engine.profiles),
       diagnostics: Effect.sync(() => engine.diagnostics),

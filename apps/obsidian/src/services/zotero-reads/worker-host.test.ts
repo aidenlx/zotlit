@@ -23,7 +23,6 @@ import {
 } from "@/lib/effect";
 import type { Duration } from "@/lib/effect";
 import { LogCategory } from "@/lib/effect-log";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import type { EffectiveReadMode } from "@/services/database/read-source";
@@ -290,8 +289,8 @@ describe("ZoteroReads worker adapter", () => {
         const { plain: service } = yield* readsFixture(
           makeWorkerReads(workers.connect),
         );
-        const oldLease = yield* acquireAsyncDisposable(
-          async () => await service.acquireRead(),
+        const oldLease = yield* Effect.acquireDisposable(
+          Effect.tryPromise(async () => await service.acquireRead()),
         );
         expect(yield* workerSeen(oldLease.reads)).toBe(1);
 
@@ -304,8 +303,8 @@ describe("ZoteroReads worker adapter", () => {
         off();
         yield* Effect.promise(() => service.refresh());
 
-        const newLease = yield* acquireAsyncDisposable(
-          async () => await service.acquireRead(),
+        const newLease = yield* Effect.acquireDisposable(
+          Effect.tryPromise(async () => await service.acquireRead()),
         );
         expect(yield* workerSeen(newLease.reads)).toBe(2);
         expect(yield* Effect.flip(workerSeen(oldLease.reads))).toMatchObject({

@@ -1,7 +1,7 @@
 // State Streams and callback subscriptions shared by Effect services and adapters.
-import type { ManagedRuntime, Scope, SubscriptionRef } from "@/lib/effect";
-import { Cause, Effect, PubSub, Stream } from "@/lib/effect";
-import { withLogCategory } from "@/lib/effect-log";
+import type { ManagedRuntime, Scope } from "@/lib/effect";
+import { Effect, Stream } from "@/lib/effect";
+import { logAndContinue } from "@/lib/effect-log";
 import { isScopeClosed } from "@/lib/effect-scope";
 
 /**
@@ -30,39 +30,6 @@ export type SubscriptionRuntime = Pick<
 >;
 
 /**
- * Replay state and retain every update until the service stops: the one way a
- * service exposes a `SubscriptionRef`. The subscription is acquired when the
- * Stream starts and each update reaches it on the publisher's fiber, so a
- * consumer started immediately during layer acquisition attaches before the
- * layer returns and sees every update in the same tick it is made. Each
- * consumer owns its subscription through the Stream's Scope.
- *
- * @param until The service's stop signal, or a terminal-state predicate. The
- *   signal shuts the state's PubSub down, which ends every subscriber. A
- *   predicate's matching value is the last one emitted, so a subscriber after
- *   close still receives that snapshot.
- */
-export function changesUntil<A>(
-  state: SubscriptionRef.SubscriptionRef<A>,
-  until: Effect.Effect<void> | ((value: A) => boolean),
-): Stream.Stream<A> {
-  return Stream.unwrap(
-    Effect.gen(function* () {
-      const changes = Stream.fromSubscription(
-        yield* PubSub.subscribe(state.pubsub),
-      );
-      if (typeof until === "function")
-        return changes.pipe(Stream.takeUntil(until));
-      yield* Effect.forkScoped(
-        Effect.andThen(until, PubSub.shutdown(state.pubsub)),
-        { startImmediately: true },
-      );
-      return changes;
-    }),
-  );
-}
-
-/**
  * Run `handle` for each element of `stream` on the current Scope: the Effect
  * side of {@link subscribe}, for a layer consuming another service's Stream.
  * Started immediately, so the consumer attaches before acquisition returns. A
@@ -74,13 +41,7 @@ export function forkEach<A, R, R2 = never>(
 ) {
   return Stream.runForEach(stream, (value) =>
     Effect.suspend(() => handle(value) ?? Effect.void).pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause)
-          ? Effect.interrupt
-          : Effect.logError("Stream consumer failed", cause).pipe(
-              withLogCategory("effect-stream"),
-            ),
-      ),
+      logAndContinue("Stream consumer failed", "effect-stream"),
     ),
   ).pipe(Effect.forkScoped({ startImmediately: true }));
 }
@@ -105,15 +66,7 @@ export function subscribe<A, R>(
     Stream.runForEach(stream, (value) =>
       Effect.sync(() => {
         if (active) callback(value);
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Cause.hasInterruptsOnly(cause)
-            ? Effect.interrupt
-            : Effect.logError("Stream subscriber failed", cause).pipe(
-                withLogCategory("effect-stream"),
-              ),
-        ),
-      ),
+      }).pipe(logAndContinue("Stream subscriber failed", "effect-stream")),
     ),
   );
   // Operators such as interruptWhen fork upstream consumption. Drain that

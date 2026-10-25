@@ -11,7 +11,6 @@ import {
   Stream,
 } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 
 import {
@@ -135,8 +134,8 @@ it.effect(
         { "paper.md": cache({ itemKey: "ABCD2345" }) },
         { enabledAtRuntime: true },
       );
-      const stack = yield* acquireAsyncDisposable(
-        async () => new AsyncDisposableStack(),
+      const stack = yield* Effect.acquireDisposable(
+        Effect.tryPromise(async () => new AsyncDisposableStack()),
       );
       const runtime = buildRuntime(noteIndexOver(host.app), stack);
       yield* Effect.promise(() => runtime.context());

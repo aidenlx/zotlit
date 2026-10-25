@@ -9,7 +9,6 @@ import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Effect } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import type {
   AnnotationRecord,
@@ -118,26 +117,28 @@ async function fixture(serverID: string | null = SERVER_ID): Promise<
 
 /** {@link fixture}, held for the case's scope. */
 const fixtureDb = (serverID?: string | null) =>
-  acquireAsyncDisposable(() => fixture(serverID));
+  Effect.acquireDisposable(Effect.tryPromise(() => fixture(serverID)));
 
 /** A bridge over an empty runtime, held for the case's scope. */
 const testBridge = () =>
-  acquireAsyncDisposable(() => Promise.resolve(openTestBridge()));
+  Effect.acquireDisposable(
+    Effect.tryPromise(() => Promise.resolve(openTestBridge())),
+  );
 
 /** An Excerpt Image service over `render` and an in-memory cache. */
 const serviceOf = (
   options: ConstructorParameters<typeof ExcerptImageService>[0],
 ) =>
-  acquireAsyncDisposable(() =>
-    Promise.resolve(new ExcerptImageService(options)),
+  Effect.acquireDisposable(
+    Effect.tryPromise(() => Promise.resolve(new ExcerptImageService(options))),
   );
 
 describe("Saved excerpt request", () => {
   it.effect("builds the same request over the Effect services", () =>
     Effect.gen(function* () {
       const db = yield* fixtureDb();
-      const bridge = yield* acquireAsyncDisposable(() =>
-        Promise.resolve(openTestBridge()),
+      const bridge = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() => Promise.resolve(openTestBridge())),
       );
       const reads = stubService<ZoteroReads["Service"]>("ZoteroReads", {
         snapshot: Effect.succeed(db.reads),
@@ -180,8 +181,10 @@ describe("Saved excerpt request", () => {
     Effect.gen(function* () {
       const closed = createClient(":memory:");
       closed.$client.close();
-      const zoteroReads = yield* acquireAsyncDisposable(() =>
-        Promise.resolve(inProcessReadsService(sharedClientOpener(closed))),
+      const zoteroReads = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          Promise.resolve(inProcessReadsService(sharedClientOpener(closed))),
+        ),
       );
       const bridge = yield* testBridge();
 
@@ -234,8 +237,8 @@ describe("Saved excerpt request", () => {
     () =>
       Effect.gen(function* () {
         const db = yield* fixtureDb();
-        const bridge = yield* acquireAsyncDisposable(() =>
-          Promise.resolve(openTestBridge()),
+        const bridge = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => Promise.resolve(openTestBridge())),
         );
         let started = false;
         const requestOver = savedExcerptRequestOver({
@@ -471,15 +474,17 @@ describe("Excerpt request for an Indexed Key", () => {
 
   /** Snapshot-bound reads of the scenario database, held for the case's scope. */
   const scenarioReads = (wrap?: InProcessReadsOptions["wrap"]) =>
-    acquireAsyncDisposable(async () => {
-      await using stack = new AsyncDisposableStack();
-      const scenario = stack.use(openScenarioDatabase({ annotations: true }));
-      const zoteroReads = stack.use(
-        inProcessReadsService(sharedClientOpener(scenario.db), { wrap }),
-      );
-      const lease = stack.use(await zoteroReads.acquireRead());
-      return Object.assign(stack.move(), { reads: lease.reads });
-    });
+    Effect.acquireDisposable(
+      Effect.tryPromise(async () => {
+        await using stack = new AsyncDisposableStack();
+        const scenario = stack.use(openScenarioDatabase({ annotations: true }));
+        const zoteroReads = stack.use(
+          inProcessReadsService(sharedClientOpener(scenario.db), { wrap }),
+        );
+        const lease = stack.use(await zoteroReads.acquireRead());
+        return Object.assign(stack.move(), { reads: lease.reads });
+      }),
+    );
 
   it.effect(
     "builds the request of an image Annotation from its row and Attachment",
