@@ -38,11 +38,6 @@ export function isMemberOf(
 
 export interface ModuleStatement extends AstNode {
   readonly importKind?: string;
-  readonly exportKind?: string;
-  readonly specifiers?: readonly {
-    readonly importKind?: string;
-    readonly exportKind?: string;
-  }[];
   readonly source?: {
     readonly value?: unknown;
   };
@@ -85,8 +80,7 @@ function isBridgeType(statement: ModuleStatement, source: string): boolean {
 /**
  * Whether a module imports Effect: any import or re-export from `effect`,
  * `@/lib/effect` or one of their submodules, but not a type-only import of the
- * bridge. `importsEffectValue` is the stricter test: it skips every type-only
- * import.
+ * bridge.
  */
 export function importsEffect(statements: readonly ModuleStatement[]): boolean {
   return statements.some((statement) => {
@@ -96,44 +90,6 @@ export function importsEffect(statements: readonly ModuleStatement[]): boolean {
       typeof source === "string" &&
       isEffectModule(source) &&
       !isBridgeType(statement, source)
-    );
-  });
-}
-
-/**
- * A statement that brings in types only: `import type`, `export type … from`,
- * or an import or re-export whose every specifier is `type`. It loads no
- * module code.
- */
-function isTypeOnly(statement: ModuleStatement): boolean {
-  if (statement.importKind === "type" || statement.exportKind === "type")
-    return true;
-  const specifiers = statement.specifiers ?? [];
-  return (
-    specifiers.length > 0 &&
-    specifiers.every(
-      (specifier) =>
-        specifier.importKind === "type" || specifier.exportKind === "type",
-    )
-  );
-}
-
-/**
- * Whether a module runs Effect code: a value import or re-export from
- * `effect`, `effect/*`, `@effect/*`, `@/lib/effect` or `@/lib/effect-*` (the
- * repo's own Effect modules, the bridge included). A type-only import does not
- * count, so a legacy file that names an Effect module's type stays a legacy
- * file (`src/lib/modal-answer.ts`).
- */
-export function importsEffectValue(
-  statements: readonly ModuleStatement[],
-): boolean {
-  return statements.some((statement) => {
-    if (!hasSource(statement) || isTypeOnly(statement)) return false;
-    const source = statement.source?.value;
-    return (
-      typeof source === "string" &&
-      (isEffectModule(source) || source.startsWith("@effect/"))
     );
   });
 }

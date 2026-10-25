@@ -30,6 +30,10 @@ export class MemoryVault implements VaultSource {
     return this.files.get(path) ?? null;
   }
 
+  getFolderByPath(path: string): TFolder | null {
+    return this.folders.get(path) ?? null;
+  }
+
   getAbstractFileByPath(path: string): TAbstractFile | null {
     return this.files.get(path) ?? this.folders.get(path) ?? null;
   }

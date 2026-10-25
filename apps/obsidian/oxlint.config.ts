@@ -242,49 +242,99 @@ export default defineConfig({
       ],
       rules: { "zotlit-services/obsidian-capabilities": "error" },
     },
+    // Capability backlog: files that import Effect and still reach the App,
+    // grouped by what blocks the change. A file moves off its list when it
+    // takes Obsidian from the capability tags.
     {
-      // Capability backlog: files that import Effect and still reach the App.
-      // Legacy services and views keep `app` until they convert; the others
-      // need a tag member that does not exist yet, or a plain helper that
-      // takes the App. A file moves off this list when it takes Obsidian from
-      // the capability tags.
+      // Legacy classes that hold the App (`app`, `#app`, `#deps.app`). A file
+      // moves off the list when its service converts to Effect.
       files: [
-        "src/services/attachment-open/actions.ts",
-        "src/services/build.ts",
-        "src/services/citation-index/cli/register.ts",
-        "src/services/citation-index/service.ts",
-        "src/services/citation-popover/service.tsx",
-        "src/services/citation-text/service.ts",
         "src/services/citekey-reading/service.ts",
         "src/services/graph-citations/service.ts",
-        "src/services/local-bridge/customize.ts",
-        "src/services/local-bridge/vault-targets.ts",
-        "src/services/log/service.ts",
-        "src/services/note-feature/operations.ts",
-        "src/services/note-feature/update-single.ts",
-        "src/services/note-import/service.ts",
-        "src/services/note-index/service.ts",
-        "src/services/pandoc/register.ts",
         "src/services/profile/service.ts",
-        "src/services/protocol/register.ts",
-        "src/services/release/service.ts",
-        "src/services/template-workbench/check-profile-document.ts",
-        "src/services/template-workbench/data.ts",
-        "src/services/template-workbench/inspect.ts",
-        "src/services/template-workbench/register.ts",
         "src/services/template/migration.ts",
         "src/services/template/service.ts",
         "src/services/wikilink-reading/service.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // Obsidian views and components, which register on their own lifecycle.
+      // A file moves off the list when its view reads the tags.
+      files: [
         "src/views/annot-view/view.tsx",
-        "src/views/note-preview/render.ts",
-        "src/views/note-preview/session.ts",
-        "src/views/pandoc-export/register.ts",
-        "src/views/query-view/table-notes.ts",
         "src/views/references/view.tsx",
         "src/views/template-data-explorer/view.tsx",
         "src/views/template-workbench/view.tsx",
         "src/views/welcome/banner.tsx",
-        "src/views/welcome/register.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // No tag member yet: `vault.getMarkdownFiles`.
+      files: [
+        "src/services/citation-index/service.ts",
+        "src/services/note-index/service.ts",
+        "src/services/template-workbench/inspect.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // No tag member yet: `vault.getName`.
+      files: [
+        "src/services/citation-index/cli/register.ts",
+        "src/services/local-bridge/customize.ts",
+        "src/services/template-workbench/register.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // No tag member yet: `vault.adapter`.
+      files: [
+        "src/services/attachment-open/actions.ts",
+        "src/services/log/service.ts",
+        "src/views/pandoc-export/register.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // No tag member yet: `metadataCache.getFirstLinkpathDest` and
+      // `metadataCache.getCache`.
+      files: [
+        "src/services/citation-text/service.ts",
+        "src/views/query-view/table-notes.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // No tag event yet: the workspace's `layout-change`.
+      files: ["src/views/welcome/register.ts"],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // Helpers and constructors that take a raw App object
+      // (`documentPresentation(app.metadataCache, …)`,
+      // `readProfileStamp(app.metadataCache, …)`, `vault: app.vault`).
+      files: [
+        "src/services/build.ts",
+        "src/services/citation-popover/service.tsx",
+        "src/services/note-feature/operations.ts",
+        "src/services/pandoc/register.ts",
+        "src/services/template-workbench/data.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // Plain async code, or an Effect.fn, that reaches the App through
+      // `deps.app`: the deps must carry the tag first.
+      files: [
+        "src/services/local-bridge/vault-targets.ts",
+        "src/services/note-feature/update-single.ts",
+        "src/services/note-import/service.ts",
+        "src/services/protocol/register.ts",
+        "src/services/template-workbench/check-profile-document.ts",
+        "src/views/note-preview/render.ts",
+        "src/views/note-preview/session.ts",
       ],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },

@@ -4,6 +4,7 @@ import type { App } from "obsidian";
 import { vi } from "vitest";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Context, Effect, Layer } from "@/lib/effect";
@@ -12,6 +13,7 @@ import type { EffectBridge } from "@/lib/effect-bridge";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { layerVaultFrom } from "@/lib/obsidian-vault";
 import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import type { HydrationOrigin } from "@/services/settings/classify";
 import type { Settings } from "@/services/settings/schema";
@@ -41,9 +43,9 @@ export function releaseApp(
   const app = {
     workspace,
     internalPlugins: { getEnabledPluginById: () => null },
-    vault: {
+    vault: MemoryVault.with({
       getFolderByPath: (path: string) => (path === folderPath ? folder : null),
-    },
+    }),
   } as unknown as App;
   return {
     app,
@@ -126,6 +128,7 @@ function releaseLayer(options: ReleaseFixtureOptions) {
     Layer.provide(
       Layer.mergeAll(
         Layer.succeed(ObsidianApp, options.app),
+        layerVaultFrom(options.app.vault),
         layerWorkspaceFrom(options.app.workspace),
         testNotifier().layer,
         Layer.succeed(PluginSettings, settings),

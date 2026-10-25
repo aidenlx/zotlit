@@ -10,6 +10,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { Notifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -65,12 +66,13 @@ export function layerRelease(options: {
 }): Layer.Layer<
   Release,
   never,
-  ObsidianApp | Workspace | Notifier | PluginSettings
+  ObsidianApp | Vault | Workspace | Notifier | PluginSettings
 > {
   return Layer.effect(
     Release,
     Effect.gen(function* () {
       const app = yield* ObsidianApp;
+      const vault = yield* Vault;
       const workspace = yield* Workspace;
       const settings = yield* PluginSettings;
       const notifier = yield* Notifier;
@@ -80,14 +82,14 @@ export function layerRelease(options: {
       let stopped = false;
 
       const hasV1Templates = (folderPath: string): Effect.Effect<boolean> =>
-        Effect.sync(() => {
-          const folder = app.vault.getFolderByPath(folderPath);
-          if (!folder) return false;
-          return folder.children.some(
-            (child) =>
-              child instanceof TFile && V1_EJECTED_TEMPLATE.test(child.name),
-          );
-        });
+        Effect.map(
+          vault.getFolderByPath(folderPath),
+          (folder) =>
+            folder?.children.some(
+              (child) =>
+                child instanceof TFile && V1_EJECTED_TEMPLATE.test(child.name),
+            ) ?? false,
+        );
 
       const openReleaseNote = Effect.fn("Release.openReleaseNote")(
         function* () {

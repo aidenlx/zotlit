@@ -273,10 +273,8 @@ tester.run("obsidian-capabilities", obsidianCapabilities, {
     // A legacy file, with no Effect import, keeps the App.
     "const file = app.vault.getFileByPath(path);",
     'stack.use(this.registerEvent(this.app.workspace.on("file-open", open)));',
-    // A type-only import of an Effect module loads no Effect code.
-    'import type { ClosableModal } from "@/lib/effect-modal";\nconst cache = app.metadataCache.getFileCache(file);',
-    'import { type Stream } from "@/lib/effect";\napp.vault.on("rename", move);',
-    'export type { Effect } from "effect";\nregisterEvent(ref);',
+    // A type-only import of the bridge names the seam a legacy file holds.
+    'import type { EffectBridge } from "@/lib/effect-bridge";\nconst cache = app.metadataCache.getFileCache(file);',
     // Not the App: a tag, or another object's members.
     `${effect}Effect.gen(function* () {
       const vault = yield* Vault;
@@ -295,12 +293,12 @@ tester.run("obsidian-capabilities", obsidianCapabilities, {
       errors: [{ messageId: "capability" }],
     },
     {
-      code: 'import * as Rpc from "@effect/platform-browser/BrowserWorker";\nconst { adapter } = plugin.app.vault;',
+      code: 'import * as Stream from "effect/Stream";\nconst { adapter } = plugin.app.vault;',
       errors: [{ messageId: "capability" }],
     },
     {
-      // A mixed import loads the module.
-      code: 'import { type Stream, Effect } from "@/lib/effect";\nctx.app.vault.create(path, data);',
+      // A type-only import of another Effect module counts.
+      code: 'import type { ClosableModal } from "@/lib/effect-modal";\nctx.app.vault.create(path, data);',
       errors: [{ messageId: "capability" }],
     },
     {

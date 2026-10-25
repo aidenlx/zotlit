@@ -5,7 +5,7 @@
 // tests: src/lint/services.test.ts.
 import { sep } from "node:path";
 
-import { importsEffect, importsEffectValue, isMemberOf } from "./oxlint-ast.ts";
+import { importsEffect, isMemberOf } from "./oxlint-ast.ts";
 import type { AstNode, ModuleProgram, Rule } from "./oxlint-ast.ts";
 
 const EFFECT_GENERATOR_CALLEES = new Set(["gen", "fn", "fnUntraced"]);
@@ -426,8 +426,8 @@ export const plainAdapterStreams: Rule = {
 };
 
 const CAPABILITY_TAGS: Readonly<Record<string, string>> = {
-  vault: "Vault from @/lib/obsidian-vault",
-  metadataCache: "MetadataCache from @/lib/obsidian-metadata-cache",
+  vault: "Vault tag (@/lib/obsidian-vault)",
+  metadataCache: "MetadataCache tag (@/lib/obsidian-metadata-cache)",
 };
 
 /** `app`, or a member named `app`: `this.app`, `plugin.app`, `this.#app`. */
@@ -454,19 +454,19 @@ function appMember(node: AstNode | undefined): string | undefined {
 
 /**
  * A file that imports Effect reaches Obsidian through the capability tags
- * (policies/events.md → Capability tags): `Vault`, `MetadataCache`,
+ * (policies/events.md → Obsidian events): `Vault`, `MetadataCache`,
  * `Workspace`, `FileManager` and `PluginHost`, each from `@/lib/obsidian-*` or
  * `@/lib/plugin-host`. A tag's events are its `changes` Stream; an event with
  * no tag yet enters through `obsidianEvents` from
- * `@/lib/effect-obsidian-events`. Both register on the layer's Scope. Reported: `app.vault` and
- * `app.metadataCache`, a call to `registerEvent`, and `.on(` on a member of
- * `app` (`app.workspace.on(…)`). `app` is an `app` identifier or any member
- * named `app` (`this.app`, `plugin.app`, `this.#app`).
+ * `@/lib/effect-obsidian-events`. Both register on the layer's Scope.
+ * Reported: `app.vault` and `app.metadataCache`, a call to `registerEvent`,
+ * and `.on(` on a member of `app` (`app.workspace.on(…)`). `app` is an `app`
+ * identifier or any member named `app` (`this.app`, `plugin.app`,
+ * `this.#app`).
  *
- * "Imports Effect" is `importsEffectValue` (`./oxlint-ast.ts`): a value import
- * from `effect`, `effect/*`, `@effect/*`, `@/lib/effect` or `@/lib/effect-*`.
- * A type-only import does not count, so a legacy file keeps `app`. The tags
- * themselves, and the backlog, are listed in oxlint.config.ts.
+ * "Imports Effect" is `importsEffect` (`./oxlint-ast.ts`), as for
+ * `clock-time`. The tags themselves, and the backlog, are listed in
+ * oxlint.config.ts.
  */
 export const obsidianCapabilities: Rule = {
   meta: {
@@ -477,7 +477,7 @@ export const obsidianCapabilities: Rule = {
     },
     messages: {
       capability:
-        "Read `app.{{name}}` through the {{tag}} tag; a file that imports Effect takes Obsidian from the capability tags (policies/events.md → Capability tags).",
+        "Read `app.{{name}}` through the {{tag}}; a file that imports Effect takes Obsidian from the capability tags (policies/events.md → Obsidian events).",
       event:
         "Take `app.{{name}}` events from its capability tag's `changes` Stream (Vault, MetadataCache, Workspace); an event the tag does not expose enters through obsidianEvents from @/lib/effect-obsidian-events (policies/events.md → Obsidian events).",
       registerEvent:
@@ -495,9 +495,7 @@ export const obsidianCapabilities: Rule = {
       appMember(node.object) !== undefined;
     return {
       Program(program) {
-        effectNative = importsEffectValue(
-          (program as ModuleProgram).body ?? [],
-        );
+        effectNative = importsEffect((program as ModuleProgram).body ?? []);
       },
       MemberExpression(node) {
         if (!effectNative) return;

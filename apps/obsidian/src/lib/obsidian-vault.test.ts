@@ -48,6 +48,7 @@ it.effect("reads the live layer's vault from ObsidianApp", () =>
   Effect.gen(function* () {
     const source = new MemoryVault();
     const note = source.add("a.md", "text");
+    const folder = source.addFolder("notes");
     const { vault } = yield* open(
       layerVault.pipe(
         Layer.provide(
@@ -62,6 +63,8 @@ it.effect("reads the live layer's vault from ObsidianApp", () =>
     );
     expect(yield* vault.getFileByPath("a.md")).toBe(note);
     expect(yield* vault.getFileByPath("b.md")).toBeNull();
+    expect(yield* vault.getFolderByPath("notes")).toBe(folder);
+    expect(yield* vault.getFolderByPath("a.md")).toBeNull();
     expect(yield* vault.read(note)).toBe("text");
     expect(yield* vault.cachedRead(note)).toBe("text");
   }),
