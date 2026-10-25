@@ -10,6 +10,8 @@ import type {
   Editor,
   MarkdownFileInfo,
   Menu,
+  OpenViewState,
+  PaneType,
   TAbstractFile,
   TFile,
   Workspace as ObsidianWorkspace,
@@ -27,7 +29,12 @@ import type { ObsidianEventEmitter } from "@/lib/obsidian-event-source";
 /** The Obsidian object the tag reads: what `app.workspace` gives. */
 export type WorkspaceSource = Pick<
   ObsidianWorkspace,
-  "onLayoutReady" | "getActiveFile" | "getActiveViewOfType"
+  | "onLayoutReady"
+  | "getActiveFile"
+  | "getActiveViewOfType"
+  | "updateOptions"
+  | "openLinkText"
+  | "trigger"
 > &
   ObsidianEventEmitter;
 
@@ -57,6 +64,25 @@ export interface WorkspaceShape {
   readonly getActiveFile: Effect.Effect<TFile | null>;
   /** The Markdown view of the active leaf now, `null` when it holds none. */
   readonly activeMarkdownView: Effect.Effect<MarkdownView | null>;
+  /**
+   * Obsidian's `updateOptions()`: every editor reads the registered editor
+   * extensions again, so a change to a registered extension array applies.
+   */
+  readonly updateOptions: Effect.Effect<void>;
+  /**
+   * Obsidian's `openLinkText`: open `linktext`, resolved from `sourcePath`, in
+   * the pane `newLeaf` names, with the view state `state`.
+   */
+  openLinkText(
+    linktext: string,
+    sourcePath: string,
+    options?: {
+      readonly newLeaf?: PaneType | boolean;
+      readonly state?: OpenViewState;
+    },
+  ): Effect.Effect<void>;
+  /** Obsidian's `trigger`: raise the workspace event `name` with `data`. */
+  trigger(name: string, ...data: unknown[]): Effect.Effect<void>;
   /**
    * Add `handler` to Obsidian's `file-menu` for the life of the current
    * Scope. Obsidian reads the menu as soon as its listeners return, so the
@@ -127,6 +153,24 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     activeMarkdownView: Effect.sync(() =>
       source.getActiveViewOfType(MarkdownView),
     ),
+    updateOptions: Effect.sync(() => source.updateOptions()).pipe(
+      Effect.withSpan("Workspace.updateOptions"),
+    ),
+    openLinkText: Effect.fn("Workspace.openLinkText")(
+      (linktext, sourcePath, options = {}) =>
+        Effect.promise(() =>
+          source.openLinkText(
+            linktext,
+            sourcePath,
+            options.newLeaf,
+            options.state,
+          ),
+        ),
+    ),
+    // Untraced: a citation raises its menus from a pointer handler.
+    trigger: Effect.fnUntraced(function* (name, ...data) {
+      yield* Effect.sync(() => source.trigger(name, ...data));
+    }),
     onFileMenu: Effect.fn("Workspace.onFileMenu")((handler) =>
       menuHook(
         "file-menu",

@@ -1,7 +1,14 @@
 // An in-memory workspace for tests. The test drives it; the tag's own layer
 // runs over it (`layerWorkspaceFrom`, or `layerHostApp` from
 // ./obsidian-host-app). It copies the shape of ./obsidian-metadata-cache.
-import type { Constructor, EventRef, TFile, View } from "obsidian";
+import type {
+  Constructor,
+  EventRef,
+  OpenViewState,
+  PaneType,
+  TFile,
+  View,
+} from "obsidian";
 
 import type { WorkspaceSource } from "@/lib/obsidian-workspace";
 
@@ -17,6 +24,15 @@ export class MemoryWorkspace implements WorkspaceSource {
   activeFile: TFile | null = null;
   /** The view of the active leaf, for `getActiveViewOfType`. */
   activeView: unknown = null;
+  /** How many times `updateOptions` reconfigured the editors. */
+  reconfigures = 0;
+  /** Each `openLinkText` call, in order. */
+  readonly opened: {
+    linktext: string;
+    sourcePath: string;
+    newLeaf: PaneType | boolean | undefined;
+    openViewState: OpenViewState | undefined;
+  }[] = [];
   readonly #listeners = new Map<string, Set<Callback>>();
   readonly #readyCallbacks: (() => void)[] = [];
   #layoutReady: boolean;
@@ -45,6 +61,19 @@ export class MemoryWorkspace implements WorkspaceSource {
 
   getActiveViewOfType<T extends View>(type: Constructor<T>): T | null {
     return this.activeView instanceof type ? this.activeView : null;
+  }
+
+  updateOptions(): void {
+    this.reconfigures += 1;
+  }
+
+  /** Records the call; no leaf opens. */
+  async openLinkText(
+    ...[linktext, sourcePath, newLeaf, openViewState]: Parameters<
+      WorkspaceSource["openLinkText"]
+    >
+  ): Promise<void> {
+    this.opened.push({ linktext, sourcePath, newLeaf, openViewState });
   }
 
   /** The active file becomes `file`, then `file-open`. */

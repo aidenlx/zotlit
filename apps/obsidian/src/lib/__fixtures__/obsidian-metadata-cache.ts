@@ -14,6 +14,8 @@ type Callback = (...args: unknown[]) => unknown;
  */
 export class MemoryMetadataCache implements MetadataCacheSource {
   readonly entries = new Map<string, CachedMetadata>();
+  /** The file each linkpath resolves to, whatever the source note; the test sets it. */
+  readonly links = new Map<string, TFile>();
   /** Mirrors Obsidian's `isCacheClean()`: no parse pending, resolver idle. */
   clean = false;
   readonly #listeners = new Map<string, Set<Callback>>();
@@ -21,6 +23,10 @@ export class MemoryMetadataCache implements MetadataCacheSource {
 
   getFileCache(file: TFile): CachedMetadata | null {
     return this.getCache(file.path);
+  }
+
+  getFirstLinkpathDest(linkpath: string, _sourcePath: string): TFile | null {
+    return this.links.get(linkpath) ?? null;
   }
 
   /** As Obsidian: `null` for a path it holds nothing for, `{}` for a non-Markdown file. */
