@@ -417,24 +417,24 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     void stack.use(
-      registerProtocolHandlers(this, {
-        useLedger: services.useLedger,
-        webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-        createProfile: services.createProfile,
-        importProfile: services.importProfile,
-        profile: services.profile,
-        app: this.app,
-        settings: services.settings,
-        zoteroReads: services.zoteroReads,
-        libraryScope: services.libraryScope,
-        zoteroPref: services.zoteroPref,
-        noteFeature: services.noteFeature,
-        noteIndex: services.noteIndex,
-        batchImport: services.batchImport,
-        liveUpdate: services.localServer,
-        bridge: services.bridge,
-        opener: services.targetOpener,
-      }),
+      services.runtime.runSync(
+        registerProtocolHandlers(this, {
+          webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
+          createProfile: services.createProfile,
+          importProfile: services.importProfile,
+          profile: services.profile,
+          app: this.app,
+          settings: services.settings,
+          zoteroReads: services.zoteroReads,
+          libraryScope: services.libraryScope,
+          zoteroPref: services.zoteroPref,
+          noteFeature: services.noteFeature,
+          noteIndex: services.noteIndex,
+          batchImport: services.batchImport,
+          bridge: services.bridge,
+          opener: services.targetOpener,
+        }),
+      ),
     );
 
     const queryCardFocus = new QueryCardFocus(this.app);

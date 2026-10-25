@@ -1,15 +1,23 @@
 // @vitest-environment happy-dom
-import { Effect } from "effect";
+import { it } from "@effect/vitest";
+import { Effect, Layer } from "effect";
 import { ButtonComponent, TFile } from "obsidian";
-import type { App, Workspace } from "obsidian";
-import { expect, it, vi } from "vitest";
+import type { App } from "obsidian";
+import { expect, vi } from "vitest";
 
 import type { Item, ItemRef } from "@zotlit/db";
 
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { UseLedger } from "@/services/use-ledger/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
 import { companionNoteNotice, openCompanionNote } from "./index";
@@ -59,6 +67,49 @@ function creationPlans(
   return new Map(indexedKeys.map((key) => [key, plan]));
 }
 
+/** The services the flow reads through their tags, over one test's fakes. */
+interface FlowServices {
+  /** Records each `openLinkText`. */
+  readonly workspace: MemoryWorkspace;
+  /** The path of each note the Use Ledger was told not to count, in order. */
+  readonly excluded: string[];
+  readonly readItems?: ZoteroReadsApi["ItemsByIndexedKeys"];
+}
+
+function flowLayer({ workspace, excluded, readItems }: FlowServices) {
+  return Layer.mergeAll(
+    layerWorkspaceFrom(workspace),
+    Layer.mock(UseLedger, {
+      withoutNoteUse: (file, open) =>
+        Effect.sync(() => excluded.push(file.path)).pipe(Effect.andThen(open)),
+    }),
+    Layer.mock(ZoteroReads, {
+      reads: stubService<ZoteroReadsApi>(
+        "ZoteroReadsApi",
+        readItems ? { ItemsByIndexedKeys: readItems } : {},
+      ),
+    }),
+    Layer.mock(ZoteroPref, {
+      current: Effect.succeed(
+        stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", { dataDir: "" }),
+      ),
+    }),
+  );
+}
+
+/** One `openLinkText` of `path` in `newLeaf`, as the flow makes it. */
+function openedAt(
+  path: string,
+  newLeaf: MemoryWorkspace["opened"][number]["newLeaf"],
+) {
+  return {
+    linktext: path,
+    sourcePath: "",
+    newLeaf,
+    openViewState: { active: true },
+  };
+}
+
 function creationHarness(selection: CreationProfileSelection) {
   const file = noteAt("Papers/Study.md");
   const item = { ...REF, fields: { title: "A Study" } } as Item;
@@ -66,7 +117,6 @@ function creationHarness(selection: CreationProfileSelection) {
     Effect.succeed(new Map([[REF.indexedKey, item]])),
   );
   const create = vi.fn(async () => ({ outcome: "created" as const, file }));
-  const openLinkText = vi.fn(async () => {});
   const previews: PreparedCreationProfile[] = [
     {
       selector: selection.selector,
@@ -84,22 +134,7 @@ function creationHarness(selection: CreationProfileSelection) {
   const deps: CompanionNoteDeps = {
     createProfile: vi.fn(),
     importProfile: vi.fn(),
-    useLedger: {
-      withoutNoteUse: <T>(_file: TFile, open: () => Promise<T>) => open(),
-    },
-    app: stubService<App>("App", {
-      workspace: stubService<Workspace>("Workspace", { openLinkText }),
-    }),
-    zoteroReads: stubService<CompanionNoteDeps["zoteroReads"]>("ZoteroReads", {
-      reads: stubService<CompanionNoteDeps["zoteroReads"]["reads"]>(
-        "ZoteroReadsApi",
-        {
-          ItemsByIndexedKeys:
-            readItems as unknown as CompanionNoteDeps["zoteroReads"]["reads"]["ItemsByIndexedKeys"],
-        },
-      ),
-    }),
-    zoteroPref: { dataDir: "" },
+    app: stubService<App>("App", {}),
     noteFeature: stubService<CompanionNoteDeps["noteFeature"]>("NoteFeature", {
       resolveCompanionNote: vi.fn(async (): Promise<CompanionNoteTarget> => ({
         outcome: "create",
@@ -112,281 +147,327 @@ function creationHarness(selection: CreationProfileSelection) {
       })),
     }),
   };
+  const workspace = new MemoryWorkspace({ layoutReady: true });
+  const excluded: string[] = [];
+  notices.shown.length = 0;
   return {
     deps,
     file,
     item,
     readItems,
     create,
-    openLinkText,
     planCreations,
+    workspace,
+    excluded,
+    layer: flowLayer({
+      workspace,
+      excluded,
+      readItems: readItems as unknown as ZoteroReadsApi["ItemsByIndexedKeys"],
+    }),
   };
 }
 
-it.each(["open", "update"] as const)(
+it.effect.each(["open", "update"] as const)(
   "%s creates directly under the link's Profile and opens the path",
-  async (action) => {
-    const harness = creationHarness({
-      selector: PAPERS,
-      source: "headless",
-      shouldAsk: true,
-    });
-    vi.mocked(chooseLiteratureNoteProfile).mockClear();
-    harness.planCreations.mockImplementation(async (keys) => {
-      expect(harness.readItems).toHaveBeenCalledOnce();
-      return creationPlans(keys, {
-        item: harness.item,
-        selection: { selector: PAPERS, source: "headless", shouldAsk: true },
-        previews: [
-          {
-            selector: PAPERS,
-            label: "Papers",
-            folder: "Papers",
-            citationStyle: null,
-            document: undefined,
-            path: harness.file.path,
-            create: harness.create,
-          },
-        ],
+  (action) =>
+    Effect.gen(function* () {
+      const harness = creationHarness({
+        selector: PAPERS,
+        source: "headless",
+        shouldAsk: true,
       });
-    });
-    await openCompanionNote(harness.deps, REF, { action, profile: PAPERS });
-    expect(harness.planCreations).toHaveBeenCalledExactlyOnceWith(
-      [harness.item.indexedKey],
-      {
-        headless: PAPERS,
-      },
-    );
-    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
-    expect(harness.create).toHaveBeenCalledOnce();
-    expect(harness.openLinkText).toHaveBeenCalledExactlyOnceWith(
-      "Papers/Study.md",
-      "",
-      false,
-      { active: true },
-    );
-  },
+      vi.mocked(chooseLiteratureNoteProfile).mockClear();
+      harness.planCreations.mockImplementation(async (keys) => {
+        expect(harness.readItems).toHaveBeenCalledOnce();
+        return creationPlans(keys, {
+          item: harness.item,
+          selection: { selector: PAPERS, source: "headless", shouldAsk: true },
+          previews: [
+            {
+              selector: PAPERS,
+              label: "Papers",
+              folder: "Papers",
+              citationStyle: null,
+              document: undefined,
+              path: harness.file.path,
+              create: harness.create,
+            },
+          ],
+        });
+      });
+      yield* openCompanionNote(harness.deps, REF, {
+        action,
+        profile: PAPERS,
+      }).pipe(Effect.provide(harness.layer));
+      expect(harness.planCreations).toHaveBeenCalledExactlyOnceWith(
+        [harness.item.indexedKey],
+        {
+          headless: PAPERS,
+        },
+      );
+      expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+      expect(harness.create).toHaveBeenCalledOnce();
+      expect(harness.workspace.opened).toEqual([
+        openedAt("Papers/Study.md", false),
+      ]);
+      // Only an update keeps the navigation out of the Use Ledger.
+      expect(harness.excluded).toEqual(
+        action === "update" ? ["Papers/Study.md"] : [],
+      );
+    }),
 );
 
-it("creates directly when a match selects the Profile for an unqualified link", async () => {
-  const harness = creationHarness({
-    selector: PAPERS,
-    source: "match",
-    shouldAsk: true,
-    reason: m.profile_match_selected({ profile: "Papers" }),
-  });
-  vi.mocked(chooseLiteratureNoteProfile).mockClear();
-  await openCompanionNote(harness.deps, REF, { action: "open" });
-  expect(harness.planCreations).toHaveBeenCalledExactlyOnceWith(
-    [harness.item.indexedKey],
-    {
-      headless: undefined,
-    },
-  );
-  expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
-  expect(harness.create).toHaveBeenCalledOnce();
-  expect(harness.openLinkText).toHaveBeenCalledExactlyOnceWith(
-    "Papers/Study.md",
-    "",
-    false,
-    { active: true },
-  );
-});
-
-it("asks when the selected Profile is unavailable", async () => {
-  const harness = creationHarness({
-    selector: "default",
-    source: "bound",
-    shouldAsk: true,
-    problem: { kind: "unavailable-profile", selector: BOOKS },
-  });
-  vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce(undefined);
-  await openCompanionNote(harness.deps, REF, { action: "open" });
-  expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
-    harness.deps.app,
-    expect.objectContaining({
-      preselected: "default",
-      problem: expect.stringContaining(BOOKS),
+it.effect(
+  "creates directly when a match selects the Profile for an unqualified link",
+  () =>
+    Effect.gen(function* () {
+      const harness = creationHarness({
+        selector: PAPERS,
+        source: "match",
+        shouldAsk: true,
+        reason: m.profile_match_selected({ profile: "Papers" }),
+      });
+      vi.mocked(chooseLiteratureNoteProfile).mockClear();
+      yield* openCompanionNote(harness.deps, REF, { action: "open" }).pipe(
+        Effect.provide(harness.layer),
+      );
+      expect(harness.planCreations).toHaveBeenCalledExactlyOnceWith(
+        [harness.item.indexedKey],
+        {
+          headless: undefined,
+        },
+      );
+      expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+      expect(harness.create).toHaveBeenCalledOnce();
+      expect(harness.workspace.opened).toEqual([
+        openedAt("Papers/Study.md", false),
+      ]);
     }),
-  );
-  expect(harness.create).not.toHaveBeenCalled();
-  expect(harness.openLinkText).not.toHaveBeenCalled();
-});
+);
 
-it("leaves a cancelled picker without a note or navigation", async () => {
-  const harness = creationHarness({
-    selector: "default",
-    source: "bound",
-    shouldAsk: true,
-  });
-  vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue(undefined);
-  await openCompanionNote(harness.deps, REF, { action: "open" });
-  expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
-    harness.deps.app,
-    expect.objectContaining({ preselected: "default", source: "bound" }),
-  );
-  expect(harness.create).not.toHaveBeenCalled();
-  expect(harness.openLinkText).not.toHaveBeenCalled();
-});
+it.effect("asks when the selected Profile is unavailable", () =>
+  Effect.gen(function* () {
+    const harness = creationHarness({
+      selector: "default",
+      source: "bound",
+      shouldAsk: true,
+      problem: { kind: "unavailable-profile", selector: BOOKS },
+    });
+    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce(undefined);
+    yield* openCompanionNote(harness.deps, REF, { action: "open" }).pipe(
+      Effect.provide(harness.layer),
+    );
+    expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
+      harness.deps.app,
+      expect.objectContaining({
+        preselected: "default",
+        problem: expect.stringContaining(BOOKS),
+      }),
+    );
+    expect(harness.create).not.toHaveBeenCalled();
+    expect(harness.workspace.opened).toEqual([]);
+  }),
+);
 
-it("creates directly when only Default is available", async () => {
-  const harness = creationHarness({
-    selector: "default",
-    source: "bound",
-    shouldAsk: false,
-  });
-  vi.mocked(chooseLiteratureNoteProfile).mockClear();
-  await openCompanionNote(harness.deps, REF, { action: "update" });
-  expect(harness.create).toHaveBeenCalledExactlyOnceWith(harness.item, {
-    profile: "default",
-  });
-  expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
-  expect(harness.planCreations).toHaveBeenCalledOnce();
-  expect(harness.openLinkText).toHaveBeenCalledOnce();
-});
+it.effect("leaves a cancelled picker without a note or navigation", () =>
+  Effect.gen(function* () {
+    const harness = creationHarness({
+      selector: "default",
+      source: "bound",
+      shouldAsk: true,
+    });
+    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue(undefined);
+    yield* openCompanionNote(harness.deps, REF, { action: "open" }).pipe(
+      Effect.provide(harness.layer),
+    );
+    expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
+      harness.deps.app,
+      expect.objectContaining({ preselected: "default", source: "bound" }),
+    );
+    expect(harness.create).not.toHaveBeenCalled();
+    expect(harness.workspace.opened).toEqual([]);
+  }),
+);
 
-it("keeps metadata-only missing-note updates outside the create flow", async () => {
-  const harness = creationHarness({
-    selector: "default",
-    source: "bound",
-    shouldAsk: false,
-  });
-  notices.shown.length = 0;
-  await openCompanionNote(harness.deps, REF, {
-    action: "update",
-    scope: "metadata",
-  });
-  expect(harness.readItems).not.toHaveBeenCalled();
-  expect(harness.planCreations).not.toHaveBeenCalled();
-  expect(harness.create).not.toHaveBeenCalled();
-  expect(harness.openLinkText).not.toHaveBeenCalled();
-  expect(notices.shown).toEqual([m.notice_update_metadata_no_note()]);
-});
+it.effect("creates directly when only Default is available", () =>
+  Effect.gen(function* () {
+    const harness = creationHarness({
+      selector: "default",
+      source: "bound",
+      shouldAsk: false,
+    });
+    vi.mocked(chooseLiteratureNoteProfile).mockClear();
+    yield* openCompanionNote(harness.deps, REF, { action: "update" }).pipe(
+      Effect.provide(harness.layer),
+    );
+    expect(harness.create).toHaveBeenCalledExactlyOnceWith(harness.item, {
+      profile: "default",
+    });
+    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+    expect(harness.planCreations).toHaveBeenCalledOnce();
+    expect(harness.workspace.opened).toHaveLength(1);
+  }),
+);
 
-it("refuses an unknown URL Profile without opening or starting creation", async () => {
-  const harness = creationHarness({
-    selector: "default",
-    source: "bound",
-    shouldAsk: false,
-  });
-  const target = {
-    outcome: "refused" as const,
-    diagnostic: unknownProfileDiagnostic(PAPERS),
-  };
-  vi.mocked(harness.deps.noteFeature.resolveCompanionNote).mockResolvedValue(
-    target,
-  );
-  notices.shown.length = 0;
-  await openCompanionNote(harness.deps, REF, {
-    action: "open",
-    profile: PAPERS,
-  });
-  expect(notices.shown).toEqual([
-    m.notice_literature_note_profile_unknown({ stamp: PAPERS }),
-  ]);
-  expect(harness.openLinkText).not.toHaveBeenCalled();
-  expect(harness.readItems).not.toHaveBeenCalled();
-  expect(companionNoteNotice(harness.deps.app, target)).toBe(
-    m.notice_literature_note_profile_unknown({ stamp: PAPERS }),
-  );
-});
-
-it("opens a matching existing note and updates under its stamp", async () => {
-  const harness = creationHarness({
-    selector: BOOKS,
-    source: "headless",
-    shouldAsk: true,
-  });
-  vi.mocked(harness.deps.noteFeature.resolveCompanionNote).mockResolvedValue({
-    outcome: "existing",
-    files: [harness.file],
-  });
-  await openCompanionNote(harness.deps, REF, {
-    action: "update",
-    profile: BOOKS,
-    scope: "metadata",
-  });
-  expect(harness.openLinkText).toHaveBeenCalledOnce();
-  expect(harness.deps.noteFeature.updateNote).toHaveBeenCalledExactlyOnceWith(
-    harness.file,
-    { indexedKey: "ABCD2345", scope: "metadata" },
-  );
-  expect(harness.create).not.toHaveBeenCalled();
-});
-
-it("opens an unknown existing stamp with recovery, while leaving its content unchanged", async () => {
-  using buttonText = vi.spyOn(ButtonComponent.prototype, "setButtonText");
-  const harness = creationHarness({
-    selector: "default",
-    source: "bound",
-    shouldAsk: false,
-  });
-  const target: CompanionNoteTarget = {
-    outcome: "existing",
-    files: [harness.file],
-    diagnostic: unknownProfileDiagnostic(`Missing (${PAPERS})`, {
-      path: harness.file.path,
+it.effect(
+  "keeps metadata-only missing-note updates outside the create flow",
+  () =>
+    Effect.gen(function* () {
+      const harness = creationHarness({
+        selector: "default",
+        source: "bound",
+        shouldAsk: false,
+      });
+      yield* openCompanionNote(harness.deps, REF, {
+        action: "update",
+        scope: "metadata",
+      }).pipe(Effect.provide(harness.layer));
+      expect(harness.readItems).not.toHaveBeenCalled();
+      expect(harness.planCreations).not.toHaveBeenCalled();
+      expect(harness.create).not.toHaveBeenCalled();
+      expect(harness.workspace.opened).toEqual([]);
+      expect(notices.shown).toEqual([m.notice_update_metadata_no_note()]);
     }),
-  };
-  vi.mocked(harness.deps.noteFeature.resolveCompanionNote).mockResolvedValue(
-    target,
-  );
-  await openCompanionNote(harness.deps, REF, {
-    action: "update",
-    profile: "default",
-  });
-  expect(harness.openLinkText).toHaveBeenCalledOnce();
-  expect(harness.deps.noteFeature.updateNote).not.toHaveBeenCalled();
-  expect(harness.create).not.toHaveBeenCalled();
-  const notice = companionNoteNotice(
-    harness.deps.app,
-    target,
-  ) as DocumentFragment;
-  expect(notice.textContent).toContain(
-    m.notice_literature_note_profile_unknown({ stamp: `Missing (${PAPERS})` }),
-  );
-  expect(buttonText).toHaveBeenLastCalledWith(m.profile_switch_recovery());
-});
+);
 
-it.each(["tab"] as const)(
-  "opens an existing note in a new %s when the link names one",
-  async (paneType) => {
+it.effect(
+  "refuses an unknown URL Profile without opening or starting creation",
+  () =>
+    Effect.gen(function* () {
+      const harness = creationHarness({
+        selector: "default",
+        source: "bound",
+        shouldAsk: false,
+      });
+      const target = {
+        outcome: "refused" as const,
+        diagnostic: unknownProfileDiagnostic(PAPERS),
+      };
+      vi.mocked(
+        harness.deps.noteFeature.resolveCompanionNote,
+      ).mockResolvedValue(target);
+      yield* openCompanionNote(harness.deps, REF, {
+        action: "open",
+        profile: PAPERS,
+      }).pipe(Effect.provide(harness.layer));
+      expect(notices.shown).toEqual([
+        m.notice_literature_note_profile_unknown({ stamp: PAPERS }),
+      ]);
+      expect(harness.workspace.opened).toEqual([]);
+      expect(harness.readItems).not.toHaveBeenCalled();
+      expect(companionNoteNotice(harness.deps.app, target)).toBe(
+        m.notice_literature_note_profile_unknown({ stamp: PAPERS }),
+      );
+    }),
+);
+
+it.effect("opens a matching existing note and updates under its stamp", () =>
+  Effect.gen(function* () {
     const harness = creationHarness({
       selector: BOOKS,
       source: "headless",
-      shouldAsk: false,
+      shouldAsk: true,
     });
     vi.mocked(harness.deps.noteFeature.resolveCompanionNote).mockResolvedValue({
       outcome: "existing",
       files: [harness.file],
     });
-    await openCompanionNote(harness.deps, REF, { action: "open", paneType });
-    expect(harness.openLinkText).toHaveBeenCalledExactlyOnceWith(
-      "Papers/Study.md",
-      "",
-      paneType,
-      { active: true },
+    yield* openCompanionNote(harness.deps, REF, {
+      action: "update",
+      profile: BOOKS,
+      scope: "metadata",
+    }).pipe(Effect.provide(harness.layer));
+    expect(harness.workspace.opened).toHaveLength(1);
+    expect(harness.excluded).toEqual([harness.file.path]);
+    expect(harness.deps.noteFeature.updateNote).toHaveBeenCalledExactlyOnceWith(
+      harness.file,
+      { indexedKey: "ABCD2345", scope: "metadata" },
     );
-  },
+    expect(harness.create).not.toHaveBeenCalled();
+  }),
 );
 
-it("opens a note it just created in the pane the link names", async () => {
-  const harness = creationHarness({
-    selector: "default",
-    source: "bound",
-    shouldAsk: false,
-  });
-  await openCompanionNote(harness.deps, REF, {
-    action: "open",
-    paneType: "window",
-  });
-  expect(harness.openLinkText).toHaveBeenCalledExactlyOnceWith(
-    "Papers/Study.md",
-    "",
-    "window",
-    { active: true },
-  );
-});
+it.effect(
+  "opens an unknown existing stamp with recovery, while leaving its content unchanged",
+  () =>
+    Effect.gen(function* () {
+      using buttonText = vi.spyOn(ButtonComponent.prototype, "setButtonText");
+      const harness = creationHarness({
+        selector: "default",
+        source: "bound",
+        shouldAsk: false,
+      });
+      const target: CompanionNoteTarget = {
+        outcome: "existing",
+        files: [harness.file],
+        diagnostic: unknownProfileDiagnostic(`Missing (${PAPERS})`, {
+          path: harness.file.path,
+        }),
+      };
+      vi.mocked(
+        harness.deps.noteFeature.resolveCompanionNote,
+      ).mockResolvedValue(target);
+      yield* openCompanionNote(harness.deps, REF, {
+        action: "update",
+        profile: "default",
+      }).pipe(Effect.provide(harness.layer));
+      expect(harness.workspace.opened).toHaveLength(1);
+      expect(harness.deps.noteFeature.updateNote).not.toHaveBeenCalled();
+      expect(harness.create).not.toHaveBeenCalled();
+      const notice = companionNoteNotice(
+        harness.deps.app,
+        target,
+      ) as DocumentFragment;
+      expect(notice.textContent).toContain(
+        m.notice_literature_note_profile_unknown({
+          stamp: `Missing (${PAPERS})`,
+        }),
+      );
+      expect(buttonText).toHaveBeenLastCalledWith(m.profile_switch_recovery());
+    }),
+);
+
+it.effect.each(["tab"] as const)(
+  "opens an existing note in a new %s when the link names one",
+  (paneType) =>
+    Effect.gen(function* () {
+      const harness = creationHarness({
+        selector: BOOKS,
+        source: "headless",
+        shouldAsk: false,
+      });
+      vi.mocked(
+        harness.deps.noteFeature.resolveCompanionNote,
+      ).mockResolvedValue({
+        outcome: "existing",
+        files: [harness.file],
+      });
+      yield* openCompanionNote(harness.deps, REF, {
+        action: "open",
+        paneType,
+      }).pipe(Effect.provide(harness.layer));
+      expect(harness.workspace.opened).toEqual([
+        openedAt("Papers/Study.md", paneType),
+      ]);
+    }),
+);
+
+it.effect("opens a note it just created in the pane the link names", () =>
+  Effect.gen(function* () {
+    const harness = creationHarness({
+      selector: "default",
+      source: "bound",
+      shouldAsk: false,
+    });
+    yield* openCompanionNote(harness.deps, REF, {
+      action: "open",
+      paneType: "window",
+    }).pipe(Effect.provide(harness.layer));
+    expect(harness.workspace.opened).toEqual([
+      openedAt("Papers/Study.md", "window"),
+    ]);
+  }),
+);
 
 it("names Default in the kept-Profile notice for an unstamped note", () => {
   expect(
@@ -402,62 +483,51 @@ it("names Default in the kept-Profile notice for an unstamped note", () => {
   );
 });
 
-it.each(["open", "update"] as const)(
+it.effect.each(["open", "update"] as const)(
   "%s opens a conflicting stamped note without updating it or asking",
-  async (action) => {
-    const file = noteAt("Books/Paper.md");
-    const target = {
-      outcome: "existing" as const,
-      files: [file] as [TFile],
-      keptProfile: { selector: BOOKS, label: "Books" },
-    };
-    const openLinkText = vi.fn(async () => {});
-    const updateNote = vi.fn();
-    const createNote = vi.fn();
-    const resolveCompanionNote = vi.fn(async () => target);
-    const deps: CompanionNoteDeps = {
-      createProfile: vi.fn(),
-      importProfile: vi.fn(),
-      useLedger: {
-        withoutNoteUse: <T>(_file: TFile, open: () => Promise<T>) => open(),
-      },
-      app: stubService<App>("App", {
-        workspace: stubService<Workspace>("Workspace", { openLinkText }),
-      }),
-      noteFeature: stubService<CompanionNoteDeps["noteFeature"]>(
-        "NoteFeature",
-        {
-          resolveCompanionNote,
-          updateNote,
-          createNote,
-        },
-      ),
-      zoteroReads: stubService<CompanionNoteDeps["zoteroReads"]>(
-        "ZoteroReads",
-        {},
-      ),
-      zoteroPref: { dataDir: "" },
-    };
-    vi.mocked(chooseLiteratureNoteProfile).mockClear();
+  (action) =>
+    Effect.gen(function* () {
+      const file = noteAt("Books/Paper.md");
+      const target = {
+        outcome: "existing" as const,
+        files: [file] as [TFile],
+        keptProfile: { selector: BOOKS, label: "Books" },
+      };
+      const updateNote = vi.fn();
+      const createNote = vi.fn();
+      const resolveCompanionNote = vi.fn(async () => target);
+      const deps: CompanionNoteDeps = {
+        createProfile: vi.fn(),
+        importProfile: vi.fn(),
+        app: stubService<App>("App", {}),
+        noteFeature: stubService<CompanionNoteDeps["noteFeature"]>(
+          "NoteFeature",
+          {
+            resolveCompanionNote,
+            updateNote,
+            createNote,
+          },
+        ),
+      };
+      const workspace = new MemoryWorkspace({ layoutReady: true });
+      vi.mocked(chooseLiteratureNoteProfile).mockClear();
+      notices.shown.length = 0;
 
-    await openCompanionNote(deps, REF, { action, profile: PAPERS });
+      yield* openCompanionNote(deps, REF, { action, profile: PAPERS }).pipe(
+        Effect.provide(flowLayer({ workspace, excluded: [] })),
+      );
 
-    expect(openLinkText).toHaveBeenCalledExactlyOnceWith(
-      "Books/Paper.md",
-      "",
-      false,
-      { active: true },
-    );
-    expect(resolveCompanionNote).toHaveBeenCalledWith("ABCD2345", {
-      profile: PAPERS,
-    });
-    expect(updateNote).not.toHaveBeenCalled();
-    expect(createNote).not.toHaveBeenCalled();
-    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
-    expect(companionNoteNotice(deps.app, target)).toBe(
-      m.notice_literature_note_profile_kept({ label: "Books" }),
-    );
-  },
+      expect(workspace.opened).toEqual([openedAt("Books/Paper.md", false)]);
+      expect(resolveCompanionNote).toHaveBeenCalledWith("ABCD2345", {
+        profile: PAPERS,
+      });
+      expect(updateNote).not.toHaveBeenCalled();
+      expect(createNote).not.toHaveBeenCalled();
+      expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+      expect(notices.shown).toEqual([
+        m.notice_literature_note_profile_kept({ label: "Books" }),
+      ]);
+    }),
 );
 
 function noteAt(path: string): TFile {
