@@ -51,7 +51,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
       await obEval(
         run.vaultId,
-        `(async function(){var file=app.vault.getFileByPath(${JSON.stringify(defaultPath)});if(file)await app.vault.delete(file);app.saveLocalStorage('zotlit-workbench-launch-approved',null);app.saveLocalStorage('zotlit-profile-customization','ask');app.plugins.plugins.zotlit.services.settings.update({'server.enabled':false,'server.workbench':false});window.zotlitE2EOpen=window.open;window.open=url=>{window.zotlitE2ELaunch=url;return null;};return true;})()`,
+        `(async function(){var file=app.vault.getFileByPath(${JSON.stringify(defaultPath)});if(file)await app.vault.delete(file);app.saveLocalStorage('zotlit-workbench-launch-approved',null);app.saveLocalStorage('zotlit-profile-customization','ask');app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'server.enabled':false,'server.workbench':false}));window.zotlitE2EOpen=window.open;window.open=url=>{window.zotlitE2ELaunch=url;return null;};return true;})()`,
       );
       await suite.mainSettings();
       expect(await suite.clickTemplateCustomize()).toBe(true);
@@ -78,7 +78,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEval(
           run.vaultId,
-          `String(!!app.vault.getFileByPath(${JSON.stringify(defaultPath)})&&app.workspace.activeLeaf?.view.controller?.readOnly===false&&window.zotlitE2ELaunch===undefined&&!app.plugins.plugins.zotlit.services.settings.current['server.enabled']&&!app.plugins.plugins.zotlit.services.settings.current['server.workbench'])`,
+          `String(!!app.vault.getFileByPath(${JSON.stringify(defaultPath)})&&app.workspace.activeLeaf?.view.controller?.readOnly===false&&window.zotlitE2ELaunch===undefined&&!app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['server.enabled']&&!app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['server.workbench'])`,
         ),
       ).toBe("true");
       await suite.mainSettings();
@@ -93,7 +93,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEval(
           run.vaultId,
-          "String(window.zotlitE2ELaunch===undefined&&!app.plugins.plugins.zotlit.services.settings.current['server.enabled'])",
+          "String(window.zotlitE2ELaunch===undefined&&!app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['server.enabled'])",
         ),
       ).toBe("true");
       // The web save cases start from the built-in Default again.
@@ -146,7 +146,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       port = Number(
         await obEval(
           run.vaultId,
-          "app.plugins.plugins.zotlit.services.localServer.effectivePort",
+          "app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.localServer.effectivePort)",
         ),
       );
       const fragment = new URLSearchParams(launch.hash.slice(1));

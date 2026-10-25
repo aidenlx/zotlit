@@ -1548,18 +1548,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const services = "app.plugins.plugins.zotlit.services";
     const autoRefresh = await obEval(
       run.vaultId,
-      `String(${services}.settings.current['zotero.auto-refresh'])`,
+      `String(${services}.bridge.runSync(${services}.settings.current)['zotero.auto-refresh'])`,
     );
     await using cleanup = new AsyncDisposableStack();
     // Only the signal may refresh: the file watchers stay unbound.
     await obEval(
       run.vaultId,
-      `${services}.settings.update({'zotero.auto-refresh':false});true`,
+      `${services}.bridge.runSync(${services}.settings.update({'zotero.auto-refresh':false}));true`,
     );
     cleanup.defer(async () => {
       await obEval(
         run.vaultId,
-        `${services}.settings.update({'zotero.auto-refresh':${autoRefresh}});true`,
+        `${services}.bridge.runSync(${services}.settings.update({'zotero.auto-refresh':${autoRefresh}}));true`,
       );
     });
     await obEval(
@@ -1834,7 +1834,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // Start from no binary, as a user who has not installed it yet.
     await obEval(
       run.vaultId,
-      `${segmenter}.uninstall().then(function(){return true;})`,
+      `${segmenter}.runPromise(${segmenter}.binary.uninstall).then(function(){return true;})`,
     );
     const added = addMyLibraryItems(e2eFixture.databasePath, [
       "长江流域的城市化研究",
@@ -1862,7 +1862,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEval(
         run.vaultId,
-        `${segmenter}.install().then(function(){return ${segmenter}.getStatus().kind;})`,
+        `${segmenter}.runPromise(${segmenter}.binary.install).then(function(){return ${segmenter}.runSync(${segmenter}.binary.getStatus).kind;})`,
         120_000,
       ),
     ).toBe("installed");
@@ -1872,7 +1872,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     await obEval(
       run.vaultId,
-      `${segmenter}.uninstall().then(function(){return true;})`,
+      `${segmenter}.runPromise(${segmenter}.binary.uninstall).then(function(){return true;})`,
     );
     expect(
       await obEvalUntil(run.vaultId, finds("流域"), { expected: "false" }),
@@ -1910,12 +1910,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     };
     const previous = await obEval(
       run.vaultId,
-      `JSON.stringify({'log.level':${services}.settings.current['log.level'],'log.to-file':${services}.settings.current['log.to-file']})`,
+      `JSON.stringify({'log.level':${services}.bridge.runSync(${services}.settings.current)['log.level'],'log.to-file':${services}.bridge.runSync(${services}.settings.current)['log.to-file']})`,
     );
     try {
       await obEval(
         run.vaultId,
-        `${services}.settings.update({'log.level':'debug','log.to-file':true});true`,
+        `${services}.bridge.runSync(${services}.settings.update({'log.level':'debug','log.to-file':true}));true`,
       );
       expect(
         await obEvalUntil(
@@ -1936,7 +1936,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // so a refresh repeats until it does.
       await obEval(
         run.vaultId,
-        `${services}.settings.update({'log.level':'info'});true`,
+        `${services}.bridge.runSync(${services}.settings.update({'log.level':'info'}));true`,
       );
       expect(
         await waitFor(
@@ -1947,7 +1947,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     } finally {
       await obEval(
         run.vaultId,
-        `${services}.settings.update(${previous});true`,
+        `${services}.bridge.runSync(${services}.settings.update(${previous}));true`,
       );
     }
   }, 180_000);
@@ -1963,7 +1963,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await app.plugins.disablePlugin('zotlit');
           const before=new Set(listed().map(([,entry])=>entry));
           await app.plugins.enablePlugin('zotlit');
-          await app.plugins.plugins.zotlit.services.zoteroReads.ready;
           const added=listed().filter(([,entry])=>!before.has(entry));
           if(added.length===0)throw new Error('ZotLit added no handler');
           await app.plugins.disablePlugin('zotlit');

@@ -282,7 +282,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       leaf.view.editor.setCursor({line:2,ch:3});
       const first=await services.citationText.read(file.path);
       if(!first?.formatted.size)throw new Error('Initial citations were not formatted');
-      const engine=await services.pandocEngine.getEngine();
+      const engine=await services.pandocEngine.runPromise(services.pandocEngine.binary.getEngine);
       const original=engine.renderCitations;
       cleanup.defer(()=>{engine.renderCitations=original;});
       let fail=true,reads=0;

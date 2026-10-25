@@ -31,6 +31,7 @@ import { ANNOTATIONS, ATTACHMENTS, ITEMS } from "@zotlit/scripts/fixture";
 import { verifyExternalAnnotationLock } from "./annotation-lock.ts";
 import { prepareRunWindow } from "./background-throttling.ts";
 import { noteBody } from "./e2e-run-note-helpers.ts";
+import { EFFECT_MODULE } from "./effect-module.ts";
 import { verifySavedEditDisplay } from "./excerpt-acceptance.ts";
 import { verifyExcerptRefresh } from "./excerpt-refresh.ts";
 import {
@@ -182,7 +183,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
     cleanup.defer(async () => {
       await obEval(
         vaultId!,
-        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(saved)}).layout);app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();await oldServices.useLedger[Symbol.asyncDispose]();await oldServices.zoteroLocalApi[Symbol.asyncDispose]();return true;})()`,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(saved)}).layout);app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();for(let i=0;i<200&&!oldServices.bridge.closed();i++)await new Promise(r=>setTimeout(r,25));if(!oldServices.bridge.closed())throw new Error('The ZotLit services did not close');return true;})()`,
       );
       try {
         await authorizationFixture!.rdp.json(
@@ -191,13 +192,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       } finally {
         await obEval(
           vaultId!,
-          `(async()=>{app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');await app.plugins.plugins.zotlit.services.useLedger.ready;return true;})()`,
+          `(async()=>{app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');return true;})()`,
         );
       }
     });
     await obEval(
       vaultId!,
-      `(async()=>{app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());await app.plugins.plugins.zotlit.services.zoteroLocalApi.probe();return true;})()`,
+      `(async()=>{app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.zoteroLocalApi.probe);return true;})()`,
     );
     await clearNotices(vaultId!);
     await openPdfWithAnnotationView(vaultId!, { attachmentPath, cleanup });
@@ -877,7 +878,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEval(
             vaultId!,
-            "String(app.plugins.plugins.zotlit.services.localServer.available)",
+            "String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.localServer.available))",
           ),
           "Live Updates is not listening; a Zotero-side edit cannot reach Obsidian",
         ).toBe("true");
@@ -887,7 +888,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();const list=await repository.read(${JSON.stringify(attachment.key)});return String(list?.source.kind);})()`,
+            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);const list=await bridge.runPromise(repository.read(${JSON.stringify(attachment.key)}));return String(list?.source.kind);})()`,
             { expected: "zotero-local-api" },
           ),
         ).toBe(true);
@@ -991,7 +992,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             expect((await stored()).data).toMatchObject(seed);
             await obEval(
               vaultId!,
-              `(async()=>{await app.plugins.plugins.zotlit.services.annotationRepository.refresh(${JSON.stringify(attachment.key)});return true;})()`,
+              `(async()=>{await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.refresh(${JSON.stringify(attachment.key)}));return true;})()`,
             );
           },
         };
@@ -1089,7 +1090,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         });
         const created = await obJson<{ kind: string; annotationKey?: string }>(
           vaultId!,
-          `(async()=>{const outcome=await app.plugins.plugins.zotlit.services.annotationRepository.createAnnotation(${JSON.stringify(attachment.key)},${JSON.stringify(
+          `(async()=>{const outcome=await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.createAnnotation(${JSON.stringify(attachment.key)},${JSON.stringify(
             {
               type: "highlight",
               color: "#5fb236",
@@ -1103,7 +1104,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 rects: [[100, 600, 300, 620]],
               },
             },
-          )});return JSON.stringify(outcome);})()`,
+          )}));return JSON.stringify(outcome);})()`,
         );
         expect(created.kind).toBe("created");
         createdKey = created.annotationKey!;
@@ -1179,7 +1180,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const edited = "#a28ae5";
         const state = await obJson<{ kind: string }>(
           vaultId!,
-          `(async()=>{const state=await app.plugins.plugins.zotlit.services.annotationRepository.patchColor(${JSON.stringify(createdKey)},${JSON.stringify(edited)});return JSON.stringify(state);})()`,
+          `(async()=>{const state=await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.patchColor(${JSON.stringify(createdKey)},${JSON.stringify(edited)}));return JSON.stringify(state);})()`,
         );
         expect(state.kind).toBe("idle");
 
@@ -1287,7 +1288,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // is the flicker this guards.
         const shown = await obJson<string[]>(
           vaultId!,
-          `(async()=>{${PAGE}const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(createdKey)};const card=()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean);const row=()=>card()?.querySelector('.zt-annot-tag-input')?'editor':'chips:'+[...(card()?.querySelectorAll('[aria-pressed]')??[])].map((chip)=>chip.textContent).join('|');const shown=[row()];const record=()=>{const state=row();if(state!==shown.at(-1))shown.push(state);};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});press(card().querySelector(${JSON.stringify(toggle)}),'tag toggle');await until('tag save settles',()=>repository.mutationFor(key).kind==='idle'&&!repository.tagDraftFor(key),10000).catch(()=>{});/* 300 ms after the save is the window a late flicker would show in. */await new Promise((resolve)=>setTimeout(resolve,300));observer.disconnect();record();return JSON.stringify(shown);})()`,
+          `(async()=>{${PAGE}const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const key=${JSON.stringify(createdKey)};const card=()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean);const row=()=>card()?.querySelector('.zt-annot-tag-input')?'editor':'chips:'+[...(card()?.querySelectorAll('[aria-pressed]')??[])].map((chip)=>chip.textContent).join('|');const shown=[row()];const record=()=>{const state=row();if(state!==shown.at(-1))shown.push(state);};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});press(card().querySelector(${JSON.stringify(toggle)}),'tag toggle');await until('tag save settles',()=>bridge.runSync(repository.mutationFor(key)).kind==='idle'&&!bridge.runSync(repository.tagDraftFor(key)),10000).catch(()=>{});/* 300 ms after the save is the window a late flicker would show in. */await new Promise((resolve)=>setTimeout(resolve,300));observer.disconnect();record();return JSON.stringify(shown);})()`,
         );
         expect(shown).toEqual(["editor", `chips:${added}`]);
         expect(await annotationTags(api, serverID, createdKey)).toEqual([
@@ -1761,7 +1762,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         }, 120000);
 
         it("draws at the width picked from the ink seat's menu, and keeps the pick over a reopen of the PDF", async () => {
-          const inkWidth = `app.plugins.plugins.zotlit.services.settings.current['reader.ink-width']`;
+          const inkWidth = `app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['reader.ink-width']`;
           /**
            * Opens the ink seat's chevron menu and answers the first word of
            * the checked width item; with `pick`, selects the width item that
@@ -1783,7 +1784,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           restore.defer(async () => {
             await obEval(
               vaultId!,
-              `(function(){app.plugins.plugins.zotlit.services.settings.update({'reader.ink-width':${width}});app.vault.setConfig('nativeMenus',${nativeMenus});return true;})()`,
+              `(function(){app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'reader.ink-width':${width}}));app.vault.setConfig('nativeMenus',${nativeMenus});return true;})()`,
             );
           });
           await obEval(
@@ -1996,7 +1997,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await armInk([150, 355]);
           const before = await annotationKeys();
           const capability = (field: "kind" | "reason") =>
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();return String(repository.capabilityFor(${JSON.stringify(attachment.key)}).${field});})()`;
+            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);return String(bridge.runSync(repository.capabilityFor(${JSON.stringify(attachment.key)})).${field});})()`;
           {
             await using restoreLocalApi = new AsyncDisposableStack();
             restoreLocalApi.defer(async () => {
@@ -2533,7 +2534,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         }, 120000);
 
         it("types at the font size picked from the text seat's menu, and keeps the pick over a reopen of the PDF", async () => {
-          const fontSize = `app.plugins.plugins.zotlit.services.settings.current['reader.text-font-size']`;
+          const fontSize = `app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['reader.text-font-size']`;
           /**
            * Opens the text seat's chevron menu and answers the first word of
            * the checked font-size item; with `pick`, selects the font-size
@@ -2566,7 +2567,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           restore.defer(async () => {
             await obEval(
               vaultId!,
-              `(function(){app.plugins.plugins.zotlit.services.settings.update({'reader.text-font-size':${size}});app.vault.setConfig('nativeMenus',${nativeMenus});return true;})()`,
+              `(function(){app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'reader.text-font-size':${size}}));app.vault.setConfig('nativeMenus',${nativeMenus});return true;})()`,
             );
           });
           await obEval(
@@ -2602,7 +2603,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         it("creates text in the colour picked from the text seat's menu, and draws it that colour darkened five percent", async () => {
           const setting = (key: string) =>
-            `app.plugins.plugins.zotlit.services.settings.current[${JSON.stringify(key)}]`;
+            `app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)[${JSON.stringify(key)}]`;
           await using restore = new AsyncDisposableStack();
           const [nativeMenus, colors, recent] = await obEval(
             vaultId!,
@@ -2611,7 +2612,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           restore.defer(async () => {
             await obEval(
               vaultId!,
-              `(function(){app.plugins.plugins.zotlit.services.settings.update({'reader.annotation-colors':${JSON.stringify(colors)}??undefined,'reader.recent-colors':${JSON.stringify(recent)}??undefined});app.vault.setConfig('nativeMenus',${nativeMenus});return true;})()`,
+              `(function(){app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'reader.annotation-colors':${JSON.stringify(colors)}??undefined,'reader.recent-colors':${JSON.stringify(recent)}??undefined}));app.vault.setConfig('nativeMenus',${nativeMenus});return true;})()`,
             );
           });
           await obEval(
@@ -2745,7 +2746,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           });
           await obEval(
             vaultId!,
-            `(async()=>{await app.plugins.plugins.zotlit.services.annotationRepository.refresh(${JSON.stringify(attachment.key)});return true;})()`,
+            `(async()=>{await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.refresh(${JSON.stringify(attachment.key)}));return true;})()`,
           );
 
           // Each line starts 1.2 font sizes, 16.8 points, below the last.
@@ -2788,7 +2789,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           announced: string[];
         }>(
           vaultId!,
-          `(async()=>{const s=app.plugins.plugins.zotlit.services;const binding=s.pdfAnnotationEditor.bindings.find(b=>b.filePath===${JSON.stringify(attachmentPath)});const announced=[];const off=s.bridge.subscribe(s.annotationRepository.excerptPixelsChanged,({record})=>announced.push(record.key));try{const position=${JSON.stringify(edited)};const sortIndex=await binding.sortIndex(position);const state=await s.annotationRepository.patchGeometry(${JSON.stringify(imageKey)},{position,sortIndex},'pointer');return JSON.stringify({sortIndex,state,announced});}finally{off();}})()`,
+          `(async()=>{const s=app.plugins.plugins.zotlit.services;const binding=s.pdfAnnotationEditor.bindings.find(b=>b.filePath===${JSON.stringify(attachmentPath)});const announced=[];const off=s.bridge.subscribe(s.annotationRepository.excerptPixelsChanged,({record})=>announced.push(record.key));try{const position=${JSON.stringify(edited)};const sortIndex=await binding.sortIndex(position);const state=await s.bridge.runPromise(s.annotationRepository.patchGeometry(${JSON.stringify(imageKey)},{position,sortIndex},'pointer'));return JSON.stringify({sortIndex,state,announced});}finally{off();}})()`,
         );
         expect(outcome.state.kind).toBe("idle");
         expect(outcome.announced).toEqual([imageKey]);
@@ -3155,7 +3156,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             expect(
               await obEvalUntil(
                 vaultId!,
-                `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();return String(repository.capabilityFor(${JSON.stringify(attachment.key)}).kind);})()`,
+                `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);return String(bridge.runSync(repository.capabilityFor(${JSON.stringify(attachment.key)})).kind);})()`,
                 { expected: "writable" },
               ),
             ).toBe(true);
@@ -3164,7 +3165,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEvalUntil(
               vaultId!,
-              `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();return String(repository.capabilityFor(${JSON.stringify(attachment.key)}).reason);})()`,
+              `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);return String(bridge.runSync(repository.capabilityFor(${JSON.stringify(attachment.key)})).reason);})()`,
               { expected: "local-api-disabled" },
             ),
           ).toBe(true);
@@ -3267,7 +3268,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           teardown.defer(async () => {
             await obEval(
               vaultId!,
-              `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;if(repository.mutationFor(${JSON.stringify(imageKey)}).kind==='conflict')repository.discardConflict(${JSON.stringify(imageKey)});return true;})()`,
+              `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;if(bridge.runSync(repository.mutationFor(${JSON.stringify(imageKey)})).kind==='conflict')bridge.runSync(repository.discardConflict(${JSON.stringify(imageKey)}));return true;})()`,
             );
           });
           const handle = await selectImage();
@@ -4165,7 +4166,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const typed = "Corrected by hand";
           await obEval(
             vaultId!,
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;repository.editTextField('text',${JSON.stringify(highlightKey)},${JSON.stringify(typed)});await repository.submitTextField('text',${JSON.stringify(highlightKey)});return true;})()`,
+            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;bridge.runSync(repository.editTextField('text',${JSON.stringify(highlightKey)},${JSON.stringify(typed)}));await bridge.runPromise(repository.submitTextField('text',${JSON.stringify(highlightKey)}));return true;})()`,
           );
           expect(
             await waitFor(
@@ -4287,7 +4288,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEvalUntil(
               vaultId!,
-              `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(historyKey)}).kind==='idle'&&!repository.textDraftFor('comment',${JSON.stringify(historyKey)}));})()`,
+              `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(bridge.runSync(repository.mutationFor(${JSON.stringify(historyKey)})).kind==='idle'&&!bridge.runSync(repository.textDraftFor('comment',${JSON.stringify(historyKey)})));})()`,
               { expected: "true" },
             ),
           ).toBe(true);
@@ -4318,7 +4319,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEvalUntil(
               vaultId!,
-              `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const list=await repository.refresh(${JSON.stringify(attachment.key)});const record=list?.annotations.find((annotation)=>annotation.key===${JSON.stringify(historyKey)});return String(record?.${field === "annotationColor" ? "color" : "comment"});})()`,
+              `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const list=await bridge.runPromise(repository.refresh(${JSON.stringify(attachment.key)}));const record=list?.annotations.find((annotation)=>annotation.key===${JSON.stringify(historyKey)});return String(record?.${field === "annotationColor" ? "color" : "comment"});})()`,
               { expected: value },
             ),
           ).toBe(true);
@@ -4365,7 +4366,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         afterEach(async () => {
           await obEval(
             vaultId!,
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.patchColor(${JSON.stringify(historyKey)},${JSON.stringify(seedColor)});await repository.patchComment(${JSON.stringify(historyKey)},'');return true;})()`,
+            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.patchColor(${JSON.stringify(historyKey)},${JSON.stringify(seedColor)}));await bridge.runPromise(repository.patchComment(${JSON.stringify(historyKey)},''));return true;})()`,
           );
           expect(
             await waitFor(async () => (await storedColor()) === seedColor),
@@ -4628,7 +4629,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // closed editor and the new text is the flicker this guards.
           const shown = await obJson<{ popup: string[]; card: string[] }>(
             vaultId!,
-            `(async()=>{${PAGE}const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(historyKey)};const slot=(root)=>{if(root?.querySelector('.cm-content'))return 'editor';const view=root?.querySelector('.zt-annot-comment');return view?'view:'+view.textContent:'none';};const roots={popup:()=>document.querySelector('.zt-pdf-mark-popup'),card:()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean)};const shown={popup:[slot(roots.popup())],card:[slot(roots.card())]};const record=()=>{for(const name of ['popup','card']){const state=slot(roots[name]());if(state!==shown[name].at(-1))shown[name].push(state);}};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});${POPUP_EDITOR}.dispatchEvent(new FocusEvent('blur',{relatedTarget:null}));await until('comment save settles',()=>repository.mutationFor(key).kind==='idle'&&!repository.textDraftFor('comment',key),10000).catch(()=>{});/* 300 ms after the save is the window a late flicker would show in. */await new Promise((resolve)=>setTimeout(resolve,300));observer.disconnect();record();return JSON.stringify(shown);})()`,
+            `(async()=>{${PAGE}const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const key=${JSON.stringify(historyKey)};const slot=(root)=>{if(root?.querySelector('.cm-content'))return 'editor';const view=root?.querySelector('.zt-annot-comment');return view?'view:'+view.textContent:'none';};const roots={popup:()=>document.querySelector('.zt-pdf-mark-popup'),card:()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean)};const shown={popup:[slot(roots.popup())],card:[slot(roots.card())]};const record=()=>{for(const name of ['popup','card']){const state=slot(roots[name]());if(state!==shown[name].at(-1))shown[name].push(state);}};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});${POPUP_EDITOR}.dispatchEvent(new FocusEvent('blur',{relatedTarget:null}));await until('comment save settles',()=>bridge.runSync(repository.mutationFor(key)).kind==='idle'&&!bridge.runSync(repository.textDraftFor('comment',key)),10000).catch(()=>{});/* 300 ms after the save is the window a late flicker would show in. */await new Promise((resolve)=>setTimeout(resolve,300));observer.disconnect();record();return JSON.stringify(shown);})()`,
           );
           expect(shown.popup).toEqual(["editor", `view:${after}`]);
           // The card may show the stored comment up to the blur; from there it
@@ -4752,7 +4753,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               expect(
                 await obEvalUntil(
                   vaultId!,
-                  `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(!(${card})?.querySelector('.zt-annot-tag-input')&&repository.mutationFor(${JSON.stringify(historyKey)}).kind==='idle'&&!repository.tagDraftFor(${JSON.stringify(historyKey)}));})()`,
+                  `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(!(${card})?.querySelector('.zt-annot-tag-input')&&bridge.runSync(repository.mutationFor(${JSON.stringify(historyKey)})).kind==='idle'&&!bridge.runSync(repository.tagDraftFor(${JSON.stringify(historyKey)})));})()`,
                   { expected: "true" },
                 ),
               ).toBe(true);
@@ -4801,7 +4802,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               const tagsSettled = () =>
                 obEvalUntil(
                   vaultId!,
-                  `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(historyKey)}).kind==='idle'&&!repository.tagDraftFor(${JSON.stringify(historyKey)}));})()`,
+                  `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(bridge.runSync(repository.mutationFor(${JSON.stringify(historyKey)})).kind==='idle'&&!bridge.runSync(repository.tagDraftFor(${JSON.stringify(historyKey)})));})()`,
                   { expected: "true" },
                 );
               const before = spelledTags([...seededTags, autoTag]);
@@ -4887,13 +4888,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const createDraft = () =>
             obJson<{ kind: string; annotationKey?: string }>(
               vaultId!,
-              `(async()=>{const outcome=await app.plugins.plugins.zotlit.services.annotationRepository.createAnnotation(${JSON.stringify(attachment.key)},${JSON.stringify(draft)});return JSON.stringify(outcome);})()`,
+              `(async()=>{const outcome=await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.createAnnotation(${JSON.stringify(attachment.key)},${JSON.stringify(draft)}));return JSON.stringify(outcome);})()`,
             );
 
           const eraseThrough = (annotationKey: string) =>
             obJson<{ kind: string }>(
               vaultId!,
-              `(async()=>{const state=await app.plugins.plugins.zotlit.services.annotationRepository.deleteAnnotation(${JSON.stringify(annotationKey)});return JSON.stringify(state);})()`,
+              `(async()=>{const state=await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.deleteAnnotation(${JSON.stringify(annotationKey)}));return JSON.stringify(state);})()`,
             );
 
           /**
@@ -4981,7 +4982,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             expect(
               await obEvalUntil(
                 vaultId!,
-                `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(!${POPUP_EDITOR}&&repository.mutationFor(${JSON.stringify(noteKey)}).kind==='idle'&&!repository.textDraftFor('comment',${JSON.stringify(noteKey)}));})()`,
+                `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(!${POPUP_EDITOR}&&bridge.runSync(repository.mutationFor(${JSON.stringify(noteKey)})).kind==='idle'&&!bridge.runSync(repository.textDraftFor('comment',${JSON.stringify(noteKey)})));})()`,
                 { expected: "true" },
               ),
               "Escape closed the comment sheet, and the note's write settled with no draft",
@@ -5320,7 +5321,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             // writes against the version Zotero ends on.
             await obEvalUntil(
               vaultId!,
-              `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(cardKey)}).kind==='idle'&&!repository.textDraftFor('comment',${JSON.stringify(cardKey)}));})()`,
+              `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(bridge.runSync(repository.mutationFor(${JSON.stringify(cardKey)})).kind==='idle'&&!bridge.runSync(repository.textDraftFor('comment',${JSON.stringify(cardKey)})));})()`,
               { expected: "true" },
             );
             await restoreAnnotationComment(api, {
@@ -5516,7 +5517,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               await restoreWriteOutcomeProbe(vaultId!);
               await obEval(
                 vaultId!,
-                `(${repository}.discardTextDraft('text',${JSON.stringify(cardKey)}),true)`,
+                `(app.plugins.plugins.zotlit.services.bridge.runSync(${repository}.discardTextDraft('text',${JSON.stringify(cardKey)})),true)`,
               );
             });
             // The draft's save waits at the seam until Zotero has moved, so
@@ -5564,7 +5565,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             expect(
               await obEvalUntil(
                 vaultId!,
-                `String(${repository}.textDraftFor('text',${JSON.stringify(cardKey)})?.state.kind)`,
+                `String(app.plugins.plugins.zotlit.services.bridge.runSync(${repository}.textDraftFor('text',${JSON.stringify(cardKey)}))?.state.kind)`,
                 { expected: "conflict" },
               ),
             ).toBe(true);
@@ -5640,7 +5641,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               expect(
                 await obEvalUntil(
                   vaultId!,
-                  `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;const draft=repository.textDraftFor('text',${JSON.stringify(cardKey)});return String(repository.mutationFor(${JSON.stringify(cardKey)}).kind==='idle'&&draft?.state.kind!=='pending');})()`,
+                  `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const draft=bridge.runSync(repository.textDraftFor('text',${JSON.stringify(cardKey)}));return String(bridge.runSync(repository.mutationFor(${JSON.stringify(cardKey)})).kind==='idle'&&draft?.state.kind!=='pending');})()`,
                   { expected: "true" },
                 ),
               ).toBe(true);
@@ -5665,7 +5666,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             expect(
               await obEvalUntil(
                 vaultId!,
-                `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(cardKey)}).kind==='idle'&&!repository.textDraftFor('text',${JSON.stringify(cardKey)}));})()`,
+                `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(bridge.runSync(repository.mutationFor(${JSON.stringify(cardKey)})).kind==='idle'&&!bridge.runSync(repository.textDraftFor('text',${JSON.stringify(cardKey)})));})()`,
                 { expected: "true" },
               ),
             ).toBe(true);
@@ -5851,7 +5852,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               { kind: string; annotationKey?: string }[]
             >(
               vaultId!,
-              `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const outcomes=[];for(const draft of ${JSON.stringify(drafts)})outcomes.push(await repository.createAnnotation(${JSON.stringify(attachment.key)},draft));return JSON.stringify(outcomes);})()`,
+              `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const outcomes=[];for(const draft of ${JSON.stringify(drafts)})outcomes.push(await bridge.runPromise(repository.createAnnotation(${JSON.stringify(attachment.key)},draft)));return JSON.stringify(outcomes);})()`,
             );
             expect(outcomes).toEqual([
               { kind: "created", annotationKey: expect.any(String) },
@@ -6032,7 +6033,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           }));
           const made = await obJson<string[]>(
             vaultId!,
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const keys=[];for(const draft of ${JSON.stringify(drafts)}){const outcome=await repository.createAnnotation(${JSON.stringify(attachment.key)},draft);keys.push(outcome.annotationKey);}return JSON.stringify(keys);})()`,
+            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const keys=[];for(const draft of ${JSON.stringify(drafts)}){const outcome=await bridge.runPromise(repository.createAnnotation(${JSON.stringify(attachment.key)},draft));keys.push(outcome.annotationKey);}return JSON.stringify(keys);})()`,
           );
           try {
             expect(made).toHaveLength(2);
@@ -6091,7 +6092,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             expect(
               await obEvalUntil(
                 vaultId!,
-                `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(${JSON.stringify(made)}.every((key)=>repository.mutationFor(key).kind==='idle'));})()`,
+                `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(${JSON.stringify(made)}.every((key)=>bridge.runSync(repository.mutationFor(key)).kind==='idle'));})()`,
                 { expected: "true" },
               ),
             ).toBe(true);
@@ -6167,7 +6168,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               { kind: string; annotationKey?: string }[]
             >(
               vaultId!,
-              `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const outcomes=[];for(const draft of ${JSON.stringify(drafts)})outcomes.push(await repository.createAnnotation(${JSON.stringify(attachment.key)},draft));return JSON.stringify(outcomes);})()`,
+              `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const outcomes=[];for(const draft of ${JSON.stringify(drafts)})outcomes.push(await bridge.runPromise(repository.createAnnotation(${JSON.stringify(attachment.key)},draft)));return JSON.stringify(outcomes);})()`,
             );
             expect(outcomes).toEqual([
               { kind: "created", annotationKey: expect.any(String) },
@@ -6216,7 +6217,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEvalUntil(
               vaultId!,
-              `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(${JSON.stringify(made)}.every((key)=>repository.mutationFor(key).kind==='idle'));})()`,
+              `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(${JSON.stringify(made)}.every((key)=>bridge.runSync(repository.mutationFor(key)).kind==='idle'));})()`,
               { expected: "true" },
             ),
             "ZotLit read both recolour writes back",
@@ -6481,7 +6482,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.read(${JSON.stringify(attachment.key)});return String(app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean)?.textContent.includes(${JSON.stringify(fromZotero)}));})()`,
+            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.read(${JSON.stringify(attachment.key)}));return String(app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean)?.textContent.includes(${JSON.stringify(fromZotero)}));})()`,
             { expected: "true" },
           ),
         ).toBe(true);
@@ -6495,18 +6496,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const liveUpdates =
           (await obEval(
             vaultId!,
-            "String(app.plugins.plugins.zotlit.services.settings.current['server.live-update'])",
+            "String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['server.live-update'])",
           )) === "true";
         await using restoreLiveUpdates = new AsyncDisposableStack();
         restoreLiveUpdates.defer(async () => {
           await obEval(
             vaultId!,
-            `app.plugins.plugins.zotlit.services.settings.update({'server.live-update':${String(liveUpdates)}});true`,
+            `app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'server.live-update':${String(liveUpdates)}}));true`,
           );
         });
         await obEval(
           vaultId!,
-          "app.plugins.plugins.zotlit.services.settings.update({'server.live-update':false});true",
+          "app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'server.live-update':false}));true",
         );
 
         const saveInZotero = (comment: string) =>
@@ -6553,7 +6554,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           failure?: { kind: string };
         }>(
           vaultId!,
-          `(async()=>{const state=await app.plugins.plugins.zotlit.services.annotationRepository.patchColor(${JSON.stringify(createdKey)},${JSON.stringify(committed)});return JSON.stringify(state);})()`,
+          `(async()=>{const state=await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.patchColor(${JSON.stringify(createdKey)},${JSON.stringify(committed)}));return JSON.stringify(state);})()`,
         );
         expect(state).toEqual({
           kind: "failed",
@@ -6577,7 +6578,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(async()=>{const services=app.plugins.plugins.zotlit?.services;if(!services)return 'loading';await services.annotationRepository.probe();const list=await services.annotationRepository.read(${JSON.stringify(attachment.key)});return String(list?.annotations.find(annotation=>annotation.key===${JSON.stringify(createdKey)})?.color);})()`,
+            `(async()=>{const services=app.plugins.plugins.zotlit?.services;if(!services)return 'loading';await services.bridge.runPromise(services.annotationRepository.probe);const list=await services.bridge.runPromise(services.annotationRepository.read(${JSON.stringify(attachment.key)}));return String(list?.annotations.find(annotation=>annotation.key===${JSON.stringify(createdKey)})?.color);})()`,
             { expected: committed },
           ),
         ).toBe(true);
@@ -6635,13 +6636,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           }>(
             vaultId!,
             `(()=>{
-            const repository=app.plugins.plugins.zotlit.services.annotationRepository;
+            const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;
             let draft=null;
             let timers=0;
             if (${String(pending === "unsent draft")}) {
               const schedule=window.setTimeout;
               window.setTimeout=function(...args){timers++;return schedule.apply(this,args)};
-              try { draft=repository.editTextField('comment',${JSON.stringify(createdKey)},'Unsent comment discarded on reload')?.text??null; }
+              try { draft=bridge.runSync(repository.editTextField('comment',${JSON.stringify(createdKey)},'Unsent comment discarded on reload'))?.text??null; }
               finally { window.setTimeout=schedule; }
             }
             const probe=window.__zotlitWriteOutcomeProbe;
@@ -6689,7 +6690,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEvalUntil(
               vaultId!,
-              `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();const list=await repository.read(${JSON.stringify(attachment.key)});const record=list?.annotations.find(annotation=>annotation.key===${JSON.stringify(createdKey)});return JSON.stringify({color:record?.color,comment:record?.comment,draft:repository.textDraftFor('comment',${JSON.stringify(createdKey)}),mutation:repository.mutationFor(${JSON.stringify(createdKey)})});})()`,
+              `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);const list=await bridge.runPromise(repository.read(${JSON.stringify(attachment.key)}));const record=list?.annotations.find(annotation=>annotation.key===${JSON.stringify(createdKey)});return JSON.stringify({color:record?.color,comment:record?.comment,draft:bridge.runSync(repository.textDraftFor('comment',${JSON.stringify(createdKey)})),mutation:bridge.runSync(repository.mutationFor(${JSON.stringify(createdKey)}))});})()`,
               {
                 expected: JSON.stringify({
                   color: stored.color,
@@ -6707,7 +6708,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obJson(
               vaultId!,
-              `JSON.stringify((()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;return {draft:repository.textDraftFor('comment',${JSON.stringify(createdKey)}),mutation:repository.mutationFor(${JSON.stringify(createdKey)})}})())`,
+              `JSON.stringify((()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return {draft:bridge.runSync(repository.textDraftFor('comment',${JSON.stringify(createdKey)})),mutation:bridge.runSync(repository.mutationFor(${JSON.stringify(createdKey)}))}})())`,
             ),
           ).toEqual({ draft: null, mutation: { kind: "idle" } });
           expect(await annotationState(api, serverID, createdKey)).toEqual(
@@ -6786,14 +6787,14 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();return String(repository.capabilityFor(${JSON.stringify(attachment.key)}).reason);})()`,
+            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);return String(bridge.runSync(repository.capabilityFor(${JSON.stringify(attachment.key)})).reason);})()`,
             { expected: "local-api-disabled" },
           ),
         ).toBe(true);
         expect(
           await obEvalUntil(
             vaultId!,
-            `(async()=>{const list=await app.plugins.plugins.zotlit.services.annotationRepository.read(${JSON.stringify(attachment.key)});return String(list?.source.kind);})()`,
+            `(async()=>{const list=await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.read(${JSON.stringify(attachment.key)}));return String(list?.source.kind);})()`,
             { expected: "zotero-db" },
           ),
         ).toBe(true);
@@ -6806,14 +6807,14 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();return String(repository.capabilityFor(${JSON.stringify(attachment.key)}).kind);})()`,
+            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);return String(bridge.runSync(repository.capabilityFor(${JSON.stringify(attachment.key)})).kind);})()`,
             { expected: "writable" },
           ),
         ).toBe(true);
         expect(
           await obEvalUntil(
             vaultId!,
-            `(async()=>{const list=await app.plugins.plugins.zotlit.services.annotationRepository.read(${JSON.stringify(attachment.key)});return String(list?.source.kind);})()`,
+            `(async()=>{const list=await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.read(${JSON.stringify(attachment.key)}));return String(list?.source.kind);})()`,
             { expected: "zotero-local-api" },
           ),
         ).toBe(true);
@@ -6838,7 +6839,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           assets: string[];
         }>(
           vaultId!,
-          `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.noteIndex.whenIndexed();const literature=services.noteIndex.getNotesByItemKey('RUGIER24')[0];const imported=services.noteIndex.getImportedNoteByNoteKey('NNNNAAAA')[0];if(!literature||!imported)throw new Error('Managed acceptance notes missing');return JSON.stringify({literature:literature.path,imported:imported.path,live:services.settings.current['note.default-profile'].bindings['note.import-annotations-as-template'],assets:app.vault.getFiles().filter(file=>file.name.startsWith('zotlit-excerpt-')).map(file=>file.path)});})()`,
+          `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.noteIndex.whenIndexed();const literature=services.noteIndex.getNotesByItemKey('RUGIER24')[0];const imported=services.noteIndex.getImportedNoteByNoteKey('NNNNAAAA')[0];if(!literature||!imported)throw new Error('Managed acceptance notes missing');return JSON.stringify({literature:literature.path,imported:imported.path,live:services.bridge.runSync(services.settings.current)['note.default-profile'].bindings['note.import-annotations-as-template'],assets:app.vault.getFiles().filter(file=>file.name.startsWith('zotlit-excerpt-')).map(file=>file.path)});})()`,
         );
         const originalLiterature = await readFile(
           join(vaultPath, notePaths.literature),
@@ -6850,13 +6851,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         );
         const originalInk = await obJson<{ color: string }>(
           vaultId!,
-          `(async()=>{const list=await app.plugins.plugins.zotlit.services.annotationRepository.read('RGRPDF24');const annotation=list?.annotations.find(value=>value.key==='TYY6Z6ZF');if(!annotation)throw new Error('Ink annotation missing');return JSON.stringify({color:annotation.color});})()`,
+          `(async()=>{const list=await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.read('RGRPDF24'));const annotation=list?.annotations.find(value=>value.key==='TYY6Z6ZF');if(!annotation)throw new Error('Ink annotation missing');return JSON.stringify({color:annotation.color});})()`,
         );
         await using restore = new AsyncDisposableStack();
         restore.defer(async () => {
           await obEval(
             vaultId!,
-            `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.annotationRepository.patchColor('TYY6Z6ZF',${JSON.stringify(originalInk.color)});await services.zoteroReads.refresh();services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':${JSON.stringify(notePaths.live)}});const literature=app.vault.getFileByPath(${JSON.stringify(notePaths.literature)});const imported=app.vault.getFileByPath(${JSON.stringify(notePaths.imported)});if(literature)await app.vault.modify(literature,${JSON.stringify(originalLiterature)});if(imported)await app.vault.modify(imported,${JSON.stringify(originalImported)});const keep=new Set(${JSON.stringify(notePaths.assets)});for(const file of app.vault.getFiles().filter(file=>file.name.startsWith('zotlit-excerpt-')))if(!keep.has(file.path))await app.vault.delete(file);return true;})()`,
+            `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.bridge.runPromise(services.annotationRepository.patchColor('TYY6Z6ZF',${JSON.stringify(originalInk.color)}));await services.zoteroReads.refresh();services.bridge.runSync(services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':${JSON.stringify(notePaths.live)}}));const literature=app.vault.getFileByPath(${JSON.stringify(notePaths.literature)});const imported=app.vault.getFileByPath(${JSON.stringify(notePaths.imported)});if(literature)await app.vault.modify(literature,${JSON.stringify(originalLiterature)});if(imported)await app.vault.modify(imported,${JSON.stringify(originalImported)});const keep=new Set(${JSON.stringify(notePaths.assets)});for(const file of app.vault.getFiles().filter(file=>file.name.startsWith('zotlit-excerpt-')))if(!keep.has(file.path))await app.vault.delete(file);return true;})()`,
           );
           expect(
             await waitFor(
@@ -6873,7 +6874,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           imported: unknown;
         }>(
           vaultId!,
-          `(async()=>{const services=app.plugins.plugins.zotlit.services;services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':true});const literature=app.vault.getFileByPath(${JSON.stringify(notePaths.literature)});const imported=app.vault.getFileByPath(${JSON.stringify(notePaths.imported)});if(!literature||!imported)throw new Error('Managed acceptance notes missing');const legacyUrl=require('url').pathToFileURL(${JSON.stringify(legacySource)}).href;await app.vault.modify(literature,(await app.vault.read(literature))+${JSON.stringify("\n\n![Legacy excerpt](")}+legacyUrl+${JSON.stringify(")\n")});const literatureResult=await services.noteFeature.updateNote(literature,{indexedKey:'RUGIER24',scope:'full'});const importedResult=await services.batchImport.reimportNoteByKey('NNNNAAAA',imported);return JSON.stringify({legacyUrl,literature:{diagnostic:literatureResult.diagnostic??null},imported:importedResult});})()`,
+          `(async()=>{const services=app.plugins.plugins.zotlit.services;services.bridge.runSync(services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':true}));const literature=app.vault.getFileByPath(${JSON.stringify(notePaths.literature)});const imported=app.vault.getFileByPath(${JSON.stringify(notePaths.imported)});if(!literature||!imported)throw new Error('Managed acceptance notes missing');const legacyUrl=require('url').pathToFileURL(${JSON.stringify(legacySource)}).href;await app.vault.modify(literature,(await app.vault.read(literature))+${JSON.stringify("\n\n![Legacy excerpt](")}+legacyUrl+${JSON.stringify(")\n")});const literatureResult=await services.noteFeature.updateNote(literature,{indexedKey:'RUGIER24',scope:'full'});const importedResult=await services.batchImport.reimportNoteByKey('NNNNAAAA',imported);return JSON.stringify({legacyUrl,literature:{diagnostic:literatureResult.diagnostic??null},imported:importedResult});})()`,
         );
         expect(prepared.literature).toEqual({ diagnostic: null });
         expect(prepared.imported).toEqual({ outcome: "overwritten" });
@@ -6910,7 +6911,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obJson<{ kind: string }>(
             vaultId!,
-            `(async()=>JSON.stringify(await app.plugins.plugins.zotlit.services.annotationRepository.patchColor('TYY6Z6ZF',${JSON.stringify(changedColor)})))()`,
+            `(async()=>JSON.stringify(await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.patchColor('TYY6Z6ZF',${JSON.stringify(changedColor)}))))()`,
           ),
         ).toMatchObject({ kind: "idle" });
         expect(
@@ -6989,7 +6990,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         await resetAuthorizations(rdp);
         await obEval(
           vaultId!,
-          "(async()=>{await app.plugins.plugins.zotlit.services.zoteroLocalApi.forgetAuthorization();for(const node of document.querySelectorAll('.notice'))node.remove();return true;})()",
+          "(async()=>{await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.zoteroLocalApi.forgetAuthorization);for(const node of document.querySelectorAll('.notice'))node.remove();return true;})()",
         );
         await stubPrompt(rdp, { allow: true, remember: false });
         expect(
@@ -7083,7 +7084,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       expect(
         await obEvalUntil(
           vaultId!,
-          `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();const list=await repository.read(${JSON.stringify(attachment.key)});return String(list?.source.kind);})()`,
+          `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);const list=await bridge.runPromise(repository.read(${JSON.stringify(attachment.key)}));return String(list?.source.kind);})()`,
           { expected: "zotero-local-api" },
         ),
       ).toBe(true);
@@ -7196,7 +7197,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       expect(
         await obEvalUntil(
           vaultId!,
-          `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();const list=await repository.read(${JSON.stringify(attachment.key)});return String(list?.source.kind);})()`,
+          `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);const list=await bridge.runPromise(repository.read(${JSON.stringify(attachment.key)}));return String(list?.source.kind);})()`,
           { expected: "zotero-local-api" },
         ),
       ).toBe(true);
@@ -7281,7 +7282,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       expect(
         await obEvalUntil(
           vaultId!,
-          `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(key)}).kind==='idle'&&!repository.textDraftFor('comment',${JSON.stringify(key)})&&repository.canUndo(${JSON.stringify(attachment.key)}));})()`,
+          `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(bridge.runSync(repository.mutationFor(${JSON.stringify(key)})).kind==='idle'&&!bridge.runSync(repository.textDraftFor('comment',${JSON.stringify(key)}))&&bridge.runSync(repository.canUndo(${JSON.stringify(attachment.key)})));})()`,
           { expected: "true" },
         ),
       ).toBe(true);
@@ -7338,7 +7339,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();const list=await repository.read(${JSON.stringify(attachment.key)});return String(list?.source.kind);})()`,
+            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);const list=await bridge.runPromise(repository.read(${JSON.stringify(attachment.key)}));return String(list?.source.kind);})()`,
             { expected: "zotero-local-api" },
           ),
         ).toBe(true);
@@ -7759,6 +7760,7 @@ async function installLostWriteProbe(vaultId: string): Promise<void> {
   await obEval(
     vaultId,
     `(() => {
+      const { Effect } = ${EFFECT_MODULE};
       const services = app.plugins.plugins.zotlit.services;
       const api = services.zoteroLocalApi;
       const probe = {
@@ -7769,20 +7771,20 @@ async function installLostWriteProbe(vaultId: string): Promise<void> {
         failRead: false,
       };
       window.__zotlitWriteOutcomeProbe = probe;
-      api.authorizedSend = async (...args) => {
+      api.authorizedSend = (...args) => Effect.promise(async () => {
         probe.calls += 1;
-        const reply = await probe.authorizedSend(...args);
+        const reply = await services.bridge.runPromise(probe.authorizedSend(...args));
         if ('value' in reply) {
           probe.failRead = true;
           return { failure: { kind: 'unknown-outcome' } };
         }
         return reply;
-      };
-      api.listAnnotations = async (...args) => {
-        if (!probe.failRead) return await probe.listAnnotations(...args);
+      });
+      api.listAnnotations = (...args) => Effect.promise(async () => {
+        if (!probe.failRead) return await services.bridge.runPromise(probe.listAnnotations(...args));
         probe.failRead = false;
         return { failure: { kind: 'unreachable' } };
-      };
+      });
       return true;
     })()`,
   );
@@ -7797,6 +7799,7 @@ async function installClosingPaneProbe(
   await obEval(
     vaultId,
     `(() => {
+      const { Effect } = ${EFFECT_MODULE};
       const services = app.plugins.plugins.zotlit.services;
       const api = services.zoteroLocalApi;
       const gate = Promise.withResolvers();
@@ -7810,16 +7813,16 @@ async function installClosingPaneProbe(
         outcome: null,
       };
       window.__zotlitWriteOutcomeProbe = probe;
-      api.authorizedSend = async (...args) => {
-        if (!args[0].endsWith('/'+${JSON.stringify(annotationKey)})) return await probe.authorizedSend(...args);
+      api.authorizedSend = (...args) => Effect.promise(async () => {
+        if (!args[0].endsWith('/'+${JSON.stringify(annotationKey)})) return await services.bridge.runPromise(probe.authorizedSend(...args));
         probe.calls += 1;
-        const reply = await probe.authorizedSend(...args);
+        const reply = await services.bridge.runPromise(probe.authorizedSend(...args));
         probe.reached = true;
         await gate.promise;
         return reply;
-      };
-      probe.pending = services.annotationRepository
-        .patchColor(${JSON.stringify(annotationKey)}, ${JSON.stringify(color)})
+      });
+      probe.pending = services.bridge
+        .runPromise(services.annotationRepository.patchColor(${JSON.stringify(annotationKey)}, ${JSON.stringify(color)}))
         .then((outcome) => { probe.outcome = outcome; });
       return true;
     })()`,
@@ -7835,6 +7838,7 @@ async function installHeldWriteProbe(vaultId: string): Promise<void> {
   await obEval(
     vaultId,
     `(() => {
+      const { Effect } = ${EFFECT_MODULE};
       const services = app.plugins.plugins.zotlit.services;
       const api = services.zoteroLocalApi;
       const gate = Promise.withResolvers();
@@ -7847,12 +7851,12 @@ async function installHeldWriteProbe(vaultId: string): Promise<void> {
         release: gate.resolve,
       };
       window.__zotlitWriteOutcomeProbe = probe;
-      api.authorizedSend = async (...args) => {
+      api.authorizedSend = (...args) => Effect.promise(async () => {
         probe.calls += 1;
         probe.reached = true;
         await gate.promise;
-        return await probe.authorizedSend(...args);
-      };
+        return await services.bridge.runPromise(probe.authorizedSend(...args));
+      });
       return true;
     })()`,
   );
@@ -8211,7 +8215,7 @@ async function setAnnotationTags(
   expect(
     await obEvalUntil(
       vaultId!,
-      `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const list=await repository.refresh(${JSON.stringify(attachment.key)});const record=list?.annotations.find((annotation)=>annotation.key===${JSON.stringify(annotationKey)});return JSON.stringify((record?.tagDetails??[]).map(({name,type})=>name+':'+type).toSorted());})()`,
+      `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const list=await bridge.runPromise(repository.refresh(${JSON.stringify(attachment.key)}));const record=list?.annotations.find((annotation)=>annotation.key===${JSON.stringify(annotationKey)});return JSON.stringify((record?.tagDetails??[]).map(({name,type})=>name+':'+type).toSorted());})()`,
       { expected: JSON.stringify(spelledTags(tags)) },
     ),
   ).toBe(true);

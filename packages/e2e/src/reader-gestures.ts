@@ -124,7 +124,7 @@ export function capabilityOf(
   attachmentKey: string,
   field: "kind" | "reason",
 ): string {
-  return `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();return String(repository.capabilityFor(${JSON.stringify(attachmentKey)}).${field});})()`;
+  return `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);return String(bridge.runSync(repository.capabilityFor(${JSON.stringify(attachmentKey)})).${field});})()`;
 }
 
 /**

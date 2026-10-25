@@ -557,12 +557,11 @@ async function loadTier(items: number, groupItems?: number): Promise<void> {
     '(async()=>{const hits=await app.plugins.plugins.zotlit.services.itemLookup.search("",{limit:1});if(hits.length!==1)throw new Error("Search index did not produce its first result");return true;})()',
     600_000,
   );
-  // Citation snapshot pages share the query worker. Await the successful read;
-  // Citation Index.ready only marks listener registration.
+  // Citation Lookup pages share the query worker. Await its resolved answers.
   log("Waiting for the Citation Index snapshot of this Fixture to finish...");
   await obEval(
     vaultId,
-    "(async()=>{await app.plugins.plugins.zotlit.services.citationIndex.readSnapshot();return true;})()",
+    "(async()=>{await app.plugins.plugins.zotlit.services.citationLookup.whenResolved();return true;})()",
     600_000,
   );
 }
