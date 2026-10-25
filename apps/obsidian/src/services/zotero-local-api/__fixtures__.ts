@@ -3,6 +3,7 @@ import { vi } from "vitest";
 
 import type { DbUpdated } from "@zotlit/protocol";
 
+import { layerFakeFetch } from "@/lib/__fixtures__/fake-fetch";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 // Zotero Local API answers, and the transport that replays them.
 //
@@ -31,7 +32,6 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
-import { layerRouteTableHttpClient } from "@/lib/http-client";
 import { layerZoteroHttp } from "@/lib/zotero-http";
 import type { ZoteroHttp } from "@/lib/zotero-http";
 import { LocalServer } from "@/services/local-server/service";
@@ -257,8 +257,14 @@ export function fakeZotero(answers: ZoteroAnswers = {}): {
   const requests: ZoteroRequest[] = [];
   const http = layerZoteroHttp.pipe(
     Layer.provide(
-      layerRouteTableHttpClient(({ url, headers, method, body }) => {
-        const request: ZoteroRequest = { url, headers, method, body };
+      layerFakeFetch(async (input, init) => {
+        const url = new URL(String(input));
+        const request: ZoteroRequest = {
+          url,
+          headers: new Headers(init?.headers),
+          method: init?.method ?? "GET",
+          body: typeof init?.body === "string" ? init.body : null,
+        };
         requests.push(request);
         if (url.pathname === "/api/") return (answers.root ?? rootOk)();
         if (url.pathname === "/api/local/authorize") {
@@ -271,7 +277,11 @@ export function fakeZotero(answers: ZoteroAnswers = {}): {
           return children(childrenRequest(url));
         }
         const write = answers.write ?? (() => writeAccepted());
-        if (answers.item && method === "GET" && ITEM_PATH.test(url.pathname)) {
+        if (
+          answers.item &&
+          request.method === "GET" &&
+          ITEM_PATH.test(url.pathname)
+        ) {
           return answers.item(request);
         }
         return write(request);

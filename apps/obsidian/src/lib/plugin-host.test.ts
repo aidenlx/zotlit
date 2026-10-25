@@ -53,7 +53,7 @@ describe("makePluginHost", () => {
     Effect.gen(function* () {
       const obsidian = fakeObsidian();
       const host = makePluginHost(obsidian.plugin);
-      const scope = yield* Scope.make();
+      const scope = yield* Scope.fork(yield* Effect.scope);
       const extension = [] as const;
       const tab = {} as PluginSettingTab;
 

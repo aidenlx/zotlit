@@ -34,7 +34,7 @@ describe("Notifier test layer", () => {
     () =>
       Effect.gen(function* () {
         const notifier = testNotifier();
-        const scope = yield* Scope.make();
+        const scope = yield* Scope.fork(yield* Effect.scope);
         const progress = yield* Notifier.use((n) => n.progress).pipe(
           Effect.provide(notifier.layer),
           Scope.provide(scope),

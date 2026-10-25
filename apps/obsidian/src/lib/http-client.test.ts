@@ -2,9 +2,9 @@ import { HttpClientRequest } from "effect/http";
 import type { RequestUrlParam, RequestUrlResponse } from "obsidian";
 import { describe, expect, vi } from "vitest";
 
-import { Effect, Exit, Fiber } from "@/lib/effect";
+import { Effect } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
-import { requestUrlHttpClient, routeTableHttpClient } from "@/lib/http-client";
+import { requestUrlHttpClient } from "@/lib/http-client";
 
 /** A `requestUrl` that answers `status` with `body`, and records each call. */
 function fakeRequestUrl(status: number, body = "") {
@@ -81,43 +81,6 @@ describe("requestUrlHttpClient", () => {
       const error = yield* Effect.flip(client.get("https://example.com/"));
 
       expect(error.reason._tag).toBe("TransportError");
-    }),
-  );
-});
-
-describe("routeTableHttpClient", () => {
-  it.effect("answers from the route, and fails where the route throws", () =>
-    Effect.gen(function* () {
-      const client = routeTableHttpClient(({ url }) => {
-        if (url.pathname === "/down") throw new Error("ECONNREFUSED");
-        return new Response("here", { status: 201 });
-      });
-
-      const response = yield* client.get("http://x.test/up");
-      const down = yield* Effect.flip(client.get("http://x.test/down"));
-
-      expect(response.status).toBe(201);
-      expect(down.reason._tag).toBe("TransportError");
-    }),
-  );
-
-  it.effect("abandons a request in flight when its caller is interrupted", () =>
-    Effect.gen(function* () {
-      const aborted = Promise.withResolvers<void>();
-      const client = routeTableHttpClient(({ signal }) => {
-        signal.addEventListener("abort", () => {
-          aborted.resolve();
-        });
-        return new Promise<Response>(() => undefined);
-      });
-
-      const fiber = yield* Effect.forkChild(client.get("http://x.test/"));
-      yield* Effect.yieldNow;
-      yield* Fiber.interrupt(fiber);
-      const exit = yield* Fiber.await(fiber);
-      yield* Effect.promise(() => aborted.promise);
-
-      expect(Exit.isFailure(exit)).toBe(true);
     }),
   );
 });

@@ -17,7 +17,6 @@ import {
   Logger,
   Scope,
   Stream,
-  SubscriptionRef,
 } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -37,9 +36,7 @@ function file(path: string): TFile {
 
 /** The layer built on a Scope of its own, closed with the case's Scope. */
 const open = Effect.fnUntraced(function* (layer: Layer.Layer<Workspace>) {
-  const scope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
-    Scope.close(scope, Exit.void),
-  );
+  const scope = yield* Scope.fork(yield* Effect.scope);
   const context = yield* Layer.buildWithScope(layer, scope);
   return { scope, workspace: Context.get(context, Workspace) };
 });
@@ -60,9 +57,7 @@ it.effect("reads the live layer's workspace from ObsidianApp", () =>
         ),
       ),
     );
-    expect((yield* SubscriptionRef.get(workspace.activeFile))?.path).toBe(
-      "a.md",
-    );
+    expect((yield* workspace.getActiveFile)?.path).toBe("a.md");
   }),
 );
 
@@ -95,27 +90,14 @@ it.effect("completes layoutReady inside Obsidian's callback", () =>
   }),
 );
 
-it.effect(
-  "replays the active file, then each file-open, until the layer closes",
-  () =>
-    Effect.gen(function* () {
-      const source = new MemoryWorkspace();
-      source.activeFile = file("a.md");
-      const { scope, workspace } = yield* open(layerWorkspaceFrom(source));
-      expect(source.listenerCount("file-open")).toBe(1);
-      source.open(file("b.md"));
-      const paths = yield* SubscriptionRef.changes(workspace.activeFile).pipe(
-        Stream.map((active) => active?.path ?? null),
-        Stream.take(3),
-        Stream.runCollect,
-        Effect.forkChild({ startImmediately: true }),
-      );
-      source.open(null);
-      source.open(file("c.md"));
-      expect(yield* Fiber.join(paths)).toEqual(["b.md", null, "c.md"]);
-      yield* Scope.close(scope, Exit.void);
-      expect(source.listenerCount("file-open")).toBe(0);
-    }),
+it.effect("owns the file-open listener until the layer closes", () =>
+  Effect.gen(function* () {
+    const source = new MemoryWorkspace();
+    const { scope } = yield* open(layerWorkspaceFrom(source));
+    expect(source.listenerCount("file-open")).toBe(1);
+    yield* Scope.close(scope, Exit.void);
+    expect(source.listenerCount("file-open")).toBe(0);
+  }),
 );
 
 it.effect("reads the active Markdown view", () =>
@@ -137,7 +119,7 @@ it.effect(
     Effect.gen(function* () {
       const source = new MemoryWorkspace();
       const { workspace } = yield* open(layerWorkspaceFrom(source));
-      const menuScope = yield* Scope.make();
+      const menuScope = yield* Scope.fork(yield* Effect.scope);
       yield* workspace
         .onFileMenu((menu, target, { source: from }) =>
           Effect.sync(() => {

@@ -14,10 +14,9 @@ import type {
   WorkspaceLeaf,
 } from "obsidian";
 
-import { Context, Effect, Layer, SubscriptionRef } from "@/lib/effect";
+import { Context, Effect, Layer } from "@/lib/effect";
 import type { Scope, Stream } from "@/lib/effect";
 import { logAndContinue } from "@/lib/effect-log";
-import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import {
   obsidianEventSource,
@@ -54,12 +53,7 @@ export interface WorkspaceShape {
   readonly layoutReady: Effect.Effect<void>;
   /** Each workspace event, in Obsidian's order, from when the consumer's Stream starts. */
   readonly changes: Stream.Stream<WorkspaceEvent>;
-  /**
-   * The active file: Obsidian's `getActiveFile()` when the layer builds, then
-   * the file of each `file-open`. Its `changes` replay the current value.
-   */
-  readonly activeFile: SubscriptionRef.SubscriptionRef<TFile | null>;
-  /** Obsidian's `getActiveFile()` now; `activeFile` can lag it, as Obsidian defers `file-open`. */
+  /** Obsidian's `getActiveFile()` now. */
   readonly getActiveFile: Effect.Effect<TFile | null>;
   /** The Markdown view of the active leaf now, `null` when it holds none. */
   readonly activeMarkdownView: Effect.Effect<MarkdownView | null>;
@@ -106,11 +100,6 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     _tag: "file-open",
     file,
   }));
-  const activeFile = yield* SubscriptionRef.make(source.getActiveFile());
-  // Hands each `file-open` over inside Obsidian's callback.
-  yield* forkEach(filterTag(events.stream, "file-open"), ({ file }) =>
-    SubscriptionRef.set(activeFile, file),
-  );
 
   /** Register `name` on the current Scope; each call runs `toEffect` synchronously with the caller's context. */
   const menuHook = <Args extends unknown[], R>(
@@ -134,7 +123,6 @@ export const makeWorkspace = Effect.fnUntraced(function* (
       source.onLayoutReady(() => resume(Effect.void));
     }),
     changes: events.stream,
-    activeFile,
     getActiveFile: Effect.sync(() => source.getActiveFile()),
     activeMarkdownView: Effect.sync(() =>
       source.getActiveViewOfType(MarkdownView),

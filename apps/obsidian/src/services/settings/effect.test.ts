@@ -30,7 +30,7 @@ it.effect("scope close flushes a pending edit and waits for its write", () =>
     const write = Promise.withResolvers<void>();
     const started = Promise.withResolvers<void>();
     const writes: unknown[] = [];
-    const scope = yield* Scope.make();
+    const scope = yield* Scope.fork(yield* Effect.scope);
     const context = yield* Layer.buildWithScope(
       layerPluginSettings({
         loadData: async () => null,
@@ -171,7 +171,7 @@ it.effect(
 
 it.effect("scope close stops change subscriptions", () =>
   Effect.gen(function* () {
-    const scope = yield* Scope.make();
+    const scope = yield* Scope.fork(yield* Effect.scope);
     const context = yield* Layer.buildWithScope(
       layerPluginSettings({
         loadData: async () => null,
@@ -420,7 +420,7 @@ it.effect("reads and writes the settings through PluginData", () =>
       __VERSION__: 11,
       "server.hostname": "/saved",
     });
-    const scope = yield* Scope.make();
+    const scope = yield* Scope.fork(yield* Effect.scope);
     const context = yield* Layer.buildWithScope(
       layerPluginSettingsOf().pipe(Layer.provide(data.layer)),
       scope,

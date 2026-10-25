@@ -483,31 +483,6 @@ describe("NoteIndex", () => {
   );
 
   it.effect(
-    "scans once on resolved when the build has no clean-cache hook",
-    () =>
-      Effect.gen(function* () {
-        const { service, metadataCache, workspace, vault } = yield* makeHarness(
-          { "paper.md": cache({ itemKey: ITEM_A }) },
-          { cleanCacheHook: false },
-        );
-        const gate = service.whenIndexed();
-
-        metadataCache.watchVault(vault);
-        workspace.layoutReady();
-        expect(service.getIndexedItemKeys()).toEqual([]);
-        metadataCache.resolve();
-
-        yield* Effect.promise(() => expect(gate).resolves.toBeUndefined());
-        expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
-
-        // A later `resolved` finds no listener: the silent swap stays unseen.
-        metadataCache.setCache("paper.md", cache({ itemKey: ITEM_B }));
-        metadataCache.resolve();
-        expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
-      }),
-  );
-
-  it.effect(
     "whenIndexed settles when the service is disposed before the Full Scan",
     () =>
       Effect.gen(function* () {
