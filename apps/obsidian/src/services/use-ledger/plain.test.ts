@@ -14,7 +14,7 @@ it.effect("keeps a throwing listener subscribed for later Uses", () =>
     const stack = yield* Effect.acquireDisposable(
       Effect.tryPromise(async () => new AsyncDisposableStack()),
     );
-    const ledger = buildUseLedger(ledgerHost({ load: () => undefined }), stack);
+    const ledger = buildUseLedger(ledgerHost(), stack);
     const received: Ledger[] = [];
     const { promise, resolve } = Promise.withResolvers<void>();
     stack.defer(

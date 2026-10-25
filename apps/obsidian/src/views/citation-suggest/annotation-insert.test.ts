@@ -39,15 +39,8 @@ const hit: AnnotationHit = {
  * Use Ledger reads the sources, the insert the app's workspace events.
  */
 function host(): { sources: HostSources; app: App } {
-  let stored: unknown;
   const workspace = new MemoryWorkspace();
-  const sources = ledgerHost({
-    load: () => stored,
-    save: (_key, value) => {
-      stored = structuredClone(value);
-    },
-    workspace,
-  });
+  const sources = ledgerHost({ workspace });
   const app = stubService<App>("App", {
     workspace: stubService<App["workspace"]>("Workspace", {
       on: (name: string, callback: (...data: never[]) => unknown) =>

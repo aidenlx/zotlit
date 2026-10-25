@@ -20,7 +20,11 @@ it.effect("saves a value and loads it back", () =>
       Effect.provide(layerDeviceStorageFrom(source)),
     );
     expect(yield* storage.load("key")).toBeNull();
-    yield* storage.save("key", { count: 1 });
+    const saved = { count: 1 };
+    yield* storage.save("key", saved);
+    // As in Obsidian, the value is kept as JSON: a later change to it is not saved.
+    saved.count = 2;
+    expect(source.values.get("key")).toBe('{"count":1}');
     expect(yield* storage.load("key")).toEqual({ count: 1 });
     yield* storage.save("key", null);
     expect(source.values.has("key")).toBe(false);
