@@ -285,7 +285,14 @@ export const layerCitationPopover: Layer.Layer<
       },
       async readText(path, { signal }) {
         if (bridge.closed()) return null;
-        return held(text.read(path, { signal }), null, { signal });
+        return held(
+          // The read is a `tryPromise`: reject with what the read rejected with.
+          text
+            .read(path, { signal })
+            .pipe(Effect.mapError(({ cause }) => cause)),
+          null,
+          { signal },
+        );
       },
       vaultPresentation: () => bridge.runSync(render.state).vaultPresentation,
       async renderBibliography(items, presentation) {

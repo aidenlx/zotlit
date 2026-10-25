@@ -200,13 +200,10 @@ export const layerUseLedger: Layer.Layer<
  * builds during plugin load, so a failed read must not stop the plugin.
  */
 function readSaved(app: App): Effect.Effect<Record<string, Use>> {
-  return Effect.try({
-    try: () => loadUses(app.loadLocalStorage(STORAGE_KEY)),
-    catch: (error) => error,
-  }).pipe(
+  return Effect.try(() => loadUses(app.loadLocalStorage(STORAGE_KEY))).pipe(
     Effect.catch((error) =>
       Effect.logWarning("Could not read the saved Uses; starting empty").pipe(
-        Effect.annotateLogs({ error }),
+        Effect.annotateLogs({ error: error.cause }),
         Effect.as({}),
       ),
     ),

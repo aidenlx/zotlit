@@ -38,7 +38,8 @@ import { pathToFileURL } from "node:url";
 
 import { ZOTERO_DB_READ_TEMP_PREFIX } from "@/lib/constants";
 import { withLogCategory } from "@/lib/effect-log-category";
-import { isErrno } from "@/lib/errno";
+import { isErrno, systemCallError } from "@/lib/errno";
+import type { SystemCallError } from "@/lib/errno";
 import { reflink, ReflinkUnsupportedError } from "@/lib/reflink";
 import type { ZoteroReadMode } from "@/services/settings/schema";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
@@ -159,9 +160,9 @@ function toDbUnavailable(cause: unknown): DbUnavailable {
 }
 
 /** Run one Node filesystem operation at the database port. */
-function fsCall<A>(run: () => Promise<A>): Effect.Effect<A, unknown> {
+function fsCall<A>(run: () => Promise<A>): Effect.Effect<A, SystemCallError> {
   // boundary: node:fs/promises is Promise-based; wrap each call once.
-  return Effect.tryPromise({ try: run, catch: (error) => error });
+  return Effect.tryPromise({ try: run, catch: systemCallError });
 }
 
 export function buildSqliteUri(
@@ -601,7 +602,13 @@ const copySource = Effect.fnUntraced(function* (
     return yield* fsCall(() => copyFile(sourcePath, targetPath)).pipe(
       Effect.asVoid,
     );
-  return yield* fsCall(() => reflink(sourcePath, targetPath));
+  // `reflink` rejects with its own `ReflinkUnsupportedError`, which the
+  // fallback reads by class; anything else is the system call's failure.
+  return yield* Effect.tryPromise({
+    try: () => reflink(sourcePath, targetPath),
+    catch: (error) =>
+      error instanceof ReflinkUnsupportedError ? error : systemCallError(error),
+  });
 });
 
 /**

@@ -19,7 +19,8 @@ import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { withLogCategory } from "./effect-log-category";
-import { isErrno } from "./errno";
+import { isErrno, systemCallError } from "./errno";
+import type { SystemCallError } from "./errno";
 
 /** What every reap step accepts, so one startup passes the same thing to each. */
 export interface ReapTempsOptions {
@@ -97,7 +98,7 @@ function remove(path: string, kind: string) {
   );
 }
 
-function fsCall<A>(run: () => Promise<A>): Effect.Effect<A, unknown> {
+function fsCall<A>(run: () => Promise<A>): Effect.Effect<A, SystemCallError> {
   // boundary: node:fs/promises and the residue rule are Promise-based.
-  return Effect.tryPromise({ try: run, catch: (error) => error });
+  return Effect.tryPromise({ try: run, catch: systemCallError });
 }

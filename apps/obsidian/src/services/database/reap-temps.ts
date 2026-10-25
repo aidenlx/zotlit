@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import { tmpdir } from "node:os";
 
 import { ZOTERO_DB_READ_TEMP_PREFIX } from "@/lib/constants";
-import { isErrno } from "@/lib/errno";
+import { isErrno, systemCallError } from "@/lib/errno";
 import { sweepTempDirectoryEffect } from "@/lib/temp-sweep";
 import type { ReapTempsOptions } from "@/lib/temp-sweep";
 
@@ -88,7 +88,7 @@ function isPidLive(pid: number): boolean {
       try: () => {
         process.kill(pid, 0);
       },
-      catch: (error) => error,
+      catch: systemCallError,
     }).pipe(
       Effect.match({
         onSuccess: () => true,

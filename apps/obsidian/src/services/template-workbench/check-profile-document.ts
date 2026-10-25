@@ -27,6 +27,7 @@ import type {
   InspectedSource,
   ProfileCheckBranch,
 } from "./check";
+import { attempt, CheckSourceThrew, thrown } from "./check-plain-document";
 import { readTemplateData, withSelectedNote } from "./data";
 import type { TemplateDataDeps } from "./data";
 import { sourceRevision } from "./inspect";
@@ -36,10 +37,6 @@ export const INVALID_PROFILE_ID = "INVALID_PROFILE_ID";
 
 /** The refusal a Template Draft whose manifest ID names another Profile carries. */
 export const PROFILE_ID_MISMATCH = "PROFILE_ID_MISMATCH";
-
-/** What the checked source, or a Template it runs, threw. */
-const attempt = <A>(evaluate: () => A) =>
-  Effect.try({ try: evaluate, catch: (error) => error });
 
 /** The data of one root, failing with what failed to read or build it. */
 const loadRoot = (
@@ -316,7 +313,7 @@ export const checkProfileDocument = Effect.fn(
       const current = file
         ? yield* Effect.tryPromise({
             try: () => deps.app.vault.read(file),
-            catch: (error) => error,
+            catch: (cause) => new CheckSourceThrew({ cause }),
           })
         : undefined;
       if (current !== baseline.source)
@@ -369,7 +366,7 @@ export const checkProfileDocument = Effect.fn(
       Effect.sync((): CheckOutcome => {
         const diagnostic = attachReport(
           profileContext,
-          checkDiagnostic(error, caller),
+          checkDiagnostic(thrown(error), caller),
         );
         if (checks.structure?.status !== "passed")
           checks.structure = { status: "failed", diagnostics: [diagnostic] };

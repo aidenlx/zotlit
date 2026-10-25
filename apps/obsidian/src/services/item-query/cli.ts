@@ -8,7 +8,7 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import type { CliData } from "obsidian";
 
 import type { CliCommandHandler, CliHost } from "@/lib/cli-command";
@@ -84,6 +84,18 @@ export function registerQueryCli(host: CliHost, runs: QueryRuns): void {
 }
 
 /**
+ * A run of the service rejected. `message` is the original's (its name where
+ * it has no message), which Obsidian prints; `cause` holds it.
+ */
+export class QueryRunRejected extends Schema.TaggedError<
+  QueryRunRejected,
+  { readonly brand: unique symbol }
+>()("QueryRunRejected", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
+/**
  * A handler over one run of the service. The run's rejection, as a cancel by
  * `zotlit:query-cancel`, is the handler's failure; interrupting the handler
  * aborts the run.
@@ -95,7 +107,13 @@ function runHandler(
   return Effect.fn(name)(function* (params: CliData) {
     return yield* Effect.tryPromise({
       try: (signal) => run(params, signal),
-      catch: (error) => error,
+      catch: (cause) =>
+        new QueryRunRejected({
+          message: Error.isError(cause)
+            ? cause.message || cause.name
+            : String(cause),
+          cause,
+        }),
     });
   });
 }

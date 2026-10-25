@@ -75,12 +75,9 @@ export const selectCheckBaseline = Effect.fnUntraced(function* (
       path = selected.path;
       kind = "real";
       const read = yield* Effect.result(
-        Effect.tryPromise({
-          try: () => readLiveText(deps.app, selected),
-          catch: (error) => error,
-        }),
+        Effect.tryPromise(() => readLiveText(deps.app, selected)),
       );
-      if (Result.isFailure(read)) return failed(read.failure);
+      if (Result.isFailure(read)) return failed(read.failure.cause);
       source = read.success;
     }
   }

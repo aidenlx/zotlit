@@ -232,20 +232,18 @@ const measureRun = Effect.fn("QueryCli.measureRun")(function* ({
         ),
       );
     return yield* Effect.result(
-      Effect.tryPromise({
-        try: (signal) =>
-          queryService.measure(query, AbortSignal.any([signal, timer.signal]), {
-            completed: (report) => {
-              measurement = report;
-            },
-            cancelled: (event) => {
-              if (event.phase === "requested") firedAt ??= now();
-              cancellationEvents.push(event);
-            },
-            heap: measured.heap === true,
-          }),
-        catch: (caught) => caught,
-      }),
+      Effect.tryPromise((signal) =>
+        queryService.measure(query, AbortSignal.any([signal, timer.signal]), {
+          completed: (report) => {
+            measurement = report;
+          },
+          cancelled: (event) => {
+            if (event.phase === "requested") firedAt ??= now();
+            cancellationEvents.push(event);
+          },
+          heap: measured.heap === true,
+        }),
+      ),
     );
   }).pipe(Effect.scoped);
   const settledAt = now();
@@ -258,9 +256,9 @@ const measureRun = Effect.fn("QueryCli.measureRun")(function* ({
       ? "failed"
       : "cancelled";
   const error = Result.isFailure(settled)
-    ? settled.failure instanceof Error
-      ? settled.failure.message
-      : String(settled.failure)
+    ? settled.failure.cause instanceof Error
+      ? settled.failure.cause.message
+      : String(settled.failure.cause)
     : undefined;
 
   const envelope =

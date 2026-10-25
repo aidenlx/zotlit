@@ -108,11 +108,8 @@ export const verifySavedSources = Effect.fn(
         Effect.as({ state, versions, ...(errors.length ? { errors } : {}) }),
       );
     const read = (path: string) =>
-      Effect.tryPromise({
-        try: () => deps.read(path),
-        catch: (error) => error,
-      }).pipe(
-        Effect.catch((error) => {
+      Effect.tryPromise(() => deps.read(path)).pipe(
+        Effect.catch(({ cause: error }) => {
           if (!isErrno(error, "ENOENT")) {
             errors.push({
               path,

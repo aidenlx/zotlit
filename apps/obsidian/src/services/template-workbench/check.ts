@@ -736,17 +736,14 @@ export function createCheckHandler(deps: CheckDeps): CliCommandHandler {
         sourceContext = { ...sourceContext, documentPath: params.draft };
         const path = params.draft;
         const read = yield* Effect.result(
-          Effect.tryPromise({
-            try: (signal) => {
-              if (!isAbsolute(path))
-                throw new Error("Use an absolute scratch-file path for draft.");
-              return readFile(path, { encoding: "utf8", signal });
-            },
-            catch: (error) => error,
+          Effect.tryPromise((signal) => {
+            if (!isAbsolute(path))
+              throw new Error("Use an absolute scratch-file path for draft.");
+            return readFile(path, { encoding: "utf8", signal });
           }),
         );
         if (Result.isFailure(read)) {
-          const error = read.failure;
+          const error = read.failure.cause;
           return finish(sourceContext, {
             ok: false,
             input,

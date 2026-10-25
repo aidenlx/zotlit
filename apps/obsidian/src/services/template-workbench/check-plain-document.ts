@@ -2,7 +2,7 @@
 // plain draft, rendered against one caller root. The entry module keeps request
 // parsing, the flag guards, Check Attempt retention, and answer assembly, and
 // hands this branch every input it reads.
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import type { CitationTemplateData, CitationVariant } from "@zotlit/db";
 import { parsePlainTemplateDocument } from "@zotlit/templates/facade";
@@ -29,9 +29,25 @@ import type { InspectDiagnosticCode } from "./inspect-contract";
 export const RESERVED_PARTIAL_NAME =
   "RESERVED_PARTIAL_NAME" satisfies InspectDiagnosticCode;
 
-/** What the checked source, or a Template it runs, threw. */
-const attempt = <A>(evaluate: () => A) =>
-  Effect.try({ try: evaluate, catch: (error) => error });
+/**
+ * The checked source, or a Template it runs, threw `cause`. The check's
+ * answer reads `cause`, as {@link thrown} gives it.
+ */
+export class CheckSourceThrew extends Schema.TaggedError<
+  CheckSourceThrew,
+  { readonly brand: unique symbol }
+>()("CheckSourceThrew", { cause: Schema.Defect() }) {}
+
+/** Runs `evaluate`, failing with what it threw as a {@link CheckSourceThrew}. */
+export const attempt = <A>(evaluate: () => A) =>
+  Effect.try({
+    try: evaluate,
+    catch: (cause) => new CheckSourceThrew({ cause }),
+  });
+
+/** What a failed check reports: what was thrown, or the failure itself. */
+export const thrown = (error: unknown): unknown =>
+  error instanceof CheckSourceThrew ? error.cause : error;
 
 /** Checks a document the Profile branch does not own, and returns the answer. */
 export const checkPlainDocument = Effect.fn(
@@ -298,7 +314,7 @@ export const checkPlainDocument = Effect.fn(
   }).pipe(
     Effect.catch((error) =>
       Effect.sync((): CheckOutcome => {
-        const diagnostic = checkDiagnostic(error, caller);
+        const diagnostic = checkDiagnostic(thrown(error), caller);
         checks.structure = { status: "failed", diagnostics: [diagnostic] };
         return {
           context: documentContext,

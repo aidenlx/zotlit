@@ -1,5 +1,5 @@
 /** Document citation text for the editor and reading surfaces. */
-import { Stream } from "effect";
+import { Effect, Stream } from "effect";
 import type { ManagedRuntime } from "effect";
 
 import { effectBridge, valueOr } from "@/lib/effect-bridge";
@@ -35,7 +35,12 @@ export function plainCitationText(
     async read(path: string, options?: { signal?: AbortSignal }) {
       if (bridge.closed()) return null;
       return valueOr(
-        await bridge.runPromiseExit(service.read(path, options)),
+        await bridge.runPromiseExit(
+          // The read is a `tryPromise`: reject with what the read rejected with.
+          service
+            .read(path, options)
+            .pipe(Effect.mapError(({ cause }) => cause)),
+        ),
         null,
       );
     },

@@ -9,6 +9,7 @@ import {
   Layer,
   Option,
   PubSub,
+  Schema,
   Scope,
   Stream,
   SubscriptionRef,
@@ -35,6 +36,24 @@ import { InstalledStyleCache, styleHasEntryMarkers } from "./styles";
 import type { CslStyleRequest, ResolvedCslStyle } from "./styles";
 
 const BIBLIOGRAPHY_RENDER = "bibliography-render";
+
+/**
+ * The style cache or the citation engine rejected. `message` is the
+ * original's, which the held read and its notice show; `cause` holds it.
+ */
+export class BibliographyRenderError extends Schema.TaggedError<
+  BibliographyRenderError,
+  { readonly brand: unique symbol }
+>()("BibliographyRenderError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
+const renderError = (cause: unknown) =>
+  new BibliographyRenderError({
+    message: Error.isError(cause) ? cause.message : String(cause),
+    cause,
+  });
 const CITATION_RENDER = "citation-render";
 
 export interface BibliographyRenderEvents {
@@ -277,7 +296,7 @@ export const layerBibliographyRender = Layer.effect(
         const dataDir = (yield* pref.current).dataDir;
         const style = yield* Effect.tryPromise({
           try: () => styles.resolve(dataDir, request),
-          catch: (error) => error,
+          catch: renderError,
         });
         if (style.kind !== "failed") return { request, style };
         yield* Effect.logDebug(
@@ -308,7 +327,7 @@ export const layerBibliographyRender = Layer.effect(
         if (!active) return { entries: [], hasEntryMarkers: false };
         const entries = yield* Effect.tryPromise({
           try: () => active.renderBibliography({ items, ...presentation }),
-          catch: (error) => error,
+          catch: renderError,
         });
         const hasEntryMarkers =
           styleHasEntryMarkers(presentation.styleXml) ||
@@ -340,7 +359,7 @@ export const layerBibliographyRender = Layer.effect(
               items,
               ...enginePresentation(style),
             }),
-          catch: (error) => error,
+          catch: renderError,
         });
         yield* Effect.logDebug("Citations rendered").pipe(
           Effect.annotateLogs({ count: rendered.length }),

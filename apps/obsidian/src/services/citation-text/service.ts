@@ -136,7 +136,7 @@ export class CitationText extends Context.Service<
     read(
       path: string,
       options?: { signal?: AbortSignal },
-    ): Effect.Effect<DocumentCitations | null, unknown>;
+    ): Effect.Effect<DocumentCitations | null, Cause.UnknownError>;
   }
 >()("zotlit/citation-text/CitationText") {}
 
@@ -755,10 +755,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
           path: string,
           options?: { signal?: AbortSignal },
         ) {
-          return yield* Effect.tryPromise({
-            try: () => read(path, options),
-            catch: (error) => error,
-          });
+          return yield* Effect.tryPromise(() => read(path, options));
         }),
       };
     }),

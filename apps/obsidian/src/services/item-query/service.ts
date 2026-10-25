@@ -9,6 +9,7 @@ import type { CliRejection } from "@/lib/cli-params";
 import { openScope } from "@/lib/effect-scope";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
+import { systemCallError } from "@/lib/errno";
 import { getLogger } from "@/lib/log";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import { Service } from "@/services/service-base";
@@ -492,15 +493,15 @@ function publishExport({
 }): Effect.Effect<string> {
   return Effect.tryPromise({
     try: () => link(stagePath, output),
-    catch: (error) => error,
+    catch: systemCallError,
   }).pipe(
     Effect.as(answer),
     Effect.catch((error) =>
-      error instanceof Error && "code" in error
+      error.code !== undefined
         ? Effect.succeed(
             failure(command, diagnostic("output-error", error.message)),
           )
-        : Effect.die(error),
+        : Effect.die(error.cause),
     ),
   );
 }
