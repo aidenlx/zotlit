@@ -33,7 +33,7 @@ export function openScope(): {
   scope: Scope.Closeable;
   close: () => Promise<void>;
 } {
-  const scope = Effect.runSync(Scope.make());
+  const scope = Scope.makeUnsafe();
   return {
     scope,
     close: () =>
