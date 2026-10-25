@@ -19,7 +19,7 @@ import {
 } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
-import { acquireDisposable, isScopeClosed } from "@/lib/effect-scope";
+import { isScopeClosed } from "@/lib/effect-scope";
 import { startupBarrier } from "@/lib/effect-startup";
 import { forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -595,7 +595,9 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         });
       };
       const held = yield* Scope.provide(
-        acquireDisposable(() => lookupAdapter.observe(onChange)),
+        Effect.acquireDisposable(
+          Effect.sync(() => lookupAdapter.observe(onChange)),
+        ),
         observationScope,
       );
       const publish = () => {

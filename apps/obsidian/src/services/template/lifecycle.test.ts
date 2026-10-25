@@ -11,7 +11,6 @@ import {
   Stream,
 } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -41,8 +40,8 @@ it.effect(
       const host = createTemplateHost({
         "templates/zotlit-note.liquid.md": "First",
       });
-      const stack = yield* acquireAsyncDisposable(
-        async () => new AsyncDisposableStack(),
+      const stack = yield* Effect.acquireDisposable(
+        Effect.tryPromise(async () => new AsyncDisposableStack()),
       );
       const context = yield* Effect.context<never>();
       const runtime = buildRuntime(
@@ -129,8 +128,8 @@ it.effect(
     Effect.gen(function* () {
       const host = createTemplateHost();
       const context = yield* Effect.context<never>();
-      const stack = yield* acquireAsyncDisposable(
-        async () => new AsyncDisposableStack(),
+      const stack = yield* Effect.acquireDisposable(
+        Effect.tryPromise(async () => new AsyncDisposableStack()),
       );
       const runtime = buildRuntime(
         templateOver(host).pipe(
@@ -181,8 +180,8 @@ it.effect(
       };
       const openPrompt = vi.fn();
       const context = yield* Effect.context<never>();
-      const stack = yield* acquireAsyncDisposable(
-        async () => new AsyncDisposableStack(),
+      const stack = yield* Effect.acquireDisposable(
+        Effect.tryPromise(async () => new AsyncDisposableStack()),
       );
       const runtime = buildRuntime(
         layerTemplateMigration({
@@ -320,8 +319,8 @@ it.effect("#1705: a stalled source read does not block runtime disposal", () =>
       "templates/zotlit-note.liquid.md": "Loaded",
     });
     const context = yield* Effect.context<never>();
-    const stack = yield* acquireAsyncDisposable(
-      async () => new AsyncDisposableStack(),
+    const stack = yield* Effect.acquireDisposable(
+      Effect.tryPromise(async () => new AsyncDisposableStack()),
     );
     const runtime = buildRuntime(
       templateOver(host).pipe(

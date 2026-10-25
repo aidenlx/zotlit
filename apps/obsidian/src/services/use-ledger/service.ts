@@ -15,7 +15,6 @@ import {
 } from "@/lib/effect";
 import type { Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
-import { acquireDisposable } from "@/lib/effect-scope";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 
@@ -110,34 +109,39 @@ const makeUseLedger = Effect.gen(function* () {
     if (closed) return;
     enabled = true;
   });
-  yield* acquireDisposable(() =>
-    registerEvent(
-      workspace.on("file-open", (file) => {
-        if (!enabled || closed) return;
-        pending = null;
-        if (!file || file.extension !== "md" || excludedOpens.has(file)) return;
-        const instant = run(now);
-        const cache = metadataCache.getFileCache(file);
-        const key = itemKeyFromFrontmatter(cache);
-        if (key) run(record(key, "opened", instant));
-        else if (!cache) pending = { file, instant };
-      }),
+  yield* Effect.acquireDisposable(
+    Effect.sync(() =>
+      registerEvent(
+        workspace.on("file-open", (file) => {
+          if (!enabled || closed) return;
+          pending = null;
+          if (!file || file.extension !== "md" || excludedOpens.has(file))
+            return;
+          const instant = run(now);
+          const cache = metadataCache.getFileCache(file);
+          const key = itemKeyFromFrontmatter(cache);
+          if (key) run(record(key, "opened", instant));
+          else if (!cache) pending = { file, instant };
+        }),
+      ),
     ),
   );
-  yield* acquireDisposable(() =>
-    registerEvent(
-      metadataCache.on("changed", (file, _text, cache) => {
-        if (
-          !pending ||
-          pending.file !== file ||
-          workspace.getActiveFile() !== file
-        )
-          return;
-        const { instant } = pending;
-        pending = null;
-        const key = itemKeyFromFrontmatter(cache);
-        if (key) run(record(key, "opened", instant));
-      }),
+  yield* Effect.acquireDisposable(
+    Effect.sync(() =>
+      registerEvent(
+        metadataCache.on("changed", (file, _text, cache) => {
+          if (
+            !pending ||
+            pending.file !== file ||
+            workspace.getActiveFile() !== file
+          )
+            return;
+          const { instant } = pending;
+          pending = null;
+          const key = itemKeyFromFrontmatter(cache);
+          if (key) run(record(key, "opened", instant));
+        }),
+      ),
     ),
   );
   // Runs first on close: a Use recorded during teardown is not kept.

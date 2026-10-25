@@ -37,7 +37,7 @@ tester.run("effect-native-resources", effectNativeResources, {
     }`,
     // A generator Effect does not run.
     `function* items() { using lock = take(); yield lock; }`,
-    `Effect.fnUntraced(function* () { yield* acquireDisposable(() => registerEvent(ref)); })`,
+    `Effect.fnUntraced(function* () { yield* Effect.acquireDisposable(Effect.sync(() => registerEvent(ref))); })`,
   ],
   invalid: [
     {
@@ -283,7 +283,7 @@ tester.run("obsidian-events-intake", obsidianEventsIntake, {
     {
       // The acquire callback is nested, but it still runs inside the layer.
       code: `Effect.fnUntraced(function* () {
-        yield* acquireDisposable(() => registerEvent(workspace.on("file-open", open)));
+        yield* Effect.acquireDisposable(Effect.sync(() => registerEvent(workspace.on("file-open", open))));
       })`,
       errors: [{ messageId: "intake" }],
     },

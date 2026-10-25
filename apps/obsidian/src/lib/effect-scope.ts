@@ -44,32 +44,3 @@ export function openScope(): {
       ),
   };
 }
-
-/**
- * Acquire a `Disposable` for the current scope; closing the scope disposes
- * it, and a failed disposal is logged.
- */
-export function acquireDisposable<D extends Disposable>(
-  acquire: () => D,
-): Effect.Effect<D, never, Scope.Scope> {
-  return Effect.acquireRelease(Effect.sync(acquire), (disposable) =>
-    Effect.try(() => disposable[Symbol.dispose]()).pipe(
-      logFailure("Could not release a resource"),
-    ),
-  );
-}
-
-/**
- * Acquire an `AsyncDisposable` for the current scope; closing the scope
- * awaits its disposal, and a failed disposal is logged. A rejected `acquire`
- * fails with `UnknownError`.
- */
-export function acquireAsyncDisposable<D extends AsyncDisposable>(
-  acquire: () => Promise<D>,
-): Effect.Effect<D, Cause.UnknownError, Scope.Scope> {
-  return Effect.acquireRelease(Effect.tryPromise(acquire), (disposable) =>
-    Effect.tryPromise(() => disposable[Symbol.asyncDispose]()).pipe(
-      logFailure("Could not release a resource"),
-    ),
-  );
-}

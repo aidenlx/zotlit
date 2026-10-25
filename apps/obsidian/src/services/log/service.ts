@@ -20,7 +20,6 @@ import {
   Scope,
   Stream,
 } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { PluginSettings } from "@/services/settings/service";
 import type { Settings } from "@/services/settings/service";
 
@@ -55,8 +54,8 @@ export function layerLogOutput(
       configureSync: (config) => Effect.try(() => configureSync(config)),
       configure: (config) => Effect.tryPromise(() => configure(config)),
       reset: Effect.tryPromise(() => reset()),
-      openFile: acquireAsyncDisposable(() =>
-        createVaultFileSink(adapter, path),
+      openFile: Effect.acquireDisposable(
+        Effect.tryPromise(() => createVaultFileSink(adapter, path)),
       ),
     }),
   );

@@ -2,7 +2,6 @@
 import { Clock, Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { filterTag, forkEach } from "@/lib/effect-stream";
 import type { ZoteroTransport } from "@/lib/zotero-http";
 import { LocalServer } from "@/services/local-server/service";
@@ -216,16 +215,18 @@ export function layerZoteroLocalApi(options: {
       const publish = (event: LocalApiEvent): void => {
         void PubSub.publishUnsafe(bus, event);
       };
-      const session = yield* acquireAsyncDisposable(() =>
-        Promise.resolve(
-          new LocalApiSession({
-            fetch: options.fetch,
-            credentials: options.credentials,
-            probeDeadline: options.probeDeadline,
-            now,
-            httpPort: () => run(pref.current).httpPort,
-            publish,
-          }),
+      const session = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          Promise.resolve(
+            new LocalApiSession({
+              fetch: options.fetch,
+              credentials: options.credentials,
+              probeDeadline: options.probeDeadline,
+              now,
+              httpPort: () => run(pref.current).httpPort,
+              publish,
+            }),
+          ),
         ),
       );
       yield* forkEach(server.dbUpdated, () =>

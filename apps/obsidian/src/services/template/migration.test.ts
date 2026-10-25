@@ -9,7 +9,6 @@ import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { buildSettings } from "@/services/settings/__fixtures__";
@@ -191,7 +190,9 @@ it.effect(
           const fixture = yield* Effect.promise(() =>
             makeHarness(undefined, context),
           );
-          yield* acquireAsyncDisposable(async () => fixture.service);
+          yield* Effect.acquireDisposable(
+            Effect.tryPromise(async () => fixture.service),
+          );
           return fixture;
         }),
       );
@@ -207,7 +208,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
       const harness = yield* Effect.promise(() =>
         makeHarness(undefined, context),
       );
-      yield* acquireAsyncDisposable(async () => harness.service);
+      yield* Effect.acquireDisposable(
+        Effect.tryPromise(async () => harness.service),
+      );
       const paths = [...harness.files.keys()];
 
       yield* Effect.promise(() => harness.layoutReady());
@@ -246,7 +249,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
             context,
           ),
         );
-        yield* acquireAsyncDisposable(async () => harness.service);
+        yield* Effect.acquireDisposable(
+          Effect.tryPromise(async () => harness.service),
+        );
 
         yield* Effect.promise(() => harness.layoutReady());
 
@@ -265,7 +270,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         const harness = yield* Effect.promise(() =>
           makeHarness({ pending: true }, context),
         );
-        yield* acquireAsyncDisposable(async () => harness.service);
+        yield* Effect.acquireDisposable(
+          Effect.tryPromise(async () => harness.service),
+        );
 
         const result = yield* Effect.promise(() => harness.service.convert());
 
@@ -320,8 +327,8 @@ describe("LiteratureNoteTemplateMigrationService", () => {
       const harness = yield* Effect.promise(() =>
         makeHarness({ pending: true, ejectedAnnotation: true }, context),
       );
-      const service = yield* acquireAsyncDisposable(
-        async () => harness.service,
+      const service = yield* Effect.acquireDisposable(
+        Effect.tryPromise(async () => harness.service),
       );
       harness.files.delete("templates/zotlit-content.liquid.md");
       yield* Effect.promise(() => service.convert());
@@ -345,8 +352,8 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         const failed = yield* Effect.promise(() =>
           makeHarness({ pending: true }, context),
         );
-        const service = yield* acquireAsyncDisposable(
-          async () => failed.service,
+        const service = yield* Effect.acquireDisposable(
+          Effect.tryPromise(async () => failed.service),
         );
         failed.trashFile.mockRejectedValueOnce(new Error("Trash unavailable"));
 
@@ -388,8 +395,8 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         const failed = yield* Effect.promise(() =>
           makeHarness({ pending: true }, context),
         );
-        const service = yield* acquireAsyncDisposable(
-          async () => failed.service,
+        const service = yield* Effect.acquireDisposable(
+          Effect.tryPromise(async () => failed.service),
         );
         failed.trashFile.mockRejectedValueOnce(new Error("Trash unavailable"));
         yield* Effect.promise(() => service.convert());
@@ -424,8 +431,8 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         const harness = yield* Effect.promise(() =>
           makeHarness({ pending: true }, context),
         );
-        const service = yield* acquireAsyncDisposable(
-          async () => harness.service,
+        const service = yield* Effect.acquireDisposable(
+          Effect.tryPromise(async () => harness.service),
         );
         harness.template.getLegacyTemplateDocuments.mockReturnValue({
           citation: [
@@ -488,8 +495,8 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         const harness = yield* Effect.promise(() =>
           makeHarness({ pending: true, defaultDocument: "existing" }, context),
         );
-        const _service = yield* acquireAsyncDisposable(
-          async () => harness.service,
+        const _service = yield* Effect.acquireDisposable(
+          Effect.tryPromise(async () => harness.service),
         );
         expect(
           harness.bridge.runSync(harness.settings.current)[
@@ -512,7 +519,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         const harness = yield* Effect.promise(() =>
           makeHarness({ pending: true }, context),
         );
-        yield* acquireAsyncDisposable(async () => harness.service);
+        yield* Effect.acquireDisposable(
+          Effect.tryPromise(async () => harness.service),
+        );
         harness.template.convertLegacyLiteratureNoteTemplates.mockRejectedValueOnce(
           new LegacyTemplateConversionError(
             "legacy-render-mismatch",
@@ -555,7 +564,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         const harness = yield* Effect.promise(() =>
           makeHarness({ pending: true }, context),
         );
-        yield* acquireAsyncDisposable(async () => harness.service);
+        yield* Effect.acquireDisposable(
+          Effect.tryPromise(async () => harness.service),
+        );
         harness.template.convertLegacyLiteratureNoteTemplates.mockRejectedValueOnce(
           new LegacyTemplateConversionError(
             "legacy-frontmatter-evaluation",
@@ -593,7 +604,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         const harness = yield* Effect.promise(() =>
           makeHarness({ pending: true, ejectedAnnotation: true }, context),
         );
-        yield* acquireAsyncDisposable(async () => harness.service);
+        yield* Effect.acquireDisposable(
+          Effect.tryPromise(async () => harness.service),
+        );
 
         const result = yield* Effect.promise(() => harness.service.convert());
 
@@ -629,7 +642,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           context,
         ),
       );
-      yield* acquireAsyncDisposable(async () => harness.service);
+      yield* Effect.acquireDisposable(
+        Effect.tryPromise(async () => harness.service),
+      );
 
       const result = yield* Effect.promise(() => harness.service.convert());
 
@@ -760,16 +775,18 @@ describe("one-pass conversion of the 2.1.x cite and partial files", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const harness = yield* acquireAsyncDisposable(() =>
-          makeVaultHarness(
-            {
-              "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-              "templates/zotlit-cite2.liquid.md": CITE2_LIQUID,
-              "templates/zotlit-authors.liquid.md": AUTHORS_LIQUID,
-              "templates/zotlit-summary.liquid.md": SUMMARY_LIQUID,
-            },
-            undefined,
-            context,
+        const harness = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            makeVaultHarness(
+              {
+                "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+                "templates/zotlit-cite2.liquid.md": CITE2_LIQUID,
+                "templates/zotlit-authors.liquid.md": AUTHORS_LIQUID,
+                "templates/zotlit-summary.liquid.md": SUMMARY_LIQUID,
+              },
+              undefined,
+              context,
+            ),
           ),
         );
 
@@ -818,14 +835,16 @@ language: liquid
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const harness = yield* acquireAsyncDisposable(() =>
-          makeVaultHarness(
-            {
-              "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-              "templates/zotlit-cite2.liquid.md": CITE2_LIQUID,
-            },
-            undefined,
-            context,
+        const harness = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            makeVaultHarness(
+              {
+                "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+                "templates/zotlit-cite2.liquid.md": CITE2_LIQUID,
+              },
+              undefined,
+              context,
+            ),
           ),
         );
         const refs = [{ citationKey: "smith2024" }];
@@ -859,14 +878,16 @@ language: liquid
   it.effect("carries an Eta partial's language into its manifest", () =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
-      const harness = yield* acquireAsyncDisposable(() =>
-        makeVaultHarness(
-          {
-            "templates/zotlit-authors.eta.md":
-              "<%= zt.creators.join(', ') %>\n",
-          },
-          undefined,
-          context,
+      const harness = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          makeVaultHarness(
+            {
+              "templates/zotlit-authors.eta.md":
+                "<%= zt.creators.join(', ') %>\n",
+            },
+            undefined,
+            context,
+          ),
         ),
       );
 
@@ -884,15 +905,17 @@ language: liquid
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const harness = yield* acquireAsyncDisposable(() =>
-          makeVaultHarness(
-            {
-              "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-              "templates/zotlit-cite2.eta.md":
-                '<%= pandocCite(zt.citations, "prefer-author-in-text") %>?\n',
-            },
-            undefined,
-            context,
+        const harness = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            makeVaultHarness(
+              {
+                "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+                "templates/zotlit-cite2.eta.md":
+                  '<%= pandocCite(zt.citations, "prefer-author-in-text") %>?\n',
+              },
+              undefined,
+              context,
+            ),
           ),
         );
 
@@ -925,15 +948,17 @@ language: liquid
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const harness = yield* acquireAsyncDisposable(() =>
-          makeVaultHarness(
-            {
-              "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-              "templates/zotlit-cite2.liquid.md":
-                '{% render "cite" with zt as zt %}!\n',
-            },
-            undefined,
-            context,
+        const harness = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            makeVaultHarness(
+              {
+                "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+                "templates/zotlit-cite2.liquid.md":
+                  '{% render "cite" with zt as zt %}!\n',
+              },
+              undefined,
+              context,
+            ),
           ),
         );
 
@@ -954,14 +979,16 @@ language: liquid
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const harness = yield* acquireAsyncDisposable(() =>
-          makeVaultHarness(
-            {
-              "templates/zotlit-note.liquid.md": "# {{ zt.title }}\n",
-              "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-            },
-            undefined,
-            context,
+        const harness = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            makeVaultHarness(
+              {
+                "templates/zotlit-note.liquid.md": "# {{ zt.title }}\n",
+                "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+              },
+              undefined,
+              context,
+            ),
           ),
         );
 
@@ -979,13 +1006,15 @@ language: liquid
   it.effect("prompts for a vault holding only zotlit-cite.liquid.md", () =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
-      const harness = yield* acquireAsyncDisposable(() =>
-        makeVaultHarness(
-          {
-            "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-          },
-          undefined,
-          context,
+      const harness = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          makeVaultHarness(
+            {
+              "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+            },
+            undefined,
+            context,
+          ),
         ),
       );
 
@@ -998,14 +1027,16 @@ language: liquid
   it.effect("leaves a vault with no legacy file unprompted", () =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
-      const harness = yield* acquireAsyncDisposable(() =>
-        makeVaultHarness(
-          {
-            "templates/zotlit-citation.md":
-              "{{ zt.citations | pandoc_cite }}\n",
-          },
-          undefined,
-          context,
+      const harness = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() =>
+          makeVaultHarness(
+            {
+              "templates/zotlit-citation.md":
+                "{{ zt.citations | pandoc_cite }}\n",
+            },
+            undefined,
+            context,
+          ),
         ),
       );
 
@@ -1026,15 +1057,17 @@ language: liquid
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const harness = yield* acquireAsyncDisposable(() =>
-          makeVaultHarness(
-            {
-              "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-              "templates/zotlit-citation.md":
-                "{{ zt.citations | pandoc_cite }}\n",
-            },
-            undefined,
-            context,
+        const harness = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            makeVaultHarness(
+              {
+                "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+                "templates/zotlit-citation.md":
+                  "{{ zt.citations | pandoc_cite }}\n",
+              },
+              undefined,
+              context,
+            ),
           ),
         );
 
@@ -1060,14 +1093,16 @@ language: liquid
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const harness = yield* acquireAsyncDisposable(() =>
-          makeVaultHarness(
-            {
-              "templates/zotlit-cite.eta.md":
-                "<%= pandocCite(zt.citations) %>\n",
-            },
-            undefined,
-            context,
+        const harness = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            makeVaultHarness(
+              {
+                "templates/zotlit-cite.eta.md":
+                  "<%= pandocCite(zt.citations) %>\n",
+              },
+              undefined,
+              context,
+            ),
           ),
         );
 
@@ -1113,7 +1148,9 @@ describe("the one-shot conversion aborts before any write", () => {
             context,
           ),
         );
-        yield* acquireAsyncDisposable(async () => harness.service);
+        yield* Effect.acquireDisposable(
+          Effect.tryPromise(async () => harness.service),
+        );
         harness.template.convertLegacyTemplateDocuments.mockRejectedValueOnce(
           new LegacyTemplateConversionError(
             "legacy-render-mismatch",
@@ -1158,8 +1195,8 @@ describe("layout-ready legacy conversion detection", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const harness = yield* acquireAsyncDisposable(() =>
-          makeVaultHarness({}, undefined, context),
+        const harness = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => makeVaultHarness({}, undefined, context)),
         );
         expect(
           harness.bridge.runSync(harness.settings.current)[
@@ -1187,16 +1224,18 @@ describe("layout-ready legacy conversion detection", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const resumed = yield* acquireAsyncDisposable(() =>
-          makeVaultHarness(
-            {},
-            {
-              storedSettings: {
-                __VERSION__: 1,
-                "note.template-conversion-pending": true,
+        const resumed = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            makeVaultHarness(
+              {},
+              {
+                storedSettings: {
+                  __VERSION__: 1,
+                  "note.template-conversion-pending": true,
+                },
               },
-            },
-            context,
+              context,
+            ),
           ),
         );
         for (const [path, source] of Object.entries(original))
@@ -1228,15 +1267,17 @@ describe("repair and retry after a refusal", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const harness = yield* acquireAsyncDisposable(() =>
-          makeVaultHarness(
-            {
-              "templates/zotlit-note.liquid.md":
-                "# No content {{ zt.title }}\n",
-              "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-            },
-            undefined,
-            context,
+        const harness = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            makeVaultHarness(
+              {
+                "templates/zotlit-note.liquid.md":
+                  "# No content {{ zt.title }}\n",
+                "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+              },
+              undefined,
+              context,
+            ),
           ),
         );
 
@@ -1283,14 +1324,16 @@ describe("cleanup retry across restart", () => {
         const context = yield* Effect.context<never>();
         let storedSettings: unknown;
         {
-          const first = yield* acquireAsyncDisposable(() =>
-            makeVaultHarness(
-              {
-                "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-                "templates/zotlit-cite2.liquid.md": CITE2_LIQUID,
-              },
-              undefined,
-              context,
+          const first = yield* Effect.acquireDisposable(
+            Effect.tryPromise(() =>
+              makeVaultHarness(
+                {
+                  "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+                  "templates/zotlit-cite2.liquid.md": CITE2_LIQUID,
+                },
+                undefined,
+                context,
+              ),
             ),
           );
           first.trashFile.mockRejectedValueOnce(new Error("Trash unavailable"));
@@ -1312,11 +1355,13 @@ describe("cleanup retry across restart", () => {
           );
           storedSettings = first.storedSettings();
         }
-        const resumed = yield* acquireAsyncDisposable(() =>
-          makeVaultHarness(
-            { "templates/zotlit-cite.liquid.md": CITE_LIQUID },
-            { storedSettings },
-            context,
+        const resumed = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() =>
+            makeVaultHarness(
+              { "templates/zotlit-cite.liquid.md": CITE_LIQUID },
+              { storedSettings },
+              context,
+            ),
           ),
         );
         expect(

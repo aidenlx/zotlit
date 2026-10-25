@@ -23,7 +23,6 @@ import {
 } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
-import { acquireDisposable } from "@/lib/effect-scope";
 import { forkEach } from "@/lib/effect-stream";
 import { mapsEqual } from "@/lib/maps-equal";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -695,8 +694,8 @@ export const layerCitationText = (open?: OpenDocuments) =>
         // Metadata changes therefore invalidate this document's render too.
         yield* intake.on("changed", app.metadataCache, "changed");
         yield* intake.on("deleted", app.metadataCache, "deleted");
-        yield* acquireDisposable(() =>
-          openDocuments.subscribe(intake.callback("open")),
+        yield* Effect.acquireDisposable(
+          Effect.sync(() => openDocuments.subscribe(intake.callback("open"))),
         );
         yield* forkEach(queries.changes, (change) => {
           if (change.key[0] !== CITATION_TEXT) return;

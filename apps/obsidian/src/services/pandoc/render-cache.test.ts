@@ -10,7 +10,6 @@ import type { CslItemData } from "@zotlit/db";
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Context, Effect, Fiber, Layer, Queue, Stream } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
@@ -809,8 +808,8 @@ describe("BibliographyRenderCache", () => {
     "stops a document that cites nothing under a style it cannot reach",
     () =>
       Effect.gen(function* () {
-        const installed = yield* acquireAsyncDisposable(() =>
-          installStyle(APA),
+        const installed = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => installStyle(APA)),
         );
         const harness = yield* harnessOf(
           { "citation.references-style": APA },
@@ -1103,8 +1102,8 @@ describe("BibliographyRenderCache", () => {
     "renders the embedded default style for a request that names Default",
     () =>
       Effect.gen(function* () {
-        const installed = yield* acquireAsyncDisposable(() =>
-          installStyle(APA),
+        const installed = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => installStyle(APA)),
         );
         const harness = yield* harnessOf(
           { "citation.references-style": APA },
@@ -1122,8 +1121,8 @@ describe("BibliographyRenderCache", () => {
 
   it.effect("renders again when a dependent style names another parent", () =>
     Effect.gen(function* () {
-      const installed = yield* acquireAsyncDisposable(() =>
-        installDependent(APA),
+      const installed = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() => installDependent(APA)),
       );
       const harness = yield* harnessOf(
         { "citation.references-style": DEPENDENT },
@@ -1144,7 +1143,9 @@ describe("BibliographyRenderCache", () => {
 
   it.effect("renders again when the selected style's own content changes", () =>
     Effect.gen(function* () {
-      const installed = yield* acquireAsyncDisposable(() => installStyle(APA));
+      const installed = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() => installStyle(APA)),
+      );
       const harness = yield* harnessOf(
         { "citation.references-style": APA },
         installed.dataDir,
@@ -1167,7 +1168,9 @@ describe("BibliographyRenderCache", () => {
 
   it.effect("holds one render per Citation Presentation", () =>
     Effect.gen(function* () {
-      const installed = yield* acquireAsyncDisposable(() => installStyle(APA));
+      const installed = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() => installStyle(APA)),
+      );
       const harness = yield* harnessOf(
         { "citation.references-style": APA },
         installed.dataDir,
@@ -1187,7 +1190,9 @@ describe("BibliographyRenderCache", () => {
 
   it.effect("blames the vault for its own selection alone", () =>
     Effect.gen(function* () {
-      const installed = yield* acquireAsyncDisposable(() => installStyle(APA));
+      const installed = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() => installStyle(APA)),
+      );
       const harness = yield* harnessOf(
         { "citation.references-style": APA },
         installed.dataDir,
@@ -1332,7 +1337,9 @@ const harnessOf = Effect.fnUntraced(function* (
   profile?: BibliographyRenderFixtureOptions["profile"],
 ) {
   const context = yield* Effect.context<never>();
-  return yield* acquireAsyncDisposable(() =>
-    openHarness(overrides, dataDir, { profile, context }),
+  return yield* Effect.acquireDisposable(
+    Effect.tryPromise(() =>
+      openHarness(overrides, dataDir, { profile, context }),
+    ),
   );
 });

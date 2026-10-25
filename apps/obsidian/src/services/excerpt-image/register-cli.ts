@@ -3,7 +3,6 @@ import { stat } from "node:fs/promises";
 
 import type { CliHost } from "@/lib/cli-command";
 import { Effect } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
@@ -57,8 +56,8 @@ function readExcerptRequest(deps: AnnotationImageDeps, key: string) {
       dataDir: deps.zoteroPref.dataDir,
       baseAttachmentPath: deps.zoteroPref.baseAttachmentPath,
     };
-    const lease = yield* acquireAsyncDisposable(() =>
-      deps.zoteroReads.acquireRead(),
+    const lease = yield* Effect.acquireDisposable(
+      Effect.tryPromise(() => deps.zoteroReads.acquireRead()),
     ).pipe(Effect.mapError(({ cause }) => unavailable(cause)));
     return yield* excerptRequestForKey({ reads: lease.reads, key, paths });
   }).pipe(Effect.scoped);

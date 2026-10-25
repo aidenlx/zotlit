@@ -17,7 +17,6 @@ import type { AttachmentPathContext } from "@zotlit/db/path";
 import { Cause, Data, Effect } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import type {
   AnnotationRecord,
   AnnotationSource,
@@ -64,8 +63,8 @@ export function savedExcerptRequest(options: {
   return options.bridge.runPromise(
     Effect.gen(function* () {
       // One Snapshot, so the identity and the attachment come from one database.
-      const lease = yield* acquireAsyncDisposable(() =>
-        options.zoteroReads.acquireRead(),
+      const lease = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() => options.zoteroReads.acquireRead()),
       );
       const request = yield* excerptRequest({
         annotation,

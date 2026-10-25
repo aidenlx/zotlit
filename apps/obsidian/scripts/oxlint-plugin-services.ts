@@ -66,9 +66,9 @@ export const effectNativeResources: Rule = {
       stack:
         "Acquire with Effect.acquireRelease or Effect.addFinalizer; the generator's Scope owns its resources.",
       using:
-        "Acquire with Effect.acquireRelease, or acquireDisposable from @/lib/effect-scope for a Disposable; the generator's Scope owns its resources.",
+        "Acquire with Effect.acquireRelease, or Effect.acquireDisposable for a Disposable; the generator's Scope owns its resources.",
       dispose:
-        "Release through the Scope: Effect.acquireRelease, Effect.addFinalizer, or acquireDisposable from @/lib/effect-scope.",
+        "Release through the Scope: Effect.acquireRelease, Effect.addFinalizer, or Effect.acquireDisposable.",
     },
     schema: [],
   },
@@ -430,7 +430,7 @@ export const plainAdapterStreams: Rule = {
  * `@/lib/effect-obsidian-events` (policies/events.md → Obsidian events), which gives one ordered intake and a failure
  * boundary per event. A bare `registerEvent` gives neither. A function nested
  * in an Effect generator counts too, such as the acquire callback of
- * `acquireDisposable`.
+ * `Effect.acquireDisposable`.
  */
 export const obsidianEventsIntake: Rule = {
   meta: {

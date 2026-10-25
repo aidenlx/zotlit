@@ -24,7 +24,6 @@ import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { annotationCitation } from "@/lib/annotation-render";
 import { Data, Effect, Stream } from "@/lib/effect";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { creatorSummary } from "@/lib/item-summary";
 import { itemFacets } from "@/services/note-feature/context";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
@@ -99,7 +98,9 @@ const build = <A>(evaluate: () => A) =>
 
 /** Reads under one Snapshot, released when the caller's scope closes. */
 const readLease = (deps: Pick<TemplateDataDeps, "zoteroReads">) =>
-  acquireAsyncDisposable(() => deps.zoteroReads.acquireRead()).pipe(
+  Effect.acquireDisposable(
+    Effect.tryPromise(() => deps.zoteroReads.acquireRead()),
+  ).pipe(
     Effect.map((lease) => lease.reads),
     Effect.mapError((error) => failed(error.cause)),
   );
