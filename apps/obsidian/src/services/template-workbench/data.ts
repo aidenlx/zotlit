@@ -1,7 +1,6 @@
 // Resolves an Indexed Key and builds side-effect-free Template data.
 
 import { Data, Effect, Stream } from "effect";
-import { dirname } from "node:path/posix";
 
 import {
   buildAnnotationsTemplateData,
@@ -25,7 +24,7 @@ import { citationExampleData } from "@zotlit/workbench/render";
 import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { annotationCitation } from "@/lib/annotation-render";
-import { normalizeFolderPath } from "@/lib/ensure-folder";
+import { attachmentFolderPath } from "@/lib/attachment-folder";
 import { creatorSummary } from "@/lib/item-summary";
 import { FileManager } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
@@ -299,25 +298,6 @@ function renderAnnotationCitation(
   }
 }
 
-/**
- * The folder the user's attachment setting picks for the note at
- * `sourcePath`: `folderPath`, or Obsidian's own attachment folder when the
- * setting is empty. `"/"` names the vault root.
- */
-const attachmentFolder = (
-  fileManager: FileManager["Service"],
-  folderPath: string | null,
-  sourcePath?: string,
-) =>
-  folderPath
-    ? Effect.succeed(normalizeFolderPath(folderPath))
-    : fileManager
-        .getAvailablePathForAttachment("zotlit-attachment", sourcePath)
-        .pipe(
-          Effect.map((path) => normalizeFolderPath(dirname(path))),
-          Effect.mapError(({ cause }) => cause),
-        );
-
 const createInertResolvers = Effect.fnUntraced(function* (
   settings: Readonly<Settings>,
   item: Item | null,
@@ -330,7 +310,7 @@ const createInertResolvers = Effect.fnUntraced(function* (
   const vault = yield* Vault;
   const fileManager = yield* FileManager;
   const { dataDir, baseAttachmentPath } = yield* (yield* ZoteroPref).current;
-  const context = yield* Effect.context<never>();
+  const context = yield* Effect.context<FileManager>();
   const runSync = Effect.runSyncWith(context);
   const runPromise = Effect.runPromiseWith(context);
   // The resolvers run synchronously while a Template renders.
@@ -354,7 +334,11 @@ const createInertResolvers = Effect.fnUntraced(function* (
         attachmentFolderPath: settings["attachment.folder-path"],
         litNotePath,
         resolveAttachmentFolderPath: (folderPath, sourcePath) =>
-          runPromise(attachmentFolder(fileManager, folderPath, sourcePath)),
+          runPromise(
+            attachmentFolderPath(folderPath, sourcePath).pipe(
+              Effect.mapError(({ cause }) => cause),
+            ),
+          ),
       }),
     catch: failed,
   });

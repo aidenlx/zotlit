@@ -1,7 +1,7 @@
 // Adapts Obsidian services to the shared side-effect-free resolver core.
 
 import { normalizePath } from "obsidian";
-import type { App, FileManager, TFile, Vault } from "obsidian";
+import type { FileManager, TFile, Vault } from "obsidian";
 import TurndownService from "turndown";
 
 import type { NoteResolvers } from "@zotlit/db";
@@ -9,12 +9,10 @@ import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import {
   buildInertNoteResolvers,
   findExistingLitNote,
-  resolveExcerptImageContext,
 } from "@zotlit/workbench/explorer";
 import type { ExcerptImageContext } from "@zotlit/workbench/explorer";
 
 import { attachmentFileLink } from "@/lib/annotation-render";
-import { resolveAttachmentFolderPath } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { creatorSummary } from "@/lib/item-summary";
 import { fileUrlLink } from "@/lib/markdown-link";
@@ -22,25 +20,10 @@ import {
   commentToMarkdown,
   createCommentTurndown,
 } from "@/lib/turndown/comment";
-import type { Settings } from "@/services/settings/schema";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 
 export { findExistingLitNote };
 export type { ExcerptImageContext };
-
-export async function resolveObsidianExcerptImageContext(options: {
-  app: App;
-  settings: Readonly<Settings>;
-  litNotePath: string | null;
-}): Promise<ExcerptImageContext> {
-  return resolveExcerptImageContext({
-    attachmentImport: options.settings["attachment.import"],
-    attachmentFolderPath: options.settings["attachment.folder-path"],
-    litNotePath: options.litNotePath,
-    resolveAttachmentFolderPath: (folderPath, sourcePath) =>
-      resolveAttachmentFolderPath(options.app, folderPath, sourcePath),
-  });
-}
 
 export interface ObsidianInertNoteResolverDeps {
   noteIndex: {
