@@ -10,7 +10,7 @@ import {
   noLegacyService,
   noNanoevents,
   layerStreamConsumer,
-  obsidianEventsIntake,
+  obsidianCapabilities,
   plainAdapterStreams,
   scopeClosed,
   serviceTagId,
@@ -266,26 +266,64 @@ tester.run("scope-closed", scopeClosed, {
   ],
 });
 
-tester.run("obsidian-events-intake", obsidianEventsIntake, {
+const effect = 'import { Effect } from "@/lib/effect";\n';
+
+tester.run("obsidian-capabilities", obsidianCapabilities, {
   valid: [
-    // Legacy services keep registerEvent on their stack until they convert.
-    `async function load() { stack.use(registerEvent(vault.on("rename", move))); }`,
-    `Effect.gen(function* () {
-      const events = yield* obsidianEvents<VaultEvents>();
-      yield* events.on("rename", vault, "rename");
+    // A legacy file, with no Effect import, keeps the App.
+    "const file = app.vault.getFileByPath(path);",
+    'stack.use(this.registerEvent(this.app.workspace.on("file-open", open)));',
+    // A type-only import of an Effect module loads no Effect code.
+    'import type { ClosableModal } from "@/lib/effect-modal";\nconst cache = app.metadataCache.getFileCache(file);',
+    'import { type Stream } from "@/lib/effect";\napp.vault.on("rename", move);',
+    'export type { Effect } from "effect";\nregisterEvent(ref);',
+    // Not the App: a tag, or another object's members.
+    `${effect}Effect.gen(function* () {
+      const vault = yield* Vault;
+      const file = yield* vault.getFileByPath(path);
     })`,
+    `${effect}settings.vault.getName(); emitter.on("change", run); app.workspace.getActiveFile();`,
+    `${effect}app["vault"];`,
   ],
   invalid: [
     {
-      code: `Effect.gen(function* () { registerEvent(vault.on("rename", move)); })`,
-      errors: [{ messageId: "intake" }],
+      code: `${effect}const file = app.vault.getFileByPath(path);`,
+      errors: [{ messageId: "capability" }],
     },
     {
-      // The acquire callback is nested, but it still runs inside the layer.
-      code: `Effect.fnUntraced(function* () {
-        yield* Effect.acquireDisposable(Effect.sync(() => registerEvent(workspace.on("file-open", open))));
-      })`,
-      errors: [{ messageId: "intake" }],
+      code: 'import { Context } from "effect";\nclass X { #app; read(file) { return this.#app.metadataCache.getFileCache(file); } }',
+      errors: [{ messageId: "capability" }],
+    },
+    {
+      code: 'import * as Rpc from "@effect/platform-browser/BrowserWorker";\nconst { adapter } = plugin.app.vault;',
+      errors: [{ messageId: "capability" }],
+    },
+    {
+      // A mixed import loads the module.
+      code: 'import { type Stream, Effect } from "@/lib/effect";\nctx.app.vault.create(path, data);',
+      errors: [{ messageId: "capability" }],
+    },
+    {
+      // The bridge is an Effect module when its values are imported.
+      code: 'import { bridgeOf } from "@/lib/effect-bridge";\napp.metadataCache.getFirstLinkpathDest(link, path);',
+      errors: [{ messageId: "capability" }],
+    },
+    {
+      code: `${effect}const ref = app.workspace.on("layout-change", update);`,
+      errors: [{ messageId: "event" }],
+    },
+    {
+      code: `${effect}this.app.metadataCache.on("changed", update);`,
+      errors: [{ messageId: "event" }],
+    },
+    {
+      // One report for the registration, one for the raw event; none for app.vault.
+      code: `${effect}this.registerEvent(this.app.vault.on("rename", move));`,
+      errors: [{ messageId: "registerEvent" }, { messageId: "event" }],
+    },
+    {
+      code: `${effect}Effect.gen(function* () { registerEvent(vault.on("rename", move)); })`,
+      errors: [{ messageId: "registerEvent" }],
     },
   ],
 });

@@ -228,9 +228,65 @@ export default defineConfig({
         "zotlit-services/interrupt-predicate": "error",
         "zotlit-services/layer-stream-consumer": "error",
         "zotlit-services/no-legacy-service": "error",
-        "zotlit-services/obsidian-events-intake": "error",
         "zotlit-services/scope-closed": "error",
       },
+    },
+    {
+      files: ["src/**"],
+      excludeFiles: [
+        "**/*.test.{ts,tsx}",
+        "**/__fixtures__/**",
+        "**/__fixtures__.ts",
+        // The capability tags themselves read the App.
+        "src/lib/obsidian-*.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "error" },
+    },
+    {
+      // Capability backlog: files that import Effect and still reach the App.
+      // Legacy services and views keep `app` until they convert; the others
+      // need a tag member that does not exist yet, or a plain helper that
+      // takes the App. A file moves off this list when it takes Obsidian from
+      // the capability tags.
+      files: [
+        "src/services/attachment-open/actions.ts",
+        "src/services/build.ts",
+        "src/services/citation-index/cli/register.ts",
+        "src/services/citation-index/service.ts",
+        "src/services/citation-popover/service.tsx",
+        "src/services/citation-text/service.ts",
+        "src/services/citekey-reading/service.ts",
+        "src/services/graph-citations/service.ts",
+        "src/services/local-bridge/customize.ts",
+        "src/services/local-bridge/vault-targets.ts",
+        "src/services/log/service.ts",
+        "src/services/note-feature/operations.ts",
+        "src/services/note-feature/update-single.ts",
+        "src/services/note-import/service.ts",
+        "src/services/note-index/service.ts",
+        "src/services/pandoc/register.ts",
+        "src/services/profile/service.ts",
+        "src/services/protocol/register.ts",
+        "src/services/release/service.ts",
+        "src/services/template-workbench/check-profile-document.ts",
+        "src/services/template-workbench/data.ts",
+        "src/services/template-workbench/inspect.ts",
+        "src/services/template-workbench/register.ts",
+        "src/services/template/migration.ts",
+        "src/services/template/service.ts",
+        "src/services/wikilink-reading/service.ts",
+        "src/views/annot-view/view.tsx",
+        "src/views/note-preview/render.ts",
+        "src/views/note-preview/session.ts",
+        "src/views/pandoc-export/register.ts",
+        "src/views/query-view/table-notes.ts",
+        "src/views/references/view.tsx",
+        "src/views/template-data-explorer/view.tsx",
+        "src/views/template-workbench/view.tsx",
+        "src/views/welcome/banner.tsx",
+        "src/views/welcome/register.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
       // The helper the rule points at.
@@ -353,12 +409,6 @@ export default defineConfig({
         "src/views/query-view/table-notes.ts",
       ],
       rules: { "zotlit-services/no-nanoevents": "off" },
-    },
-    {
-      // Registered its events before obsidianEvents existed. It moves off this
-      // list when it adopts the helper.
-      files: ["src/services/use-ledger/service.ts"],
-      rules: { "zotlit-services/obsidian-events-intake": "off" },
     },
     {
       files: ["src/views/annot-view/*.{ts,tsx}"],
