@@ -19,6 +19,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import packageJson from "./package.json" with { type: "json" };
 import { resolveChineseSegmenterPin } from "./scripts/chinese-segmenter.ts";
 import { deriveDevVersion } from "./scripts/dev-version.ts";
+import { effectEntry, effectEntryCheck } from "./scripts/effect-entry.ts";
 import { embeddedWorker } from "./scripts/embedded-worker.ts";
 import { pandocFilterVariants } from "./scripts/lua-filter.ts";
 import { resolvePandocEnginePin } from "./scripts/pandoc-engine.ts";
@@ -171,6 +172,8 @@ export default defineConfig(({ mode }) => {
             ? undefined
             : { port: i18nDevServerPort },
       }),
+      effectEntry("renderer"),
+      effectEntryCheck("renderer"),
       preact(),
       tailwindcss(),
       pandocFilterVariants(),
@@ -184,6 +187,7 @@ export default defineConfig(({ mode }) => {
           mode,
           define,
           resolve: workerResolveConfig,
+          plugins: [effectEntry("worker"), effectEntryCheck("worker")],
           external: builtins,
           minify: isProd,
           sourcemap: isProd ? false : "inline",
@@ -200,6 +204,7 @@ export default defineConfig(({ mode }) => {
           mode,
           define,
           resolve: workerResolveConfig,
+          plugins: [effectEntry("worker"), effectEntryCheck("worker")],
           external: builtins,
           minify: isProd,
           sourcemap: isProd ? false : "inline",
