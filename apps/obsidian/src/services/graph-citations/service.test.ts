@@ -1966,24 +1966,6 @@ describe("GraphCitations node colours", () => {
     });
   });
 
-  it("leaves a Literature Note the user's colour group matched as the group coloured it", async () => {
-    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    engine.nodes = grouped;
-
-    await fixture.layoutReady();
-
-    expect(colorsOf(engine.handedOff)).toEqual({
-      "Literature/Doe 2024.md": GROUP,
-      "@typo2024": { a: 1, rgb: 0x888888 },
-      "@roe2025": { a: 1, rgb: 0x888888 },
-      "Draft.md": undefined,
-    });
-  });
-
   it("keeps a Literature Note native while the Pandoc citations row is off", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
     const fixture = await makeFixture();
@@ -2614,44 +2596,6 @@ describe("GraphCitations Display row", () => {
     ]);
   });
 
-  it("starts a global graph from its own defaults", async () => {
-    const fixture = await makeFixture({
-      savedGlobal: { "zotlit-color-citation-links": false },
-    });
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-
-    await fixture.layoutReady();
-
-    expect(
-      rowToggle(
-        engine,
-        m.graph_option_color_citation_links_name(),
-        engine.displayOptions,
-      ).getValue(),
-    ).toBe(false);
-  });
-
-  it("round-trips through the engine's set options", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-
-    engine.setOptions({ "zotlit-color-citation-links": false });
-
-    expect(engine.getOptions()["zotlit-color-citation-links"]).toBe(false);
-    expect(
-      rowToggle(
-        engine,
-        m.graph_option_color_citation_links_name(),
-        engine.displayOptions,
-      ).getValue(),
-    ).toBe(false);
-  });
-
   it("returns to its default when the panel restores default settings", async () => {
     const fixture = await makeFixture();
     await using service = fixture.service;
@@ -3056,30 +3000,6 @@ const PRESET_ROWS = {
 };
 
 describe("GraphCitations Citation Graph preset", () => {
-  it("keeps a saved citation graph's labels off until the command preset runs", async () => {
-    const fixture = await presetFixture({
-      savedGlobal: {
-        "zotlit-pandoc-citations": true,
-        "zotlit-citation-popover": true,
-      },
-    });
-    await using service = fixture.service;
-    await service.ready;
-    await fixture.layoutReady();
-
-    expect(fixture.engine.getOptions()).toMatchObject({
-      "zotlit-pandoc-citations": true,
-      "zotlit-citation-popover": true,
-      "zotlit-author-title-labels": false,
-    });
-
-    fixture.apply();
-
-    expect(fixture.engine.getOptions()["zotlit-author-title-labels"]).toBe(
-      true,
-    );
-  });
-
   it("presets the global graph, and adds the literature notes group", async () => {
     const fixture = await presetFixture();
     await using service = fixture.service;

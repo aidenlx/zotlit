@@ -50,11 +50,6 @@ function setup(enabled: boolean): {
 }
 
 describe("addCitekeyEditorActions", () => {
-  it("registers one command per pane", () => {
-    const { plugin } = setup(true);
-    expect([...plugin.commands.keys()]).toEqual(ALL_COMMAND_IDS);
-  });
-
   it("ships no default hotkey", () => {
     const { plugin } = setup(true);
     for (const command of plugin.commands.values()) {

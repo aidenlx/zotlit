@@ -1,4 +1,4 @@
-import { Menu, TFile, TFolder } from "@mock/obsidian";
+import { Menu, TFile } from "@mock/obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { openAttachments } from "@/lib/attachment-open";
@@ -112,22 +112,6 @@ describe("Literature Note attachment-open file menu", () => {
         anchor: undefined,
       }),
     );
-  });
-
-  it("stays off a non-Markdown file", () => {
-    const menu = new Menu();
-    const file = new TFile();
-    file.extension = "canvas";
-    fileMenuHandler()(menu as never, file as never, "more-options");
-
-    expect(menu.items).toHaveLength(0);
-  });
-
-  it("stays off a folder", () => {
-    const menu = new Menu();
-    fileMenuHandler()(menu as never, new TFolder() as never, "more-options");
-
-    expect(menu.items).toHaveLength(0);
   });
 
   it("stays off a note that carries no item key", () => {

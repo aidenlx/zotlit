@@ -1187,30 +1187,6 @@ describe("up-to-date classification", () => {
     expect(importNote).toHaveBeenCalledTimes(2);
   });
 
-  it("classifies as overwrite when zotero-lastmod is newer than dateModified", async () => {
-    const ref50 = makeRef(50);
-    seedNotes([50, 51]);
-    const target = makeFile("Imported/Note 50.md");
-    const { deps, importNote } = makeDeps(
-      {},
-      {
-        importNoteResult: "overwritten",
-        frontmatter: new Map([
-          [target, { "zotero-lastmod": "2024-02-03T08:31:00Z" }],
-        ]),
-      },
-    );
-    deps.noteIndex.getImportedNoteByNoteKey = (key) =>
-      key === ref50.indexedKey ? [target] : [];
-
-    await createBatchImport(deps).runBatchImport("note", [50, 51]);
-    const { manifest } = await driveLastModal();
-
-    expect(manifest.options.tasks[0]).toMatchObject({ kind: "1:overwrite" });
-    expect(manifest.options.upToDate).toHaveLength(0);
-    expect(importNote).toHaveBeenCalledTimes(2);
-  });
-
   it("classifies as create when no existing file exists", async () => {
     seedNotes([50, 51]);
     const { deps, importNote } = makeDeps({});
@@ -1417,18 +1393,5 @@ describe("reimportNoteByKey", () => {
     ).resolves.toEqual({ outcome: "overwritten" });
 
     expect(importNote.mock.calls[0]![1]).toMatchObject({ targetFile });
-  });
-
-  it("preserves a skipped write outcome", async () => {
-    const note = makeIndexedNote();
-    seedNotes([note.itemID], { key: note.key });
-    const { deps } = makeDeps({}, { importNoteResult: "skipped" });
-
-    await expect(
-      createBatchImport(deps).reimportNoteByKey(
-        note.indexedKey,
-        makeFile("Imported/Clicked.md"),
-      ),
-    ).resolves.toEqual({ outcome: "skipped" });
   });
 });

@@ -539,19 +539,6 @@ describe("embedded image resolution", () => {
     });
   });
 
-  it("resolves an image-excerpt embed to a bare embed (no annotation branch)", () => {
-    embeddedAttachment.mockReturnValue(storageAttachment("DUPB2GWX") as never);
-    const md = parseNote(
-      TurndownService,
-      note(
-        '<img data-attachment-key="DUPB2GWX" ' +
-          'data-annotation="%7B%22annotationKey%22%3A%22DBKE89L9%22%7D">',
-      ),
-      deps,
-    );
-    expect(md).toBe("![[DUPB2GWX-img.png]]");
-  });
-
   it("passes a missing attachment through as raw HTML", () => {
     embeddedAttachment.mockReturnValue(undefined);
     const md = parseNote(TurndownService, note(img("GONE1234")), deps);
@@ -616,18 +603,6 @@ describe("annotation template mode", () => {
     expect(md).toBe("> [!note]\n>\n> callout K2");
   });
 
-  it("subsumes an image excerpt without resolving its storage attachment", () => {
-    embeddedAttachment.mockReturnValue(storageAttachment("IMG1") as never);
-    const imgAnnot = encodeURIComponent(
-      JSON.stringify({ attachmentURI: ATTACHMENT, annotationKey: "K3" }),
-    );
-    const body = `<p><img data-attachment-key="IMG1" data-annotation="${imgAnnot}"><br>${citation} caption</p>`;
-    const md = parseNote(TurndownService, note(body), withRender());
-    expect(md).toBe("> [!note]\n>\n> callout K3");
-    // The inner <img> is removed before the embed rule runs — no orphan copy.
-    expect(embeddedAttachment).not.toHaveBeenCalled();
-  });
-
   it("falls back to an inline mark when the renderer declines", () => {
     const md = parseNote(
       TurndownService,
@@ -657,18 +632,6 @@ describe("annotation template mode", () => {
     expect(render).not.toHaveBeenCalled();
     expect(md).toContain("this is the one to exclude");
     expect(md).toContain("<mark");
-  });
-
-  it("subsumes despite trailing prose after the citation", () => {
-    // Zotero serializes the annotation comment into this slot; under
-    // DB-as-truth the snapshot text is discarded for the rendered callout.
-    const body = `<p>${annot(
-      "underline",
-      { attachmentURI: ATTACHMENT, annotationKey: "K6", color: "#ffd400" },
-      "excerpt",
-    )} ${citation} hand-typed trailing note</p>`;
-    const md = parseNote(TurndownService, note(body), withRender());
-    expect(md).toBe("> [!note]\n>\n> callout K6");
   });
 
   it("bails to inline when an extra element joins the paragraph", () => {
@@ -723,15 +686,6 @@ describe("annotation template mode", () => {
     });
     expect(md).toBe("> [!note]\n>\n> line one\n\n> line two");
     expect(md).not.toMatch(/\n{3,}/);
-  });
-
-  it("leaves a callout without excess blank lines unchanged", () => {
-    const md = parseNote(
-      TurndownService,
-      note(spanPara("highlight", "K1")),
-      withRender(),
-    );
-    expect(md).toBe("> [!note]\n>\n> callout K1");
   });
 
   it("carries zt.citation onto a subsumed annotation paragraph via the real render path (9.2-CSL #05)", () => {

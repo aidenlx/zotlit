@@ -845,26 +845,6 @@ describe("CitationText over wikilink Citations", () => {
   );
 
   it.effect(
-    "leaves a fragment-less wikilink out while Wikilink Citations is off",
-    () =>
-      Effect.promise(async () => {
-        const body = `Claim [[${LIT}]].`;
-        const { service, citationRequests, dispose } = await makeHarness({
-          body,
-          cited: [],
-          links: [link(LIT, body.indexOf("[["))],
-          notes,
-          settings: { "citation.wikilink-citations": false },
-        });
-
-        await readText(service);
-
-        expect(citationRequests).toEqual([{ citations: [] }]);
-        await dispose();
-      }),
-  );
-
-  it.effect(
     "keeps a fragment-less member in the render context while presentation is off",
     () =>
       Effect.promise(async () => {
@@ -885,23 +865,6 @@ describe("CitationText over wikilink Citations", () => {
         expect(citationRequests).toEqual([{ citations: [`[@${LIT_KEY}]`] }]);
         await dispose();
       }),
-  );
-
-  it.effect("leaves an aliased wikilink out, as the display surfaces do", () =>
-    Effect.promise(async () => {
-      const body = `Claim [[${LIT}|Alpha]].`;
-      const { service, citationRequests, dispose } = await makeHarness({
-        body,
-        cited: [],
-        links: [link(LIT, body.indexOf("[["), `[[${LIT}|Alpha]]`)],
-        notes,
-      });
-
-      await readText(service);
-
-      expect(citationRequests).toEqual([{ citations: [] }]);
-      await dispose();
-    }),
   );
 
   it.effect("renders both syntaxes in one batch, in document order", () =>

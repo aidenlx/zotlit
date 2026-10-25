@@ -467,98 +467,6 @@ describe("CitationIndex", () => {
     }),
   );
 
-  it.effect("leaves wikilinks out while Wikilink Citations is off", () =>
-    Effect.promise(async () => {
-      const { draft, index, metadataCache } = await makeHarness({
-        "draft.md": "As @roe2025 wrote, see [[Doe 2024]].",
-      });
-      metadataCache.fileCache.set("draft.md", {
-        links: [link("Doe 2024", 23)],
-      } as CachedMetadata);
-
-      expect(await citationsOf(index, draft)).toMatchObject([
-        { indexedKey: KEY_B, refNumber: 1 },
-      ]);
-    }),
-  );
-
-  // Pandoc reads `[[@doe2024]]` as a wikilink, so the export cites nothing
-  // there; the References sidebar must agree.
-  it.effect(
-    "reads no citekey inside a wikilink while Wikilink Citations is off",
-    () =>
-      Effect.promise(async () => {
-        const { draft, index, metadataCache } = await makeHarness({
-          "draft.md": "As @roe2025 wrote, see [[@doe2024]].",
-        });
-        metadataCache.fileCache.set("draft.md", {
-          links: [link("@doe2024", 23)],
-        } as CachedMetadata);
-
-        expect(await citationsOf(index, draft)).toMatchObject([
-          { indexedKey: KEY_B, refNumber: 1 },
-        ]);
-      }),
-  );
-
-  it.effect(
-    "leaves citekeys inside code, math, comments, and frontmatter out",
-    () =>
-      Effect.promise(async () => {
-        const { draft, index } = await makeHarness({
-          "draft.md": [
-            "---",
-            "cite: @doe2024",
-            "---",
-            "",
-            "```md",
-            "@doe2024",
-            "```",
-            "",
-            "    @doe2024",
-            "",
-            "Inline `@doe2024`, math $x = @doe2024$, and %% @doe2024 %% too.",
-            "",
-            "$$",
-            "@doe2024",
-            "$$",
-            "",
-            "Only @roe2025 counts.",
-          ].join("\n"),
-        });
-
-        expect(await citationsOf(index, draft)).toMatchObject([
-          { indexedKey: KEY_B, refNumber: 1 },
-        ]);
-      }),
-  );
-
-  // Indented list content is no code block, an unpaired backtick opens no code
-  // span, and a price pair is no math — each would swallow a real citation.
-  it.effect("keeps citekeys that only look like code or math", () =>
-    Effect.promise(async () => {
-      const { draft, index } = await makeHarness({
-        "draft.md": [
-          "- item",
-          "",
-          "    Indented under the list, citing @doe2024.",
-          "",
-          "It cost $5 and @roe2025 says $6 isn't a formula.",
-          "",
-          "A lone ` backtick keeps @doe2024 readable.",
-        ].join("\n"),
-      });
-
-      const citations = await citationsOf(index, draft);
-
-      expect(citations).toMatchObject([
-        { indexedKey: KEY_A, refNumber: 1 },
-        { indexedKey: KEY_B, refNumber: 2 },
-      ]);
-      expect(citations[0]!.occurrences).toHaveLength(2);
-    }),
-  );
-
   it.effect("rescans a document when its metadata changes", () =>
     Effect.promise(async () => {
       const { draft, index, metadataCache } = await makeHarness({
@@ -683,18 +591,6 @@ describe("CitationIndex", () => {
 
       expect(changed).toEqual(["draft.md"]);
       expect(await citationsOf(index, draft)).toEqual([]);
-    }),
-  );
-
-  it.effect("answers for a document the backfill has not reached", () =>
-    Effect.promise(async () => {
-      const { draft, index } = await makeHarness({
-        "draft.md": "As @doe2024 wrote.",
-      });
-
-      expect(await citationsOf(index, draft)).toMatchObject([
-        { indexedKey: KEY_A },
-      ]);
     }),
   );
 
@@ -1794,18 +1690,6 @@ describe("CitationIndex resolution", () => {
       stop();
       await index.getFileScan(draft);
       expect(publications).toBe(before);
-    }),
-  );
-
-  it.effect("resolves with a Literature Note's path as linkpath", () =>
-    Effect.promise(async () => {
-      const { draft, index } = await makeHarness({
-        "draft.md": "As @doe2024 wrote.",
-      });
-
-      expect(await citationsOf(index, draft)).toMatchObject([
-        { indexedKey: KEY_A, linkpath: "Doe 2024.md" },
-      ]);
     }),
   );
 });

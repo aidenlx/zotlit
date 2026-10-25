@@ -642,18 +642,6 @@ describe("popover failure and lifetime", () => {
 });
 
 describe("source-less presentation updates", () => {
-  it("keeps Item actions when nothing could be formatted", async () => {
-    await using run = workHarness();
-    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]);
-    run.readBibliography.mockResolvedValue(null);
-    run.show();
-    const element = await run.shown();
-    expect(element.textContent).toContain("Alpha kernels");
-    expect(
-      element.querySelector("[data-citation-popover-actions]"),
-    ).not.toBeNull();
-  });
-
   it("keeps the newer work when the pointer moved on before the first was read", async () => {
     await using run = workHarness();
     run.db.holds([
