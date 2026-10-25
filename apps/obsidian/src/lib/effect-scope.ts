@@ -4,7 +4,7 @@ import type { Component } from "obsidian";
 
 import { Cause, Effect, Exit, Scope } from "@/lib/effect";
 
-import { withLogCategory } from "./effect-log";
+import { logAndContinue, withLogCategory } from "./effect-log";
 
 /** Log a failed release, so the rest of the scope still closes. */
 const logFailure =
@@ -66,7 +66,7 @@ export function componentScope(
       () =>
         void run(
           Scope.close(scope, Exit.void).pipe(
-            logFailure("Could not close a scope"),
+            logAndContinue("Could not close a scope", "scope"),
           ),
         ),
     );
