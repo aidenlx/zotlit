@@ -1,13 +1,22 @@
+import { Schema } from "effect";
 import { execFile } from "node:child_process";
 import { constants, copyFile } from "node:fs/promises";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-export class ReflinkUnsupportedError extends Error {
-  constructor(cause?: unknown) {
-    super("Native reflink is unsupported", { cause });
-    this.name = "ReflinkUnsupportedError";
+/**
+ * The platform or volume cannot clone a file natively. `cause` holds the
+ * `clonefile` failure where one was raised.
+ */
+export class ReflinkUnsupportedError extends Schema.TaggedError<
+  ReflinkUnsupportedError,
+  { readonly brand: unique symbol }
+>()("ReflinkUnsupportedError", {
+  cause: Schema.optional(Schema.Defect()),
+}) {
+  override get message(): string {
+    return "Native reflink is unsupported";
   }
 }
 
@@ -47,7 +56,8 @@ async function reflinkMac(
   try {
     await execFileAsync("cp", ["-c", "-n", sourcePath, targetPath]);
   } catch (error) {
-    if (isClonefileUnsupported(error)) throw new ReflinkUnsupportedError(error);
+    if (isClonefileUnsupported(error))
+      throw new ReflinkUnsupportedError({ cause: error });
     throw error;
   }
 }

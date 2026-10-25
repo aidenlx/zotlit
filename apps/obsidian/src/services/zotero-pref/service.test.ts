@@ -5,6 +5,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { expect } from "vitest";
 
+import { systemCallError } from "@/lib/errno";
+
 import { zoteroPrefFixture } from "./__fixtures__";
 
 // #1705: stalled external I/O releases startup and still publishes a late read.
@@ -204,7 +206,7 @@ it.effect(
           return Effect.succeed(
             'user_pref("extensions.zotero.useDataDir", true);\nuser_pref("extensions.zotero.dataDir", "/research-data");\nuser_pref("extensions.zotero.httpServer.port", 45678);',
           );
-        return Effect.fail(new Error("unreadable"));
+        return Effect.fail(systemCallError(new Error("unreadable")));
       }, null);
       yield* Stream.runHead(
         Stream.filter(f.pref.changes, (s) => s.state === "ready"),

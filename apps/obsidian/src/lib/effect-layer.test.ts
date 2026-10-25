@@ -86,20 +86,17 @@ it.effect("unwinds the startup stack before rejecting a failed graph", () =>
     );
 
     const rejected = yield* Effect.flip(
-      Effect.tryPromise({
-        try: async () => {
-          await using stack = new AsyncDisposableStack();
-          stack.defer(() => {
-            released.push("startup");
-          });
-          const runtime = buildRuntime(layer, stack);
-          await runtime.context();
-        },
-        catch: (cause) => cause,
+      Effect.tryPromise(async () => {
+        await using stack = new AsyncDisposableStack();
+        stack.defer(() => {
+          released.push("startup");
+        });
+        const runtime = buildRuntime(layer, stack);
+        await runtime.context();
       }),
     );
 
-    expect(rejected).toBe(error);
+    expect(rejected.cause).toBe(error);
     expect(released).toEqual(["layer", "startup"]);
   }),
 );

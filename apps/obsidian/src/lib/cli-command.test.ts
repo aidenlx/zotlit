@@ -37,13 +37,10 @@ describe("cliRunner", () => {
       const error = new TypeError("bad parameter");
 
       const rejected = yield* Effect.flip(
-        Effect.tryPromise({
-          try: () => run(Effect.fail(error)),
-          catch: (cause) => cause,
-        }),
+        Effect.tryPromise(() => run(Effect.fail(error))),
       );
 
-      expect(rejected).toBe(error);
+      expect(rejected.cause).toBe(error);
     }),
   );
 
@@ -60,10 +57,8 @@ describe("cliRunner", () => {
       yield* Deferred.await(started);
       unload.abort(new Error("Plugin unloaded"));
 
-      const rejected = yield* Effect.flip(
-        Effect.tryPromise({ try: () => pending, catch: (cause) => cause }),
-      );
-      expect(rejected).toBe(unload.signal.reason);
+      const rejected = yield* Effect.flip(Effect.tryPromise(() => pending));
+      expect(rejected.cause).toBe(unload.signal.reason);
     }),
   );
 });

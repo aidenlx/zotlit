@@ -8,6 +8,7 @@ import {
   Layer,
   Predicate,
   PubSub,
+  Schema,
   Scope,
   SubscriptionRef,
 } from "effect";
@@ -17,7 +18,11 @@ import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
 
 import type { BinaryPin } from "./pin";
-import { ManagedBinaryPlatform } from "./platform";
+import {
+  ManagedBinaryError,
+  ManagedBinaryPlatform,
+  managedBinaryError,
+} from "./platform";
 export { ManagedBinaryPlatform, layerManagedBinaryPlatform } from "./platform";
 export type { ManagedBinaryHostPorts, ManagedBinaryPorts } from "./platform";
 
@@ -106,9 +111,9 @@ function cachedBinaryName(pin: BinaryPin): string {
 export interface ManagedBinaryApi<Engine extends Disposable | AsyncDisposable> {
   readonly getStatus: Effect.Effect<ManagedBinaryStatus>;
   readonly changes: Stream.Stream<ManagedBinaryStatus>;
-  readonly getEngine: Effect.Effect<Engine | null, Error>;
-  readonly install: Effect.Effect<void, Error>;
-  readonly uninstall: Effect.Effect<void, Error>;
+  readonly getEngine: Effect.Effect<Engine | null, ManagedBinaryError>;
+  readonly install: Effect.Effect<void, ManagedBinaryError | HashMismatchError>;
+  readonly uninstall: Effect.Effect<void, ManagedBinaryError>;
   readonly decline: Effect.Effect<void>;
 }
 
@@ -123,11 +128,19 @@ export function layerManagedBinary<
   return Layer.effect(tag, makeManagedBinary(binary));
 }
 
-const attempt = <A>(run: () => Promise<A>): Effect.Effect<A, Error> =>
+const attempt = <A>(
+  run: () => Promise<A>,
+): Effect.Effect<A, ManagedBinaryError> =>
+  Effect.tryPromise({ try: run, catch: managedBinaryError });
+
+/** The running install, failing as it fails, so a second caller sees the same error. */
+const joinInstall = (
+  done: Promise<void>,
+): Effect.Effect<void, ManagedBinaryError | HashMismatchError> =>
   Effect.tryPromise({
-    try: run,
+    try: () => done,
     catch: (error) =>
-      error instanceof Error ? error : new Error(String(error)),
+      error instanceof HashMismatchError ? error : managedBinaryError(error),
   });
 
 const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
@@ -205,7 +218,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   );
 
   const failInit = Effect.fn("ManagedBinary.failInit")(function* (
-    error: Error,
+    error: ManagedBinaryError,
   ) {
     const failure: ManagedBinaryFailure = {
       code: "init-failed",
@@ -218,7 +231,10 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
     const blob = yield* store.read(name).pipe(
       Effect.filterOrFail(
         Predicate.isNotUndefined,
-        () => new Error(`The cached ${binary.label} binary is gone`),
+        () =>
+          new ManagedBinaryError({
+            message: `The cached ${binary.label} binary is gone`,
+          }),
       ),
       Effect.tapError(failInit),
     );
@@ -237,7 +253,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
             yield* store.remove(name).pipe(Effect.ignore);
             yield* setStatus({ kind: "absent" });
           } else yield* failInit(error);
-          return yield* Effect.fail(error);
+          return yield* error;
         }),
       ),
     );
@@ -257,7 +273,10 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
     ),
   );
   let engine:
-    | { fiber: Fiber.Fiber<Engine, Error>; scope: Scope.Closeable }
+    | {
+        fiber: Fiber.Fiber<Engine, ManagedBinaryError>;
+        scope: Scope.Closeable;
+      }
     | undefined;
   const dropEngine = Effect.fn("ManagedBinary.dropEngine")(function* () {
     const pending = engine;
@@ -272,9 +291,9 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
     if (closed) return null;
     if (!engine) {
       if ((yield* SubscriptionRef.get(status)).kind !== "installed")
-        return yield* Effect.fail(
-          new Error(`The ${binary.label} is not installed`),
-        );
+        return yield* new ManagedBinaryError({
+          message: `The ${binary.label} is not installed`,
+        });
       const engineScope = yield* Scope.make();
       const fiber = yield* Effect.forkIn(
         acquireEngine.pipe(Effect.provideService(Scope.Scope, engineScope)),
@@ -299,7 +318,8 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
     const asset = yield* platform.download(url);
     const bytes = yield* Effect.try({
       try: () => (binary.extract ? binary.extract(asset) : asset),
-      catch: (error) => new Error(describe(error)),
+      catch: (error) =>
+        new ManagedBinaryError({ message: describe(error), cause: error }),
     });
     const temp = `${sha256}.${crypto.randomUUID()}.part`;
     // The release also covers a failed write, so a partial file cannot outlive this install.
@@ -310,7 +330,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
           yield* store.write(temp, bytes);
           const actual = yield* attempt(() => sha256Hex(bytes));
           if (actual !== sha256)
-            return yield* Effect.fail(new HashMismatchError(sha256, actual));
+            return yield* new HashMismatchError({ expected: sha256, actual });
           yield* store.rename(temp, name);
         }),
       () => store.remove(temp).pipe(Effect.ignore),
@@ -354,8 +374,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   const install = Effect.gen(function* () {
     if (closed) return;
     const current = yield* SubscriptionRef.get(status);
-    if (current.kind === "installing")
-      return yield* attempt(() => current.done);
+    if (current.kind === "installing") return yield* joinInstall(current.done);
     yield* consent.saveLocalStorage(declinedKey, null);
     // The inherited Promise belongs to the public status contract. Its work is
     // a scoped fiber, and this runner retains the layer's services and Clock.
@@ -377,7 +396,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
       Effect.gen(function* () {
         const current = yield* SubscriptionRef.get(status);
         if (current.kind === "installing")
-          yield* attempt(() => current.done).pipe(Effect.ignore);
+          yield* joinInstall(current.done).pipe(Effect.ignore);
         yield* dropEngine();
         yield* store.clear;
         yield* consent.saveLocalStorage(declinedKey, null);
@@ -411,15 +430,13 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   } satisfies ManagedBinaryApi<Engine>;
 });
 
-class HashMismatchError extends Error {
-  override name = "HashMismatchError";
-  readonly expected: string;
-  readonly actual: string;
-
-  constructor(expected: string, actual: string) {
-    super(`Expected the binary to hash to ${expected}, got ${actual}`);
-    this.expected = expected;
-    this.actual = actual;
+/** The downloaded binary does not hash to its pin. */
+export class HashMismatchError extends Schema.TaggedError<
+  HashMismatchError,
+  { readonly brand: unique symbol }
+>()("HashMismatchError", { expected: Schema.String, actual: Schema.String }) {
+  override get message(): string {
+    return `Expected the binary to hash to ${this.expected}, got ${this.actual}`;
   }
 }
 

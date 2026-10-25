@@ -24,7 +24,7 @@ import { layerTemplateMigration } from "./migration";
 import type { TemplateMigrationOptions } from "./migration";
 import { plainTemplateMigration } from "./plain";
 import type { PlainTemplate } from "./plain";
-import { Template } from "./service";
+import { Template, templateFailure } from "./service";
 import type { LegacyTemplateDocuments } from "./service";
 
 async function makeHarness(
@@ -1429,14 +1429,14 @@ async function buildMigration(
             }) =>
               Effect.tryPromise({
                 try: () => template.convertLegacyLiteratureNoteTemplates(data),
-                catch: (error) => error,
+                catch: templateFailure,
               })) as unknown as Template["Service"]["convertLegacyLiteratureNoteTemplates"],
             convertLegacyTemplateDocuments: ((
               refs: readonly import("@zotlit/db").CiteRef[],
             ) =>
               Effect.tryPromise({
                 try: () => template.convertLegacyTemplateDocuments(refs),
-                catch: (error) => error,
+                catch: templateFailure,
               })) as unknown as Template["Service"]["convertLegacyTemplateDocuments"],
           }),
         ),
