@@ -77,6 +77,8 @@ Vitest runs in Node with `"obsidian"` resolved to a local mock via `resolve.alia
 - `pnpm exec vitest run path/to/file.test.ts` — single file.
 - `pnpm exec vitest` — watch mode.
 
+App-local `tsc` and `vitest` read workspace packages (`@zotlit/db`, `@zotlit/templates`, …) from their built `dist`, and only turbo builds them first. After a change in `packages/*`, or a merge that brings one in, run `pnpm exec turbo run build --filter=<package>` before them. A missing export from a workspace package (`TS2305`) usually means a stale `dist`.
+
 Write an Effect case with `it.effect` from `@/lib/effect-vitest`: it adds the plugin's runtime services (browser scheduler, LogTape logger) to `@effect/vitest`'s TestClock and TestConsole. Provide a `Logger.layer` to capture logs (`src/services/service-layer.test.ts`).
 
 `sleep` is an Obsidian global that doesn't exist in Node. Use `delay` from `@std/async` instead.
