@@ -22,7 +22,7 @@ export function layerHostApp(
 > {
   return Layer.mergeAll(
     layerMetadataCacheFrom(app.metadataCache),
-    layerFileManagerFrom(app.fileManager),
+    layerFileManagerFrom(app.fileManager, app.vault),
     layerVaultFrom(app.vault),
     layerWorkspaceFrom(app.workspace),
   ).pipe(Layer.provideMerge(Layer.succeed(ObsidianApp, app)));

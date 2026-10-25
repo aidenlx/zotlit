@@ -1,6 +1,6 @@
 import { TFile } from "obsidian";
 import type { Vault as VaultApi } from "obsidian";
-import { expect, vi } from "vitest";
+import { assert, expect, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
@@ -111,8 +111,7 @@ it.effect(
       vi.spyOn(source, "create").mockRejectedValueOnce(refused);
       const { vault } = yield* open(layerVaultFrom(source));
       const error = yield* Effect.flip(vault.create("A.md", ""));
-      expect(error._tag).toBe("VaultError");
-      if (error._tag !== "VaultError") return;
+      assert(error._tag === "VaultError");
       expect([error.operation, error.path, error.message]).toEqual([
         "create",
         "A.md",

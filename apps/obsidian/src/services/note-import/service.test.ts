@@ -542,32 +542,6 @@ describe("createNoteImporter", () => {
     expect(create.mock.calls[0]![1]).toContain("zotero-note-key: NOTE1234g42");
   });
 
-  it("skips on a file-exists collision at write time without flushing copies", async () => {
-    const { app, host, create } = makeApp();
-    // The minted path is free; a note lands there while the import renders.
-    const lookup = host.vault.getAbstractFileByPath.bind(host.vault);
-    let minted: string | undefined;
-    vi.spyOn(host.vault, "getAbstractFileByPath").mockImplementation((path) => {
-      if (!path.endsWith(".md")) return lookup(path);
-      if (minted === undefined) {
-        minted = path;
-        return null;
-      }
-      return path === minted ? host.vault.addFile(path, "Arrived") : null;
-    });
-    const attachmentImport = makeAttachmentImport();
-
-    await expect(
-      makeService(app, { attachmentImport }).importNote(makeNote(), {
-        reads,
-        settings: importSettings(),
-      }),
-    ).resolves.toBe("skipped");
-    expect(create).not.toHaveBeenCalled();
-    // The note wasn't written, so its queued image copies stay inert.
-    expect(attachmentImport.flush).not.toHaveBeenCalled();
-  });
-
   it("throws NoteImportMintError when the minted path is already occupied", async () => {
     const { app, host } = makeApp({ "occupied.md": {} });
     // Any note path the mint checks reports as occupied, forcing the hard

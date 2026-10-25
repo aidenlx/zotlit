@@ -1,3 +1,5 @@
+// Creation preparation and registry behavior over Profile documents and relational Item rows.
+
 import { Effect } from "effect";
 import type { TFile, Vault } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +14,6 @@ import type { MatchTree } from "@zotlit/templates/facade";
 import type { ItemFields } from "@zotlit/zotero-types";
 
 import { testEvents } from "@/lib/__fixtures__/event-stream";
-// Creation preparation and registry behavior over Profile documents and relational Item rows.
 import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import {

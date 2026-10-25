@@ -1,4 +1,3 @@
-import { basename, dirname, join } from "node:path/posix";
 import { getFrontMatterInfo } from "obsidian";
 import type { CachedMetadata, TFile } from "obsidian";
 
@@ -949,7 +948,7 @@ async function createNote(
   if (!source) throw new Error(`Zotero item not found: ${item.indexedKey}`);
   // The filename renders from the Snapshot's Item, as the body does.
   const { itemTags, itemCollections } = itemFacets(source);
-  let { path, canSuffix } =
+  const { path } =
     options.preparedPath ??
     resolveNotePath(ctx, source.item, {
       itemTags,
@@ -957,8 +956,6 @@ async function createNote(
       settings: profile.settings,
       document,
     });
-
-  const parentFolder = dirname(path);
   return await writeNewNote(ctx, item, {
     reads,
     source,
@@ -969,25 +966,10 @@ async function createNote(
     onFileCreated: options.onFileCreated,
     reportExcerpts: options.reportExcerpts,
     outcomes: options.outcomes,
+    // The path was found free in the vault cache when it was resolved; a
+    // note that took it since fails the create with `FileExists`.
     createFile: async (content) => {
       await ensureParentFolder(ctx.app, path);
-      // Another note took the path since it was resolved: find a free one in
-      // the vault cache, then create one time.
-      if (canSuffix && ctx.app.vault.getAbstractFileByPath(path) !== null) {
-        logger.debug("Filename taken before create; using a new suffix", {
-          path,
-          itemKey: item.indexedKey,
-        });
-        ({ path } = resolveNotePath(ctx, source.item, {
-          itemTags,
-          itemCollections,
-          settings: profile.settings,
-          forceSuffix: true,
-          document,
-        }));
-        // Prepared relative links belong to the original parent folder.
-        path = join(parentFolder, basename(path));
-      }
       return await ctx.bridge.runPromise(ctx.vault.create(path, content));
     },
   });
@@ -997,8 +979,8 @@ async function createNote(
  * Prepare and render once; the supplied create boundary writes these composed
  * bytes in one create.
  *
- * @throws `FileExists` when the path is taken and the filename has no
- *   `suffix()` marker, or `VaultError` when Obsidian refuses the create.
+ * @throws `FileExists` when a note took the path since it was resolved, or
+ *   `VaultError` when Obsidian refuses the create.
  */
 async function writeNewNote(
   ctx: OpsContext,

@@ -546,7 +546,6 @@ class ProfileEngine {
     return { state: "saved", revision: profileRevision(source) };
   }
 
-  /** The refusal a document standing where the caller expected none earns. */
   /** Create `path` with `data`; false when the vault already holds the path. */
   async #create(path: string, data: string): Promise<boolean> {
     return await this.#deps.runPromise(
@@ -557,6 +556,7 @@ class ProfileEngine {
     );
   }
 
+  /** The refusal a document standing where the caller expected none earns. */
   async #documentExists(path: string): Promise<ProfileDocumentWrite> {
     const file = this.#deps.app.vault.getFileByPath(path);
     return {

@@ -456,7 +456,7 @@ describe("Profile source selection", () => {
     expect(app.vault.contents.get("Reading/Paper.md")).toBe("Occupied");
   });
 
-  it("keeps the preview's random suffix and retries safely if another file takes that path", async () => {
+  it("keeps the preview's random suffix and refuses when another file takes that path", async () => {
     const { deps } = makeUpdateHarness({ content: "" });
     const app = makeApp();
     deps.app = app;
@@ -489,8 +489,10 @@ describe("Profile source selection", () => {
       otherItem.indexedKey,
     )!.previews;
     await app.vault.create(second!.path!, "Arrived after preview");
-    const otherCreated = createdFile(await second!.create());
-    expect(otherCreated.path).not.toBe(second!.path);
+    await expect(second!.create()).rejects.toMatchObject({
+      _tag: "FileExists",
+      path: second!.path,
+    });
     expect(app.vault.contents.get(second!.path!)).toBe("Arrived after preview");
   });
 

@@ -28,7 +28,8 @@ function outer(node: AstNode): AstNode {
  * absolute path or changes between versions, and our own is localized. A
  * capability tag decides an expected outcome before it calls Obsidian and
  * fails with a tagged error, which a caller handles with `Effect.catchTag`;
- * our own errors carry a `_tag`, a class or a `code` to test instead.
+ * our own errors carry a `_tag`, a class or a `code` to test instead
+ * (policies/events.md, Capability tags → Expected outcomes).
  */
 export const noMessageMatch: Rule = {
   meta: {

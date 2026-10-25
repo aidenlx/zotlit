@@ -12,11 +12,12 @@ ZotLit does not classify what Obsidian throws (policies/events.md, Capability ta
 
 | Outcome | Tag member | Decision | Callers |
 |---|---|---|---|
-| `FileExists` | `Vault.create` | `getAbstractFileByPath(path) !== null`: a file or a folder in the vault cache. Case-sensitive, so a name that differs only in case is not found; on a case-insensitive disk Obsidian then throws `"File already exists."` (row `create` above), and that is a `VaultError`. | note import (skip), Partial unpack (keep the reader's file), Profile save (refuse), Profile create (second name), Profile import ("import changed"), Default eject (open the existing file), Literature Note create (finds a free suffixed path in the cache first; a taken path with no `suffix()` marker fails) |
+| `FileExists` | `Vault.create` | `getAbstractFileByPath(path) !== null`: a file or a folder in the vault cache. Case-sensitive, so a name that differs only in case is not found; on a case-insensitive disk Obsidian then throws `"File already exists."` (see `create` under [Vault](#vault-dn)), and that is a `VaultError`. | note import (skip), Partial unpack (keep the reader's file), Profile save (refuse), Profile create (second name), Profile import ("import changed"), Default eject (open the existing file), Literature Note create (resolves a free path in the cache; a note that took it since fails) |
+| `FileExists` | `FileManager.renameFile` | `getAbstractFileByPath(normalizePath(newPath))` holds a file or folder other than the moved file. As `Vault.rename` (65081–65086, 27586–27595): a move to the file's own path is no move, and a case-only change of the file's own name is not found by the case-sensitive lookup, so it is no collision either. | none handle it yet; it reaches them as a typed failure |
 
 Every other rejection is a `VaultError` with Obsidian's `message` and the original `cause`, unclassified. A new outcome adds one tagged error and one cache decision in the tag, and only when a caller handles it. No fallback covers a cache that lags the disk.
 
-Not used, so not decided: `rename` / `renameFile` onto a taken path (`"Destination file already exists!"`), `createFolder` on a taken path (`"Folder already exists."`), a folder at a `create` path as its own outcome (`IsFolder`), and the errno cases (`ENOENT`, `EISDIR`, …). `template-workbench/inspect.ts` still reads `ENOENT` from `vault.adapter.read`: it compares the disk to the cache, so the cache cannot decide it.
+Not used, so not decided: `createFolder` on a taken path (`"Folder already exists."`), a folder at a `create` path as its own outcome (`IsFolder`), and the errno cases (`ENOENT`, `EISDIR`, …). `template-workbench/inspect.ts` still reads `ENOENT` from `vault.adapter.read`: it compares the disk to the cache, so the cache cannot decide it.
 
 ## Name map (export block, app.js 119341–119474)
 
