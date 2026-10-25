@@ -9,7 +9,6 @@ import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
 import { AnnotationPopover } from "@/services/annotation-popover/service";
@@ -41,7 +40,6 @@ import type { CitekeyTreatment } from "./service";
 export const layerCitekeyEditorExtension = Layer.effectDiscard(
   Effect.gen(function* () {
     const host = yield* PluginHost;
-    const app = yield* ObsidianApp;
     const workspace = yield* Workspace;
     const editor = yield* CitekeyEditor;
     const settings = yield* PluginSettings;
@@ -93,7 +91,7 @@ export const layerCitekeyEditorExtension = Layer.effectDiscard(
       Effect.gen(function* () {
         if (!treatment.active) return;
         const editors = dispatchToMarkdownEditors(
-          app,
+          yield* workspace.markdownViews,
           citekeyDecorationsChanged.of(undefined),
           { path },
         );
