@@ -472,6 +472,17 @@ export default defineConfig({
       rules: { "zotlit-services/temporal-in-effect": "error" },
     },
     {
+      // The edge between Effect and plain code: a plain adapter hands Effect
+      // values to plain callers as Temporal; @zotlit/db rows carry
+      // Temporal.Instant, the date type of the template contract, and
+      // instant-codec.ts codes it for the ZoteroReads wire.
+      files: [
+        "src/services/**/plain.ts",
+        "src/services/zotero-reads/instant-codec.ts",
+      ],
+      rules: { "zotlit-services/temporal-in-effect": "off" },
+    },
+    {
       // Rewritten by effect/drop-port; the date rule follows after it merges.
       files: [
         "src/services/zotero-local-api/**",
@@ -516,14 +527,8 @@ export default defineConfig({
         "src/services/query-client/service.ts",
         "src/services/template-workbench/cli.test.ts",
         "src/services/template/service.test.ts",
-        "src/services/use-ledger/__fixtures__.ts",
-        "src/services/use-ledger/plain.ts",
-        "src/services/use-ledger/service.ts",
         "src/services/zotero-reads/handlers.test.ts",
-        "src/services/zotero-reads/rpc.ts",
-        "src/services/zotero-reads/zotero-reads.test.ts",
         "src/views/annot-view/view.tsx",
-        "src/views/library/view.test.ts",
         "src/views/query-view/mixed-query.bench.ts",
       ],
       rules: { "zotlit-services/temporal-in-effect": "off" },

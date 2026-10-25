@@ -1,6 +1,6 @@
 import {
-  Clock,
   Context,
+  DateTime,
   Effect,
   Layer,
   Option,
@@ -13,6 +13,7 @@ import type { App, TFile } from "obsidian";
 
 import { isIndexedKey } from "@zotlit/db";
 
+import { parseInstant, toInstant } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -24,7 +25,7 @@ const UseKind = Schema.Literals(["opened", "read", "cited"]);
 export type UseKind = typeof UseKind.Type;
 
 export interface Use {
-  readonly instant: Temporal.Instant;
+  readonly instant: DateTime.Utc;
   readonly kind: UseKind;
 }
 
@@ -51,7 +52,7 @@ export class UseLedger extends Context.Service<
     record(
       itemKey: string,
       kind: UseKind,
-      instant?: Temporal.Instant,
+      instant?: DateTime.Utc,
     ): Effect.Effect<Use>;
     /** Keep a Companion update's own navigation outside the Use timeline. */
     withoutNoteUse<A, E, R>(
@@ -73,21 +74,19 @@ const makeUseLedger = Effect.gen(function* () {
   const excludedOpens = new Map<TFile, number>();
   let closed = false;
 
-  const now = Effect.map(Clock.currentTimeMillis, (millis) =>
-    Temporal.Instant.fromEpochMilliseconds(millis),
-  );
+  const now = DateTime.now;
   const current = SubscriptionRef.get(ledger);
 
   const record = Effect.fn("UseLedger.record")(function* (
     itemKey: string,
     kind: UseKind,
-    instant?: Temporal.Instant,
+    instant?: DateTime.Utc,
   ) {
     const use: Use = Object.freeze({ instant: instant ?? (yield* now), kind });
     if (closed || !isIndexedKey(itemKey)) return use;
     const before = yield* current;
     const previous = before[itemKey];
-    if (previous && Temporal.Instant.compare(previous.instant, use.instant) > 0)
+    if (previous && DateTime.isGreaterThan(previous.instant, use.instant))
       return use;
     const next = newest({ ...before, [itemKey]: use });
     app.saveLocalStorage(
@@ -95,7 +94,8 @@ const makeUseLedger = Effect.gen(function* () {
       Object.fromEntries(
         Object.entries(next).map(([key, entry]) => [
           key,
-          { instant: entry.instant.toString(), kind: entry.kind },
+          // Temporal's ISO form, the bytes the ledger has always saved.
+          { instant: toInstant(entry.instant).toString(), kind: entry.kind },
         ]),
       ),
     );
@@ -104,7 +104,7 @@ const makeUseLedger = Effect.gen(function* () {
   });
 
   let enabled = false;
-  let pending: { file: TFile; instant: Temporal.Instant } | null = null;
+  let pending: { file: TFile; instant: DateTime.Utc } | null = null;
   yield* workspace.layoutReady.pipe(
     Effect.andThen(
       Effect.sync(() => {
@@ -162,7 +162,7 @@ const makeUseLedger = Effect.gen(function* () {
       Object.fromEntries(
         Object.entries(entries).map(([key, use]) => [
           key,
-          use.instant.epochMilliseconds,
+          DateTime.toEpochMillis(use.instant),
         ]),
       ),
     ),
@@ -224,26 +224,18 @@ function loadUses(raw: unknown): Record<string, Use> {
   for (const [key, value] of Object.entries(saved)) {
     if (!isIndexedKey(key)) continue;
     const entry = Option.getOrUndefined(decodeEntry(value));
-    const instant = entry && parseInstant(entry.instant);
+    const instant = entry && Option.getOrUndefined(parseInstant(entry.instant));
     if (entry && instant)
       loaded[key] = Object.freeze({ instant, kind: entry.kind });
   }
   return loaded;
 }
 
-function parseInstant(text: string): Temporal.Instant | undefined {
-  try {
-    return Temporal.Instant.from(text);
-  } catch {
-    return undefined;
-  }
-}
-
 function newest(entries: Ledger): Ledger {
   return Object.freeze(
     Object.fromEntries(
       Object.entries(entries)
-        .sort(([, a], [, b]) => Temporal.Instant.compare(b.instant, a.instant))
+        .sort(([, a], [, b]) => DateTime.Order(b.instant, a.instant))
         .slice(0, CAPACITY),
     ),
   );
