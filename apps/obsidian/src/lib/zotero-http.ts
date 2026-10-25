@@ -162,18 +162,25 @@ export async function sendToZotero(
   const error = Option.getOrElse(Exit.findErrorOption(exit), () =>
     Cause.squash(exit.cause),
   );
+  if (isTransportAbort(error)) throw new AbortError();
+  throw new TypeError("fetch failed", {
+    cause: HttpClientError.isHttpClientError(error) ? error.reason : error,
+  });
+}
+
+/**
+ * Whether a failed exchange is the transport's own abort, as `fetch` reports
+ * one: the request left and no answer came, so its outcome is unknown.
+ */
+export function isTransportAbort(error: unknown): boolean {
   const reason = HttpClientError.isHttpClientError(error)
     ? error.reason
     : error;
-  // The transport's own abort, as `fetch` reports one.
   const cause =
     typeof reason === "object" && reason !== null && "cause" in reason
       ? reason.cause
       : undefined;
-  if (isAbort(reason) || isAbort(cause)) {
-    throw new AbortError();
-  }
-  throw new TypeError("fetch failed", { cause: reason });
+  return isAbort(reason) || isAbort(cause);
 }
 
 function isAbort(error: unknown): boolean {

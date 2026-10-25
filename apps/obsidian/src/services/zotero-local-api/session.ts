@@ -1,23 +1,29 @@
 // Reads Zotero's data live, from the local API a running Zotero serves on loopback.
 import {
+  Cause,
   Clock,
   Deferred,
   Duration,
   Effect,
+  Exit,
   Fiber,
   PubSub,
   RcRef,
   Ref,
   Semaphore,
 } from "effect";
-import type { HttpClientError } from "effect/http";
 import * as v from "valibot";
 
 import { parseIndexedKey } from "@zotlit/db";
 
 import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
-import { exchangeWithZotero, parseJson, zoteroOrigin } from "@/lib/zotero-http";
+import {
+  exchangeWithZotero,
+  isTransportAbort,
+  parseJson,
+  zoteroOrigin,
+} from "@/lib/zotero-http";
 import type { ZoteroHttp, ZoteroMethod } from "@/lib/zotero-http";
 
 import {
@@ -210,6 +216,13 @@ interface ProbeSlot {
   readonly stale: boolean;
 }
 
+/**
+ * How far one read write-back got, which is what a deadline or a scope close
+ * that ends it has to report: the wait in the queue, the GET of the Attachment,
+ * or the PATCH that may have landed.
+ */
+type WriteBackPhase = "queued" | "reading" | "writing";
+
 /** The read write-backs of one `serverID/attachmentKey`, one at a time. */
 interface ReadQueue {
   readonly permits: Semaphore.Semaphore;
@@ -252,8 +265,11 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
     moved: false,
     stale: false,
   });
-  /** A gesture is at Zotero's dialog now. */
-  const authorizing = yield* Ref.make(false);
+  /**
+   * The request at Zotero's dialog now, by its own token, so that a request
+   * clears only the flag that is still its own; null while none runs.
+   */
+  const authorizing = yield* Ref.make<symbol | null>(null);
   /**
    * The libraries Zotero refused a write to this session, as the route names
    * them. Cleared by the next Capability Probe.
@@ -278,7 +294,9 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
   const hasKey = (serverID: string) =>
     Effect.map(storedKey(serverID), (key) => key !== null);
 
-  const heldServerID = Effect.map(Ref.get(state), serverIDOf);
+  const heldServerID = Effect.map(Ref.get(state), (current) =>
+    serverIDOf(current),
+  );
 
   const setAuthorized = Effect.fnUntraced(function* (authorized: boolean) {
     const changed = yield* Ref.modify(
@@ -498,22 +516,29 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
     }: { moved?: boolean; silent?: boolean; stale?: boolean } = {},
   ) {
     const before = yield* heldServerID;
-    const done = Deferred.makeUnsafe<void>();
-    const running = yield* Ref.modify(
+    const [done, started] = yield* Ref.modify(
       probeSlot,
-      (slot): readonly [Deferred.Deferred<void> | null, ProbeSlot] =>
-        slot.done === null
-          ? [null, { ...slot, done, moved: slot.moved || moved }]
-          : [
-              slot.done,
-              {
-                ...slot,
-                moved: slot.moved || moved,
-                stale: slot.stale || stale,
-              },
-            ],
+      (
+        slot,
+      ): readonly [readonly [Deferred.Deferred<void>, boolean], ProbeSlot] => {
+        if (slot.done !== null) {
+          return [
+            [slot.done, false],
+            {
+              ...slot,
+              moved: slot.moved || moved,
+              stale: slot.stale || stale,
+            },
+          ];
+        }
+        const fresh = Deferred.makeUnsafe<void>();
+        return [
+          [fresh, true],
+          { ...slot, done: fresh, moved: slot.moved || moved },
+        ];
+      },
     );
-    if (running !== null) return running;
+    if (!started) return done;
 
     const settle = Effect.gen(function* () {
       yield* probe(reason, silent);
@@ -538,16 +563,25 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
         yield* probe("resolved paths moved during a probe", silent);
       }
     }).pipe(
-      Effect.ensuring(
+      // The probe's own Exit settles the waiters, so a defect reaches them.
+      Effect.onExit((exit) =>
         Ref.update(probeSlot, (slot) =>
           slot.done === done
             ? { done: null, moved: false, stale: false }
             : slot,
-        ).pipe(Effect.andThen(Deferred.succeed(done, undefined))),
+        ).pipe(Effect.andThen(Deferred.done(done, exit))),
       ),
     );
     yield* Effect.forkIn(settle, scope, { startImmediately: true });
     return done;
+  });
+
+  // Untraced: the annotation repository runs this through `runSync` many times
+  // per render.
+  const demandSourceNow = Effect.fnUntraced(function* () {
+    const current = yield* Ref.get(state);
+    if (current.kind === "unprobed") yield* startProbe("first demand");
+    return current.kind === "available" ? current.source : null;
   });
 
   const reprobe = Effect.fnUntraced(function* (
@@ -624,10 +658,10 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
    * One authorization gesture, from the probe it starts with to the grant or
    * the refusal it ends on.
    */
-  const authorizeBody: Effect.Effect<LocalApiResult<void>> = Effect.gen(
-    function* () {
+  const authorizeBody = (token: symbol): Effect.Effect<LocalApiResult<void>> =>
+    Effect.gen(function* () {
       const probing = yield* startProbe("authorization gesture");
-      yield* Ref.set(authorizing, true);
+      yield* Ref.set(authorizing, token);
       yield* publish({ _tag: "capability-changed" });
       yield* Deferred.await(probing);
       const current = yield* Ref.get(state);
@@ -656,8 +690,7 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
       const grant = readGrant(reply.value.text);
       if ("failure" in grant) return grant;
       return yield* granted(serverID, grant.value);
-    },
-  );
+    });
 
   /**
    * The one authorization request in flight, shared by the gestures waiting on
@@ -668,14 +701,17 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
    * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
    */
   const request = yield* RcRef.make({
-    acquire: authorizeBody.pipe(
-      Effect.ensuring(
-        Ref.set(authorizing, false).pipe(
-          Effect.andThen(publish({ _tag: "capability-changed" })),
+    acquire: Effect.suspend(() => {
+      const mine = Symbol("write-authorization-request");
+      return authorizeBody(mine).pipe(
+        Effect.ensuring(
+          Ref.update(authorizing, (token) =>
+            token === mine ? null : token,
+          ).pipe(Effect.andThen(publish({ _tag: "capability-changed" }))),
         ),
-      ),
-      Effect.forkScoped({ startImmediately: true }),
-    ),
+        Effect.forkScoped({ startImmediately: true }),
+      );
+    }),
   });
 
   /**
@@ -776,11 +812,18 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
         }),
     );
 
-  const writeLastReadNow = Effect.fnUntraced(function* (
-    attachmentKey: string,
-    serverID: string,
-    instant: Temporal.Instant,
-  ) {
+  const writeLastReadNow = Effect.fnUntraced(function* ({
+    attachmentKey,
+    serverID,
+    instant,
+    phase,
+  }: {
+    attachmentKey: string;
+    serverID: string;
+    instant: Temporal.Instant;
+    phase: Ref.Ref<WriteBackPhase>;
+  }) {
+    yield* Ref.set(phase, "reading");
     const parsed = parseIndexedKey(attachmentKey);
     if (!parsed || parsed.groupID !== null) {
       yield* writeBackSkipped(attachmentKey, "not a personal attachment");
@@ -843,6 +886,7 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
       yield* writeBackSkipped(attachmentKey, "stored read is newer or equal");
       return;
     }
+    yield* Ref.set(phase, "writing");
     const written = yield* authorizedSend(path, {
       library: "users/0",
       expectedServerID: serverID,
@@ -944,14 +988,7 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
      *
      * @returns the source, or null while another source must answer instead.
      */
-    demandSource: Effect.gen(function* () {
-      const current = yield* Ref.get(state);
-      if (current.kind === "unprobed") yield* startProbe("first demand");
-      return current.kind === "available" ? current.source : null;
-    }).pipe(
-      Effect.withSpan("ZoteroLocalApi.demandSource"),
-      withLogCategory(LOG_CATEGORY),
-    ),
+    demandSource: demandSourceNow().pipe(withLogCategory(LOG_CATEGORY)),
 
     /**
      * What the last Capability Probe learned, for the repository that computes
@@ -959,6 +996,9 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
      */
     state: Effect.map(Ref.get(state), (current): LocalApiState =>
       current.kind === "unprobed" ? { kind: "probing" } : current,
+    ).pipe(
+      Effect.withSpan("ZoteroLocalApi.state"),
+      withLogCategory(LOG_CATEGORY),
     ),
 
     /**
@@ -984,18 +1024,19 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
       const parsed =
         attachmentKey === null ? null : parseIndexedKey(attachmentKey);
       return {
-        authorizing: yield* Ref.get(authorizing),
+        authorizing: (yield* Ref.get(authorizing)) !== null,
         libraryReadOnly:
           parsed !== null &&
           (yield* Ref.get(readOnlyLibraries)).has(libraryPath(parsed)),
         cooldownUntil: yield* Ref.get(cooldownUntil),
       };
-    }),
+    }, withLogCategory(LOG_CATEGORY)),
 
     /** Whether a Remembered Write Authorization is stored, for the settings row. */
     remembered: Effect.tryPromise(() => credentials.has()).pipe(
       Effect.orDie,
       Effect.withSpan("ZoteroLocalApi.remembered"),
+      withLogCategory(LOG_CATEGORY),
     ),
 
     /**
@@ -1012,14 +1053,12 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
      * Always Allow whose key SecretStorage cannot save answers `not-saved`; both
      * keys are discarded unsent.
      *
-     * The request itself is unbounded: Zotero's dialog waits for the user, so
-     * only the gesture ends it. A gesture that is interrupted leaves the request;
-     * the last one to leave interrupts it.
+     * The request itself is unbounded: Zotero's dialog waits for the user.
      *
      * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
      */
     authorize: Effect.scoped(
-      RcRef.get(request).pipe(Effect.flatMap(Fiber.join)),
+      RcRef.get(request).pipe(Effect.flatMap((fiber) => Fiber.join(fiber))),
     ).pipe(
       Effect.withSpan("ZoteroLocalApi.authorize"),
       withLogCategory(LOG_CATEGORY),
@@ -1032,6 +1071,7 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
      */
     forgetAuthorization: Effect.andThen(forgetKey, setAuthorized(false)).pipe(
       Effect.withSpan("ZoteroLocalApi.forgetAuthorization"),
+      withLogCategory(LOG_CATEGORY),
     ),
 
     authorizedSend,
@@ -1051,18 +1091,49 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
       // The write-back runs on the Scope of the session, which interrupts it
       // when it closes, and under the deadline of a probe. Its caller waits for
       // it, and leaving does not cancel it.
+      const phase = yield* Ref.make<WriteBackPhase>("queued");
       const writing = yield* queued(
         `${serverID}/${attachmentKey}`,
-        writeLastReadNow(attachmentKey, serverID, instant),
+        writeLastReadNow({ attachmentKey, serverID, instant, phase }),
       ).pipe(
-        Effect.onInterrupt(() => writeBackSkipped(attachmentKey, "cancelled")),
+        Effect.onInterrupt(() =>
+          Effect.flatMap(Ref.get(phase), (reached) => {
+            switch (reached) {
+              // It never started: the deadline or the scope ended its wait.
+              case "queued":
+                return writeBackSkipped(attachmentKey, "cancelled");
+              // The deadline or the scope aborted the GET, an unknown outcome.
+              case "reading":
+                return Effect.logTrace("Read write-back refused").pipe(
+                  Effect.annotateLogs({
+                    attachmentKey,
+                    reason: "unknown-outcome",
+                  }),
+                );
+              // The PATCH was sent and may have landed.
+              case "writing":
+                return Effect.logTrace("Read write-back outcome").pipe(
+                  Effect.annotateLogs({
+                    attachmentKey,
+                    outcome: "refused",
+                    reason: "unknown-outcome",
+                  }),
+                );
+            }
+          }),
+        ),
         Effect.timeoutOrElse({
           duration: PROBE_TIMEOUT,
           orElse: () => Effect.void,
         }),
         Effect.forkIn(scope, { startImmediately: true }),
       );
-      yield* Effect.asVoid(Fiber.await(writing));
+      // A defect reaches the caller; a write-back its Scope interrupted ends
+      // quietly, as the old aborted one did.
+      const exit = yield* Fiber.await(writing);
+      if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) {
+        return yield* Effect.failCause(exit.cause);
+      }
     }, withLogCategory(LOG_CATEGORY)),
 
     /**
@@ -1192,24 +1263,6 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
     }, withLogCategory(LOG_CATEGORY)),
   };
 });
-
-/**
- * Whether a failed exchange is an abort that came from the transport rather
- * than from this session's interrupt: the request left, and its outcome is
- * unknown.
- */
-function isTransportAbort(error: HttpClientError.HttpClientError): boolean {
-  const { reason } = error;
-  const cause =
-    typeof reason === "object" && reason !== null && "cause" in reason
-      ? reason.cause
-      : undefined;
-  return isAbort(reason) || isAbort(cause);
-}
-
-function isAbort(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
-}
 
 function serverIDOf(state: ProbeState): string | null {
   return state.kind === "available" ? state.source.serverID : null;

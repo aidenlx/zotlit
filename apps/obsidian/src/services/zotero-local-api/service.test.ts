@@ -611,6 +611,16 @@ it("leaves the session standing when a read is interrupted", async () => {
   expect(bridge.runSync(service.demandSource)).not.toBeNull();
 });
 
+it("lets the caller of a probe see a defect of the probe", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { service, bridge, credentials } = await setup(stack);
+  credentials.read.mockRejectedValueOnce(new Error("keychain locked"));
+
+  await expect(bridge.runPromise(service.probe)).rejects.toMatchObject({
+    cause: new Error("keychain locked"),
+  });
+});
+
 it("refuses to read at all while no session stands, rather than sending a request", async () => {
   await using stack = new AsyncDisposableStack();
   const { requests, service, bridge } = await setup(stack, {

@@ -362,3 +362,17 @@ it("gives up a read write-back that outlasts the probe deadline", async () => {
 
   expect(requests.filter(({ method }) => method === "PATCH")).toEqual([]);
 });
+
+it("lets the caller see a defect of the write-back", async () => {
+  const { service, bridge, credentials, disposable } = await localApiClient(
+    { item: () => attachment() },
+    { key: "remembered-key" },
+  );
+  await using _owned = disposable;
+  await bridge.runPromise(service.probe);
+  credentials.read.mockRejectedValueOnce(new Error("keychain locked"));
+
+  await expect(
+    bridge.runPromise(service.writeLastRead(ATTACHMENT_KEY, SERVER_ID, NOW)),
+  ).rejects.toMatchObject({ cause: new Error("keychain locked") });
+});
