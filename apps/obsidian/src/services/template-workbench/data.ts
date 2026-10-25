@@ -271,15 +271,6 @@ export function loadTemplateData(
   });
 }
 
-/** {@link readCitationData} for a caller outside Effect, through its handle. */
-export function loadCitationData(
-  deps: TemplateDataDeps,
-  selector: CitationSelector,
-  variant: CitationVariant,
-): Promise<CitationDataLoadResult> {
-  return deps.templateData.loadCitation(selector, variant);
-}
-
 /**
  * Render the annotation root's `citation` field, labeling its failure with the
  * Template that raised it: the getter runs the Citation Template, so a fault

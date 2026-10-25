@@ -1,5 +1,4 @@
-// Template data for callers outside Effect: the views, the Profile dialogs and
-// the Template Migration engine.
+// Template data for callers outside Effect: the views and the Profile dialogs.
 import { Effect } from "effect";
 import type { Context } from "effect";
 

@@ -84,7 +84,6 @@ import { ServiceContainer } from "./service-base";
 import { PluginSettings } from "./settings/service";
 import { bindTemplateData } from "./template-workbench/data-handle";
 import type { TemplateDataHandleServices } from "./template-workbench/data-handle";
-import { loadLiteratureNoteTemplateMigrationData } from "./template/migration";
 import type { TemplateMigrationOptions } from "./template/migration";
 import { plainTemplate, plainTemplateMigration } from "./template/plain";
 import { plainUseLedger } from "./use-ledger/plain";
@@ -117,8 +116,12 @@ export async function buildServices(
   stack: AsyncDisposableStack,
   languagePack: LanguagePackStartup,
 ) {
-  let bindMigration!: (actions: TemplateMigrationOptions) => void;
-  const migrationActions = new Promise<TemplateMigrationOptions>((resolve) => {
+  let bindMigration!: (
+    actions: Pick<TemplateMigrationOptions, "openPrompt">,
+  ) => void;
+  const migrationActions = new Promise<
+    Pick<TemplateMigrationOptions, "openPrompt">
+  >((resolve) => {
     bindMigration = resolve;
   });
   // The citekey editor opens a note it has to create through the legacy
@@ -138,8 +141,6 @@ export async function buildServices(
     pluginLayer(
       plugin,
       {
-        loadVerificationData: async (options) =>
-          (await migrationActions).loadVerificationData(options),
         openPrompt: async () => (await migrationActions).openPrompt(),
       },
       {
@@ -391,10 +392,8 @@ export async function buildServices(
         ),
     })
     .useValue({
-      templateMigration: ({ settings, templateData }) => {
+      templateMigration: ({ settings }) => {
         bindMigration({
-          loadVerificationData: (options) =>
-            loadLiteratureNoteTemplateMigrationData({ templateData }, options),
           openPrompt: () => openWelcomeView(plugin.app, settings, bridge),
         });
         return plainTemplateMigration(runtime);

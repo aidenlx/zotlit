@@ -106,6 +106,7 @@ import type {
   TemplateMigration,
   TemplateMigrationOptions,
 } from "./template/migration";
+import { readMigrationVerificationData } from "./template/migration-data";
 import { layerTemplate } from "./template/service";
 import type { Template } from "./template/service";
 import { layerUseLedger } from "./use-ledger/service";
@@ -138,7 +139,7 @@ import { workerClient } from "./zotero-reads/worker-client";
  */
 export function pluginLayer(
   plugin: Plugin & CliHost,
-  migration: TemplateMigrationOptions,
+  migration: Pick<TemplateMigrationOptions, "openPrompt">,
   {
     excerpt,
     languagePack,
@@ -219,6 +220,13 @@ export function pluginLayer(
         layerCitationLookup.pipe(startingAs("CitationLookup")),
       ),
     ),
+    // The migration verifies a conversion against a real in-scope item.
+    Layer.provideMerge(
+      layerTemplateMigration({
+        ...migration,
+        loadVerificationData: readMigrationVerificationData,
+      }).pipe(startingAs("TemplateMigration")),
+    ),
     Layer.provideMerge(
       Layer.mergeAll(
         layerLibraryScope.pipe(startingAs("LibraryScope")),
@@ -259,10 +267,7 @@ export function pluginLayer(
             await openLibraryView(plugin.app, { pane: "first-screen" });
           },
         }).pipe(startingAs("Release")),
-        layerTemplateMigration(migration).pipe(
-          startingAs("TemplateMigration"),
-          Layer.provideMerge(layerTemplate.pipe(startingAs("Template"))),
-        ),
+        layerTemplate.pipe(startingAs("Template")),
         layerZoteroPref.pipe(
           Layer.provide(layerZoteroPrefFiles),
           startingAs("ZoteroPref"),

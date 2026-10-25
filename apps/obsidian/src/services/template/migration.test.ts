@@ -190,17 +190,18 @@ async function makeHarness(
       settings,
       bridge,
       template,
-      loadVerificationData: async () => ({
-        note: { title: "Paper" },
-        filename: { citationKey: "doePaper" },
-        annotation:
-          options && "verificationAnnotation" in options
-            ? (options.verificationAnnotation ?? null)
-            : options?.ejectedAnnotation
-              ? { text: "Excerpt" }
-              : null,
-        citation: [{ citationKey: "smith2024" }],
-      }),
+      loadVerificationData: () =>
+        Effect.succeed({
+          note: { title: "Paper" },
+          filename: { citationKey: "doePaper" },
+          annotation:
+            options && "verificationAnnotation" in options
+              ? (options.verificationAnnotation ?? null)
+              : options?.ejectedAnnotation
+                ? { text: "Excerpt" }
+                : null,
+          citation: [{ citationKey: "smith2024" }],
+        }),
       openPrompt,
     },
     context,
@@ -787,12 +788,13 @@ async function makeVaultHarness(
         settings,
         bridge: settings.bridge,
         template,
-        loadVerificationData: async () => ({
-          note: { title: "Paper" },
-          filename: { citationKey: "smith2024" },
-          annotation: null,
-          citation: [{ citationKey: "smith2024" }],
-        }),
+        loadVerificationData: () =>
+          Effect.succeed({
+            note: { title: "Paper" },
+            filename: { citationKey: "smith2024" },
+            annotation: null,
+            citation: [{ citationKey: "smith2024" }],
+          }),
         openPrompt,
       },
       context,

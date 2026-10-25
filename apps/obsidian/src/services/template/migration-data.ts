@@ -18,26 +18,6 @@ export interface MigrationVerificationData {
   readonly citation: readonly CiteRef[];
 }
 
-/**
- * The verification data for a caller outside Effect: the Template Migration
- * engine and the Profile dialogs. `build.ts` binds it (`bindTemplateData`).
- */
-export interface LiteratureNoteTemplateMigrationDataDeps {
-  readonly templateData: {
-    verificationData(options: {
-      annotation: boolean;
-    }): Promise<MigrationVerificationData | null>;
-  };
-}
-
-/** {@link readMigrationVerificationData} for a caller outside Effect, through its handle. */
-export function loadLiteratureNoteTemplateMigrationData(
-  deps: LiteratureNoteTemplateMigrationDataDeps,
-  options: { annotation: boolean },
-): Promise<MigrationVerificationData | null> {
-  return deps.templateData.verificationData(options);
-}
-
 /** One root's data, failing with what failed to read or build it. */
 const load = (indexedKey: string, root: "note" | "filename" | "annotation") =>
   readTemplateData(indexedKey, root).pipe(
