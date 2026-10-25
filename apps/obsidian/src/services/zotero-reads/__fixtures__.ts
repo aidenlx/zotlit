@@ -181,17 +181,14 @@ export type ReadsAnswers = {
 
 /**
  * A {@link ZoteroReadsApi} that answers the reads in `answers`; any other read
- * throws. Each answer gets the read's input, without the RPC call options.
+ * throws.
  */
 export function readsAnswering(answers: ReadsAnswers): ZoteroReadsApi {
-  const members: Record<string, unknown> = {};
-  for (const [tag, answer] of Object.entries(answers))
-    members[tag] = (input: unknown) =>
-      (answer as (input: unknown) => unknown)(input);
-  // The RPC client's methods are generic over their call options, which a
-  // plain function cannot state; each answer above is checked per read.
+  // The one cast: the RPC client's methods are generic over their call
+  // options, which a plain function cannot state. ReadsAnswers checks each
+  // answer against its read's input and result.
   return stubService<ZoteroReadsApi>(
     "ZoteroReadsApi",
-    members as Partial<ZoteroReadsApi>,
+    answers as Partial<ZoteroReadsApi>,
   );
 }

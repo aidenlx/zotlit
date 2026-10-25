@@ -196,10 +196,11 @@ export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
  * The edge `zt-main.ts` calls: {@link registerProtocolHandlers} on a Scope of
  * its own, which the returned disposal closes at unload.
  *
- * It runs on `runtime` in place of the container's bridge, a departure from
- * policies/services.md (Bridge): the registration reads tags, and the bridge
- * runs only Effects that need none. The registration becomes a layer in the
- * plugin graph once ticket 13 converts Note Feature.
+ * It calls `runtime.runSync` once, at load, in place of the container's
+ * bridge: a departure from policies/services.md → Bridge, which leaves that
+ * call to `build.ts`. The registration reads tags, and the bridge runs only
+ * Effects that need none. The registration becomes a layer in the plugin
+ * graph, and this edge goes away, once ticket 13 converts Note Feature.
  */
 export function startProtocolHandlers(
   runtime: Pick<
