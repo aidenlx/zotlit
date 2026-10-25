@@ -13,7 +13,6 @@ import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -49,8 +48,10 @@ import {
   markCitationClick,
 } from "@/services/citekey-navigation";
 import type { CitationHover } from "@/services/citekey-navigation";
-import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import { NoteIndex } from "@/services/note-index/service";
+import {
+  NoteIndex,
+  resolveLiteratureNoteIn,
+} from "@/services/note-index/service";
 import { PluginSettings } from "@/services/settings/service";
 
 import {
@@ -90,7 +91,6 @@ import "./style.css";
 export const layerWikilinkReading = Layer.effectDiscard(
   Effect.gen(function* () {
     const host = yield* PluginHost;
-    const app = yield* ObsidianApp;
     const vault = yield* Vault;
     const metadata = yield* MetadataCache;
     const workspace = yield* Workspace;
@@ -108,7 +108,7 @@ export const layerWikilinkReading = Layer.effectDiscard(
     const sections = new LiveSections();
     /** Set when the layer closes, which retires the treatment the post-processor applies. */
     let retired = false;
-    /** What a hover raises its `hover-link` on. */
+    /** What a hover raises its `hover-link` on, and a recovery button its Profile switch. */
     const hoverWorkspace: Pick<ObsidianWorkspace, "trigger"> = {
       trigger: (name, ...data) => run(workspace.trigger(name, ...data)),
     };
@@ -122,23 +122,22 @@ export const layerWikilinkReading = Layer.effectDiscard(
       sourcePath: string,
       lookup: CitationLookupAnswer | null,
     ) {
-      const dest = yield* metadata.firstLinkpathDest(linkpath, sourcePath);
-      if (!dest) return null;
-      const indexedKey = itemKeyFromFrontmatter(
-        yield* metadata.fileCache(dest),
+      const note = yield* resolveLiteratureNoteIn(
+        metadata,
+        linkpath,
+        sourcePath,
       );
-      if (indexedKey === null) return null;
-      const note: LiteratureNoteTarget = {
-        path: dest.path,
-        indexedKey,
-        citationKey: heldCitekeyOf(lookup, indexedKey) ?? null,
+      if (!note) return null;
+      const target: LiteratureNoteTarget = {
+        ...note,
+        citationKey: heldCitekeyOf(lookup, note.indexedKey) ?? null,
       };
-      return note;
+      return target;
     });
 
     /** A reading view holds what a post-processor produced until it renders again. */
     const rerender = Effect.gen(function* () {
-      const count = rerenderReadingViews(app);
+      const count = rerenderReadingViews(yield* workspace.markdownViews);
       yield* Effect.logDebug("Rerendering reading views").pipe(
         Effect.annotateLogs({ count }),
       );
@@ -195,7 +194,10 @@ export const layerWikilinkReading = Layer.effectDiscard(
         showPopover: (request) => run(citationPopover.show(request)),
         hoverPreferences: () => display.hover,
         hoverTarget: () => {
-          const hoverParent = markdownViewOf(app, element);
+          const hoverParent = markdownViewOf(
+            run(workspace.markdownViews),
+            element,
+          );
           return hoverParent === null
             ? null
             : { workspace: hoverWorkspace, hoverParent, sourcePath };
@@ -261,7 +263,11 @@ export const layerWikilinkReading = Layer.effectDiscard(
       // for its own place.
       const citations = runs.map((members) => citationOfRun(members));
       const failure = text.value.presentationFailure;
-      renderProfileRecovery(el, app, { path: failure?.target });
+      renderProfileRecovery(
+        el,
+        { workspace: hoverWorkspace },
+        { path: failure?.target },
+      );
       if (failure) {
         const diagnostic = m.notice_imported_note_profile_unknown({
           stamp: failure.diagnostic.stamp,

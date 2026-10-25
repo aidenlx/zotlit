@@ -1,5 +1,5 @@
 // UI recovery for an unavailable Profile, shared by notes and citation surfaces.
-import type { App } from "obsidian";
+import type { App, Workspace } from "obsidian";
 
 import * as m from "./i18n/generated/messages";
 import { getLogger } from "./log";
@@ -8,9 +8,17 @@ import type { UnknownProfileDiagnostic } from "./profile-stamp";
 
 const logger = getLogger("profile-recovery");
 
-export function requestProfileSwitch(app: App, path: string): void {
+/** What a Profile switch is asked of: the app, or any host with its workspace's `trigger`. */
+export interface ProfileSwitchHost {
+  readonly workspace: Pick<Workspace, "trigger">;
+}
+
+export function requestProfileSwitch(
+  host: ProfileSwitchHost,
+  path: string,
+): void {
   logger.debug("Requested Profile recovery for {path}", { path });
-  app.workspace.trigger("zotlit:switch-profile", { path });
+  host.workspace.trigger("zotlit:switch-profile", { path });
 }
 
 export function profileRecoveryNotice(
@@ -39,7 +47,7 @@ export function profileRecoveryNotice(
 /** One recovery control per reading section, cleared when its failure clears. */
 export function renderProfileRecovery(
   container: HTMLElement,
-  app: App,
+  host: ProfileSwitchHost,
   options: { path?: string },
 ): void {
   container.querySelector("[data-profile-recovery]")?.remove();
@@ -52,7 +60,7 @@ export function renderProfileRecovery(
   button.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    requestProfileSwitch(app, path);
+    requestProfileSwitch(host, path);
   });
   container.appendChild(button);
 }

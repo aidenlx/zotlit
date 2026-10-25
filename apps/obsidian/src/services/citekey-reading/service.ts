@@ -12,7 +12,6 @@ import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
@@ -132,7 +131,6 @@ function shownEqual(
 export const layerCitekeyReading = Layer.effectDiscard(
   Effect.gen(function* () {
     const host = yield* PluginHost;
-    const app = yield* ObsidianApp;
     const vault = yield* Vault;
     const workspace = yield* Workspace;
     const settings = yield* PluginSettings;
@@ -150,14 +148,14 @@ export const layerCitekeyReading = Layer.effectDiscard(
     let hover: HoverPreferences = hoverPreferences(defaults);
     /** The sections this surface rendered into and Obsidian still shows. */
     const sections = new LiveSections();
-    /** What a hover raises its `hover-link` on. */
+    /** What a hover raises its `hover-link` on, and a recovery button its Profile switch. */
     const hoverWorkspace: Pick<ObsidianWorkspace, "trigger"> = {
       trigger: (name, ...data) => run(workspace.trigger(name, ...data)),
     };
 
     /** A reading view holds what a post-processor produced until it renders again. */
     const rerender = Effect.gen(function* () {
-      const count = rerenderReadingViews(app);
+      const count = rerenderReadingViews(yield* workspace.markdownViews);
       yield* Effect.logDebug("Rerendering reading views").pipe(
         Effect.annotateLogs({ count }),
       );
@@ -263,7 +261,10 @@ export const layerCitekeyReading = Layer.effectDiscard(
           // hangs the popover off. Markdown rendered outside such a view — an
           // export, a popover of its own — belongs to none, and hover stays
           // silent there.
-          const hoverParent = markdownViewOf(app, element);
+          const hoverParent = markdownViewOf(
+            run(workspace.markdownViews),
+            element,
+          );
           return hoverParent === null
             ? null
             : { workspace: hoverWorkspace, hoverParent, sourcePath };
@@ -312,9 +313,13 @@ export const layerCitekeyReading = Layer.effectDiscard(
       // Source stays until a first answer: native text while the read
       // settles, and what a placed element shows until fresh text replaces it.
       if (text === null && !resolutionPending) return;
-      renderProfileRecovery(el, app, {
-        path: text?.value.presentationFailure?.target,
-      });
+      renderProfileRecovery(
+        el,
+        { workspace: hoverWorkspace },
+        {
+          path: text?.value.presentationFailure?.target,
+        },
+      );
       const snapshotState = (citekey: string) =>
         citekeyState(heldResolution(answer, citekey));
       const stateOf =

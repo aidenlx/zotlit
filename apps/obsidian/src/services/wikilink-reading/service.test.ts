@@ -15,7 +15,6 @@ import { testPluginHost } from "@/lib/__fixtures__/plugin-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -185,7 +184,6 @@ async function harness({
       Layer.provide(
         Layer.mergeAll(
           host.layer,
-          Layer.succeed(ObsidianApp, app),
           Layer.mock(Vault, {
             getFileByPath: (path) =>
               Effect.sync(() => app.vault.getFileByPath(path)),
@@ -199,6 +197,7 @@ async function harness({
               Effect.sync(() => app.metadataCache.getFileCache(file)),
           }),
           Layer.mock(Workspace, {
+            markdownViews: Effect.succeed([view]),
             trigger: (name, ...data) =>
               Effect.sync(() => app.workspace.trigger(name, ...data)),
           }),

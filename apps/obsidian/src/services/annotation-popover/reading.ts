@@ -2,12 +2,13 @@ import { Effect, Layer } from "effect";
 import { MarkdownRenderChild } from "obsidian";
 // The reading-mode surface of annotation hover: a rendered Durable Annotation
 // Link shows the Annotation it names.
-import type { MarkdownPostProcessorContext } from "obsidian";
+import type { MarkdownPostProcessorContext, MarkdownView } from "obsidian";
 
 import { parseAnnotationOpenUri } from "@zotlit/db";
 import type { AnnotationOpenUriOptions } from "@zotlit/db";
 
 import { scopedBridge } from "@/lib/effect-bridge";
+import { Workspace } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
 import type { PluginHostShape } from "@/lib/plugin-host";
 import { isDraftMarkdown, markdownViewOf } from "@/lib/reading-view";
@@ -19,7 +20,9 @@ import type { AnnotationHoverRequest } from "./service";
 const LINK_SELECTOR = 'a.external-link[href^="zotero://open/"]';
 
 export interface AnnotationLinkReadingDeps {
-  host: Pick<PluginHostShape, "app" | "registerMarkdownPostProcessor">;
+  host: Pick<PluginHostShape, "registerMarkdownPostProcessor">;
+  /** The open Markdown views, which a hovered link's popover hangs off. */
+  markdownViews: () => readonly MarkdownView[];
   /** What a hovered Durable Annotation Link shows. */
   show: (request: AnnotationHoverRequest) => void;
 }
@@ -92,7 +95,7 @@ export class AnnotationLinkReadingCore implements Disposable {
     // within one link hovers it once.
     const related = event.relatedTarget as Node | null;
     if (related?.instanceOf(Node) && anchor.contains(related)) return;
-    const hoverParent = markdownViewOf(this.#deps.host.app, anchor);
+    const hoverParent = markdownViewOf(this.#deps.markdownViews(), anchor);
     if (hoverParent === null) return;
     this.#deps.show({
       event,
@@ -109,12 +112,14 @@ export const layerAnnotationLinkReading = Layer.effectDiscard(
   Effect.gen(function* () {
     const host = yield* PluginHost;
     const popover = yield* AnnotationPopover;
+    const workspace = yield* Workspace;
     const bridge = yield* scopedBridge;
     yield* Effect.acquireDisposable(
       Effect.sync(
         () =>
           new AnnotationLinkReadingCore({
             host,
+            markdownViews: () => bridge.runSync(workspace.markdownViews),
             show: (request) => void bridge.runPromise(popover.show(request)),
           }),
       ),

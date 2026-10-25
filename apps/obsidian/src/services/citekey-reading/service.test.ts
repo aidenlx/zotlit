@@ -19,7 +19,6 @@ import { testPluginHost } from "@/lib/__fixtures__/plugin-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { themeHook } from "@/lib/theme-hooks";
@@ -91,6 +90,13 @@ function appWith(
   });
 }
 
+/** The Markdown views the app's workspace holds, as `Workspace.markdownViews` reads them. */
+function markdownViews(app: App): MarkdownView[] {
+  return app.workspace
+    .getLeavesOfType("markdown")
+    .flatMap(({ view }) => (view instanceof MarkdownView ? [view] : []));
+}
+
 /** The fakes Citekey Reading reads its tags from; a member a case leaves out fails when read. */
 interface ReadingFakes {
   app: App;
@@ -122,12 +128,12 @@ async function openReading(
       Layer.provide(
         Layer.mergeAll(
           host.layer,
-          Layer.succeed(ObsidianApp, app),
           Layer.mock(Vault, {
             getFileByPath: (path) =>
               Effect.sync(() => app.vault.getFileByPath(path)),
           }),
           Layer.mock(Workspace, {
+            markdownViews: Effect.sync(() => markdownViews(app)),
             trigger: (name, ...data) =>
               Effect.sync(() => app.workspace.trigger(name, ...data)),
           }),
