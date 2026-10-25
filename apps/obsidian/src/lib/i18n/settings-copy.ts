@@ -7,8 +7,6 @@
 import type { LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
 
-import { installLanguagePack } from "./install-toast";
-
 export type LanguagePackSettingCopy = {
   name: string;
   desc: string;
@@ -31,17 +29,20 @@ export type LanguagePackSettingCopy = {
  * is already running.
  */
 export function languagePackSettingCopy(
-  lifecycle: LanguagePackLifecycle,
+  lifecycle: Pick<
+    LanguagePackLifecycle,
+    "endonym" | "getSituation" | "install"
+  >,
 ): LanguagePackSettingCopy | undefined {
   const situation = lifecycle.getSituation();
   const { endonym } = lifecycle;
   const name = m.settings_language_pack_name();
-  // `install()` returns the in-flight promise, so the disabled button's action
+  // `install()` joins the download in flight, so the disabled button's action
   // stays the real one rather than a stand-in that could never run.
   const install = (disabled: boolean): LanguagePackSettingCopy["install"] => ({
     label: m.notice_language_pack_install_action(),
     disabled,
-    run: () => installLanguagePack(lifecycle),
+    run: () => lifecycle.install(),
   });
 
   switch (situation.kind) {

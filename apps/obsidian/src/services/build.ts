@@ -50,6 +50,7 @@ import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
 import { ItemLookup } from "./item-lookup/service";
 import { QueryService } from "./item-query/service";
+import type { LanguagePackStartup } from "./language-pack/service";
 import { plainLibraryScope } from "./library-scope/plain";
 import { LocalBridgeService } from "./local-bridge/service";
 import { LocalServer } from "./local-server/service";
@@ -104,6 +105,7 @@ import { ZoteroReads } from "./zotero-reads/service";
 export async function buildServices(
   plugin: ZotLitPlugin,
   stack: AsyncDisposableStack,
+  languagePack: LanguagePackStartup,
 ) {
   let bindMigration!: (actions: TemplateMigrationOptions) => void;
   const migrationActions = new Promise<TemplateMigrationOptions>((resolve) => {
@@ -125,8 +127,11 @@ export async function buildServices(
         openPrompt: async () => (await migrationActions).openPrompt(),
       },
       {
-        openStore: () => openExcerptStore(plugin.app.appId),
-        readers,
+        excerpt: {
+          openStore: () => openExcerptStore(plugin.app.appId),
+          readers,
+        },
+        languagePack,
       },
     ),
     stack,

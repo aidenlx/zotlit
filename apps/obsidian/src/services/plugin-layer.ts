@@ -4,7 +4,9 @@ import { Layer } from "effect";
 import type { Plugin } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
+import { layerRequestUrlHttpClient } from "@/lib/http-client";
 import { layerNotifier } from "@/lib/notifier";
+import type { Notifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerObsidianEnv } from "@/lib/obsidian-env";
 import { layerFileManager } from "@/lib/obsidian-file-manager";
@@ -43,6 +45,12 @@ import { layerExcerptImages } from "./excerpt-image/layer";
 import type { ExcerptImages } from "./excerpt-image/layer";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
 import type { ExcerptStore } from "./excerpt-image/store";
+import { layerLanguagePackNotices } from "./language-pack/notices";
+import { layerLanguagePack } from "./language-pack/service";
+import type {
+  LanguagePack,
+  LanguagePackStartup,
+} from "./language-pack/service";
 import { layerLibraryScopeCli } from "./library-scope/cli";
 import { layerLibraryScopeNotices } from "./library-scope/notices";
 import { layerLibraryScope } from "./library-scope/service";
@@ -96,6 +104,9 @@ import { workerClient } from "./zotero-reads/worker-client";
  * from the Effect Clock, which a test replaces. Each layer starts under its
  * service's name, so a defect during acquisition names what failed.
  *
+ * The Language Pack starts from what `startLanguagePack` applied before the
+ * graph, so every service's copy already reads in the user's language.
+ *
  * Above the services sit the layers that register a service's notices and
  * commands on `plugin`. They hold no service of their own, so unloading the
  * plugin releases them before the services they read.
@@ -103,11 +114,19 @@ import { workerClient } from "./zotero-reads/worker-client";
 export function pluginLayer(
   plugin: Plugin & CliHost,
   migration: TemplateMigrationOptions,
-  excerpt: {
-    readonly openStore: () => Promise<ExcerptStore>;
-    readonly readers: ExcerptReaderDocuments;
+  {
+    excerpt,
+    languagePack,
+  }: {
+    readonly excerpt: {
+      readonly openStore: () => Promise<ExcerptStore>;
+      readonly readers: ExcerptReaderDocuments;
+    };
+    readonly languagePack: LanguagePackStartup;
   },
 ): Layer.Layer<
+  | LanguagePack
+  | Notifier
   | AnnotationRepository
   | AnnotationPopover
   | ExcerptDisplays
@@ -219,6 +238,12 @@ export function pluginLayer(
     ),
     // The legacy note writers create and move through the tags (`build.ts`).
     Layer.provideMerge(Layer.mergeAll(layerVault, fileManager)),
+    Layer.provideMerge(
+      layerLanguagePack(languagePack).pipe(
+        Layer.provide(layerRequestUrlHttpClient),
+        startingAs("LanguagePack"),
+      ),
+    ),
     Layer.provide(obsidian),
     Layer.provideMerge(
       layerLogging.pipe(
@@ -236,14 +261,18 @@ export function pluginLayer(
     layerCitationStyleNotice.pipe(startingAs("CitationStyleNotice")),
     layerCitationTemplateActions.pipe(startingAs("CitationTemplateActions")),
     layerDatabaseActions.pipe(startingAs("DatabaseActions")),
+    layerLanguagePackNotices.pipe(startingAs("LanguagePackNotices")),
     layerLibraryScopeCli.pipe(startingAs("LibraryScopeCli")),
     layerLibraryScopeNotices.pipe(startingAs("LibraryScopeNotices")),
     layerPandocResolve.pipe(startingAs("PandocResolve")),
     layerReleaseActions.pipe(startingAs("ReleaseActions")),
   ).pipe(Layer.provide(Layer.mergeAll(layerPluginHost(plugin), obsidian)));
   // The Node file system, once for the whole graph: the temp sweeps read it.
+  // The Notifier is the one the layers share: the setting tab's Language Pack
+  // toast shows through it.
   return registrations.pipe(
     Layer.provideMerge(services),
     Layer.provide(NodeFileSystem.layer),
+    Layer.merge(layerNotifier),
   );
 }
