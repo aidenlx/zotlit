@@ -1,7 +1,7 @@
 // State Streams and callback subscriptions shared by Effect services and adapters.
 import type { ManagedRuntime, Scope } from "@/lib/effect";
-import { Cause, Effect, Stream } from "@/lib/effect";
-import { withLogCategory } from "@/lib/effect-log";
+import { Effect, Stream } from "@/lib/effect";
+import { logAndContinue } from "@/lib/effect-log";
 import { isScopeClosed } from "@/lib/effect-scope";
 
 /** The events of one tag from a tagged-union Stream, narrowed to that member. */
@@ -34,13 +34,7 @@ export function forkEach<A, R, R2 = never>(
 ) {
   return Stream.runForEach(stream, (value) =>
     Effect.suspend(() => handle(value) ?? Effect.void).pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause)
-          ? Effect.interrupt
-          : Effect.logError("Stream consumer failed", cause).pipe(
-              withLogCategory("effect-stream"),
-            ),
-      ),
+      logAndContinue("Stream consumer failed", "effect-stream"),
     ),
   ).pipe(Effect.forkScoped({ startImmediately: true }));
 }
@@ -65,15 +59,7 @@ export function subscribe<A, R>(
     Stream.runForEach(stream, (value) =>
       Effect.sync(() => {
         if (active) callback(value);
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Cause.hasInterruptsOnly(cause)
-            ? Effect.interrupt
-            : Effect.logError("Stream subscriber failed", cause).pipe(
-                withLogCategory("effect-stream"),
-              ),
-        ),
-      ),
+      }).pipe(logAndContinue("Stream subscriber failed", "effect-stream")),
     ),
   );
   // Operators such as interruptWhen fork upstream consumption. Drain that

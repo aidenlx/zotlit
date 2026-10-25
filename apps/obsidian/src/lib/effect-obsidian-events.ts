@@ -1,7 +1,7 @@
 import type { Events } from "obsidian";
 
-import { Cause, Effect, PubSub, Stream } from "@/lib/effect";
-import { withLogCategory } from "@/lib/effect-log";
+import { Effect, PubSub, Stream } from "@/lib/effect";
+import { logAndContinue } from "@/lib/effect-log";
 
 type Payload<E> = {
   [K in keyof E]: { readonly type: K; readonly args: E[K] };
@@ -56,14 +56,9 @@ export const obsidianEvents = Effect.fnUntraced(function* <
       },
       (effect, event) =>
         effect.pipe(
-          Effect.catchCause((cause) =>
-            Cause.hasInterruptsOnly(cause)
-              ? Effect.interrupt
-              : Effect.logError("Obsidian event handler failed", cause).pipe(
-                  Effect.annotateLogs({ event: event.type }),
-                  withLogCategory("obsidian-events"),
-                ),
-          ),
+          logAndContinue("Obsidian event handler failed", "obsidian-events", {
+            event: event.type,
+          }),
         ),
     );
     yield* Stream.runForEach(stream, dispatch);
