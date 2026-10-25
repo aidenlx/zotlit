@@ -1,5 +1,6 @@
 // Obsidian notices as a service the Effect layers show their toasts through.
 import { Cause, Context, Effect, Exit, Layer, Option } from "effect";
+import type { Duration } from "effect";
 import type { Scope } from "effect";
 
 import { AbortError } from "@/lib/abort-error";
@@ -64,13 +65,17 @@ export const layerNotifier: Layer.Layer<Notifier> = Layer.succeed(
 export interface ProgressCopy {
   readonly loading: NoticeMessage;
   readonly success: NoticeMessage;
-  readonly error: NoticeMessage;
+  /** The error message, or the message for the error the task failed with. */
+  readonly error: NoticeMessage | ((error: unknown) => NoticeMessage);
+  /** How long the success message stays; 2 s when absent. */
+  readonly successDuration?: Duration.Input;
 }
 
 /**
  * Report a task's outcome the way `toast.promise` does: the loading message
  * after 200 ms when the task has not finished (so a fast task does not flash
- * it), then the success message for 2 s or the error message for 4 s. An
+ * it), then the success message for 2 s (or `successDuration`) or the error
+ * message for 4 s. An
  * interrupted task counts as a success, an abort shows nothing, and an error
  * is logged.
  *
@@ -87,19 +92,20 @@ export const reportProgress = Effect.fn("Notifier.reportProgress")(function* <
   const exit = Option.isSome(early) ? early.value : yield* outcome;
   if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) {
     yield* notice.setMessage(copy.success);
-    yield* Effect.sleep("2 seconds");
+    yield* Effect.sleep(copy.successDuration ?? "2 seconds");
     return;
   }
   const error = Cause.squash(exit.cause);
   if (AbortError.test(error)) return;
+  const message =
+    typeof copy.error === "function" ? copy.error(error) : copy.error;
   yield* Effect.logError("Toast reported error").pipe(
     Effect.annotateLogs({
-      message:
-        typeof copy.error === "string" ? copy.error : copy.error.textContent,
+      message: typeof message === "string" ? message : message.textContent,
       error,
     }),
     withLogCategory("toast"),
   );
-  yield* notice.setMessage(copy.error);
+  yield* notice.setMessage(message);
   yield* Effect.sleep("4 seconds");
 }, Effect.scoped);
