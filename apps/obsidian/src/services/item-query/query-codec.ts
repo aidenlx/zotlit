@@ -52,7 +52,7 @@ const Formulas = Schema.declare(
 export const DecodedQuery = Schema.Struct({
   from: Schema.Literals(QUERY_DATASETS),
   libraries: Schema.NullOr(NamedLibraries),
-  limit: Schema.NullOr(Schema.Number),
+  limit: Schema.NullOr(Schema.Int),
   group: Schema.optionalKey(Schema.String),
   filter: Schema.optionalKey(Schema.String),
   fields: Schema.optionalKey(Schema.Array(Schema.String)),
@@ -84,7 +84,7 @@ export type DecodedQuery = typeof DecodedQuery.Type;
 export const DecodedValues = Schema.Struct({
   kind: Schema.Literals(["collections", "tags"]),
   match: Schema.optionalKey(Schema.String),
-  limit: Schema.NullOr(Schema.Number),
+  limit: Schema.NullOr(Schema.Int),
   libraries: Schema.NullOr(NamedLibraries),
 });
 export type DecodedValues = typeof DecodedValues.Type;

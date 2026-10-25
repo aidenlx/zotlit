@@ -46,7 +46,7 @@ export const LogPortRecordSchema = Schema.Struct({
       stack: Schema.NullOr(Schema.String),
     }),
   ),
-  timestamp: Schema.Number,
+  timestamp: Schema.Finite,
 });
 
 export type LogPortRecord = typeof LogPortRecordSchema.Type;

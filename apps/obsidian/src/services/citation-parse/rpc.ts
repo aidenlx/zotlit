@@ -15,7 +15,7 @@ export const CitationParseRpc = RpcGroup.make(
   Rpc.make("Parse", {
     payload: {
       path: Schema.String,
-      generation: Schema.Number,
+      generation: Schema.Int,
       text: Schema.String,
     },
     success: Schema.String,
