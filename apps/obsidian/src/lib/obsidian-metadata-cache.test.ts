@@ -184,33 +184,6 @@ it.effect("completes whenResolved when the cache next resolves", () =>
   }),
 );
 
-it.effect(
-  "waits for the next resolved on a build without onCleanCache, and logs it",
-  () =>
-    Effect.gen(function* () {
-      const cache = new MemoryMetadataCache();
-      Object.defineProperty(cache, "onCleanCache", { value: undefined });
-      cache.clean = true;
-      const { metadata } = yield* open(layerMetadataCacheFrom(cache));
-      const changed = yield* changedPaths(metadata);
-      const warnings: unknown[] = [];
-      const done = yield* Deferred.make<void>();
-      yield* metadata.whenResolved.pipe(
-        Effect.andThen(Deferred.succeed(done, undefined)),
-        Effect.provide(
-          Logger.layer([Logger.make(({ message }) => warnings.push(message))]),
-        ),
-        Effect.forkScoped({ startImmediately: true }),
-      );
-      cache.change(file("a.md"), {});
-      expect(yield* Queue.take(changed)).toBe("a.md");
-      expect(yield* Deferred.isDone(done)).toBe(false);
-      cache.resolve();
-      yield* Deferred.await(done);
-      expect(warnings).toHaveLength(1);
-    }),
-);
-
 it.effect("logs a failed handler and keeps the subscription", () =>
   Effect.gen(function* () {
     const cache = new MemoryMetadataCache();

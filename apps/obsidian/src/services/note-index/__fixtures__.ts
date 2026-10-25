@@ -168,7 +168,7 @@ export interface Harness {
  */
 export const makeHarness = Effect.fn("fixture.makeHarness")(function* (
   files: Record<string, CachedMetadata>,
-  options: { enabledAtRuntime?: boolean; cleanCacheHook?: boolean } = {},
+  options: { enabledAtRuntime?: boolean } = {},
 ) {
   const { app, metadataCache, workspace, vault } = createNoteHost(
     files,
@@ -242,17 +242,13 @@ function makeResource(app: App) {
 
 export function createNoteHost(
   files: Record<string, CachedMetadata>,
-  options: { enabledAtRuntime?: boolean; cleanCacheHook?: boolean } = {},
+  options: { enabledAtRuntime?: boolean } = {},
 ) {
   const metadataCache = new MockMetadataCache();
   const workspace = new MemoryWorkspace({
     layoutReady: options.enabledAtRuntime,
   });
   metadataCache.clean = options.enabledAtRuntime ?? false;
-  if (options.cleanCacheHook === false) {
-    // A build that dropped the internal hook.
-    Object.defineProperty(metadataCache, "onCleanCache", { value: undefined });
-  }
   const vault = new MockVault();
   const app = { metadataCache, vault, workspace } as unknown as App;
   if (options.enabledAtRuntime) metadataCache.watchVault(vault);
