@@ -17,13 +17,18 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { nameDictionary } from "@zotlit/item-query";
-import type { FormulaDiagnostics, QueryContext } from "@zotlit/item-query";
+import type {
+  FormulaDiagnostics,
+  QueryContext,
+  QuerySummary,
+} from "@zotlit/item-query";
 
 import { shimPopover } from "@/components/__fixtures__/popover";
 import type { ShimmedPopover } from "@/components/__fixtures__/popover";
 import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { pressTop } from "@/lib/__fixtures__/keymap";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
@@ -128,7 +133,7 @@ function result(
     kind: "result",
     result: {
       libraries: [{ type: "personal" }],
-      query: {} as never,
+      query: { filter: null, fields: [], sort: [], limit: null },
       returnedCount: rows.length,
       matchedCount,
       truncated: matchedCount > rows.length,
@@ -309,32 +314,48 @@ async function mount(
       notesChanged.emit("changed");
     }),
   };
-  const readers = { open: vi.fn(() => Promise.resolve()) };
+  const readers = {
+    open: vi.fn<QueryViewDeps["opener"]["open"]>(async () => ({
+      kind: "reader",
+    })),
+  };
   const runtime = testRuntime();
-  const deps = {
+  const readService = new Proxy(
+    stubService<QueryViewDeps["reads"]>("ZoteroReads", {
+      ...reads.streams,
+      acquireRead: vi.fn(),
+    }),
+    {
+      get(target, property, receiver) {
+        if (property === "acquireRead")
+          return () =>
+            Promise.resolve({
+              reads: {
+                TagNames: ({ libraryID }: { libraryID: number }) =>
+                  Effect.succeed(
+                    libraryID === 1 ? ["figure", "method"] : ["group"],
+                  ),
+                CollectionPaths: ({ libraryIDs }: { libraryIDs: number[] }) =>
+                  Effect.succeed(
+                    libraryIDs.length === 2 ? [["Thesis", "Methods"]] : [],
+                  ),
+              },
+              [Symbol.asyncDispose]: () => Promise.resolve(),
+            });
+        return Reflect.get(target, property, receiver);
+      },
+    },
+  );
+  const deps = stubService<QueryViewDeps>("QueryViewDeps", {
     runtime,
     bridge: effectBridge(runtime),
-    app: editorApp() as unknown as App,
-    reads: {
-      ...reads.streams,
-      acquireRead: () =>
-        Promise.resolve({
-          reads: {
-            TagNames: ({ libraryID }: { libraryID: number }) =>
-              Effect.succeed(
-                libraryID === 1 ? ["figure", "method"] : ["group"],
-              ),
-            CollectionPaths: ({ libraryIDs }: { libraryIDs: number[] }) =>
-              Effect.succeed(
-                libraryIDs.length === 2 ? [["Thesis", "Methods"]] : [],
-              ),
-          },
-          [Symbol.asyncDispose]: () => Promise.resolve(),
-        }),
-    },
-    libraryScope: {
+    app: editorApp(),
+    reads: readService,
+    libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
       ...libraryScope.streams,
       current: {
+        mode: "selected",
+        invalid: false,
         available: [
           { selector: { type: "personal" }, libraryID: 1, name: null },
           {
@@ -343,14 +364,20 @@ async function mount(
             name: "Lab",
           },
         ],
+        unavailable: [],
       },
-    },
+    }),
     query: fakeQuery(run),
-    annotations: {
+    annotations: stubService<QueryViewDeps["annotations"]>("Annotations", {
       ...annotations,
       read: () => Effect.succeed(list),
-      peek: () => Effect.succeed({ value: list }),
-      refresh: () => Effect.void,
+      peek: () =>
+        Effect.succeed({
+          value: list,
+          status: "fresh",
+          settled: Promise.resolve(list),
+        }),
+      refresh: () => Effect.succeed(null),
       capabilityFor: (): Effect.Effect<EditingCapability> =>
         Effect.succeed({ kind: "writable" }),
       textDraftFor: () => Effect.succeed(null),
@@ -370,16 +397,22 @@ async function mount(
           [Symbol.dispose]: () => released.push(list),
         });
       },
-    },
-    zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-    excerptDisplay: { open: vi.fn(), refresh: vi.fn() },
-    noteFeature: {},
+    }),
+    zoteroPref: stubService<QueryViewDeps["zoteroPref"]>("ZoteroPref", {
+      dataDir: "/zotero",
+      baseAttachmentPath: null,
+    }),
+    excerptDisplay: stubService<QueryViewDeps["excerptDisplay"]>(
+      "ExcerptDisplay",
+      { open: vi.fn(), refresh: vi.fn() },
+    ),
+    noteFeature: stubService<QueryViewDeps["noteFeature"]>("NoteFeature", {}),
     libraryTagNames: () => Promise.resolve([]),
     allowEditing: vi.fn(),
     reportBlockedGesture: vi.fn(),
     literatureNotes,
-    opener: readers,
-  } as unknown as QueryViewDeps;
+    opener: stubService<QueryViewDeps["opener"]>("TargetOpener", readers),
+  });
   const save = vi.fn((_text: string) => {});
   const onSelectView = vi.fn((_name: string) => {});
   const scope = new Scope();
@@ -600,7 +633,10 @@ it("says the Item's library is outside the library scope, rather than only that 
               'Indexed Key "RUGIER24G4815" names group:4815, which is outside the Target Libraries.',
             hint: "Use library=group:4815 to include group:4815.",
             report: [],
-          } as never,
+            found: "group:4815",
+            expected: ["the Target Libraries"],
+            suggestions: [],
+          },
         ],
       },
     },
@@ -2907,13 +2943,16 @@ it("keeps the count, the Formula marks and the Error Values with the last result
 it("keeps the warnings of the last results on a filter error, and shows them", async () => {
   const warned = result([row("ANNOTBBB")]);
   if (warned.kind !== "result") throw new Error("unreachable");
-  const warning = {
+  const warning: QuerySummary["warnings"][number] = {
     code: "never-true",
     severity: "warning",
     message: "colorName == 1 is never true.",
     hint: "Compare values of the same type.",
     report: [],
-  } as never;
+    found: "colorName == 1",
+    expected: ["true"],
+    suggestions: [],
+  };
   const { view, el, settle } = await mount(
     [
       { kind: "result", result: { ...warned.result, warnings: [warning] } },

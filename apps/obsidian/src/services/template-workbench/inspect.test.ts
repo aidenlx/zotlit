@@ -2,13 +2,14 @@ import { it } from "@effect/vitest";
 import { Stream } from "effect";
 import { Effect, Exit, Fiber } from "effect";
 import { TestClock } from "effect/testing";
-import type { CliData } from "obsidian";
+import type { CachedMetadata, CliData } from "obsidian";
 import { afterEach, beforeEach, describe, expect, vi } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 
+import { workbenchRegistrationDeps } from "./__fixtures__";
 import { TEMPLATE_INSPECT_COMMAND } from "./inspect";
 import { INSPECT_DIAGNOSTICS, inspectFlags } from "./inspect-contract";
 import { registerTemplateWorkbench } from "./register";
@@ -51,18 +52,23 @@ async function fixture(
     adapter: { getBasePath: () => "/fixture", read },
   });
   const { host, command } = fakeCliHost();
-  registerTemplateWorkbench({ ...host, manifest: { version: "test" } }, {
-    runtime: testRuntime(),
-    app: f.app,
-    templates: f.template,
-    settings: f.settings,
-    bridge: f.bridge,
-    profile: f.profile,
-    zoteroPref: {
-      sourceId: "fixture-source",
-      databasePath: "/fixture/db",
-    },
-  } as never);
+  registerTemplateWorkbench(
+    { ...host, manifest: { version: "test" } },
+    workbenchRegistrationDeps({
+      runtime: testRuntime(),
+      app: f.app,
+      templates: f.template,
+      settings: f.settings,
+      bridge: f.bridge,
+      profile: f.profile,
+      zoteroPref: {
+        sourceId: "fixture-source",
+        databasePath: "/fixture/db",
+        dataDir: "/fixture",
+        baseAttachmentPath: null,
+      },
+    }),
+  );
   const inspect = (params: CliData = {}) =>
     command(TEMPLATE_INSPECT_COMMAND)
       .handler(params)
@@ -147,12 +153,13 @@ describe("registered template-inspect", () => {
           [BOOKS]: source.replace("name: Books", "name: MissingId123"),
         });
         f.vault.addFile("Reading/Book.md", "Existing note");
-        vi.spyOn(f.app.metadataCache, "getFileCache").mockReturnValue({
+        const cache: CachedMetadata = {
           frontmatter: {
             "zotero-key": "ABCD2345",
             "zotlit-profile": "MissingId123",
           },
-        } as never);
+        };
+        vi.spyOn(f.app.metadataCache, "getFileCache").mockReturnValue(cache);
         expect(yield* f.inspect({ note: "Reading/Book.md" })).toMatchObject({
           ok: false,
           diagnostic: { code: "TARGET_NOT_FOUND" },
@@ -170,12 +177,13 @@ describe("registered template-inspect", () => {
       Effect.gen(function* () {
         const f = yield* scopedFixture(files);
         f.vault.addFile("Reading/Book.md", "Existing note");
-        vi.spyOn(f.app.metadataCache, "getFileCache").mockReturnValue({
+        const cache: CachedMetadata = {
           frontmatter: {
             "zotero-key": "ABCD2345",
             "zotlit-profile": "Books (Bk3Qn7XvT2Lp)",
           },
-        } as never);
+        };
+        vi.spyOn(f.app.metadataCache, "getFileCache").mockReturnValue(cache);
         return yield* f.inspect({ note: "Reading/Book.md", source: "full" });
       }),
     );
@@ -251,12 +259,13 @@ describe("registered template-inspect", () => {
       Effect.gen(function* () {
         const f = yield* scopedFixture();
         f.vault.addFile("Reading/Book.md", "My note");
-        vi.spyOn(f.app.metadataCache, "getFileCache").mockReturnValue({
+        const cache: CachedMetadata = {
           frontmatter: {
             "zotero-key": "ABCD2345",
             "zotlit-profile": "Books (Bk3Qn7XvT2Lp)",
           },
-        } as never);
+        };
+        vi.spyOn(f.app.metadataCache, "getFileCache").mockReturnValue(cache);
         expect(yield* f.inspect({ note: "Reading/Book.md" })).toMatchObject({
           ok: true,
           note: { path: "Reading/Book.md", key: "ABCD2345" },

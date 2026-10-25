@@ -6,7 +6,14 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import type { App, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type {
+  App,
+  FileManager,
+  MetadataCache,
+  Vault,
+  Workspace,
+} from "obsidian";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
 import { getZoteroDatabaseIdentity } from "@zotlit/db";
@@ -20,6 +27,7 @@ import { LOCAL_BRIDGE_PATHS } from "@zotlit/workbench/bridge";
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { excerptAssetIdentities } from "@/services/excerpt-image/materialize";
@@ -33,7 +41,7 @@ import {
 import { createLocalBridgeApp } from "./app";
 import { STABLE_DOCS_ORIGIN } from "./origins";
 import { createLocalBridgeReads } from "./reads";
-import type { BridgeProfileReader } from "./reads";
+import type { BridgeProfileReader, LocalBridgeReadDeps } from "./reads";
 import { BridgeSessions } from "./sessions";
 
 const INSTALLATION_ID = "install-1";
@@ -172,16 +180,26 @@ async function harness(
     vaultFiles.delete(IMAGE_PATH);
     vaultFiles.add(immutablePath);
   }
-  const fileAt = (path: string): TFile | null =>
-    vaultFiles.has(path) ? ({ path } as TFile) : null;
-  const app = Object.assign({} as App, {
-    vault: {
+  const fileAt = (path: string): TFile | null => {
+    if (!vaultFiles.has(path)) return null;
+    const file = new TFile();
+    file.path = path;
+    return file;
+  };
+  const notesAt = (path: string): TFile[] => {
+    const file = fileAt(path);
+    return file ? [file] : [];
+  };
+  const app = stubService<App>("App", {
+    vault: stubService<Vault>("Vault", {
       getName: () => VAULT_NAME,
       getFileByPath: fileAt,
       cachedRead: async () => content,
-    },
-    workspace: { iterateAllLeaves: () => {} },
-    metadataCache: {
+    }),
+    workspace: stubService<Workspace>("Workspace", {
+      iterateAllLeaves: () => {},
+    }),
+    metadataCache: stubService<MetadataCache>("MetadataCache", {
       getFileCache: () => ({
         [options.reference === "link" ? "links" : "embeds"]: options.immutable
           ? [
@@ -197,11 +215,11 @@ async function harness(
           : [],
       }),
       getFirstLinkpathDest: fileAt,
-    },
-    fileManager: {
+    }),
+    fileManager: stubService<FileManager>("FileManager", {
       getAvailablePathForAttachment: (name: string) =>
         Promise.resolve(`literatures/attachments/${name}`),
-    },
+    }),
   });
 
   const settings = {
@@ -214,16 +232,15 @@ async function harness(
     settings,
     bridge: effectBridge(testRuntime()),
     zoteroReads: inProcessReadsService(sharedClientOpener(sqlite)),
-    noteIndex: {
+    noteIndex: stubService<LocalBridgeReadDeps["noteIndex"]>("NoteIndex", {
       whenIndexed: () => Promise.resolve(),
       getNotesByItemKey: (indexedKey: string) =>
-        indexedKey === ITEM.key ? [fileAt(ITEM_NOTE_PATH)].filter(Boolean) : [],
+        indexedKey === ITEM.key ? notesAt(ITEM_NOTE_PATH) : [],
       getImportedNoteByNoteKey: (noteKey: string) =>
-        noteKey === "NOTE2345" ? [fileAt(CHILD_NOTE_PATH)].filter(Boolean) : [],
-    } as never,
+        noteKey === "NOTE2345" ? notesAt(CHILD_NOTE_PATH) : [],
+    }),
     profile: profileReader(),
-    template: {
-      ready: Promise.resolve(),
+    template: stubService<LocalBridgeReadDeps["template"]>("PlainTemplate", {
       exportLiteratureNotePackSource: (
         source: string,
         exportOptions: Parameters<typeof exportLiteratureNotePack>[2],
@@ -231,7 +248,7 @@ async function harness(
         Promise.resolve(
           exportLiteratureNotePack(source, partials, exportOptions),
         ),
-    } as never,
+    }),
     zoteroPref: { dataDir },
     installationId: () => INSTALLATION_ID,
     vaultName: () => VAULT_NAME,

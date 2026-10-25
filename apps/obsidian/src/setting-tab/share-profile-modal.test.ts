@@ -12,10 +12,12 @@ import {
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { App, Setting as ObsidianSetting, SettingGroup } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { TemplateFacade } from "@zotlit/templates/facade";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import * as nativeDialog from "@/lib/require";
@@ -38,6 +40,16 @@ importFolder: Imported
 ---
 {% managed %}{% render "summary" %}{% endmanaged %}
 --- zotlit:annotation ---\nAnnotation`;
+
+function dialogWith(
+  showSaveDialog: ReturnType<
+    typeof nativeDialog.requireDialog
+  >["showSaveDialog"],
+): ReturnType<typeof nativeDialog.requireDialog> {
+  return stubService<ReturnType<typeof nativeDialog.requireDialog>>("Dialog", {
+    showSaveDialog,
+  });
+}
 
 function observeControls(container: HTMLElement) {
   using stack = new DisposableStack();
@@ -88,9 +100,9 @@ it("edits share metadata, bumps the version, and writes identical file and clipb
     vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(),
   );
   stack.use(
-    vi.spyOn(nativeDialog, "requireDialog").mockReturnValue({
-      showSaveDialog: async () => ({ canceled: false, filePath }),
-    } as unknown as ReturnType<typeof nativeDialog.requireDialog>),
+    vi
+      .spyOn(nativeDialog, "requireDialog")
+      .mockReturnValue(dialogWith(async () => ({ canceled: false, filePath }))),
   );
   const modal = new ShareProfileModal(f.app, await f.profile.prepareShare(id));
   modal.contentEl = document.createElement("div");
@@ -134,9 +146,11 @@ it("keeps an empty version inline and cancels a save without writing", async () 
   using clipboard = vi
     .spyOn(navigator.clipboard, "writeText")
     .mockResolvedValue();
-  using dialog = vi.spyOn(nativeDialog, "requireDialog").mockReturnValue({
-    showSaveDialog: async () => ({ canceled: true }),
-  } as unknown as ReturnType<typeof nativeDialog.requireDialog>);
+  using dialog = vi
+    .spyOn(nativeDialog, "requireDialog")
+    .mockReturnValue(
+      dialogWith(async () => ({ canceled: true, filePath: "" })),
+    );
   const modal = new ShareProfileModal(
     f.app,
     await f.profile.prepareShare("default"),
@@ -166,10 +180,33 @@ it.each(["default", id] as const)(
     });
     using opened = vi.spyOn(Modal.prototype, "open");
     const container = document.createElement("div");
-    const page = profilesPage({
-      ...f,
-      requestUpdate: vi.fn(),
-    } as unknown as SettingTabContext);
+    const page = profilesPage(
+      stubService<SettingTabContext>("SettingTabContext", {
+        runtime: f.runtime,
+        bridge: f.bridge,
+        app: stubService<App>("App", {
+          vault: stubService<App["vault"]>("Vault", {
+            getFileByPath: f.vault.getFileByPath.bind(f.vault),
+          }),
+        }),
+        settings: stubService<SettingTabContext["settings"]>("Settings", {
+          current: f.settings.current,
+        }),
+        profile: stubService<SettingTabContext["profile"]>("Profile", {
+          loaded: f.profile.loaded,
+          profiles: f.profile.profiles,
+          diagnostics: f.profile.diagnostics,
+          defaultDocumentPath: f.profile.defaultDocumentPath,
+          resolveProfile: f.profile.resolveProfile,
+          prepareShare: f.profile.prepareShare,
+        }),
+        template: stubService<SettingTabContext["template"]>(
+          "Template",
+          f.template,
+        ),
+        requestUpdate: vi.fn(),
+      }),
+    );
     const label =
       selector === "default" ? m.settings_profile_default_name() : "Books";
     // Default sits on the page itself; every other Profile is a list row.
@@ -179,7 +216,10 @@ it.each(["default", id] as const)(
     const row = rows.find((item) => "name" in item && item.name === label);
     if (!row || !("render" in row)) throw new Error("Profile row missing");
     const setting = new Setting(container);
-    row.render?.(setting as never, {} as never);
+    row.render?.(
+      setting as unknown as ObsidianSetting,
+      stubService<SettingGroup>("SettingGroup", {}),
+    );
     const more = setting.components
       .filter((control) => control instanceof ExtraButtonComponent)
       .find((button) => button.tooltip === m.workbench_more_actions())!;
@@ -211,9 +251,9 @@ it("does not write when the Share sheet closes while the save dialog is open", a
     filePath: string;
   }>();
   stack.use(
-    vi.spyOn(nativeDialog, "requireDialog").mockReturnValue({
-      showSaveDialog: () => selection.promise,
-    } as unknown as ReturnType<typeof nativeDialog.requireDialog>),
+    vi
+      .spyOn(nativeDialog, "requireDialog")
+      .mockReturnValue(dialogWith(() => selection.promise)),
   );
   const modal = new ShareProfileModal(
     f.app,
@@ -263,9 +303,11 @@ Annotation`;
     stack.defer(() => rm(folder, { recursive: true, force: true }));
     const filePath = join(folder, "Books.md");
     stack.use(
-      vi.spyOn(nativeDialog, "requireDialog").mockReturnValue({
-        showSaveDialog: async () => ({ canceled: false, filePath }),
-      } as unknown as ReturnType<typeof nativeDialog.requireDialog>),
+      vi
+        .spyOn(nativeDialog, "requireDialog")
+        .mockReturnValue(
+          dialogWith(async () => ({ canceled: false, filePath })),
+        ),
     );
     using clipboard = vi
       .spyOn(navigator.clipboard, "writeText")

@@ -57,7 +57,8 @@ export class MemoryWorkspace implements WorkspaceSource {
     let listeners = this.#listeners.get(name);
     if (!listeners) this.#listeners.set(name, (listeners = new Set()));
     listeners.add(callback);
-    return { e: this, name, fn: callback } as unknown as EventRef;
+    const ref = { e: this, name, fn: callback };
+    return ref;
   }
 
   offref(ref: EventRef): void {

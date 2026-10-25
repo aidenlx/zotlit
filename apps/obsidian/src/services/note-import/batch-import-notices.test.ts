@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 import { ButtonComponent } from "obsidian";
-import type { App } from "obsidian";
+import type { App, Workspace } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { importedNoteProfileErrorNotice } from "./batch-import-notices";
@@ -17,7 +18,11 @@ it("offers recovery on the Literature Note whose unavailable Profile blocked a n
       path: "Literature/Parent.md",
       imported: false,
     }),
-    { app: { workspace: { trigger } } as unknown as App },
+    {
+      app: stubService<App>("App", {
+        workspace: stubService<Workspace>("Workspace", { trigger }),
+      }),
+    },
   );
   expect(notice).toBeInstanceOf(DocumentFragment);
   const content = notice as DocumentFragment;

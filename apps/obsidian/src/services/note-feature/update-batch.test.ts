@@ -1,5 +1,6 @@
 import { DateTime, Deferred, Effect, Exit, Stream } from "effect";
-import type { TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { App } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
@@ -8,6 +9,7 @@ import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
@@ -226,7 +228,7 @@ function makeDeps(
   const client = db;
   return {
     profile: profileReader(),
-    app: {} as SingleUpdateDeps["app"],
+    app: stubService<App>("App", {}),
     zoteroReads: withState(
       caseResources.use(
         inProcessReadsService(sharedClientOpener(client), {
@@ -235,27 +237,29 @@ function makeDeps(
       ),
       dbState,
     ),
-    settings: {
+    settings: stubService<SingleUpdateDeps["settings"]>("PluginSettings", {
       current: Effect.succeed(defaults),
-      update: vi.fn(() => Effect.void),
-    },
+      update: () => Effect.succeed(defaults),
+    }),
     bridge: { runSync: Effect.runSync },
     libraryScope: { resolveLibraries: () => currentScope },
-    noteFeature: {
+    noteFeature: stubService<SingleUpdateDeps["noteFeature"]>("NoteFeature", {
+      ready: Promise.resolve(),
+      reportExcerptImages: vi.fn(),
       planCreations: async (keys: readonly string[]) =>
         creationPlans(keys, () => ({
           selection: { selector: "default", source: "bound", shouldAsk: false },
           previews: [],
         })),
-    },
+    }),
     createProfile: vi.fn(),
     importProfile: vi.fn(),
-    zoteroPref: { dataDir: null },
-    noteIndex: {
+    zoteroPref: { dataDir: "" },
+    noteIndex: stubService<SingleUpdateDeps["noteIndex"]>("NoteIndex", {
       whenIndexed: async () => {},
       getNotesByItemKey: () => [],
-    },
-  } as unknown as BatchUpdateDeps;
+    }),
+  };
 }
 
 /** Drive the last opened modal's loading phase and return its manifest options. */
@@ -316,7 +320,7 @@ describe("classify through the DisplayRefs stream", () => {
       );
       return {
         outcome: "created",
-        file: { path: "Literature/New.md" } as TFile,
+        file: noteAt("Literature/New.md"),
       };
     };
     itemsIn(
@@ -441,7 +445,7 @@ it.each([false, true])(
       expect(report).not.toHaveBeenCalled();
       return {
         outcome: "created",
-        file: { path: `Literature/Item ${id}.md` } as TFile,
+        file: noteAt(`Literature/Item ${id}.md`),
       };
     };
     deps.noteFeature.createNote = (item, options) =>
@@ -509,10 +513,10 @@ it("runs every row of one update batch under one outcome scope, released after t
   };
   deps.noteFeature.createNote = async (_item, options) => {
     await resolveThrough(options?.outcomes);
-    return { outcome: "created", file: { path: "Literature/New.md" } as TFile };
+    return { outcome: "created", file: noteAt("Literature/New.md") };
   };
   deps.noteIndex.getNotesByItemKey = (key) =>
-    key === "ITEM1" ? [{ path: "Literature/Item1.md" } as TFile] : [];
+    key === "ITEM1" ? [noteAt("Literature/Item1.md")] : [];
   itemsIn(
     new Map([
       [1, USER_LIBRARY_ID],
@@ -558,11 +562,11 @@ it("classifies conflicting Companion Profiles as kept rows before any write or p
   );
   const create = vi.fn(async () => ({
     outcome: "created" as const,
-    file: { path: "Books/New.md" } as TFile,
+    file: noteAt("Books/New.md"),
   }));
   const createDefault = vi.fn(async () => ({
     outcome: "created" as const,
-    file: { path: "Literature/New.md" } as TFile,
+    file: noteAt("Literature/New.md"),
   }));
   const writeNoteUpdate = vi.fn(async () => ({
     bodyUpdated: true,
@@ -698,7 +702,7 @@ it.each([true, false])(
   "shows an unknown Literature Note stamp and preserves recovery (additional Profiles: %s)",
   async (additionalProfiles) => {
     const stamp = "Retired (Qw8Er5Ty2Ui9)";
-    const file = { path: "Reading/Paper.md" } as TFile;
+    const file = noteAt("Reading/Paper.md");
     const deps = makeDeps();
     deps.profile = profileReader(
       {
@@ -821,7 +825,7 @@ function mixedBatch() {
         created.push({ itemID, selector });
         return {
           outcome: "created" as const,
-          file: { path: `${FOLDERS[selector]}/Item ${itemID}.md` } as TFile,
+          file: noteAt(`${FOLDERS[selector]}/Item ${itemID}.md`),
         };
       },
     }));
@@ -851,7 +855,7 @@ function mixedBatch() {
     ITEM8: "Reading/Retired.md",
   };
   deps.noteIndex.getNotesByItemKey = (key) =>
-    key in notes ? [{ path: notes[key] } as TFile] : [];
+    key in notes ? [noteAt(notes[key]!)] : [];
   itemsIn(new Map([1, 2, 3, 4, 5, 6, 7, 8].map((id) => [id, USER_LIBRARY_ID])));
   vi.mocked(chooseBatchProfile).mockReset();
   return { deps, planCreations, created, updated, selections };
@@ -878,6 +882,12 @@ async function classifyMixedBatch(deps: BatchUpdateDeps) {
     run,
     onItemSettled,
   };
+}
+
+function noteAt(path: string): TFile {
+  const file = new TFile();
+  file.path = path;
+  return file;
 }
 
 const DEFAULT_LABEL = () => m.settings_profile_default_name();

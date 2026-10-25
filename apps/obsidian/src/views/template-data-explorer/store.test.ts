@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import { annotationSamples } from "@zotlit/workbench/ui";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   loadCitationData,
   loadTemplateData,
@@ -26,7 +27,7 @@ vi.mock("@/services/template-workbench/data", () => ({
   loadTemplateData: vi.fn(),
 }));
 
-const deps = {} as TemplateDataDeps;
+const deps = stubService<TemplateDataDeps>("TemplateDataDeps", {});
 const paper = { id: "sample:conference-paper", title: null };
 const real = { id: "MAIN2345", title: "Real paper" };
 
@@ -211,7 +212,7 @@ describe("native Explorer sample data", () => {
 
   it("follows annotation selection while preserving independently browsed roots", async () => {
     const context: TemplateAuthoringContext = {
-      leaf: {} as WorkspaceLeaf,
+      leaf: stubService<WorkspaceLeaf>("WorkspaceLeaf", {}),
       path: "profiles/paper.md",
       kind: "profile",
       item: paper,
@@ -282,7 +283,7 @@ describe("the citation root", () => {
 
   it("lists the example set and Variant the editor's preview renders", async () => {
     const context: TemplateAuthoringContext = {
-      leaf: {} as WorkspaceLeaf,
+      leaf: stubService<WorkspaceLeaf>("WorkspaceLeaf", {}),
       path: "templates/zotlit-citation.md",
       kind: "citation",
       item: null,
@@ -321,7 +322,7 @@ describe("the citation root", () => {
       data: { text: "Read me", type: "highlight" },
     } as TemplateDataLoadResult);
     const context: TemplateAuthoringContext = {
-      leaf: {} as WorkspaceLeaf,
+      leaf: stubService<WorkspaceLeaf>("WorkspaceLeaf", {}),
       path: "templates/zotlit-partial.authors.md",
       kind: "partial",
       item: real,
@@ -359,7 +360,7 @@ describe("the citation root", () => {
     } as CitationDataLoadResult);
     using session = new NativeExplorerSession(deps);
     session.setContext({
-      leaf: {} as WorkspaceLeaf,
+      leaf: stubService<WorkspaceLeaf>("WorkspaceLeaf", {}),
       path: "templates/zotlit-citation.md",
       kind: "citation",
       item: real,

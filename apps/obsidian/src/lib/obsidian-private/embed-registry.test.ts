@@ -1,5 +1,7 @@
-import type { App } from "obsidian";
+import type { App, EmbedRegistry } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 
 import { registerEmbed } from "./embed-registry";
 import type { EmbedCreator } from "./embed-registry";
@@ -33,7 +35,7 @@ describe("registerEmbed", () => {
   it("registers the creator for the extension, and the returned callback removes it", () => {
     const embeds = registry();
     const unregister = registerEmbed(
-      { embedRegistry: embeds } as unknown as App,
+      stubService<App>("App", { embedRegistry: embeds }),
       "zotquery",
       creator,
     );
@@ -44,23 +46,35 @@ describe("registerEmbed", () => {
   });
 
   it("registers nothing and warns once when the app has no embed registry", () => {
-    expect(registerEmbed({} as App, "zotquery", creator)).toBeNull();
+    expect(
+      registerEmbed(
+        stubService<App>("App", { embedRegistry: undefined }),
+        "zotquery",
+        creator,
+      ),
+    ).toBeNull();
     expect(warn).toHaveBeenCalledOnce();
   });
 
   it("registers nothing and warns once when the registry lost a method", () => {
-    const { registerExtension, isExtensionRegistered } = registry();
-    const app = {
-      embedRegistry: { registerExtension, isExtensionRegistered },
-    } as unknown as App;
+    const embeds = registry();
+    const app = stubService<App>("App", {
+      embedRegistry: {
+        registerExtension: (
+          ...args: Parameters<EmbedRegistry["registerExtension"]>
+        ) => embeds.registerExtension(...args),
+        isExtensionRegistered: (extension) =>
+          embeds.isExtensionRegistered(extension),
+      },
+    });
     expect(registerEmbed(app, "zotquery", creator)).toBeNull();
-    expect(registerExtension).not.toHaveBeenCalled();
+    expect(embeds.registerExtension).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledOnce();
   });
 
   it("replaces a creator a previous load left behind, without a throw", () => {
     const embeds = registry();
-    const app = { embedRegistry: embeds } as unknown as App;
+    const app = stubService<App>("App", { embedRegistry: embeds });
     registerEmbed(app, "zotquery", () => null);
     const unregister = registerEmbed(app, "zotquery", creator);
     expect(embeds.byExtension.zotquery).toBe(creator);

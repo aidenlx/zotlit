@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 
+import { openTextFileView } from "./__fixtures__/open-text-view";
 import { writeBlockCode } from "./block-write";
 
 const PATH = "literatures/Paper.md";
@@ -23,7 +24,7 @@ function context(
     getSectionInfo: () =>
       text === null ? null : { text, lineStart: 5, lineEnd: 9 },
     ...extra,
-  } as MarkdownPostProcessorContext;
+  };
 }
 
 const el = {} as HTMLElement;
@@ -35,7 +36,7 @@ describe("writeBlockCode", () => {
     const replaceCode = vi.fn();
     await writeBlockCode(
       host.app,
-      { ctx: context(NOTE, { replaceCode } as never), el },
+      { ctx: context(NOTE, { replaceCode }), el },
       EDIT,
     );
     expect(replaceCode).toHaveBeenCalledWith(NEW);
@@ -50,7 +51,7 @@ describe("writeBlockCode", () => {
 
   it("without replaceCode, rewrites the open note's unsaved text", async () => {
     const host = createObsidianHost({ [PATH]: NOTE });
-    const view = host.openInEditor(host.file(PATH));
+    const view = openTextFileView(host, host.file(PATH));
     const typed = `${NOTE}Typed below.\n`;
     view.edit(typed);
     await writeBlockCode(host.app, { ctx: context(typed), el }, EDIT);
@@ -83,7 +84,7 @@ describe("writeBlockCode", () => {
     await expect(
       writeBlockCode(
         host.app,
-        { ctx: context(null, { replaceCode } as never), el },
+        { ctx: context(null, { replaceCode }), el },
         EDIT,
       ),
     ).rejects.toThrow();

@@ -1,11 +1,15 @@
 // @vitest-environment happy-dom
-import { Menu, TFile } from "@mock/obsidian";
+import { Menu } from "@mock/obsidian";
 import { Effect } from "effect";
-import type { Command, Plugin, TFile as ObsidianFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { App, Command, MetadataCache, Workspace } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import type { ProfileId } from "@/lib/profile-stamp";
 import { fileMenuHandler } from "@/services/__fixtures__/file-menu";
+import type { NoteProfile, ResolvedProfile } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
 
 import {
@@ -16,7 +20,10 @@ import {
 import type { CustomizeActionDeps } from "./actions";
 
 /** The one Profile this vault holds beside the built-in Default. */
-const BOOKS = { id: "Bk3Qn7XvT2Lp", label: "Books" };
+const BOOKS: { id: ProfileId; label: string } = {
+  id: "Bk3Qn7XvT2Lp" as ProfileId,
+  label: "Books",
+};
 
 interface Note {
   readonly path: string;
@@ -28,7 +35,7 @@ interface Note {
 }
 
 interface Harness {
-  file: ObsidianFile | null;
+  file: TFile | null;
   command: Command;
   /** The ZotLit menu items a right-click on the note offers. */
   menu: () => Menu;
@@ -41,36 +48,38 @@ function harness(
   note: Note | null,
   { workbench = true, loaded = true } = {},
 ): Harness {
-  const file =
-    note &&
-    Object.assign(new TFile(), {
-      path: note.path,
-      basename: note.basename,
-      extension: "md",
-    });
+  const file: TFile | null = note
+    ? Object.assign(new TFile(), {
+        path: note.path,
+        basename: note.basename,
+        extension: "md",
+      })
+    : null;
   const frontmatter: Record<string, string> = {};
   if (note?.itemKey) frontmatter["zotero-key"] = note.itemKey;
   if (note?.stamp) frontmatter["zotlit-profile"] = note.stamp;
 
   const commands: Command[] = [];
   const customize = vi.fn(() => Promise.resolve());
-  const app = {
-    workspace: {
+  const app = stubService<App>("App", {
+    workspace: stubService<Workspace>("Workspace", {
       getActiveFile: () => file,
-    },
-    metadataCache: { getFileCache: () => ({ frontmatter }) },
-  } as unknown as Plugin["app"];
+    }),
+    metadataCache: stubService<MetadataCache>("MetadataCache", {
+      getFileCache: () => ({ frontmatter }),
+    }),
+  });
   const deps: CustomizeActionDeps = {
-    settings: {
+    settings: stubService<CustomizeActionDeps["settings"]>("PluginSettings", {
       current: Effect.sync(() => ({
         ...defaults,
         "server.workbench": workbench,
       })),
-    } as unknown as CustomizeActionDeps["settings"],
-    profile: {
+    }),
+    profile: stubService<CustomizeActionDeps["profile"]>("PlainProfile", {
       loaded,
       profileOf: () => stampedProfile(note?.stamp),
-    } as unknown as CustomizeActionDeps["profile"],
+    }),
     customize,
   };
 
@@ -87,7 +96,7 @@ function harness(
   const fileMenu = fileMenuHandler([customizeFileMenu(app, deps)], frontmatter);
 
   return {
-    file: file as unknown as ObsidianFile | null,
+    file,
     command: commands.find(({ id }) => id === "customize-note-template")!,
     menu: () => {
       const menu = new Menu();
@@ -95,17 +104,26 @@ function harness(
       return menu;
     },
     customize,
-    request: () =>
-      noteCustomizeRequest(file! as unknown as ObsidianFile, app, deps),
+    request: () => noteCustomizeRequest(file!, app, deps),
   };
 }
 
 /** The Profile resolution the registry answers a note's stamp with. */
-function stampedProfile(stamp: string | undefined) {
+function stampedProfile(stamp: string | undefined): NoteProfile {
   if (stamp === undefined)
-    return { ok: true, profile: { selector: "default" } };
+    return {
+      ok: true,
+      profile: stubService<ResolvedProfile>("ResolvedProfile", {
+        selector: "default",
+      }),
+    };
   if (stamp === `${BOOKS.label} (${BOOKS.id})`)
-    return { ok: true, profile: { selector: BOOKS.id } };
+    return {
+      ok: true,
+      profile: stubService<ResolvedProfile>("ResolvedProfile", {
+        selector: BOOKS.id,
+      }),
+    };
   return { ok: false, stamped: { stamp, id: undefined } };
 }
 

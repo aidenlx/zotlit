@@ -10,6 +10,7 @@ import type {
 import { describe, expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import { highlightEmoji } from "@/lib/highlight-mapping";
 import * as m from "@/lib/i18n/generated/messages";
@@ -30,16 +31,19 @@ function setup() {
     };
   };
   const runtime = testRuntime();
-  const ctx = {
+  const ctx = stubService<SettingTabContext>("SettingTabContext", {
     runtime,
     bridge: effectBridge(runtime),
-    settings: {
+    settings: stubService<SettingTabContext["settings"]>("Settings", {
       current: Effect.sync(() => current),
-      update: (patch: Parameters<typeof update>[0]) =>
-        Effect.sync(() => update(patch)),
-    },
+      update: (patch) =>
+        Effect.sync(() => {
+          const next = typeof patch === "function" ? patch(current) : patch;
+          return Object.assign(current, next);
+        }),
+    }),
     requestUpdate: vi.fn(),
-  } as unknown as SettingTabContext;
+  });
   const rows = highlightMappingItems(ctx);
   const row = (name: string) => {
     const item = rows.find((entry) => "name" in entry && entry.name === name);
@@ -53,7 +57,10 @@ function render(item: SettingDefinitionItem) {
   if (!("render" in item) || !item.render)
     throw new Error("Custom renderer missing");
   const setting = new Setting(document.createElement("div"));
-  item.render(setting as unknown as ObsidianSetting, {} as SettingGroup);
+  item.render(
+    setting as unknown as ObsidianSetting,
+    stubService<SettingGroup>("SettingGroup", {}),
+  );
   return setting;
 }
 

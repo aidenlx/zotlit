@@ -2,6 +2,7 @@
 // What the Note Preview shows against what the real create path writes: one
 // fixture Item, one Profile source, the write captured through an in-memory vault.
 import { Effect } from "effect";
+import type { App } from "obsidian";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
@@ -9,7 +10,9 @@ import { getItemsByKey } from "@zotlit/db";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { VaultSource } from "@/lib/obsidian-vault";
+import type { SourceOrigin } from "@/services/attachment-import/source";
 import type { NoteFeatureDeps } from "@/services/note-feature/context";
 import { createNoteFeature } from "@/services/note-feature/operations";
 import type { CreateNoteResult } from "@/services/note-feature/operations";
@@ -72,18 +75,19 @@ async function realCreate(
     profiles: [entry],
   };
   const host = createObsidianHost();
-  const deps = {
+  const app = stubService<App>("App", {
+    vault: host.vault as unknown as App["vault"],
+    metadataCache: host.metadataCache as unknown as App["metadataCache"],
+    workspace: host.workspace as unknown as App["workspace"],
+    fileManager: stubService<App["fileManager"]>("FileManager", {
+      generateMarkdownLink: (target: { path: string }) => `[[${target.path}]]`,
+      renameFile: async () => undefined,
+    }),
+  });
+  const deps = stubService<NoteFeatureDeps>("NoteFeatureDeps", {
     profile: profileReader(current, host.metadataCache),
-    app: {
-      ...host.app,
-      fileManager: {
-        generateMarkdownLink: (target: { path: string }) =>
-          `[[${target.path}]]`,
-        renameFile: async () => undefined,
-      },
-    },
-    template: {
-      ready: Promise.resolve(),
+    app,
+    template: stubService<NoteFeatureDeps["template"]>("Template", {
       loaded: true,
       frontmatterFields: [],
       getLiteratureNoteTemplate: () => document,
@@ -91,41 +95,47 @@ async function realCreate(
       renderFilename: (data: object) => document.renderFilename(data),
       render: (name: string, data: object) =>
         fixture.deps.templates.render(name as "note", data),
-    },
-    zoteroReads: fixture.deps.zoteroReads,
+    }),
+    zoteroReads: fixture.zoteroReads,
     noteIndex: {
       whenIndexed: async () => {},
       getNotesByItemKey: () => [],
       getImportedNoteByNoteKey: () => [],
     },
     zoteroPref: { dataDir: "/Zotero", baseAttachmentPath: null },
-    settings: {
+    settings: stubService<NoteFeatureDeps["settings"]>("PluginSettings", {
       current: Effect.succeed(current),
       update: () => Effect.succeed(current),
-    },
-    bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
+    }),
+    bridge: stubService<NoteFeatureDeps["bridge"]>("EffectBridge", {
+      runSync: Effect.runSync,
+      runPromise: Effect.runPromise,
+    }),
     vault: vaultOver(host.vault as unknown as VaultSource),
     fileManager: { renameFile: () => Effect.void },
-    attachmentImport: {
-      prepare: async () => ({
-        decide: (path: string, origin: string) => ({
-          approved: false,
-          path,
-          origin,
-          reason: "no-trusted-root",
+    attachmentImport: stubService<NoteFeatureDeps["attachmentImport"]>(
+      "AttachmentImport",
+      {
+        prepare: async (_notePath: string) => ({
+          decide: (path: string, origin: SourceOrigin) => ({
+            approved: false,
+            path,
+            origin,
+            reason: "no-trusted-root",
+          }),
+          resolveLink: () => () => "",
+          flush: async () => ({
+            copied: 0,
+            skipped: 0,
+            missing: 0,
+            blocked: 0,
+            refused: 0,
+          }),
+          discard: () => undefined,
         }),
-        resolveLink: () => () => "",
-        flush: async () => ({
-          copied: 0,
-          skipped: 0,
-          missing: 0,
-          blocked: 0,
-          refused: 0,
-        }),
-        discard: () => undefined,
-      }),
-    },
-  } as unknown as NoteFeatureDeps;
+      },
+    ),
+  });
 
   const item = getItemsByKey(fixture.client, ["MAIN2345"], {
     libraryID: 1,

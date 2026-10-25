@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
 import { ButtonComponent, controlsOf } from "@mock/obsidian";
-import type { App } from "obsidian";
+import type { App, Workspace } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { MissingTemplateError } from "@zotlit/templates/facade";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { MissingPartialError } from "@/services/template/errors";
 
 import * as m from "./i18n/generated/messages";
@@ -14,7 +15,12 @@ import { missingPartialNotice } from "./workbench-recovery";
  *  recorded so a test can assert the action button reaches it. */
 function makeApp(): { app: App; trigger: ReturnType<typeof vi.fn> } {
   const trigger = vi.fn();
-  return { app: { workspace: { trigger } } as unknown as App, trigger };
+  return {
+    app: stubService<App>("App", {
+      workspace: stubService<Workspace>("Workspace", { trigger }),
+    }),
+    trigger,
+  };
 }
 
 describe("missingPartialNotice", () => {

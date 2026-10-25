@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { chmod, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { Vault } from "obsidian";
+import type { FileManager, FileSystemAdapter, Vault } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -16,6 +16,7 @@ import type { ProjectionJson } from "@zotlit/item-query";
 import { delimited } from "@zotlit/shared/delimited";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 import {
   buildUseLedger,
@@ -70,10 +71,12 @@ function setup(
     libraryScope: {
       effective: MY_LIBRARY_SCOPE,
     },
-    vault: {
+    vault: stubService<Vault>("Vault", {
       getName: () => "Query tests",
-      adapter: { getBasePath: () => dirname(scenario.path) },
-    } as unknown as Vault,
+      adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
+        getBasePath: () => dirname(scenario.path),
+      }),
+    }),
   });
   const dispose = service[Symbol.asyncDispose].bind(service);
   service[Symbol.asyncDispose] = async () => {
@@ -1347,16 +1350,24 @@ describe("typed Query View call", () => {
 // Uses after a new one is recorded.
 it("tells a Query View of a Use recorded after it subscribes", async () => {
   await using stack = new AsyncDisposableStack();
-  const useLedger = buildUseLedger(fakeApp({ load: () => undefined }), stack);
-  const service = stack.use(
-    new QueryService({
-      runtime: testRuntime(),
-      pluginVersion: "2.2.0-beta.2",
-      useLedger,
-      reads: { ready: Promise.resolve() },
-      libraryScope: { effective: { mode: "all" } },
-    } as unknown as ConstructorParameters<typeof QueryService>[0]),
-  );
+  const app = fakeApp({ load: () => undefined });
+  Object.assign(app, {
+    fileManager: stubService<FileManager>("FileManager", {}),
+  });
+  const useLedger = buildUseLedger(app, stack);
+  type QueryDeps = ConstructorParameters<typeof QueryService>[0];
+  const deps: QueryDeps = {
+    runtime: testRuntime(),
+    pluginVersion: "2.2.0-beta.2",
+    useLedger,
+    reads: stubService<QueryDeps["reads"]>("ZoteroReads", {}),
+    zoteroPref: stubService<QueryDeps["zoteroPref"]>("ZoteroPref", {
+      dataDir: "",
+    }),
+    libraryScope: { effective: { mode: "all" } },
+    vault: stubService<Vault>("Vault", {}),
+  };
+  const service = stack.use(new QueryService(deps));
   const changed = vi.fn();
   stack.defer(service.on("changed", changed));
 

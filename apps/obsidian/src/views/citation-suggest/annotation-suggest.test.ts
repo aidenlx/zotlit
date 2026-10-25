@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import type { App, Editor, EditorSuggestContext } from "obsidian";
 import { describe, expect, it } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -106,17 +107,19 @@ describe("AnnotationEditorSuggest", () => {
     }),
     commentRenderer?: AnnotationSuggestDeps["commentRenderer"],
   ) {
-    const suggest = new AnnotationEditorSuggest({
-      app: {} as App,
-      settings: { current: Effect.succeed(settings ?? defaults) },
-      bridge: { runSync: Effect.runSync },
-      query: { run },
-      commentRenderer,
-    } as AnnotationSuggestDeps);
+    const suggest = new AnnotationEditorSuggest(
+      stubService<AnnotationSuggestDeps>("AnnotationSuggestDeps", {
+        app: stubService<App>("App", {}),
+        settings: { current: Effect.succeed({ ...defaults, ...settings }) },
+        bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
+        query: { run },
+        commentRenderer: commentRenderer ?? (() => () => () => {}),
+      }),
+    );
     return { suggest, [Symbol.dispose]: () => suggest.close() };
   }
   const editor = (line: string) =>
-    ({ getLine: () => line }) as unknown as Editor;
+    stubService<Editor>("Editor", { getLine: () => line });
   const trigger = (s: AnnotationEditorSuggest, line: string) =>
     s.onTrigger({ line: 0, ch: line.length }, editor(line), null);
 
@@ -168,14 +171,29 @@ describe("AnnotationEditorSuggest", () => {
       if (request.from === "items")
         return {
           kind: "result",
-          result: { rows: [{ indexedKey: "PAPER" }] },
-        } as never;
+          result: {
+            libraries: [],
+            query: { filter: null, fields: [], sort: [], limit: null },
+            returnedCount: 1,
+            matchedCount: 1,
+            truncated: false,
+            warnings: [],
+            rows: [{ indexedKey: "PAPER", values: {} }],
+          },
+        };
       return {
         kind: "result",
         result: {
+          libraries: [],
+          query: { filter: null, fields: [], sort: [], limit: null },
+          returnedCount: 2,
+          matchedCount: 2,
+          truncated: false,
+          warnings: [],
           groups: [
             {
               value: "PAPER",
+              count: 2,
               rows: [`${word}-1`, `${word}-2`].map((key) => ({
                 indexedKey: key,
                 attachmentIndexedKey: "PDF",
@@ -184,8 +202,9 @@ describe("AnnotationEditorSuggest", () => {
               })),
             },
           ],
+          totalCount: 2,
         },
-      } as never;
+      };
     };
     return { run, release: (word: string) => gate(word).resolve() };
   }
@@ -193,12 +212,12 @@ describe("AnnotationEditorSuggest", () => {
   it("drops the search of the keystroke before, and the live one as it closes", async () => {
     const query = gatedQuery();
     using h = setup({}, query.run);
-    const context = {
-      file: null,
+    const context = stubService<EditorSuggestContext>("EditorSuggestContext", {
+      file: undefined,
       editor: editor(""),
       start: { line: 0, ch: 0 },
       end: { line: 0, ch: 2 },
-    } as unknown as EditorSuggestContext;
+    });
     const keys = async (hits: Promise<{ key: string }[] | null>) =>
       (await hits)?.map(({ key }) => key) ?? null;
 
@@ -237,10 +256,15 @@ describe("AnnotationEditorSuggest", () => {
     });
     const show = async (word: string) => {
       query.release(word);
-      const hits = await h.suggest.getSuggestions({
-        query: word,
-        file: null,
-      } as unknown as EditorSuggestContext);
+      const hits = await h.suggest.getSuggestions(
+        stubService<EditorSuggestContext>("EditorSuggestContext", {
+          query: word,
+          file: undefined,
+          editor: editor(""),
+          start: { line: 0, ch: 0 },
+          end: { line: 0, ch: 0 },
+        }),
+      );
       for (const hit of hits)
         h.suggest.renderSuggestion(hit, document.createElement("div"));
     };

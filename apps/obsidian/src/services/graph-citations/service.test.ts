@@ -5,7 +5,7 @@ import { Keymap, Menu } from "@mock/obsidian";
 import { Effect } from "effect";
 import { Stream } from "effect";
 import { around } from "monkey-around";
-import { PopoverState } from "obsidian";
+import { PopoverState, TFile, debounce } from "obsidian";
 import type {
   App,
   EventRef,
@@ -21,6 +21,7 @@ import type {
   WorkspaceLeaf,
 } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { testEvents } from "@/lib/__fixtures__/event-stream";
@@ -44,6 +45,7 @@ import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
 
 import type { LinkMap } from "./adapter";
 import { GraphCitations } from "./service";
+import type { GraphCitationsDeps } from "./service";
 import { FakeColorGroupSection, FakeControlSection } from "./test-double";
 import { graphNode, themeStates, themeStatesNothing } from "./test-stub";
 
@@ -451,7 +453,13 @@ function fakeLeaf(
     onOptionsChange: () => {},
     onload: () => {},
   };
-  const view =
+  const view = stubService<
+    import("obsidian").View & {
+      dataEngine?: FakeEngine;
+      engine?: FakeEngine;
+    }
+  >(
+    "View",
     viewType === "graph"
       ? { ...shared, dataEngine: engine }
       : {
@@ -460,10 +468,17 @@ function fakeLeaf(
           // `LocalGraphView.getState` reports the engine's options, which is
           // how a local graph's rows reach the workspace file.
           getState: () => ({ options: engine.getOptions() }),
-        };
-  const leaf = { view, isDeferred: false };
+        },
+  );
+  type MutableLeaf = {
+    -readonly [K in keyof WorkspaceLeaf]: WorkspaceLeaf[K];
+  } & { isDeferred: boolean };
+  const leaf = stubService<MutableLeaf>("WorkspaceLeaf", {
+    view,
+    isDeferred: false,
+  });
   return {
-    leaf: leaf as unknown as WorkspaceLeaf,
+    leaf,
     engine,
     load: () => {
       leaf.view = view;
@@ -550,60 +565,73 @@ interface FixtureOptions {
 }
 
 async function makeFixture(options: FixtureOptions = {}) {
-  const listeners = new Map<string, Set<() => void>>();
+  const listeners = new Map<string, Set<(...data: unknown[]) => unknown>>();
   const leaves: WorkspaceLeaf[] = [];
   /** What unloads each leaf's view, which is what closing the leaf runs. */
   const closers = new Map<WorkspaceLeaf, () => void>();
   /** What each leaf's view holds for that unload, as a `Component` holds it. */
   const registrations = new Map<WorkspaceLeaf, readonly (() => unknown)[]>();
   let layoutReady: (() => void) | undefined;
-  const workspace = {
+  const trigger = vi.fn();
+  const workspace = stubService<App["workspace"]>("Workspace", {
     onLayoutReady(cb: () => void) {
       layoutReady = cb;
     },
-    on(name: string, cb: () => void): EventRef {
+    on: ((name: string, cb: (...data: unknown[]) => unknown): EventRef => {
       if (!listeners.has(name)) listeners.set(name, new Set());
       listeners.get(name)!.add(cb);
-      return { e: workspace, name, cb } as unknown as EventRef;
-    },
+      return stubService<EventRef>("EventRef", { e: workspace, name, cb });
+    }) as App["workspace"]["on"],
     offref(ref: EventRef) {
-      const { name, cb } = ref as unknown as { name: string; cb: () => void };
+      const { name, cb } = ref as unknown as {
+        name: string;
+        cb: (...data: unknown[]) => unknown;
+      };
       listeners.get(name)?.delete(cb);
     },
     getLeavesOfType: (type: string) =>
       leaves.filter((leaf) => leaf.view.getViewType() === type),
     readWorkspaceFile: () => Promise.resolve(options.savedLayout ?? {}),
-    trigger: vi.fn(),
-    requestSaveLayout: vi.fn(),
-  };
+    trigger,
+    requestSaveLayout: debounce(() => Promise.resolve()),
+  });
   const graphPlugin = { options: options.savedGlobal ?? {} };
-  const app = {
+  const app = stubService<App>("App", {
     workspace,
-    viewRegistry: {
-      getViewCreatorByType: (type: "graph" | "localgraph") => () => {
-        const made = fakeLeaf(type, app, app);
-        Object.assign(made.leaf.view, {
-          onload: () => made.engine.setOptions(graphPlugin.options),
-        });
-        return made.leaf.view;
+    viewRegistry: stubService<NonNullable<App["viewRegistry"]>>(
+      "ViewRegistry",
+      {
+        getViewCreatorByType: (type: "graph" | "localgraph") => () => {
+          const made = fakeLeaf(type, app, app);
+          Object.assign(made.leaf.view, {
+            onload: () => made.engine.setOptions(graphPlugin.options),
+          });
+          return made.leaf.view;
+        },
       },
-    },
-    internalPlugins: {
-      getEnabledPluginById: (id: string) =>
-        id === "graph" && (options.graphEnabled ?? true) ? graphPlugin : null,
-    },
-    metadataCache: {
+    ),
+    internalPlugins: stubService<NonNullable<App["internalPlugins"]>>(
+      "InternalPlugins",
+      {
+        getEnabledPluginById: (id: string) =>
+          id === "graph" && (options.graphEnabled ?? true) ? graphPlugin : null,
+      },
+    ),
+    metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
       resolvedLinks: options.links ?? VAULT_LINKS,
       unresolvedLinks: options.unresolved ?? {},
       getCachedFiles: () => [...CACHED_FILES],
-      getFirstLinkpathDest: (linkpath: string) => {
+      getFirstLinkpathDest: (linkpath: string, _sourcePath: string) => {
         const path = LINK_TARGETS[linkpath];
-        return path ? { path } : null;
+        if (!path) return null;
+        const file = new TFile();
+        file.path = path;
+        return file;
       },
       getCache: (path: string) => CACHES[path] ?? null,
       getFileCache: ({ path }: { path: string }) => CACHES[path] ?? null,
-    },
-  } as unknown as App;
+    }),
+  });
   const citationIndex = new CitationIndexStub();
   const { noteIndex, writeNote } = await openNoteVault(
     options.notes ?? { "Literature/Doe 2024.md": "DEE23456" },
@@ -628,8 +656,8 @@ async function makeFixture(options: FixtureOptions = {}) {
   const bridge = owned.use(openTestBridge());
   const readsEvents = testEvents<ZoteroReadsEvents>(["changed", "degraded"]);
   const reads = {
-    reads: {
-      WorkLabels: ({ indexedKeys }: { indexedKeys: readonly string[] }) =>
+    reads: stubService<GraphCitationsDeps["reads"]["reads"]>("ZoteroReadsApi", {
+      WorkLabels: (({ indexedKeys }: { indexedKeys: readonly string[] }) =>
         options.labelDatabase
           ? Effect.promise(
               async () =>
@@ -649,15 +677,20 @@ async function makeFixture(options: FixtureOptions = {}) {
                   ),
                 ),
             )
-          : Effect.fail(new DbUnavailable({ message: "disconnected" })),
-    },
+          : Effect.fail(
+              new DbUnavailable({ message: "disconnected" }),
+            )) as GraphCitationsDeps["reads"]["reads"]["WorkLabels"],
+    }),
     ...readsEvents.streams,
     emit: readsEvents.emit.bind(readsEvents),
   };
   const service = new GraphCitations({
     runtime: testRuntime(),
     app,
-    reads: reads as unknown as import("./service").GraphCitationsDeps["reads"],
+    reads: stubService<GraphCitationsDeps["reads"] & typeof reads>(
+      "ZoteroReads",
+      reads,
+    ),
     libraryScope: {
       current: {
         mode: "all",
@@ -708,7 +741,7 @@ async function makeFixture(options: FixtureOptions = {}) {
     openIndexedKey,
     citationPopover,
     /** What a page preview goes out through: `workspace.trigger("hover-link", …)`. */
-    trigger: workspace.trigger,
+    trigger,
     addLeaf(viewType: "graph" | "localgraph", id = `leaf-${leaves.length}`) {
       const made = fakeLeaf(viewType, app, app);
       engines.push(made.engine);
@@ -829,7 +862,7 @@ describe("GraphCitations installation", () => {
     });
     await using service = fixture.service;
     await service.ready;
-    const leaf = { id: "new" } as WorkspaceLeaf;
+    const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", { id: "new" });
     const create = fixture.app.viewRegistry!.getViewCreatorByType("graph")!;
     const view = create(leaf);
     Object.assign(leaf, { view });
@@ -1856,18 +1889,23 @@ describe("GraphCitations hovers", () => {
 /** A popover already shown, as the engine holds the one its nodes stand on. */
 function fakePopover(targetEl: HTMLElement | null = null): HoverPopover & {
   onTarget: boolean;
-  transition: ReturnType<typeof vi.fn>;
+  transition: Mock<(...args: unknown[]) => void>;
 } {
-  return {
+  const transition: Mock<(...args: unknown[]) => void> = vi.fn(
+    (..._args: unknown[]) => undefined,
+  );
+  return stubService<
+    HoverPopover & {
+      onTarget: boolean;
+      transition: typeof transition;
+    }
+  >("HoverPopover", {
     state: PopoverState.Shown,
     onTarget: true,
     targetEl,
-    transition: vi.fn(),
+    transition,
     hide: vi.fn(),
-  } as unknown as HoverPopover & {
-    onTarget: boolean;
-    transition: ReturnType<typeof vi.fn>;
-  };
+  });
 }
 
 /** One hover over a Cited Work Node and one over a Literature Note. */

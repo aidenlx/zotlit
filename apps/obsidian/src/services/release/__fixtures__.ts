@@ -2,7 +2,7 @@
 import { Context, Effect, Layer } from "effect";
 import type { Scope } from "effect";
 import { TFile, TFolder } from "obsidian";
-import type { App } from "obsidian";
+import type { App, Events } from "obsidian";
 import { vi } from "vitest";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
@@ -28,6 +28,19 @@ export interface ReleaseAppFixture {
   layoutReady(): void;
 }
 
+type EventSource = Pick<Events, "on" | "offref">;
+type EventCallback = (...args: never[]) => unknown;
+
+export function obsidianEventMethods(source: EventSource) {
+  return {
+    on: (name: string, callback: EventCallback) =>
+      source.on(name, (...args: unknown[]) =>
+        Reflect.apply(callback, undefined, args),
+      ),
+    offref: (ref: Parameters<EventSource["offref"]>[0]) => source.offref(ref),
+  };
+}
+
 /** An App with one template folder and a layout-ready callback the test fires. */
 export function releaseApp(
   templateFiles: readonly string[],
@@ -40,13 +53,31 @@ export function releaseApp(
     return file;
   });
   const workspace = new MemoryWorkspace();
-  const app = {
-    workspace,
-    internalPlugins: { getEnabledPluginById: () => null },
-    vault: MemoryVault.with({
-      getFolderByPath: (path: string) => (path === folderPath ? folder : null),
+  const vault = MemoryVault.with({
+    getFolderByPath: (path: string) => (path === folderPath ? folder : null),
+  });
+  const app = stubService<App>("App", {
+    workspace: stubService<App["workspace"]>("Workspace", {
+      ...obsidianEventMethods(workspace),
+      onLayoutReady: (callback) => workspace.onLayoutReady(callback),
+      getActiveFile: () => workspace.getActiveFile(),
+      getActiveViewOfType: (type) => workspace.getActiveViewOfType(type),
     }),
-  } as unknown as App;
+    internalPlugins: stubService<App["internalPlugins"]>("InternalPlugins", {
+      getEnabledPluginById: () => null,
+    }),
+    vault: stubService<App["vault"]>("Vault", {
+      ...obsidianEventMethods(vault),
+      read: (file) => vault.read(file),
+      cachedRead: (file) => vault.cachedRead(file),
+      process: (file, fn, options) => vault.process(file, fn, options),
+      create: (path, data, options) => vault.create(path, data, options),
+      trash: (file, system) => vault.trash(file, system),
+      getFileByPath: (path) => vault.getFileByPath(path),
+      getFolderByPath: (path) => vault.getFolderByPath(path),
+      getAbstractFileByPath: (path) => vault.getAbstractFileByPath(path),
+    }),
+  });
   return {
     app,
     layoutReady: () => workspace.layoutReady(),

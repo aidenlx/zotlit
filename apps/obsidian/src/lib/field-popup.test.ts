@@ -1,33 +1,35 @@
 // @vitest-environment happy-dom
+import type { EditorView } from "@codemirror/view";
 import { Scope } from "obsidian";
 import type { Keymap } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import type { FieldPopupKeys } from "@zotlit/workbench/language";
 
+import { stubService } from "./__fixtures__/service-stub";
 import { popupScope } from "./field-popup";
 
 /** A keymap that records its stack, and the keys a popup hands it. */
 function setup() {
   const stack: Scope[] = [];
-  const keymap = {
+  const keymap = stubService<Keymap>("Keymap", {
     pushScope: (scope: Scope) => stack.push(scope),
     popScope: (scope: Scope) => stack.splice(stack.indexOf(scope), 1),
-  } as unknown as Keymap;
+  });
   const migrated: (() => void)[] = [];
-  const keys = {
-    view: {
-      scrollDOM: {
+  const keys = stubService<FieldPopupKeys>("FieldPopupKeys", {
+    view: stubService<EditorView>("EditorView", {
+      scrollDOM: Object.assign(document.createElement("div"), {
         onWindowMigrated: (listener: () => void) => {
           migrated.push(listener);
           return () => migrated.splice(migrated.indexOf(listener), 1);
         },
-      },
-    },
+      }),
+    }),
     accept: vi.fn(() => true),
     close: vi.fn(() => true),
     released: vi.fn(),
-  } as unknown as FieldPopupKeys;
+  });
   popupScope({ scope: new Scope(), keymap })(keys);
   return { stack, keys, migrated };
 }

@@ -14,11 +14,13 @@ import {
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { buildRelease } from "@/services/release/__fixtures__";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import type { SettingsFixture } from "@/services/settings/__fixtures__";
+import { stubbedReads } from "@/services/zotero-reads/test-utils";
 
 import { WelcomeBanner } from "./banner";
 import type { WelcomeBannerDeps } from "./banner";
@@ -105,16 +107,24 @@ async function bannerDeps(
       version: "2.2.0",
     }),
   );
+  const zoteroReads = cleanup.use(stubbedReads());
+  const reads = new Proxy(zoteroReads.reads, {
+    get(target, property, receiver) {
+      if (property === "ConnectionReadout")
+        return () => Effect.succeed({ itemCount: 3 });
+      return Reflect.get(target, property, receiver);
+    },
+  });
   const deps: WelcomeBannerDeps = {
     runtime: testRuntime(),
     bridge: release.bridge,
     app,
-    reads: {
+    reads: stubService<WelcomeBannerDeps["reads"]>("ZoteroReads", {
       state: "ready",
       error: null,
-      reads: { ConnectionReadout: () => Effect.succeed({ itemCount: 3 }) },
+      reads,
       ...events.streams,
-    } as unknown as WelcomeBannerDeps["reads"],
+    }),
     queries: queryClientsFixture(),
     zoteroPref: { dataDir: "/Zotero" },
     settings,

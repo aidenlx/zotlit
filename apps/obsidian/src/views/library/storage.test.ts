@@ -9,11 +9,9 @@ import type { App } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, expect, it, vi } from "vitest";
 
-import {
-  createObsidianHost,
-  PluginStub,
-} from "@/lib/__fixtures__/obsidian-host";
+import { PluginStub } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
@@ -43,7 +41,7 @@ const EMPTY: QueryViewOutcome = {
   kind: "result",
   result: {
     libraries: [{ type: "personal" }],
-    query: {} as never,
+    query: { filter: null, fields: [], sort: [], limit: null },
     returnedCount: 0,
     matchedCount: 0,
     truncated: false,
@@ -87,8 +85,8 @@ afterEach(async () => {
 async function openLibrary() {
   setMockPlatform({ isMacOS: true });
   cleanup.defer(resetMockPlatform);
-  const host = createObsidianHost({});
-  const plugin = new PluginStub(host.app as unknown as App, {
+  const app = stubService<App>("App", {});
+  const plugin = new PluginStub(app, {
     __VERSION__: 10,
     "library.document": STORED_EARLIER,
   });
@@ -110,24 +108,40 @@ async function openLibrary() {
   await settings.bridge.runPromise(settings.loaded);
   const saveData = vi.spyOn(plugin, "saveData");
   const runtime = testRuntime();
-  const deps = {
+  const deps = stubService<QueryViewDeps>("QueryViewDeps", {
     runtime,
     bridge: effectBridge(runtime),
-    app: { ...host.app, scope: undefined },
-    reads: {
+    app,
+    opener: stubService<QueryViewDeps["opener"]>("TargetOpener", {}),
+    reads: stubService<QueryViewDeps["reads"]>("ZoteroReads", {
       changed: Stream.empty,
       degraded: Stream.empty,
       "refresh-failed": Stream.empty,
       refreshing: Stream.empty,
       "db-file-missing": Stream.empty,
       "refresh-requested": Stream.empty,
-    },
-    libraryScope: { changed: Stream.empty, "libraries-changed": Stream.empty },
+    }),
+    libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
+      changed: Stream.empty,
+      "libraries-changed": Stream.empty,
+    }),
     query: fakeQuery(() => Promise.resolve(EMPTY)),
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
-    annotations: annotationReads(),
+    annotations: stubService<QueryViewDeps["annotations"]>(
+      "AnnotationRepository",
+      annotationReads(),
+    ),
+    excerptDisplay: stubService<QueryViewDeps["excerptDisplay"]>(
+      "ExcerptDisplay",
+      {},
+    ),
+    noteFeature: stubService<QueryViewDeps["noteFeature"]>("NoteFeature", {}),
+    zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+    libraryTagNames: async () => [],
+    allowEditing: vi.fn(),
+    reportBlockedGesture: vi.fn(),
     literatureNotes: noLiteratureNotes(),
-  } as unknown as QueryViewDeps;
+  });
   // The view's text is the toolbar's, which the storage takes changes from.
   const toolbar = { text: (): string | null => null };
   const storage = new LibraryViewStorage(settings, settings.bridge, () =>

@@ -4,6 +4,7 @@ import { ButtonComponent } from "obsidian";
 import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { yieldToMain } from "@/lib/yield-to-main";
 import { batchGroups } from "@/services/batch-scope";
@@ -328,7 +329,7 @@ it("refreshes the chip and every path after choosing, and blocks Run while previ
     failed: 0,
     cancelled: false,
   }));
-  const modal = new BatchModal({} as App, {
+  const modal = new BatchModal(stubService<App>("App", {}), {
     total: 1,
     text: {
       title: m.batch_update_title(),
@@ -383,40 +384,45 @@ it("offers note recovery in both the live failure panel and the completed summar
   using buttons = observeButtons();
   const trigger = vi.fn();
   const finished = Promise.withResolvers<BatchRunResult>();
-  const modal = new BatchModal({ workspace: { trigger } } as unknown as App, {
-    total: 1,
-    text: {
-      title: m.batch_update_title(),
-      loadingLabel: m.batch_update_loading_label(),
-      loadFailed: m.batch_update_load_failed(),
-      runFailed: m.batch_update_run_failed(),
-      progressLabel: m.batch_update_progress_label(),
-      confirmIntro: ({ actionable }) =>
-        m.batch_update_confirm_intro({ count: actionable }),
-      confirmButton: m.batch_update_confirm_button(),
-      runSummary: m.batch_update_summary,
-    },
-    onClassify: async () => ({
-      counts: { actionable: 1, notFound: 0 },
-      renderList: () => {},
-      setRowStatus: () => {},
-      renderSummary: () => {},
+  const modal = new BatchModal(
+    stubService<App>("App", {
+      workspace: stubService<App["workspace"]>("Workspace", { trigger }),
     }),
-    onRun: async (controls) => {
-      controls.onItemSettled({
-        id: 1,
-        status: "failed",
-        failure: {
-          label: "Paper",
-          message: m.notice_literature_note_profile_unknown({
-            stamp: "Missing",
-          }),
-          recovery: { action: "switch-profile", path: "Reading/Paper.md" },
-        },
-      });
-      return finished.promise;
+    {
+      total: 1,
+      text: {
+        title: m.batch_update_title(),
+        loadingLabel: m.batch_update_loading_label(),
+        loadFailed: m.batch_update_load_failed(),
+        runFailed: m.batch_update_run_failed(),
+        progressLabel: m.batch_update_progress_label(),
+        confirmIntro: ({ actionable }) =>
+          m.batch_update_confirm_intro({ count: actionable }),
+        confirmButton: m.batch_update_confirm_button(),
+        runSummary: m.batch_update_summary,
+      },
+      onClassify: async () => ({
+        counts: { actionable: 1, notFound: 0 },
+        renderList: () => {},
+        setRowStatus: () => {},
+        renderSummary: () => {},
+      }),
+      onRun: async (controls) => {
+        controls.onItemSettled({
+          id: 1,
+          status: "failed",
+          failure: {
+            label: "Paper",
+            message: m.notice_literature_note_profile_unknown({
+              stamp: "Missing",
+            }),
+            recovery: { action: "switch-profile", path: "Reading/Paper.md" },
+          },
+        });
+        return finished.promise;
+      },
     },
-  });
+  );
   modal.contentEl = document.createElement("div");
   modal.onOpen();
   await vi.waitFor(() =>
@@ -458,7 +464,7 @@ it.each(["cancel", "dismiss"] as const)(
     const finished = Promise.withResolvers<BatchRunResult>();
     let controls: BatchRunControls | undefined;
     const runSummary = vi.fn(() => "summary");
-    const modal = new BatchModal({} as App, {
+    const modal = new BatchModal(stubService<App>("App", {}), {
       total: 1,
       text: {
         title: m.batch_update_title(),

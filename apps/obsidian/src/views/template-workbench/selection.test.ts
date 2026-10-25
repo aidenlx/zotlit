@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 
-import type { App, ItemView, WorkspaceLeaf } from "obsidian";
+import type { App, EventRef, ItemView, WorkspaceLeaf } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 
 import {
   publishWorkbenchSelection,
@@ -11,25 +13,40 @@ import type { WorkbenchSelectionEvent } from "./selection";
 
 function workspace() {
   const listeners = new Set<(event: WorkbenchSelectionEvent) => void>();
-  const app = {
-    workspace: {
-      on: (
-        _name: string,
-        listener: (event: WorkbenchSelectionEvent) => void,
-      ) => {
-        listeners.add(listener);
-        return listener;
-      },
-      offref: (listener: (event: WorkbenchSelectionEvent) => void) =>
-        listeners.delete(listener),
-      trigger: (_name: string, event: WorkbenchSelectionEvent) => {
-        for (const listener of listeners) listener(event);
-      },
+  const refs = new Map<EventRef, (event: WorkbenchSelectionEvent) => unknown>();
+  const on = vi.fn();
+  const app = stubService<App>("App", {
+    workspace: stubService<App["workspace"]>("Workspace", {
+      on,
+      offref: vi.fn((ref: EventRef) => {
+        const listener = refs.get(ref);
+        if (listener) listeners.delete(listener);
+        refs.delete(ref);
+      }),
+    }),
+  });
+  on.mockImplementation(
+    (
+      _name: string,
+      listener: (event: WorkbenchSelectionEvent) => unknown,
+    ): EventRef => {
+      listeners.add(listener);
+      const ref = stubService<EventRef>("EventRef", {});
+      refs.set(ref, listener);
+      return ref;
     },
-  } as unknown as App;
+  );
+  const trigger = (_name: string, event: WorkbenchSelectionEvent) => {
+    for (const listener of listeners) listener(event);
+  };
+  app.workspace.trigger = trigger;
   return (group: string | null = null, pinned = false) => {
-    const leaf = { group, pinned } as WorkspaceLeaf;
-    const view = { app, leaf } as ItemView;
+    const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+      updateHeader: vi.fn(),
+      group,
+      pinned,
+    });
+    const view = stubService<ItemView>("ItemView", { app, leaf });
     const apply = vi.fn();
     return {
       view,

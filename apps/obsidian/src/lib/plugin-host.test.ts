@@ -1,8 +1,21 @@
+import type { Extension } from "@codemirror/state";
 import { it } from "@effect/vitest";
 import { Effect, Exit, Scope } from "effect";
-import type { App, Command, Plugin, PluginSettingTab } from "obsidian";
+import type {
+  App,
+  Command,
+  ObsidianProtocolHandler,
+  Plugin,
+  PluginManifest,
+  PluginSettingTab,
+  SettingsModal,
+  View,
+  ViewCreator,
+  Workspace,
+} from "obsidian";
 import { describe, expect, it as plainIt, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { CliHost } from "@/lib/cli-command";
 
 import { makePluginHost } from "./plugin-host";
@@ -14,37 +27,51 @@ function fakeObsidian() {
   const protocols = new Map<string, unknown>();
   const extensions = new Set<unknown>();
   const tabs = new Set<unknown>();
-  const app = {
-    viewRegistry: { unregisterView: (type: string) => views.delete(type) },
-    workspace: {
+  const app = stubService<App>("App", {
+    viewRegistry: {
+      getViewCreatorByType: () => undefined,
+      unregisterView: (type: string) => {
+        views.delete(type);
+      },
+    },
+    workspace: stubService<Workspace>("Workspace", {
       protocolHandler: {
-        unregister: (action: string, handler?: unknown) => {
+        unregister: (action: string, handler?: ObsidianProtocolHandler) => {
           if (!handler || protocols.get(action) === handler)
             protocols.delete(action);
         },
       },
-      unregisterEditorExtension: (extension: unknown) =>
+      unregisterEditorExtension: (extension: Extension) =>
         extensions.delete(extension),
-    },
-    setting: { removeSettingTab: (tab: unknown) => tabs.delete(tab) },
-  } as unknown as App;
-  const plugin = {
+    }),
+    setting: stubService<SettingsModal>("SettingsModal", {
+      removeSettingTab: (tab: PluginSettingTab) => tabs.delete(tab),
+    }),
+  });
+  const plugin = stubService<Plugin & CliHost>("Plugin", {
     app,
-    manifest: { id: "zotlit", version: "2.0.0" },
+    manifest: stubService<PluginManifest>("PluginManifest", {
+      id: "zotlit",
+      version: "2.0.0",
+    }),
     addCommand: (command: Command) => {
       command.id = `zotlit:${command.id}`;
       commands.set(command.id, command);
       return command;
     },
     removeCommand: (id: string) => commands.delete(`zotlit:${id}`),
-    registerView: (type: string, creator: unknown) => views.set(type, creator),
-    registerObsidianProtocolHandler: (action: string, handler: unknown) =>
-      protocols.set(action, handler),
-    registerEditorExtension: (extension: unknown) => extensions.add(extension),
-    addSettingTab: (tab: unknown) => tabs.add(tab),
+    registerView: (type: string, creator: ViewCreator) =>
+      views.set(type, creator),
+    registerObsidianProtocolHandler: (
+      action: string,
+      handler: ObsidianProtocolHandler,
+    ) => protocols.set(action, handler),
+    registerEditorExtension: (extension: Extension) =>
+      extensions.add(extension),
+    addSettingTab: (tab: PluginSettingTab) => tabs.add(tab),
     registerMarkdownPostProcessor: vi.fn(),
     registerCliCommand: vi.fn(),
-  } as unknown as Plugin & CliHost;
+  });
   return { plugin, commands, views, protocols, extensions, tabs };
 }
 
@@ -55,13 +82,13 @@ describe("makePluginHost", () => {
       const host = makePluginHost(obsidian.plugin);
       const scope = yield* Scope.fork(yield* Effect.scope);
       const extension = [] as const;
-      const tab = {} as PluginSettingTab;
+      const tab = stubService<PluginSettingTab>("PluginSettingTab", {});
 
       const command = yield* host
         .addCommand({ id: "open-release-note", name: "Open release note" })
         .pipe(Scope.provide(scope));
       yield* host
-        .registerView("zotlit-library", () => ({}) as never)
+        .registerView("zotlit-library", () => stubService<View>("View", {}))
         .pipe(Scope.provide(scope));
       yield* host
         .registerObsidianProtocolHandler("zotlit", () => {})

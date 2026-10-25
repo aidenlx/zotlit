@@ -7,19 +7,25 @@ import {
   Setting,
 } from "@mock/obsidian";
 import { Effect } from "effect";
+import { TFile } from "obsidian";
 import type {
+  App,
   ExtraButtonComponent as ObsidianExtraButton,
   Setting as ObsidianSetting,
   SettingDefinitionItem,
   SettingDefinitionList,
   SettingDefinitionPage,
-  TFile,
+  SettingGroup,
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
+import type { ProfileId } from "@/lib/profile-stamp";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
+import type { PreparedProfileCreation } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import {
   openNativeProfile,
@@ -39,32 +45,53 @@ vi.mock("@/views/template-workbench/register", () => ({
   openTemplateWorkbench: vi.fn(async () => {}),
 }));
 
+const books = "Bk3Qn7XvT2Lp" as ProfileId;
+
+function fileAt(path: string): TFile {
+  const file = new TFile();
+  file.path = path;
+  for (const field of [
+    "vault",
+    "name",
+    "parent",
+    "stat",
+    "basename",
+    "extension",
+  ])
+    Reflect.deleteProperty(file, field);
+  return file;
+}
+
 function context(): SettingTabContext {
-  return {
+  return stubService<SettingTabContext>("SettingTabContext", {
     runtime: testRuntime(),
-    app: { vault: { getFileByPath: () => null } },
+    app: stubService<App>("App", {
+      vault: stubService<SettingTabContext["app"]["vault"]>("Vault", {
+        getFileByPath: () => null,
+      }),
+    }),
     customize: vi.fn(() => Promise.resolve()),
     bridge: {
       runSync: Effect.runSync,
       runPromise: Effect.runPromise,
       subscribe: () => () => {},
     },
-    settings: {
+    settings: stubService<SettingTabContext["settings"]>("Settings", {
       current: Effect.succeed(defaults),
       updateDefaultLiteratureNoteProfileBindings: vi.fn(() => Effect.void),
-    },
-    profile: {
+    }),
+    profile: stubService<SettingTabContext["profile"]>("Profile", {
       profiles: [],
       diagnostics: [],
       loaded: true,
       defaultDocumentPath: "templates/zotlit-profile.default.md",
-    },
-    template: {
+    }),
+    template: stubService<SettingTabContext["template"]>("Template", {
       loaded: true,
       getPartialDocuments: () => [],
       getReservedPartialFiles: () => [],
-    },
-  } as unknown as SettingTabContext;
+    }),
+  });
 }
 
 /** The rendered row, so a test reads the controls the user gets. */
@@ -72,7 +99,10 @@ function render(row: SettingDefinitionItem): Setting {
   if (!("render" in row) || !row.render)
     throw new Error("Expected a render row");
   const setting = new Setting(document.createElement("div"));
-  row.render(setting as unknown as ObsidianSetting, {} as never);
+  row.render(
+    setting as unknown as ObsidianSetting,
+    stubService<SettingGroup>("SettingGroup", {}),
+  );
   return setting;
 }
 
@@ -125,10 +155,10 @@ function pageWithOneProfile(ctx: SettingTabContext): {
   defaultRow: SettingDefinitionItem;
   profileRow: SettingDefinitionItem;
 } {
-  ctx.profile = {
+  ctx.profile = stubService<SettingTabContext["profile"]>("Profile", {
     profiles: [
       {
-        id: "Bk3Qn7XvT2Lp",
+        id: books,
         label: "Books",
         document: "zotlit-profile.books.md",
         path: "templates/zotlit-profile.books.md",
@@ -139,7 +169,7 @@ function pageWithOneProfile(ctx: SettingTabContext): {
     diagnostics: [],
     loaded: true,
     defaultDocumentPath: "templates/zotlit-profile.default.md",
-  } as unknown as SettingTabContext["profile"];
+  });
   const page = profilesPage(ctx);
   return {
     defaultRow: page.items![0]!,
@@ -158,21 +188,21 @@ function customizeButton(row: SettingDefinitionItem): ButtonComponent {
 describe("Profile settings", () => {
   it("opens the workbench from Edit and groups profile management in More actions", () => {
     const ctx = context();
-    ctx.profile = {
+    ctx.profile = stubService<SettingTabContext["profile"]>("Profile", {
       diagnostics: [],
       loaded: true,
       defaultDocumentPath: "templates/zotlit-profile.default.md",
       profiles: [
         {
-          id: "Bk3Qn7XvT2Lp",
+          id: books,
           label: "Books",
           document: "zotlit-profile.books.md",
           path: "templates/zotlit-profile.books.md",
-          match: { state: "absent" },
+          match: { state: "absent", summary: m.profile_match_absent() },
           bindings: {},
         },
       ],
-    } as unknown as SettingTabContext["profile"];
+    });
     const row = list(profilesPage(ctx), m.settings_profile_other_heading())
       .items![0]!;
     expect(buttonLabels(row)).toEqual([m.settings_profile_edit()]);
@@ -204,9 +234,11 @@ describe("Profile settings", () => {
     const ctx = context();
     expect(buttonLabels(documentRow(ctx))).toEqual([m.settings_profile_edit()]);
 
-    ctx.app = {
-      vault: { getFileByPath: (path: string) => ({ path }) as TFile },
-    } as unknown as SettingTabContext["app"];
+    ctx.app = stubService<SettingTabContext["app"]>("App", {
+      vault: stubService<SettingTabContext["app"]["vault"]>("Vault", {
+        getFileByPath: fileAt,
+      }),
+    });
     expect(buttonLabels(documentRow(ctx))).toEqual([
       m.settings_profile_document_restore(),
       m.settings_profile_edit(),
@@ -231,16 +263,18 @@ describe("Profile settings", () => {
 
   it("keeps native customization while the web Template Workbench is off", () => {
     const ctx = context();
-    ctx.settings = {
+    ctx.settings = stubService<SettingTabContext["settings"]>("Settings", {
       current: Effect.succeed({ ...defaults, "server.workbench": false }),
       updateDefaultLiteratureNoteProfileBindings: vi.fn(() => Effect.void),
-    } as unknown as SettingTabContext["settings"];
+    });
 
     expect(buttonLabels(documentRow(ctx))).toEqual([m.settings_profile_edit()]);
 
-    ctx.app = {
-      vault: { getFileByPath: (path: string) => ({ path }) as TFile },
-    } as unknown as SettingTabContext["app"];
+    ctx.app = stubService<SettingTabContext["app"]>("App", {
+      vault: stubService<SettingTabContext["app"]["vault"]>("Vault", {
+        getFileByPath: fileAt,
+      }),
+    });
     expect(buttonLabels(documentRow(ctx))).toEqual([
       m.settings_profile_document_restore(),
       m.settings_profile_edit(),
@@ -264,17 +298,17 @@ describe("Profile settings", () => {
     customizeButton(profileRow).click();
     await vi.waitFor(() =>
       expect(ctx.customize).toHaveBeenCalledWith({
-        profileId: "Bk3Qn7XvT2Lp",
+        profileId: books,
       }),
     );
   });
 
   it("keeps More actions available while web access is off", () => {
     const ctx = context();
-    ctx.settings = {
+    ctx.settings = stubService<SettingTabContext["settings"]>("Settings", {
       current: Effect.succeed({ ...defaults, "server.workbench": false }),
       updateDefaultLiteratureNoteProfileBindings: vi.fn(() => Effect.void),
-    } as unknown as SettingTabContext["settings"];
+    });
     const { defaultRow, profileRow } = pageWithOneProfile(ctx);
 
     expect(extraButtonTooltips(defaultRow)).toEqual([
@@ -287,12 +321,12 @@ describe("Profile settings", () => {
 
   it("withholds both ways in while a Profile write would race the load", () => {
     const ctx = context();
-    ctx.profile = {
+    ctx.profile = stubService<SettingTabContext["profile"]>("Profile", {
       profiles: [],
       diagnostics: [],
       loaded: false,
       defaultDocumentPath: "templates/zotlit-profile.default.md",
-    } as unknown as SettingTabContext["profile"];
+    });
     const profiles = list(
       profilesPage(ctx),
       m.settings_profile_other_heading(),
@@ -331,13 +365,20 @@ it("warns once about repeated IDs and lists each excluded file with its own acti
     "templates/zotlit-profile.two.md",
   ];
   const trash = vi.fn();
-  ctx.app = {
-    vault: { getFileByPath: (path: string) => ({ path }) as TFile },
-    setting: { close: vi.fn<() => void>() },
-    fileManager: { trashFile: trash },
-  } as unknown as SettingTabContext["app"];
+  ctx.app = stubService<SettingTabContext["app"]>("App", {
+    vault: stubService<SettingTabContext["app"]["vault"]>("Vault", {
+      getFileByPath: fileAt,
+    }),
+    setting: stubService<SettingTabContext["app"]["setting"]>("SettingsModal", {
+      close: vi.fn<() => void>(),
+    }),
+    fileManager: stubService<SettingTabContext["app"]["fileManager"]>(
+      "FileManager",
+      { trashFile: trash },
+    ),
+  });
   ctx.requestUpdate = vi.fn();
-  ctx.profile = {
+  ctx.profile = stubService<SettingTabContext["profile"]>("Profile", {
     profiles: [],
     loaded: true,
     defaultDocumentPath: "templates/zotlit-profile.default.md",
@@ -347,7 +388,7 @@ it("warns once about repeated IDs and lists each excluded file with its own acti
       paths,
       message: "Repeated ID",
     })),
-  } as unknown as SettingTabContext["profile"];
+  });
   const page = profilesPage(ctx);
   const banners = page.items!.filter(
     (row) =>
@@ -393,13 +434,19 @@ it("collects a destination before creating a Profile and cancels without a write
   const ctx = context();
   const create = vi.fn();
   ctx.requestUpdate = vi.fn();
-  ctx.profile.resolveProfile = vi.fn(() => ({
-    bindings: { "note.literature-folder": "literatures" },
-  })) as unknown as SettingTabContext["profile"]["resolveProfile"];
-  ctx.profile.prepareCreate = vi.fn(async () => ({
-    reason: m.settings_profile_name_invalid(),
-    create,
-  })) as unknown as SettingTabContext["profile"]["prepareCreate"];
+  const resolved = profileReader().resolveProfile("default")!;
+  ctx.profile.resolveProfile = vi.fn(() => resolved);
+  const prepared: PreparedProfileCreation = {
+    profile: resolved,
+    source: "",
+    inherited: [],
+    constraint: {
+      kind: "invalid-name",
+      message: m.settings_profile_name_invalid(),
+    },
+    create: async () => create(),
+  };
+  ctx.profile.prepareCreate = vi.fn(async () => prepared);
   const profiles = list(profilesPage(ctx), m.settings_profile_other_heading());
   profiles.addItem!.action(document.createElement("div"));
   const modal = Modal.instances.at(-1)!;

@@ -6,11 +6,16 @@
 // gone while its sections stay rendered.
 import { Component, MarkdownView } from "obsidian";
 import type {
+  App,
   MarkdownPostProcessor,
   MarkdownPostProcessorContext,
+  MarkdownRenderChild,
+  Workspace,
+  WorkspaceLeaf,
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   setup,
   useFakeTimers,
@@ -46,14 +51,23 @@ async function harness(stack: AsyncDisposableStack) {
   let process: MarkdownPostProcessor | undefined;
   const container = document.body.appendChild(document.createElement("div"));
   stack.defer(() => container.remove());
-  const view = Object.assign(
-    Object.create(MarkdownView.prototype) as MarkdownView,
-    { containerEl: container, hoverPopover: null },
+  const view: MarkdownView = Object.assign(
+    new MarkdownView(stubService<WorkspaceLeaf>("WorkspaceLeaf", {})),
+    {
+      containerEl: container,
+      hoverPopover: null,
+    },
   );
   const service = stack.use(
     new AnnotationLinkReadingCore({
       host: {
-        app: { workspace: { getLeavesOfType: () => [{ view }] } } as never,
+        app: stubService<App>("App", {
+          workspace: stubService<Workspace>("Workspace", {
+            getLeavesOfType: () => [
+              stubService<WorkspaceLeaf>("WorkspaceLeaf", { view }),
+            ],
+          }),
+        }),
         registerMarkdownPostProcessor: (
           postProcessor: MarkdownPostProcessor,
         ) => {
@@ -69,10 +83,13 @@ async function harness(stack: AsyncDisposableStack) {
   const section = new Component();
   section.load();
   stack.defer(() => section.unload());
-  await process!(el, {
-    sourcePath: "drafts/chapter.md",
-    addChild: (child: Component) => section.addChild(child),
-  } as unknown as MarkdownPostProcessorContext);
+  await process!(
+    el,
+    stubService<MarkdownPostProcessorContext>("MarkdownPostProcessorContext", {
+      sourcePath: "drafts/chapter.md",
+      addChild: (child: MarkdownRenderChild) => section.addChild(child),
+    }),
+  );
   // Obsidian's hover delay runs on a fake clock; the repository's reads do not.
   useFakeTimers();
   stack.defer(() => {

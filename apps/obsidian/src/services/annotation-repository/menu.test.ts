@@ -1,9 +1,12 @@
-import { Menu, TFile } from "@mock/obsidian";
+import { Menu } from "@mock/obsidian";
+import type { MenuItem as MockMenuItem } from "@mock/obsidian";
 import { Effect } from "effect";
-import type { WorkspaceLeaf } from "obsidian";
+import { TFile } from "obsidian";
+import type { Menu as ObsidianMenu, MenuItem, WorkspaceLeaf } from "obsidian";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { fileMenuHandler } from "@/services/__fixtures__/file-menu";
 
 import type { HistorySurface } from "./actions";
@@ -29,7 +32,47 @@ function surface(historyAttachment: string | null): Surface {
 }
 
 /** The leaf a More options menu was opened over. */
-const LEAF = { id: "pdf-leaf" } as unknown as WorkspaceLeaf;
+const LEAF = stubService<WorkspaceLeaf>("WorkspaceLeaf", { id: "pdf-leaf" });
+
+/** The mock menu behind the public Obsidian `Menu` type its consumer takes. */
+function obsidianMenu(menu: Menu): ObsidianMenu {
+  const typed = Object.assign(stubService<ObsidianMenu>("Menu", {}), {
+    addItem(callback: (item: MenuItem) => unknown): ObsidianMenu {
+      menu.addItem((item) => callback(obsidianMenuItem(item)));
+      return typed;
+    },
+  });
+  return typed;
+}
+
+/** The mock item behind the public Obsidian `MenuItem` type. */
+function obsidianMenuItem(item: MockMenuItem): MenuItem {
+  const typed = Object.assign(stubService<MenuItem>("MenuItem", {}), {
+    setSection(section: string): MenuItem {
+      item.setSection(section);
+      return typed;
+    },
+    setTitle(title: string): MenuItem {
+      item.setTitle(title);
+      return typed;
+    },
+    setIcon(icon: string): MenuItem {
+      item.setIcon(icon);
+      return typed;
+    },
+    setDisabled(disabled: boolean): MenuItem {
+      item.setDisabled(disabled);
+      return typed;
+    },
+    onClick(
+      callback: (event: MouseEvent | KeyboardEvent) => unknown,
+    ): MenuItem {
+      item.onClick(callback);
+      return typed;
+    },
+  });
+  return typed;
+}
 
 /** The registered `file-menu` handler, over one leaf and one history. */
 function setup({
@@ -59,7 +102,7 @@ function setup({
     /** One More options menu, built over the leaf this test names. */
     open: (source = "more-options", leaf: WorkspaceLeaf | null = LEAF) => {
       const menu = new Menu();
-      registered(menu as never, pdf as never, source, leaf ?? undefined);
+      registered(obsidianMenu(menu), pdf, source, leaf ?? undefined);
       return menu;
     },
   };

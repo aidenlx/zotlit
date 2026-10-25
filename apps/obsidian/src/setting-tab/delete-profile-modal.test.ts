@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-import { ButtonComponent, ConfirmationModal } from "obsidian";
-import type { App, TFile } from "obsidian";
+import { ButtonComponent, ConfirmationModal, TFile } from "obsidian";
+import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
@@ -27,11 +28,12 @@ function plan(used = false): ProfileDeletionPlan {
       },
     ],
   });
-  const literature = {
-    path: "Books/My title.md",
-    name: "My title.md",
-  } as TFile;
-  const imported = { path: "Imports/Child.md", name: "Child.md" } as TFile;
+  const literature = new TFile();
+  literature.path = "Books/My title.md";
+  literature.name = "My title.md";
+  const imported = new TFile();
+  imported.path = "Imports/Child.md";
+  imported.name = "Child.md";
   return {
     source: {
       id: books,
@@ -69,7 +71,9 @@ function plan(used = false): ProfileDeletionPlan {
 it("confirms an unused Profile with configured trash and no target control", async () => {
   using opened = vi.spyOn(ConfirmationModal.prototype, "open");
   using action = vi.spyOn(ButtonComponent.prototype, "setButtonText");
-  const decision = confirmProfileDeletion({} as App, { plan: plan() });
+  const decision = confirmProfileDeletion(stubService<App>("App", {}), {
+    plan: plan(),
+  });
   const modal = opened.mock.instances[0] as ConfirmationModal;
   expect(
     [...modal.contentEl.querySelectorAll("p")].map((p) => p.textContent),
@@ -87,7 +91,9 @@ it("shows both counts and informed Default target, changing the move option with
   using opened = vi.spyOn(ConfirmationModal.prototype, "open");
   using action = vi.spyOn(ButtonComponent.prototype, "setButtonText");
   using clicked = vi.spyOn(ButtonComponent.prototype, "onClick");
-  const decision = confirmProfileDeletion({} as App, { plan: plan(true) });
+  const decision = confirmProfileDeletion(stubService<App>("App", {}), {
+    plan: plan(true),
+  });
   const modal = opened.mock.instances[0] as ConfirmationModal;
   const paragraphs = [...modal.contentEl.querySelectorAll("p")].map(
     (p) => p.textContent,
@@ -138,7 +144,7 @@ it("names the target Profile's folders for the moved note kinds, however many su
     { file: literature, path: "Books/2020/My title.md" },
     { file: imported, path: imported.path },
   ];
-  void confirmProfileDeletion({} as App, { plan: used });
+  void confirmProfileDeletion(stubService<App>("App", {}), { plan: used });
   const modal = opened.mock.instances[0] as ConfirmationModal;
   const caption = () =>
     modal.contentEl.querySelector<HTMLInputElement>('input[type="checkbox"]')!

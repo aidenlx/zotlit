@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
 import { Keymap, Menu } from "obsidian";
+import type { App, Workspace } from "obsidian";
 import type { MouseEvent } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 
 import { createCitationPopoverActions } from "./actions";
 import type { CitationEntryBlock } from "./blocks";
@@ -50,7 +53,9 @@ function actions() {
     opened,
     hide,
     ...createCitationPopoverActions({
-      app: { workspace: { trigger: vi.fn() } } as never,
+      app: stubService<App>("App", {
+        workspace: stubService<Workspace>("Workspace", { trigger: vi.fn() }),
+      }),
       open: (entry, pane) => opened.push([entry.citekey!, pane]),
       hide,
       switchProfile: vi.fn(),

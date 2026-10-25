@@ -18,6 +18,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { yieldToMain } from "@/lib/yield-to-main";
 import {
@@ -270,42 +271,44 @@ async function render(options: {
   );
   const openLinkText = vi.fn(() => Promise.resolve());
   const setEphemeralState = vi.fn();
-  const markdownView = new MarkdownView({} as WorkspaceLeaf);
+  const markdownView = new MarkdownView(
+    stubService<WorkspaceLeaf>("WorkspaceLeaf", {}),
+  );
   Object.assign(markdownView, { file, setEphemeralState });
-  const sourceLeaf = { view: markdownView } as unknown as WorkspaceLeaf;
+  const sourceLeaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+    view: markdownView,
+  });
   const oldSetEphemeralState = vi.fn();
-  const oldMarkdownView = new MarkdownView({} as WorkspaceLeaf);
+  const oldMarkdownView = new MarkdownView(
+    stubService<WorkspaceLeaf>("WorkspaceLeaf", {}),
+  );
   Object.assign(oldMarkdownView, {
     file,
     setEphemeralState: oldSetEphemeralState,
   });
-  const oldSourceLeaf = {
+  const oldSourceLeaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
     view: oldMarkdownView,
-  } as unknown as WorkspaceLeaf;
+  });
   const setActiveLeaf = vi.fn();
-  const app = {
-    vault: {
-      getAbstractFileByPath: (path: string) => files.get(path) ?? null,
-      cachedRead: read,
-    },
-    metadataCache: {
-      getFileCache: () =>
-        ({
-          links: options.links ?? [],
-          sections: options.sections,
-          listItems: options.listItems,
-        }) as CachedMetadata,
-    },
-    workspace: {
-      activeLeaf: sourceLeaf,
-      openLinkText,
-      getLeavesOfType: () =>
-        options.duplicateSourceLeaf
-          ? [oldSourceLeaf, sourceLeaf]
-          : [sourceLeaf],
-      setActiveLeaf,
-    },
-  } as unknown as App;
+  const vault = stubService<App["vault"]>("Vault", {
+    getAbstractFileByPath: (path: string) => files.get(path) ?? null,
+    cachedRead: read,
+  });
+  const metadataCache = stubService<App["metadataCache"]>("MetadataCache", {
+    getFileCache: (): CachedMetadata => ({
+      links: options.links ?? [],
+      sections: options.sections,
+      listItems: options.listItems,
+    }),
+  });
+  const workspace = stubService<App["workspace"]>("Workspace", {
+    activeLeaf: sourceLeaf,
+    openLinkText,
+    getLeavesOfType: () =>
+      options.duplicateSourceLeaf ? [oldSourceLeaf, sourceLeaf] : [sourceLeaf],
+    setActiveLeaf,
+  });
+  const app = stubService<App>("App", { vault, metadataCache, workspace });
   const store = createCitedByStore();
   store.setState({
     indexedKey:

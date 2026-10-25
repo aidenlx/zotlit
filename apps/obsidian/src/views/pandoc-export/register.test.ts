@@ -4,13 +4,13 @@ import {
   DropdownComponent,
   Modal,
   settingsOf,
-  TFile,
 } from "@mock/obsidian";
 import { Effect } from "effect";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { App, Command, Plugin } from "obsidian";
+import { TFile } from "obsidian";
+import type { App, Command, FileSystemAdapter, Plugin } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -18,6 +18,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
+import type { CitationEngine } from "@/services/pandoc/engine";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
@@ -138,61 +139,81 @@ function openVault({
     },
   };
 
-  const app = {
-    workspace: { getActiveFile: () => (note ? file : null) },
-    metadataCache: { getFileCache: () => ({ frontmatter }) },
-    vault: {
-      adapter: { getBasePath: () => basePath },
+  const app = stubService<App>("App", {
+    workspace: stubService<App["workspace"]>("Workspace", {
+      getActiveFile: () => (note ? file : null),
+    }),
+    metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
+      getFileCache: () => ({ frontmatter }),
+    }),
+    vault: stubService<App["vault"]>("Vault", {
+      adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
+        getBasePath: () => basePath,
+      }),
       getName: () => "Research",
       cachedRead: () => Promise.resolve("[[Doe 2020]]\n"),
-    },
-  } as unknown as App;
+    }),
+  });
 
   registerPandocExport(
-    {
+    stubService<Pick<Plugin, "addCommand" | "app">>("Plugin", {
       app,
       addCommand: (added: Command) => {
         command = added;
         return added;
       },
-    } as unknown as Pick<Plugin, "addCommand" | "app">,
-    {
+    }),
+    stubService<PandocExportDeps>("PandocExportDeps", {
       app,
       pandocEngine: {
-        binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
-          "PandocEngine",
-          {
-            getStatus: Effect.succeed(
-              engineInstalled
-                ? {
-                    kind: "installed",
-                    version: "test",
-                    binary: {
-                      directory: "pandoc-engine",
-                      name: "pandoc.wasm",
-                    },
-                  }
-                : { kind: "absent" },
+        binary: stubService<ManagedBinaryApi<CitationEngine>>("PandocEngine", {
+          getStatus: Effect.succeed(
+            engineInstalled
+              ? {
+                  kind: "installed",
+                  version: "test",
+                  binary: {
+                    directory: "pandoc-engine",
+                    name: "pandoc.wasm",
+                  },
+                }
+              : { kind: "absent" },
+          ),
+          getEngine: Effect.promise(() => getEngine()).pipe(
+            Effect.map(() =>
+              stubService<CitationEngine>("CitationEngine", {
+                [Symbol.asyncDispose]: async () => {},
+              }),
             ),
-            getEngine: Effect.promise(() => getEngine()).pipe(
-              Effect.map(() => ({ [Symbol.dispose]: () => undefined })),
-            ),
-          },
-        ),
+          ),
+        }),
         runSync: Effect.runSync,
         runPromise: Effect.runPromise,
       },
-      zoteroPref: { dataDir: DATA_DIR },
+      zoteroPref: stubService<PandocExportDeps["zoteroPref"]>("ZoteroPref", {
+        dataDir: DATA_DIR,
+        httpPort: 23119,
+        get: () => undefined,
+      }),
+      db: stubService<PandocExportDeps["db"]>("ZoteroReads", {}),
+      citationParse: stubService<PandocExportDeps["citationParse"]>(
+        "CitationParse",
+        {},
+      ),
+      zoteroHttp: stubService<PandocExportDeps["zoteroHttp"]>("ZoteroHttp", {}),
       citationLookup: {
         read: async () => lookupAnswer(),
       },
       settings: { current: Effect.succeed(resolvedSettings) },
-      bridge: { runSync: Effect.runSync },
+      bridge: {
+        runSync: Effect.runSync,
+        runPromiseExit: Effect.runPromiseExit,
+      },
       profile: profileReader(resolvedSettings, {
         getFileCache: () => ({ frontmatter }),
       }),
       openSettings: () => undefined,
-    } as unknown as PandocExportDeps,
+    }),
   );
 
   if (!command) throw new Error("the export registered no command");

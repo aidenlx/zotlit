@@ -1,14 +1,16 @@
 // @vitest-environment happy-dom
 import { Effect } from "effect";
-import type { HoverParent } from "obsidian";
+import type { App, HoverParent } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
+import { NO_ADDITIONS } from "@/services/graph-citations/adapter";
 import { wrapNodeHover } from "@/services/graph-citations/hover";
 import type { GraphLeafMembers } from "@/services/graph-citations/install";
 import type {
@@ -16,6 +18,8 @@ import type {
   BibliographyRenderResult,
 } from "@/services/pandoc/render-cache";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
+import { defaults } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 import {
   inProcessReadsService,
   memoryOpener,
@@ -383,17 +387,30 @@ describe("Citation Popover visits", () => {
         setData: (_data: unknown) => {},
       };
       using installed = wrapNodeHover(
-        { engine, renderer } as unknown as GraphLeafMembers,
+        Object.assign(stubService<GraphLeafMembers>("GraphLeafMembers", {}), {
+          engine,
+          renderer,
+          viewType: "graph",
+        }),
         {
-          app: {} as never,
-          settings: {
-            current: Effect.succeed({ "citation.hover-action": "popover" }),
-          } as never,
+          app: stubService<App>("App", {}),
+          settings: stubService<Pick<PluginSettings["Service"], "current">>(
+            "PluginSettings",
+            {
+              current: Effect.succeed({
+                ...defaults,
+                "citation.hover-action": "popover",
+              }),
+            },
+          ),
           citationPopover: run.service,
           bridge: run.bridge,
           open: run.open,
         },
-        () => ({ citedWorkNodes: new Map([["alpha", "alpha"]]) }) as never,
+        () => ({
+          ...NO_ADDITIONS,
+          citedWorkNodes: new Map([["alpha", "alpha"]]),
+        }),
       );
       await act(() =>
         renderer.onNodeHover(

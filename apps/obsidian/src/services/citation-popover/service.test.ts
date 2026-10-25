@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { Logger, References, Stream } from "effect";
 import type { Layer } from "effect";
-import type { TFile } from "obsidian";
+import { TFile } from "obsidian";
 import { act } from "preact/test-utils";
 import type { ReactElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -36,6 +36,7 @@ import {
 import type { SeededWork } from "@/services/zotero-reads/test-utils";
 
 import { citationPopoverFixture } from "./__fixtures__";
+import type { CitationPopoverFixtureDeps } from "./__fixtures__";
 import type { CitationPopoverContentProps } from "./content";
 import type { WorkHoverRequest } from "./service";
 
@@ -109,7 +110,7 @@ function reads(works: readonly SeededWork[] = []) {
   return stub;
 }
 
-const NOTE = { path: "note.md" } as TFile;
+const NOTE = Object.assign(new TFile(), { path: "note.md" });
 
 const emptyText = (): DocumentCitations => ({
   formatted: new Map(),
@@ -853,7 +854,7 @@ it.each([false, true])(
         invalidated: Stream.empty,
         "style-missing": Stream.empty,
         render: () => Promise.resolve({ kind: "unavailable" }),
-      } as never,
+      } satisfies CitationPopoverFixtureDeps["bibliographyRender"],
     });
     popover.runtime.runSync(
       popover.service.show({

@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { AppContext } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
@@ -59,7 +60,7 @@ afterEach(async () => {
 });
 
 async function mountList({
-  app = {} as App,
+  app = stubService<App>("App", {}),
   actions = {},
 }: { app?: App; actions?: Partial<AnnotActions> } = {}) {
   const store = createAnnotStore();

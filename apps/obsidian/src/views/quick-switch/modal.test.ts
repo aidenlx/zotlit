@@ -1,19 +1,16 @@
 import { Effect } from "effect";
-import { Keymap, MarkdownView, Platform } from "obsidian";
-import type {
-  App,
-  Instruction,
-  Modifier,
-  TFile,
-  WorkspaceLeaf,
-} from "obsidian";
+import { Keymap, MarkdownView, Platform, TFile } from "obsidian";
+import type { App, Instruction, Modifier, WorkspaceLeaf } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Item } from "@zotlit/db";
+import { makeItem } from "@zotlit/db/test-utils";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { openAttachments } from "@/lib/attachment-open";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { resolveLiteratureNoteAttachments } from "@/services/attachment-open/actions";
+import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
+import type { SearchHit } from "@/services/item-lookup/service";
 import type {
   CreationProfileSelection,
   PreparedCreationProfile,
@@ -46,6 +43,35 @@ vi.mock("@/lib/attachment-open", async (importOriginal) => ({
 
 beforeEach(() => vi.clearAllMocks());
 
+function file(path: string): TFile {
+  return Object.assign(new TFile(), { path });
+}
+
+function searchHit(indexedKey: string): SearchHit {
+  return {
+    item: makeItem(
+      {
+        itemType: "journalArticle",
+        key: indexedKey,
+        title: "Paper",
+      },
+      { key: indexedKey, indexedKey },
+    ),
+    matches: [],
+    library: null,
+    cited: false,
+  };
+}
+
+function openable(indexedKey: string): ObsidianOpenableAttachment {
+  return {
+    indexedKey,
+    label: `Attachment ${indexedKey}`,
+    openPath: `${indexedKey}.pdf`,
+    absolutePath: `/Zotero/storage/${indexedKey}/${indexedKey}.pdf`,
+  };
+}
+
 function profileSettings(profiles: { id: ProfileId; label: string }[] = []): {
   "note.default-profile": typeof DEFAULT_LITERATURE_NOTE_PROFILE;
   profiles: typeof profiles;
@@ -61,14 +87,24 @@ function onPlatform(isMacOS: boolean): void {
 }
 
 function makeModal(): QuickSwitchModal {
-  const deps = {
-    app: {} as App,
-    lookup: { openSession: vi.fn() },
-    noteFeature: { createNote: vi.fn() },
-    noteIndex: { getNotesByItemKey: vi.fn().mockReturnValue([]) },
-    settings: { current: Effect.succeed({}) },
-    bridge: { runSync: Effect.runSync },
-  } as unknown as QuickSwitchDeps;
+  const deps = stubService<QuickSwitchDeps>("QuickSwitchDeps", {
+    app: stubService<App>("App", {}),
+    lookup: stubService<QuickSwitchDeps["lookup"]>("ItemLookup", {
+      openSession: vi.fn(),
+    }),
+    noteFeature: stubService<QuickSwitchDeps["noteFeature"]>("NoteFeature", {
+      createNote: vi.fn(),
+    }),
+    noteIndex: stubService<QuickSwitchDeps["noteIndex"]>("NoteIndex", {
+      getNotesByItemKey: vi.fn().mockReturnValue([]),
+    }),
+    settings: stubService<QuickSwitchDeps["settings"]>("PluginSettings", {
+      current: Effect.succeed(defaults),
+    }),
+    bridge: stubService<QuickSwitchDeps["bridge"]>("EffectBridge", {
+      runSync: Effect.runSync,
+    }),
+  });
   return makeQuickSwitchModal(deps);
 }
 
@@ -180,40 +216,55 @@ describe("QuickSwitchModal PDF chord", () => {
     getNotesByItemKey: ReturnType<typeof vi.fn>;
     open: ReturnType<typeof vi.fn>;
   } {
-    const open = vi.fn(() => Promise.resolve({ kind: "reader" }));
+    const open = vi.fn<QuickSwitchDeps["opener"]["open"]>(async () => ({
+      kind: "reader",
+    }));
     onPlatform(true);
     const getNotesByItemKey = vi.fn().mockReturnValue([]);
-    const deps = {
-      app: {},
-      lookup: { openSession: vi.fn() },
-      noteFeature: { createNote: vi.fn() },
-      noteIndex: { getNotesByItemKey, whenIndexed: vi.fn() },
-      settings: { current: Effect.succeed({}) },
-      bridge: { runSync: Effect.runSync },
-      reads: { acquireRead: vi.fn() },
-      zoteroPref: { dataDir: null, baseAttachmentPath: null },
-      opener: { open },
-    } as unknown as QuickSwitchDeps;
+    const deps = stubService<QuickSwitchDeps>("QuickSwitchDeps", {
+      app: stubService<App>("App", {}),
+      lookup: stubService<QuickSwitchDeps["lookup"]>("ItemLookup", {
+        openSession: vi.fn(),
+      }),
+      noteFeature: stubService<QuickSwitchDeps["noteFeature"]>("NoteFeature", {
+        createNote: vi.fn(),
+      }),
+      noteIndex: stubService<QuickSwitchDeps["noteIndex"]>("NoteIndex", {
+        getNotesByItemKey,
+        whenIndexed: vi.fn(),
+      }),
+      settings: stubService<QuickSwitchDeps["settings"]>("PluginSettings", {
+        current: Effect.succeed(defaults),
+      }),
+      bridge: stubService<QuickSwitchDeps["bridge"]>("EffectBridge", {
+        runSync: Effect.runSync,
+      }),
+      reads: stubService<QuickSwitchDeps["reads"]>("ZoteroReads", {
+        acquireRead: vi.fn(),
+      }),
+      zoteroPref: stubService<QuickSwitchDeps["zoteroPref"]>("ZoteroPref", {
+        dataDir: undefined,
+        baseAttachmentPath: null,
+      }),
+      opener: stubService<QuickSwitchDeps["opener"]>("TargetOpener", { open }),
+    });
     return { deps, modal: new QuickSwitchModal(deps), getNotesByItemKey, open };
   }
 
   it("resolves the Item's Attachments instead of its note on Shift+Enter", async () => {
     const { deps, modal, getNotesByItemKey } = pdfDeps();
-    const openable = [{ indexedKey: "ATCH1" }];
-    vi.mocked(resolveLiteratureNoteAttachments).mockResolvedValue(
-      openable as never,
-    );
+    const attachments = [openable("ATCH1")];
+    vi.mocked(resolveLiteratureNoteAttachments).mockResolvedValue(attachments);
 
-    await modal.onChooseSuggestion(
-      { item: { indexedKey: "PAPER234" } } as never,
-      { shiftKey: true } as KeyboardEvent,
-    );
+    await modal.onChooseSuggestion(searchHit("PAPER234"), {
+      shiftKey: true,
+    } as KeyboardEvent);
 
     expect(resolveLiteratureNoteAttachments).toHaveBeenCalledWith(
       deps,
       "PAPER234",
     );
-    expect(openAttachments).toHaveBeenCalledExactlyOnceWith(openable, {
+    expect(openAttachments).toHaveBeenCalledExactlyOnceWith(attachments, {
       reader: expect.anything(),
       app: deps.app,
     });
@@ -222,19 +273,17 @@ describe("QuickSwitchModal PDF chord", () => {
 
   it("honors Mod+Shift+Enter's new-pane request, however many Attachments resolve", async () => {
     const { modal, open } = pdfDeps();
-    const opened = { indexedKey: "ATCH1" };
-    vi.mocked(resolveLiteratureNoteAttachments).mockResolvedValue([
-      opened,
-    ] as never);
+    const opened = openable("ATCH1");
+    vi.mocked(resolveLiteratureNoteAttachments).mockResolvedValue([opened]);
     using _mod = vi.spyOn(Keymap, "isModEvent").mockReturnValue(true);
 
-    await modal.onChooseSuggestion(
-      { item: { indexedKey: "PAPER234" } } as never,
-      { shiftKey: true, metaKey: true } as KeyboardEvent,
-    );
+    await modal.onChooseSuggestion(searchHit("PAPER234"), {
+      shiftKey: true,
+      metaKey: true,
+    } as KeyboardEvent);
 
     const { reader } = vi.mocked(openAttachments).mock.calls[0]![1];
-    void reader.open(opened as never, false);
+    void reader.open(opened, false);
     expect(open).toHaveBeenCalledExactlyOnceWith(
       { kind: "attachment", attachmentKey: "ATCH1" },
       true,
@@ -251,7 +300,18 @@ describe("QuickSwitchModal Profile creation", () => {
     return new Map(
       indexedKeys.map((indexedKey) => [
         indexedKey,
-        { item: { indexedKey } as Item, selection, previews },
+        {
+          item: makeItem(
+            {
+              itemType: "journalArticle",
+              key: indexedKey,
+              title: "Paper",
+            },
+            { key: indexedKey, indexedKey },
+          ),
+          selection,
+          previews,
+        },
       ]),
     );
   }
@@ -260,7 +320,7 @@ describe("QuickSwitchModal Profile creation", () => {
     const books = "Bk3Qn7XvT2Lp" as ProfileId;
     const create = vi.fn(async () => ({
       outcome: "created" as const,
-      file: { path: "Books/Paper.md" } as TFile,
+      file: file("Books/Paper.md"),
     }));
     const openLinkText = vi.fn(async () => {});
     const preview = {
@@ -272,28 +332,29 @@ describe("QuickSwitchModal Profile creation", () => {
       path: "Books/Paper.md",
       create,
     };
-    const deps = {
-      app: {
-        metadataCache: {
-          getFileCache: () => ({
-            frontmatter: { "zotlit-profile": `Books (${books})` },
-          }),
-        },
-        workspace: {
-          openLinkText,
-          getLeavesOfType: vi.fn((): WorkspaceLeaf[] => []),
-          revealLeaf: vi.fn(async () => {}),
-          setActiveLeaf: vi.fn(),
-        },
-      },
-      noteIndex: {
+    const app = stubService<App>("App", {
+      metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
+        getFileCache: () => ({
+          frontmatter: { "zotlit-profile": `Books (${books})` },
+        }),
+      }),
+      workspace: stubService<App["workspace"]>("Workspace", {
+        openLinkText,
+        getLeavesOfType: vi.fn((): WorkspaceLeaf[] => []),
+        revealLeaf: vi.fn(async () => {}),
+        setActiveLeaf: vi.fn(),
+      }),
+    });
+    const deps = stubService<QuickSwitchDeps>("QuickSwitchDeps", {
+      app,
+      noteIndex: stubService<QuickSwitchDeps["noteIndex"]>("NoteIndex", {
         whenIndexed: async () => {},
         getNotesByItemKey: () => (existing ? [existing] : []),
-      },
-      noteFeature: {
+      }),
+      noteFeature: stubService<QuickSwitchDeps["noteFeature"]>("NoteFeature", {
         createNote: vi.fn(async () => ({
           outcome: "created" as const,
-          file: { path: "Literature/Paper.md" } as TFile,
+          file: file("Literature/Paper.md"),
         })),
         planCreations: vi.fn(async (keys: readonly string[]) =>
           creationPlans(
@@ -306,56 +367,64 @@ describe("QuickSwitchModal Profile creation", () => {
             [preview],
           ),
         ),
-      },
-      zoteroPref: { dataDir: null },
-      settings: {
+      }),
+      zoteroPref: stubService<QuickSwitchDeps["zoteroPref"]>("ZoteroPref", {
+        dataDir: undefined,
+        baseAttachmentPath: null,
+      }),
+      settings: stubService<QuickSwitchDeps["settings"]>("PluginSettings", {
         current: Effect.succeed({
           ...defaults,
           ...profileSettings([{ id: books, label: "Books" }]),
         }),
-      },
-      bridge: { runSync: Effect.runSync },
-    };
+      }),
+      bridge: stubService<QuickSwitchDeps["bridge"]>("EffectBridge", {
+        runSync: Effect.runSync,
+      }),
+    });
     return {
       deps,
       books,
       preview,
       create,
       openLinkText,
-      modal: makeQuickSwitchModal(deps as unknown as QuickSwitchDeps),
+      modal: makeQuickSwitchModal(deps),
     };
   }
 
   it("opens an existing stamped note without a picker or a Profile change", async () => {
-    const { modal, deps, openLinkText } = creationDeps({
-      path: "Books/Existing.md",
-    } as TFile);
-    await modal.onChooseSuggestion(
-      { item: { indexedKey: "PAPER234" } } as never,
-      {} as KeyboardEvent,
+    const { modal, deps, openLinkText } = creationDeps(
+      file("Books/Existing.md"),
     );
+    await modal.onChooseSuggestion(searchHit("PAPER234"), {} as KeyboardEvent);
     expect(openLinkText).toHaveBeenCalledWith("Books/Existing.md", "", false, {
       active: true,
     });
     expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
-    expect(deps.noteFeature.planCreations).not.toHaveBeenCalled();
-    expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
+    expect(vi.mocked(deps.noteFeature.planCreations)).not.toHaveBeenCalled();
+    expect(vi.mocked(deps.noteFeature.createNote)).not.toHaveBeenCalled();
   });
 
   async function chooseOpenNote(newPane: boolean) {
-    const file = { path: "Books/Existing.md" } as TFile;
-    const { modal, deps, openLinkText } = creationDeps(file);
-    const leaf = {
-      view: Object.assign(new MarkdownView({} as WorkspaceLeaf), { file }),
-    } as unknown as WorkspaceLeaf;
-    deps.app.workspace.getLeavesOfType.mockReturnValue([leaf]);
+    const openFile = file("Books/Existing.md");
+    const { modal, deps, openLinkText } = creationDeps(openFile);
+    const view = Object.assign(
+      new MarkdownView(
+        stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+          updateHeader: vi.fn(),
+        }),
+      ),
+      { file: openFile },
+    );
+    const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+      updateHeader: vi.fn(),
+    });
+    Object.defineProperty(leaf, "view", { value: view });
+    vi.mocked(deps.app.workspace.getLeavesOfType).mockReturnValue([leaf]);
     using _mod = vi.spyOn(Keymap, "isModEvent").mockReturnValue(newPane);
 
-    await modal.onChooseSuggestion(
-      { item: { indexedKey: "PAPER234" } } as never,
-      {} as KeyboardEvent,
-    );
-    return { file, leaf, deps, openLinkText };
+    await modal.onChooseSuggestion(searchHit("PAPER234"), {} as KeyboardEvent);
+    return { file: openFile, leaf, deps, openLinkText };
   }
 
   it("reveals the resolved note's open leaf without the new-pane modifier", async () => {
@@ -365,7 +434,7 @@ describe("QuickSwitchModal Profile creation", () => {
       focus: true,
     });
     expect(openLinkText).not.toHaveBeenCalled();
-    expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
+    expect(vi.mocked(deps.noteFeature.createNote)).not.toHaveBeenCalled();
   });
 
   it("opens the already-open resolved note in a new pane with the new-pane modifier", async () => {
@@ -374,17 +443,14 @@ describe("QuickSwitchModal Profile creation", () => {
       active: true,
     });
     expect(deps.app.workspace.revealLeaf).not.toHaveBeenCalled();
-    expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
+    expect(vi.mocked(deps.noteFeature.createNote)).not.toHaveBeenCalled();
   });
 
   it("passes prepared rows and the resolved selection to the picker and cancels silently", async () => {
     const { modal, deps, books, preview, create, openLinkText } =
       creationDeps();
     vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue(undefined);
-    await modal.onChooseSuggestion(
-      { item: { indexedKey: "PAPER234" } } as never,
-      {} as KeyboardEvent,
-    );
+    await modal.onChooseSuggestion(searchHit("PAPER234"), {} as KeyboardEvent);
     expect(chooseLiteratureNoteProfile).toHaveBeenCalledWith(deps.app, {
       preselected: books,
       onNew: expect.any(Function),
@@ -394,7 +460,7 @@ describe("QuickSwitchModal Profile creation", () => {
       styles: [],
     });
     expect(create).not.toHaveBeenCalled();
-    expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
+    expect(vi.mocked(deps.noteFeature.createNote)).not.toHaveBeenCalled();
     expect(openLinkText).not.toHaveBeenCalled();
   });
 
@@ -405,10 +471,9 @@ describe("QuickSwitchModal Profile creation", () => {
       id: books,
       label: "Books",
     });
-    await modal.onChooseSuggestion(
-      { item: { indexedKey: "PAPER234" } } as never,
-      { metaKey: true } as KeyboardEvent,
-    );
+    await modal.onChooseSuggestion(searchHit("PAPER234"), {
+      metaKey: true,
+    } as KeyboardEvent);
     expect(create).toHaveBeenCalledOnce();
     expect(openLinkText).toHaveBeenCalledWith("Books/Paper.md", "", true, {
       active: true,
@@ -417,7 +482,7 @@ describe("QuickSwitchModal Profile creation", () => {
 
   it("creates directly without opening the picker when only Default is available", async () => {
     const { modal, deps, preview, openLinkText } = creationDeps();
-    deps.noteFeature.planCreations.mockImplementation(async (keys) =>
+    vi.mocked(deps.noteFeature.planCreations).mockImplementation(async (keys) =>
       creationPlans(
         keys,
         {
@@ -428,16 +493,12 @@ describe("QuickSwitchModal Profile creation", () => {
         [preview],
       ),
     );
-    await modal.onChooseSuggestion(
-      { item: { indexedKey: "PAPER234" } } as never,
-      {} as KeyboardEvent,
-    );
+    await modal.onChooseSuggestion(searchHit("PAPER234"), {} as KeyboardEvent);
     expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
-    expect(deps.noteFeature.planCreations).toHaveBeenCalledExactlyOnceWith(
-      ["PAPER234"],
-      {},
-    );
-    expect(deps.noteFeature.createNote).toHaveBeenCalledWith(
+    expect(
+      vi.mocked(deps.noteFeature.planCreations),
+    ).toHaveBeenCalledExactlyOnceWith(["PAPER234"], {});
+    expect(vi.mocked(deps.noteFeature.createNote)).toHaveBeenCalledWith(
       expect.any(Object),
       { profile: "default" },
     );
@@ -459,15 +520,27 @@ describe("QuickSwitchModal Show in Library chord", () => {
     onPlatform(true);
     const showInLibrary = vi.fn(() => Promise.resolve());
     const getNotesByItemKey = vi.fn().mockReturnValue([]);
-    const modal = new QuickSwitchModal({
-      app: {},
-      lookup: { openSession: vi.fn() },
-      noteFeature: { createNote: vi.fn() },
-      noteIndex: { getNotesByItemKey, whenIndexed: vi.fn() },
-      settings: { current: Effect.succeed({}) },
-      bridge: { runSync: Effect.runSync },
+    const deps = stubService<QuickSwitchDeps>("QuickSwitchDeps", {
+      app: stubService<App>("App", {}),
+      lookup: stubService<QuickSwitchDeps["lookup"]>("ItemLookup", {
+        openSession: vi.fn(),
+      }),
+      noteFeature: stubService<QuickSwitchDeps["noteFeature"]>("NoteFeature", {
+        createNote: vi.fn(),
+      }),
+      noteIndex: stubService<QuickSwitchDeps["noteIndex"]>("NoteIndex", {
+        getNotesByItemKey,
+        whenIndexed: vi.fn(),
+      }),
+      settings: stubService<QuickSwitchDeps["settings"]>("PluginSettings", {
+        current: Effect.succeed(defaults),
+      }),
+      bridge: stubService<QuickSwitchDeps["bridge"]>("EffectBridge", {
+        runSync: Effect.runSync,
+      }),
       showInLibrary,
-    } as unknown as QuickSwitchDeps);
+    });
+    const modal = new QuickSwitchModal(deps);
     const select = vi
       .spyOn(modal, "selectActiveSuggestion")
       .mockImplementation(() => {});
@@ -475,10 +548,7 @@ describe("QuickSwitchModal Show in Library chord", () => {
     expect(findExactHandler(modal, ["Alt"])?.(evt)).toBe(false);
     expect(select).toHaveBeenCalledWith(evt);
 
-    await modal.onChooseSuggestion(
-      { item: { indexedKey: "ABCD2345g7" } } as never,
-      evt,
-    );
+    await modal.onChooseSuggestion(searchHit("ABCD2345g7"), evt);
     expect(showInLibrary).toHaveBeenCalledExactlyOnceWith("ABCD2345g7");
     expect(getNotesByItemKey).not.toHaveBeenCalled();
     expect(resolveLiteratureNoteAttachments).not.toHaveBeenCalled();

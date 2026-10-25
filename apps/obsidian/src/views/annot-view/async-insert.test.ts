@@ -1,13 +1,10 @@
 // @vitest-environment happy-dom
 import { history, undo } from "@codemirror/commands";
-import type {
-  Editor,
-  EventRef,
-  MarkdownFileInfo,
-  TFile,
-  Workspace,
-} from "obsidian";
+import { TFile } from "obsidian";
+import type { Editor, EventRef, MarkdownFileInfo, Workspace } from "obsidian";
 import { describe, expect, it } from "vitest";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 
 import { stateEditor } from "./__fixtures__/editor";
 import { captureInsertion } from "./async-insert";
@@ -15,27 +12,35 @@ import { captureInsertion } from "./async-insert";
 /** The workspace events a held insertion listens to, triggered by hand. */
 function fakeWorkspace() {
   const listeners = new Map<string, Set<() => void>>();
-  const on = (name: string, callback: () => void) => {
-    const set = listeners.get(name) ?? new Set();
-    set.add(callback);
-    listeners.set(name, set);
-    return { name, callback } as unknown as EventRef;
-  };
-  return {
-    on: on as Workspace["on"],
-    offref(ref: EventRef) {
-      const { name, callback } = ref as unknown as {
-        name: string;
-        callback: () => void;
-      };
-      listeners.get(name)?.delete(callback);
+  const refs = new Map<EventRef, { name: string; callback: () => void }>();
+  const workspace = stubService<Pick<Workspace, "on" | "offref">>("Workspace", {
+    on: (
+      name: string,
+      callback: (...args: never[]) => unknown,
+      _ctx?: unknown,
+    ) => {
+      const listener = () => callback();
+      const set = listeners.get(name) ?? new Set();
+      set.add(listener);
+      listeners.set(name, set);
+      const ref = stubService<EventRef>("EventRef", {});
+      refs.set(ref, { name, callback: listener });
+      return ref;
     },
+    offref(ref: EventRef) {
+      const entry = refs.get(ref);
+      if (!entry) return;
+      listeners.get(entry.name)?.delete(entry.callback);
+      refs.delete(ref);
+    },
+  });
+  return Object.assign(workspace, {
     trigger(name: string) {
       for (const callback of listeners.get(name) ?? []) callback();
     },
     listening: () =>
       [...listeners.values()].reduce((count, set) => count + set.size, 0),
-  };
+  });
 }
 
 function fixture() {
@@ -44,11 +49,13 @@ function fixture() {
     selection: { anchor: 7, head: 13 },
     extensions: [history()],
   });
-  const editor = { cm } as Editor;
-  const info = {
+  const file = new TFile();
+  file.path = "target.md";
+  const editor = stubService<Editor>("Editor", { cm });
+  const info = stubService<MarkdownFileInfo>("MarkdownFileInfo", {
     editor,
-    file: { path: "target.md" } as TFile,
-  } as MarkdownFileInfo;
+    file,
+  });
   let current = true;
   const workspace = fakeWorkspace();
   const target = captureInsertion({
@@ -81,8 +88,13 @@ function holdAt(
   { from, to = from }: { from: number; to?: number },
 ) {
   const cm = stateEditor({ doc });
-  const editor = { cm } as Editor;
-  const info = { editor, file: { path: "t.md" } as TFile } as MarkdownFileInfo;
+  const file = new TFile();
+  file.path = "t.md";
+  const editor = stubService<Editor>("Editor", { cm });
+  const info = stubService<MarkdownFileInfo>("MarkdownFileInfo", {
+    editor,
+    file,
+  });
   const target = captureInsertion({
     editor,
     info,
@@ -134,7 +146,9 @@ describe("captured asynchronous insertion", () => {
       using f = fixture();
       if (reason === "switch") f.switchEditor();
       if (reason === "file")
-        Object.assign(f.info, { file: { path: "other.md" } as TFile });
+        Object.assign(f.info, {
+          file: Object.assign(new TFile(), { path: "other.md" }),
+        });
       if (reason === "close") f.cm.dom.remove();
       if (reason === "cancel") f.target.cancel();
       if (reason === "escape")

@@ -1,16 +1,11 @@
 // @vitest-environment happy-dom
 import { Menu } from "@mock/obsidian";
 import { TFile } from "obsidian";
-import type {
-  App,
-  CachedMetadata,
-  EventRef,
-  ViewStateResult,
-  WorkspaceLeaf,
-} from "obsidian";
+import type { App, CachedMetadata, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { ParsedNote } from "@/services/citation-index/parsed-note";
 import { scanNote } from "@/services/citation-index/scan-note";
@@ -21,6 +16,7 @@ import type {
 
 import { SEARCH_DEBOUNCE } from "./CitedBy";
 import { CitedByView } from "./view";
+import type { CitedByViewDeps } from "./view";
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
@@ -32,6 +28,13 @@ class TestCitedByView extends CitedByView {
   close(): Promise<void> {
     return this.onClose();
   }
+}
+
+function leafFor(app: App): WorkspaceLeaf {
+  return stubService<WorkspaceLeaf & { app: App }>("WorkspaceLeaf", {
+    app,
+    updateHeader: () => {},
+  });
 }
 
 let view: TestCitedByView | undefined;
@@ -60,45 +63,54 @@ describe("CitedByView", () => {
     const duplicate = makeFile("Literature/Duplicate.md");
     const ordinary = makeFile("Notes/Ordinary.md");
     const caches = new Map<TFile, CachedMetadata>([
-      [file, { frontmatter: { "zotero-key": "ABCD2345" } } as CachedMetadata],
-      [
-        second,
-        { frontmatter: { "zotero-key": "ZZZ99999g7" } } as CachedMetadata,
-      ],
-      [
-        duplicate,
-        { frontmatter: { "zotero-key": "ABCD2345" } } as CachedMetadata,
-      ],
-      [ordinary, {} as CachedMetadata],
+      [file, { frontmatter: { "zotero-key": "ABCD2345" } }],
+      [second, { frontmatter: { "zotero-key": "ZZZ99999g7" } }],
+      [duplicate, { frontmatter: { "zotero-key": "ABCD2345" } }],
+      [ordinary, {}],
     ]);
-    const app = {
-      workspace: {
-        getActiveFile: () => activeFile,
-        on: (event: string, callback: () => void) => {
-          if (event === "active-leaf-change") onActiveLeafChange = callback;
-          return {} as EventRef;
-        },
+    const workspace = stubService<App["workspace"]>("Workspace", {
+      getActiveFile: () => activeFile,
+      on: (
+        event: string,
+        callback: (...args: never[]) => unknown,
+        _ctx?: unknown,
+      ) => {
+        if (event === "active-leaf-change")
+          onActiveLeafChange = () => callback();
+        return {};
       },
-      metadataCache: {
-        getFileCache: (target: TFile) => caches.get(target) ?? null,
-        on: (event: string, callback: (file: TFile) => void) => {
-          if (event === "changed") onMetadataChange = callback;
-          return {} as EventRef;
-        },
+    });
+    const metadataCache = stubService<App["metadataCache"]>("MetadataCache", {
+      getFileCache: (target: TFile) => caches.get(target) ?? null,
+      on: (
+        event: string,
+        callback: (...args: never[]) => unknown,
+        _ctx?: unknown,
+      ) => {
+        if (event === "changed")
+          onMetadataChange = (target) => callback(...([target] as never[]));
+        return {};
       },
-      vault: {
-        getAbstractFileByPath: (path: string) =>
-          path === file.path ? file : null,
-        cachedRead: () => Promise.resolve(""),
-        on: (event: string, callback: (...args: [TFile, string?]) => void) => {
-          if (event === "rename") {
-            onRename = (renamed, oldPath) => callback(renamed, oldPath);
-          }
-          if (event === "delete") onDelete = (deleted) => callback(deleted);
-          return {} as EventRef;
-        },
+    });
+    const vault = stubService<App["vault"]>("Vault", {
+      getAbstractFileByPath: (path: string) =>
+        path === file.path ? file : null,
+      cachedRead: () => Promise.resolve(""),
+      on: (
+        event: string,
+        callback: (...args: never[]) => unknown,
+        _ctx?: unknown,
+      ) => {
+        if (event === "rename") {
+          onRename = (renamed, oldPath) =>
+            callback(...([renamed, oldPath] as never[]));
+        }
+        if (event === "delete")
+          onDelete = (deleted) => callback(...([deleted] as never[]));
+        return {};
       },
-    } as unknown as App;
+    });
+    const app = stubService<App>("App", { workspace, metadataCache, vault });
     let publish: ((snapshot: CitedBySnapshot) => void) | undefined;
     const dispose = vi.fn();
     const observeCitedBy = vi.fn(
@@ -107,12 +119,15 @@ describe("CitedByView", () => {
         return dispose;
       },
     );
-    view = new TestCitedByView({} as WorkspaceLeaf, {
+    view = new TestCitedByView(leafFor(app), {
       app,
-      citationIndex: {
-        observeCitedBy,
-        getParsedNote: async () => new ParsedNote("", scanNote("")),
-      },
+      citationIndex: stubService<CitedByViewDeps["citationIndex"]>(
+        "CitationIndex",
+        {
+          observeCitedBy,
+          getParsedNote: async () => new ParsedNote("", scanNote("")),
+        },
+      ),
     });
     expect(view.getIcon()).toBe("file-input");
     expect(view.contentEl.classList).toContain("zt-cited-by-view");
@@ -155,7 +170,7 @@ describe("CitedByView", () => {
 
     caches.set(file, {
       frontmatter: { "zotero-key": "ZZZ99999g7" },
-    } as CachedMetadata);
+    });
     await act(() => onMetadataChange?.(file));
     expect(observeCitedBy).toHaveBeenLastCalledWith(
       "ZZZ99999g7",
@@ -164,7 +179,7 @@ describe("CitedByView", () => {
 
     caches.set(file, {
       frontmatter: { "zotero-key": "ABCD2345" },
-    } as CachedMetadata);
+    });
     await act(() => onMetadataChange?.(file));
     expect(observeCitedBy).toHaveBeenLastCalledWith(
       "ABCD2345",
@@ -200,7 +215,7 @@ describe("CitedByView", () => {
 
   it("carries its controls into the workspace layout", async () => {
     const harness = makeHarness();
-    view = new TestCitedByView({} as WorkspaceLeaf, harness.deps);
+    view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     document.body.append(view.contentEl);
     await act(() => view!.open());
     await act(() => harness.publish());
@@ -234,7 +249,7 @@ describe("CitedByView", () => {
 
   it("restores the controls the workspace layout holds", async () => {
     const harness = makeHarness();
-    view = new TestCitedByView({} as WorkspaceLeaf, harness.deps);
+    view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     await view.setState(
       {
         searchVisible: true,
@@ -244,7 +259,7 @@ describe("CitedByView", () => {
         // A collapse the view never writes stays out of the restored view.
         collapsed: [CITING_PATHS[0]],
       },
-      {} as ViewStateResult,
+      { history: false },
     );
     document.body.append(view.contentEl);
     await act(() => view!.open());
@@ -273,12 +288,9 @@ describe("CitedByView", () => {
 
   it("ignores layout state it does not recognize", async () => {
     const harness = makeHarness();
-    view = new TestCitedByView({} as WorkspaceLeaf, harness.deps);
-    await view.setState(
-      { search: 7, sort: "byWordCount" },
-      {} as ViewStateResult,
-    );
-    await view.setState(null, {} as ViewStateResult);
+    view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
+    await view.setState({ search: 7, sort: "byWordCount" }, { history: false });
+    await view.setState(null, { history: false });
 
     expect(view.getState()).toEqual({
       searchVisible: false,
@@ -290,7 +302,7 @@ describe("CitedByView", () => {
 
   it("keeps its controls but not its collapse or expansions across a note switch", async () => {
     const harness = makeHarness();
-    view = new TestCitedByView({} as WorkspaceLeaf, harness.deps);
+    view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     await view.setState(
       {
         searchVisible: true,
@@ -298,7 +310,7 @@ describe("CitedByView", () => {
         moreContext: true,
         sort: "alphabeticalReverse",
       },
-      {} as ViewStateResult,
+      { history: false },
     );
     document.body.append(view.contentEl);
     await act(() => view!.open());
@@ -336,7 +348,7 @@ describe("CitedByView", () => {
 
   it("keeps the toolbar node through a same-note leaf change that starts mid-press", async () => {
     const harness = makeHarness();
-    view = new TestCitedByView({} as WorkspaceLeaf, harness.deps);
+    view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     document.body.append(view.contentEl);
     await act(() => view!.open());
     await act(() => harness.publish());
@@ -356,7 +368,7 @@ describe("CitedByView", () => {
 
   it("keeps the toolbar node through a transient empty snapshot", async () => {
     const harness = makeHarness();
-    view = new TestCitedByView({} as WorkspaceLeaf, harness.deps);
+    view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     document.body.append(view.contentEl);
     await act(() => view!.open());
     await act(() => harness.publish());
@@ -379,7 +391,7 @@ describe("CitedByView", () => {
 
   it("keeps collapse and excerpt expansions across a same-note leaf change", async () => {
     const harness = makeHarness();
-    view = new TestCitedByView({} as WorkspaceLeaf, harness.deps);
+    view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     document.body.append(view.contentEl);
     await act(() => view!.open());
     await act(() => harness.publish());
@@ -413,7 +425,7 @@ describe("CitedByView", () => {
 
   it("keeps its subscription across a switch to a duplicate Literature Note", async () => {
     const harness = makeHarness();
-    view = new TestCitedByView({} as WorkspaceLeaf, harness.deps);
+    view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     document.body.append(view.contentEl);
     await act(() => view!.open());
     await act(() => harness.publish());
@@ -436,7 +448,7 @@ describe("CitedByView", () => {
 
   it("resubscribes on a close then re-open", async () => {
     const harness = makeHarness();
-    view = new TestCitedByView({} as WorkspaceLeaf, harness.deps);
+    view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     document.body.append(view.contentEl);
     await act(() => view!.open());
     await act(() => harness.publish());
@@ -470,37 +482,43 @@ function makeHarness() {
   // seam and the "This note" label switch.
   const duplicate = makeFile(CITING_PATHS[0]);
   const caches = new Map<TFile, CachedMetadata>([
-    [note, { frontmatter: { "zotero-key": "ABCD2345" } } as CachedMetadata],
-    [plain, {} as CachedMetadata],
-    [
-      duplicate,
-      { frontmatter: { "zotero-key": "ABCD2345" } } as CachedMetadata,
-    ],
-    ...citing.map((file) => [file, {} as CachedMetadata] as const),
+    [note, { frontmatter: { "zotero-key": "ABCD2345" } }],
+    [plain, {}],
+    [duplicate, { frontmatter: { "zotero-key": "ABCD2345" } }],
+    ...citing.map((file) => [file, {}] as const),
   ]);
   const files = new Map(citing.map((file) => [file.path, file]));
   let activeFile: TFile | null = note;
   let onActiveLeafChange: (() => void) | undefined;
-  const requestSaveLayout = vi.fn();
-  const app = {
-    workspace: {
-      getActiveFile: () => activeFile,
-      requestSaveLayout,
-      on: (event: string, callback: () => void) => {
-        if (event === "active-leaf-change") onActiveLeafChange = callback;
-        return {} as EventRef;
-      },
+  const requestSaveLayout = Object.assign(
+    vi.fn(() => requestSaveLayout),
+    {
+      cancel: () => requestSaveLayout,
+      run: () => Promise.resolve(),
     },
-    metadataCache: {
-      getFileCache: (target: TFile) => caches.get(target) ?? null,
-      on: () => ({}) as EventRef,
+  );
+  const workspace = stubService<App["workspace"]>("Workspace", {
+    getActiveFile: () => activeFile,
+    requestSaveLayout,
+    on: (
+      event: string,
+      callback: (...args: never[]) => unknown,
+      _ctx?: unknown,
+    ) => {
+      if (event === "active-leaf-change") onActiveLeafChange = () => callback();
+      return {};
     },
-    vault: {
-      getAbstractFileByPath: (path: string) => files.get(path) ?? null,
-      cachedRead: () => Promise.resolve(CITING_BODY),
-      on: () => ({}) as EventRef,
-    },
-  } as unknown as App;
+  });
+  const metadataCache = stubService<App["metadataCache"]>("MetadataCache", {
+    getFileCache: (target: TFile) => caches.get(target) ?? null,
+    on: () => ({}),
+  });
+  const vault = stubService<App["vault"]>("Vault", {
+    getAbstractFileByPath: (path: string) => files.get(path) ?? null,
+    cachedRead: () => Promise.resolve(CITING_BODY),
+    on: () => ({}),
+  });
+  const app = stubService<App>("App", { workspace, metadataCache, vault });
   let publish: ((snapshot: CitedBySnapshot) => void) | undefined;
   const dispose = vi.fn();
   const observeCitedBy = vi.fn(
@@ -513,11 +531,14 @@ function makeHarness() {
   return {
     deps: {
       app,
-      citationIndex: {
-        observeCitedBy,
-        getParsedNote: async () =>
-          new ParsedNote(CITING_BODY, scanNote(CITING_BODY)),
-      },
+      citationIndex: stubService<CitedByViewDeps["citationIndex"]>(
+        "CitationIndex",
+        {
+          observeCitedBy,
+          getParsedNote: async () =>
+            new ParsedNote(CITING_BODY, scanNote(CITING_BODY)),
+        },
+      ),
     },
     note,
     plain,

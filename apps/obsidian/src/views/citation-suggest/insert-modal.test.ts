@@ -1,25 +1,47 @@
 // @vitest-environment happy-dom
 import { Effect } from "effect";
-import type { App, Editor, Modifier, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { App, Editor, Modifier } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/service";
+import type { ItemLookup } from "@/services/item-lookup/service";
 import type { SearchHit } from "@/services/item-lookup/service";
+import { defaults } from "@/services/settings/schema";
 
 import { InsertCitationModal } from "./insert-modal";
 import type { CitationSuggestDeps } from "./register";
 
+function searchHit(): SearchHit {
+  return stubService<SearchHit>("SearchHit", {
+    item: stubService<SearchHit["item"]>("Item", {
+      key: "ABC123",
+      indexedKey: "ABC123",
+      fields: stubService<SearchHit["item"]["fields"]>("ItemFields", {
+        citationKey: "doe2024",
+      }),
+    }),
+  });
+}
+
 function makeModal(
-  overrides: Partial<CitationSuggestDeps> = {},
-  editor: Editor = {} as Editor,
+  overrides: Partial<Omit<CitationSuggestDeps, "lookup">> & {
+    lookup?: Pick<ItemLookup, "openSession">;
+  } = {},
+  editor: Editor = stubService<Editor>("Editor", {}),
   file: TFile | null = null,
 ): InsertCitationModal {
-  const deps = {
-    app: {} as App,
-    lookup: { openSession: vi.fn() },
-    noteFeature: { renderCitation: vi.fn() },
-    settings: { current: Effect.succeed({}) },
+  const { lookup = { openSession: vi.fn() }, ...rest } = overrides;
+  const deps = stubService<CitationSuggestDeps>("CitationSuggestDeps", {
+    app: stubService<App>("App", {}),
+    lookup: stubService<CitationSuggestDeps["lookup"]>("ItemLookup", lookup),
+    noteFeature: stubService<CitationSuggestDeps["noteFeature"]>(
+      "NoteFeature",
+      { renderCitation: vi.fn() },
+    ),
+    settings: { current: Effect.succeed(defaults) },
     bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
     citationLookup: {
       read: async () =>
@@ -34,11 +56,13 @@ function makeModal(
             },
           },
         }),
-      status: "ready",
+      status: "fresh",
     },
-    useLedger: { record: vi.fn() },
-    ...overrides,
-  } as unknown as CitationSuggestDeps;
+    useLedger: stubService<CitationSuggestDeps["useLedger"]>("UseLedger", {
+      record: vi.fn(),
+    }),
+    ...rest,
+  });
   return new InsertCitationModal(deps, editor, file);
 }
 
@@ -92,7 +116,7 @@ describe("InsertCitationModal ambiguity", () => {
     const renderCitation = vi.fn();
     const record = vi.fn();
     const replaceRange = vi.fn();
-    const editor = {
+    const editor = stubService<Editor>("Editor", {
       getValue: () => "",
       getCursor: () => ({ line: 0, ch: 0 }),
       getLine: () => "",
@@ -100,26 +124,19 @@ describe("InsertCitationModal ambiguity", () => {
       setCursor: vi.fn(),
       offsetToPos: (offset: number) => ({ line: 0, ch: offset }),
       posToOffset: () => 0,
-    } as unknown as Editor;
+    });
     const modal = makeModal(
       {
         noteFeature: { renderCitation },
         citationLookup: {
           read: async () => lookupAnswer({ doe2024: ambiguous }),
-          status: "ready",
+          status: "fresh",
         },
         useLedger: { record },
-      } as unknown as Partial<CitationSuggestDeps>,
+      },
       editor,
     );
-    const hit = {
-      item: {
-        key: "ABC123",
-        indexedKey: "ABC123",
-        fields: { citationKey: "doe2024" },
-      },
-      matches: [],
-    } as unknown as SearchHit;
+    const hit = searchHit();
 
     await modal.onChooseSuggestion(hit, {} as MouseEvent);
 
@@ -133,7 +150,7 @@ describe("InsertCitationModal Uses", () => {
   function editor(value = "") {
     let text = value;
     return {
-      editor: {
+      editor: stubService<Editor>("Editor", {
         getValue: () => text,
         getCursor: () => ({ line: 0, ch: text.length }),
         getLine: () => text,
@@ -143,7 +160,7 @@ describe("InsertCitationModal Uses", () => {
         setCursor: vi.fn(),
         offsetToPos: (offset: number) => ({ line: 0, ch: offset }),
         posToOffset: () => text.length,
-      } as unknown as Editor,
+      }),
       text: () => text,
       change: (next: string) => {
         text = next;
@@ -151,14 +168,7 @@ describe("InsertCitationModal Uses", () => {
     };
   }
 
-  const hit = {
-    item: {
-      key: "ABC123",
-      indexedKey: "ABC123",
-      fields: { citationKey: "doe2024" },
-    },
-    matches: [],
-  } as unknown as SearchHit;
+  const hit = searchHit();
 
   it("records the chosen Item after its citation is inserted", async () => {
     const draft = editor();
@@ -167,7 +177,7 @@ describe("InsertCitationModal Uses", () => {
       {
         noteFeature: { renderCitation: () => "[@doe2024]" },
         useLedger: { record },
-      } as unknown as Partial<CitationSuggestDeps>,
+      },
       draft.editor,
     );
 
@@ -184,9 +194,9 @@ describe("InsertCitationModal Uses", () => {
     const modal = makeModal(
       {
         noteFeature: { renderCitation: () => "[@doe2024]" },
-        citationLookup: { status: "ready", read: () => answer.promise },
+        citationLookup: { status: "fresh", read: () => answer.promise },
         useLedger: { record },
-      } as unknown as Partial<CitationSuggestDeps>,
+      },
       draft.editor,
     );
 
@@ -208,7 +218,7 @@ describe("InsertCitationModal Uses", () => {
       {
         noteFeature: { renderCitation: () => "" },
         useLedger: { record },
-      } as unknown as Partial<CitationSuggestDeps>,
+      },
       draft.editor,
     );
 
@@ -220,15 +230,24 @@ describe("InsertCitationModal Uses", () => {
 });
 
 describe("Insert Citation document citations", () => {
-  const file = { path: "Draft.md" } as TFile;
-  function setup(read: unknown) {
+  const file = new TFile();
+  file.path = "Draft.md";
+  function setup(
+    read: CitationSuggestDeps["citationIndex"]["getDocumentCitationSet"],
+  ) {
     const search = vi.fn().mockResolvedValue([]);
     const modal = makeModal(
       {
-        lookup: { openSession: () => ({ search, close() {} }) },
+        lookup: {
+          openSession: () => ({
+            search,
+            close() {},
+            [Symbol.dispose]() {},
+          }),
+        },
         citationIndex: { getDocumentCitationSet: read },
-      } as unknown as Partial<CitationSuggestDeps>,
-      {} as Editor,
+      },
+      stubService<Editor>("Editor", {}),
       file,
     );
     return { modal, search, [Symbol.dispose]: () => modal.onClose() };

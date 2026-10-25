@@ -52,8 +52,12 @@ it("#1704 refreshes an Annotation Citation's parent in References after a databa
   );
   const { app, draft, index, lookup, db, libraryScope } = harness;
   app.workspace.getActiveFile = () => draft;
-  app.workspace.on = () => ({}) as EventRef;
-  const view = new TestReferencesView({} as WorkspaceLeaf, {
+  app.workspace.on = () => stubService<EventRef>("EventRef", {});
+  const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+    updateHeader: vi.fn(),
+  });
+  Object.defineProperty(leaf, "app", { value: app });
+  const view = new TestReferencesView(leaf, {
     app,
     db,
     libraryScope,

@@ -1,8 +1,10 @@
-import type { App, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import type { Item } from "@zotlit/db";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
@@ -49,7 +51,7 @@ function booksPreview(
     path: "Books/Paper.md",
     create: vi.fn(async () => ({
       outcome: "created" as const,
-      file: { path: "Books/Paper.md" } as TFile,
+      file: noteAt("Books/Paper.md"),
     })),
     ...overrides,
   };
@@ -77,16 +79,22 @@ function directDeps(
   selection: CreationProfileSelection,
   previews: PreparedCreationProfile[],
 ) {
-  return {
-    app: {} as App,
-    zoteroPref: { dataDir: null },
-    noteFeature: {
-      planCreations: vi.fn(async (keys: readonly string[]) =>
-        creationPlans(keys, selection, previews),
-      ),
-      createNote: vi.fn(),
-    },
-  } as unknown as InteractiveCreationDeps;
+  const deps: InteractiveCreationDeps = {
+    createProfile: vi.fn(),
+    importProfile: vi.fn(),
+    app: stubService<App>("App", {}),
+    zoteroPref: { dataDir: "" },
+    noteFeature: stubService<InteractiveCreationDeps["noteFeature"]>(
+      "NoteFeature",
+      {
+        planCreations: vi.fn(async (keys: readonly string[]) =>
+          creationPlans(keys, selection, previews),
+        ),
+        createNote: vi.fn(),
+      },
+    ),
+  };
+  return deps;
 }
 
 /** The success notice the create toast shows, captured by spying on it. */
@@ -105,7 +113,7 @@ function successNotice() {
 }
 
 it("creates a note from the New profile dialog's prepared callback without re-resolving its path", async () => {
-  const file = { path: "Reading/Paper-7cx.md" } as TFile;
+  const file = noteAt("Reading/Paper-7cx.md");
   const create = vi.fn(async () => ({ outcome: "created" as const, file }));
   const createProfile = vi.fn(async () => ({
     profile: {
@@ -114,28 +122,37 @@ it("creates a note from the New profile dialog's prepared callback without re-re
       document: "reading.md",
       path: "templates/reading.md",
       bindings: {},
-    },
+      match: {
+        state: "all",
+        summary: m.profile_match_all(),
+        tree: { and: [] },
+      },
+    } satisfies LiteratureNoteProfile,
     preview: { path: file.path, properties: {}, body: "Body", create },
   }));
-  const deps = {
-    app: {} as App,
+  const deps: InteractiveCreationDeps = {
+    app: stubService<App>("App", {}),
     createProfile,
-    zoteroPref: { dataDir: null },
-    noteFeature: {
-      planCreations: vi.fn(async (keys: readonly string[]) =>
-        creationPlans(
-          keys,
-          {
-            selector: "default",
-            source: "bound",
-            shouldAsk: true,
-          },
-          [],
+    zoteroPref: { dataDir: "" },
+    noteFeature: stubService<InteractiveCreationDeps["noteFeature"]>(
+      "NoteFeature",
+      {
+        planCreations: vi.fn(async (keys: readonly string[]) =>
+          creationPlans(
+            keys,
+            {
+              selector: "default",
+              source: "bound",
+              shouldAsk: true,
+            },
+            [],
+          ),
         ),
-      ),
-      createNote: vi.fn(),
-    },
-  } as unknown as InteractiveCreationDeps;
+        createNote: vi.fn(),
+      },
+    ),
+    importProfile: vi.fn(),
+  };
   vi.mocked(chooseLiteratureNoteProfile).mockImplementation(
     async (_app, options) =>
       "onNew" in options ? options.onNew?.() : undefined,
@@ -233,7 +250,7 @@ it("creates directly under an explicit Profile, naming Default when it is the on
     path: "Literature/Paper.md",
     create: vi.fn(async () => ({
       outcome: "created" as const,
-      file: { path: "Literature/Paper.md" } as TFile,
+      file: noteAt("Literature/Paper.md"),
     })),
   });
   const deps = directDeps(
@@ -357,25 +374,29 @@ it.each([
 
 it("imports from the contextual picker without creating a note", async () => {
   const importProfile = vi.fn(async () => undefined);
-  const deps = {
-    app: {} as App,
+  const deps: InteractiveCreationDeps = {
+    app: stubService<App>("App", {}),
+    createProfile: vi.fn(),
     importProfile,
-    zoteroPref: { dataDir: null },
-    noteFeature: {
-      planCreations: vi.fn(async (keys: readonly string[]) =>
-        creationPlans(
-          keys,
-          {
-            selector: "default",
-            source: "bound",
-            shouldAsk: true,
-          },
-          [],
+    zoteroPref: { dataDir: "" },
+    noteFeature: stubService<InteractiveCreationDeps["noteFeature"]>(
+      "NoteFeature",
+      {
+        planCreations: vi.fn(async (keys: readonly string[]) =>
+          creationPlans(
+            keys,
+            {
+              selector: "default",
+              source: "bound",
+              shouldAsk: true,
+            },
+            [],
+          ),
         ),
-      ),
-      createNote: vi.fn(),
-    },
-  } as unknown as InteractiveCreationDeps;
+        createNote: vi.fn(),
+      },
+    ),
+  };
   vi.mocked(chooseLiteratureNoteProfile).mockImplementation(
     async (_app, options) => {
       if ("onImport" in options) await options.onImport?.();
@@ -396,6 +417,12 @@ it.each([
     "Literature note created under Reading: literatures/engelbart1962.md.",
   ],
 ])("names the new note created through %s", (_, created, notice) => {
-  const file = { path: "literatures/engelbart1962.md" } as TFile;
+  const file = noteAt("literatures/engelbart1962.md");
   expect(createdNoteNotice(file, created)).toBe(notice);
 });
+
+function noteAt(path: string): TFile {
+  const file = new TFile();
+  file.path = path;
+  return file;
+}

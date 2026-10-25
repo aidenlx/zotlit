@@ -2,9 +2,10 @@ import { it } from "@effect/vitest";
 import type { Config } from "@logtape/logtape";
 import { Effect, Exit, Fiber, Layer, Queue, Schema, Scope } from "effect";
 import { TestClock, TestConsole } from "effect/testing";
-import type { Plugin } from "obsidian";
+import type { App, Plugin } from "obsidian";
 import { expect } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { settingsOf } from "@/services/settings/__fixtures__";
 import { settingsMigrations } from "@/services/settings/migrate";
 import { PluginSettings } from "@/services/settings/service";
@@ -66,10 +67,11 @@ const logging = Effect.fnUntraced(function* (
       () => Effect.sync(() => events.push("close file")),
     ),
   });
-  const plugin = {
+  const plugin = stubService<Plugin>("Plugin", {
+    app: stubService<App>("App", {}),
     loadData: async () => ({ __VERSION__: 11, ...saved }),
     saveData: async () => {},
-  } as unknown as Plugin;
+  });
   const settings = yield* settingsOf({ plugin, ...settingsMigrations });
   const layer = layerLogging.pipe(
     Layer.provide(Layer.succeed(LogOutput, output)),

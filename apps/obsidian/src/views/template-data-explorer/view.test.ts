@@ -2,13 +2,22 @@
 import type { ItemView as MockItemView } from "@mock/obsidian";
 import { Effect } from "effect";
 import { Stream } from "effect";
-import type { App, EventRef, WorkspaceLeaf, ViewStateResult } from "obsidian";
+import type {
+  App,
+  EventRef,
+  Vault,
+  ViewStateResult,
+  Workspace,
+  WorkspaceLeaf,
+} from "obsidian";
 import { act } from "preact/test-utils";
 import { expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { pickItem } from "@/services/item-lookup/search-modal";
+import { defaults } from "@/services/settings/schema";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import {
   activeTemplateWorkbench,
@@ -49,33 +58,101 @@ class ExplorerView extends TemplateDataExplorerView {
     return this.onClose();
   }
 }
-it("binds copied context to its editor, addresses field requests, and releases workspace listeners", async () => {
-  const events = new Map<
-    EventRef,
-    { name: string; callback: (...args: unknown[]) => void }
-  >();
+
+interface HostEvent {
+  name: string;
+  callback: (...args: unknown[]) => void;
+}
+
+function host(events = new Map<EventRef, HostEvent>()) {
   const trigger = vi.fn((name: string, ...args: unknown[]) => {
     for (const event of events.values())
       if (event.name === name) event.callback(...args);
   });
-  const app = {
-    vault: { on: vi.fn(() => ({})), offref: vi.fn() },
-    workspace: {
-      on(name: string, callback: (...args: unknown[]) => void) {
-        const ref = {} as EventRef;
-        events.set(ref, { name, callback });
-        return ref;
-      },
-      offref(ref: EventRef) {
-        events.delete(ref);
-      },
+  const on = vi.fn();
+  const offref = vi.fn((ref: EventRef) => {
+    events.delete(ref);
+  });
+  on.mockImplementation(
+    (name: string, callback: (...args: unknown[]) => void): EventRef => {
+      const ref: EventRef = {};
+      events.set(ref, { name, callback });
+      return ref;
+    },
+  );
+  const requestSaveLayout: Workspace["requestSaveLayout"] = Object.assign(
+    vi.fn(() => requestSaveLayout),
+    {
+      cancel: () => requestSaveLayout,
+      run: () => undefined,
+    },
+  );
+  const app = stubService<App>("App", {
+    vault: stubService<Vault>("Vault", { on, offref }),
+    workspace: stubService<Workspace>("Workspace", {
+      on,
+      offref,
       trigger,
       getActiveFile: () => null,
-      requestSaveLayout: vi.fn(),
-    },
+      requestSaveLayout,
+    }),
     loadLocalStorage: () => null,
-  } as unknown as App;
-  const editorLeaf = { app } as unknown as WorkspaceLeaf;
+  });
+  const leaf = (pinned = false) => {
+    const value = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+      pinned,
+      updateHeader: vi.fn(),
+    });
+    Object.defineProperty(value, "app", { value: app });
+    return value;
+  };
+  return { app, events, leaf, trigger };
+}
+
+function viewDeps(
+  app: App,
+  zoteroReads: Partial<ExplorerViewDeps["zoteroReads"]>,
+): ExplorerViewDeps {
+  return stubService<ExplorerViewDeps>("ExplorerViewDeps", {
+    runtime: testRuntime(),
+    app,
+    itemLookup: stubService<ExplorerViewDeps["itemLookup"]>("ItemLookup", {
+      search: async () => [],
+      openSession: () => ({
+        search: async () => [],
+        close: () => {},
+        [Symbol.dispose]() {},
+      }),
+    }),
+    settings: stubService<ExplorerViewDeps["settings"]>("PluginSettings", {
+      current: Effect.succeed(defaults),
+    }),
+    bridge: stubService<ExplorerViewDeps["bridge"]>("EffectBridge", {
+      runSync: Effect.runSync,
+    }),
+    noteIndex: stubService<ExplorerViewDeps["noteIndex"]>("NoteIndex", {
+      getNotesByItemKey: () => [],
+      getImportedNoteByNoteKey: () => [],
+      whenIndexed: async () => {},
+    }),
+    zoteroPref: stubService<ExplorerViewDeps["zoteroPref"]>("ZoteroPref", {
+      dataDir: "/Zotero",
+      baseAttachmentPath: null,
+    }),
+    pluginVersion: "test",
+    zoteroReads: stubService<ExplorerViewDeps["zoteroReads"]>(
+      "ZoteroReads",
+      zoteroReads,
+    ),
+    templates: stubService<ExplorerViewDeps["templates"]>("Templates", {
+      javascriptTemplatesEnabled: true,
+    }),
+  });
+}
+
+it("binds copied context to its editor, addresses field requests, and releases workspace listeners", async () => {
+  const { app, events, leaf, trigger } = host();
+  const editorLeaf = leaf();
   const context: TemplateAuthoringContext = {
     leaf: editorLeaf,
     path: "profiles/paper.md",
@@ -112,20 +189,14 @@ it("binds copied context to its editor, addresses field requests, and releases w
   });
   const unsubscribeDb = vi.fn();
   const view = new ExplorerView(
-    { app } as unknown as WorkspaceLeaf,
-    {
-      runtime: testRuntime(),
-      app,
-      zoteroReads: {
-        ready: Promise.resolve(),
-        changed: Stream.unwrap(
-          Effect.acquireRelease(Effect.succeed(Stream.never), () =>
-            Effect.sync(unsubscribeDb),
-          ),
+    leaf(),
+    viewDeps(app, {
+      changed: Stream.unwrap(
+        Effect.acquireRelease(Effect.succeed(Stream.never), () =>
+          Effect.sync(unsubscribeDb),
         ),
-      },
-      templates: { javascriptTemplatesEnabled: true },
-    } as unknown as ExplorerViewDeps,
+      ),
+    }),
   );
   Object.defineProperty(view, "app", { value: app });
   document.body.append(view.contentEl);
@@ -191,7 +262,7 @@ it("binds copied context to its editor, addresses field requests, and releases w
     expect(insertion()).toBeUndefined();
     await act(async () => binding(editor));
     expect(insertion()).toBeDefined();
-    const earlierLeaf = { app } as unknown as WorkspaceLeaf;
+    const earlierLeaf = leaf();
     const earlierPeer = {
       runtime: testRuntime(),
       leaf: earlierLeaf,
@@ -252,16 +323,7 @@ it("binds copied context to its editor, addresses field requests, and releases w
 });
 
 it("restores independent Explorer navigation after delayed data and keeps search out of workspace saves", async () => {
-  const app = {
-    vault: { on: vi.fn(() => ({})), offref: vi.fn() },
-    workspace: {
-      on: vi.fn(() => ({})),
-      offref: vi.fn(),
-      getActiveFile: () => null,
-      requestSaveLayout: vi.fn(),
-    },
-    loadLocalStorage: () => null,
-  } as unknown as App;
+  const { app, leaf } = host();
   vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
   vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
     (_app, listener) => {
@@ -277,21 +339,15 @@ it("restores independent Explorer navigation after delayed data and keeps search
   );
   vi.mocked(loadTemplateData).mockReturnValue(data);
   const view = new ExplorerView(
-    { app } as unknown as WorkspaceLeaf,
-    {
-      runtime: testRuntime(),
-      app,
-      zoteroReads: {
-        ready: Promise.resolve(),
-        changed: Stream.empty,
-        degraded: Stream.empty,
-        "refresh-failed": Stream.empty,
-        refreshing: Stream.empty,
-        "db-file-missing": Stream.empty,
-        "refresh-requested": Stream.empty,
-      },
-      templates: { javascriptTemplatesEnabled: true },
-    } as unknown as ExplorerViewDeps,
+    leaf(),
+    viewDeps(app, {
+      changed: Stream.empty,
+      degraded: Stream.empty,
+      "refresh-failed": Stream.empty,
+      refreshing: Stream.empty,
+      "db-file-missing": Stream.empty,
+      "refresh-requested": Stream.empty,
+    }),
   );
   Object.defineProperty(view, "app", { value: app });
   document.body.append(view.contentEl);
@@ -312,7 +368,7 @@ it("restores independent Explorer navigation after delayed data and keeps search
   });
   cleanup.defer(() => act(async () => view.close()));
   await act(async () => view.open());
-  await act(async () => view.setState(descriptor, {} as ViewStateResult));
+  await act(async () => view.setState(descriptor, { history: false }));
   const saved = view.getEphemeralState() as {
     zotlitDataExplorer: Record<string, unknown>;
   };
@@ -361,27 +417,21 @@ it("restores independent Explorer navigation after delayed data and keeps search
   expect(view.contentEl.textContent).toContain("42");
   expect(saves).not.toHaveBeenCalled();
   const recreated = new ExplorerView(
-    { app } as unknown as WorkspaceLeaf,
-    {
-      runtime: testRuntime(),
-      app,
-      zoteroReads: {
-        ready: Promise.resolve(),
-        changed: Stream.empty,
-        degraded: Stream.empty,
-        "refresh-failed": Stream.empty,
-        refreshing: Stream.empty,
-        "db-file-missing": Stream.empty,
-        "refresh-requested": Stream.empty,
-      },
-      templates: { javascriptTemplatesEnabled: true },
-    } as unknown as ExplorerViewDeps,
+    leaf(),
+    viewDeps(app, {
+      changed: Stream.empty,
+      degraded: Stream.empty,
+      "refresh-failed": Stream.empty,
+      refreshing: Stream.empty,
+      "db-file-missing": Stream.empty,
+      "refresh-requested": Stream.empty,
+    }),
   );
   Object.defineProperty(recreated, "app", { value: app });
   cleanup.defer(() => act(async () => recreated.close()));
   await act(async () => recreated.open());
   await act(async () =>
-    recreated.setState(view.getState(), {} as ViewStateResult),
+    recreated.setState(view.getState(), { history: false }),
   );
   expect(recreated.contentEl.textContent).toContain("A paper");
   expect(recreated.getState()).toEqual(descriptor);
@@ -392,28 +442,9 @@ it("restores independent Explorer navigation after delayed data and keeps search
 });
 
 it("applies an explicit Item choice to the requesting pinned Explorer and leaves cancellation and other pins unchanged", async () => {
-  const events = new Map<
-    EventRef,
-    { name: string; callback: (...args: unknown[]) => void }
-  >();
-  const app = {
-    vault: { on: vi.fn(() => ({})), offref: vi.fn() },
-    workspace: {
-      on(name: string, callback: (...args: unknown[]) => void) {
-        const ref = {} as EventRef;
-        events.set(ref, { name, callback });
-        return ref;
-      },
-      offref(ref: EventRef) {
-        events.delete(ref);
-      },
-      getActiveFile: () => null,
-      requestSaveLayout: vi.fn(),
-    },
-    loadLocalStorage: () => null,
-  } as unknown as App;
+  const { app, events, leaf } = host();
   let context: TemplateAuthoringContext = {
-    leaf: {} as WorkspaceLeaf,
+    leaf: leaf(),
     path: "profiles/paper.md",
     kind: "profile",
     item: { id: "PAPER001", title: "First paper" },
@@ -454,21 +485,15 @@ it("applies an explicit Item choice to the requesting pinned Explorer and leaves
   await using cleanup = new AsyncDisposableStack();
   const views = [0, 1].map(() => {
     const view = new ExplorerView(
-      { app, pinned: true } as unknown as WorkspaceLeaf,
-      {
-        runtime: testRuntime(),
-        app,
-        zoteroReads: {
-          ready: Promise.resolve(),
-          changed: Stream.empty,
-          degraded: Stream.empty,
-          "refresh-failed": Stream.empty,
-          refreshing: Stream.empty,
-          "db-file-missing": Stream.empty,
-          "refresh-requested": Stream.empty,
-        },
-        templates: { javascriptTemplatesEnabled: true },
-      } as unknown as ExplorerViewDeps,
+      leaf(true),
+      viewDeps(app, {
+        changed: Stream.empty,
+        degraded: Stream.empty,
+        "refresh-failed": Stream.empty,
+        refreshing: Stream.empty,
+        "db-file-missing": Stream.empty,
+        "refresh-requested": Stream.empty,
+      }),
     );
     Object.defineProperty(view, "app", { value: app });
     cleanup.defer(() => act(async () => view.close()));
@@ -502,34 +527,8 @@ it("applies an explicit Item choice to the requesting pinned Explorer and leaves
 });
 
 it("keeps pinned Explorer navigation and insertion when its Profile is renamed", async () => {
-  const events = new Map<
-    EventRef,
-    { name: string; callback: (...args: unknown[]) => void }
-  >();
-  const on = (name: string, callback: (...args: unknown[]) => void) => {
-    const ref = {} as EventRef;
-    events.set(ref, { name, callback });
-    return ref;
-  };
-  const offref = (ref: EventRef) => {
-    events.delete(ref);
-  };
-  const trigger = vi.fn((name: string, ...args: unknown[]) => {
-    for (const event of events.values())
-      if (event.name === name) event.callback(...args);
-  });
-  const app = {
-    vault: { on, offref },
-    workspace: {
-      on,
-      offref,
-      trigger,
-      requestSaveLayout: vi.fn(),
-      getActiveFile: () => null,
-    },
-    loadLocalStorage: () => null,
-  } as unknown as App;
-  const editorLeaf = { app } as unknown as WorkspaceLeaf;
+  const { app, events, leaf, trigger } = host();
+  const editorLeaf = leaf();
   const context: TemplateAuthoringContext = {
     leaf: editorLeaf,
     path: "profiles/paper.md",
@@ -561,21 +560,15 @@ it("keeps pinned Explorer navigation and insertion when its Profile is renamed",
     data: { title: "Native paper" },
   });
   const view = new ExplorerView(
-    { app, pinned: true } as unknown as WorkspaceLeaf,
-    {
-      runtime: testRuntime(),
-      app,
-      zoteroReads: {
-        ready: Promise.resolve(),
-        changed: Stream.empty,
-        degraded: Stream.empty,
-        "refresh-failed": Stream.empty,
-        refreshing: Stream.empty,
-        "db-file-missing": Stream.empty,
-        "refresh-requested": Stream.empty,
-      },
-      templates: { javascriptTemplatesEnabled: true },
-    } as unknown as ExplorerViewDeps,
+    leaf(true),
+    viewDeps(app, {
+      changed: Stream.empty,
+      degraded: Stream.empty,
+      "refresh-failed": Stream.empty,
+      refreshing: Stream.empty,
+      "db-file-missing": Stream.empty,
+      "refresh-requested": Stream.empty,
+    }),
   );
   Object.defineProperty(view, "app", { value: app });
   document.body.append(view.contentEl);

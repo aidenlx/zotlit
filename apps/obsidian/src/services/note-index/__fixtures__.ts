@@ -2,11 +2,20 @@
 import { Context, Effect, Layer } from "effect";
 import { basename } from "node:path/posix";
 import { TFile } from "obsidian";
-import type { App, CachedMetadata, EventRef } from "obsidian";
+import type {
+  App,
+  CachedMetadata,
+  EventRef,
+  FileManager,
+  MetadataCache,
+  Vault,
+  Workspace,
+} from "obsidian";
 
 import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { buildRuntime } from "@/lib/effect-layer";
 
@@ -109,7 +118,7 @@ class MockVault {
 
   on(name: VaultEvent, callback: Callback): EventRef {
     this.#listeners[name].add(callback);
-    return { e: this, name, callback } as unknown as EventRef;
+    return stubService<EventRef>("EventRef", { e: this, name, callback });
   }
 
   offref(ref: EventRef): void {
@@ -209,7 +218,7 @@ export function cache(options: {
 
   return {
     frontmatter: Object.keys(frontmatter).length > 0 ? frontmatter : undefined,
-  } as CachedMetadata;
+  };
 }
 
 export function paths(files: TFile[]): string[] {
@@ -250,7 +259,12 @@ export function createNoteHost(
   });
   metadataCache.clean = options.enabledAtRuntime ?? false;
   const vault = new MockVault();
-  const app = { metadataCache, vault, workspace } as unknown as App;
+  const app = stubService<App>("App", {
+    metadataCache: metadataCache as unknown as MetadataCache,
+    vault: vault as unknown as Vault,
+    workspace: workspace as unknown as Workspace,
+    fileManager: stubService<FileManager>("FileManager", {}),
+  });
   if (options.enabledAtRuntime) metadataCache.watchVault(vault);
 
   for (const [path, fileCache] of Object.entries(files)) {

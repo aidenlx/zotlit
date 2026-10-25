@@ -36,6 +36,7 @@ import {
 } from "@/services/zotero-reads/test-utils";
 
 import { ReferencesView } from "./view";
+import type { ReferencesViewDeps } from "./view";
 
 let streamStack: AsyncDisposableStack;
 let streamRuntime: ReturnType<typeof buildRuntime<never>>;
@@ -263,34 +264,49 @@ beforeEach(async () => {
   citekeyResolution = "fresh";
   activeFile = markdownFile("tidal");
   otherFile = markdownFile("estuary");
-  const app = {
-    workspace: {
-      getActiveFile: () => activeFile,
-      on: (event: string, callback: () => void) => {
-        if (event === "active-leaf-change") onActiveLeafChange = callback;
-        return {} as EventRef;
-      },
+  const workspaceOn = vi.fn();
+  const metadataOn = vi.fn();
+  workspaceOn.mockImplementation(
+    (event: string, callback: () => void): EventRef => {
+      if (event === "active-leaf-change") onActiveLeafChange = callback;
+      const ref: EventRef = {};
+      return ref;
     },
-    metadataCache: {
-      on: (event: string, callback: () => void) => {
-        if (event === "changed") onMetadataChanged = callback;
-        return {} as EventRef;
-      },
+  );
+  metadataOn.mockImplementation(
+    (event: string, callback: () => void): EventRef => {
+      if (event === "changed") onMetadataChanged = callback;
+      const ref: EventRef = {};
+      return ref;
+    },
+  );
+  const app = stubService<App>("App", {
+    scope: stubService<App["scope"]>("Scope", {}),
+    workspace: stubService<App["workspace"]>("Workspace", {
+      getActiveFile: () => activeFile,
+      on: workspaceOn,
+    }),
+    metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
+      on: metadataOn,
       // No note here declares a style of its own, so every list is rendered
       // under the vault Citation Presentation.
       getFileCache: () => (frontmatter ? { frontmatter } : null),
-    },
-  } as unknown as App;
+    }),
+  });
 
   const profile = {
     ...profileReader(defaults, app.metadataCache),
   };
   reads = inProcessReadsService(memoryOpener(() => SEED).open);
+  const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+    updateHeader: vi.fn(),
+  });
+  Object.defineProperty(leaf, "app", { value: app });
   view = new TestReferencesView(
-    {} as WorkspaceLeaf,
-    {
+    leaf,
+    stubService<ReferencesViewDeps>("ReferencesViewDeps", {
       app,
-      db: {
+      db: stubService<ReferencesViewDeps["db"]>("ZoteroReads", {
         state: "ready",
         get reads() {
           return reads!.reads;
@@ -301,7 +317,7 @@ beforeEach(async () => {
           onDbChanged = () => source.emit();
           return source.stream;
         })(),
-      },
+      }),
       citationLookup: {
         get status() {
           return citekeyResolution ?? "pending";
@@ -351,27 +367,29 @@ beforeEach(async () => {
           },
         ),
         runSync: Effect.runSync,
-        runPromise: Effect.runPromise,
       },
-      bibliographyRender: {
-        vaultPresentation: { styleId: null, locale: null },
-        render: () => {
-          const deferred = Promise.withResolvers<RenderedBibliography>();
-          renders.push(deferred);
-          return deferred.promise;
+      bibliographyRender: stubService<ReferencesViewDeps["bibliographyRender"]>(
+        "BibliographyRender",
+        {
+          vaultPresentation: { styleId: null, locale: null },
+          render: () => {
+            const deferred = Promise.withResolvers<RenderedBibliography>();
+            renders.push(deferred);
+            return deferred.promise;
+          },
+          invalidated: (() => {
+            const source = testEvent<void>();
+            onInvalidated = () => source.emit();
+            return source.stream;
+          })(),
+          changed: Stream.empty,
+          settled: Stream.empty,
         },
-        invalidated: (() => {
-          const source = testEvent<void>();
-          onInvalidated = () => source.emit();
-          return source.stream;
-        })(),
-        changed: Stream.empty,
-        settled: Stream.empty,
-      },
+      ),
       profile,
       openSettings: () => undefined,
       openStyleSettings: () => undefined,
-    } as unknown as ConstructorParameters<typeof TestReferencesView>[1],
+    }),
   );
 
   document.body.append(view.contentEl);

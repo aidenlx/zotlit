@@ -3,13 +3,23 @@ import { Effect } from "effect";
 import { expect } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 
 import { registerCitationsCli } from "./register";
 
 it.effect("publishes all citation commands and their parameter help", () =>
   Effect.gen(function* () {
     const { host, command, commands } = fakeCliHost();
-    registerCitationsCli(host, {} as never);
+    type RegistrationDeps = Parameters<typeof registerCitationsCli>[1];
+    registerCitationsCli(host, {
+      app: stubService<RegistrationDeps["app"]>("App", {}),
+      basePath: "/vault",
+      citationIndex: stubService<RegistrationDeps["citationIndex"]>(
+        "CitationIndex",
+        {},
+      ),
+      zoteroPref: stubService<RegistrationDeps["zoteroPref"]>("ZoteroPref", {}),
+    });
     expect([...commands.keys()]).toEqual([
       "zotlit:annotation-uses",
       "zotlit:cited-by",

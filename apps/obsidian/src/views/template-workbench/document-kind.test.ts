@@ -1,8 +1,9 @@
+import { TFile } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import { templateDocumentKind, templatePartialName } from "./document-kind";
 
-const file = (path: string) => ({ path }) as never;
+const file = (path: string) => Object.assign(new TFile(), { path });
 
 describe("templateDocumentKind", () => {
   it("names the Citation Template and a Shared Partial inside the folder", () => {

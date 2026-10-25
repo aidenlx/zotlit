@@ -5,7 +5,7 @@ import { plainTestParseClient } from "@/lib/__fixtures__/parse-client";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 // Live database and TemplateService boundaries for native preview tests.
 import type { DatabaseSync } from "node:sqlite";
-import type { App } from "obsidian";
+import type { App, Events } from "obsidian";
 import { Effect } from "effect";
 import { expect, vi } from "vitest";
 import { createClient } from "@zotlit/db/client/node";
@@ -15,8 +15,21 @@ import type { RenderedCitation } from "@/services/pandoc/engine";
 
 import { buildTemplate } from "@/services/template/__fixtures__";
 import { createObsidianHost, PluginStub } from "@/lib/__fixtures__/obsidian-host";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { inProcessReadsService, sharedClientOpener } from "@/services/zotero-reads/test-utils";
 import type { NativeRenderDeps } from "@/views/note-preview/render";
+
+type EventSource = Pick<Events, "on" | "offref">;
+
+function eventMethods(source: EventSource) {
+  return {
+    on: (name: string, callback: (...args: never[]) => unknown) =>
+      source.on(name, (...args: unknown[]) =>
+        Reflect.apply(callback, undefined, args),
+      ),
+    offref: (ref: Parameters<EventSource["offref"]>[0]) => source.offref(ref),
+  };
+}
 
 export const PROFILE_SOURCE = `---
 id: paper
@@ -84,17 +97,50 @@ export async function createRenderFixture(options: { existing?: string; javascri
   for (const [name, source] of Object.entries(options.partials ?? {}))
     vault.addFile(`templates/zotlit-partial.${name}.md`, source);
   const memory = new Map<string, unknown>(options.javascript ? [["zotlit-javascript-templates", "1"]] : []);
-  const app = {
-    vault,
-    fileManager: { getAvailablePathForAttachment: async () => "notes/preview.png", generateMarkdownLink: (target: { path: string }) => `[[${target.path}]]` },
-    workspace: host.workspace,
-    metadataCache: {
+  const requestSaveLayout: App["workspace"]["requestSaveLayout"] =
+    Object.assign(vi.fn(() => requestSaveLayout), {
+      cancel: () => requestSaveLayout,
+      run: () => undefined,
+    });
+  const app = stubService<App>("App", {
+    scope: stubService<App["scope"]>("Scope", {}),
+    vault: stubService<App["vault"]>("Vault", {
+      ...eventMethods(vault),
+      read: (file) => vault.read(file),
+      cachedRead: (file) => vault.cachedRead(file),
+      process: (file, fn) => vault.process(file, fn),
+      create: (path, data) => vault.create(path, data),
+      trash: async (file) => vault.deleteFile(file.path),
+      getConfig: () => false,
+      getFileByPath: (path) => vault.getFileByPath(path),
+      getFolderByPath: (path) => vault.getFolderByPath(path),
+      getAbstractFileByPath: (path) => vault.getAbstractFileByPath(path),
+      getRoot: () => vault.getRoot(),
+      getMarkdownFiles: () => vault.getMarkdownFiles(),
+    }),
+    fileManager: stubService<App["fileManager"]>("FileManager", {
+      getAvailablePathForAttachment: async () => "notes/preview.png",
+      generateMarkdownLink: (target: { path: string }) =>
+        `[[${target.path}]]`,
+    }),
+    workspace: stubService<App["workspace"]>("Workspace", {
+      ...eventMethods(host.workspace),
+      onLayoutReady: (callback) => host.workspace.onLayoutReady(callback),
+      getActiveFile: () => host.workspace.getActiveFile(),
+      getActiveViewOfType: (type) => host.workspace.getActiveViewOfType(type),
+      updateOptions: () => host.workspace.updateOptions(),
+      iterateAllLeaves: (callback) => host.workspace.iterateAllLeaves(callback),
+      requestSaveLayout,
+    }),
+    metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
+      ...eventMethods(host.metadataCache),
       getFirstLinkpathDest: (path: string) => path === "notes/paper.md" ? file : null,
       getFileCache: () => ({ frontmatter: { "zotero-key": "MAIN2345" } }),
-    },
+      onCleanCache: (callback) => host.metadataCache.onCleanCache(callback),
+    }),
     loadLocalStorage: (key: string) => memory.get(key) ?? null,
     saveLocalStorage: (key: string, value: unknown) => memory.set(key, value),
-  } as unknown as App;
+  });
   const plugin = new PluginStub(app, { __VERSION__: 1, "note.template-conversion-pending": true, "citation.wikilink-citations": options.wikilinks ?? false });
   const identity = (raw: unknown) => raw;
   const settings = await buildSettings({ plugin, migrateLegacy: identity, migrateV1: identity, migrateV2: identity, migrateV3: identity, migrateV4: identity, migrateV5: identity, migrateV6: identity, migrateV7: identity, migrateV8: identity, migrateV9: identity });
@@ -137,5 +183,5 @@ export async function createRenderFixture(options: { existing?: string; javascri
   };
   const writes = { create: vi.spyOn(vault, "create"), process: vi.spyOn(vault, "process"), modify: vi.spyOn(vault, "modifyFile") };
   const snapshot = exportItemSnapshot(client, { key: "MAIN2345", library: { type: "personal" } }, { provenance: { kind: "connected", installationId: "fixture", vault: "preview" } });
-  return { deps, settings, client, snapshot, host, vault, renderCitations, writes, async [Symbol.asyncDispose]() { await templates[Symbol.asyncDispose](); await settings[Symbol.asyncDispose](); await zoteroReads[Symbol.asyncDispose](); sqlite.close(); } };
+  return { deps, settings, templates, client, snapshot, host, vault, zoteroReads, renderCitations, writes, async [Symbol.asyncDispose]() { await templates[Symbol.asyncDispose](); await settings[Symbol.asyncDispose](); await zoteroReads[Symbol.asyncDispose](); sqlite.close(); } };
 }

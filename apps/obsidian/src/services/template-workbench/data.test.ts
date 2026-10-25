@@ -2,7 +2,7 @@ import { it } from "@effect/vitest";
 import Ajv2020 from "ajv/dist/2020";
 import { Effect } from "effect";
 import type { DatabaseSync } from "node:sqlite";
-import type { CliData } from "obsidian";
+import type { App, CliData } from "obsidian";
 import { describe, expect } from "vitest";
 
 import { citekeysToCiteTemplateData } from "@zotlit/db";
@@ -19,6 +19,8 @@ import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import type { NoteProfile, ResolvedProfile } from "@/services/profile/bindings";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
 import {
@@ -26,10 +28,13 @@ import {
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
+import { workbenchRegistrationDeps } from "./__fixtures__";
 import { createTemplateWorkbenchHandlers, TEMPLATE_DATA_COMMAND } from "./cli";
 import { readCitationData, readTemplateData } from "./data";
 import type { TemplateDataDeps } from "./data";
 import { registerTemplateWorkbench } from "./register";
+
+type RegistrationOptions = Parameters<typeof workbenchRegistrationDeps>[0];
 
 function registeredData(deps: FixtureDeps) {
   const { host, command } = fakeCliHost();
@@ -48,14 +53,50 @@ function registeredData(deps: FixtureDeps) {
     databasePath: "/Zotero/zotero.sqlite",
   });
   Object.assign(deps.templates, { waitUntilSettled: async () => "settled" });
-  registerTemplateWorkbench({ ...host, manifest: { version: "test" } }, {
-    runtime: testRuntime(),
-    ...deps,
-    profile: {
-      ready: Promise.resolve(),
-      profileOf: () => ({ ok: true, profile: { selector: "default" } }),
-    },
-  } as never);
+  registerTemplateWorkbench(
+    { ...host, manifest: { version: "test" } },
+    workbenchRegistrationDeps({
+      runtime: testRuntime(),
+      app: deps.app,
+      zoteroReads: stubService<NonNullable<RegistrationOptions["zoteroReads"]>>(
+        "ZoteroReads",
+        deps.zoteroReads,
+      ),
+      noteIndex: stubService<NonNullable<RegistrationOptions["noteIndex"]>>(
+        "NoteIndex",
+        deps.noteIndex,
+      ),
+      settings: stubService<NonNullable<RegistrationOptions["settings"]>>(
+        "PluginSettings",
+        deps.settings,
+      ),
+      bridge: deps.bridge,
+      templates: stubService<NonNullable<RegistrationOptions["templates"]>>(
+        "Template",
+        deps.templates,
+      ),
+      zoteroPref: stubService<NonNullable<RegistrationOptions["zoteroPref"]>>(
+        "ZoteroPref",
+        {
+          ...deps.zoteroPref,
+          sourceId: "fixture-source",
+          databasePath: "/Zotero/zotero.sqlite",
+        },
+      ),
+      profile: stubService<NonNullable<RegistrationOptions["profile"]>>(
+        "Profile",
+        {
+          profileOf: () =>
+            stubService<NoteProfile>("NoteProfile", {
+              ok: true,
+              profile: stubService<ResolvedProfile>("ResolvedProfile", {
+                selector: "default",
+              }),
+            }),
+        },
+      ),
+    }),
+  );
   const { handler } = command(TEMPLATE_DATA_COMMAND);
   return (params: CliData) =>
     handler(params).pipe(
@@ -826,63 +867,69 @@ function createFixture(options?: {
     const zoteroReads = resources.use(
       inProcessReadsService(sharedClientOpener(client)),
     );
-    return {
-      deps: {
-        app: {
-          fileManager: {
-            generateMarkdownLink: () => "",
-            renameFile: () => {
-              writeCalls.push("fileManager.renameFile");
-            },
-          },
-          vault: {
-            getFileByPath: () => null,
-            create: () => {
-              writeCalls.push("vault.create");
-            },
-            createBinary: () => {
-              writeCalls.push("vault.createBinary");
-            },
-            modify: () => {
-              writeCalls.push("vault.modify");
-            },
-          },
-        } as never,
-        zoteroReads,
-        noteIndex: {
-          getNotesByItemKey: () => [],
-          getImportedNoteByNoteKey: () => [],
-          whenIndexed: async () => {},
+    const app = stubService<App>("App", {
+      fileManager: stubService<App["fileManager"]>("FileManager", {
+        generateMarkdownLink: () => "",
+        renameFile: async () => {
+          writeCalls.push("fileManager.renameFile");
         },
-        settings: {
-          current: Effect.succeed(settingsDefaults),
+      }),
+      vault: stubService<App["vault"]>("Vault", {
+        getFileByPath: () => null,
+        create: async () => {
+          writeCalls.push("vault.create");
+          throw new Error("Unread Vault.create");
         },
-        bridge: { runSync: Effect.runSync },
-        templates: {
-          compileErrors: options?.compileError
-            ? new Map([["citation", { message: options.compileError }]])
-            : new Map(),
-          renderCitation: (refs, variant) => {
-            if (options?.renderError) throw options.renderError;
-            if (options?.render) {
-              return options.render(
-                "citation",
-                citekeysToCiteTemplateData(refs, variant),
-              );
-            }
-            return "Fixture citation";
-          },
-          render: (name, data) => {
-            if (options?.renderError) throw options.renderError;
-            if (options?.render) return options.render(name, data);
-            return "Fixture citation\n";
-          },
+        createBinary: async () => {
+          writeCalls.push("vault.createBinary");
+          throw new Error("Unread Vault.createBinary");
         },
-        zoteroPref: {
-          dataDir: "/Zotero",
-          baseAttachmentPath: null,
+        modify: async () => {
+          writeCalls.push("vault.modify");
         },
+      }),
+    });
+    const deps: FixtureDeps = {
+      app,
+      zoteroReads: stubService<FixtureDeps["zoteroReads"]>("ZoteroReads", {
+        acquireRead: () => zoteroReads.acquireRead(),
+      }),
+      noteIndex: stubService<FixtureDeps["noteIndex"]>("NoteIndex", {
+        getNotesByItemKey: () => [],
+        getImportedNoteByNoteKey: () => [],
+        whenIndexed: async () => {},
+      }),
+      settings: stubService<FixtureDeps["settings"]>("PluginSettings", {
+        current: Effect.succeed(settingsDefaults),
+      }),
+      bridge: { runSync: Effect.runSync },
+      templates: stubService<FixtureDeps["templates"]>("Template", {
+        compileErrors: options?.compileError
+          ? new Map([["citation", { message: options.compileError }]])
+          : new Map(),
+        renderCitation: (refs, variant) => {
+          if (options?.renderError) throw options.renderError;
+          if (options?.render) {
+            return options.render(
+              "citation",
+              citekeysToCiteTemplateData(refs, variant),
+            );
+          }
+          return "Fixture citation";
+        },
+        render: (name, data) => {
+          if (options?.renderError) throw options.renderError;
+          if (options?.render) return options.render(name, data);
+          return "Fixture citation\n";
+        },
+      }),
+      zoteroPref: {
+        dataDir: "/Zotero",
+        baseAttachmentPath: null,
       },
+    };
+    return {
+      deps,
       writeCalls,
       [Symbol.asyncDispose]: () => resources.disposeAsync(),
     };

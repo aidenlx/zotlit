@@ -10,11 +10,12 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { FileSystemAdapter, TFile, TFolder } from "obsidian";
-import type { App } from "obsidian";
+import type { App, FileManager, Vault } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { defaults } from "@/services/settings/schema";
 
 import { availableOutcome } from "./__fixtures__/outcome";
@@ -90,22 +91,22 @@ async function fixture() {
     folders.set(path, folder);
     return folder;
   });
-  const adapter = Object.assign(Object.create(FileSystemAdapter.prototype), {
+  const adapter = Object.assign(new FileSystemAdapter(), {
     getFullPath: (path: string) => `${root}/${path}`,
     reconcileInternalFile: vi.fn(async (path: string) => {
       await readFile(`${root}/${path}`);
       files.set(path, Object.assign(new TFile(), { path }));
     }),
   });
-  const app = {
-    vault: {
+  const app = stubService<App>("App", {
+    vault: stubService<Vault>("Vault", {
       adapter,
       createFolder,
       getFileByPath: (path: string) => files.get(path) ?? null,
       getAbstractFileByPath: (path: string) => folders.get(path) ?? null,
-    },
-    fileManager: {},
-  } as unknown as App;
+    }),
+    fileManager: stubService<FileManager>("FileManager", {}),
+  });
   const settings = {
     ...defaults,
     "attachment.import": true,

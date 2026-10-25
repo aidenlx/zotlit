@@ -4,10 +4,19 @@
 // @vitest-environment happy-dom
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { FileSystemAdapter, Scope } from "obsidian";
+import type {
+  App,
+  EventRef,
+  View,
+  Vault,
+  Workspace,
+  WorkspaceLeaf,
+} from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { openNoteVault } from "@/services/note-index/__fixtures__";
 
 import {
@@ -43,14 +52,23 @@ function pdfView(path: string | null, reader = pdfReader()) {
 }
 
 function workspace(views: { view: unknown }[]) {
-  const app = {
-    vault: { adapter: new FileSystemAdapter() },
-    workspace: {
-      getLeavesOfType: () => views,
-      onLayoutReady: (callback: () => void) => callback(),
-      on: () => ({ e: { offref: vi.fn() } }),
-    },
-  } as never;
+  const workspace: Workspace = stubService<Workspace>("Workspace", {
+    getLeavesOfType: () =>
+      views.map(({ view }) =>
+        stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+          view: view as unknown as View,
+        }),
+      ),
+    onLayoutReady: (callback: () => void) => callback(),
+    on: () => stubService<EventRef>("EventRef", { e: workspace }),
+    offref: () => {},
+  });
+  const app = stubService<App>("App", {
+    vault: stubService<Vault>("Vault", {
+      adapter: new FileSystemAdapter(),
+    }),
+    workspace,
+  });
   return app;
 }
 

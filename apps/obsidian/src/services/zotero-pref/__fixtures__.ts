@@ -1,6 +1,7 @@
 import { Context, Effect, Layer } from "effect";
 import type { App } from "obsidian";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
 import type { SystemCallError } from "@/lib/errno";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -15,13 +16,13 @@ export const zoteroPrefFixture = Effect.fn("zoteroPrefFixture")(function* (
   onSave: () => void = () => undefined,
 ) {
   let saved: unknown = overrides;
-  const app = {
+  const app = stubService<App>("App", {
     loadLocalStorage: () => saved,
     saveLocalStorage: (_key: string, value: unknown) => {
       saved = value;
       onSave();
     },
-  } as unknown as App;
+  });
   const layer = layerZoteroPref.pipe(
     Layer.provide(Layer.succeed(ObsidianApp, app)),
     Layer.provide(Layer.succeed(ZoteroPrefFiles, { read })),

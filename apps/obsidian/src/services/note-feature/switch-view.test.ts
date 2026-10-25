@@ -1,7 +1,9 @@
 import { ButtonComponent, ConfirmationModal } from "obsidian";
-import type { App, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
@@ -33,7 +35,7 @@ function observeDialog() {
 
 it("shows next-update consequences, real Imported Note count and both unchecked opt-ins", async () => {
   using dialog = observeDialog();
-  const decision = confirmProfileSwitch({} as App, {
+  const decision = confirmProfileSwitch(stubService<App>("App", {}), {
     current: "Books",
     requested: "Papers",
     moveFolder: "Papers",
@@ -59,7 +61,7 @@ it("shows next-update consequences, real Imported Note count and both unchecked 
 
 it("omits the move checkbox for the same folder and cancels without consent", async () => {
   using dialog = observeDialog();
-  const decision = confirmProfileSwitch({} as App, {
+  const decision = confirmProfileSwitch(stubService<App>("App", {}), {
     current: "Books",
     requested: "Papers",
     importedCount: 0,
@@ -77,7 +79,7 @@ it("omits the move checkbox for the same folder and cancels without consent", as
 
 it("states next-reimport consequences for Imported Note recovery without a family checkbox", async () => {
   using dialog = observeDialog();
-  const decision = confirmProfileSwitch({} as App, {
+  const decision = confirmProfileSwitch(stubService<App>("App", {}), {
     current: "Missing",
     requested: "Papers",
     importedCount: 0,
@@ -93,7 +95,7 @@ it("states next-reimport consequences for Imported Note recovery without a famil
 
 it("states the unavailable Imported Note lookup and offers only the Literature Note switch", async () => {
   using dialog = observeDialog();
-  const decision = confirmProfileSwitch({} as App, {
+  const decision = confirmProfileSwitch(stubService<App>("App", {}), {
     current: "Missing",
     requested: "Default",
     importedCount: null,
@@ -114,8 +116,8 @@ it("marks the current Profile, names the destination folder, and applies the sin
   using dialog = observeDialog();
   const current = "Bk3Qn7XvT2Lp" as ProfileId;
   const requested = "Rz9Wm4YfH6Kd" as ProfileId;
-  const file = { path: "Books/2024/My title.md" } as TFile;
-  const imported = { path: "Imported/Child.md" } as TFile;
+  const file = noteAt("Books/2024/My title.md");
+  const imported = noteAt("Imported/Child.md");
   const profiles = [
     {
       selector: requested,
@@ -134,24 +136,24 @@ it("marks the current Profile, names the destination folder, and applies the sin
     id: requested,
     label: "Papers",
   });
-  const task = switchNoteProfileInteractively(
-    {
-      app: {} as App,
-      createProfile: async () => undefined,
-      importProfile: async () => undefined,
-      zoteroPref: { dataDir: "" },
-      noteFeature: {
-        prepareProfileSwitch: async () => ({
-          imported: false,
-          current: { selector: current, label: "Books" },
-          profiles,
-          importedNotes: [imported],
-        }),
-        switchNoteProfile: switchProfile,
-      },
-    },
-    file,
-  );
+  const deps: Parameters<typeof switchNoteProfileInteractively>[0] = {
+    app: stubService<App>("App", {}),
+    createProfile: async () => undefined,
+    importProfile: async () => undefined,
+    zoteroPref: { dataDir: "" },
+    noteFeature: stubService<
+      Parameters<typeof switchNoteProfileInteractively>[0]["noteFeature"]
+    >("NoteFeature", {
+      prepareProfileSwitch: async () => ({
+        imported: false,
+        current: { selector: current, label: "Books" },
+        profiles,
+        importedNotes: [imported],
+      }),
+      switchNoteProfile: switchProfile,
+    }),
+  };
+  const task = switchNoteProfileInteractively(deps, file);
   await vi.waitFor(() => expect(dialog.opened).toHaveBeenCalledOnce());
   expect(chooseLiteratureNoteProfile).toHaveBeenCalledWith(expect.anything(), {
     previews: profiles,
@@ -174,3 +176,9 @@ it("marks the current Profile, names the destination folder, and applies the sin
     importedNotes: [imported],
   });
 });
+
+function noteAt(path: string): TFile {
+  const file = new TFile();
+  file.path = path;
+  return file;
+}

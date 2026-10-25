@@ -1,12 +1,15 @@
 import type { Extension } from "@codemirror/state";
+import type { EditorView } from "@codemirror/view";
 import { Effect, Layer, PubSub, Stream } from "effect";
-import { MarkdownView } from "obsidian";
+import { MarkdownView, TFile } from "obsidian";
+import type { App, Editor, WorkspaceLeaf } from "obsidian";
 import {
   beforeEach as beforeStreamTest,
   afterEach as afterStreamTest,
 } from "vitest";
 import { describe, expect, it } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
 import { openNoteVault } from "@/services/note-index/__fixtures__";
@@ -15,6 +18,7 @@ import type { SettingsFixture } from "@/services/settings/__fixtures__";
 import type { Settings } from "@/services/settings/schema";
 
 import { WikilinkEditor } from "./service";
+import type { WikilinkEditorDeps } from "./service";
 
 let streamStack: AsyncDisposableStack;
 let streamRuntime: ReturnType<typeof buildRuntime<never>>;
@@ -26,14 +30,21 @@ afterStreamTest(() => streamStack.disposeAsync());
 
 /** The markdown leaves two notes are open in, as the workspace hands them out. */
 const leaves = (dispatched: string[]) =>
-  ["note.md", "other.md"].map((path) => ({
-    // The service narrows a leaf's view with `instanceof`, so the stand-in
-    // carries the prototype rather than running the real constructor.
-    view: Object.assign(Object.create(MarkdownView.prototype) as object, {
-      file: { path },
-      editor: { cm: { dispatch: () => dispatched.push(path) } },
-    }),
-  }));
+  ["note.md", "other.md"].map((path) => {
+    const file = new TFile();
+    file.path = path;
+    const view = stubService<MarkdownView>("MarkdownView", {
+      file,
+      editor: stubService<Editor>("Editor", {
+        cm: stubService<EditorView>("EditorView", {
+          dispatch: () => dispatched.push(path),
+        }),
+      }),
+    });
+    // The service narrows a leaf's view with `instanceof`.
+    Object.setPrototypeOf(view, MarkdownView.prototype);
+    return stubService<WorkspaceLeaf>("WorkspaceLeaf", { view });
+  });
 
 interface Harness extends AsyncDisposable {
   service: WikilinkEditor;
@@ -58,24 +69,50 @@ async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
   const dispatched: string[] = [];
   let registered: Extension[] = [];
   let reconfigures = 0;
-  const service = new WikilinkEditor({
-    runtime: streamRuntime,
-    app: {
-      workspace: {
-        updateOptions: () => reconfigures++,
-        getLeavesOfType: () => leaves(dispatched),
-      },
+  const app = stubService<App>("App", {
+    workspace: stubService<App["workspace"]>("Workspace", {
+      updateOptions: () => reconfigures++,
+      getLeavesOfType: () => leaves(dispatched),
+    }),
+  });
+  const plugin = stubService<WikilinkEditorDeps["plugin"]>("Plugin", {
+    registerEditorExtension: (extension: Extension) => {
+      registered = extension as Extension[];
     },
-    plugin: {
-      registerEditorExtension: (extension: Extension) => {
-        registered = extension as Extension[];
-      },
-    },
-    noteIndex,
-    citationText,
-    citationLookup,
-    settings,
-  } as never);
+  });
+  const service = new WikilinkEditor(
+    stubService<WikilinkEditorDeps>("WikilinkEditorDeps", {
+      runtime: streamRuntime,
+      app,
+      plugin,
+      noteIndex: stubService<WikilinkEditorDeps["noteIndex"]>("NoteIndex", {
+        changed: noteIndex.changed,
+        indexed: noteIndex.indexed,
+        "frontmatter-changed": noteIndex["frontmatter-changed"],
+      }),
+      citationText: stubService<WikilinkEditorDeps["citationText"]>(
+        "CitationText",
+        {
+          changed: citationText.changed,
+          invalidated: citationText.invalidated.pipe(
+            Stream.map(() => undefined),
+          ),
+          peek: () => citationText.peek(),
+        },
+      ),
+      citekeyEditor: stubService<WikilinkEditorDeps["citekeyEditor"]>(
+        "CitekeyEditor",
+        {},
+      ),
+      citationPopover: stubService<WikilinkEditorDeps["citationPopover"]>(
+        "CitationPopover",
+        {},
+      ),
+      citationLookup,
+      bridge: settings.bridge,
+      settings,
+    }),
+  );
   await service.ready;
   const owned = stack.move();
   return {

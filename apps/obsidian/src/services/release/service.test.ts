@@ -7,11 +7,17 @@ import { expect, vi } from "vitest";
 
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { DOCS_COMPANION } from "@/lib/constants";
 import type { HydrationOrigin } from "@/services/settings/classify";
 import type { Settings } from "@/services/settings/schema";
 
-import { buildRelease, releaseApp, releaseOf } from "./__fixtures__";
+import {
+  buildRelease,
+  obsidianEventMethods,
+  releaseApp,
+  releaseOf,
+} from "./__fixtures__";
 import { releaseNoteUrl, V1_TEMPLATE_FOLDER } from "./constants";
 
 /** The configured Literature Note template folder in the fixture settings. */
@@ -23,17 +29,44 @@ it.effect("Release.openReleaseNote succeeds when the view cannot open", () =>
       const setViewState = vi
         .fn()
         .mockRejectedValue(new Error("Cannot open view"));
-      const app = {
-        vault: new MemoryVault(),
-        workspace: Object.assign(new MemoryWorkspace(), {
-          getLeavesOfType: () => [],
-          getLeaf: () => ({ setViewState }),
-          revealLeaf: vi.fn(),
+      const vault = new MemoryVault();
+      const workspace = Object.assign(new MemoryWorkspace(), {
+        getLeavesOfType: (): [] => [],
+        getLeaf: () =>
+          stubService<ReturnType<App["workspace"]["getLeaf"]>>(
+            "WorkspaceLeaf",
+            { setViewState },
+          ),
+        revealLeaf: vi.fn(),
+      });
+      const app = stubService<App>("App", {
+        vault: stubService<App["vault"]>("Vault", {
+          ...obsidianEventMethods(vault),
+          read: (file) => vault.read(file),
+          cachedRead: (file) => vault.cachedRead(file),
+          process: (file, fn, options) => vault.process(file, fn, options),
+          create: (path, data, options) => vault.create(path, data, options),
+          trash: (file, system) => vault.trash(file, system),
+          getFileByPath: (path) => vault.getFileByPath(path),
+          getFolderByPath: (path) => vault.getFolderByPath(path),
+          getAbstractFileByPath: (path) => vault.getAbstractFileByPath(path),
         }),
-        internalPlugins: {
-          getEnabledPluginById: () => true,
-        },
-      } as unknown as App;
+        workspace: stubService<App["workspace"]>("Workspace", {
+          ...obsidianEventMethods(workspace),
+          onLayoutReady: (callback) => workspace.onLayoutReady(callback),
+          getActiveFile: () => workspace.getActiveFile(),
+          getActiveViewOfType: (type) => workspace.getActiveViewOfType(type),
+          getLeavesOfType: () => workspace.getLeavesOfType(),
+          getLeaf: () => workspace.getLeaf(),
+          revealLeaf: (leaf) => workspace.revealLeaf(leaf),
+        }),
+        internalPlugins: stubService<App["internalPlugins"]>(
+          "InternalPlugins",
+          {
+            getEnabledPluginById: () => true,
+          },
+        ),
+      });
       const fixture = yield* releaseOf({
         app,
         layoutReady: () => {},

@@ -1,6 +1,7 @@
-import type { App, Plugin, WorkspaceLeaf, ItemView } from "obsidian";
+import type { App, Command, Plugin, WorkspaceLeaf, ItemView } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { EXPLORER_VIEW_TYPE } from "@/views/template-data-explorer/view";
 import {
   TemplateWorkbenchView,
@@ -18,6 +19,12 @@ import {
   subscribeActiveTemplateWorkbench,
 } from "./register";
 import { NOTE_PREVIEW_VIEW_TYPE } from "./view";
+import type { PreviewViewDeps } from "./view";
+
+const emptyWorkbenchDeps = stubService<TemplateWorkbenchDeps>(
+  "TemplateWorkbenchDeps",
+  {},
+);
 
 vi.mock("@/views/template-workbench/view", async () => {
   const { createStore } = await import("zustand/vanilla");
@@ -84,10 +91,7 @@ function setup() {
   const leaves: TestLeaf[] = [];
   const callbacks = events();
   const cleanup: (() => void)[] = [];
-  const commands = new Map<
-    string,
-    { checkCallback(checking: boolean): boolean }
-  >();
+  const commands = new Map<string, Command>();
   const makeLeaf = (container = rootSplit): TestLeaf => {
     const leaf: TestLeaf = {
       view: { getViewType: () => "empty" },
@@ -154,23 +158,30 @@ function setup() {
       callbacks.get("active-leaf-change")?.();
     }),
   };
-  const app = { workspace } as unknown as App;
-  const plugin = {
+  const app = stubService<App>("App", {
+    workspace: workspace as unknown as App["workspace"],
+  });
+  const plugin = stubService<Plugin>("Plugin", {
     app,
-    manifest: { id: "zotlit" },
+    manifest: stubService<Plugin["manifest"]>("PluginManifest", {
+      id: "zotlit",
+    }),
     registerView: vi.fn(),
     registerEvent: vi.fn(),
-    addCommand: (command: {
-      id: string;
-      checkCallback(checking: boolean): boolean;
-    }) => commands.set(command.id, command),
+    addCommand: (command) => {
+      commands.set(command.id, command);
+      return command;
+    },
     register: (dispose: () => void) => cleanup.push(dispose),
-  } as unknown as Plugin;
-  registerNotePreview(plugin, {} as import("./view").PreviewViewDeps);
+  });
+  registerNotePreview(
+    plugin,
+    stubService<PreviewViewDeps>("PreviewViewDeps", {}),
+  );
   const editorLeaf = makeLeaf();
   const editor = new TemplateWorkbenchView(
     editorLeaf as unknown as WorkspaceLeaf,
-    {} as TemplateWorkbenchDeps,
+    emptyWorkbenchDeps,
   );
   editorLeaf.view = editor;
   const activate = (view: { getViewType(): string }) => {
@@ -205,7 +216,7 @@ function addEditor(
   const leaf = test.makeLeaf(options.container);
   const editor = new TemplateWorkbenchView(
     leaf as unknown as WorkspaceLeaf,
-    {} as TemplateWorkbenchDeps,
+    emptyWorkbenchDeps,
   );
   Object.assign(editor, {
     file: options.path === null ? null : { path: options.path },
@@ -385,9 +396,9 @@ describe("active Template Workbench sidebars", () => {
     test.activate(test.editor);
     expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
     const command = test.commands.get("open-note-preview")!;
-    expect(command.checkCallback(true)).toBe(true);
+    expect(command.checkCallback!(true)).toBe(true);
     expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
-    command.checkCallback(false);
+    command.checkCallback!(false);
     await vi.waitFor(() =>
       expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(3),
     );
@@ -410,7 +421,7 @@ describe("active Template Workbench sidebars", () => {
     const otherLeaf = test.makeLeaf();
     const other = new TemplateWorkbenchView(
       otherLeaf as unknown as WorkspaceLeaf,
-      {} as TemplateWorkbenchDeps,
+      emptyWorkbenchDeps,
     );
     otherLeaf.view = other;
     test.activate(other);
@@ -419,7 +430,7 @@ describe("active Template Workbench sidebars", () => {
     test.activate(companion.view);
     expect(activeTemplateWorkbench(test.app)).toBe(test.editor);
     test.leaves.splice(2, 1);
-    test.commands.get("open-note-preview")!.checkCallback(false);
+    test.commands.get("open-note-preview")!.checkCallback!(false);
     await vi.waitFor(() =>
       expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(3),
     );
@@ -446,7 +457,7 @@ describe("active Template Workbench sidebars", () => {
     const secondLeaf = test.makeLeaf();
     const second = new TemplateWorkbenchView(
       secondLeaf as unknown as WorkspaceLeaf,
-      {} as TemplateWorkbenchDeps,
+      emptyWorkbenchDeps,
     );
     secondLeaf.view = second;
     secondLeaf.group = "research";
@@ -471,7 +482,7 @@ describe("active Template Workbench sidebars", () => {
     const otherLeaf = test.makeLeaf();
     const other = new TemplateWorkbenchView(
       otherLeaf as unknown as WorkspaceLeaf,
-      {} as TemplateWorkbenchDeps,
+      emptyWorkbenchDeps,
     );
     otherLeaf.view = other;
     test.activate(other);
@@ -506,7 +517,7 @@ describe("active Template Workbench sidebars", () => {
     const otherLeaf = test.makeLeaf({ focus: vi.fn() });
     const other = new TemplateWorkbenchView(
       otherLeaf as unknown as WorkspaceLeaf,
-      {} as TemplateWorkbenchDeps,
+      emptyWorkbenchDeps,
     );
     otherLeaf.view = other;
     test.activate(other);
@@ -569,7 +580,7 @@ describe("active Template Workbench sidebars", () => {
     const heldLeaf = test.makeLeaf();
     const held = new TemplateWorkbenchView(
       heldLeaf as unknown as WorkspaceLeaf,
-      {} as TemplateWorkbenchDeps,
+      emptyWorkbenchDeps,
     );
     heldLeaf.view = held;
     companion.setGroupMember(heldLeaf);
@@ -592,18 +603,20 @@ describe("active Template Workbench sidebars", () => {
 
 it("lets native history capture a companion while synchronous listeners still see a non-navigating view", () => {
   const snapshots: unknown[] = [];
-  const view = { navigation: false } as ItemView;
-  const history = { owner: null as unknown as WorkspaceLeaf };
-  const leaf = {
+  const view = stubService<ItemView>("ItemView", {});
+  Object.defineProperty(view, "navigation", { value: false, writable: true });
+  const history: { owner: WorkspaceLeaf | null } = { owner: null };
+  const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+    updateHeader: vi.fn(),
     view,
-    history,
     recordHistory(this: WorkspaceLeaf, state: unknown) {
       if (!this.view.navigation) return;
       expect(leaf.view.navigation).toBe(false);
       expect(history.owner).toBe(leaf);
       snapshots.push(state);
     },
-  } as unknown as WorkspaceLeaf;
+  });
+  Object.defineProperty(leaf, "history", { value: history });
   history.owner = leaf;
   Object.assign(view, { leaf });
   const native = Object.getOwnPropertyDescriptor(leaf, "recordHistory")!.value;
@@ -615,7 +628,12 @@ it("lets native history capture a companion while synchronous listeners still se
   leaf.recordHistory(snapshot);
   expect(snapshots).toEqual([snapshot]);
   expect(view.navigation).toBe(false);
-  leaf.view = { navigation: false } as ItemView;
+  const replacement = stubService<ItemView>("ItemView", {});
+  Object.defineProperty(replacement, "navigation", {
+    value: false,
+    writable: true,
+  });
+  leaf.view = replacement;
   leaf.recordHistory({ state: { item: "PAPER002" } });
   expect(snapshots).toHaveLength(1);
   remove();
@@ -646,13 +664,13 @@ it("waits for native layout readiness before choosing a restored companion's sou
 it("preserves native completion before waiting for layout-ready restoration", () => {
   const events: string[] = [];
   let ready = () => {};
-  const app = {
-    workspace: {
+  const app = stubService<App>("App", {
+    workspace: stubService<App["workspace"]>("Workspace", {
       onLayoutReady(callback: () => void) {
         ready = callback;
       },
-    },
-  } as App;
+    }),
+  });
   const result = {
     history: false,
     done: () => {

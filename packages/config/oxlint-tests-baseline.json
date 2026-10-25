@@ -31,89 +31,30 @@
     "zotlit-tests/no-markup-assertion",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/lib/__fixtures__/keymap.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/lib/__fixtures__/obsidian-host.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/lib/__fixtures__/obsidian-metadata-cache.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/lib/__fixtures__/obsidian-vault.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/lib/__fixtures__/obsidian-workspace.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/lib/attachment-open.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/lib/brand.test.ts": [
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/lib/effect-log-port.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/lib/effect-obsidian-events.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/lib/field-popup.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/lib/obsidian-env.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/lib/obsidian-file-manager.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/lib/obsidian-private/embed-registry.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/lib/obsidian-private/metadata-type-manager.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/lib/obsidian-private/property-values.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
-  ],
-  "apps/obsidian/src/lib/obsidian-workspace.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/lib/open-settings.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/lib/plugin-host.test.ts": [
-    "zotlit-effect-tests/typed-fake"
   ],
   "apps/obsidian/src/lib/pointer-drag.test.ts": [
     "zotlit-tests/no-markup-assertion"
   ],
-  "apps/obsidian/src/lib/workbench-recovery.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/__fixtures__/file-menu.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/annotation-popover/reading.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/annotation-repository/menu.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/services/attachment-import/copy-security.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/attachment-import/service.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
@@ -122,7 +63,6 @@
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/attachment-open/menu.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
@@ -130,49 +70,20 @@
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/services/citation-index/annotation-uses.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/citation-index/cli/register.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/citation-index/parse-store.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/citation-index/service.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/citation-popover/__fixtures__.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/citation-popover/actions.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/services/citation-popover/content.test.ts": [
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-markup-assertion",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/citation-popover/lifecycle.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/services/citation-popover/popover.test.ts": [
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/services/citation-popover/service.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
-  ],
-  "apps/obsidian/src/services/citation-text/document-citation-set.integration.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/citation-text/service.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/citekey-editor/actions.test.ts": [
-    "zotlit-effect-tests/typed-fake"
   ],
   "apps/obsidian/src/services/citekey-editor/extension-parse.test.ts": [
     "zotlit-tests/no-internal-mock",
@@ -185,7 +96,6 @@
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/citekey-editor/service.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
@@ -196,7 +106,6 @@
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/services/citekey-reading/service.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/services/database/read-source-fallback.test.ts": [
@@ -207,20 +116,7 @@
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/services/excerpt-image/materialize.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/excerpt-image/prepare.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/graph-citations/actions.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/graph-citations/facade.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/services/graph-citations/groups.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-markup-assertion",
     "zotlit-tests/no-source-text"
@@ -230,50 +126,22 @@
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/graph-citations/rows.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/graph-citations/saved-options.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/graph-citations/service.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-markup-assertion",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/services/indexed-key/actions.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/services/item-lookup/render-hit.test.ts": [
     "zotlit-tests/no-markup-assertion"
   ],
-  "apps/obsidian/src/services/item-lookup/search-modal.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/item-query/service.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/local-bridge/actions.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/local-bridge/customize.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/local-bridge/reads.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/local-bridge/service.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/log/service.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/services/note-feature/actions.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
@@ -282,22 +150,18 @@
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/note-feature/companion-view.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/note-feature/creation-view.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/note-feature/insert-annotation.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/note-feature/operations.membership.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
@@ -306,28 +170,18 @@
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/note-feature/switch-view.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/note-feature/update-batch.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/services/note-feature/update-single.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/note-import/batch-import-notices.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/services/note-import/batch-import.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/note-import/excerpts.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
@@ -335,48 +189,26 @@
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/services/note-import/note-parser.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/note-import/outcome-scope.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/note-import/service.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
-  ],
-  "apps/obsidian/src/services/note-index/__fixtures__.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/note-index/service.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/pandoc/__fixtures__/citation-surfaces.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/pandoc/document-presentation.test.ts": [
-    "zotlit-effect-tests/typed-fake"
   ],
   "apps/obsidian/src/services/pandoc/inline-content.test.ts": [
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-markup-assertion",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/services/pandoc/register.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/pdf-annotation-editor/borrow.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/services/pdf-annotation-editor/creation-toolbar.test.ts": [
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/services/pdf-annotation-editor/creation.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/services/pdf-annotation-editor/mark-popup-host.test.ts": [
@@ -385,61 +217,32 @@
   "apps/obsidian/src/services/pdf-annotation-editor/render.test.ts": [
     "zotlit-tests/no-markup-assertion"
   ],
-  "apps/obsidian/src/services/pdf-annotation-editor/selection-capture.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/services/pdf-annotation-editor/selection.test.ts": [
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-markup-assertion",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/pdf-annotation-editor/service.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/services/protocol/register.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/services/release/__fixtures__.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/release/service.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/services/service-base.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/template-workbench/check.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
-  ],
-  "apps/obsidian/src/services/template-workbench/data.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/template-workbench/inspect.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/services/template-workbench/register.test.ts": [
-    "zotlit-effect-tests/typed-fake"
   ],
   "apps/obsidian/src/services/template/__fixtures__.ts": [
     "zotlit-effect-tests/typed-fake"
   ],
-  "apps/obsidian/src/services/template/actions.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/services/template/migration-data.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
-  ],
-  "apps/obsidian/src/services/template/migration.test.ts": [
-    "zotlit-effect-tests/typed-fake"
   ],
   "apps/obsidian/src/services/use-ledger/__fixtures__.ts": [
     "zotlit-effect-tests/typed-fake"
@@ -448,289 +251,147 @@
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/services/wikilink-editor/service.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/services/wikilink-editor/theme-hooks.test.ts": [
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-markup-assertion",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/wikilink-reading/service.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/services/zotero-local-api/last-read.test.ts": [
     "zotlit-effect-tests/typed-fake"
   ],
-  "apps/obsidian/src/services/zotero-pref/__fixtures__.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/setting-tab/advanced.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/setting-tab/create-profile-modal.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-markup-assertion"
   ],
-  "apps/obsidian/src/setting-tab/delete-profile-modal.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/setting-tab/ids.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/setting-tab/import-profile-modal.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/setting-tab/local-server.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/setting-tab/managed-binary.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/setting-tab/note-import.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/setting-tab/profile-destination-modal.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/setting-tab/profiles.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-markup-assertion",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/setting-tab/resources.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/setting-tab/share-profile-modal.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/setting-tab/templates.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/views/annot-view/AnnotView.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/views/annot-view/Annotation.test.ts": [
     "zotlit-tests/no-markup-assertion"
   ],
-  "apps/obsidian/src/views/annot-view/__fixtures__/editor-app.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/views/annot-view/actions.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/views/annot-view/async-insert.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/views/annot-view/drag-insert.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/views/annot-view/editor-sheet.test.ts": [
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/views/annot-view/layout.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-markup-assertion"
-  ],
-  "apps/obsidian/src/views/annot-view/view.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/views/batch-modal/shell.test.ts": [
-    "zotlit-effect-tests/typed-fake"
   ],
   "apps/obsidian/src/views/citation-presentation/modal.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
-  ],
-  "apps/obsidian/src/views/citation-presentation/presentation.test.ts": [
-    "zotlit-effect-tests/typed-fake"
   ],
   "apps/obsidian/src/views/citation-presentation/register.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/views/citation-suggest/annotation-insert.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/views/citation-suggest/annotation-search.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/views/citation-suggest/annotation-suggest.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/views/citation-suggest/editor-suggest.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/views/citation-suggest/insert-modal.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/views/cited-by/CitedBy.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-markup-assertion"
-  ],
-  "apps/obsidian/src/views/cited-by/register.test.ts": [
-    "zotlit-effect-tests/typed-fake"
   ],
   "apps/obsidian/src/views/cited-by/view.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-markup-assertion"
-  ],
-  "apps/obsidian/src/views/library/item-actions.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/views/library/item-drag.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/views/library/storage.test.ts": [
-    "zotlit-effect-tests/typed-fake"
   ],
   "apps/obsidian/src/views/library/view.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-markup-assertion"
   ],
-  "apps/obsidian/src/views/note-preview/__fixtures__/render.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/views/note-preview/markdown.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/views/note-preview/register.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/views/note-preview/render.fidelity.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/views/note-preview/view.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/views/pandoc-export/register.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/views/query-view/block-write.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/views/query-view/embed.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/views/query-view/file-view.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/views/query-view/note-host.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/views/query-view/table-notes.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/views/query-view/view.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/views/quick-switch/modal.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
-  ],
-  "apps/obsidian/src/views/quick-switch/profile-picker.test.ts": [
-    "zotlit-effect-tests/typed-fake"
   ],
   "apps/obsidian/src/views/references/References.test.ts": [
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-markup-assertion",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/views/references/actions.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
-  "apps/obsidian/src/views/references/annotation-parent.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/views/references/view.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/views/template-data-explorer/profile-explorer.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/views/template-data-explorer/register.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/views/template-data-explorer/store.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/views/template-data-explorer/view.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
-  ],
-  "apps/obsidian/src/views/template-workbench/document-kind.test.ts": [
-    "zotlit-effect-tests/typed-fake"
   ],
   "apps/obsidian/src/views/template-workbench/editor-extension.test.ts": [
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/views/template-workbench/host.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/views/template-workbench/hover.test.ts": [
     "zotlit-tests/no-markup-assertion"
   ],
-  "apps/obsidian/src/views/template-workbench/match-data.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/views/template-workbench/native-completion.test.ts": [
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/views/template-workbench/new-partial.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/views/template-workbench/register.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/views/template-workbench/selection.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/views/template-workbench/view.test.ts": [
-    "zotlit-effect-tests/typed-fake",
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-markup-assertion",
     "zotlit-tests/no-source-text"
-  ],
-  "apps/obsidian/src/views/welcome/banner.test.ts": [
-    "zotlit-effect-tests/typed-fake"
   ],
   "apps/zotero/scripts/vite-fluent-plugin.test.ts": [
     "zotlit-tests/no-internal-mock",

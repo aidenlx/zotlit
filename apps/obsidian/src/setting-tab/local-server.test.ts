@@ -4,6 +4,7 @@ import { Effect, Stream } from "effect";
 import type {
   Setting as ObsidianSetting,
   SettingDefinitionItem,
+  SettingGroup,
   SettingGroupItem,
 } from "obsidian";
 import { expect, it, vi } from "vitest";
@@ -33,17 +34,23 @@ function setup({
 }: Options = {}) {
   const current: Settings = { ...defaults, ...settings };
   const runtime = testRuntime();
-  const ctx = {
+  const ctx = stubService<SettingTabContext>("SettingTabContext", {
     runtime,
     bridge: effectBridge(runtime),
     webWorkbenchEnabled: true,
-    settings: { current: Effect.succeed(current) },
+    settings: stubService<SettingTabContext["settings"]>("Settings", {
+      current: Effect.succeed(current),
+    }),
     localServer: stubService<LocalServer["Service"]>("LocalServer", {
       effectivePort: Effect.succeed(null),
       effectivePortChanges: Stream.empty,
     }),
-    localBridge: { connection, disconnect, on: () => () => {} },
-  } as unknown as SettingTabContext;
+    localBridge: stubService<SettingTabContext["localBridge"]>("LocalBridge", {
+      connection,
+      disconnect,
+      on: () => () => {},
+    }),
+  });
   return localServerItems(ctx);
 }
 
@@ -52,7 +59,10 @@ function render(row: SettingDefinitionItem): Setting {
   if (!("render" in row) || !row.render)
     throw new Error("Expected a render row");
   const setting = new Setting(document.createElement("div"));
-  row.render(setting as unknown as ObsidianSetting, {} as never);
+  row.render(
+    setting as unknown as ObsidianSetting,
+    stubService<SettingGroup>("SettingGroup", {}),
+  );
   return setting;
 }
 

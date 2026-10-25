@@ -9,13 +9,23 @@ import {
   citekeysToCiteTemplateData,
   formatIndexedKey,
 } from "@zotlit/db";
-import type { Attachment, CiteRef, CitationVariant, Item } from "@zotlit/db";
+import type {
+  Annotation,
+  AnnotationSources,
+  Attachment,
+  CiteRef,
+  CitationVariant,
+  Item,
+  TemplateAnnotation,
+  TemplateParentItemData,
+} from "@zotlit/db";
 import { makeItem } from "@zotlit/db/test-utils";
 import { getPackageRoot } from "@zotlit/scripts/package-roots";
 import { inlineCitation, TemplateEngine } from "@zotlit/templates";
 import defaultCitation from "@zotlit/templates/defaults/citation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { renderAnnotationSources } from "@/lib/annotation-render";
 import type {
   AttachmentSource,
@@ -549,11 +559,13 @@ describe("embedded image resolution", () => {
 
   it("passes a path-unresolved attachment through as raw HTML", () => {
     // linkMode 3 (linked_url) has no filesystem path, so attachmentAbsPath is null.
-    embeddedAttachment.mockReturnValue({
-      key: "URL12345",
-      path: "http://example.com/a.png",
-      linkMode: 3,
-    } as never);
+    embeddedAttachment.mockReturnValue(
+      stubService<Attachment>("Attachment", {
+        key: "URL12345",
+        path: "http://example.com/a.png",
+        linkMode: 3,
+      }),
+    );
     const md = parseNote(TurndownService, note(img("URL12345")), deps);
     expect(md).toContain('data-attachment-key="URL12345"');
     expect(echoResolveLink).not.toHaveBeenCalled();
@@ -701,21 +713,39 @@ describe("annotation template mode", () => {
       new Map([
         [
           "K1",
-          {
+          stubService<TemplateAnnotation>("TemplateAnnotation", {
             key: "K1",
             pageLabel: "62",
-            parentItem: { citationKey: "Hensher2011", citekey: "Hensher2011" },
-          } as never,
+            parentItem: stubService<TemplateParentItemData>("ParentItem", {
+              key: "HENSHER1",
+              groupID: null,
+              libraryID: 1,
+              indexedKey: "HENSHER1",
+              dateAdded: Temporal.Instant.fromEpochMilliseconds(0),
+              dateModified: Temporal.Instant.fromEpochMilliseconds(0),
+              tags: [],
+              notePath: null,
+              noteLink: () => null,
+              citationKey: "Hensher2011",
+              citekey: "Hensher2011",
+            }),
+          }),
         ],
       ]),
     );
     const renderAnnotationParagraph = (keys: readonly string[]) =>
       renderAnnotationSources(
-        { annotations: keys.map((key) => ({ key })) } as never,
+        stubService<AnnotationSources>("AnnotationSources", {
+          annotations: keys.map((key) =>
+            stubService<Annotation>("Annotation", { key }),
+          ),
+        }),
         {
           // The two template seams `renderAnnotationSources` reaches for, wired to
           // one facade the way TemplateService wires them to its own.
-          template: {
+          template: stubService<
+            Parameters<typeof renderAnnotationSources>[1]["template"]
+          >("Template", {
             render: (name: string, data: object) => facade.render(name, data),
             renderCitation: (
               refs: readonly CiteRef[],
@@ -727,7 +757,7 @@ describe("annotation template mode", () => {
                   citekeysToCiteTemplateData(refs, variant),
                 ),
               ),
-          } as never,
+          }),
           zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
           attachmentImport: {
             decide: blockedDecide,

@@ -270,20 +270,20 @@ describe("Effect log port", () => {
       yield* Effect.scoped(
         Effect.gen(function* () {
           yield* Layer.build(layerHostLogPort(ports.host, HOST_LOG_PORT));
-          workerLogger.log({
-            message: ["Citation lookup failed"],
-            logLevel: "Error",
-            cause: Cause.fail(new TypeError("bad lookup")),
-            fiber: {
-              getRef: (reference: unknown) =>
-                reference === LogCategory
-                  ? ["citation-index"]
-                  : reference === References.CurrentLogAnnotations
-                    ? { itemID: 9 }
-                    : [],
-            },
-            date: DateTime.toDateUtc(DateTime.makeUnsafe(0)),
-          } as never);
+          yield* Effect.withFiber((fiber) =>
+            Effect.sync(() =>
+              workerLogger.log({
+                message: ["Citation lookup failed"],
+                logLevel: "Error",
+                cause: Cause.fail(new TypeError("bad lookup")),
+                fiber,
+                date: DateTime.toDateUtc(DateTime.makeUnsafe(0)),
+              }),
+            ),
+          ).pipe(
+            Effect.provideService(LogCategory, ["citation-index"]),
+            Effect.annotateLogs({ itemID: 9 }),
+          );
           expect(yield* Queue.take(captured)).toMatchObject({
             level: "Error",
             message: ["Citation lookup failed"],

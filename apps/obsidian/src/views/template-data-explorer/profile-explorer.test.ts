@@ -7,8 +7,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import { WorkbenchHostProvider } from "@zotlit/workbench/ui";
+import type { WorkbenchHost } from "@zotlit/workbench/ui";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import type {
   TemplateDataDeps,
@@ -18,6 +21,7 @@ import { chooseWorkbenchAnnotation } from "@/views/template-workbench/selection"
 import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
 import { ExplorerActionsContext } from "./actions";
+import type { ExplorerActions } from "./actions";
 import { Explorer } from "./Explorer";
 import {
   annotationIndexedKey,
@@ -29,8 +33,10 @@ vi.mock("@/services/template-workbench/data", () => ({
   loadTemplateData: vi.fn(),
 }));
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
-const deps = {} as TemplateDataDeps;
-const leaf = {} as WorkspaceLeaf;
+const deps = stubService<TemplateDataDeps>("TemplateDataDeps", {});
+const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+  updateHeader: vi.fn(),
+});
 function context(
   patch: Partial<TemplateAuthoringContext> = {},
 ): TemplateAuthoringContext {
@@ -184,17 +190,22 @@ describe("independent native Explorer", () => {
         createElement(
           WorkbenchHostProvider,
           {
-            host: {
+            host: stubService<WorkbenchHost>("WorkbenchHost", {
+              messages: workbenchM,
               getLocale: () => "en",
               persistence: { read: () => null, write: () => {} },
-            } as never,
+            }),
           },
           createElement(
             ExplorerStoreProvider,
             { value: session.state },
             createElement(
               ExplorerActionsContext,
-              { value: { onChooseItem: choose } as never },
+              {
+                value: stubService<ExplorerActions>("ExplorerActions", {
+                  onChooseItem: choose,
+                }),
+              },
               createElement(Explorer, {
                 explorer: { copy: async () => {} },
                 lookup: { search: async () => [] },
@@ -268,13 +279,13 @@ it("switches annotation data locally through the annotation chooser", async () =
       createElement(
         WorkbenchHostProvider,
         {
-          host: {
+          host: stubService<WorkbenchHost>("WorkbenchHost", {
             messages: m,
             getLocale: () => "en",
             tooltip: (text: string) => ({ title: text }),
             persistence: { read: () => null, write: () => {} },
             suggester,
-          } as never,
+          }),
         },
         createElement(
           ExplorerStoreProvider,
@@ -287,7 +298,7 @@ it("switches annotation data locally through the annotation chooser", async () =
             onChooseAnnotation: async () => {
               const state = session.state.getState();
               const id = await chooseWorkbenchAnnotation(
-                { suggester } as never,
+                stubService<WorkbenchHost>("WorkbenchHost", { suggester }),
                 state.annotations ?? [],
                 annotationIndexedKey(state.item!.id, state.annotationId) ??
                   state.annotationId,

@@ -1,5 +1,7 @@
-import type { App, MetadataCache } from "obsidian";
+import type { App, CachedMetadata, MetadataCache, Vault } from "obsidian";
 import { describe, expect, it } from "vitest";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 
 import type { GraphCitationAdditions } from "./adapter";
 import {
@@ -27,14 +29,24 @@ function additionsOf(
 }
 
 /** The metadata of a file the reader tagged, which the tag scan draws a node from. */
-const TAGGED = { tags: [{ tag: "#todo" }] };
+const TAGGED: CachedMetadata = {
+  tags: [
+    {
+      tag: "#todo",
+      position: {
+        start: { line: 0, col: 0, offset: 0 },
+        end: { line: 0, col: 5, offset: 5 },
+      },
+    },
+  ],
+};
 
 /** A metadata cache whose one method reads its own state through `this`. */
 function cacheWith(links: {
   resolved: MetadataCache["resolvedLinks"];
   unresolved: MetadataCache["unresolvedLinks"];
 }): MetadataCache {
-  return {
+  return stubService<MetadataCache & { files: string[] }>("MetadataCache", {
     resolvedLinks: links.resolved,
     unresolvedLinks: links.unresolved,
     files: ["Draft.md", "Other.md"],
@@ -42,7 +54,7 @@ function cacheWith(links: {
       return this.files;
     },
     getCache: () => TAGGED,
-  } as unknown as MetadataCache;
+  });
 }
 
 describe("facadeApp", () => {
@@ -51,10 +63,10 @@ describe("facadeApp", () => {
       resolved: { "Draft.md": { "Other.md": 1 } },
       unresolved: { "Draft.md": { missing: 1 } },
     });
-    const app = {
+    const app = stubService<App>("App", {
       metadataCache: cache,
-      vault: { name: "v" },
-    } as unknown as App;
+      vault: stubService<Vault>("Vault", { getName: () => "v" }),
+    });
 
     const facade = facadeApp(
       app,
@@ -83,9 +95,9 @@ describe("facadeApp", () => {
 
 describe("renderWithFacade", () => {
   it("shows the facade to render alone and restores the real app after", () => {
-    const app = {
+    const app = stubService<App>("App", {
       metadataCache: cacheWith({ resolved: {}, unresolved: {} }),
-    } as unknown as App;
+    });
     const seen: MetadataCache["unresolvedLinks"][] = [];
     const render = function (this: FacadeEngine) {
       seen.push(this.app.metadataCache.unresolvedLinks);
@@ -105,9 +117,9 @@ describe("renderWithFacade", () => {
   });
 
   it("restores the real app when render throws", () => {
-    const app = {
+    const app = stubService<App>("App", {
       metadataCache: cacheWith({ resolved: {}, unresolved: {} }),
-    } as unknown as App;
+    });
     const render = () => {
       throw new Error("boom");
     };
@@ -151,7 +163,7 @@ describe("facadeApp under the Filters rows", () => {
       },
       unresolved: {},
     });
-    const app = { metadataCache: cache } as unknown as App;
+    const app = stubService<App>("App", { metadataCache: cache });
 
     const facade = facadeApp(
       app,
@@ -176,7 +188,7 @@ describe("facadeApp under the Filters rows", () => {
 
   it("narrows the cached files to the surviving paths, so the render's own narrowing runs on them", () => {
     const cache = cacheWith({ resolved: {}, unresolved: {} });
-    const app = { metadataCache: cache } as unknown as App;
+    const app = stubService<App>("App", { metadataCache: cache });
 
     const facade = facadeApp(
       app,
@@ -192,7 +204,7 @@ describe("facadeApp under the Filters rows", () => {
 
   it("answers no metadata while Citation-connected only is on, so a surviving note's tags draw no node", () => {
     const cache = cacheWith({ resolved: {}, unresolved: {} });
-    const app = { metadataCache: cache } as unknown as App;
+    const app = stubService<App>("App", { metadataCache: cache });
 
     const facade = facadeApp(
       app,
@@ -204,7 +216,7 @@ describe("facadeApp under the Filters rows", () => {
 
   it("reads a file's metadata through while Citation-connected only is off", () => {
     const cache = cacheWith({ resolved: {}, unresolved: {} });
-    const app = { metadataCache: cache } as unknown as App;
+    const app = stubService<App>("App", { metadataCache: cache });
 
     const facade = facadeApp(app, additionsOf({}));
 
@@ -216,7 +228,7 @@ describe("facadeApp under the Filters rows", () => {
       resolved: { "Draft.md": { "Other.md": 1 } },
       unresolved: { "Draft.md": { todo: 1 } },
     });
-    const app = { metadataCache: cache } as unknown as App;
+    const app = stubService<App>("App", { metadataCache: cache });
 
     const facade = facadeApp(
       app,

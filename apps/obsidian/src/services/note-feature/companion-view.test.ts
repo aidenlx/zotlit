@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 import { Effect } from "effect";
-import { ButtonComponent } from "obsidian";
-import type { App, TFile } from "obsidian";
+import { ButtonComponent, TFile } from "obsidian";
+import type { App, Workspace } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import type { Item, ItemRef } from "@zotlit/db";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -42,7 +43,7 @@ function creationPlans(
 }
 
 function creationHarness(selection: CreationProfileSelection) {
-  const file = { path: "Papers/Study.md" } as TFile;
+  const file = noteAt("Papers/Study.md");
   const item = { ...REF, fields: { title: "A Study" } } as Item;
   const readItems = vi.fn(() =>
     Effect.succeed(new Map([[REF.indexedKey, item]])),
@@ -63,16 +64,26 @@ function creationHarness(selection: CreationProfileSelection) {
   const planCreations = vi.fn(async (keys: readonly string[]) =>
     creationPlans(keys, { item, selection, previews }),
   );
-  const deps = {
+  const deps: CompanionNoteDeps = {
+    createProfile: vi.fn(),
+    importProfile: vi.fn(),
     useLedger: {
-      withoutNoteUse: (_file: TFile, open: () => Promise<void>) => open(),
+      withoutNoteUse: <T>(_file: TFile, open: () => Promise<T>) => open(),
     },
-    app: { workspace: { openLinkText } },
-    zoteroReads: {
-      reads: { ItemsByIndexedKeys: readItems },
-    },
-    zoteroPref: { dataDir: null },
-    noteFeature: {
+    app: stubService<App>("App", {
+      workspace: stubService<Workspace>("Workspace", { openLinkText }),
+    }),
+    zoteroReads: stubService<CompanionNoteDeps["zoteroReads"]>("ZoteroReads", {
+      reads: stubService<CompanionNoteDeps["zoteroReads"]["reads"]>(
+        "ZoteroReadsApi",
+        {
+          ItemsByIndexedKeys:
+            readItems as unknown as CompanionNoteDeps["zoteroReads"]["reads"]["ItemsByIndexedKeys"],
+        },
+      ),
+    }),
+    zoteroPref: { dataDir: "" },
+    noteFeature: stubService<CompanionNoteDeps["noteFeature"]>("NoteFeature", {
       resolveCompanionNote: vi.fn(async (): Promise<CompanionNoteTarget> => ({
         outcome: "create",
       })),
@@ -82,8 +93,8 @@ function creationHarness(selection: CreationProfileSelection) {
         bodyUpdated: true,
         duplicateRegionCount: 0,
       })),
-    },
-  } as unknown as CompanionNoteDeps;
+    }),
+  };
   return {
     deps,
     file,
@@ -356,9 +367,9 @@ it("opens a note it just created in the pane the link names", async () => {
 
 it("names Default in the kept-Profile notice for an unstamped note", () => {
   expect(
-    companionNoteNotice({} as App, {
+    companionNoteNotice(stubService<App>("App", {}), {
       outcome: "existing",
-      files: [{ path: "Paper.md" } as TFile],
+      files: [noteAt("Paper.md")],
       keptProfile: { selector: "default", label: undefined },
     }),
   ).toBe(
@@ -371,7 +382,7 @@ it("names Default in the kept-Profile notice for an unstamped note", () => {
 it.each(["open", "update"] as const)(
   "%s opens a conflicting stamped note without updating it or asking",
   async (action) => {
-    const file = { path: "Books/Paper.md" } as TFile;
+    const file = noteAt("Books/Paper.md");
     const target = {
       outcome: "existing" as const,
       files: [file] as [TFile],
@@ -381,13 +392,29 @@ it.each(["open", "update"] as const)(
     const updateNote = vi.fn();
     const createNote = vi.fn();
     const resolveCompanionNote = vi.fn(async () => target);
-    const deps = {
+    const deps: CompanionNoteDeps = {
+      createProfile: vi.fn(),
+      importProfile: vi.fn(),
       useLedger: {
-        withoutNoteUse: (_file: TFile, open: () => Promise<void>) => open(),
+        withoutNoteUse: <T>(_file: TFile, open: () => Promise<T>) => open(),
       },
-      app: { workspace: { openLinkText } } as unknown as App,
-      noteFeature: { resolveCompanionNote, updateNote, createNote },
-    } as unknown as CompanionNoteDeps;
+      app: stubService<App>("App", {
+        workspace: stubService<Workspace>("Workspace", { openLinkText }),
+      }),
+      noteFeature: stubService<CompanionNoteDeps["noteFeature"]>(
+        "NoteFeature",
+        {
+          resolveCompanionNote,
+          updateNote,
+          createNote,
+        },
+      ),
+      zoteroReads: stubService<CompanionNoteDeps["zoteroReads"]>(
+        "ZoteroReads",
+        {},
+      ),
+      zoteroPref: { dataDir: "" },
+    };
     vi.mocked(chooseLiteratureNoteProfile).mockClear();
 
     await openCompanionNote(deps, REF, { action, profile: PAPERS });
@@ -409,3 +436,9 @@ it.each(["open", "update"] as const)(
     );
   },
 );
+
+function noteAt(path: string): TFile {
+  const file = new TFile();
+  file.path = path;
+  return file;
+}

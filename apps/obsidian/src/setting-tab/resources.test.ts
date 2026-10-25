@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
 import { ButtonComponent, Setting } from "@mock/obsidian";
 import { Effect } from "effect";
-import type { Setting as ObsidianSetting } from "obsidian";
+import type { Setting as ObsidianSetting, SettingGroup } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
@@ -28,7 +29,10 @@ function renderResources(ctx: SettingTabContext): Setting[] {
         ? item.desc
         : (item.desc?.textContent ?? ""),
     );
-    item.render(setting as unknown as ObsidianSetting, {} as never);
+    item.render(
+      setting as unknown as ObsidianSetting,
+      stubService<SettingGroup>("SettingGroup", {}),
+    );
     return [setting];
   });
 }
@@ -46,16 +50,27 @@ function reviewButton(settings: Setting[]): ButtonComponent | undefined {
 it("opens conversion review from the pending reminder and removes it after acceptance", () => {
   let current = { ...defaults, "note.template-conversion-pending": true };
   const runtime = testRuntime();
-  const ctx = {
+  const ctx = stubService<SettingTabContext>("SettingTabContext", {
     runtime,
     bridge: effectBridge(runtime),
-    app: {},
-    languagePack: { getSituation: () => ({ kind: "active" }) },
-    manifest: { version: "2.3.0" },
-    settings: {
+    app: stubService<SettingTabContext["app"]>("App", {}),
+    languagePack: stubService<SettingTabContext["languagePack"]>(
+      "LanguagePack",
+      {
+        getSituation: () => ({
+          kind: "active" as const,
+          pack: { fileName: "en.json", origin: "https://example.com" },
+        }),
+        endonym: "English",
+      },
+    ),
+    manifest: stubService<SettingTabContext["manifest"]>("PluginManifest", {
+      version: "2.3.0",
+    }),
+    settings: stubService<SettingTabContext["settings"]>("Settings", {
       current: Effect.sync(() => current),
-    },
-  } as unknown as SettingTabContext;
+    }),
+  });
   const rendered = renderResources(ctx);
   expect(
     rendered.find(({ name }) => name === m.welcome_template_conversion_title())

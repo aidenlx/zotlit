@@ -6,13 +6,14 @@
 import { history } from "@codemirror/commands";
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { Effect } from "effect";
-import { Keymap, Scope } from "obsidian";
-import type { App, Editor, EventRef, MarkdownFileInfo, TFile } from "obsidian";
+import { Keymap, Scope, TFile } from "obsidian";
+import type { App, Editor, EventRef, MarkdownFileInfo } from "obsidian";
 import { act } from "preact/test-utils";
 import type { DragEvent as ReactDragEvent } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationList,
@@ -80,19 +81,32 @@ function repository() {
   const lists = { ...LISTS };
   const capabilities = { ...CAPABILITIES };
   const base = annotationReads();
-  const api = {
+  const read = vi.fn((key: string) => Effect.succeed(lists[key] ?? null));
+  const api = stubService<
+    AnnotationsLayoutDeps["annotations"] & { read: typeof read }
+  >("AnnotationRepository", {
     ...base,
-    read: vi.fn((key: string) => Effect.succeed(lists[key] ?? null)),
-    peek: vi.fn((key: string) =>
-      Effect.succeed(lists[key] ? { value: lists[key] } : null),
-    ),
-    refresh: vi.fn(() => Effect.void),
+    read,
+    peek: vi.fn((key: string) => {
+      const value = lists[key];
+      return Effect.succeed(
+        value
+          ? {
+              value,
+              status: "fresh" as const,
+              settled: Promise.resolve(value),
+            }
+          : null,
+      );
+    }),
+    refresh: vi.fn((key: string) => Effect.succeed(lists[key] ?? null)),
     capabilityFor: (key: string) => Effect.succeed(capabilities[key]!),
     tagDraftFor: vi.fn(() => Effect.succeed(null)),
-  };
+  });
   return {
     lists,
     capabilities,
+    api,
     emit(
       event: "annotations-changed" | "capability-changed",
       attachmentKey?: string,
@@ -103,7 +117,6 @@ function repository() {
         base.setCapability({ kind: "writable" });
       }
     },
-    api,
   };
 }
 
@@ -130,36 +143,49 @@ async function mountLayout(
 ) {
   const repo = repository();
   const bridge = cleanup.use(openTestBridge());
-  const workspaceListeners = new Map<string, Set<Listener>>();
-  const app = Object.assign(editorApp(), {
-    workspace: {
-      trigger: () => {},
-      on: (event: string, cb: Listener) => {
-        const set = workspaceListeners.get(event) ?? new Set();
-        set.add(cb);
-        workspaceListeners.set(event, set);
-        return cb as unknown as EventRef;
-      },
-      offref: (ref: EventRef) => {
-        for (const set of workspaceListeners.values()) set.delete(ref as never);
-      },
+  const workspaceListeners = new Map<string, Set<EventRef>>();
+  const listeners = new Map<EventRef, Listener>();
+  const workspace = stubService<App["workspace"]>("Workspace", {
+    trigger: () => {},
+    on: (event: string, callback: Listener, _ctx?: unknown) => {
+      const ref = stubService<EventRef>("EventRef", {});
+      const set = workspaceListeners.get(event) ?? new Set();
+      set.add(ref);
+      workspaceListeners.set(event, set);
+      listeners.set(ref, callback);
+      return ref;
     },
-  }) as unknown as App;
+    offref: (ref: EventRef) => {
+      const callback = listeners.get(ref);
+      if (!callback) return;
+      for (const set of workspaceListeners.values()) set.delete(ref);
+      listeners.delete(ref);
+    },
+  });
+  const app = editorApp();
+  app.workspace = workspace;
   const prepare = vi.fn<NoteFeature["prepareAnnotationInsert"]>(() =>
     Promise.resolve(null),
   );
-  const deps = {
+  const deps = stubService<AnnotationsLayoutDeps>("AnnotationsLayoutDeps", {
     app,
+    opener: stubService<AnnotationsLayoutDeps["opener"]>("TargetOpener", {}),
     annotations: repo.api,
     bridge,
-    reads: {},
+    reads: stubService<AnnotationsLayoutDeps["reads"]>("ZoteroReads", {}),
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-    excerptDisplay: { open: vi.fn(), refresh: vi.fn(), revalidate: vi.fn() },
-    noteFeature: { prepareAnnotationInsert: prepare },
+    excerptDisplay: stubService<AnnotationsLayoutDeps["excerptDisplay"]>(
+      "ExcerptDisplay",
+      { open: vi.fn(), refresh: vi.fn() },
+    ),
+    noteFeature: stubService<AnnotationsLayoutDeps["noteFeature"]>(
+      "NoteFeature",
+      { prepareAnnotationInsert: prepare },
+    ),
     libraryTagNames: () => Promise.resolve([]),
     allowEditing: vi.fn(),
     reportBlockedGesture: vi.fn(),
-  } as unknown as AnnotationsLayoutDeps;
+  });
   const scope = new Scope();
   const layout = new AnnotationsLayout(deps, {
     scope,
@@ -178,8 +204,8 @@ async function mountLayout(
     ]);
   });
   const emitWorkspace = (event: string, ...args: unknown[]) => {
-    for (const cb of workspaceListeners.get(event) ?? [])
-      cb(...(args as never[]));
+    for (const ref of workspaceListeners.get(event) ?? [])
+      listeners.get(ref)?.(...(args as never[]));
   };
   return { layout, el, scope, repo, prepare, emitWorkspace };
 }
@@ -285,11 +311,13 @@ it("drags each card with the Annotation Source of its own Attachment", async () 
   const { layout, prepare, emitWorkspace } = await mountLayout();
   const cm = stateEditor({ doc: "one two", extensions: [history()] });
   cleanup.defer(() => cm.destroy());
-  const editor = { cm } as Editor;
-  const info = {
-    file: { path: "Drop.md" } as TFile,
+  const file = new TFile();
+  file.path = "Drop.md";
+  const editor = stubService<Editor>("Editor", { cm });
+  const info = stubService<MarkdownFileInfo>("MarkdownFileInfo", {
+    file,
     editor,
-  } as MarkdownFileInfo;
+  });
   const source = document.createElement("button");
   Object.defineProperty(source, "win", { value: window });
   document.body.append(source);

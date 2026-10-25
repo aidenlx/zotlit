@@ -1,15 +1,23 @@
 import { Text } from "@codemirror/state";
 import { Effect, Stream } from "effect";
-import type { App, Editor, EditorSuggestContext, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type {
+  App,
+  Editor,
+  EditorPosition,
+  EditorSuggestContext,
+} from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type {
   CitationKeyResolution,
   CitekeyResolution,
+  DocumentCitationSet,
 } from "@/services/citation-index/service";
 import {
   createCitationIndexHarness,
@@ -17,6 +25,7 @@ import {
 } from "@/services/citation-index/test-harness";
 import { ItemLookup } from "@/services/item-lookup/service";
 import type { SearchHit } from "@/services/item-lookup/service";
+import { defaults } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
 import {
   inProcessReadsService,
@@ -32,33 +41,51 @@ import {
 import type { CitationSuggestDeps } from "./register";
 
 function makeHit(citationKey: string | null): SearchHit {
-  return {
-    item: { key: "ABC123", fields: { citationKey } },
-    matches: [],
-  } as unknown as SearchHit;
+  return searchHit("ABC123", "ABC123", citationKey);
+}
+
+function searchHit(
+  key: string,
+  indexedKey: string,
+  citationKey: string | null,
+): SearchHit {
+  return stubService<SearchHit>("SearchHit", {
+    item: stubService<SearchHit["item"]>("Item", {
+      key,
+      indexedKey,
+      fields: stubService<SearchHit["item"]["fields"]>("ItemFields", {
+        citationKey,
+      }),
+    }),
+  });
 }
 
 /** The two decisions an insert runs on: how a citation renders, and whether
  *  its Citation Key names one Zotero Item or several — the second only once
  *  the resolution snapshot has an answer at all. */
 function insertDeps(
-  renderCitation: unknown,
+  renderCitation: CitationSuggestDeps["noteFeature"]["renderCitation"],
   resolved: CitekeyResolution = { kind: "unique", item: UNIQUE_ITEM },
   resolution: CitationKeyResolution = "fresh",
 ): Pick<CitationSuggestDeps, "noteFeature" | "citationLookup"> {
   return {
-    noteFeature: {
-      renderCitation,
-    } as CitationSuggestDeps["noteFeature"],
-    citationLookup: {
-      read: async ({ citekeys }) => {
-        if (resolution === "failed") throw new Error("Citation lookup failed");
-        return lookupAnswer(
-          Object.fromEntries((citekeys ?? []).map((key) => [key, resolved])),
-        );
+    noteFeature: stubService<CitationSuggestDeps["noteFeature"]>(
+      "NoteFeature",
+      { renderCitation },
+    ),
+    citationLookup: stubService<CitationSuggestDeps["citationLookup"]>(
+      "CitationLookup",
+      {
+        read: async ({ citekeys }) => {
+          if (resolution === "failed")
+            throw new Error("Citation lookup failed");
+          return lookupAnswer(
+            Object.fromEntries((citekeys ?? []).map((key) => [key, resolved])),
+          );
+        },
+        status: resolution ?? "pending",
       },
-      status: resolution ?? "pending",
-    },
+    ),
   };
 }
 
@@ -416,25 +443,39 @@ describe("a placed citation and the triggers", () => {
 });
 
 describe("Citation Suggester document citations", () => {
-  const file = { path: "Draft.md" } as TFile;
+  const file = new TFile();
+  file.path = "Draft.md";
   const context = {
     file,
-    editor: {} as Editor,
+    editor: stubService<Editor>("Editor", {}),
     start: { line: 0, ch: 0 },
     end: { line: 0, ch: 2 },
     query: "",
   } satisfies EditorSuggestContext;
 
-  function setup(read: unknown) {
+  function setup(
+    read: CitationSuggestDeps["citationIndex"]["getDocumentCitationSet"],
+  ) {
     const search = vi.fn().mockResolvedValue([]);
     const close = vi.fn();
-    const suggest = new CitationEditorSuggest({
-      app: {} as App,
-      lookup: { openSession: () => ({ search, close }) },
-      citationIndex: { getDocumentCitationSet: read },
-      settings: { current: Effect.succeed({}) },
-      bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
-    } as unknown as CitationSuggestDeps);
+    const suggest = new CitationEditorSuggest(
+      stubService<CitationSuggestDeps>("CitationSuggestDeps", {
+        app: stubService<App>("App", {}),
+        lookup: stubService<CitationSuggestDeps["lookup"]>("ItemLookup", {
+          openSession: () => ({
+            search,
+            close,
+            [Symbol.dispose]: close,
+          }),
+        }),
+        citationIndex: stubService<CitationSuggestDeps["citationIndex"]>(
+          "CitationIndex",
+          { getDocumentCitationSet: read },
+        ),
+        settings: { current: Effect.succeed(defaults) },
+        bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
+      }),
+    );
     return { suggest, search, [Symbol.dispose]: () => suggest.close() };
   }
 
@@ -484,7 +525,7 @@ describe("Citation Suggester document citations", () => {
   });
 
   it("keeps the newest hits visible when keystrokes overlap a document read", async () => {
-    const document = Promise.withResolvers<{ citations: [] }>();
+    const document = Promise.withResolvers<DocumentCitationSet>();
     await using reads = inProcessReadsService(
       memoryOpener(
         () => `
@@ -516,13 +557,18 @@ describe("Citation Suggester document citations", () => {
         },
       },
     });
-    const suggest = new CitationEditorSuggest({
-      app: {} as App,
-      lookup,
-      citationIndex: { getDocumentCitationSet: () => document.promise },
-      settings: { current: Effect.succeed({}) },
-      bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
-    } as unknown as CitationSuggestDeps);
+    const suggest = new CitationEditorSuggest(
+      stubService<CitationSuggestDeps>("CitationSuggestDeps", {
+        app: stubService<App>("App", {}),
+        lookup,
+        citationIndex: stubService<CitationSuggestDeps["citationIndex"]>(
+          "CitationIndex",
+          { getDocumentCitationSet: () => document.promise },
+        ),
+        settings: { current: Effect.succeed(defaults) },
+        bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
+      }),
+    );
     using _close = { [Symbol.dispose]: () => suggest.close() };
     const close = vi.spyOn(suggest, "close");
     // Obsidian consumes every answer and closes the dropdown for an empty list.
@@ -536,7 +582,11 @@ describe("Citation Suggester document citations", () => {
     const second = suggest
       .getSuggestions({ ...context, query: "Alpha" })
       .then(showSuggestions);
-    document.resolve({ citations: [] });
+    document.resolve(
+      stubService<DocumentCitationSet>("DocumentCitationSet", {
+        citations: [],
+      }),
+    );
 
     expect(await Promise.all([first, second])).toEqual([
       ["ALPHA222"],
@@ -599,10 +649,7 @@ describe("Citation Suggester choices while the typed query's answer is pending",
   const rules = titled("RUGIER24", "rougier2024");
 
   function titled(indexedKey: string, citationKey: string): SearchHit {
-    return {
-      item: { key: indexedKey, indexedKey, fields: { citationKey } },
-      matches: [],
-    } as unknown as SearchHit;
+    return searchHit(indexedKey, indexedKey, citationKey);
   }
 
   const enter = { type: "keydown", key: "Enter" } as KeyboardEvent;
@@ -610,19 +657,19 @@ describe("Citation Suggester choices while the typed query's answer is pending",
 
   function setup() {
     let note = "";
-    const editor = {
+    const editor = stubService<Editor>("Editor", {
       getValue: () => note,
       posToOffset: ({ ch }: { ch: number }) => ch,
       offsetToPos: (ch: number) => ({ line: 0, ch }),
       replaceRange: (
         text: string,
-        from: { ch: number },
-        to: { ch: number },
+        from: EditorPosition,
+        to: EditorPosition,
       ) => {
         note = note.slice(0, from.ch) + text + note.slice(to.ch);
       },
       setCursor: () => {},
-    } as unknown as Editor;
+    });
     const answers = new Map<string, PromiseWithResolvers<SearchHit[]>>();
     const answerTo = (query: string) => {
       let answer = answers.get(query);
@@ -633,24 +680,35 @@ describe("Citation Suggester choices while the typed query's answer is pending",
       return answer;
     };
     const record = vi.fn();
-    const suggest = new CitationEditorSuggest({
-      app: {} as App,
-      lookup: {
-        openSession: () => ({
-          search: (query: string) => answerTo(query).promise,
-          close: () => {},
+    const suggest = new CitationEditorSuggest(
+      stubService<CitationSuggestDeps>("CitationSuggestDeps", {
+        app: stubService<App>("App", {}),
+        lookup: stubService<CitationSuggestDeps["lookup"]>("ItemLookup", {
+          openSession: () => ({
+            search: (query: string) => answerTo(query).promise,
+            close: () => {},
+            [Symbol.dispose]: () => {},
+          }),
         }),
-      },
-      citationIndex: {
-        getDocumentCitationSet: async () => ({ citations: [] }),
-      },
-      settings: { current: Effect.succeed({}) },
-      bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
-      useLedger: { record },
-      ...insertDeps((cites: { citationKey: string }[]) =>
-        cites.map(({ citationKey }) => `[@${citationKey}]`).join(""),
-      ),
-    } as unknown as CitationSuggestDeps);
+        citationIndex: stubService<CitationSuggestDeps["citationIndex"]>(
+          "CitationIndex",
+          {
+            getDocumentCitationSet: async () =>
+              stubService<DocumentCitationSet>("DocumentCitationSet", {
+                citations: [],
+              }),
+          },
+        ),
+        settings: { current: Effect.succeed(defaults) },
+        bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
+        useLedger: stubService<CitationSuggestDeps["useLedger"]>("UseLedger", {
+          record,
+        }),
+        ...insertDeps((cites: { citationKey: string }[]) =>
+          cites.map(({ citationKey }) => `[@${citationKey}]`).join(""),
+        ),
+      }),
+    );
     const shown = new Map<string, Promise<SearchHit[]>>();
     return {
       suggest,
@@ -659,13 +717,16 @@ describe("Citation Suggester choices while the typed query's answer is pending",
       /** Types `query` after the trigger; Obsidian asks for its answer. */
       type: (query: string) => {
         note = `[@${query}`;
-        const context = {
-          file: null,
-          editor,
-          start: { line: 0, ch: 0 },
-          end: { line: 0, ch: note.length },
-          query,
-        } as unknown as EditorSuggestContext;
+        const context = stubService<EditorSuggestContext>(
+          "EditorSuggestContext",
+          {
+            file: undefined,
+            editor,
+            start: { line: 0, ch: 0 },
+            end: { line: 0, ch: note.length },
+            query,
+          },
+        );
         suggest.context = context;
         shown.set(query, suggest.getSuggestions(context));
       },

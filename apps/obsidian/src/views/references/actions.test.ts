@@ -2,6 +2,7 @@
 import type { App } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { ClipboardRepresentation } from "@/lib/clipboard";
 import { ambiguousCandidates } from "@/services/citation-index/__fixtures__/ambiguous-candidates";
 import type {
@@ -53,7 +54,7 @@ let notify: ReturnType<typeof vi.fn<(message: string) => void>>;
 
 function build(): ReferenceActions {
   return createReferenceActions({
-    app: {} as App,
+    app: stubService<App>("App", {}),
     getSourcePath: () => "notes/tidal.md",
     openIndexedKey: () => undefined,
     onOpenEngineSettings: () => undefined,
@@ -88,7 +89,13 @@ describe("onOpenNote", () => {
     const openIndexedKey = vi.fn();
     const openLinkText = vi.fn();
     createReferenceActions({
-      app: { workspace: { openLinkText } } as unknown as App,
+      app: stubService<App>("App", {
+        workspace: stubService<App["workspace"]>("Workspace", {
+          openLinkText: (
+            ...args: Parameters<App["workspace"]["openLinkText"]>
+          ) => openLinkText(...args),
+        }),
+      }),
       getSourcePath: () => "notes/tidal.md",
       openIndexedKey,
       onOpenEngineSettings: () => undefined,

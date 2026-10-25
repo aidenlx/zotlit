@@ -7,6 +7,7 @@ import type {
   SettingDefinitionList,
   SettingDefinitionPage,
   SettingTab,
+  SettingsModal,
 } from "obsidian";
 import { expect, it, vi } from "vitest";
 
@@ -17,6 +18,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
 import type { LocalServer } from "@/services/local-server/service";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
+import { defaults } from "@/services/settings/schema";
 
 import { advancedPageItems } from "./advanced";
 import { attachmentPageItems } from "./attachments";
@@ -35,56 +37,82 @@ vi.mock("@/views/template-workbench/register", () => ({
 
 function ctx(): SettingTabContext {
   const runtime = testRuntime();
-  return {
+  return stubService<SettingTabContext>("SettingTabContext", {
     runtime,
     bridge: effectBridge(runtime),
     webWorkbenchEnabled: true,
-    app: {
-      vault: { getFileByPath: () => null, adapter: {} },
-      internalPlugins: { getEnabledPluginById: () => null },
+    app: stubService<SettingTabContext["app"]>("App", {
+      vault: stubService<SettingTabContext["app"]["vault"]>("Vault", {
+        getFileByPath: () => null,
+        adapter: stubService<SettingTabContext["app"]["vault"]["adapter"]>(
+          "DataAdapter",
+          {},
+        ),
+      }),
+      internalPlugins: stubService<SettingTabContext["app"]["internalPlugins"]>(
+        "InternalPlugins",
+        { getEnabledPluginById: () => null },
+      ),
       loadLocalStorage: () => null,
       saveLocalStorage: () => {},
-    },
-    manifest: { version: "0.0.0", dir: "plugins/zotlit" },
-    settings: {
-      current: Effect.succeed({}),
-      update: () => Effect.void,
+    }),
+    manifest: stubService<SettingTabContext["manifest"]>("PluginManifest", {
+      version: "0.0.0",
+      dir: "plugins/zotlit",
+    }),
+    settings: stubService<SettingTabContext["settings"]>("Settings", {
+      current: Effect.succeed(defaults),
       changes: Stream.empty,
-    },
-    profile: {
+    }),
+    profile: stubService<SettingTabContext["profile"]>("Profile", {
       loaded: true,
       profiles: [],
       diagnostics: [],
       defaultDocumentPath: "templates/zotlit-profile.default.md",
-    },
-    db: {},
-    libraryScope: {
-      effective: { mode: "all" },
-      current: null,
-      invalid: false,
-    },
-    zoteroPref: { databasePath: "", dataDir: null },
+    }),
+    db: stubService<SettingTabContext["db"]>("ZoteroReads", {}),
+    libraryScope: stubService<SettingTabContext["libraryScope"]>(
+      "LibraryScope",
+      {
+        effective: { mode: "all" },
+        current: null,
+        invalid: false,
+      },
+    ),
+    zoteroPref: stubService<SettingTabContext["zoteroPref"]>("ZoteroPref", {
+      databasePath: "",
+      dataDir: undefined,
+    }),
     localServer: stubService<LocalServer["Service"]>("LocalServer", {
       effectivePort: Effect.succeed(null),
       effectivePortChanges: Stream.empty,
     }),
-    localBridge: { connection: null, disconnect: () => {}, on: () => () => {} },
+    localBridge: stubService<SettingTabContext["localBridge"]>("LocalBridge", {
+      connection: null,
+      disconnect: () => {},
+      on: () => () => {},
+    }),
     customize: async () => {},
-    attachmentImport: {
-      approvedFolders: [],
-      approveFolder: async () => {},
-      revokeFolder: async () => {},
-    },
-    citationIndex: { reset: async () => {} },
-    template: {
+    attachmentImport: stubService<SettingTabContext["attachmentImport"]>(
+      "AttachmentImport",
+      {
+        approvedFolders: [],
+        approveFolder: async () => null,
+        revokeFolder: async () => {},
+      },
+    ),
+    citationIndex: stubService<SettingTabContext["citationIndex"]>(
+      "CitationIndex",
+      { reset: async () => {} },
+    ),
+    template: stubService<SettingTabContext["template"]>("Template", {
       loaded: true,
       javascriptTemplatesEnabled: false,
       getPartialDocuments: () => [],
       getReservedPartialFiles: () => [],
       getUnrecognizedFiles: () => [],
-      compileStatus: undefined,
-    },
-    release: {},
+    }),
+    release: stubService<SettingTabContext["release"]>("Release", {}),
     pandocEngine: {
       binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
         "PandocEngine",
@@ -107,17 +135,23 @@ function ctx(): SettingTabContext {
       runSync: Effect.runSync,
       runPromise: Effect.runPromise,
     },
-    languagePack: {
-      getSituation: () => ({ kind: "unavailable" }),
-      endonym: "English",
-    },
-    writeAuthorization: {
-      allowEditing: () => {},
-      forgetAuthorization: Effect.void,
-      remembered: Effect.succeed(false),
-    },
+    languagePack: stubService<SettingTabContext["languagePack"]>(
+      "LanguagePack",
+      {
+        getSituation: () => ({ kind: "unavailable" }),
+        endonym: "English",
+      },
+    ),
+    writeAuthorization: stubService<SettingTabContext["writeAuthorization"]>(
+      "WriteAuthorization",
+      {
+        allowEditing: async () => {},
+        forgetAuthorization: Effect.void,
+        remembered: Effect.succeed(false),
+      },
+    ),
     requestUpdate: () => {},
-  } as unknown as SettingTabContext;
+  });
 }
 
 /** Walk the definition tree, asserting ids unique among each sibling array. */
@@ -223,10 +257,10 @@ const DEEP_LINKED_ROWS = [
 it.each(DEEP_LINKED_ROWS)(
   "the deep link to %s reaches a row the tab renders (%s)",
   (settingId) => {
-    const tab = {
+    const tab = stubService<SettingTab>("SettingTab", {
       id: TAB_ID,
       settingItems: realTree(ctx()),
-    } as unknown as SettingTab;
+    });
     const setting = {
       open: vi.fn(),
       openTabById: vi.fn(() => tab),
@@ -234,7 +268,10 @@ it.each(DEEP_LINKED_ROWS)(
       scrollToDefinition: vi.fn(),
     };
 
-    revealSetting({ setting } as unknown as App, TAB_ID, settingId);
+    const app = stubService<App>("App", {
+      setting: stubService<SettingsModal>("SettingsModal", setting),
+    });
+    revealSetting(app, TAB_ID, settingId);
 
     expect(setting.scrollToDefinition).toHaveBeenCalledOnce();
     expect(setting.scrollToDefinition.mock.calls[0]![1]).toMatchObject({

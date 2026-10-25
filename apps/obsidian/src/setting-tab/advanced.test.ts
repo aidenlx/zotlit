@@ -4,6 +4,7 @@ import { Effect, Stream } from "effect";
 import type {
   Setting as ObsidianSetting,
   SettingDefinitionItem,
+  SettingGroup,
 } from "obsidian";
 import { expect, it, vi } from "vitest";
 
@@ -12,6 +13,7 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { LocalServer } from "@/services/local-server/service";
+import { defaults } from "@/services/settings/schema";
 
 import { advancedPageItems, clearExcerptCache } from "./advanced";
 import type { SettingsKey, SettingTabContext } from "./context";
@@ -20,20 +22,30 @@ function items(
   overrides: Partial<SettingTabContext> = { runtime: testRuntime() },
 ) {
   const runtime = testRuntime();
-  return advancedPageItems({
+  const ctx = stubService<SettingTabContext>("SettingTabContext", {
     runtime,
     bridge: effectBridge(runtime),
     webWorkbenchEnabled: true,
-    app: { loadLocalStorage: () => null, saveLocalStorage: () => {} },
-    settings: { current: Effect.succeed({ "log.to-file": false }) },
-    template: { loaded: false },
+    app: stubService<SettingTabContext["app"]>("App", {
+      loadLocalStorage: () => null,
+      saveLocalStorage: () => {},
+    }),
+    settings: stubService<SettingTabContext["settings"]>("Settings", {
+      current: Effect.succeed({ ...defaults, "log.to-file": false }),
+    }),
+    template: stubService<SettingTabContext["template"]>("Template", {
+      loaded: false,
+    }),
     localServer: stubService<LocalServer["Service"]>("LocalServer", {
       effectivePort: Effect.succeed(null),
       effectivePortChanges: Stream.empty,
     }),
-    localBridge: { connection: null },
+    localBridge: stubService<SettingTabContext["localBridge"]>("LocalBridge", {
+      connection: null,
+    }),
     ...overrides,
-  } as unknown as SettingTabContext);
+  });
+  return advancedPageItems(ctx);
 }
 
 it.each(["cancel", "clear", "failure"] as const)(
@@ -61,7 +73,10 @@ it("offers each editor choice in web-enabled builds", () => {
   if (!("render" in row) || !row.render)
     throw new Error("Expected a render row");
   const setting = new Setting(document.createElement("div"));
-  row.render(setting as unknown as ObsidianSetting, {} as never);
+  row.render(
+    setting as unknown as ObsidianSetting,
+    stubService<SettingGroup>("SettingGroup", {}),
+  );
   const dropdown = setting.components.find(
     (control) => control instanceof DropdownComponent,
   ) as DropdownComponent;

@@ -9,6 +9,7 @@ import {
 import type { App } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 
@@ -29,7 +30,7 @@ const UNINSTALLED = "http://www.zotero.org/styles/gone";
 
 /** One dialog on screen, read and driven the way the user reads and drives it. */
 async function openDialog(options: Partial<CitationPresentationModalOptions>) {
-  const choice = openCitationPresentationModal({} as App, {
+  const choice = openCitationPresentationModal(stubService<App>("App", {}), {
     dataDir: "/zotero",
     vaultStyleId: null,
     vaultLocale: "",

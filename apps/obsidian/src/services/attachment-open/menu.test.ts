@@ -1,6 +1,17 @@
-import { Menu, TFile } from "@mock/obsidian";
+import { Menu } from "@mock/obsidian";
+import type { MenuItem as MockMenuItem } from "@mock/obsidian";
+import type {
+  App,
+  FileSystemAdapter,
+  Menu as ObsidianMenu,
+  MenuItem,
+  Vault,
+  Workspace,
+} from "obsidian";
+import { TFile } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { openAttachments } from "@/lib/attachment-open";
 import { fileMenuHandler as handlerFor } from "@/services/__fixtures__/file-menu";
 import {
@@ -10,7 +21,9 @@ import {
 
 import type { AttachmentOpenDeps } from "./actions";
 import { attachmentOpenFileMenu } from "./menu";
+import type { TargetOpener } from "./open-target";
 import { toObsidianOpenableAttachments } from "./resolve";
+import type { ObsidianOpenableAttachment } from "./resolve";
 
 vi.mock("./resolve", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./resolve")>()),
@@ -37,6 +50,46 @@ const ITEM_WITH_PDFS = `
 
 let stack: AsyncDisposableStack;
 
+/** The mock menu behind the public Obsidian `Menu` type its consumer takes. */
+function obsidianMenu(menu: Menu): ObsidianMenu {
+  const typed = Object.assign(stubService<ObsidianMenu>("Menu", {}), {
+    addItem(callback: (item: MenuItem) => unknown): ObsidianMenu {
+      menu.addItem((item) => callback(obsidianMenuItem(item)));
+      return typed;
+    },
+  });
+  return typed;
+}
+
+/** The mock item behind the public Obsidian `MenuItem` type. */
+function obsidianMenuItem(item: MockMenuItem): MenuItem {
+  const typed = Object.assign(stubService<MenuItem>("MenuItem", {}), {
+    setSection(section: string): MenuItem {
+      item.setSection(section);
+      return typed;
+    },
+    setTitle(title: string): MenuItem {
+      item.setTitle(title);
+      return typed;
+    },
+    setIcon(icon: string): MenuItem {
+      item.setIcon(icon);
+      return typed;
+    },
+    setDisabled(disabled: boolean): MenuItem {
+      item.setDisabled(disabled);
+      return typed;
+    },
+    onClick(
+      callback: (event: MouseEvent | KeyboardEvent) => unknown,
+    ): MenuItem {
+      item.onClick(callback);
+      return typed;
+    },
+  });
+  return typed;
+}
+
 beforeEach(() => {
   stack = new AsyncDisposableStack();
   vi.mocked(toObsidianOpenableAttachments).mockReset();
@@ -49,10 +102,16 @@ function fileMenuHandler(
   deps: Partial<AttachmentOpenDeps> = {},
   frontmatter: Record<string, unknown> = { "zotero-key": "ABCD2345" },
 ) {
-  const app = {
-    vault: { adapter: { getBasePath: () => "/vault" } },
-    workspace: { trigger: () => {} },
-  };
+  const app = stubService<App>("App", {
+    vault: stubService<Vault>("Vault", {
+      adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
+        getBasePath: () => "/vault",
+      }),
+    }),
+    workspace: stubService<Workspace>("Workspace", {
+      trigger: () => {},
+    }),
+  });
   return handlerFor(
     [
       attachmentOpenFileMenu({
@@ -61,8 +120,9 @@ function fileMenuHandler(
           inProcessReadsService(memoryOpener(() => ITEM_WITH_PDFS).open),
         ),
         zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
+        opener: stubService<Pick<TargetOpener, "open">>("TargetOpener", {}),
         ...deps,
-      } as unknown as AttachmentOpenDeps),
+      }),
     ],
     frontmatter,
   );
@@ -89,7 +149,7 @@ function anchorRect(): DOMRect {
 describe("Literature Note attachment-open file menu", () => {
   it("adds the Open PDF entry to the open section", () => {
     const menu = new Menu();
-    fileMenuHandler()(menu as never, markdownFile() as never, "more-options");
+    fileMenuHandler()(obsidianMenu(menu), markdownFile(), "more-options");
 
     expect(menu.items).toHaveLength(1);
     expect(menu.items[0]!.title).toBe("Open PDF");
@@ -97,11 +157,18 @@ describe("Literature Note attachment-open file menu", () => {
   });
 
   it("opens the resolved Attachments on click", async () => {
-    const openable = [{ indexedKey: "ATCH1" }];
-    vi.mocked(toObsidianOpenableAttachments).mockReturnValue(openable as never);
+    const openable: ObsidianOpenableAttachment[] = [
+      {
+        indexedKey: "ATCH1",
+        label: "Alpha.pdf",
+        openPath: "Alpha.pdf",
+        absolutePath: "/vault/Alpha.pdf",
+      },
+    ];
+    vi.mocked(toObsidianOpenableAttachments).mockReturnValue(openable);
 
     const menu = new Menu();
-    fileMenuHandler()(menu as never, markdownFile() as never, "more-options");
+    fileMenuHandler()(obsidianMenu(menu), markdownFile(), "more-options");
     menu.items[0]!.click();
 
     await vi.waitFor(() =>
@@ -116,11 +183,7 @@ describe("Literature Note attachment-open file menu", () => {
 
   it("stays off a note that carries no item key", () => {
     const menu = new Menu();
-    fileMenuHandler({}, {})(
-      menu as never,
-      markdownFile() as never,
-      "more-options",
-    );
+    fileMenuHandler({}, {})(obsidianMenu(menu), markdownFile(), "more-options");
 
     expect(menu.items).toHaveLength(0);
   });
@@ -129,7 +192,7 @@ describe("Literature Note attachment-open file menu", () => {
     vi.mocked(toObsidianOpenableAttachments).mockReturnValue([]);
 
     const menu = new Menu();
-    fileMenuHandler()(menu as never, markdownFile() as never, "more-options");
+    fileMenuHandler()(obsidianMenu(menu), markdownFile(), "more-options");
     menu.items[0]!.click();
 
     await vi.waitFor(() =>
@@ -155,13 +218,23 @@ describe("Literature Note attachment-open file menu", () => {
     >("@/lib/attachment-open");
     vi.mocked(openAttachments).mockImplementation(actual.openAttachments);
     vi.mocked(toObsidianOpenableAttachments).mockReturnValue([
-      { indexedKey: "ATCH1", label: "Alpha.pdf" },
-      { indexedKey: "ATCH2", label: "Beta.pdf" },
-    ] as never);
+      {
+        indexedKey: "ATCH1",
+        label: "Alpha.pdf",
+        openPath: "Alpha.pdf",
+        absolutePath: "/vault/Alpha.pdf",
+      },
+      {
+        indexedKey: "ATCH2",
+        label: "Beta.pdf",
+        openPath: "Beta.pdf",
+        absolutePath: "/vault/Beta.pdf",
+      },
+    ]);
 
     Menu.instances.length = 0;
     const menu = new Menu();
-    fileMenuHandler()(menu as never, markdownFile() as never, "more-options");
+    fileMenuHandler()(obsidianMenu(menu), markdownFile(), "more-options");
 
     const rect = anchorRect();
     const evt = {
