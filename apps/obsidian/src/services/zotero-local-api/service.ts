@@ -265,21 +265,16 @@ export function layerZoteroLocalApi(options: {
         forgetAuthorization: Effect.promise(() =>
           session.forgetAuthorization(),
         ).pipe(Effect.withSpan("ZoteroLocalApi.forgetAuthorization")),
-        // A write runs to its answer once sent: an interrupt would leave its
-        // outcome unknown. So it takes no abort signal, and it is
-        // uninterruptible, so a scope close waits for a write that was sent.
+        // A write runs to its answer once sent: an abort would leave its
+        // outcome unknown. So it takes no abort signal.
         authorizedSend: Effect.fn("ZoteroLocalApi.authorizedSend")(
           (path, options) =>
-            Effect.uninterruptible(
-              Effect.promise(() => session.authorizedSend(path, options)),
-            ),
+            Effect.promise(() => session.authorizedSend(path, options)),
         ),
         writeLastRead: Effect.fn("ZoteroLocalApi.writeLastRead")(
           (attachmentKey, serverID, instant) =>
-            Effect.uninterruptible(
-              Effect.promise(() =>
-                session.writeLastRead(attachmentKey, serverID, instant),
-              ),
+            Effect.promise(() =>
+              session.writeLastRead(attachmentKey, serverID, instant),
             ),
         ),
         readAnnotation: Effect.fn("ZoteroLocalApi.readAnnotation")(

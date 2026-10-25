@@ -438,10 +438,8 @@ export function layerAnnotationRepository(options: {
         ),
         submitTextField: Effect.fn("AnnotationRepository.submitTextField")(
           (field, annotationKey, writeOptions) =>
-            Effect.uninterruptible(
-              Effect.promise(() =>
-                core.submitTextField(field, annotationKey, writeOptions),
-              ),
+            Effect.promise(() =>
+              core.submitTextField(field, annotationKey, writeOptions),
             ),
         ),
         discardTextDraft: Effect.fn("AnnotationRepository.discardTextDraft")(
@@ -450,9 +448,7 @@ export function layerAnnotationRepository(options: {
         ),
         retryTextDraft: Effect.fn("AnnotationRepository.retryTextDraft")(
           (field, annotationKey) =>
-            Effect.uninterruptible(
-              Effect.promise(() => core.retryTextDraft(field, annotationKey)),
-            ),
+            Effect.promise(() => core.retryTextDraft(field, annotationKey)),
         ),
         // Untraced: the annotation view reads it per Annotation.
         tagDraftFor: Effect.fnUntraced(function* (annotationKey) {
@@ -464,11 +460,7 @@ export function layerAnnotationRepository(options: {
         ),
         submitTags: Effect.fn("AnnotationRepository.submitTags")(
           (annotationKey, writeOptions) =>
-            Effect.uninterruptible(
-              Effect.promise(() =>
-                core.submitTags(annotationKey, writeOptions),
-              ),
-            ),
+            Effect.promise(() => core.submitTags(annotationKey, writeOptions)),
         ),
         discardTagDraft: Effect.fn("AnnotationRepository.discardTagDraft")(
           (annotationKey) =>
@@ -476,55 +468,39 @@ export function layerAnnotationRepository(options: {
         ),
         createAnnotation: Effect.fn("AnnotationRepository.createAnnotation")(
           (attachmentKey, draft, createOptions) =>
-            Effect.uninterruptible(
-              Effect.promise(() =>
-                core.createAnnotation(attachmentKey, draft, createOptions),
-              ),
+            Effect.promise(() =>
+              core.createAnnotation(attachmentKey, draft, createOptions),
             ),
         ),
         patchColor: Effect.fn("AnnotationRepository.patchColor")(
           (annotationKey, color) =>
-            Effect.uninterruptible(
-              Effect.promise(() => core.patchColor(annotationKey, color)),
-            ),
+            Effect.promise(() => core.patchColor(annotationKey, color)),
         ),
         patchColors: Effect.fn("AnnotationRepository.patchColors")(
           (annotationKeys, color) =>
-            Effect.uninterruptible(
-              Effect.promise(() => core.patchColors(annotationKeys, color)),
-            ),
+            Effect.promise(() => core.patchColors(annotationKeys, color)),
         ),
         patchComment: Effect.fn("AnnotationRepository.patchComment")(
           (annotationKey, comment) =>
-            Effect.uninterruptible(
-              Effect.promise(() => core.patchComment(annotationKey, comment)),
-            ),
+            Effect.promise(() => core.patchComment(annotationKey, comment)),
         ),
         patchGeometry: Effect.fn("AnnotationRepository.patchGeometry")(
           (annotationKey, edit, input) =>
-            Effect.uninterruptible(
-              Effect.promise(() =>
-                core.patchGeometry(annotationKey, edit, input),
-              ),
+            Effect.promise(() =>
+              core.patchGeometry(annotationKey, edit, input),
             ),
         ),
         deleteAnnotation: Effect.fn("AnnotationRepository.deleteAnnotation")(
           (annotationKey) =>
-            Effect.uninterruptible(
-              Effect.promise(() => core.deleteAnnotation(annotationKey)),
-            ),
+            Effect.promise(() => core.deleteAnnotation(annotationKey)),
         ),
         deleteAnnotations: Effect.fn("AnnotationRepository.deleteAnnotations")(
           (annotationKeys) =>
-            Effect.uninterruptible(
-              Effect.promise(() => core.deleteAnnotations(annotationKeys)),
-            ),
+            Effect.promise(() => core.deleteAnnotations(annotationKeys)),
         ),
         retryWrite: Effect.fn("AnnotationRepository.retryWrite")(
           (annotationKey) =>
-            Effect.uninterruptible(
-              Effect.promise(() => core.retryWrite(annotationKey)),
-            ),
+            Effect.promise(() => core.retryWrite(annotationKey)),
         ),
         discardConflict: Effect.fn("AnnotationRepository.discardConflict")(
           (annotationKey) =>
@@ -544,14 +520,10 @@ export function layerAnnotationRepository(options: {
           Effect.sync(() => core.canRedo(attachmentKey)),
         ),
         undo: Effect.fn("AnnotationRepository.undo")((attachmentKey) =>
-          Effect.uninterruptible(
-            Effect.promise(() => core.undo(attachmentKey)),
-          ),
+          Effect.promise(() => core.undo(attachmentKey)),
         ),
         redo: Effect.fn("AnnotationRepository.redo")((attachmentKey) =>
-          Effect.uninterruptible(
-            Effect.promise(() => core.redo(attachmentKey)),
-          ),
+          Effect.promise(() => core.redo(attachmentKey)),
         ),
         annotationsChanged: byTag("annotations-changed").pipe(
           Stream.map(({ attachmentKey }) => attachmentKey),
