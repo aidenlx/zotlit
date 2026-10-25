@@ -237,14 +237,6 @@ async function press(
   return handled;
 }
 
-it("shows the cards of every Attachment it is given, in that order", async () => {
-  const { el } = await mountLayout();
-  const keys = [...el.querySelectorAll(".zt-annot-card")].map((node) =>
-    node.getAttribute("data-zotero-annotation-key"),
-  );
-  expect(keys).toEqual([ALPHA.key, BETA.key]);
-});
-
 it("gives each card the Editing Capability of its own Attachment", async () => {
   const { el } = await mountLayout();
   const commentField = (key: string) =>

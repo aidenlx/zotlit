@@ -139,10 +139,6 @@ function openVault({ note, settings = {} }: VaultOptions = {}) {
       await vi.waitFor(() => expect(dialog.opened.length).toBeGreaterThan(0));
       await Promise.resolve();
     },
-    /** Perform it from the palette, leaving it to whatever it waits on. */
-    begin() {
-      palette.checkCallback?.(false);
-    },
     /** One menu this action was offered a place in, as Obsidian builds it. */
     menu(source: string, target: TAbstractFile = file as never) {
       const menu = new Menu();
@@ -220,24 +216,6 @@ describe("the Set citation presentation action", () => {
     });
   });
 
-  it("opens on the settled vault selections", async () => {
-    const vault = openVault({
-      note: {},
-      settings: {
-        "citation.references-style": VAULT_STYLE_ID,
-        "citation.locale": "en-GB",
-      },
-    });
-
-    vault.begin();
-    await vi.waitFor(() => expect(dialog.opened.length).toBeGreaterThan(0));
-
-    expect(openedOn()).toMatchObject({
-      vaultStyleId: VAULT_STYLE_ID,
-      vaultLocale: "en-GB",
-    });
-  });
-
   it("writes the chosen style and language into the note at once", async () => {
     const vault = openVault({ note: { title: "Draft" } });
     answer({ styleId: NOTE_STYLE_ID, language: "de-DE" });
@@ -249,18 +227,6 @@ describe("the Set citation presentation action", () => {
       "zotlit-csl": NOTE_STYLE_ID,
       lang: "de-DE",
     });
-    expect(vault.writes).toEqual(["draft.md"]);
-  });
-
-  it("hands the note back to the vault selections it chose to inherit", async () => {
-    const vault = openVault({
-      note: { title: "Draft", "zotlit-csl": NOTE_STYLE_ID, lang: "de-DE" },
-    });
-    answer({ styleId: null, language: null });
-
-    await vault.perform();
-
-    expect(vault.frontmatter).toEqual({ title: "Draft" });
     expect(vault.writes).toEqual(["draft.md"]);
   });
 

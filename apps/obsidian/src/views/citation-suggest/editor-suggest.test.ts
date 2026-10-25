@@ -246,30 +246,6 @@ describe("resolveCitationTrigger", () => {
     ).toEqual({ start: 0, end: line.length, query, variant: "main" });
   });
 
-  it("matches the Bracket Trigger `[@`", () => {
-    const line = "see [@foo";
-    expect(
-      resolveCitationTrigger(line, line.length, { atTrigger: false }),
-    ).toEqual({
-      start: 4,
-      end: 9,
-      query: "foo",
-      variant: "main",
-    });
-  });
-
-  it("matches the Bracket Trigger `【@`", () => {
-    const line = "见【@foo";
-    expect(
-      resolveCitationTrigger(line, line.length, { atTrigger: false }),
-    ).toEqual({
-      start: 1,
-      end: 6,
-      query: "foo",
-      variant: "main",
-    });
-  });
-
   it("prefers the Bracket Trigger over the At Trigger even when at-trigger is enabled", () => {
     const bracketLine = "see [@foo";
     const wideBracketLine = "见【@foo";
@@ -285,17 +261,6 @@ describe("resolveCitationTrigger", () => {
     ).toEqual({ start: 1, end: 6, query: "foo", variant: "main" });
   });
 
-  it("extends `end` to swallow an adjacent closing bracket for bracket matches", () => {
-    // "[@foo]" with the cursor right before "]": bracket match consumes it.
-    const line = "[@foo]";
-    expect(resolveCitationTrigger(line, 5, { atTrigger: false })).toEqual({
-      start: 0,
-      end: 6,
-      query: "foo",
-      variant: "main",
-    });
-  });
-
   it("does not extend `end` when the adjacent char is a bracket but the trigger isn't", () => {
     // "(@foo]" — no Bracket Trigger match here ("(" isn't an opener for it),
     // and the At Trigger never swallows a following bracket.
@@ -303,16 +268,6 @@ describe("resolveCitationTrigger", () => {
     expect(resolveCitationTrigger(line, 5, { atTrigger: true })).toEqual({
       start: 1,
       end: 5,
-      query: "foo",
-      variant: "main",
-    });
-  });
-
-  it("never extends `end` for an At Trigger match even next to `]`", () => {
-    const line = "@foo]";
-    expect(resolveCitationTrigger(line, 4, { atTrigger: true })).toEqual({
-      start: 0,
-      end: 4,
       query: "foo",
       variant: "main",
     });

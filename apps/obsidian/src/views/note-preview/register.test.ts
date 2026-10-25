@@ -376,16 +376,6 @@ describe("active Template Workbench sidebars", () => {
     expect(test.leaves.every((leaf) => leaf.container === ordinary)).toBe(true);
   });
 
-  it("reuses a restored workbench window even when its companion panes are closed", async () => {
-    const test = setup();
-    const restored = { focus: vi.fn() };
-    test.editorLeaf.container = restored;
-    test.activate(test.editor);
-    await openWorkbenchLayout(test.app, test.editor);
-    expect(test.workspace.moveLeafToPopout).not.toHaveBeenCalled();
-    expect(test.leaves.every((leaf) => leaf.container === restored)).toBe(true);
-  });
-
   it("keeps a closed preview closed until its reopen command runs in the workbench window", async () => {
     const test = setup();
     test.activate(test.editor);

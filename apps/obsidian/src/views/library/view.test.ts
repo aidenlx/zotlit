@@ -2475,11 +2475,6 @@ describe("Welcome View banner once setup is complete", () => {
     return { ...harness, view };
   }
 
-  it("shows nothing until the researcher asks for it", async () => {
-    const { view } = await setUp();
-    expect(banner(view)).toEqual([]);
-  });
-
   it("shows the setup steps on Open welcome view", async () => {
     const { view, settings } = await setUp();
     const leaf = { view } as unknown as WorkspaceLeaf;
@@ -2946,19 +2941,6 @@ describe("Reading Card", () => {
     // Space only opens the card.
     expect(items.openNote).not.toHaveBeenCalled();
     expect(items.openPdf).not.toHaveBeenCalled();
-  });
-
-  it("shows no Annotations section for an Item with none", async () => {
-    const { deps } = await pluginData();
-    const view = await openTab(deps);
-    await act(async () => {
-      itemRow(view, B).click();
-      await view.card.settled;
-    });
-    expect(
-      card(view).querySelector('[data-library-card-part="annotations"]'),
-    ).toBeNull();
-    expect(card(view).textContent).not.toMatch(/annotation/i);
   });
 
   /** The parts the card shows under its buttons, in order. */

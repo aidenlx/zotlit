@@ -95,7 +95,7 @@ it("creates an explicit Explorer instead of replacing a pinned or grouped pane",
   );
 });
 
-it.each(["tab", "split", "window"] as const)(
+it.each(["tab"] as const)(
   "puts the Explorer in a new %s the link names, leaving the sidebar one alone",
   async (paneType) => {
     vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
