@@ -96,11 +96,7 @@ export async function bibliographyRenderFixture(
               },
             });
           }),
-          ask: (key, fn) =>
-            Effect.tryPromise({
-              try: () => query.ask(key, fn),
-              catch: (error) => error,
-            }),
+          ask: (key, fn) => Effect.promise(() => query.ask(key, fn)),
           peek: (key) => Effect.sync(() => query.peek(key)),
           readFresh: (key, fn) =>
             Effect.tryPromise({

@@ -82,14 +82,8 @@ export class QueryClients extends Context.Service<
     update<T>(key: QueryKey, next: (held: T) => T): Effect.Effect<void>;
     keysUnder(prefix: QueryKey): Effect.Effect<QueryKey[]>;
     peek<T>(key: QueryKey): Effect.Effect<Held<T> | null>;
-    ask<T>(
-      key: QueryKey,
-      queryFn: QueryFunction<T>,
-    ): Effect.Effect<T | null, unknown>;
-    read<T>(
-      key: QueryKey,
-      queryFn: QueryFunction<T>,
-    ): Effect.Effect<T | null, unknown>;
+    ask<T>(key: QueryKey, queryFn: QueryFunction<T>): Effect.Effect<T | null>;
+    read<T>(key: QueryKey, queryFn: QueryFunction<T>): Effect.Effect<T | null>;
     readFresh<T>(
       key: QueryKey,
       queryFn: QueryFunction<T>,
@@ -236,7 +230,7 @@ const makeQueryClients = Effect.gen(function* () {
   const ask = Effect.fn("QueryClients.ask")(function* <T>(
     key: QueryKey,
     queryFn: QueryFunction<T>,
-  ): Effect.fn.Return<T | null, unknown> {
+  ): Effect.fn.Return<T | null> {
     const result = yield* settle(key, queryFn);
     if (result.kind === "value") return result.value;
     return result.kind === "failed" && result.cooldown ? result.held : null;
@@ -257,7 +251,7 @@ const makeQueryClients = Effect.gen(function* () {
   const read = Effect.fn("QueryClients.read")(function* <T>(
     key: QueryKey,
     queryFn: QueryFunction<T>,
-  ): Effect.fn.Return<T | null, unknown> {
+  ): Effect.fn.Return<T | null> {
     const result = yield* settle(key, queryFn);
     if (result.kind === "value") return result.value;
     return result.kind === "released" ? null : result.held;
@@ -346,26 +340,22 @@ const makeQueryClients = Effect.gen(function* () {
   const settle = Effect.fn("QueryClients.settle")(function* <T>(
     key: QueryKey,
     queryFn: QueryFunction<T>,
-  ): Effect.fn.Return<ReadResult<T>, unknown> {
+  ): Effect.fn.Return<ReadResult<T>> {
     if (closed) return { kind: "released" };
     const reading = fetch(key, queryFn);
     const cache = client.getQueryCache();
     const query = cache.find({ queryKey: key, exact: true });
     const released = () =>
       closed || cache.find({ queryKey: key, exact: true }) !== query;
-    const joined = yield* Effect.tryPromise({
-      try: () => reading,
-      catch: (error) => error,
-    });
+    // `fetch` settles a failed or cancelled read as a value and never
+    // rejects, so a rejection here is a defect.
+    const joined = yield* Effect.promise(() => reading);
     if (released()) return { kind: "released" };
     if (joined.kind !== "cancelled") return joined;
     yield* Effect.logDebug("Held read cancelled, asking again").pipe(
       Effect.annotateLogs({ queryKey: key }),
     );
-    const retried = yield* Effect.tryPromise({
-      try: () => fetch(key, queryFn),
-      catch: (error) => error,
-    });
+    const retried = yield* Effect.promise(() => fetch(key, queryFn));
     return released() ? { kind: "released" } : retried;
   }, withLogCategory("query-client"));
 

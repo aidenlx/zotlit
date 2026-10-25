@@ -296,16 +296,9 @@ export function citationTextFixture(
                   }),
                 ];
               }),
-              ask: (key, fn) =>
-                Effect.tryPromise({
-                  try: () => queries.ask(key, fn),
-                  catch: (error) => error,
-                }),
+              ask: (key, fn) => Effect.promise(() => queries.ask(key, fn)),
               read: (key, fn) =>
-                Effect.tryPromise({
-                  try: (signal) => queries.read(key, fn, signal),
-                  catch: (error) => error,
-                }),
+                Effect.promise((signal) => queries.read(key, fn, signal)),
               peek: (key) => Effect.sync(() => queries.peek(key)),
               invalidate: (key) => Effect.sync(() => queries.invalidate(key)),
               watch: (prefix, on) =>
