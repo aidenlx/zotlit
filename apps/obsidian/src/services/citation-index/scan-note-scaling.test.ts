@@ -43,15 +43,18 @@ it.each([
       }
       indices.reverse();
     }
-    const medians = samples.map(
-      (times) => times.toSorted((a, b) => a - b)[Math.floor(sampleCount / 2)]!,
-    );
-    for (let index = 1; index < medians.length; index++) {
-      expect(
-        medians[index]! / medians[index - 1]!,
-        `${counts[index - 1]} → ${counts[index]} openers: ${medians[index - 1]} → ${medians[index]} ms`,
-      ).toBeLessThan(3);
-    }
+    // Machine load only adds time to a sample, so the fastest sample of each
+    // size is the most stable estimate.
+    const minimums = samples.map((times) => Math.min(...times));
+    // Compare the smallest size with the largest, 8 times as many openers:
+    // linear growth takes about 8 times as long, quadratic about 64 times. A
+    // bound between them stays far from both, where a bound on each doubling
+    // (2 against 4) failed under load.
+    const last = minimums.length - 1;
+    expect(
+      minimums[last]! / minimums[0]!,
+      `${counts[0]} → ${counts[last]} openers: ${minimums[0]} → ${minimums[last]} ms`,
+    ).toBeLessThan(20);
   },
   60_000,
 );
