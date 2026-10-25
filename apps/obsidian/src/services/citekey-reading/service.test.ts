@@ -457,6 +457,20 @@ describe("CitekeyReading", () => {
     expect(rerender).toHaveBeenCalledExactlyOnceWith(true);
   });
 
+  it("renders the reading views again on disposal, which drops its citations", async () => {
+    const harnessed = await makeHarness({ body: "Blah [@alpha]." });
+    const el = section("<p>Blah [@alpha].</p>");
+    await harnessed.process(el, viewedCtx(harnessed, el));
+    expect(harnessed.rerenders()).toBe(0);
+
+    await harnessed[Symbol.asyncDispose]();
+
+    expect(harnessed.rerenders()).toBe(1);
+    const late = section("<p>Blah [@alpha].</p>");
+    await harnessed.process(late, harnessed.ctx);
+    expect(late.textContent).toBe("Blah [@alpha].");
+  });
+
   it("puts the engine's formatted citation in the source's place", async () => {
     await using harnessed = await makeHarness({
       body: "Blah [see @alpha, p. 3] blah.",
