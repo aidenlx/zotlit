@@ -1,28 +1,24 @@
+import { Effect, Stream } from "effect";
+
 import {
   formatPandocCitation,
   PandocCitationError,
   scanPandocCitations,
 } from "@zotlit/templates/pandoc-citation";
+// The shared core that derives Citations from Literature Note wikilinks.
 import type {
   PandocCitationForm,
   PandocCitationItem,
 } from "@zotlit/templates/pandoc-citation";
-// The shared core that derives Citations from Literature Note wikilinks.
 
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
 import { hoverPreferences } from "@/services/citekey-navigation";
 import type { HoverPreferences } from "@/services/citekey-navigation";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
-import type { PluginSettings } from "@/services/settings/service";
 
 import { citationRunItem } from "./citation-fragment";
 import type { CitationRunItem } from "./citation-fragment";
 import type { CitationSource } from "./citation-source";
-import { getLogger } from "./log";
-
-const logger = getLogger("wikilink-citation");
 
 /** The `cite:` marker that tells a wikilink subpath from a heading or block one. */
 const FRAGMENT_PREFIX = "cite:";
@@ -304,33 +300,29 @@ export class WikilinkDisplaySettings {
   }
 
   /**
-   * Follows the settings, and asks for a redraw whenever they change what a
-   * link displays or who answers its hover.
+   * The settings in `changes` that change what a link displays or who answers
+   * its hover, each one taken as the current settings. A surface redraws on
+   * each.
    *
-   * `changes` replays the current value when a subscriber attaches, so the
-   * listener is called at once. That first snapshot only seeds the values:
-   * everything drawn so far already read them, and a startup redraw would show
-   * nothing new. The settings that arrive after it redraw like any change.
-   *
-   * @returns the unsubscribe.
+   * `changes` replays the current value first. That first snapshot only seeds
+   * the values: everything drawn so far already read them, and a startup
+   * redraw would show nothing new. The settings that arrive after it redraw
+   * like any change.
    */
-  watch(
-    runtime: SubscriptionRuntime,
-    settings: Pick<PluginSettings["Service"], "changes">,
-    redraw: () => void,
-  ): () => void {
-    let seeded = false;
-    return subscribe(runtime, settings.changes, (next) => {
-      const seeding = !seeded;
-      seeded = true;
-      const changed = this.apply(next);
-      if (seeding || !changed) return;
-      logger.debug("Wikilink display settings changed", {
-        enabled: this.#enabled,
-        popoverHover: this.popoverHover,
-        clickIntercepted: this.clickIntercepted,
-      });
-      redraw();
-    });
+  redraws(changes: Stream.Stream<Readonly<Settings>>): Stream.Stream<void> {
+    return changes.pipe(
+      Stream.map((next) => this.apply(next)),
+      Stream.drop(1),
+      Stream.filter((changed) => changed),
+      Stream.mapEffect(() =>
+        Effect.logDebug("Wikilink display settings changed").pipe(
+          Effect.annotateLogs({
+            enabled: this.#enabled,
+            popoverHover: this.popoverHover,
+            clickIntercepted: this.clickIntercepted,
+          }),
+        ),
+      ),
+    );
   }
 }

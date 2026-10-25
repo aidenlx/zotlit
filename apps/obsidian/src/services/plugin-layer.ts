@@ -48,6 +48,7 @@ import type {
   CitekeyEditor,
   CitekeyNoteCreation,
 } from "./citekey-editor/service";
+import { layerCitekeyReading } from "./citekey-reading/service";
 import { layerDatabaseActions } from "./database/actions";
 import { layerExcerptDisplays } from "./excerpt-image/display";
 import type { ExcerptDisplays } from "./excerpt-image/display";
@@ -98,6 +99,7 @@ import type { Template } from "./template/service";
 import { layerUseLedger } from "./use-ledger/service";
 import type { UseLedger } from "./use-ledger/service";
 import { layerWikilinkEditor } from "./wikilink-editor/service";
+import { layerWikilinkReading } from "./wikilink-reading/service";
 import { layerZoteroLocalApi } from "./zotero-local-api/service";
 import type { ZoteroLocalApi } from "./zotero-local-api/service";
 import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
@@ -280,6 +282,7 @@ export function pluginLayer(
     layerCitekeyCandidatePicker.pipe(startingAs("CitekeyCandidatePicker")),
     layerCitekeyEditorExtension.pipe(startingAs("CitekeyEditorExtension")),
     layerCitekeyEditorNotices.pipe(startingAs("CitekeyEditorNotices")),
+    layerCitekeyReading.pipe(startingAs("CitekeyReading")),
     layerDatabaseActions.pipe(startingAs("DatabaseActions")),
     layerLanguagePackNotices.pipe(startingAs("LanguagePackNotices")),
     layerLibraryScopeCli.pipe(startingAs("LibraryScopeCli")),
@@ -287,6 +290,7 @@ export function pluginLayer(
     layerPandocResolve.pipe(startingAs("PandocResolve")),
     layerReleaseActions.pipe(startingAs("ReleaseActions")),
     layerWikilinkEditor.pipe(startingAs("WikilinkEditor")),
+    layerWikilinkReading.pipe(startingAs("WikilinkReading")),
   ).pipe(Layer.provide(Layer.mergeAll(layerPluginHost(plugin), obsidian)));
   // The Node file system, once for the whole graph: the temp sweeps read it.
   // The Notifier is the one the layers share: the setting tab's Language Pack

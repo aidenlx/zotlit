@@ -9,43 +9,40 @@ import type {
   MarkdownRenderChild,
   WorkspaceLeaf,
 } from "obsidian";
-import {
-  beforeEach as beforeStreamTest,
-  afterEach as afterStreamTest,
-} from "vitest";
 import { describe, expect, it, vi } from "vitest";
 
-import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { testPluginHost } from "@/lib/__fixtures__/plugin-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
+import { ObsidianApp } from "@/lib/obsidian-app";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import { Vault } from "@/lib/obsidian-vault";
+import { Workspace } from "@/lib/obsidian-workspace";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
+import { CitationPopover } from "@/services/citation-popover/service";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { FormattedOccurrence } from "@/services/citation-text/present";
+import { CitationText } from "@/services/citation-text/service";
+import type { CitationTextEvent } from "@/services/citation-text/service";
+import { CitekeyEditor } from "@/services/citekey-editor/service";
 import type {
   CitationHoverRequest,
   NavigationPane,
 } from "@/services/citekey-navigation";
 import { openNoteVault } from "@/services/note-index/__fixtures__";
+import { NoteIndex } from "@/services/note-index/service";
 import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import type { Held } from "@/services/query-client/service";
 import { buildSeededSettings } from "@/services/settings/__fixtures__";
 import type { SettingsFixture } from "@/services/settings/__fixtures__";
 import type { Settings } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 
 import { internalLink, section } from "./__fixtures__/internal-link";
-import { WikilinkReading } from "./service";
-import type { WikilinkReadingDeps } from "./service";
-
-let streamStack: AsyncDisposableStack;
-let streamRuntime: ReturnType<typeof buildRuntime<never>>;
-beforeStreamTest(() => {
-  streamStack = new AsyncDisposableStack();
-  streamRuntime = buildRuntime(Layer.empty, streamStack);
-});
-afterStreamTest(() => streamStack.disposeAsync());
+import { layerWikilinkReading } from "./service";
 
 /** The one Literature Note the metadata-cache stand-in knows. */
 const WANG = "literatures/wangMutationalClinicalSpectrum2020a";
@@ -177,52 +174,58 @@ async function harness({
       }),
     }),
   });
-  const service = new WikilinkReading(
-    stubService<WikilinkReadingDeps>("WikilinkReadingDeps", {
-      runtime: streamRuntime,
-      app,
-      plugin: stubService<WikilinkReadingDeps["plugin"]>("Plugin", {
-        registerMarkdownPostProcessor: (
-          postProcessor: MarkdownPostProcessor,
-        ) => {
-          process = postProcessor;
-          return postProcessor;
-        },
-      }),
-      noteIndex,
-      citationText: stubService<WikilinkReadingDeps["citationText"]>(
-        "CitationText",
-        {
-          changed: citationText.changed,
-          invalidated: citationText.invalidated.pipe(
-            Stream.map(() => undefined),
-          ),
-          peek: () => citationText.peek(),
-        },
+  const host = testPluginHost({
+    registerMarkdownPostProcessor: (postProcessor) => {
+      process = postProcessor;
+      return postProcessor;
+    },
+  });
+  const reading = buildRuntime(
+    layerWikilinkReading.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          host.layer,
+          Layer.succeed(ObsidianApp, app),
+          Layer.mock(Vault, {
+            getFileByPath: (path) =>
+              Effect.sync(() => app.vault.getFileByPath(path)),
+          }),
+          Layer.mock(MetadataCache, {
+            firstLinkpathDest: (linkpath, sourcePath) =>
+              Effect.sync(() =>
+                app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath),
+              ),
+            fileCache: (file) =>
+              Effect.sync(() => app.metadataCache.getFileCache(file)),
+          }),
+          Layer.mock(Workspace, {
+            trigger: (name, ...data) =>
+              Effect.sync(() => app.workspace.trigger(name, ...data)),
+          }),
+          Layer.succeed(NoteIndex, noteIndex.runtime.runSync(NoteIndex)),
+          Layer.succeed(PluginSettings, settings),
+          Layer.mock(CitationText, {
+            events: citationText.events,
+            peek: () => Effect.sync(() => citationText.peek()),
+          }),
+          Layer.mock(CitekeyEditor, {
+            openCitekey: (citekey, pane) =>
+              Effect.sync(() => {
+                opened.push([citekey, pane]);
+              }),
+          }),
+          Layer.mock(CitationPopover, {
+            show: (request) =>
+              Effect.sync(() => {
+                requests.push(request);
+              }),
+          }),
+        ),
       ),
-      citekeyEditor: stubService<WikilinkReadingDeps["citekeyEditor"]>(
-        "CitekeyEditor",
-        {
-          openCitekey: (citekey: string, pane: NavigationPane) =>
-            Effect.sync(() => {
-              opened.push([citekey, pane]);
-            }),
-        },
-      ),
-      citationPopover: stubService<WikilinkReadingDeps["citationPopover"]>(
-        "CitationPopover",
-        {
-          show: (request: CitationHoverRequest) => {
-            requests.push(request);
-            return Effect.void;
-          },
-        },
-      ),
-      bridge: stack.use(openTestBridge()),
-      settings,
-    }),
+    ),
+    stack,
   );
-  await service.ready;
+  await reading.context();
   const owned = stack.move();
   return {
     settings,
@@ -264,10 +267,7 @@ async function harness({
     unloadSections: () => {
       for (const child of children.splice(0)) child.unload();
     },
-    [Symbol.asyncDispose]: async () => {
-      await service[Symbol.asyncDispose]();
-      await owned.disposeAsync();
-    },
+    [Symbol.asyncDispose]: () => owned.disposeAsync(),
   };
 }
 
@@ -844,10 +844,8 @@ interface HeldText {
 }
 
 class CitationTextStub {
-  readonly #changedBus = Effect.runSync(PubSub.unbounded<string>());
-  readonly #invalidatedBus = Effect.runSync(PubSub.unbounded<void>());
-  readonly changed = Stream.fromPubSub(this.#changedBus);
-  readonly invalidated = Stream.fromPubSub(this.#invalidatedBus);
+  readonly #bus = Effect.runSync(PubSub.unbounded<CitationTextEvent>());
+  readonly events = Stream.fromPubSub(this.#bus);
   #citekeys: Record<string, string>;
   #formatted: Record<string, string>;
   #pending: boolean;
@@ -908,8 +906,10 @@ class CitationTextStub {
   }
 
   emit(event: "changed" | "invalidated" = "invalidated", path?: string): void {
-    if (event === "changed") PubSub.publishUnsafe(this.#changedBus, path!);
-    else PubSub.publishUnsafe(this.#invalidatedBus, undefined);
+    PubSub.publishUnsafe(
+      this.#bus,
+      event === "changed" ? { type: "changed", path: path! } : { type: event },
+    );
   }
 }
 

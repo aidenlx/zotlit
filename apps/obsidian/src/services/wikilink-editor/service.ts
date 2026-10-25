@@ -132,26 +132,9 @@ export const layerWikilinkEditor = Layer.effectDiscard(
       }),
     );
 
-    // `changes` replays the current settings first. That snapshot only seeds
-    // the values: everything drawn so far already read them, and a startup
-    // redraw would show nothing new. The settings after it redraw like any
-    // change of what a link displays or who answers its hover.
-    let seeded = false;
-    yield* forkEach(settings.changes, (next) =>
-      Effect.gen(function* () {
-        const seeding = !seeded;
-        seeded = true;
-        if (!display.apply(next) || seeding) return;
-        yield* Effect.logDebug("Wikilink display settings changed").pipe(
-          Effect.annotateLogs({
-            enabled: display.enabled,
-            popoverHover: display.popoverHover,
-            clickIntercepted: display.clickIntercepted,
-          }),
-        );
-        yield* redraw();
-      }),
-    );
+    // A setting change redraws whatever changes what a link displays or who
+    // answers its hover.
+    yield* forkEach(display.redraws(settings.changes), () => redraw());
     // Creating, deleting, or renaming a Literature Note changes what a link
     // displays without changing any document. The Note Index's own
     // invalidation is coarse, so every change redraws every open editor.

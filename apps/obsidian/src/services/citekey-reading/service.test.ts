@@ -10,24 +10,29 @@ import type {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
+import { testPluginHost } from "@/lib/__fixtures__/plugin-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
+import { ObsidianApp } from "@/lib/obsidian-app";
+import { Vault } from "@/lib/obsidian-vault";
+import { Workspace } from "@/lib/obsidian-workspace";
 import { themeHook } from "@/lib/theme-hooks";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
 import { lookupAnswerFor } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
 // @vitest-environment happy-dom
 import { ParsedNote } from "@/services/citation-index/parsed-note";
 import type { Citation } from "@/services/citation-index/service";
 import { readReferenceSources } from "@/services/citation-index/sources";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
+import { CitationPopover } from "@/services/citation-popover/service";
 import {
   ALPHA_KEY,
   citation,
@@ -35,20 +40,22 @@ import {
   rendered,
 } from "@/services/citation-text/__fixtures__";
 import { citationTextFixture } from "@/services/citation-text/__fixtures__";
+import { CitationText } from "@/services/citation-text/service";
+import { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 import {
   citedWorkSeed,
   inProcessReadsService,
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 
-import { CitekeyReading } from "./service";
-import type { CitekeyReadingDeps } from "./service";
+import { layerCitekeyReading } from "./service";
 
 /** A typed facade over a test source, so its methods keep the source as `this`. */
 function capability<T extends object>(name: string, source: object): T {
@@ -84,35 +91,57 @@ function appWith(
   });
 }
 
-/** A Citekey Reading over only the dependencies one case reads. */
-function readingDeps(
-  runtime: CitekeyReadingDeps["runtime"],
-  overrides: Partial<Omit<CitekeyReadingDeps, "runtime">> = {},
-): CitekeyReadingDeps {
-  return {
-    runtime,
-    app: appWith(),
-    plugin: stubService<CitekeyReadingDeps["plugin"]>("Plugin", {}),
-    citationText: stubService<CitekeyReadingDeps["citationText"]>(
-      "CitationText",
-      {},
+/** The fakes Citekey Reading reads its tags from; a member a case leaves out fails when read. */
+interface ReadingFakes {
+  app: App;
+  /** Where the post-processor the layer registers lands. */
+  registered?: (postProcessor: MarkdownPostProcessor) => void;
+  citationText?: Layer.Layer<CitationText>;
+  citationLookup?: Layer.PartialEffectful<CitationLookup["Service"]>;
+  citekeyEditor?: Layer.PartialEffectful<CitekeyEditor["Service"]>;
+  citationPopover?: Layer.PartialEffectful<CitationPopover["Service"]>;
+  settings: Layer.PartialEffectful<PluginSettings["Service"]>;
+}
+
+/**
+ * Citekey Reading over `fakes`, built as the plugin layer builds it. Closing
+ * `stack` closes the layer, which is the plugin's unload.
+ */
+async function openReading(
+  stack: AsyncDisposableStack,
+  { app, registered, ...fakes }: ReadingFakes,
+): Promise<void> {
+  const host = testPluginHost({
+    registerMarkdownPostProcessor: (postProcessor) => {
+      registered?.(postProcessor);
+      return postProcessor;
+    },
+  });
+  const runtime = buildRuntime(
+    layerCitekeyReading.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          host.layer,
+          Layer.succeed(ObsidianApp, app),
+          Layer.mock(Vault, {
+            getFileByPath: (path) =>
+              Effect.sync(() => app.vault.getFileByPath(path)),
+          }),
+          Layer.mock(Workspace, {
+            trigger: (name, ...data) =>
+              Effect.sync(() => app.workspace.trigger(name, ...data)),
+          }),
+          fakes.citationText ?? Layer.mock(CitationText, {}),
+          Layer.mock(CitationLookup, fakes.citationLookup ?? {}),
+          Layer.mock(CitekeyEditor, fakes.citekeyEditor ?? {}),
+          Layer.mock(CitationPopover, fakes.citationPopover ?? {}),
+          Layer.mock(PluginSettings, fakes.settings),
+        ),
+      ),
     ),
-    citationLookup: stubService<CitekeyReadingDeps["citationLookup"]>(
-      "CitationLookup",
-      {},
-    ),
-    citekeyEditor: stubService<CitekeyReadingDeps["citekeyEditor"]>(
-      "CitekeyEditor",
-      {},
-    ),
-    citationPopover: stubService<CitekeyReadingDeps["citationPopover"]>(
-      "CitationPopover",
-      {},
-    ),
-    bridge: stubService<CitekeyReadingDeps["bridge"]>("EffectBridge", {}),
-    settings: stubService<CitekeyReadingDeps["settings"]>("PluginSettings", {}),
-    ...overrides,
-  };
+    stack,
+  );
+  await runtime.context();
 }
 
 /** One rendered section, as a Markdown post-processor receives it. */
@@ -328,51 +357,41 @@ async function makeHarness({
     });
   }
 
-  const service = stack.use(
-    new CitekeyReading(
-      readingDeps(citationText.runtime, {
-        app: appWith({
-          vault: {
-            getFileByPath: (path: string) =>
-              Object.assign(new TFile(), { path }),
-          },
-          workspace: {
-            getLeavesOfType: () => views.map((view) => ({ view })),
-            trigger: (_name: string, request: { path: string }) =>
-              switchRequests.push(request.path),
-          },
-        }),
-        plugin: {
-          registerMarkdownPostProcessor: (
-            postProcessor: MarkdownPostProcessor,
-          ) => {
-            process = postProcessor;
-            return postProcessor;
-          },
-        },
-        citationText,
-        citationLookup,
-        citekeyEditor: capability<CitekeyReadingDeps["citekeyEditor"]>(
-          "CitekeyEditor",
-          {
-            openCitekey: (citekey: string, pane: unknown) =>
-              Effect.sync(() => {
-                opened.push([citekey, pane]);
-              }),
-          },
-        ),
-        citationPopover: {
-          show: (request: CitationHoverRequest) => {
-            popoverRequests.push(request);
-            return Effect.void;
-          },
-        },
-        bridge: stack.use(openTestBridge()),
-        settings: settingsStub(overrides),
-      }),
+  await openReading(stack, {
+    app: appWith({
+      vault: {
+        getFileByPath: (path: string) => Object.assign(new TFile(), { path }),
+      },
+      workspace: {
+        getLeavesOfType: () => views.map((view) => ({ view })),
+        trigger: (_name: string, request: { path: string }) =>
+          switchRequests.push(request.path),
+      },
+    }),
+    registered: (postProcessor) => {
+      process = postProcessor;
+    },
+    citationText: Layer.succeed(
+      CitationText,
+      citationText.runtime.runSync(CitationText),
     ),
-  );
-  await service.ready;
+    citationLookup: {
+      observe: (changed) => Effect.sync(() => citationLookup.observe(changed)),
+    },
+    citekeyEditor: {
+      openCitekey: (citekey, pane) =>
+        Effect.sync(() => {
+          opened.push([citekey, pane]);
+        }),
+    },
+    citationPopover: {
+      show: (request) =>
+        Effect.sync(() => {
+          popoverRequests.push(request);
+        }),
+    },
+    settings: settingsStub(overrides),
+  });
   const resources = stack.move();
 
   const sectionCtx = (
@@ -428,28 +447,14 @@ describe("CitekeyReading", () => {
       { previewMode: { rerender } },
     );
     await using stack = new AsyncDisposableStack();
-    await using service = new CitekeyReading(
-      readingDeps(buildRuntime(Layer.empty, stack), {
-        app: appWith({ workspace: { getLeavesOfType: () => [{ view }] } }),
-        plugin: {
-          registerMarkdownPostProcessor: (postProcessor) => postProcessor,
-        },
-        citationText: capability<CitekeyReadingDeps["citationText"]>(
-          "CitationText",
-          { changed: Stream.empty, invalidated: Stream.empty },
-        ),
-        citekeyEditor: capability<CitekeyReadingDeps["citekeyEditor"]>(
-          "CitekeyEditor",
-          {},
-        ),
-        settings: {
-          current: Effect.succeed(defaults),
-          changes: settingsChanged.stream.pipe(Stream.prepend([defaults])),
-        },
-        bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
-      }),
-    );
-    await service.ready;
+    await openReading(stack, {
+      app: appWith({ workspace: { getLeavesOfType: () => [{ view }] } }),
+      citationText: Layer.mock(CitationText, { events: Stream.empty }),
+      settings: {
+        current: Effect.succeed(defaults),
+        changes: settingsChanged.stream.pipe(Stream.prepend([defaults])),
+      },
+    });
     expect(rerender).not.toHaveBeenCalled();
 
     notify?.({ ...defaults, "citation.open-as-links": true });

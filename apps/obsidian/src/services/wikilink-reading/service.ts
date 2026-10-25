@@ -1,20 +1,28 @@
-// The Wikilink Reading Rendering service: it registers the Markdown
-// post-processor, answers which Literature Note a linkpath names, rewrites the
-// Citations it placed when their text changes, and asks the open reading views
-// to render again when something outside their documents changed which links
-// it touches.
-import { MarkdownView, setTooltip } from "obsidian";
-import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
+// The Wikilink Reading Rendering: it registers the Markdown post-processor,
+// answers which Literature Note a linkpath names, rewrites the Citations it
+// placed when their text changes, and asks the open reading views to render
+// again when something outside their documents changed which links it touches.
+import { Effect, Layer } from "effect";
+import { setTooltip } from "obsidian";
+import type {
+  MarkdownPostProcessorContext,
+  Workspace as ObsidianWorkspace,
+} from "obsidian";
 
-import type { EffectBridge } from "@/lib/effect-bridge";
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
+import { scopedBridge } from "@/lib/effect-bridge";
+import { withLogCategory } from "@/lib/effect-log";
+import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
+import { ObsidianApp } from "@/lib/obsidian-app";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import { Vault } from "@/lib/obsidian-vault";
+import { Workspace } from "@/lib/obsidian-workspace";
+import { PluginHost } from "@/lib/plugin-host";
 import { renderProfileRecovery } from "@/lib/profile-recovery";
 import {
   LiveSections,
   isDraftMarkdown,
+  markdownViewOf,
   rerenderReadingViews,
   sectionRange,
 } from "@/lib/reading-view";
@@ -23,28 +31,27 @@ import {
   citationOfRun,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
-import type { RunMember } from "@/lib/wikilink-citation";
+import type { LiteratureNoteTarget, RunMember } from "@/lib/wikilink-citation";
 import { heldCitekeyOf } from "@/services/citation-index/lookup";
 import type { CitationLookupAnswer } from "@/services/citation-index/service";
-import type { CitationPopover } from "@/services/citation-popover/service";
-import type { PlainCitationText } from "@/services/citation-text/plain";
+import { CitationPopover } from "@/services/citation-popover/service";
 import {
   citationContent,
   sectionCoordinates,
   showCitation,
 } from "@/services/citation-text/present";
 import type { ShownCitation } from "@/services/citation-text/present";
-import type { CitekeyEditor } from "@/services/citekey-editor/service";
+import { CitationText } from "@/services/citation-text/service";
+import { CitekeyEditor } from "@/services/citekey-editor/service";
 import {
   clickWikilinkCitation,
   hoverWikilinkCitation,
   markCitationClick,
 } from "@/services/citekey-navigation";
 import type { CitationHover } from "@/services/citekey-navigation";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
-import { resolveLiteratureNote } from "@/services/note-index/service";
-import { Service } from "@/services/service-base";
-import type { PluginSettings } from "@/services/settings/service";
+import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
+import { NoteIndex } from "@/services/note-index/service";
+import { PluginSettings } from "@/services/settings/service";
 
 import {
   hasInternalLink,
@@ -53,26 +60,6 @@ import {
 } from "./render";
 import type { SectionRuns } from "./render";
 import "./style.css";
-
-const logger = getLogger("wikilink-reading");
-
-export interface WikilinkReadingDeps {
-  runtime: SubscriptionRuntime;
-  app: App;
-  plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
-  noteIndex: Pick<
-    PlainNoteIndex,
-    "changed" | "indexed" | "frontmatter-changed"
-  >;
-  /** The formatted citations every surface of one document shares. */
-  citationText: Pick<PlainCitationText, "peek" | "changed" | "invalidated">;
-  /** The open-or-create flow every citation surface shares. */
-  citekeyEditor: Pick<CitekeyEditor["Service"], "openCitekey">;
-  /** What a hovered citation shows. */
-  citationPopover: Pick<CitationPopover["Service"], "show">;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
-  settings: Pick<PluginSettings["Service"], "current" | "changes">;
-}
 
 /**
  * The Wikilink Reading Rendering: in reading mode a Literature Note wikilink —
@@ -100,318 +87,284 @@ export interface WikilinkReadingDeps {
  *
  * @see docs/research/wikilink-display-decoration-interaction.md — section 6
  */
-export class WikilinkReading extends Service<void> {
-  readonly #runtime;
-  readonly #app;
-  readonly #plugin;
-  readonly #noteIndex;
-  readonly #citationText;
-  readonly #citekeyEditor;
-  readonly #citationPopover;
-  readonly #bridge;
-  readonly #settings;
+export const layerWikilinkReading = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const host = yield* PluginHost;
+    const app = yield* ObsidianApp;
+    const vault = yield* Vault;
+    const metadata = yield* MetadataCache;
+    const workspace = yield* Workspace;
+    const notes = yield* NoteIndex;
+    const settings = yield* PluginSettings;
+    const citationText = yield* CitationText;
+    const citationPopover = yield* CitationPopover;
+    const citekeyEditor = yield* CitekeyEditor;
+    const bridge = yield* scopedBridge;
+    const run = Effect.runSyncWith(yield* Effect.context<never>());
 
-  /** The source and display settings that decide what a link displays. */
-  readonly #display = new WikilinkDisplaySettings();
-  /** The sections this surface rendered into and Obsidian still shows. */
-  readonly #sections = new LiveSections();
-  /** Set on disposal, which retires the treatment the post-processor applies. */
-  #retired = false;
+    /** The source and display settings that decide what a link displays. */
+    const display = new WikilinkDisplaySettings();
+    /** The sections this surface rendered into and Obsidian still shows. */
+    const sections = new LiveSections();
+    /** Set when the layer closes, which retires the treatment the post-processor applies. */
+    let retired = false;
+    /** What a hover raises its `hover-link` on. */
+    const hoverWorkspace: Pick<ObsidianWorkspace, "trigger"> = {
+      trigger: (name, ...data) => run(workspace.trigger(name, ...data)),
+    };
 
-  ready: Promise<void>;
+    /**
+     * The Literature Note `linkpath` names from `sourcePath`, or `null` when
+     * the target is missing or is an ordinary note.
+     */
+    const literatureNote = Effect.fnUntraced(function* (
+      linkpath: string,
+      sourcePath: string,
+      lookup: CitationLookupAnswer | null,
+    ) {
+      const dest = yield* metadata.firstLinkpathDest(linkpath, sourcePath);
+      if (!dest) return null;
+      const indexedKey = itemKeyFromFrontmatter(
+        yield* metadata.fileCache(dest),
+      );
+      if (indexedKey === null) return null;
+      const note: LiteratureNoteTarget = {
+        path: dest.path,
+        indexedKey,
+        citationKey: heldCitekeyOf(lookup, indexedKey) ?? null,
+      };
+      return note;
+    });
 
-  constructor(deps: WikilinkReadingDeps) {
-    super();
-    this.#runtime = deps.runtime;
-    this.#app = deps.app;
-    this.#plugin = deps.plugin;
-    this.#noteIndex = deps.noteIndex;
-    this.#citationText = deps.citationText;
-    this.#citekeyEditor = deps.citekeyEditor;
-    this.#citationPopover = deps.citationPopover;
-    this.#bridge = deps.bridge;
-    this.#settings = deps.settings;
-    this.ready = this.#load();
-  }
+    /** A reading view holds what a post-processor produced until it renders again. */
+    const rerender = Effect.gen(function* () {
+      const count = rerenderReadingViews(app);
+      yield* Effect.logDebug("Rerendering reading views").pipe(
+        Effect.annotateLogs({ count }),
+      );
+    });
 
-  async #load(): Promise<void> {
-    await using stack = new AsyncDisposableStack();
+    /**
+     * The Citation Runs of a section's native links, which is every run that
+     * has not rendered yet: a rendered run's anchor shows formatted text, so
+     * the scan passes it by.
+     */
+    const sectionRuns = (
+      el: HTMLElement,
+      ctx: MarkdownPostProcessorContext,
+      lookup: CitationLookupAnswer | null,
+    ): SectionRuns =>
+      sectionCitationRuns(el, (linktext) =>
+        wikilinkCitation(linktext, {
+          literatureNote: (linkpath) =>
+            run(literatureNote(linkpath, ctx.sourcePath, lookup)),
+          enabled: display.enabled,
+        }),
+      );
 
-    this.#plugin.registerMarkdownPostProcessor((el, ctx) =>
-      this.#process(el, ctx),
-    );
-    stack.defer(
-      this.#display.watch(this.#runtime, this.#settings, () =>
-        this.#rerender(),
-      ),
-    );
+    /**
+     * Gives one rendered Citation what this surface answers for it: the
+     * Citation Popover on hover, in place of the page preview Obsidian answers
+     * a Literature Note link with, and nothing at all on a plain click, in
+     * place of opening that note.
+     *
+     * The listeners sit on the anchor the run rendered into, which is where
+     * the post-processor left the Citation and where Obsidian's own delegated
+     * handlers would have read the link from. They last until `signal` aborts,
+     * which is when the section rewrites and attaches the next ones.
+     */
+    const attachPopover = (
+      members: readonly RunMember<HTMLAnchorElement>[],
+      shown: ShownCitation,
+      { sourcePath, signal }: { sourcePath: string; signal: AbortSignal },
+    ): void => {
+      const element = members[0]!.source;
+      const hover: CitationHover = {
+        works: members.map(({ citation }) => ({
+          citekey: citation.item.citekey,
+          indexedKey: citation.indexedKey,
+        })),
+        // The occurrence this section shows in the Citation's place, which is
+        // where a note-class style's own note text is read from, however often
+        // the popover reads it again.
+        shown,
+        where: { surface: "reading" },
+        open: (citekey, pane) => {
+          void bridge.runPromise(citekeyEditor.openCitekey(citekey, pane));
+        },
+        showPopover: (request) => run(citationPopover.show(request)),
+        hoverPreferences: () => display.hover,
+        hoverTarget: () => {
+          const hoverParent = markdownViewOf(app, element);
+          return hoverParent === null
+            ? null
+            : { workspace: hoverWorkspace, hoverParent, sourcePath };
+        },
+      };
+      if (display.popoverHover) {
+        element.addEventListener(
+          "mouseover",
+          (event) => {
+            hoverWikilinkCitation(event, element, hover);
+          },
+          { signal },
+        );
+      }
+      if (display.clickIntercepted) {
+        // The anchor states what its plain click does, which is what
+        // neutralizes Obsidian's own link cursor and hover colour on it.
+        markCitationClick(element, "none", { cursor: false });
+        element.addEventListener(
+          "click",
+          (event) => {
+            clickWikilinkCitation(event, { where: hover.where });
+          },
+          { signal },
+        );
+      }
+    };
+
+    /**
+     * Shows every Citation Run of a section what the document's Held Read
+     * holds for it. A run that has not rendered collapses into its first
+     * anchor once text is held for it; a run that has keeps that anchor and
+     * its current text until fresh text differs. Native links stay in place
+     * while the read settles.
+     *
+     * @param rendered the runs that already show formatted text, in the order
+     *   they rendered; a run this call renders is appended.
+     * @param signal retires the gesture listeners this call attaches.
+     */
+    const show = (
+      el: HTMLElement,
+      ctx: MarkdownPostProcessorContext,
+      {
+        rendered,
+        signal,
+      }: {
+        rendered: SectionRuns;
+        signal: AbortSignal;
+      },
+    ): void => {
+      // Read only once a Citation is on screen, so a section that writes none
+      // waits for nothing.
+      const file = run(vault.getFileByPath(ctx.sourcePath));
+      const text = file === null ? null : run(citationText.peek(file.path));
+      if (text === null) return;
+
+      const runs = [
+        ...rendered,
+        ...sectionRuns(el, ctx, text.value.lookup),
+      ].sort((a, b) => documentOrder(a[0]!.source, b[0]!.source));
+      // Which occurrence each Citation of the section is, so a
+      // position-dependent style shows every one of them the text rendered
+      // for its own place.
+      const citations = runs.map((members) => citationOfRun(members));
+      const failure = text.value.presentationFailure;
+      renderProfileRecovery(el, app, { path: failure?.target });
+      if (failure) {
+        const diagnostic = m.notice_imported_note_profile_unknown({
+          stamp: failure.diagnostic.stamp,
+          target: failure.target,
+        });
+        for (const { source } of runs.flat()) {
+          source.dataset["citationPresentationError"] = "profile";
+          setTooltip(source, diagnostic);
+        }
+      }
+      const coordinates = sectionCoordinates(citations, sectionRange(ctx, el));
+      const contents = citations.map((citation, index) =>
+        citationContent(citation, text.value, coordinates[index]),
+      );
+      // A run that rendered before keeps its one anchor: the collapse never
+      // runs on it again, and its text follows the fresh content where there
+      // is one.
+      const collapsed = new Set(rendered);
+      const shown = renderCitationRuns(runs, (members, index) => {
+        const content = contents[index] ?? null;
+        if (!collapsed.has(members)) {
+          if (content !== null) rendered.push(members);
+          return content;
+        }
+        if (content !== null)
+          showCitation(members[0]!.source, content, "suppress");
+        return null;
+      });
+      if (shown > 0) {
+        run(
+          Effect.logTrace("Rendered wikilink citations").pipe(
+            Effect.annotateLogs({ path: ctx.sourcePath, count: shown }),
+          ),
+        );
+      }
+      if (!display.popoverHover && !display.clickIntercepted) return;
+      for (const [index, members] of runs.entries()) {
+        // A run the style formatted no text for keeps Obsidian's own link,
+        // hover and click and all; only the Citation this surface rendered
+        // carries the popover.
+        if (!rendered.includes(members)) continue;
+        attachPopover(
+          members,
+          { citation: citations[index]!, at: coordinates[index] },
+          { sourcePath: ctx.sourcePath, signal },
+        );
+      }
+    };
+
+    /**
+     * Holds one rendered section and shows its Citations, which are rewritten
+     * in place for as long as Obsidian shows the section.
+     */
+    const process = (
+      el: HTMLElement,
+      ctx: MarkdownPostProcessorContext,
+    ): void => {
+      if (isDraftMarkdown(el)) return;
+      if (retired) return;
+      // Any internal link, Citation or not: a link whose Item gains a native
+      // citation key at the next snapshot rebuild becomes a Citation in place.
+      if (!hasInternalLink(el)) return;
+      /** The runs that show formatted text, each collapsed into its first anchor. */
+      const rendered: SectionRuns = [];
+      /** Retires the gesture listeners the previous rewrite attached. */
+      let gestures = new AbortController();
+      const rewrite = () => {
+        if (retired) return;
+        gestures.abort();
+        gestures = new AbortController();
+        show(el, ctx, { rendered, signal: gestures.signal });
+      };
+      sections.hold(el, ctx, rewrite);
+      rewrite();
+    };
+
+    host.registerMarkdownPostProcessor((el, ctx) => process(el, ctx));
+    yield* forkEach(display.redraws(settings.changes), () => rerender);
     // Creating, deleting, or renaming a Literature Note changes which links
     // are Citations without changing any document, so every open reading view
     // renders again. The Note Index reports every moved mapping as `changed`,
     // and its one Full Scan per session as `indexed`.
-    stack.defer(
-      subscribe(this.#runtime, this.#noteIndex["changed"], () =>
-        this.#rerender(),
-      ),
-    );
-    stack.defer(
-      subscribe(this.#runtime, this.#noteIndex["indexed"], () =>
-        this.#rerender(),
-      ),
+    yield* forkEach(notes.changes, (change) =>
+      change.type === "frontmatter-changed" ? undefined : rerender,
     );
     // What a placed Citation says follows its document's Held Read: the live
     // sections of that document rewrite on its change, and every live section
     // rewrites when all text goes stale.
-    stack.defer(
-      subscribe(this.#runtime, this.#citationText.invalidated, () =>
-        this.#sections.refresh(),
-      ),
-    );
-    stack.defer(
-      subscribe(this.#runtime, this.#citationText.changed, (path) =>
-        this.#sections.refresh(path),
-      ),
-    );
-    // A reading view holds the text this service wrote, so the views render
-    // again without it once it is gone. The flag goes first: the post-processor
-    // may still be registered while this runs.
-    stack.defer(() => {
-      this.#retired = true;
-      this.#rerender();
+    yield* forkEach(citationText.events, (event) => {
+      if (event.type === "changed") sections.refresh(event.path);
+      else if (event.type === "invalidated") sections.refresh();
     });
-
-    this.commit(stack.move());
-  }
-
-  /**
-   * Holds one rendered section and shows its Citations, which are rewritten in
-   * place for as long as Obsidian shows the section.
-   */
-  #process(el: HTMLElement, ctx: MarkdownPostProcessorContext): void {
-    if (isDraftMarkdown(el)) return;
-    if (this.#retired) return;
-    // Any internal link, Citation or not: a link whose Item gains a native
-    // citation key at the next snapshot rebuild becomes a Citation in place.
-    if (!hasInternalLink(el)) return;
-    /** The runs that show formatted text, each collapsed into its first anchor. */
-    const rendered: SectionRuns = [];
-    /** Retires the gesture listeners the previous rewrite attached. */
-    let gestures = new AbortController();
-    const show = () => {
-      if (this.#retired) return;
-      gestures.abort();
-      gestures = new AbortController();
-      this.#show(el, ctx, {
-        rendered,
-        signal: gestures.signal,
-      });
-    };
-    this.#sections.hold(el, ctx, show);
-    show();
-  }
-
-  /**
-   * The Citation Runs of a section's native links, which is every run that has
-   * not rendered yet: a rendered run's anchor shows formatted text, so the scan
-   * passes it by.
-   */
-  #sectionRuns(
-    el: HTMLElement,
-    ctx: MarkdownPostProcessorContext,
-    lookup: CitationLookupAnswer | null,
-  ): SectionRuns {
-    const literatureNote = (linkpath: string) => {
-      const note = resolveLiteratureNote(linkpath, ctx.sourcePath, {
-        app: this.#app,
-      });
-      return (
-        note && {
-          ...note,
-          citationKey: heldCitekeyOf(lookup, note.indexedKey) ?? null,
-        }
-      );
-    };
-    return sectionCitationRuns(el, (linktext) =>
-      wikilinkCitation(linktext, {
-        literatureNote,
-        enabled: this.#display.enabled,
+    // A reading view holds the text this layer wrote, so the views render
+    // again without it once it is gone. The flag goes first: the
+    // post-processor stays registered while this runs.
+    yield* Effect.addFinalizer(() =>
+      Effect.suspend(() => {
+        retired = true;
+        return rerender;
       }),
     );
-  }
-
-  /**
-   * Shows every Citation Run of a section what the document's Held Read holds
-   * for it. A run that has not rendered collapses into its first anchor once
-   * text is held for it; a run that has keeps that anchor and its current text
-   * until fresh text differs. Native links stay in place while the read
-   * settles.
-   *
-   * @param rendered the runs that already show formatted text, in the order
-   *   they rendered; a run this call renders is appended.
-   * @param signal retires the gesture listeners this call attaches.
-   */
-  #show(
-    el: HTMLElement,
-    ctx: MarkdownPostProcessorContext,
-    {
-      rendered,
-      signal,
-    }: {
-      rendered: SectionRuns;
-      signal: AbortSignal;
-    },
-  ): void {
-    // Read only once a Citation is on screen, so a section that writes none
-    // waits for nothing.
-    const file = this.#app.vault.getFileByPath(ctx.sourcePath);
-    const text = file === null ? null : this.#citationText.peek(file.path);
-    if (text === null) return;
-
-    const runs = [
-      ...rendered,
-      ...this.#sectionRuns(el, ctx, text.value.lookup),
-    ].sort((a, b) => documentOrder(a[0]!.source, b[0]!.source));
-    // Which occurrence each Citation of the section is, so a position-dependent
-    // style shows every one of them the text rendered for its own place.
-    const citations = runs.map((run) => citationOfRun(run));
-    const failure = text.value.presentationFailure;
-    renderProfileRecovery(el, this.#app, { path: failure?.target });
-    if (failure) {
-      const diagnostic = m.notice_imported_note_profile_unknown({
-        stamp: failure.diagnostic.stamp,
-        target: failure.target,
-      });
-      for (const { source } of runs.flat()) {
-        source.dataset["citationPresentationError"] = "profile";
-        setTooltip(source, diagnostic);
-      }
-    }
-    const coordinates = sectionCoordinates(citations, sectionRange(ctx, el));
-    const contents = citations.map((citation, index) =>
-      citationContent(citation, text.value, coordinates[index]),
-    );
-    // A run that rendered before keeps its one anchor: the collapse never runs
-    // on it again, and its text follows the fresh content where there is one.
-    const collapsed = new Set(rendered);
-    const shown = renderCitationRuns(runs, (run, index) => {
-      const content = contents[index] ?? null;
-      if (!collapsed.has(run)) {
-        if (content !== null) rendered.push(run);
-        return content;
-      }
-      if (content !== null) showCitation(run[0]!.source, content, "suppress");
-      return null;
-    });
-    if (shown > 0) {
-      logger.trace("Rendered wikilink citations", {
-        path: ctx.sourcePath,
-        count: shown,
-      });
-    }
-    if (!this.#display.popoverHover && !this.#display.clickIntercepted) return;
-    for (const [index, run] of runs.entries()) {
-      // A run the style formatted no text for keeps Obsidian's own link, hover
-      // and click and all; only the Citation this surface rendered carries the
-      // popover.
-      if (!rendered.includes(run)) continue;
-      this.#attachPopover(
-        run,
-        { citation: citations[index]!, at: coordinates[index] },
-        { sourcePath: ctx.sourcePath, signal },
-      );
-    }
-  }
-
-  /**
-   * Gives one rendered Citation what this surface answers for it: the Citation
-   * Popover on hover, in place of the page preview Obsidian answers a
-   * Literature Note link with, and nothing at all on a plain click, in place of
-   * opening that note.
-   *
-   * The listeners sit on the anchor the run rendered into, which is where the
-   * post-processor left the Citation and where Obsidian's own delegated
-   * handlers would have read the link from. They last until `signal` aborts,
-   * which is when the section rewrites and attaches the next ones.
-   */
-  #attachPopover(
-    run: readonly RunMember<HTMLAnchorElement>[],
-    shown: ShownCitation,
-    { sourcePath, signal }: { sourcePath: string; signal: AbortSignal },
-  ): void {
-    const element = run[0]!.source;
-    const hover: CitationHover = {
-      works: run.map(({ citation }) => ({
-        citekey: citation.item.citekey,
-        indexedKey: citation.indexedKey,
-      })),
-      // The occurrence this section shows in the Citation's place, which is
-      // where a note-class style's own note text is read from, however often
-      // the popover reads it again.
-      shown,
-      where: { surface: "reading" },
-      open: (citekey, pane) => {
-        void this.#bridge.runPromise(
-          this.#citekeyEditor.openCitekey(citekey, pane),
-        );
-      },
-      showPopover: (request) =>
-        this.#bridge.runSync(this.#citationPopover.show(request)),
-      hoverPreferences: () => this.#display.hover,
-      hoverTarget: () => {
-        const hoverParent = this.#viewOf(element);
-        return hoverParent === null
-          ? null
-          : {
-              workspace: this.#app.workspace,
-              hoverParent,
-              sourcePath,
-            };
-      },
-    };
-    if (this.#display.popoverHover) {
-      element.addEventListener(
-        "mouseover",
-        (event) => {
-          hoverWikilinkCitation(event, element, hover);
-        },
-        { signal },
-      );
-    }
-    if (this.#display.clickIntercepted) {
-      // The anchor states what its plain click does, which is what neutralizes
-      // Obsidian's own link cursor and hover colour on it.
-      markCitationClick(element, "none", { cursor: false });
-      element.addEventListener(
-        "click",
-        (event) => {
-          clickWikilinkCitation(event, { where: hover.where });
-        },
-        { signal },
-      );
-    }
-  }
-
-  /**
-   * The Markdown view a rendered Citation sits in, which Obsidian hangs the
-   * popover off. Markdown rendered outside such a view — an export, a popover
-   * of its own — belongs to none, and hover stays silent there.
-   */
-  #viewOf(element: HTMLElement): MarkdownView | null {
-    for (const leaf of this.#app.workspace.getLeavesOfType("markdown")) {
-      const { view } = leaf;
-      if (view instanceof MarkdownView && view.containerEl.contains(element)) {
-        return view;
-      }
-    }
-    return null;
-  }
-
-  /** A reading view holds what a post-processor produced until it renders again. */
-  #rerender(): void {
-    const count = rerenderReadingViews(this.#app);
-    logger.debug("Rerendering reading views", { count });
-  }
-}
+  }).pipe(withLogCategory("wikilink-reading")),
+);
 
 /** Sorts two nodes into document order. */
 function documentOrder(a: Node, b: Node): number {
