@@ -102,6 +102,7 @@ export default defineConfig({
     "./scripts/oxlint-plugin-effect-tests.ts",
     "./scripts/oxlint-plugin-logging.ts",
     "./scripts/oxlint-plugin-errors.ts",
+    "./scripts/oxlint-plugin-effect-style.ts",
     new URL("../../packages/config/oxlint-plugin-keyboard.ts", import.meta.url)
       .pathname,
   ],
@@ -113,6 +114,7 @@ export default defineConfig({
     "zotlit-menu/no-literal-section": "error",
     "zotlit-services/service-tag-id": "error",
     "zotlit-services/cli-command-registration": "error",
+    "zotlit-effect-style/no-tacit": "warn",
     // Repeats the base pattern: a rule set here replaces the base entry.
     "no-restricted-imports": ["error", runtimeImports],
   },
