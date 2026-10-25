@@ -1,9 +1,10 @@
 import { createMockPlugin } from "@mock/obsidian";
-import { Effect } from "effect";
+import { DateTime, Effect } from "effect";
 import type { Command } from "obsidian";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { toInstant } from "@/lib/effect-clock";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { addAnnotationHistoryActions, historyOutcomeNotice } from "./actions";
@@ -121,16 +122,21 @@ describe("the Annotation History commands", () => {
 // - a block of the Editing Capability gets a second notice beside the one its
 //   own seam raises.
 describe("the notice of one undo or redo press", () => {
-  const NOW = Temporal.Instant.from("2026-09-26T12:00:00Z");
+  const NOW = DateTime.makeUnsafe("2026-09-26T12:00:00Z");
 
   it("gives the Lock Reason alone for a step a lock refused", () => {
     expect(
-      historyOutcomeNotice({ kind: "locked", reason: "external" }, NOW),
+      historyOutcomeNotice(
+        { kind: "locked", reason: "external" },
+        toInstant(NOW),
+      ),
     ).toBe(m.annot_view_lock_external());
   });
 
   it("leaves a block of the Editing Capability to its own seam", () => {
-    expect(historyOutcomeNotice({ kind: "blocked" }, NOW)).toBeNull();
+    expect(
+      historyOutcomeNotice({ kind: "blocked" }, toInstant(NOW)),
+    ).toBeNull();
   });
 
   it("says the user is now the creator after a restore of another user's Annotations", () => {
@@ -141,15 +147,18 @@ describe("the notice of one undo or redo press", () => {
           annotationKey: "MADE2345",
           restoredAsCreator: { count: 2 },
         },
-        NOW,
+        toInstant(NOW),
       ),
     ).toBe(m.annot_history_restored_new_creator({ count: 2 }));
   });
 
   it("gives no notice for a step it took", () => {
     expect(
-      historyOutcomeNotice({ kind: "stepped", annotationKey: "PUPR5FG5" }, NOW),
+      historyOutcomeNotice(
+        { kind: "stepped", annotationKey: "PUPR5FG5" },
+        toInstant(NOW),
+      ),
     ).toBeNull();
-    expect(historyOutcomeNotice({ kind: "idle" }, NOW)).toBeNull();
+    expect(historyOutcomeNotice({ kind: "idle" }, toInstant(NOW))).toBeNull();
   });
 });

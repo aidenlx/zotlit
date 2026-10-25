@@ -1,6 +1,7 @@
 import { defineConfig } from "oxlint";
 
 import baseConfig, {
+  datePattern,
   itemQuerySchemaPaths,
   parentImportPattern,
   uniqueIdPaths,
@@ -15,6 +16,7 @@ export default defineConfig({
       {
         patterns: [
           parentImportPattern,
+          datePattern,
           {
             group: [
               "./schema",
@@ -59,7 +61,7 @@ export default defineConfig({
         "no-restricted-imports": [
           "error",
           {
-            patterns: [parentImportPattern],
+            patterns: [parentImportPattern, datePattern],
           },
         ],
       },

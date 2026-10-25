@@ -61,6 +61,38 @@ it.effect("keeps the 300 most recently used Items across reloads", () =>
   }),
 );
 
+// Failure mode: the saved instants change form, so a stored ledger differs
+// from the one earlier versions wrote.
+it.effect("saves each instant in the ISO form it has always had", () =>
+  Effect.gen(function* () {
+    let stored: unknown;
+    const app = fakeApp({
+      load: () => stored,
+      save: (_key, value) => {
+        stored = structuredClone(value);
+      },
+    });
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const ledger = yield* useLedgerOf(app);
+        yield* TestClock.adjust(1000);
+        yield* ledger.record("AAAAAAAA", "opened");
+        yield* TestClock.adjust(120);
+        yield* ledger.record("AAAAAAAB", "cited");
+      }),
+    );
+    expect(stored).toEqual({
+      AAAAAAAA: { instant: "1970-01-01T00:00:01Z", kind: "opened" },
+      AAAAAAAB: { instant: "1970-01-01T00:00:01.12Z", kind: "cited" },
+    });
+
+    const reloaded = yield* useLedgerOf(app);
+    expect((yield* reloaded.get("AAAAAAAB"))?.instant.epochMilliseconds).toBe(
+      1120,
+    );
+  }),
+);
+
 // Failure modes: an Item note opened after unload still records a Use, or
 // the ledger leaves its workspace listeners behind.
 it.effect(

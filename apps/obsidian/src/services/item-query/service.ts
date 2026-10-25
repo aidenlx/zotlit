@@ -1,5 +1,14 @@
 import { Stream } from "effect";
-import { Cause, Effect, Exit, Fiber, FiberMap, Result, Scope } from "effect";
+import {
+  Cause,
+  Clock,
+  Effect,
+  Exit,
+  Fiber,
+  FiberMap,
+  Result,
+  Scope,
+} from "effect";
 import type { RpcClientError } from "effect/rpc";
 import { randomUUID } from "node:crypto";
 import { link, rm } from "node:fs/promises";
@@ -458,12 +467,11 @@ function reportCancel(
   measure: QueryObserver | undefined,
   phase: CancellationEvent["phase"],
 ): Effect.Effect<void> {
-  return Effect.sync(() =>
-    measure?.cancelled?.({
-      phase,
-      atEpochMs: Temporal.Now.instant().epochMilliseconds,
-    }),
-  );
+  return Effect.gen(function* () {
+    if (measure?.cancelled === undefined) return;
+    const atEpochMs = yield* Clock.currentTimeMillis;
+    measure.cancelled({ phase, atEpochMs });
+  });
 }
 
 /** The staging path of an export, beside its output; removed with the job. */

@@ -4,6 +4,7 @@ import type { App, TFile } from "obsidian";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
+import { rowInstant } from "@zotlit/db/test-utils";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
@@ -140,8 +141,8 @@ function baseNote(overrides?: { key?: string; groupID?: number | null }) {
     indexedKey: formatIndexedKey(key, groupID),
     title: "Methods",
     note: NOTE_BODY,
-    dateAdded: Temporal.Instant.from("2024-01-01T10:00:00Z"),
-    dateModified: Temporal.Instant.from("2024-02-03T08:30:00Z"),
+    dateAdded: rowInstant("2024-01-01T10:00:00Z"),
+    dateModified: rowInstant("2024-02-03T08:30:00Z"),
   };
 }
 

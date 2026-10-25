@@ -1,6 +1,5 @@
 import { it } from "@effect/vitest";
-import { Stream } from "effect";
-import { Effect } from "effect";
+import { Duration, Effect, Stream } from "effect";
 import { afterEach, describe, expect, vi } from "vitest";
 
 import { subscribe } from "@/lib/effect-stream";
@@ -757,13 +756,13 @@ it.live(
       vi.useFakeTimers();
       try {
         await vi.advanceTimersByTimeAsync(
-          Temporal.Duration.from({ minutes: 6 }).total("milliseconds"),
+          Duration.toMillis(Duration.minutes(6)),
         );
         expect(view.current?.status).toBe("fresh");
         expect(requested).toBe(1);
         view[Symbol.dispose]();
         await vi.advanceTimersByTimeAsync(
-          Temporal.Duration.from({ minutes: 6 }).total("milliseconds"),
+          Duration.toMillis(Duration.minutes(6)),
         );
         const delivered = Promise.withResolvers<void>();
         using reopened = lookup.observe(() => {

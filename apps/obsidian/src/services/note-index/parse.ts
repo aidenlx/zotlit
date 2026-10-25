@@ -7,6 +7,7 @@ import {
   FIELD_ZOTERO_LASTMOD,
   FIELD_ZOTERO_NOTE_KEY,
 } from "@/lib/constants";
+import { frontmatterInstant } from "@/lib/frontmatter-date";
 
 export interface FileContributions {
   itemKey: string | null;
@@ -76,9 +77,8 @@ export function lastmodFromFrontmatter(
 ): Temporal.Instant | null {
   const value = cache?.frontmatter?.[FIELD_ZOTERO_LASTMOD];
   if (value == null) return null;
-  if (value instanceof Date) {
-    return Temporal.Instant.fromEpochMilliseconds(value.getTime());
-  }
+  const timestamp = frontmatterInstant(value);
+  if (timestamp) return timestamp;
   if (typeof value !== "string") return null;
   try {
     return Temporal.Instant.from(value);

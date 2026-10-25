@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { Attachment } from "@zotlit/db";
+import { rowInstant } from "@zotlit/db/test-utils";
 
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
@@ -77,8 +78,8 @@ function attachment(overrides: Partial<Attachment>): Attachment {
     path: null,
     contentType: null,
     linkMode: null,
-    dateAdded: Temporal.Instant.from("2024-01-01T00:00:00Z"),
-    dateModified: Temporal.Instant.from("2024-01-01T00:00:00Z"),
+    dateAdded: rowInstant("2024-01-01T00:00:00Z"),
+    dateModified: rowInstant("2024-01-01T00:00:00Z"),
     ...overrides,
   };
 }

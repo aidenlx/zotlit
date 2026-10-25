@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Context, Effect } from "effect";
+import { Context, DateTime, Effect } from "effect";
 import { TestClock } from "effect/testing";
 import type { App } from "obsidian";
 import { afterEach, beforeEach, describe, expect, vi } from "vitest";
@@ -12,6 +12,7 @@ import {
 import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
 
 import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
+import { toInstant } from "@/lib/effect-clock";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { resolveProfile } from "@/services/profile/__fixtures__/reader";
@@ -150,7 +151,7 @@ frontmatter:
           evalManagedFrontmatterEntries(
             inert?.compiled ?? [],
             { title: "Paper" },
-            Temporal.Now.instant(),
+            toInstant(yield* DateTime.now),
           ).values,
         ).toEqual([
           { key: "title", value: "Paper", merge: "replace", position: 1 },
@@ -168,7 +169,7 @@ frontmatter:
           evalManagedFrontmatterEntries(
             active?.compiled ?? [],
             { title: "Paper" },
-            Temporal.Now.instant(),
+            toInstant(yield* DateTime.now),
           ).values,
         ).toEqual([
           { key: "title", value: "Paper", merge: "replace", position: 1 },

@@ -13,6 +13,7 @@ import { FileSystemAdapter, TFile, TFolder } from "obsidian";
 import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import type { Annotation } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
@@ -363,7 +364,7 @@ it.each([false, true])(
 it("reads truthful metadata and reports a missing required fact only on access", async () => {
   await using f = await fixture("disabled");
   f.render.mockImplementation((data) =>
-    String((data as { dateModified: Temporal.Instant }).dateModified),
+    String((data as { dateModified: Annotation["dateModified"] }).dateModified),
   );
   await expect(prepareAnnotationInsert(f.ctx, f.options)).rejects.toThrow(
     "Annotation source did not supply dateModified",

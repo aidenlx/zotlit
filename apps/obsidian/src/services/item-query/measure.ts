@@ -10,7 +10,7 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
-import { Effect, Exit, Result, Schema, Scope } from "effect";
+import { Clock, Effect, Exit, Result, Schema, Scope } from "effect";
 import type { CliData, CliFlags } from "obsidian";
 
 import type { ItemQueryReader } from "@zotlit/db/item-query";
@@ -202,7 +202,7 @@ const measureRun = Effect.fn("QueryCli.measureRun")(function* ({
   };
 
   const startedAt = now();
-  const startedAtEpochMs = Temporal.Now.instant().epochMilliseconds;
+  const startedAtEpochMs = yield* Clock.currentTimeMillis;
   // The service reports the request from any source: the timer, an unload,
   // or `zotlit:query-cancel` for a run with `id`.
   let firedAt: number | undefined;

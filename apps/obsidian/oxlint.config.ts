@@ -2,6 +2,7 @@ import { defineConfig } from "oxlint";
 
 import { testBaselineOverrides } from "@zotlit/config/oxlint";
 import baseConfig, {
+  datePattern,
   itemQuerySchemaPaths,
   parentImportPattern,
   uniqueIdPaths,
@@ -42,6 +43,7 @@ const effectWrapperPaths = [
 const commonImports = {
   patterns: [
     parentImportPattern,
+    datePattern,
     {
       group: ["**/citation-index/scan", "./scan"],
       importNames: [
@@ -124,7 +126,7 @@ export default defineConfig({
       rules: {
         "no-restricted-imports": [
           "error",
-          { ...runtimeImports, patterns: [parentImportPattern] },
+          { ...runtimeImports, patterns: [parentImportPattern, datePattern] },
         ],
       },
     },
@@ -445,12 +447,55 @@ export default defineConfig({
         "src/services/item-query/answer.ts",
         "src/services/item-query/job.ts",
         "src/services/item-query/measure.ts",
-        "src/services/item-query/service.ts",
         "src/services/item-query/trace.ts",
-        "src/services/note-feature/operations.ts",
-        "src/views/annot-view/view.tsx",
       ],
       rules: { "zotlit-services/clock-time": "off" },
+    },
+    {
+      // Date adapter: Obsidian's YAML frontmatter can hand in a Date.
+      files: [
+        "src/lib/frontmatter-date.ts",
+        "src/lib/frontmatter-date.test.ts",
+      ],
+      rules: {
+        "effecttsgo/global-date": "off",
+        "no-restricted-globals": "off",
+      },
+    },
+    {
+      files: ["src/**/*.{ts,tsx}"],
+      excludeFiles: [
+        // Converts between Effect's DateTime and Clock and the Temporal of plain code.
+        "src/lib/effect-clock.ts",
+      ],
+      rules: { "zotlit-services/temporal-in-effect": "error" },
+    },
+    {
+      // The edge between Effect and plain code: a plain adapter hands Effect
+      // values to plain callers as Temporal; @zotlit/db rows carry
+      // Temporal.Instant, the date type of the template contract, and
+      // instant-codec.ts codes it for the ZoteroReads wire.
+      files: [
+        "src/services/**/plain.ts",
+        "src/services/zotero-reads/instant-codec.ts",
+      ],
+      rules: { "zotlit-services/temporal-in-effect": "off" },
+    },
+    {
+      // Rewritten by effect/drop-port; the date rule follows after it merges.
+      files: [
+        "src/services/zotero-local-api/**",
+        "src/services/annotation-repository/repository.ts",
+        "src/services/annotation-repository/notices.ts",
+        "src/services/annotation-repository/service.ts",
+        "src/services/annotation-repository/__fixtures__.ts",
+        "src/services/build.ts",
+      ],
+      rules: {
+        "zotlit-services/temporal-in-effect": "off",
+        "no-restricted-globals": "off",
+        "typescript/no-restricted-types": "off",
+      },
     },
     {
       files: ["src/services/**/plain.ts"],
@@ -518,7 +563,7 @@ export default defineConfig({
         "no-restricted-imports": [
           "error",
           {
-            patterns: [parentImportPattern],
+            patterns: [parentImportPattern, datePattern],
             paths: [...effectWrapperPaths, ...obsidianImportPaths],
           },
         ],
@@ -561,6 +606,7 @@ export default defineConfig({
         "no-restricted-imports": [
           "error",
           {
+            patterns: [datePattern],
             paths: itemQuerySchemaPaths,
           },
         ],
@@ -577,7 +623,7 @@ export default defineConfig({
       // The rule tests reach the package-local Oxlint modules in scripts/.
       files: ["src/lint/*.test.ts"],
       rules: {
-        "no-restricted-imports": "off",
+        "no-restricted-imports": ["error", { patterns: [datePattern] }],
       },
     },
     {
@@ -673,6 +719,7 @@ export default defineConfig({
           "error",
           {
             patterns: [
+              datePattern,
               {
                 group: ["../src/**", "!../src/services/managed-binary/pin.ts"],
                 allowTypeImports: true,

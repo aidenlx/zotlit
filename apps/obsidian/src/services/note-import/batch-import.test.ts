@@ -6,7 +6,7 @@ import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
 import type { ChildNote, Library, Note } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import { createFixtureSchema } from "@zotlit/db/test-utils";
+import { createFixtureSchema, rowInstant } from "@zotlit/db/test-utils";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -99,7 +99,7 @@ function makeRef(itemID: number, libraryID = USER_LIBRARY_ID): ChildNote {
     key,
     indexedKey: formatIndexedKey(key, null),
     title: `Note ${itemID}`,
-    dateModified: Temporal.Instant.from("2024-02-03T08:30:00Z"),
+    dateModified: rowInstant("2024-02-03T08:30:00Z"),
   };
 }
 
@@ -181,7 +181,7 @@ function makeNote(itemID: number): Note {
   return {
     ...makeRef(itemID),
     note: "<h1>Methods</h1><p>body</p>",
-    dateAdded: Temporal.Instant.from("2024-01-01T10:00:00Z"),
+    dateAdded: rowInstant("2024-01-01T10:00:00Z"),
   };
 }
 
