@@ -6,6 +6,7 @@ import { Layer } from "@/lib/effect";
 import { layerNotifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerObsidianEnv } from "@/lib/obsidian-env";
+import { layerFileManager } from "@/lib/obsidian-file-manager";
 import { layerMetadataCache } from "@/lib/obsidian-metadata-cache";
 import { layerPluginHost } from "@/lib/plugin-host";
 import type { ZoteroHttp } from "@/lib/zotero-http";
@@ -134,6 +135,7 @@ export function pluginLayer(
     layerNotifier,
     layerObsidianEnv,
     layerMetadataCache,
+    layerFileManager,
   ).pipe(Layer.provideMerge(Layer.succeed(ObsidianApp, plugin.app)));
   const services = Layer.mergeAll(
     layerCitationPopover.pipe(startingAs("CitationPopover")),

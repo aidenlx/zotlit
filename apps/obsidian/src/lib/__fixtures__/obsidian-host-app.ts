@@ -5,14 +5,17 @@ import type { App } from "obsidian";
 
 import { Layer } from "@/lib/effect";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { layerFileManagerFrom } from "@/lib/obsidian-file-manager";
+import type { FileManager } from "@/lib/obsidian-file-manager";
 import { layerMetadataCacheFrom } from "@/lib/obsidian-metadata-cache";
 import type { MetadataCache } from "@/lib/obsidian-metadata-cache";
 
 /** `ObsidianApp` as `app`, and each capability tag over its member of `app`. */
 export function layerHostApp(
   app: App,
-): Layer.Layer<ObsidianApp | MetadataCache> {
-  return Layer.mergeAll(layerMetadataCacheFrom(app.metadataCache)).pipe(
-    Layer.provideMerge(Layer.succeed(ObsidianApp, app)),
-  );
+): Layer.Layer<ObsidianApp | MetadataCache | FileManager> {
+  return Layer.mergeAll(
+    layerMetadataCacheFrom(app.metadataCache),
+    layerFileManagerFrom(app.fileManager),
+  ).pipe(Layer.provideMerge(Layer.succeed(ObsidianApp, app)));
 }
