@@ -9,7 +9,10 @@ import { Schema } from "effect";
  * not in the cache, and a disk that folds case then fails the call as a
  * `VaultError`.
  */
-export class FileExists extends Schema.TaggedError<FileExists>()("FileExists", {
+export class FileExists extends Schema.TaggedError<
+  FileExists,
+  { readonly brand: unique symbol }
+>()("FileExists", {
   /** The vault path that is taken. */
   path: Schema.String,
 }) {
@@ -23,7 +26,10 @@ export class FileExists extends Schema.TaggedError<FileExists>()("FileExists", {
  * A vault or file manager call rejected. `message` is Obsidian's own, for logs and
  * notices; `cause` holds what Obsidian threw. Nothing classifies it.
  */
-export class VaultError extends Schema.TaggedError<VaultError>()("VaultError", {
+export class VaultError extends Schema.TaggedError<
+  VaultError,
+  { readonly brand: unique symbol }
+>()("VaultError", {
   /** The Obsidian method that rejected, such as `renameFile`. */
   operation: Schema.String,
   /** The vault path the call acted on. */
