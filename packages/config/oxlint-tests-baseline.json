@@ -150,8 +150,7 @@
     "zotlit-tests/no-source-text"
   ],
   "apps/obsidian/src/services/note-feature/companion-view.test.ts": [
-    "zotlit-tests/no-internal-mock",
-    "zotlit-tests/no-source-text"
+    "zotlit-tests/no-internal-mock"
   ],
   "apps/obsidian/src/services/note-feature/creation-view.test.ts": [
     "zotlit-tests/no-internal-mock",
@@ -226,8 +225,7 @@
     "zotlit-tests/no-markup-assertion"
   ],
   "apps/obsidian/src/services/protocol/register.test.ts": [
-    "zotlit-tests/no-internal-mock",
-    "zotlit-tests/no-source-text"
+    "zotlit-tests/no-internal-mock"
   ],
   "apps/obsidian/src/services/service-base.test.ts": [
     "zotlit-tests/no-internal-mock",
