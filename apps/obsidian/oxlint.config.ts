@@ -101,6 +101,7 @@ export default defineConfig({
     "./scripts/oxlint-plugin-services.ts",
     "./scripts/oxlint-plugin-effect-tests.ts",
     "./scripts/oxlint-plugin-logging.ts",
+    "./scripts/oxlint-plugin-errors.ts",
     new URL("../../packages/config/oxlint-plugin-keyboard.ts", import.meta.url)
       .pathname,
   ],
@@ -132,6 +133,17 @@ export default defineConfig({
     {
       files: ["src/**"],
       rules: { "zotlit-logging/no-logtape-in-effect-file": "error" },
+    },
+    {
+      files: ["src/**"],
+      excludeFiles: ["src/**/*.test.{ts,tsx}"],
+      rules: { "zotlit-errors/no-message-match": "error" },
+    },
+    {
+      // Message-match backlog: the file tests a CLI rejection of our own by
+      // its text; give the rejection a code to test, then remove the file.
+      files: ["src/services/template-workbench/check.ts"],
+      rules: { "zotlit-errors/no-message-match": "off" },
     },
     {
       // Tests and the LogTape bridge and sink owners may use LogTape directly.
