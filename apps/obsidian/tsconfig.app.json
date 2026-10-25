@@ -6,6 +6,17 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "isolatedDeclarations": false,
+    // Read by the effecttsgo lint rules. Keep tsconfig.app.json and
+    // tsconfig.test.json the same: each file takes the options of its tsconfig.
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        // effect-fn-opportunity names its fix Effect.fn("<Tag>.<method>").
+        "effectFn": ["inferred-span"],
+        // The worker RPC and the HTTP clients use these on purpose.
+        "allowedUnstableApis": ["effect/http", "effect/rpc", "effect/workers"]
+      }
+    ],
     "types": ["node-24"],
     "paths": {
       "@/*": ["./src/*"],
