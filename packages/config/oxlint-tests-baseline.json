@@ -259,9 +259,6 @@
   "apps/obsidian/src/services/wikilink-reading/service.test.ts": [
     "zotlit-tests/no-markup-assertion"
   ],
-  "apps/obsidian/src/services/zotero-local-api/last-read.test.ts": [
-    "zotlit-effect-tests/typed-fake"
-  ],
   "apps/obsidian/src/setting-tab/create-profile-modal.test.ts": [
     "zotlit-tests/no-markup-assertion"
   ],
