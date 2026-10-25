@@ -8,7 +8,6 @@ import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
 import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
@@ -20,8 +19,10 @@ import type { CitationLookupAnswer } from "@/services/citation-index/service";
 import { CitationPopover } from "@/services/citation-popover/service";
 import { CitationText } from "@/services/citation-text/service";
 import { CitekeyEditor } from "@/services/citekey-editor/service";
-import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import { NoteIndex } from "@/services/note-index/service";
+import {
+  NoteIndex,
+  resolveLiteratureNoteIn,
+} from "@/services/note-index/service";
 import { PluginSettings } from "@/services/settings/service";
 
 import {
@@ -48,7 +49,6 @@ import {
 export const layerWikilinkEditor = Layer.effectDiscard(
   Effect.gen(function* () {
     const host = yield* PluginHost;
-    const app = yield* ObsidianApp;
     const workspace = yield* Workspace;
     const metadata = yield* MetadataCache;
     const notes = yield* NoteIndex;
@@ -63,28 +63,23 @@ export const layerWikilinkEditor = Layer.effectDiscard(
     /** The source and display settings that decide what a link displays. */
     const display = new WikilinkDisplaySettings();
 
-    /**
-     * The Literature Note `linkpath` names from `sourcePath`, or `null` when
-     * the target is missing or is an ordinary note. Frontmatter-only, as
-     * `resolveLiteratureNote` reads it, so it answers before the first scan.
-     */
+    /** The Literature Note `linkpath` names from `sourcePath`, with its citation key. */
     const literatureNote = Effect.fnUntraced(function* (
       linkpath: string,
       sourcePath: string,
       answer: CitationLookupAnswer | null,
     ) {
-      const dest = yield* metadata.firstLinkpathDest(linkpath, sourcePath);
-      if (!dest) return null;
-      const indexedKey = itemKeyFromFrontmatter(
-        yield* metadata.fileCache(dest),
+      const note = yield* resolveLiteratureNoteIn(
+        metadata,
+        linkpath,
+        sourcePath,
       );
-      if (indexedKey === null) return null;
-      const note: LiteratureNoteTarget = {
-        path: dest.path,
-        indexedKey,
-        citationKey: heldCitekeyOf(answer, indexedKey) ?? null,
+      if (!note) return null;
+      const target: LiteratureNoteTarget = {
+        ...note,
+        citationKey: heldCitekeyOf(answer, note.indexedKey) ?? null,
       };
-      return note;
+      return target;
     });
 
     /** Registered once; emptied when the layer closes, which retires the treatment. */
@@ -114,7 +109,7 @@ export const layerWikilinkEditor = Layer.effectDiscard(
     const redraw = (path?: string) =>
       Effect.gen(function* () {
         const editors = dispatchToMarkdownEditors(
-          app,
+          yield* workspace.markdownViews,
           wikilinkDecorationsChanged.of(undefined),
           { path },
         );

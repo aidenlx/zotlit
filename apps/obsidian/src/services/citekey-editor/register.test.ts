@@ -1,21 +1,12 @@
 import type { Extension } from "@codemirror/state";
-import type { EditorView } from "@codemirror/view";
 import { it } from "@effect/vitest";
-import { Context, Effect, Exit, Layer, PubSub, Scope, Stream } from "effect";
-import { MarkdownView, TFile } from "obsidian";
-import type {
-  App,
-  Editor,
-  HoverLinkSource,
-  Workspace as ObsidianWorkspace,
-  WorkspaceLeaf,
-} from "obsidian";
+import { Effect, Exit, Layer, Scope, Stream } from "effect";
+import type { HoverLinkSource } from "obsidian";
 import { describe, expect } from "vitest";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { testPluginHost } from "@/lib/__fixtures__/plugin-host";
-import { stubService } from "@/lib/__fixtures__/service-stub";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import { AnnotationPopover } from "@/services/annotation-popover/service";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
@@ -24,56 +15,20 @@ import { CitationPopover } from "@/services/citation-popover/service";
 import { CitationText } from "@/services/citation-text/service";
 import type { CitationTextEvent } from "@/services/citation-text/service";
 import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
+import { settingsFeed } from "@/services/settings/__fixtures__";
 import type { Settings } from "@/services/settings/schema";
-import {
-  layerPluginSettings,
-  PluginSettings,
-} from "@/services/settings/service";
 
 import { layerCitekeyEditorExtension } from "./register";
 import { CitekeyEditor } from "./service";
 
-/** The markdown leaves two notes are open in, as the workspace hands them out. */
-function leaves(dispatched: string[]): WorkspaceLeaf[] {
-  return ["note.md", "other.md"].map((path) => {
-    const file = new TFile();
-    file.path = path;
-    const view = stubService<MarkdownView>("MarkdownView", {
-      file,
-      editor: stubService<Editor>("Editor", {
-        cm: stubService<EditorView>("EditorView", {
-          dispatch: () => dispatched.push(path),
-        }),
-      }),
-    });
-    // The redraw narrows a leaf's view with `instanceof`.
-    Object.setPrototypeOf(view, MarkdownView.prototype);
-    return stubService<WorkspaceLeaf>("WorkspaceLeaf", { view });
-  });
-}
-
-/** Lets the layer's Stream consumers take what was just published. */
-const settle = Effect.gen(function* () {
-  for (let turn = 0; turn < 5; turn++) yield* Effect.yieldNow;
-});
-
 /**
- * The extension registration over the real settings, seeded with `overrides`
- * before it starts, an in-memory workspace, and two open Markdown editors.
- * Closing `scope` unloads it.
+ * The extension registration over settings seeded with `overrides`, and a
+ * workspace with editors open on `note.md` and `other.md`. `unload` closes it.
  */
 const openExtension = Effect.fnUntraced(function* (
   overrides: Partial<Settings> = {},
 ) {
-  const settingsContext = yield* Layer.build(
-    layerPluginSettings({
-      loadData: () => Promise.resolve(null),
-      saveData: () => Promise.resolve(),
-    }),
-  );
-  const settings = Context.get(settingsContext, PluginSettings);
-  yield* settings.update(overrides);
-
+  const settings = settingsFeed(overrides);
   const extensions: Extension[][] = [];
   const sources: Record<string, HoverLinkSource> = {};
   const host = testPluginHost({
@@ -85,34 +40,23 @@ const openExtension = Effect.fnUntraced(function* (
     },
   });
   const workspace = new MemoryWorkspace();
-  const dispatched: string[] = [];
-  let leafReads = 0;
-  const app = stubService<App>("App", {
-    workspace: stubService<ObsidianWorkspace>("Workspace", {
-      getLeavesOfType: (type: string) => {
-        if (type === "markdown") leafReads += 1;
-        return leaves(dispatched);
-      },
-    }),
-  });
-  const text = yield* PubSub.unbounded<CitationTextEvent>();
-  const lookup = yield* PubSub.unbounded<CitationLookupState>();
+  workspace.openMarkdownEditor("note.md");
+  workspace.openMarkdownEditor("other.md");
+  const text = testEvent<CitationTextEvent>();
+  const lookup = testEvent<CitationLookupState>();
   const scope = yield* Scope.make();
   yield* Layer.buildWithScope(
     layerCitekeyEditorExtension.pipe(
       Layer.provide(
         Layer.mergeAll(
           host.layer,
-          Layer.succeed(ObsidianApp, app),
           layerWorkspaceFrom(workspace),
-          Layer.succeedContext(settingsContext),
+          settings.layer,
           Layer.mock(CitekeyEditor, {}),
-          Layer.mock(CitationText, { events: Stream.fromPubSub(text) }),
+          Layer.mock(CitationText, { events: text.stream }),
           Layer.mock(CitationLookup, {
-            changes: Stream.fromPubSub(lookup),
-            invalidated: Stream.fromPubSub(lookup).pipe(
-              Stream.map(() => undefined),
-            ),
+            changes: lookup.stream,
+            invalidated: lookup.stream.pipe(Stream.map(() => undefined)),
           }),
           Layer.mock(CitationPopover, {}),
           Layer.mock(AnnotationPopover, {}),
@@ -121,21 +65,14 @@ const openExtension = Effect.fnUntraced(function* (
     ),
     scope,
   );
-  yield* settle;
   return {
     settings,
     /** The switchable extension array: the last registration. */
     registered: () => extensions.at(-1)!,
     sources,
     workspace,
-    dispatched,
-    leafReads: () => leafReads,
-    emitText: (event: CitationTextEvent) => PubSub.publish(text, event),
-    emitLookup: PubSub.publish(lookup, {
-      status: "fresh",
-      revision: "2",
-      stopped: false,
-    }),
+    text,
+    lookup,
     unload: Scope.close(scope, Exit.void),
   };
 });
@@ -151,25 +88,20 @@ describe("CitekeyEditor extension settings lifecycle", () => {
         });
         expect(h.registered()).toEqual([]);
 
-        yield* h.settings.update({ "citation.show-formatted": true });
-        yield* settle;
+        h.settings.update({ "citation.show-formatted": true });
         expect(h.registered()).toHaveLength(1);
 
-        yield* h.settings.update({ "citation.open-as-links": true });
-        yield* settle;
+        h.settings.update({ "citation.open-as-links": true });
         expect(h.registered()).toHaveLength(1);
         expect(h.workspace.reconfigures).toBe(1);
 
-        yield* h.settings.update({ "citation.show-formatted": false });
-        yield* settle;
+        h.settings.update({ "citation.show-formatted": false });
         expect(h.registered()).toHaveLength(1);
 
-        yield* h.settings.update({ "citation.open-as-links": false });
-        yield* settle;
+        h.settings.update({ "citation.open-as-links": false });
         expect(h.registered()).toEqual([]);
 
-        yield* h.settings.update({ "citation.show-formatted": true });
-        yield* settle;
+        h.settings.update({ "citation.show-formatted": true });
         yield* h.unload;
         expect(h.registered()).toEqual([]);
       }),
@@ -185,12 +117,10 @@ describe("CitekeyEditor extension settings lifecycle", () => {
         });
         expect(h.registered()).toEqual([]);
 
-        yield* h.settings.update({ "citation.pandoc-citations": true });
-        yield* settle;
+        h.settings.update({ "citation.pandoc-citations": true });
         expect(h.registered()).toHaveLength(1);
 
-        yield* h.settings.update({ "citation.pandoc-citations": false });
-        yield* settle;
+        h.settings.update({ "citation.pandoc-citations": false });
         expect(h.registered()).toEqual([]);
       }),
   );
@@ -217,10 +147,10 @@ describe("CitekeyEditor lookup ownership", () => {
     Effect.gen(function* () {
       const h = yield* openExtension();
 
-      yield* h.emitLookup;
-      yield* settle;
+      h.lookup.emit({ status: "fresh", revision: "2", stopped: false });
 
-      expect(h.leafReads()).toBe(0);
+      expect(h.lookup.subscribers).toBe(0);
+      expect(h.workspace.dispatched).toEqual([]);
     }),
   );
 });
@@ -232,10 +162,9 @@ describe("CitekeyEditor citation text broadcast", () => {
       Effect.gen(function* () {
         const h = yield* openExtension();
 
-        yield* h.emitText({ type: "changed", path: "note.md" });
-        yield* settle;
+        h.text.emit({ type: "changed", path: "note.md" });
 
-        expect(h.dispatched).toEqual(["note.md"]);
+        expect(h.workspace.dispatched).toEqual(["note.md"]);
       }),
   );
 
@@ -243,10 +172,9 @@ describe("CitekeyEditor citation text broadcast", () => {
     Effect.gen(function* () {
       const h = yield* openExtension();
 
-      yield* h.emitText({ type: "invalidated" });
-      yield* settle;
+      h.text.emit({ type: "invalidated" });
 
-      expect(h.dispatched).toEqual(["note.md", "other.md"]);
+      expect(h.workspace.dispatched).toEqual(["note.md", "other.md"]);
     }),
   );
 });

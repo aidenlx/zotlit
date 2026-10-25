@@ -6,7 +6,7 @@ import type { TFile } from "obsidian";
 
 import type { Item } from "@zotlit/db";
 
-import { withLogCategory } from "@/lib/effect-log";
+import { logAndContinue, withLogCategory } from "@/lib/effect-log";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { describeCandidates } from "@/services/citation-index/ambiguity";
 import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
@@ -96,7 +96,8 @@ export interface CitekeyNoteCreation {
  * The citekey editor treatment: literal Pandoc `@citekey` text opens the
  * Literature Note of the Zotero Item its native citation key names — the note
  * an Indexed Key already points at, or a note created from the matching Item.
- * An open that finds no single note reports why on `events`.
+ * An open that finds no single note reports why on `events`. An open never
+ * fails: a defect is logged, and the open ends.
  */
 export class CitekeyEditor extends Context.Service<
   CitekeyEditor,
@@ -167,6 +168,11 @@ function reportFailure<A, E, R, B, R2>(
 }
 
 const log = withLogCategory("citekey-editor");
+/**
+ * An open ends in a defect when a read, the creation flow or Obsidian rejects:
+ * it is logged here, and the caller runs the open fire-and-forget.
+ */
+const contained = logAndContinue("Cannot open the note", "citekey-editor");
 
 export const layerCitekeyEditor = (
   creation: CitekeyNoteCreation,
@@ -279,94 +285,97 @@ export const layerCitekeyEditor = (
           const matches = yield* notes.getNotesByItemKey(item.indexedKey);
           return matches.length === 1 ? matches[0]!.path : null;
         }),
-        openCitekey: Effect.fn("CitekeyEditor.openCitekey")(function* (
-          citekey,
-          pane,
-        ) {
-          const answer = yield* reportFailure(
-            Effect.all(
-              [notes.whenIndexed, lookup.read({ citekeys: [citekey] })],
-              { concurrency: "unbounded" },
-            ).pipe(Effect.map(([, answer]) => answer)),
-            (cause) =>
-              Effect.logWarning(
-                "Cannot resolve citekey for navigation",
-                cause,
-              ).pipe(
-                Effect.annotateLogs({ citekey }),
-                Effect.andThen(report({ _tag: "db-unavailable", citekey })),
+        openCitekey: Effect.fn("CitekeyEditor.openCitekey")(
+          function* (citekey, pane) {
+            const answer = yield* reportFailure(
+              Effect.all(
+                [notes.whenIndexed, lookup.read({ citekeys: [citekey] })],
+                { concurrency: "unbounded" },
+              ).pipe(Effect.map(([, answer]) => answer)),
+              (cause) =>
+                Effect.logWarning(
+                  "Cannot resolve citekey for navigation",
+                  cause,
+                ).pipe(
+                  Effect.annotateLogs({ citekey }),
+                  Effect.andThen(report({ _tag: "db-unavailable", citekey })),
+                  Effect.as(null),
+                ),
+            );
+            if (answer === null) return;
+
+            const resolved = answer.resolve(citekey);
+            if (resolved.kind === "ambiguous") {
+              yield* Effect.logDebug("Citekey names several items").pipe(
+                Effect.annotateLogs({
+                  citekey,
+                  candidates: resolved.candidates.length,
+                }),
+              );
+              const current = yield* libraryScope.current;
+              const candidates = yield* Effect.promise(() =>
+                describeCandidates(
+                  { db: reads, libraryScope: { current } },
+                  resolved.candidates,
+                ),
+              );
+              yield* report({
+                _tag: "citekey-ambiguous",
+                ambiguous: { citekey, candidates, pane },
+              });
+              return;
+            }
+            if (resolved.kind === "missing") {
+              const branch =
+                (yield* reads.current).state === "ready"
+                  ? "citekey-not-found"
+                  : "db-unavailable";
+              yield* Effect.logDebug("Citekey open blocked").pipe(
+                Effect.annotateLogs({ citekey, branch }),
+              );
+              yield* report({ _tag: branch, citekey });
+              return;
+            }
+
+            yield* openItem(resolved.item, pane, citekey);
+          },
+          contained,
+          log,
+        ),
+        openCandidate: Effect.fn("CitekeyEditor.openCandidate")(
+          function* (candidate, pane) {
+            yield* notes.whenIndexed;
+            yield* openItem(candidate, pane);
+          },
+          contained,
+          log,
+        ),
+        openIndexedKey: Effect.fn("CitekeyEditor.openIndexedKey")(
+          function* (indexedKey, pane) {
+            yield* notes.whenIndexed;
+            if ((yield* reads.current).state === "degraded") {
+              yield* report({ _tag: "item-unavailable", reason: "database" });
+              return;
+            }
+            const item = yield* reportFailure(readItem(indexedKey), (cause) =>
+              Effect.logWarning("Cannot read Item for navigation", cause).pipe(
+                Effect.annotateLogs({ indexedKey }),
+                Effect.andThen(
+                  report({ _tag: "item-unavailable", reason: "database" }),
+                ),
                 Effect.as(null),
               ),
-          );
-          if (answer === null) return;
-
-          const resolved = answer.resolve(citekey);
-          if (resolved.kind === "ambiguous") {
-            yield* Effect.logDebug("Citekey names several items").pipe(
-              Effect.annotateLogs({
-                citekey,
-                candidates: resolved.candidates.length,
-              }),
             );
-            const current = yield* libraryScope.current;
-            const candidates = yield* Effect.promise(() =>
-              describeCandidates(
-                { db: reads, libraryScope: { current } },
-                resolved.candidates,
-              ),
-            );
-            yield* report({
-              _tag: "citekey-ambiguous",
-              ambiguous: { citekey, candidates, pane },
-            });
-            return;
-          }
-          if (resolved.kind === "missing") {
-            const branch =
-              (yield* reads.current).state === "ready"
-                ? "citekey-not-found"
-                : "db-unavailable";
-            yield* Effect.logDebug("Citekey open blocked").pipe(
-              Effect.annotateLogs({ citekey, branch }),
-            );
-            yield* report({ _tag: branch, citekey });
-            return;
-          }
-
-          yield* openItem(resolved.item, pane, citekey);
-        }, log),
-        openCandidate: Effect.fn("CitekeyEditor.openCandidate")(function* (
-          candidate,
-          pane,
-        ) {
-          yield* notes.whenIndexed;
-          yield* openItem(candidate, pane);
-        }, log),
-        openIndexedKey: Effect.fn("CitekeyEditor.openIndexedKey")(function* (
-          indexedKey,
-          pane,
-        ) {
-          yield* notes.whenIndexed;
-          if ((yield* reads.current).state === "degraded") {
-            yield* report({ _tag: "item-unavailable", reason: "database" });
-            return;
-          }
-          const item = yield* reportFailure(readItem(indexedKey), (cause) =>
-            Effect.logWarning("Cannot read Item for navigation", cause).pipe(
-              Effect.annotateLogs({ indexedKey }),
-              Effect.andThen(
-                report({ _tag: "item-unavailable", reason: "database" }),
-              ),
-              Effect.as(null),
-            ),
-          );
-          if (item === null) return;
-          if (!item) {
-            yield* report({ _tag: "item-unavailable", reason: "item" });
-            return;
-          }
-          yield* openItem(item, pane);
-        }, log),
+            if (item === null) return;
+            if (!item) {
+              yield* report({ _tag: "item-unavailable", reason: "item" });
+              return;
+            }
+            yield* openItem(item, pane);
+          },
+          contained,
+          log,
+        ),
       });
     }),
   );

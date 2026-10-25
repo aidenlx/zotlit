@@ -32,6 +32,7 @@ export type WorkspaceSource = Pick<
   | "onLayoutReady"
   | "getActiveFile"
   | "getActiveViewOfType"
+  | "getLeavesOfType"
   | "updateOptions"
   | "openLinkText"
   | "trigger"
@@ -64,6 +65,12 @@ export interface WorkspaceShape {
   readonly getActiveFile: Effect.Effect<TFile | null>;
   /** The Markdown view of the active leaf now, `null` when it holds none. */
   readonly activeMarkdownView: Effect.Effect<MarkdownView | null>;
+  /**
+   * The Markdown view of each open Markdown leaf now, in Obsidian's leaf
+   * order: the editors a decoration change reaches, and the reading views a
+   * re-render reaches.
+   */
+  readonly markdownViews: Effect.Effect<readonly MarkdownView[]>;
   /**
    * Obsidian's `updateOptions()`: every editor reads the registered editor
    * extensions again, so a change to a registered extension array applies.
@@ -153,6 +160,11 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     activeMarkdownView: Effect.sync(() =>
       source.getActiveViewOfType(MarkdownView),
     ),
+    markdownViews: Effect.sync(() =>
+      source
+        .getLeavesOfType("markdown")
+        .flatMap(({ view }) => (view instanceof MarkdownView ? [view] : [])),
+    ).pipe(Effect.withSpan("Workspace.markdownViews")),
     updateOptions: Effect.sync(() => source.updateOptions()).pipe(
       Effect.withSpan("Workspace.updateOptions"),
     ),
