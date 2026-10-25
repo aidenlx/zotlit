@@ -14,11 +14,15 @@ import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { openAttachments } from "@/lib/attachment-open";
 import { effectBridge } from "@/lib/effect-bridge";
+import * as m from "@/lib/i18n/generated/messages";
 import { toObsidianOpenableAttachments } from "@/services/attachment-open/resolve";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 import type { LocalServer } from "@/services/local-server/service";
 import { openCompanionNote } from "@/services/note-feature";
-import { runBatchUpdateAll } from "@/services/note-feature/update-batch";
+import {
+  runBatchUpdate,
+  runBatchUpdateAll,
+} from "@/services/note-feature/update-batch";
 import type { BatchImportResult } from "@/services/note-import/batch-import";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
@@ -28,6 +32,23 @@ import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 import { registerProtocolHandlers } from "./register";
 import type { ProtocolDeps } from "./register";
+
+/** Every text notice a handler showed, in order. */
+const notices = vi.hoisted(() => ({ shown: [] as string[] }));
+vi.mock("@/lib/notice", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/notice")>();
+  return {
+    ...actual,
+    BaseNotice: class extends actual.BaseNotice {
+      constructor(message: string | DocumentFragment, duration?: number) {
+        super(message, duration);
+        notices.shown.push(
+          typeof message === "string" ? message : (message.textContent ?? ""),
+        );
+      }
+    },
+  };
+});
 
 vi.mock("@/services/note-feature/update-batch", () => ({
   runBatchUpdate: vi.fn(async () => ({ outcome: "batch-modal" })),
@@ -60,6 +81,13 @@ vi.mock("@/views/template-data-explorer/register", () => ({
 }));
 
 const SOURCE_ID = "abc12345";
+
+type UpdateManyRequest = Stream.Success<
+  LocalServer["Service"]["updateManyRequests"]
+>;
+type ImportNotesRequest = Stream.Success<
+  LocalServer["Service"]["importNotesRequests"]
+>;
 
 type ItemDisplayRef = NonNullable<ReturnType<typeof getItemDisplayRefByID>>;
 type DisplayRefSlice = { itemID: number; ref: ItemDisplayRef | null }[];
@@ -230,6 +258,8 @@ async function dispatch(
 
 beforeEach(() => {
   handlers.clear();
+  notices.shown.length = 0;
+  vi.mocked(runBatchUpdate).mockClear();
   vi.mocked(runBatchUpdateAll).mockClear();
   runBatchImportAll.mockClear();
   reads.DisplayRefs.mockReset();
@@ -635,4 +665,207 @@ describe("clipboard Profile protocol handoff", () => {
       expect(importProfile).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("refused protocol links", () => {
+  it("shows the invalid-link notice for a query that does not parse", () => {
+    using _handlers = register();
+
+    handlers.get("zotlit/open")!(
+      protocolData("zotlit/open", { item: "x", "source-id": SOURCE_ID }),
+    );
+
+    expect(notices.shown).toEqual([m.notice_protocol_invalid()]);
+    expect(reads.DisplayRefs).not.toHaveBeenCalled();
+  });
+
+  it("ignores a link from another Zotero without a notice", async () => {
+    refOf(REF);
+    using _handlers = register();
+
+    handlers.get("zotlit/open")!(
+      protocolData("zotlit/open", { item: "1", "source-id": "ffff0000" }),
+    );
+    await Promise.resolve();
+
+    expect(notices.shown).toEqual([]);
+    expect(reads.DisplayRefs).not.toHaveBeenCalled();
+    expect(openCompanionNote).not.toHaveBeenCalled();
+  });
+
+  it("shows the database notice when the database is not ready", async () => {
+    using _handlers = register({ zoteroReads: readsIn("degraded") });
+
+    handlers.get("zotlit/open")!(
+      protocolData("zotlit/open", { item: "1", "source-id": SOURCE_ID }),
+    );
+
+    await vi.waitFor(() =>
+      expect(notices.shown).toEqual([m.notice_protocol_db_unavailable()]),
+    );
+    expect(reads.DisplayRefs).not.toHaveBeenCalled();
+  });
+
+  it("shows the not-found notice for an id with no live item", async () => {
+    using _handlers = register();
+
+    handlers.get("zotlit/open")!(
+      protocolData("zotlit/open", { item: "5", "source-id": SOURCE_ID }),
+    );
+
+    await vi.waitFor(() =>
+      expect(notices.shown).toEqual([m.notice_protocol_item_not_found()]),
+    );
+    expect(openCompanionNote).not.toHaveBeenCalled();
+  });
+
+  it("refuses a pushed Profile ID that names no Profile", async () => {
+    using _handlers = register({
+      liveUpdate: stubService<LocalServer["Service"]>("LocalServer", {
+        updateManyRequests: Stream.make<[UpdateManyRequest]>({
+          items: [1, 2],
+          scope: "full",
+          profileId: "not-a-profile",
+        }),
+        importNotesRequests: Stream.empty,
+      }),
+    });
+
+    await vi.waitFor(() => expect(notices.shown).toHaveLength(1));
+    expect(notices.shown[0]).toContain("not-a-profile");
+    expect(runBatchUpdate).not.toHaveBeenCalled();
+  });
+
+  it("shows the Profile failure notice when the imported document is gone", async () => {
+    const app = appStub({
+      vault: stubService<App["vault"]>("Vault", {
+        getFileByPath: vi.fn(() => null),
+      }),
+    });
+    using _handlers = register({
+      app,
+      importProfile: vi.fn(async () =>
+        stubService<
+          NonNullable<Awaited<ReturnType<ProtocolDeps["importProfile"]>>>
+        >("LiteratureNoteProfile", { path: "templates/gone.md" }),
+      ),
+    });
+
+    handlers.get("zotlit/import-profile")!(
+      protocolData("zotlit/import-profile", { clipboard: "true" }),
+    );
+
+    await vi.waitFor(() =>
+      expect(notices.shown).toEqual([m.notice_profile_action_failed()]),
+    );
+    expect(openTemplateWorkbench).not.toHaveBeenCalled();
+  });
+});
+
+describe("batch protocol links", () => {
+  it("hands an update-many link's ids, scope and Profile to the batch runner", async () => {
+    using _handlers = register();
+
+    handlers.get("zotlit/update-many")!(
+      protocolData("zotlit/update-many", {
+        items: "3,4,3",
+        scope: "metadata",
+        profile: "Bk3Qn7XvT2Lp",
+        "source-id": SOURCE_ID,
+      }),
+    );
+
+    await vi.waitFor(() =>
+      expect(runBatchUpdate).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        [3, 4],
+        { scope: "metadata", profile: "Bk3Qn7XvT2Lp" },
+      ),
+    );
+  });
+
+  it("imports the one item an import-note link names", async () => {
+    const runBatchImport = vi.fn(async (): Promise<BatchImportResult> => ({
+      outcome: "batch-modal",
+    }));
+    using _handlers = register({
+      batchImport: { runBatchImport, runBatchImportAll },
+    });
+
+    handlers.get("zotlit/import-note")!(
+      protocolData("zotlit/import-note", {
+        item: "8",
+        mode: "child",
+        "source-id": SOURCE_ID,
+      }),
+    );
+
+    await vi.waitFor(() =>
+      expect(runBatchImport).toHaveBeenCalledExactlyOnceWith("child", [8]),
+    );
+  });
+
+  it("imports the items an import-notes link names", async () => {
+    const runBatchImport = vi.fn(async (): Promise<BatchImportResult> => ({
+      outcome: "batch-modal",
+    }));
+    using _handlers = register({
+      batchImport: { runBatchImport, runBatchImportAll },
+    });
+
+    handlers.get("zotlit/import-notes")!(
+      protocolData("zotlit/import-notes", {
+        items: "8,9",
+        mode: "note",
+        "source-id": SOURCE_ID,
+      }),
+    );
+
+    await vi.waitFor(() =>
+      expect(runBatchImport).toHaveBeenCalledExactlyOnceWith("note", [8, 9]),
+    );
+  });
+});
+
+describe("requests pushed over the Local Server", () => {
+  it("runs a pushed batch update with its scope and Profile", async () => {
+    using _handlers = register({
+      liveUpdate: stubService<LocalServer["Service"]>("LocalServer", {
+        updateManyRequests: Stream.make<[UpdateManyRequest]>({
+          items: [5, 6],
+          scope: "full",
+          profileId: "Bk3Qn7XvT2Lp",
+        }),
+        importNotesRequests: Stream.empty,
+      }),
+    });
+
+    await vi.waitFor(() =>
+      expect(runBatchUpdate).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        [5, 6],
+        { scope: "full", profile: "Bk3Qn7XvT2Lp" },
+      ),
+    );
+  });
+
+  it("runs a pushed batch import", async () => {
+    const runBatchImport = vi.fn(async (): Promise<BatchImportResult> => ({
+      outcome: "batch-modal",
+    }));
+    using _handlers = register({
+      batchImport: { runBatchImport, runBatchImportAll },
+      liveUpdate: stubService<LocalServer["Service"]>("LocalServer", {
+        updateManyRequests: Stream.empty,
+        importNotesRequests: Stream.make<[ImportNotesRequest]>({
+          items: [7],
+          mode: "note",
+        }),
+      }),
+    });
+
+    await vi.waitFor(() =>
+      expect(runBatchImport).toHaveBeenCalledExactlyOnceWith("note", [7]),
+    );
+  });
 });

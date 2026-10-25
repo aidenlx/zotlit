@@ -21,6 +21,23 @@ import type {
 } from "./index";
 import type { CreationPlan } from "./operations";
 
+/** Every text notice the flow showed, in order. */
+const notices = vi.hoisted(() => ({ shown: [] as string[] }));
+vi.mock("@/lib/notice", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/notice")>();
+  return {
+    ...actual,
+    BaseNotice: class extends actual.BaseNotice {
+      constructor(message: string | DocumentFragment, duration?: number) {
+        super(message, duration);
+        notices.shown.push(
+          typeof message === "string" ? message : (message.textContent ?? ""),
+        );
+      }
+    },
+  };
+});
+
 vi.mock("@/views/quick-switch/profile-picker", () => ({
   chooseLiteratureNoteProfile: vi.fn(),
 }));
@@ -234,6 +251,7 @@ it("keeps metadata-only missing-note updates outside the create flow", async () 
     source: "bound",
     shouldAsk: false,
   });
+  notices.shown.length = 0;
   await openCompanionNote(harness.deps, REF, {
     action: "update",
     scope: "metadata",
@@ -242,6 +260,7 @@ it("keeps metadata-only missing-note updates outside the create flow", async () 
   expect(harness.planCreations).not.toHaveBeenCalled();
   expect(harness.create).not.toHaveBeenCalled();
   expect(harness.openLinkText).not.toHaveBeenCalled();
+  expect(notices.shown).toEqual([m.notice_update_metadata_no_note()]);
 });
 
 it("refuses an unknown URL Profile without opening or starting creation", async () => {
@@ -257,10 +276,14 @@ it("refuses an unknown URL Profile without opening or starting creation", async 
   vi.mocked(harness.deps.noteFeature.resolveCompanionNote).mockResolvedValue(
     target,
   );
+  notices.shown.length = 0;
   await openCompanionNote(harness.deps, REF, {
     action: "open",
     profile: PAPERS,
   });
+  expect(notices.shown).toEqual([
+    m.notice_literature_note_profile_unknown({ stamp: PAPERS }),
+  ]);
   expect(harness.openLinkText).not.toHaveBeenCalled();
   expect(harness.readItems).not.toHaveBeenCalled();
   expect(companionNoteNotice(harness.deps.app, target)).toBe(
