@@ -5,6 +5,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { cn } from "@/lib/utils";
+import { makeStopRequest } from "@/services/batch-run";
 import type { BatchFailure } from "@/services/batch-run";
 
 import { failureRow, ICON_CLS, section, SECTION_SUMMARY_CLS } from "./dom";
@@ -26,13 +27,17 @@ const logger = getLogger("batch-modal");
  * determinate bar driven by per-item {@link BatchRunControls.onItemSettled}
  * events; the per-item listing is collapsed behind a disclosure and updated in
  * place. Execution is delegated to {@link BatchModalOptions.onRun}; cancel
- * aborts queued work while in-flight items finish.
+ * completes the run's {@link BatchRunControls.stop}, which skips queued work
+ * while in-flight items finish.
  */
 export class BatchModal extends Modal {
   readonly #options: BatchModalOptions;
   /** Populated by {@link #classify} once the loading phase resolves. */
   #manifest: BatchManifest | null = null;
-  #runAbort: AbortController | null = null;
+  /** The loading phase's cancel, for {@link BatchModalOptions.onClassify}. */
+  #classifyAbort: AbortController | null = null;
+  /** Requests the run phase's stop, for {@link BatchModalOptions.onRun}. */
+  #stopRun: (() => void) | null = null;
   #dismissed = false;
   #choosingProfile = false;
 
@@ -62,11 +67,13 @@ export class BatchModal extends Modal {
   }
 
   override onClose(): void {
-    // A window dismissal mid-classify or mid-run also aborts: both loops check
-    // the signal between chunks/items, and #dismissed suppresses the now-detached
-    // confirm/summary render.
+    // A window dismissal mid-classify aborts and mid-run requests the stop: the
+    // classification checks its signal between chunks and the run its stop
+    // between items, and #dismissed suppresses the now-detached confirm/summary
+    // render.
     this.#dismissed = true;
-    this.#runAbort?.abort();
+    this.#classifyAbort?.abort();
+    this.#stopRun?.();
     this.contentEl.empty();
   }
 
@@ -84,7 +91,7 @@ export class BatchModal extends Modal {
   async #classify(): Promise<void> {
     this.#renderLoading();
     const abort = new AbortController();
-    this.#runAbort = abort;
+    this.#classifyAbort = abort;
 
     let manifest: BatchManifest;
     try {
@@ -103,7 +110,7 @@ export class BatchModal extends Modal {
       }
       return;
     } finally {
-      this.#runAbort = null;
+      this.#classifyAbort = null;
     }
 
     if (this.#dismissed) return;
@@ -219,7 +226,7 @@ export class BatchModal extends Modal {
     this.#manifestOrThrow.renderList(this.#renderDisclosure(shell, false));
 
     const cancel = this.#button(this.#renderFooter(), m.modal_cancel(), () => {
-      this.#runAbort?.abort();
+      this.#stopRun?.();
       cancel
         .setButtonText(
           this.#options.text.cancelling ?? m.batch_update_cancelling(),
@@ -347,8 +354,8 @@ export class BatchModal extends Modal {
   async #run(): Promise<void> {
     if (this.#choosingProfile || this.#dismissed) return;
     this.#renderProgress();
-    const abort = new AbortController();
-    this.#runAbort = abort;
+    const { stop, request } = makeStopRequest();
+    this.#stopRun = request;
 
     let result: BatchRunResult;
     try {
@@ -359,7 +366,7 @@ export class BatchModal extends Modal {
           if (event.status === "failed") this.#addFailure(event.failure);
           this.#updateProgress();
         },
-        signal: abort.signal,
+        stop,
       });
     } catch (error) {
       if (!this.#dismissed) {
@@ -371,7 +378,7 @@ export class BatchModal extends Modal {
       }
       return;
     } finally {
-      this.#runAbort = null;
+      this.#stopRun = null;
     }
 
     if (this.#dismissed) {

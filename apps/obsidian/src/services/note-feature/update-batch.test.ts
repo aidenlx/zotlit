@@ -1,4 +1,4 @@
-import { Effect, Exit, Stream } from "effect";
+import { Deferred, Effect, Exit, Stream } from "effect";
 import type { TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -333,7 +333,7 @@ describe("classify through the DisplayRefs stream", () => {
     });
     const result = await modal.onRun({
       onItemSettled: vi.fn(),
-      signal: new AbortController().signal,
+      stop: Deferred.makeUnsafe<void>(),
     });
 
     expect(result).toMatchObject({ created: 2, failed: 0 });
@@ -476,7 +476,7 @@ it.each([false, true])(
       onItemSettled: () => {
         expect(report).not.toHaveBeenCalled();
       },
-      signal: new AbortController().signal,
+      stop: Deferred.makeUnsafe<void>(),
     });
     expect(result).toMatchObject({ created: 2, failed: 0 });
     expect(report).toHaveBeenCalledExactlyOnceWith({
@@ -525,7 +525,7 @@ it("runs every row of one update batch under one outcome scope, released after t
   });
   const result = await modal.onRun({
     onItemSettled: vi.fn(),
-    signal: new AbortController().signal,
+    stop: Deferred.makeUnsafe<void>(),
   });
 
   expect(result).toMatchObject({ created: 1, updated: 1, failed: 0 });
@@ -661,7 +661,7 @@ it("classifies conflicting Companion Profiles as kept rows before any write or p
   expect(settingsUpdate).not.toHaveBeenCalled();
   const result = await modal.onRun({
     onItemSettled: vi.fn(),
-    signal: new AbortController().signal,
+    stop: Deferred.makeUnsafe<void>(),
   });
   expect(result).toMatchObject({
     created: 1,
@@ -730,7 +730,7 @@ it.each([true, false])(
     expect(
       await options.onRun({
         onItemSettled,
-        signal: new AbortController().signal,
+        stop: Deferred.makeUnsafe<void>(),
       }),
     ).toMatchObject({ created: 0, updated: 0, failed: 1 });
     expect(onItemSettled).toHaveBeenCalledExactlyOnceWith({
@@ -865,7 +865,7 @@ async function classifyMixedBatch(deps: BatchUpdateDeps) {
   const choice = (scope: BatchProfileChoice["scope"]) =>
     choices.find((entry) => entry.scope === scope)!;
   const run = () =>
-    modal.onRun({ onItemSettled, signal: new AbortController().signal });
+    modal.onRun({ onItemSettled, stop: Deferred.makeUnsafe<void>() });
   const onItemSettled = vi.fn();
   return {
     modal,

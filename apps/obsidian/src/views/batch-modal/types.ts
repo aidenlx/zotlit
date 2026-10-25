@@ -99,7 +99,7 @@ export interface BatchModalText {
   /** Confirm-phase CTA. */
   confirmButton: string;
   /** Terminal summary line, also surfaced as a notice. `cancelled` is set when
-   * the run was aborted with work still queued; `aborted` when the window was
+   * the run was stopped with work still queued; `aborted` when the window was
    * dismissed mid-run. */
   runSummary: (
     result: BatchRunResult,

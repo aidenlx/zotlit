@@ -27,8 +27,10 @@ import type {
 import {
   classifyStream,
   executeBatchRun,
+  makeStopRequest,
   runBatch,
   runBatchWrite,
+  TaskRejected,
 } from "./batch-run";
 import type {
   BatchClassifyControls,
@@ -45,23 +47,23 @@ class WriteFailed extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("WriteFailed", { message: Schema.String }) {}
 
-/** Settle event recorder for a run's controls, plus the abort controller so a
- * test can cancel mid-run from inside a settle callback. */
+/** Settle event recorder for a run's controls, plus `requestStop` so a test can
+ * stop the run mid-run from inside a settle callback. */
 function makeRunControls(onSettle?: () => void): {
   controls: BatchRunControls;
-  abort: AbortController;
+  requestStop: () => void;
   settled: Parameters<BatchRunControls["onItemSettled"]>[0][];
 } {
-  const abort = new AbortController();
+  const { stop, request: requestStop } = makeStopRequest();
   const settled: Parameters<BatchRunControls["onItemSettled"]>[0][] = [];
   const controls: BatchRunControls = {
     onItemSettled: (event) => {
       settled.push(event);
       onSettle?.();
     },
-    signal: abort.signal,
+    stop,
   };
-  return { controls, abort, settled };
+  return { controls, requestStop, settled };
 }
 
 function task(id: number): BatchRunTask {
@@ -204,10 +206,10 @@ describe("executeBatchRun", () => {
   );
 
   it.effect(
-    "keeps admitted work running when the run's signal aborts mid-run",
+    "keeps admitted work running when the run's stop is requested mid-run",
     () =>
       Effect.gen(function* () {
-        const { controls, abort, settled } = makeRunControls();
+        const { controls, requestStop, settled } = makeRunControls();
         const started = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         const run = vi.fn((t: BatchRunTask) =>
@@ -229,7 +231,7 @@ describe("executeBatchRun", () => {
         );
 
         yield* Effect.promise(() => started.promise);
-        abort.abort();
+        requestStop();
         expect(settled).toHaveLength(0);
         release.resolve();
         const result = yield* Fiber.join(pending);
@@ -298,10 +300,10 @@ describe("executeBatchRun", () => {
     }),
   );
 
-  it.effect("runs no tasks when the signal is already aborted", () =>
+  it.effect("runs no tasks when the stop is already requested", () =>
     Effect.gen(function* () {
-      const { controls, abort, settled } = makeRunControls();
-      abort.abort();
+      const { controls, requestStop, settled } = makeRunControls();
+      requestStop();
       const run = vi.fn(() => Effect.succeed("created" as const));
 
       const result = yield* executeBatchRun({
@@ -323,9 +325,11 @@ describe("executeBatchRun", () => {
     }),
   );
 
-  it.effect("stops issuing new work once aborted mid-run", () =>
+  it.effect("stops issuing new work once the stop is requested mid-run", () =>
     Effect.gen(function* () {
-      const { controls, abort, settled } = makeRunControls(() => abort.abort());
+      const { controls, requestStop, settled } = makeRunControls(() =>
+        requestStop(),
+      );
       const run = vi.fn(() => Effect.succeed("created" as const));
 
       const result = yield* executeBatchRun({
@@ -335,7 +339,7 @@ describe("executeBatchRun", () => {
         run,
       });
 
-      // Task 1 runs and settles; its settle aborts, so tasks 2 and 3 never run.
+      // Task 1 runs and settles; its settle requests the stop, so tasks 2 and 3 never run.
       expect(run).toHaveBeenCalledTimes(1);
       expect(settled).toHaveLength(1);
       expect(result).toMatchObject({ created: 1, failed: 0, cancelled: true });
@@ -495,25 +499,27 @@ describe("runBatchWrite", () => {
     }),
   );
 
-  it.effect("closes the Snapshot when aborted before any task runs", () =>
-    Effect.gen(function* () {
-      const { zoteroReads, dispose } = makeSnapshotReads();
-      const { controls, abort } = makeRunControls();
-      abort.abort();
-      const run = vi.fn(async () => "created" as const);
+  it.effect(
+    "closes the Snapshot when the stop is requested before any task runs",
+    () =>
+      Effect.gen(function* () {
+        const { zoteroReads, dispose } = makeSnapshotReads();
+        const { controls, requestStop } = makeRunControls();
+        requestStop();
+        const run = vi.fn(async () => "created" as const);
 
-      const result = yield* runBatchWrite({
-        zoteroReads,
-        tasks: [task(1), task(2)],
-        controls,
-        concurrency: 4,
-        run,
-      });
+        const result = yield* runBatchWrite({
+          zoteroReads,
+          tasks: [task(1), task(2)],
+          controls,
+          concurrency: 4,
+          run,
+        });
 
-      expect(run).not.toHaveBeenCalled();
-      expect(result.cancelled).toBe(true);
-      expect(dispose).toHaveBeenCalledTimes(1);
-    }),
+        expect(run).not.toHaveBeenCalled();
+        expect(result.cancelled).toBe(true);
+        expect(dispose).toHaveBeenCalledTimes(1);
+      }),
   );
 
   it.effect("closes the Snapshot when the run fails", () =>
@@ -535,8 +541,73 @@ describe("runBatchWrite", () => {
         }),
       );
 
-      expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(failure);
+      const error = Exit.isFailure(exit) && Cause.squash(exit.cause);
+      expect(error).toBeInstanceOf(TaskRejected);
+      expect(error instanceof TaskRejected && error.cause).toBe(failure);
       expect(dispose).toHaveBeenCalledTimes(1);
+    }),
+  );
+
+  it("rejects a halted run with the task's own rejection through runBatch", async () => {
+    const { zoteroReads } = makeSnapshotReads();
+    const { controls } = makeRunControls();
+    const failure = new Error("bad config");
+    const onTaskFailed = vi.fn();
+
+    await expect(
+      runBatch(
+        runBatchWrite({
+          zoteroReads,
+          tasks: [task(1)],
+          controls,
+          concurrency: 4,
+          run: async () => {
+            throw failure;
+          },
+          onTaskFailed,
+          haltOn: (error) => error === failure,
+        }),
+      ),
+    ).rejects.toBe(failure);
+    expect(onTaskFailed).not.toHaveBeenCalled();
+  });
+
+  it.effect("reports a rejected task's own error on its failure row", () =>
+    Effect.gen(function* () {
+      const { zoteroReads } = makeSnapshotReads();
+      const { controls, settled } = makeRunControls();
+      const failure = new NoteImportProfileError("Missing", {
+        path: "Reading/Paper.md",
+      });
+      const onTaskFailed = vi.fn();
+
+      const result = yield* runBatchWrite({
+        zoteroReads,
+        tasks: [task(1)],
+        controls,
+        concurrency: 1,
+        run: async () => {
+          throw failure;
+        },
+        onTaskFailed,
+      });
+
+      expect(result).toMatchObject({ failed: 1 });
+      expect(settled).toEqual([
+        {
+          id: 1,
+          status: "failed",
+          failure: {
+            label: "Item 1",
+            message: failure.message,
+            recovery: { action: "switch-profile", path: "Reading/Paper.md" },
+          },
+        },
+      ]);
+      expect(onTaskFailed).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 1 }),
+        failure,
+      );
     }),
   );
 
