@@ -1,6 +1,6 @@
 // Runners for entering Effect services from legacy classes and Promise code.
-import { Context, Effect, Fiber, Scope } from "@/lib/effect";
-import type { Exit, ManagedRuntime, Stream } from "@/lib/effect";
+import { Cause, Context, Effect, Exit, Fiber, Scope } from "@/lib/effect";
+import type { ManagedRuntime, Stream } from "@/lib/effect";
 
 import { isScopeClosed } from "./effect-scope";
 import { subscribe } from "./effect-stream";
@@ -32,24 +32,46 @@ export interface EffectBridge {
   readonly closed: () => boolean;
 }
 
-export function effectBridge<R>(
-  runtime: ManagedRuntime.ManagedRuntime<R, never>,
+/**
+ * What a run settled to, for code that has no Effect to return it in: the
+ * value of a success, `released` where only interrupts ended the run (the
+ * runtime closed under it), and the failure thrown otherwise.
+ */
+export function valueOr<A, E>(exit: Exit.Exit<A, E>, released: A): A {
+  if (Exit.isSuccess(exit)) return exit.value;
+  if (Cause.hasInterruptsOnly(exit.cause)) return released;
+  throw Cause.squash(exit.cause);
+}
+
+/** The runners over `context`, with pending Exit runs and subscriptions kept in `scope`. */
+function bridgeOver(
+  context: Context.Context<never>,
+  scope: Scope.Scope,
+  host: Pick<ManagedRuntime.ManagedRuntime<never, never>, "runFork"> & {
+    readonly scope: Scope.Scope;
+  },
 ): EffectBridge {
-  const context = runtime.runSync(Effect.context<R>());
   const runPromiseExit = Effect.runPromiseExitWith(context);
-  // Keep pending Exit runs in the runtime's scope, so unload interrupts them.
-  const onFiberStart = Fiber.runIn(runtime.scope);
+  const onFiberStart = Fiber.runIn(scope);
   return {
     runSync: Effect.runSyncWith(context),
     runPromise: Effect.runPromiseWith(context),
     runPromiseExit: (effect, options) =>
-      runPromiseExit(effect, {
-        ...options,
-        onFiberStart,
-      }),
-    subscribe: (stream, callback) => subscribe(runtime, stream, callback),
-    closed: () => isScopeClosed(runtime.scope),
+      runPromiseExit(effect, { ...options, onFiberStart }),
+    subscribe: (stream, callback) => subscribe(host, stream, callback),
+    closed: () => isScopeClosed(scope),
   };
+}
+
+export function effectBridge<R>(
+  runtime: ManagedRuntime.ManagedRuntime<R, never>,
+): EffectBridge {
+  // Pending Exit runs stay in the runtime's scope, so unload interrupts them.
+  return bridgeOver(
+    runtime.runSync(Effect.context<R>()),
+    runtime.scope,
+    runtime,
+  );
 }
 
 /**
@@ -61,15 +83,8 @@ export const scopedBridge: Effect.Effect<EffectBridge, never, Scope.Scope> =
   Effect.gen(function* () {
     const context = yield* Effect.context<Scope.Scope>();
     const scope = Context.get(context, Scope.Scope);
-    const runPromiseExit = Effect.runPromiseExitWith(context);
-    const onFiberStart = Fiber.runIn(scope);
-    const host = { runFork: Effect.runForkWith(context), scope };
-    return {
-      runSync: Effect.runSyncWith(context),
-      runPromise: Effect.runPromiseWith(context),
-      runPromiseExit: (effect, options) =>
-        runPromiseExit(effect, { ...options, onFiberStart }),
-      subscribe: (stream, callback) => subscribe(host, stream, callback),
-      closed: () => isScopeClosed(scope),
-    };
+    return bridgeOver(context, scope, {
+      runFork: Effect.runForkWith(context),
+      scope,
+    });
   });

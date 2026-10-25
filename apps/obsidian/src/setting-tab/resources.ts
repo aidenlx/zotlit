@@ -101,9 +101,9 @@ export function resourcesGroup(
   ctx: SettingTabContext,
 ): SettingDefinitionGroup<SettingsKey> {
   const current = ctx.bridge.runSync(ctx.settings.current);
-  const pending = current?.["release.migration-pending"] === true;
+  const pending = current["release.migration-pending"] === true;
   const templateConversionPending =
-    current?.["note.template-conversion-pending"] === true;
+    current["note.template-conversion-pending"] === true;
   const languagePack = languagePackSettingCopy(ctx.languagePack);
   return {
     type: "group",

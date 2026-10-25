@@ -164,7 +164,11 @@ export async function sendToZotero(
     ? error.reason
     : error;
   // The transport's own abort, as `fetch` reports one.
-  if (isAbort(reason) || isAbort((reason as { cause?: unknown })?.cause)) {
+  const cause =
+    typeof reason === "object" && reason !== null && "cause" in reason
+      ? reason.cause
+      : undefined;
+  if (isAbort(reason) || isAbort(cause)) {
     throw new AbortError();
   }
   throw new TypeError("fetch failed", { cause: reason });

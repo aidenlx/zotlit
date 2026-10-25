@@ -3,6 +3,7 @@
 
 import { expect, it, vi } from "vitest";
 
+import { manualClock } from "@/lib/__fixtures__/manual-clock";
 import { yieldToMain } from "@/lib/yield-to-main";
 import {
   annotationPage,
@@ -177,22 +178,22 @@ it("reads again on a database change only the lists that surfaces hold", async (
 
 it("lets go at a database change a list read with no hold and not asked for a while", async () => {
   await using stack = new AsyncDisposableStack();
-  let now = NOW;
+  const time = manualClock(NOW);
   const { repository, acquireRead, dbEvents } = await setup(stack, undefined, {
-    repositoryNow: () => now,
+    clock: time,
   });
   const tick = Temporal.Duration.from({ milliseconds: 1 });
 
   await repository.read("RGRPDF24");
   // A reader that asks without a hold keeps its list while no change comes,
   // so a card it shows still finds its record however long it stood idle.
-  now = now.add(UNHELD_RETENTION).add(UNHELD_RETENTION);
+  time.advance(UNHELD_RETENTION.add(UNHELD_RETENTION));
   expect(repository.peek("RGRPDF24")).not.toBeNull();
 
   // Asked again within the retention, a change reads it again; that read is
   // the repository's own and no ask.
   await repository.read("RGRPDF24");
-  now = now.add(UNHELD_RETENTION).subtract(tick);
+  time.advance(UNHELD_RETENTION.subtract(tick));
   acquireRead.mockClear();
   dbEvents.emit("changed");
   await settled();
@@ -200,7 +201,7 @@ it("lets go at a database change a list read with no hold and not asked for a wh
   expect(repository.peek("RGRPDF24")).not.toBeNull();
 
   // Unasked past the retention, the next change lets it go unread.
-  now = now.add(tick);
+  time.advance(tick);
   acquireRead.mockClear();
   dbEvents.emit("changed");
   await settled();

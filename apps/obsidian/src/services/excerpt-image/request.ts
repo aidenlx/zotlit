@@ -50,6 +50,8 @@ export function savedExcerptRequest(options: {
   sourceScope: string | null;
   zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   paths: AttachmentPathContext;
+  /** Runs the read on the plugin's runtime, so its log reaches the plugin logger. */
+  bridge: Pick<EffectBridge, "runPromise">;
 }): Promise<ExcerptRequest | null> {
   const { annotation, source, sourceScope } = options;
   // The paths as they stand now: a request belongs to the data directory its
@@ -59,8 +61,7 @@ export function savedExcerptRequest(options: {
     baseAttachmentPath: options.paths.baseAttachmentPath,
   };
   if (!source || sourceScope !== paths.dataDir) return Promise.resolve(null);
-  // Callers outside Effect: the one run of this read.
-  return Effect.runPromise(
+  return options.bridge.runPromise(
     Effect.gen(function* () {
       // One Snapshot, so the identity and the attachment come from one database.
       const lease = yield* acquireAsyncDisposable(() =>
@@ -97,7 +98,10 @@ export function savedExcerptRequest(options: {
 export function savedExcerptRequestOver(services: {
   readonly reads: Pick<ZoteroReads["Service"], "snapshot">;
   readonly pref: Pick<ZoteroPref["Service"], "current">;
-  readonly bridge: Pick<EffectBridge, "runSync" | "runPromiseExit" | "closed">;
+  readonly bridge: Pick<
+    EffectBridge,
+    "runSync" | "runPromise" | "runPromiseExit" | "closed"
+  >;
 }): (input: {
   annotation: AnnotationRecord;
   source: AnnotationSource | null;
@@ -108,6 +112,7 @@ export function savedExcerptRequestOver(services: {
       annotation,
       source,
       sourceScope: pref.dataDir,
+      bridge: services.bridge,
       zoteroReads: {
         acquireRead: () => acquireReadLease(services.reads, services.bridge),
       },

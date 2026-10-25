@@ -51,10 +51,7 @@ export function createPdfReader(deps: PdfReaderDeps): TargetReader {
   return createObsidianAttachmentReader(deps.app, {
     onOpened: () => {
       if (
-        deps.bridge.runSync(deps.settings.current)?.[
-          "reader.focus-annot-view"
-        ] ??
-        true
+        deps.bridge.runSync(deps.settings.current)["reader.focus-annot-view"]
       ) {
         void activateAnnotView(deps.app);
       }

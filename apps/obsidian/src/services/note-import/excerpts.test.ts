@@ -114,7 +114,6 @@ async function fixture(mode = "normal") {
   const runtime = testRuntime();
   const attachments = stack.use(
     new AttachmentImportService({
-      runtime,
       bridge: effectBridge(runtime),
       app,
       settings: {

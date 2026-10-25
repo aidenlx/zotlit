@@ -811,6 +811,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
             sourceScope: services.zoteroPref.dataDir,
             zoteroReads: services.zoteroReads,
             paths: services.zoteroPref,
+            bridge: services.bridge,
           }).then((request) => {
             if (latestEdit.get(record.key) !== edit) return;
             latestEdit.delete(record.key);

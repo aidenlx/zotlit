@@ -218,8 +218,7 @@ export interface ToolColorStore {
  * Each tool's colour, the colours used last, the ink tool's pen width, and the
  * text tool's font size, read and written through the settings file, so a
  * colour, a width or a size chosen in one PDF is the one the next one opens
- * with. A choice made before the
- * settings have loaded is dropped rather than written over what is on disk.
+ * with.
  */
 export function toolColorStore(
   settings: Pick<PluginSettings["Service"], "current" | "update">,
@@ -227,42 +226,33 @@ export function toolColorStore(
 ): ToolColorStore {
   return {
     current: () =>
-      resolveToolColors(
-        bridge.runSync(settings.current)?.[TOOL_COLORS_SETTING],
-      ),
+      resolveToolColors(bridge.runSync(settings.current)[TOOL_COLORS_SETTING]),
     set: (tool: AnnotationTool, color: string) => {
-      const stored = bridge.runSync(settings.current)?.[TOOL_COLORS_SETTING];
-      if (!stored) return;
+      const stored = bridge.runSync(settings.current)[TOOL_COLORS_SETTING];
       bridge.runSync(
         settings.update({
           [TOOL_COLORS_SETTING]: { ...stored, [tool]: color },
         }),
       );
     },
-    recent: () =>
-      bridge.runSync(settings.current)?.[RECENT_COLORS_SETTING] ?? [],
+    recent: () => bridge.runSync(settings.current)[RECENT_COLORS_SETTING],
     use: (color: string) => {
-      const stored = bridge.runSync(settings.current)?.[RECENT_COLORS_SETTING];
+      const stored = bridge.runSync(settings.current)[RECENT_COLORS_SETTING];
       // A colour already first changes nothing, so it writes nothing.
-      if (!stored || isColor(stored[0] ?? null, color)) return;
+      if (isColor(stored[0] ?? null, color)) return;
       bridge.runSync(
         settings.update({
           [RECENT_COLORS_SETTING]: withRecentColor(stored, color),
         }),
       );
     },
-    inkWidth: () =>
-      bridge.runSync(settings.current)?.[INK_WIDTH_SETTING] ??
-      DEFAULT_INK_WIDTH,
+    inkWidth: () => bridge.runSync(settings.current)[INK_WIDTH_SETTING],
     setInkWidth: (width: InkWidth) => {
-      if (!bridge.runSync(settings.current)) return;
       bridge.runSync(settings.update({ [INK_WIDTH_SETTING]: width }));
     },
     textFontSize: () =>
-      bridge.runSync(settings.current)?.[TEXT_FONT_SIZE_SETTING] ??
-      DEFAULT_TEXT_FONT_SIZE,
+      bridge.runSync(settings.current)[TEXT_FONT_SIZE_SETTING],
     setTextFontSize: (size: TextFontSize) => {
-      if (!bridge.runSync(settings.current)) return;
       bridge.runSync(settings.update({ [TEXT_FONT_SIZE_SETTING]: size }));
     },
   };

@@ -154,7 +154,14 @@ export type LocalApiEvent =
 export interface LocalApiSessionDeps {
   /** The `ZoteroHttp` loopback client. */
   http: ZoteroHttp["Service"];
-  /** Runs each exchange, from the context of the layer that holds the session. */
+  /**
+   * Runs each exchange, from the context of the layer that holds the session
+   * but outside its Scope. A sent write must reach its answer, and a scope
+   * close must not interrupt it: the service makes writes uninterruptible, and
+   * a runner tied to the Scope (`scopedBridge`) would still interrupt the
+   * exchange fiber under them. Reads are abandoned through their signals and
+   * the session's read lifetime instead.
+   */
   run: ZoteroRunner;
   /** Zotero's HTTP port. */
   httpPort: () => number | null;

@@ -24,7 +24,10 @@ export const settingsOf = Effect.fnUntraced(function* ({
   );
 });
 
-/** A plain adapter with the test's Clock and logger; its runtime closes with the test Scope. */
+/**
+ * The settings service, its bridge, and its runtime, using the test's Clock and
+ * logger; all three close with the test Scope.
+ */
 export const settingsRuntimeOf = Effect.fnUntraced(function* (
   options: SettingsFixtureOptions,
 ) {
@@ -73,12 +76,6 @@ async function openSettings(
     close: () => lifetime.disposeAsync(),
   };
 }
-
-export const settingsRuntimeBridgeOf = Effect.fnUntraced(function* (
-  options: SettingsFixtureOptions,
-) {
-  return yield* settingsRuntimeOf(options);
-});
 
 /** Values a test seeds: persisted settings, and default Profile bindings by name. */
 export type SettingsOverrides = Partial<Settings> &

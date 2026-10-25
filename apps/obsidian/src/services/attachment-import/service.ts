@@ -13,8 +13,6 @@ import type {
   AttachmentCopyResult,
 } from "@/lib/copy-attachments";
 import type { EffectBridge } from "@/lib/effect-bridge";
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
 import {
   ensureFolder,
   joinFolderPath,
@@ -61,7 +59,6 @@ const logger = getLogger("attachment-import");
 const SKIP_SUMMARY_DEBOUNCE_MS = 1500;
 
 export interface AttachmentImportServiceDeps {
-  runtime: SubscriptionRuntime;
   bridge: Pick<EffectBridge, "runSync" | "subscribe">;
   app: App;
   settings: Pick<PluginSettings["Service"], "current" | "changes">;
@@ -129,7 +126,6 @@ export interface AttachmentImport {
 }
 
 export class AttachmentImportService extends Service<void> {
-  readonly #runtime;
   readonly #bridge;
   readonly #app;
   readonly #settings;
@@ -160,7 +156,6 @@ export class AttachmentImportService extends Service<void> {
 
   constructor(deps: AttachmentImportServiceDeps) {
     super();
-    this.#runtime = deps.runtime;
     this.#bridge = deps.bridge;
     this.#app = deps.app;
     this.#settings = deps.settings;
@@ -289,14 +284,14 @@ export class AttachmentImportService extends Service<void> {
     });
     stack.defer(
       this.#bridge.subscribe(this.#settings.changes, (value) => {
-        if (value?.["attachment.import"]) void this.#rebuildRoots();
+        if (value["attachment.import"]) void this.#rebuildRoots();
       }),
     );
     // Every root reads from Zotero's prefs — the data directory the storage and
     // annotation-cache roots are joined onto, and the base attachment path — so
     // a profile re-read or a data-dir override moves them all.
     stack.defer(
-      subscribe(this.#runtime, this.#zoteroPref["resolved-changed"], () => {
+      this.#bridge.subscribe(this.#zoteroPref["resolved-changed"], () => {
         void this.#rebuildRoots();
       }),
     );

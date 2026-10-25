@@ -249,14 +249,14 @@ export class ZotLitSettingTab extends PluginSettingTab {
     // render cycle) never trigger a rebuild and never steal focus from inline
     // inputs.
     const current = this.#bridge.runSync(settings.current);
-    let lastPending = current?.["release.migration-pending"];
+    let lastPending = current["release.migration-pending"];
     let lastTemplateConversionPending =
-      current?.["note.template-conversion-pending"];
+      current["note.template-conversion-pending"];
     plugin.register(
       subscribe(runtime, settings.changes, (value) => {
-        const pending = value?.["release.migration-pending"];
+        const pending = value["release.migration-pending"];
         const templateConversionPending =
-          value?.["note.template-conversion-pending"];
+          value["note.template-conversion-pending"];
         if (
           pending === lastPending &&
           templateConversionPending === lastTemplateConversionPending
@@ -280,7 +280,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     if (isProfileControlKey(key)) {
       return getProfileControlValue(this.#settings, this.#bridge, key);
     }
-    const value = this.#bridge.runSync(this.#settings.current)?.[
+    const value = this.#bridge.runSync(this.#settings.current)[
       key as SettingsKey
     ];
     // Auto-trim stores `false | "nl" | "slurp"`; its dropdown reads a string.

@@ -114,7 +114,6 @@ function hoverNode(
 ): boolean {
   if (!rowFlag(members.engine, CITATION_POPOVER, false)) return false;
   const settings = deps.bridge.runSync(deps.settings.current);
-  if (!settings) return false;
   const drawn = additions();
   const node = hoveredNode(id, drawn, deps);
   if (node === null) return false;

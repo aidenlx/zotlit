@@ -100,9 +100,15 @@ const READS_IDLE: Omit<ZoteroReadsState, "state"> = {
   activeReadMode: null,
 };
 
-/** The popover layer over the reads each test scenario supplies. */
+/**
+ * The popover layer over the reads each test scenario supplies.
+ *
+ * @param options.logs a Logger layer that takes the layer's Effect logs in
+ *   place of the plugin's loggers.
+ */
 export function citationPopoverFixture(
   deps: PopoverFixtureDeps,
+  options: { logs?: Layer.Layer<never> } = {},
 ): CitationPopoverFixture {
   const stack = new AsyncDisposableStack();
   // A host without a metadata cache gets an empty in-memory one.
@@ -119,6 +125,7 @@ export function citationPopoverFixture(
   const layer = layerCitationPopover.pipe(
     Layer.provide(
       Layer.mergeAll(
+        options.logs ?? Layer.empty,
         layerHostApp(app),
         Layer.succeed(
           ZoteroReads,

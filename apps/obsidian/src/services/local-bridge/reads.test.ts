@@ -174,7 +174,7 @@ async function harness(
   }
   const fileAt = (path: string): TFile | null =>
     vaultFiles.has(path) ? ({ path } as TFile) : null;
-  const app = {
+  const app = Object.assign({} as App, {
     vault: {
       getName: () => VAULT_NAME,
       getFileByPath: fileAt,
@@ -202,11 +202,11 @@ async function harness(
       getAvailablePathForAttachment: (name: string) =>
         Promise.resolve(`literatures/attachments/${name}`),
     },
-  } as unknown as App;
+  });
 
   const settings = {
     current: Effect.sync(() => ({ ...defaults, "attachment.import": true })),
-  } as unknown as Pick<PluginSettings["Service"], "current">;
+  } satisfies Pick<PluginSettings["Service"], "current">;
 
   const partials = options.partials ?? [CITATION_TEMPLATE];
   const reads = createLocalBridgeReads({
@@ -276,7 +276,7 @@ async function harness(
 
 /** The registry as the bridge reads it: two Profiles, one of them the built-in. */
 function profileReader(): BridgeProfileReader {
-  return {
+  return Object.assign({} as BridgeProfileReader, {
     ready: Promise.resolve(),
     loaded: true,
     resolveProfile: (selector: string) => {
@@ -292,7 +292,7 @@ function profileReader(): BridgeProfileReader {
       Promise.resolve(
         selector === "default" ? DEFAULT_PROFILE_SOURCE : BOOKS_SOURCE,
       ),
-  } as unknown as BridgeProfileReader;
+  });
 }
 
 it("answers the generated Note, Annotation, and Filename schemas", async () => {

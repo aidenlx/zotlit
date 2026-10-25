@@ -40,7 +40,7 @@ export function workbenchEnabled(
   settings: Pick<PluginSettings["Service"], "current">,
   effect: Pick<EffectBridge, "runSync">,
 ): boolean {
-  return effect.runSync(settings.current)?.["server.workbench"] ?? false;
+  return effect.runSync(settings.current)["server.workbench"];
 }
 
 /** What an entry action asks Customize to open. */
@@ -138,7 +138,7 @@ export function createCustomize(deps: CustomizeDeps): CustomizeAction {
     }
 
     const turnServerOn =
-      deps.effect.runSync(deps.settings.current)?.["server.enabled"] !== true;
+      deps.effect.runSync(deps.settings.current)["server.enabled"] !== true;
     const turnWorkbenchOn = !workbenchEnabled(deps.settings, deps.effect);
     if (turnServerOn || turnWorkbenchOn || preference !== "web") {
       const consent = await deps.confirmLaunch({

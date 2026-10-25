@@ -202,7 +202,6 @@ export class ZoteroLocalApi extends Context.Service<
 export function layerZoteroLocalApi(options: {
   readonly credentials: WriteAuthorizationStore;
   readonly probeDeadline?: () => AbortSignal;
-  readonly now?: () => Temporal.Instant;
 }): Layer.Layer<ZoteroLocalApi, never, ZoteroPref | LocalServer | ZoteroHttp> {
   return Layer.effect(
     ZoteroLocalApi,
@@ -210,7 +209,7 @@ export function layerZoteroLocalApi(options: {
       const pref = yield* ZoteroPref;
       const server = yield* LocalServer;
       const http = yield* ZoteroHttp;
-      const now = options.now ?? instantClock(yield* Clock.Clock);
+      const now = instantClock(yield* Clock.Clock);
       const context = yield* Effect.context<never>();
       const run = Effect.runSyncWith(context);
       const bus = yield* PubSub.unbounded<LocalApiEvent>();
@@ -254,12 +253,17 @@ export function layerZoteroLocalApi(options: {
         forgetAuthorization: () =>
           Effect.promise(() => session.forgetAuthorization()),
         // A write runs to its answer once sent: an interrupt would leave its
-        // outcome unknown.
+        // outcome unknown. So it takes no abort signal, and it is
+        // uninterruptible, so a scope close waits for a write that was sent.
         authorizedSend: (path, options) =>
-          Effect.promise(() => session.authorizedSend(path, options)),
+          Effect.uninterruptible(
+            Effect.promise(() => session.authorizedSend(path, options)),
+          ),
         writeLastRead: (attachmentKey, serverID, instant) =>
-          Effect.promise(() =>
-            session.writeLastRead(attachmentKey, serverID, instant),
+          Effect.uninterruptible(
+            Effect.promise(() =>
+              session.writeLastRead(attachmentKey, serverID, instant),
+            ),
           ),
         readAnnotation: (annotationKey, attachmentKey, signal) =>
           Effect.promise((interrupt) =>
