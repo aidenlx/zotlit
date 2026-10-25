@@ -1,11 +1,21 @@
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer, Stream } from "effect";
+import {
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  PubSub,
+  Scope,
+  Stream,
+} from "effect";
 import { TFile } from "obsidian";
 import type { App, ObsidianProtocolData } from "obsidian";
 import { beforeEach, describe, expect, vi } from "vitest";
 
 import type { Attachment, getItemDisplayRefByID } from "@zotlit/db";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { layerTestObsidianEnv } from "@/lib/__fixtures__/obsidian-env";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -29,6 +39,7 @@ import type { BatchImportResult } from "@/services/note-import/batch-import";
 import { UseLedger } from "@/services/use-ledger/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type {
   ZoteroReadsApi,
@@ -39,27 +50,6 @@ import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 import { registerProtocolHandlers } from "./register";
 import type { ProtocolDeps } from "./register";
-
-/** Every text notice a handler showed, in order, and a hook on each one. */
-const notices = vi.hoisted(() => ({
-  shown: [] as string[],
-  onShow: undefined as (() => void) | undefined,
-}));
-vi.mock("@/lib/notice", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/notice")>();
-  return {
-    ...actual,
-    BaseNotice: class extends actual.BaseNotice {
-      constructor(message: string | DocumentFragment, duration?: number) {
-        super(message, duration);
-        notices.shown.push(
-          typeof message === "string" ? message : (message.textContent ?? ""),
-        );
-        notices.onShow?.();
-      }
-    },
-  };
-});
 
 vi.mock("@/services/note-feature/update-batch", () => ({
   runBatchUpdate: vi.fn(async () => ({ outcome: "batch-modal" })),
@@ -101,29 +91,28 @@ type DisplayRefSlice = { itemID: number; ref: ItemDisplayRef | null }[];
 
 /** The ZoteroReads operations the handlers call, answering what a test sets. */
 const reads = {
-  DisplayRefs: vi.fn(
-    (
-      _input: Parameters<ZoteroReadsApi["DisplayRefs"]>[0],
-      _options?: Parameters<ZoteroReadsApi["DisplayRefs"]>[1],
-    ) => Stream.make<DisplayRefSlice[]>([]),
+  DisplayRefs: vi.fn((_input: Parameters<ZoteroReadsApi["DisplayRefs"]>[0]) =>
+    Stream.make<DisplayRefSlice[]>([]),
   ),
   AttachmentsAt: vi.fn(
-    (
-      _input: Parameters<ZoteroReadsApi["AttachmentsAt"]>[0],
-      _options?: Parameters<ZoteroReadsApi["AttachmentsAt"]>[1],
-    ) => Effect.succeed<readonly Attachment[]>([]),
+    (_input: Parameters<ZoteroReadsApi["AttachmentsAt"]>[0]) =>
+      Effect.succeed<readonly Attachment[]>([]),
   ),
 };
-const readsApi = stubService<ZoteroReadsApi>("ZoteroReadsApi", {
-  DisplayRefs: ((input, options) =>
-    options === undefined
-      ? reads.DisplayRefs(input)
-      : reads.DisplayRefs(input, options)) as ZoteroReadsApi["DisplayRefs"],
-  AttachmentsAt: ((input, options) =>
-    options === undefined
-      ? reads.AttachmentsAt(input)
-      : reads.AttachmentsAt(input, options)) as ZoteroReadsApi["AttachmentsAt"],
+const readsApi = readsAnswering({
+  DisplayRefs: (input) => reads.DisplayRefs(input),
+  AttachmentsAt: (input) => reads.AttachmentsAt(input),
 });
+
+/** Records the notices of the current case. */
+let notifier = testNotifier();
+
+/** The text of each notice the case showed, in order. */
+function shown(): string[] {
+  return notifier.notices.map(({ messages: [message] }) =>
+    typeof message === "string" ? message : (message?.textContent ?? ""),
+  );
+}
 
 /** Item `itemID` reads as `ref`. */
 function refOf(ref: ItemDisplayRef): void {
@@ -198,6 +187,8 @@ interface Setup {
   /** The vault's files, by path. */
   readonly files?: ReadonlyMap<string, TFile>;
   readonly workspace?: MemoryWorkspace;
+  /** Finds a vault file by path; `files` by default. */
+  readonly getFileByPath?: (path: string) => Effect.Effect<TFile | null>;
 }
 
 /** Register the handlers over the case's fakes; the case's Scope stops them. */
@@ -241,15 +232,17 @@ const register = Effect.fn("register")(function* (setup: Setup = {}) {
       }),
       Layer.mock(UseLedger, {}),
       Layer.mock(Vault, {
-        getFileByPath: (path: string) =>
-          Effect.succeed(setup.files?.get(path) ?? null),
+        getFileByPath:
+          setup.getFileByPath ??
+          ((path: string) => Effect.succeed(setup.files?.get(path) ?? null)),
       }),
+      notifier.layer,
       layerWorkspaceFrom(setup.workspace ?? new MemoryWorkspace()),
       layerTestObsidianEnv({ basePath: "/vault" }),
     ),
   );
-  yield* Effect.acquireDisposable(
-    registerProtocolHandlers(plugin, deps).pipe(Effect.provideContext(context)),
+  return yield* registerProtocolHandlers(plugin, deps).pipe(
+    Effect.provide(context),
   );
 });
 
@@ -267,19 +260,9 @@ const dispatch = Effect.fn("dispatch")(function* (
   yield* Fiber.join(fiber);
 });
 
-/** A Deferred that completes when `install` hands its callback a call. */
-const signal = Effect.fn("signal")(function* (
-  install: (done: () => void) => void,
-) {
-  const called = yield* Deferred.make<void>();
-  install(() => Deferred.doneUnsafe(called, Effect.void));
-  return called;
-});
-
 beforeEach(() => {
   handlers.clear();
-  notices.shown.length = 0;
-  notices.onShow = undefined;
+  notifier = testNotifier();
   vi.mocked(runBatchUpdate).mockClear();
   vi.mocked(runBatchUpdateAll).mockClear();
   runBatchImportAll.mockClear();
@@ -425,7 +408,7 @@ describe("open-attachment protocol link", () => {
 
         yield* dispatch("zotlit/open-attachment", { item: "9" });
 
-        expect(notices.shown).toEqual([m.notice_protocol_db_unavailable()]);
+        expect(shown()).toEqual([m.notice_protocol_db_unavailable()]);
         expect(reads.AttachmentsAt).not.toHaveBeenCalled();
         expect(openAttachments).not.toHaveBeenCalled();
       }),
@@ -636,7 +619,35 @@ describe("clipboard Profile protocol handoff", () => {
       yield* dispatch("zotlit/import-profile", { clipboard: "true" });
 
       expect(openTemplateWorkbench).not.toHaveBeenCalled();
-      expect(notices.shown).toEqual([]);
+      expect(shown()).toEqual([]);
+    }),
+  );
+
+  it.effect("interrupts a waiting handoff when the Scope closes", () =>
+    Effect.gen(function* () {
+      const consent =
+        Promise.withResolvers<
+          Awaited<ReturnType<ProtocolDeps["importProfile"]>>
+        >();
+      const { file, files } = profileVault();
+      const scope = yield* Scope.make();
+      yield* register({
+        deps: { importProfile: vi.fn(() => consent.promise) },
+        files,
+      }).pipe(Scope.provide(scope));
+      const fiber = handlers.get("zotlit/import-profile")!(
+        protocolData("zotlit/import-profile", { clipboard: "true" }),
+      );
+      if (!Fiber.isFiber(fiber)) return yield* Effect.die("no handler fiber");
+
+      yield* Scope.close(scope, Exit.void);
+      const exit = yield* Fiber.await(fiber);
+      consent.resolve(imported(file.path));
+      yield* Effect.promise(() => consent.promise);
+
+      expect(Exit.hasInterrupts(exit)).toBe(true);
+      expect(openTemplateWorkbench).not.toHaveBeenCalled();
+      expect(shown()).toEqual([]);
     }),
   );
 
@@ -653,7 +664,7 @@ describe("clipboard Profile protocol handoff", () => {
         );
 
         expect(importProfile).not.toHaveBeenCalled();
-        expect(notices.shown).toEqual([m.notice_protocol_invalid()]);
+        expect(shown()).toEqual([m.notice_protocol_invalid()]);
       }),
   );
 });
@@ -667,7 +678,7 @@ describe("refused protocol links", () => {
 
         yield* dispatch("zotlit/open", { item: "x" });
 
-        expect(notices.shown).toEqual([m.notice_protocol_invalid()]);
+        expect(shown()).toEqual([m.notice_protocol_invalid()]);
         expect(reads.DisplayRefs).not.toHaveBeenCalled();
       }),
   );
@@ -679,7 +690,7 @@ describe("refused protocol links", () => {
 
       yield* dispatch("zotlit/open", { item: "1", "source-id": "ffff0000" });
 
-      expect(notices.shown).toEqual([]);
+      expect(shown()).toEqual([]);
       expect(reads.DisplayRefs).not.toHaveBeenCalled();
       expect(openCompanionNote).not.toHaveBeenCalled();
     }),
@@ -691,7 +702,7 @@ describe("refused protocol links", () => {
 
       yield* dispatch("zotlit/open", { item: "1" });
 
-      expect(notices.shown).toEqual([m.notice_protocol_db_unavailable()]);
+      expect(shown()).toEqual([m.notice_protocol_db_unavailable()]);
       expect(reads.DisplayRefs).not.toHaveBeenCalled();
     }),
   );
@@ -702,17 +713,14 @@ describe("refused protocol links", () => {
 
       yield* dispatch("zotlit/open", { item: "5" });
 
-      expect(notices.shown).toEqual([m.notice_protocol_item_not_found()]);
+      expect(shown()).toEqual([m.notice_protocol_item_not_found()]);
       expect(openCompanionNote).not.toHaveBeenCalled();
     }),
   );
 
   it.effect("refuses a pushed Profile ID that names no Profile", () =>
     Effect.gen(function* () {
-      const shown = yield* signal((done) => {
-        notices.onShow = done;
-      });
-      yield* register({
+      const registration = yield* register({
         updateManyRequests: Stream.make<[UpdateManyRequest]>({
           items: [1, 2],
           scope: "full",
@@ -720,10 +728,10 @@ describe("refused protocol links", () => {
         }),
       });
 
-      yield* Deferred.await(shown);
+      yield* registration.idle;
 
-      expect(notices.shown).toHaveLength(1);
-      expect(notices.shown[0]).toContain("not-a-profile");
+      expect(shown()).toHaveLength(1);
+      expect(shown()[0]).toContain("not-a-profile");
       expect(runBatchUpdate).not.toHaveBeenCalled();
     }),
   );
@@ -744,9 +752,29 @@ describe("refused protocol links", () => {
 
         yield* dispatch("zotlit/import-profile", { clipboard: "true" });
 
-        expect(notices.shown).toEqual([m.notice_profile_action_failed()]);
+        expect(shown()).toEqual([m.notice_profile_action_failed()]);
         expect(openTemplateWorkbench).not.toHaveBeenCalled();
       }),
+  );
+
+  it.effect("shows the Profile failure notice when a vault read dies", () =>
+    Effect.gen(function* () {
+      yield* register({
+        deps: {
+          importProfile: vi.fn(async () =>
+            stubService<
+              NonNullable<Awaited<ReturnType<ProtocolDeps["importProfile"]>>>
+            >("LiteratureNoteProfile", { path: "templates/shared.md" }),
+          ),
+        },
+        getFileByPath: () => Effect.die(new Error("vault read failed")),
+      });
+
+      yield* dispatch("zotlit/import-profile", { clipboard: "true" });
+
+      expect(shown()).toEqual([m.notice_profile_action_failed()]);
+      expect(openTemplateWorkbench).not.toHaveBeenCalled();
+    }),
   );
 });
 
@@ -805,13 +833,7 @@ describe("batch protocol links", () => {
 describe("requests pushed over the Local Server", () => {
   it.effect("runs a pushed batch update with its scope and Profile", () =>
     Effect.gen(function* () {
-      const called = yield* signal((done) => {
-        vi.mocked(runBatchUpdate).mockImplementationOnce(async () => {
-          done();
-          return { outcome: "batch-modal" };
-        });
-      });
-      yield* register({
+      const registration = yield* register({
         updateManyRequests: Stream.make<[UpdateManyRequest]>({
           items: [5, 6],
           scope: "full",
@@ -819,7 +841,7 @@ describe("requests pushed over the Local Server", () => {
         }),
       });
 
-      yield* Deferred.await(called);
+      yield* registration.idle;
 
       expect(runBatchUpdate).toHaveBeenCalledExactlyOnceWith(
         expect.anything(),
@@ -834,13 +856,7 @@ describe("requests pushed over the Local Server", () => {
       const runBatchImport = vi.fn<
         ProtocolDeps["batchImport"]["runBatchImport"]
       >(async () => ({ outcome: "batch-modal" }));
-      const called = yield* signal((done) => {
-        runBatchImport.mockImplementationOnce(async () => {
-          done();
-          return { outcome: "batch-modal" };
-        });
-      });
-      yield* register({
+      const registration = yield* register({
         deps: { batchImport: { runBatchImport, runBatchImportAll } },
         importNotesRequests: Stream.make<[ImportNotesRequest]>({
           items: [7],
@@ -848,9 +864,33 @@ describe("requests pushed over the Local Server", () => {
         }),
       });
 
-      yield* Deferred.await(called);
+      yield* registration.idle;
 
       expect(runBatchImport).toHaveBeenCalledExactlyOnceWith("note", [7]);
+    }),
+  );
+
+  it.effect("starts no run for a request pushed after the Scope closes", () =>
+    Effect.gen(function* () {
+      const requests = yield* PubSub.unbounded<UpdateManyRequest>();
+      const scope = yield* Scope.make();
+      const registration = yield* register({
+        updateManyRequests: Stream.fromPubSub(requests),
+      }).pipe(Scope.provide(scope));
+      const request: UpdateManyRequest = { items: [5], scope: "full" };
+      const ran = yield* Deferred.make<void>();
+      vi.mocked(runBatchUpdate).mockImplementationOnce(async () => {
+        Deferred.doneUnsafe(ran, Effect.void);
+        return { outcome: "batch-modal" };
+      });
+      yield* PubSub.publish(requests, request);
+      yield* Deferred.await(ran);
+
+      yield* Scope.close(scope, Exit.void);
+      yield* PubSub.publish(requests, request);
+      yield* registration.idle;
+
+      expect(runBatchUpdate).toHaveBeenCalledOnce();
     }),
   );
 });

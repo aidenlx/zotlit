@@ -1,4 +1,5 @@
-import { Data, Effect, Exit, Scope } from "effect";
+import { Cause, Data, Effect, Fiber, FiberSet, Scope } from "effect";
+import type { ManagedRuntime } from "effect";
 import type { ObsidianProtocolData, PaneType, Plugin } from "obsidian";
 
 import type { ItemRef } from "@zotlit/db";
@@ -29,9 +30,10 @@ import type { ProtocolAction } from "@zotlit/protocol";
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import type { AttachmentReader } from "@/lib/attachment-open";
 import { logAndContinue, withLogCategory } from "@/lib/effect-log";
+import { openScope } from "@/lib/effect-scope";
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import { BaseNotice } from "@/lib/notice";
+import { Notifier } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -41,9 +43,11 @@ import {
 } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
-import { pdfPickerReader } from "@/services/attachment-open/actions";
+import {
+  pdfPickerReader,
+  toObsidianOpenable,
+} from "@/services/attachment-open/actions";
 import type { TargetOpener } from "@/services/attachment-open/open-target";
-import { toObsidianOpenableAttachments } from "@/services/attachment-open/resolve";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 import { LocalServer } from "@/services/local-server/service";
 import type {
@@ -75,6 +79,7 @@ import { openTemplateWorkbench } from "@/views/template-workbench/register";
 /** The services a protocol handler reads through their tags. */
 export type ProtocolServices =
   | LocalServer
+  | Notifier
   | ObsidianEnv
   | UseLedger
   | Vault
@@ -104,18 +109,20 @@ export interface ProtocolDeps extends BatchUpdateDeps {
  * decodes a different query shape (an item-id list) and routes to the batch
  * runner.
  *
- * Handlers auto-deregister when the plugin unloads. Each Obsidian callback runs
- * its handler with the services this Effect runs with, and a handler that fails
- * is logged. A handler still running at unload runs to its end, as the
- * Promise handlers did. The returned `Disposable` stops the requests the Local
- * Server pushes.
+ * Handlers auto-deregister when the plugin unloads. Each Obsidian callback
+ * runs its handler with the services this Effect runs with, and a handler that
+ * fails is logged. Every handler run and every run of a request the Local
+ * Server pushes is a fiber of the current Scope: closing it stops the pushed
+ * requests and interrupts the runs still going. A legacy Promise a run waits
+ * on (Note Feature, batch import, a view opener) still runs to its end.
  */
 export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
   function* (
     plugin: Pick<Plugin, "registerObsidianProtocolHandler">,
     deps: ProtocolDeps,
   ) {
-    const run = Effect.runForkWith(yield* Effect.context<ProtocolServices>());
+    const runs = yield* FiberSet.make();
+    const run = yield* FiberSet.runtime(runs)<ProtocolServices>();
     const register = (
       id: string,
       handle: (
@@ -163,29 +170,65 @@ export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
       );
 
     const localServer = yield* LocalServer;
-    const scope = yield* Scope.make();
     // A batch update pushed over HTTP (companion couldn't fit the ids in a URL)
     // runs the same interactive flow as the `update-many` protocol link. Each
-    // run is detached, so a long batch does not hold back the next request.
-    yield* forkEach(localServer.updateManyRequests, (event) =>
-      Effect.forkDetach(updateManyRequested(event, deps)),
-    ).pipe(Scope.provide(scope));
+    // run is a fiber of its own, so a long batch does not hold back the next
+    // request.
+    const updates = yield* forkEach(localServer.updateManyRequests, (event) =>
+      FiberSet.run(runs, updateManyRequested(event, deps)),
+    );
     // A batch import pushed over HTTP runs the same flow as the import-notes link.
-    yield* forkEach(localServer.importNotesRequests, (event) =>
-      Effect.forkDetach(importNotesRequested(event, deps)),
-    ).pipe(Scope.provide(scope));
+    const imports = yield* forkEach(localServer.importNotesRequests, (event) =>
+      FiberSet.run(runs, importNotesRequested(event, deps)),
+    );
 
-    return {
-      [Symbol.dispose]: () => {
-        run(Scope.close(scope, Exit.void));
-      },
-    } satisfies Disposable;
+    const registration: ProtocolRegistration = {
+      idle: Effect.andThen(
+        Fiber.awaitAll([updates, imports]),
+        FiberSet.awaitEmpty(runs),
+      ),
+    };
+    return registration;
   },
 );
 
+/**
+ * The edge `zt-main.ts` calls: {@link registerProtocolHandlers} on a Scope of
+ * its own, which the returned disposal closes at unload.
+ *
+ * It calls `runtime.runSync` once, at load, in place of the container's
+ * bridge: a departure from policies/services.md → Bridge, which leaves that
+ * call to `build.ts`. The registration reads tags, and the bridge runs only
+ * Effects that need none. The registration becomes a layer in the plugin
+ * graph, and this edge goes away, once ticket 13 converts Note Feature.
+ */
+export function startProtocolHandlers(
+  runtime: Pick<
+    ManagedRuntime.ManagedRuntime<ProtocolServices, never>,
+    "runSync"
+  >,
+  plugin: Pick<Plugin, "registerObsidianProtocolHandler">,
+  deps: ProtocolDeps,
+): AsyncDisposable {
+  const { scope, close } = openScope();
+  runtime.runSync(
+    registerProtocolHandlers(plugin, deps).pipe(Scope.provide(scope)),
+  );
+  return { [Symbol.asyncDispose]: close };
+}
+
+/** The registered handlers, while their Scope holds them. */
+export interface ProtocolRegistration {
+  /**
+   * Completes once both pushed request streams have ended (or the Scope has
+   * closed) and no handler run or pushed request run is going.
+   */
+  readonly idle: Effect.Effect<void>;
+}
+
 const updateManyRequested = Effect.fn("protocol.updateManyRequested")(
   function* (event: UpdateManyRequest, deps: ProtocolDeps) {
-    const requested = resolveRequestedProfile(event.profileId);
+    const requested = yield* resolveRequestedProfile(event.profileId);
     if (!requested.ok) return;
     yield* Effect.promise(() =>
       toast.promise(
@@ -226,7 +269,7 @@ const handleProtocol = Effect.fn("protocol.handleProtocol")(function* (
   const ref = yield* resolveProtocolItem(query, action);
   if (!ref) return;
 
-  const requested = resolveRequestedProfile(query.profileId);
+  const requested = yield* resolveRequestedProfile(query.profileId);
   if (!requested.ok) return;
 
   yield* openCompanionNote(deps, ref, {
@@ -246,17 +289,31 @@ type RequestedProfile =
   | { readonly ok: true; readonly selector: ProfileSelector | undefined }
   | { readonly ok: false };
 
-function resolveRequestedProfile(text: string | undefined): RequestedProfile {
-  if (text === undefined) return { ok: true, selector: undefined };
-  const selector = parseProfileSelector(text);
-  if (selector === undefined) {
-    new BaseNotice(
-      noteOperationDiagnosticNotice(unknownProfileDiagnostic(text)),
-    );
-    return { ok: false };
-  }
-  return { ok: true, selector };
-}
+const resolveRequestedProfile = Effect.fn("protocol.resolveRequestedProfile")(
+  function* (text: string | undefined) {
+    if (text === undefined) {
+      const requested: RequestedProfile = { ok: true, selector: undefined };
+      return requested;
+    }
+    const selector = parseProfileSelector(text);
+    if (selector === undefined) {
+      yield* notify(
+        noteOperationDiagnosticNotice(unknownProfileDiagnostic(text)),
+      );
+      const refused: RequestedProfile = { ok: false };
+      return refused;
+    }
+    const requested: RequestedProfile = { ok: true, selector };
+    return requested;
+  },
+);
+
+/** Show `message` as a notice. */
+const notify = Effect.fn("protocol.notify")(function* (
+  message: Parameters<Notifier["Service"]["show"]>[0],
+) {
+  yield* (yield* Notifier).show(message);
+});
 
 /**
  * Handle `obsidian://zotlit/update-many`. Validates the source id at this
@@ -273,7 +330,7 @@ const handleBatchProtocol = Effect.fn("protocol.handleBatchProtocol")(
     });
     if (!query) return;
 
-    const requested = resolveRequestedProfile(query.profileId);
+    const requested = yield* resolveRequestedProfile(query.profileId);
     if (!requested.ok) return;
 
     yield* Effect.promise(() =>
@@ -387,15 +444,9 @@ const handleOpenAttachmentProtocol = Effect.fn(
     itemID: query.item,
   });
 
-  const pref = yield* (yield* ZoteroPref).current;
-  const { basePath } = yield* ObsidianEnv;
-  const openable = toObsidianOpenableAttachments(attachments, {
-    pathContext: {
-      dataDir: pref.dataDir,
-      baseAttachmentPath: pref.baseAttachmentPath,
-    },
-    vaultBasePath: basePath,
-    platform: process.platform,
+  const openable = toObsidianOpenable(attachments, {
+    vaultBasePath: (yield* ObsidianEnv).basePath,
+    zoteroPref: yield* (yield* ZoteroPref).current,
   });
 
   openAttachments(openable, {
@@ -484,18 +535,14 @@ function parseProtocolData<Query extends { sourceId: string }>(
     action: string;
     parse: (data: Record<string, unknown>) => Query;
   },
-): Effect.Effect<Query | null, never, ZoteroPref> {
+): Effect.Effect<Query | null, never, Notifier | ZoteroPref> {
   const { action, parse } = options;
   return Effect.gen(function* () {
     const parsed = yield* Effect.try(() => parse(data)).pipe(
       Effect.catch((error) =>
         Effect.logWarning("Invalid protocol query").pipe(
           Effect.annotateLogs({ action, error: error.cause }),
-          Effect.andThen(
-            Effect.sync(() => {
-              new BaseNotice(m.notice_protocol_invalid());
-            }),
-          ),
+          Effect.andThen(notify(m.notice_protocol_invalid())),
           Effect.as(null),
         ),
       ),
@@ -528,7 +575,7 @@ const databaseReady = Effect.fn("protocol.databaseReady")(function* (
     Effect.annotateLogs({ action }),
     withLogCategory("protocol"),
   );
-  new BaseNotice(m.notice_protocol_db_unavailable());
+  yield* notify(m.notice_protocol_db_unavailable());
   return false;
 });
 
@@ -543,7 +590,7 @@ const resolveProtocolItem = Effect.fn("protocol.resolveProtocolItem")(
         Effect.annotateLogs({ action, itemID: query.item }),
         withLogCategory("protocol"),
       );
-      new BaseNotice(m.notice_protocol_item_not_found());
+      yield* notify(m.notice_protocol_item_not_found());
       return null;
     }
 
@@ -563,26 +610,21 @@ const handleProfileImportProtocol = Effect.fn(
     Effect.catch((error) =>
       Effect.logDebug("Refused clipboard Profile handoff").pipe(
         Effect.annotateLogs({ error: error.cause }),
-        Effect.andThen(
-          Effect.sync(() => {
-            new BaseNotice(m.notice_protocol_invalid());
-          }),
-        ),
+        Effect.andThen(notify(m.notice_protocol_invalid())),
         Effect.as(null),
       ),
     ),
   );
   if (!query) return;
+  // A failure or a defect is reported; an interrupt (unload) passes through.
   yield* openImportedProfile(deps, query.paneType).pipe(
-    Effect.catch((error) =>
-      Effect.logError("Failed to open clipboard Profile handoff").pipe(
-        Effect.annotateLogs({ error }),
-        Effect.andThen(
-          Effect.sync(() => {
-            new BaseNotice(m.notice_profile_action_failed());
-          }),
-        ),
-      ),
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.interrupt
+        : Effect.logError("Failed to open clipboard Profile handoff").pipe(
+            Effect.annotateLogs({ error: Cause.squash(cause) }),
+            Effect.andThen(notify(m.notice_profile_action_failed())),
+          ),
     ),
   );
 }, withLogCategory("protocol"));
