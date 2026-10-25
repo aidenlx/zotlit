@@ -6,9 +6,11 @@ import { TestClock } from "effect/testing";
 import { expect, it, vi } from "vitest";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
+import { toInstant } from "@/lib/effect-clock";
 
 import {
   authorized,
+  cooldownOf,
   denied,
   keyRejected,
   libraryReadOnly,
@@ -218,18 +220,18 @@ it("holds Zotero's cooldown, with the Retry-After it named", async () => {
   expect(limited).toEqual({
     failure: {
       kind: "cooldown",
-      retryAfter: Temporal.Duration.from({ seconds: 60 }),
+      retryAfter: cooldownOf(60),
     },
   });
   expect(bridge.runSync(service.writeStateFor(null)).cooldownUntil).toEqual(
-    NOW.add({ seconds: 60 }),
+    toInstant(NOW).add({ seconds: 60 }),
   );
   // A second gesture inside the cooldown asks Zotero nothing: the rate limit is
   // what a sixth dialog request in a minute costs.
   expect(again).toEqual({
     failure: {
       kind: "cooldown",
-      retryAfter: Temporal.Duration.from({ seconds: 60 }),
+      retryAfter: cooldownOf(60),
     },
   });
   expect(

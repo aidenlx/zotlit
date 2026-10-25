@@ -1,8 +1,8 @@
 // Reads Zotero's data live, from the local API a running Zotero serves on loopback.
 import {
   Cause,
-  Clock,
   Deferred,
+  DateTime,
   Duration,
   Effect,
   Exit,
@@ -16,7 +16,7 @@ import * as v from "valibot";
 
 import { parseIndexedKey } from "@zotlit/db";
 
-import { instantClock } from "@/lib/effect-clock";
+import { fromInstant, toInstant } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import {
   exchangeWithZotero,
@@ -45,6 +45,7 @@ import type {
   LocalApiAnnotation,
   LocalApiFailure,
   LocalApiResult,
+  WriteAuthorizationState,
   ZoteroReply,
 } from "./wire";
 import type { WriteAuthorizationStore } from "./write-authorization";
@@ -106,22 +107,6 @@ export type LocalApiState =
       authorized: boolean;
     }
   | { kind: "unavailable"; failure: LocalApiFailure };
-
-/**
- * What the write path knows about one Attachment beside the Capability Probe.
- * The repository folds it into that Attachment's Editing Capability; none of it
- * outlives the session.
- *
- * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
- */
-export interface WriteAuthorizationState {
-  /** A gesture is at Zotero's dialog now. */
-  authorizing: boolean;
-  /** Zotero refused a write to this Attachment's library this session. */
-  libraryReadOnly: boolean;
-  /** When Zotero's dialog rate limit lifts, or null while none is running. */
-  cooldownUntil: Temporal.Instant | null;
-}
 
 export type LocalApiEvent =
   /**
@@ -256,7 +241,6 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
   credentials,
 }: LocalApiSessionDeps) {
   const scope = yield* Effect.scope;
-  const now = instantClock(yield* Clock.Clock);
   const state = yield* Ref.make<ProbeState>({ kind: "unprobed" });
   /** What the last probe announced, so a probe that learned nothing new stays quiet. */
   const announced = yield* Ref.make<ProbeState>({ kind: "unprobed" });
@@ -276,7 +260,7 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
    */
   const readOnlyLibraries = yield* Ref.make<ReadonlySet<string>>(new Set());
   /** When Zotero's authorization-dialog rate limit lifts. */
-  const cooldownUntil = yield* Ref.make<Temporal.Instant | null>(null);
+  const cooldownUntil = yield* Ref.make<DateTime.Utc | null>(null);
   /** In-flight read writes only; completed and failed Uses are never replayed. */
   const readQueues = new Map<string, ReadQueue>();
 
@@ -594,7 +578,11 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
   /** What a refused authorization leaves behind, beside the failure itself. */
   const refused = Effect.fnUntraced(function* (failure: LocalApiFailure) {
     if (failure.kind === "cooldown") {
-      yield* Ref.set(cooldownUntil, now().add(failure.retryAfter));
+      const now = yield* DateTime.now;
+      yield* Ref.set(
+        cooldownUntil,
+        fromInstant(toInstant(now).add(failure.retryAfter)),
+      );
       yield* publish({ _tag: "capability-changed" });
     }
     yield* Effect.logDebug("Zotero granted no write authorization").pipe(
@@ -607,14 +595,14 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
   const cooling = Effect.gen(function* () {
     const until = yield* Ref.get(cooldownUntil);
     if (until === null) return null;
-    const current = now();
-    if (Temporal.Instant.compare(until, current) <= 0) {
+    const current = yield* DateTime.now;
+    if (DateTime.isLessThanOrEqualTo(until, current)) {
       yield* Ref.set(cooldownUntil, null);
       return null;
     }
     const failure: LocalApiFailure = {
       kind: "cooldown",
-      retryAfter: current.until(until),
+      retryAfter: toInstant(current).until(toInstant(until)),
     };
     return failure;
   });
@@ -820,7 +808,7 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
   }: {
     attachmentKey: string;
     serverID: string;
-    instant: Temporal.Instant;
+    instant: DateTime.Utc;
     phase: Ref.Ref<WriteBackPhase>;
   }) {
     yield* Ref.set(phase, "reading");
@@ -881,7 +869,7 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
       yield* writeBackSkipped(attachmentKey, "malformed attachment");
       return;
     }
-    const lastRead = Math.floor(instant.epochMilliseconds / 1000);
+    const lastRead = Math.floor(DateTime.toEpochMillis(instant) / 1000);
     if ((item.output.data.lastRead ?? 0) >= lastRead) {
       yield* writeBackSkipped(attachmentKey, "stored read is newer or equal");
       return;
@@ -1023,12 +1011,16 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
     ): Effect.fn.Return<WriteAuthorizationState> {
       const parsed =
         attachmentKey === null ? null : parseIndexedKey(attachmentKey);
+      const authorizingNow = (yield* Ref.get(authorizing)) !== null;
+      const libraryReadOnly =
+        parsed !== null &&
+        (yield* Ref.get(readOnlyLibraries)).has(libraryPath(parsed));
+      const until = yield* Ref.get(cooldownUntil);
       return {
-        authorizing: (yield* Ref.get(authorizing)) !== null,
-        libraryReadOnly:
-          parsed !== null &&
-          (yield* Ref.get(readOnlyLibraries)).has(libraryPath(parsed)),
-        cooldownUntil: yield* Ref.get(cooldownUntil),
+        authorizing: authorizingNow,
+        libraryReadOnly,
+        // The state goes to plain callers, which read it as Temporal.
+        cooldownUntil: until === null ? null : toInstant(until),
       };
     }, withLogCategory(LOG_CATEGORY)),
 
@@ -1080,7 +1072,7 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
     writeLastRead: Effect.fn("ZoteroLocalApi.writeLastRead")(function* (
       attachmentKey: string,
       serverID: string,
-      instant: Temporal.Instant,
+      instant: DateTime.Utc,
     ) {
       const current = yield* Ref.get(state);
       const unwritable = unwritableReason(current, serverID);

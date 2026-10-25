@@ -141,6 +141,22 @@ export type LocalApiFailure =
 export type LocalApiResult<T> = { value: T } | { failure: LocalApiFailure };
 
 /**
+ * What the write path knows about one Attachment beside the Capability Probe.
+ * The repository folds it into that Attachment's Editing Capability; none of it
+ * outlives the session.
+ *
+ * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
+ */
+export interface WriteAuthorizationState {
+  /** A gesture is at Zotero's dialog now. */
+  authorizing: boolean;
+  /** Zotero refused a write to this Attachment's library this session. */
+  libraryReadOnly: boolean;
+  /** When Zotero's dialog rate limit lifts, or null while none is running. */
+  cooldownUntil: Temporal.Instant | null;
+}
+
+/**
  * Zotero's authorization-dialog window, which is also the `Retry-After` it
  * sends. Used when an answer carries no parsable one.
  *

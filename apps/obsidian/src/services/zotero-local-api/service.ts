@@ -1,5 +1,6 @@
 // The Effect service over the Zotero Local API session.
 import { Context, Effect, Layer, PubSub, Stream } from "effect";
+import type { DateTime } from "effect";
 
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag, forkEach } from "@/lib/effect-stream";
@@ -13,12 +14,12 @@ import type {
   LocalApiEvent,
   LocalApiSource,
   LocalApiState,
-  WriteAuthorizationState,
 } from "./session";
 import type {
   LocalApiAnnotation,
   LocalApiFailure,
   LocalApiResult,
+  WriteAuthorizationState,
   ZoteroReply,
 } from "./wire";
 import type { WriteAuthorizationStore } from "./write-authorization";
@@ -28,13 +29,13 @@ export type {
   LocalApiAnnotation,
   LocalApiFailure,
   LocalApiResult,
+  WriteAuthorizationState,
 } from "./wire";
 export type {
   AuthorizedSendOptions,
   LocalApiEvent,
   LocalApiSource,
   LocalApiState,
-  WriteAuthorizationState,
 } from "./session";
 export type {
   SecretStore,
@@ -123,7 +124,7 @@ export class ZoteroLocalApi extends Context.Service<
     writeLastRead(
       attachmentKey: string,
       serverID: string,
-      instant: Temporal.Instant,
+      instant: DateTime.Utc,
     ): Effect.Effect<void>;
     /**
      * One Annotation as Zotero holds it now.

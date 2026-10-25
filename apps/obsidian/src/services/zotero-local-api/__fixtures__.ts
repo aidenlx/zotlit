@@ -22,7 +22,7 @@
 //
 // @see docs/fixture.md — "Trial the Zotero Local API"
 // @see https://github.com/aidenlx/zotlit/issues/1143
-import { Effect, Layer, PubSub, Stream } from "effect";
+import { DateTime, Effect, Layer, PubSub, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { vi } from "vitest";
 
@@ -31,6 +31,7 @@ import type { DbUpdated } from "@zotlit/protocol";
 import { layerFakeFetch } from "@/lib/__fixtures__/fake-fetch";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
+import { toInstant } from "@/lib/effect-clock";
 import { buildRuntime } from "@/lib/effect-layer";
 import { layerZoteroHttp } from "@/lib/zotero-http";
 import type { ZoteroHttp } from "@/lib/zotero-http";
@@ -705,7 +706,11 @@ export interface ClientOptions {
 }
 
 /** The instant a fixture's TestClock stands at until a test moves it. */
-export const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
+export const NOW = DateTime.makeUnsafe("2026-09-16T15:52:21Z");
+
+/** A cooldown of `seconds`, as plain callers receive it in a `cooldown` failure. */
+export const cooldownOf = (seconds: number) =>
+  toInstant(NOW).until(toInstant(NOW).add({ seconds }));
 
 /**
  * One TestClock for a fixture's runtime, standing at {@link NOW} before any
@@ -713,7 +718,7 @@ export const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
  * `await runtime.runPromise(TestClock.adjust(duration))`.
  */
 export const testClockAtNow = Layer.provideMerge(
-  Layer.effectDiscard(TestClock.setTime(NOW.epochMilliseconds)),
+  Layer.effectDiscard(TestClock.setTime(DateTime.toEpochMillis(NOW))),
   TestClock.layer(),
 );
 

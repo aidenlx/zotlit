@@ -4,6 +4,7 @@ import { cliRunner } from "@/lib/cli-command";
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
 import { effectBridge } from "@/lib/effect-bridge";
+import { fromInstant } from "@/lib/effect-clock";
 import { buildRuntime } from "@/lib/effect-layer";
 import { FileManager } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
@@ -249,7 +250,7 @@ export async function buildServices(
                 bridge,
                 api: zoteroLocalApi,
               },
-              { attachmentKey, instant, serverID },
+              { attachmentKey, instant: fromInstant(instant), serverID },
             );
           },
           app: plugin.app,

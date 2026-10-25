@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { DateTime, Effect } from "effect";
 import { TestClock } from "effect/testing";
 import { expect, it, vi } from "vitest";
 
@@ -302,7 +302,11 @@ it("keeps the newest read when two writes overlap at the same object version", a
   );
   await firstStarted.promise;
   const newer = bridge.runPromise(
-    service.writeLastRead(ATTACHMENT_KEY, SERVER_ID, NOW.add({ seconds: 30 })),
+    service.writeLastRead(
+      ATTACHMENT_KEY,
+      SERVER_ID,
+      DateTime.add(NOW, { seconds: 30 }),
+    ),
   );
   await new Promise<void>((resolve) => setImmediate(resolve));
   firstWrite.resolve();

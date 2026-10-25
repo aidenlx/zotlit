@@ -1,3 +1,5 @@
+import type { DateTime } from "effect";
+
 import { parseIndexedKey } from "@zotlit/db";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
@@ -27,7 +29,7 @@ export async function writeReadUse(
     serverID: resolvedServerID,
   }: {
     attachmentKey: string;
-    instant: Temporal.Instant;
+    instant: DateTime.Utc;
     serverID: string | null;
   },
 ): Promise<void> {
