@@ -186,7 +186,6 @@ export function layerAttachmentResolver({
       const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
       const indexed = yield* Deferred.make<void>();
       const announcements = yield* PubSub.unbounded<void>();
-      let closed = false;
 
       /** Reads the rows on one snapshot and keys them into a new index. */
       const readIndex = Effect.scoped(
@@ -229,7 +228,6 @@ export function layerAttachmentResolver({
 
       /** The index a lookup answers from, starting a build when none is held. */
       const held = Effect.gen(function* () {
-        if (closed) return undefined;
         const current = yield* queries.peek<PathIndex>(PATH_INDEX_KEY);
         // A failed build is asked again; the failure cooldown paces the retries.
         if (current === null || current.status === "failed")
@@ -271,12 +269,7 @@ export function layerAttachmentResolver({
       yield* forkEach(resolvedChanged(zoteroPref), () =>
         rebuild("Zotero paths changed"),
       );
-      yield* Effect.addFinalizer(() =>
-        Effect.gen(function* () {
-          closed = true;
-          yield* PubSub.shutdown(announcements);
-        }),
-      );
+      yield* Effect.addFinalizer(() => PubSub.shutdown(announcements));
 
       return AttachmentResolver.of({
         resolve: Effect.fn("AttachmentResolver.resolve")(function* (
