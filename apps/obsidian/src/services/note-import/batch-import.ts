@@ -77,7 +77,7 @@ export interface NoteImportDeps {
   settings: Pick<PluginSettings["Service"], "current" | "update">;
   bridge: Pick<EffectBridge, "runSync">;
   /** Plans a library-wide import: which Libraries and notes it covers. */
-  batchScope: Pick<BatchScopeHandle, "plan">;
+  batchScope: BatchScopeHandle;
   noteImport: Pick<NoteImporter, "importNote" | "prepareExplicitImport">;
   noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getImportedNoteByNoteKey">;
   metadataCache: Pick<MetadataCache, "getFileCache">;

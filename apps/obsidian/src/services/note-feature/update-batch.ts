@@ -73,7 +73,7 @@ function profileLabel(profile: ResolvedProfile): string {
 export interface BatchUpdateDeps
   extends SingleUpdateDeps, BatchProfilePickerDeps {
   /** Plans a library-wide update: which Libraries and items it covers. */
-  batchScope: Pick<BatchScopeHandle, "plan">;
+  batchScope: BatchScopeHandle;
 }
 
 /**

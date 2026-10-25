@@ -20,6 +20,7 @@ import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { LibraryScope } from "@/services/library-scope/service";
 import { BatchUpdateRefusedError } from "@/services/note-feature/update-batch";
 import { NoteImportProfileError } from "@/services/note-import/service";
+import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
@@ -942,12 +943,11 @@ describe("planBatchScope", () => {
     resolveLibraries: LibraryScope["Service"]["resolveLibraries"],
   ) {
     return Layer.mergeAll(
-      Layer.succeed(
-        ZoteroReads,
-        stubService<ZoteroReads["Service"]>("ZoteroReads", {
-          snapshot: zoteroReads.snapshot,
-        }),
-      ),
+      Layer.mock(ZoteroReads, {
+        // The plan reads only through its Snapshot.
+        reads: readsAnswering({}),
+        snapshot: zoteroReads.snapshot,
+      }),
       Layer.mock(LibraryScope, { resolveLibraries }),
     );
   }
