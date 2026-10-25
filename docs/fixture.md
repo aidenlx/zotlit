@@ -84,6 +84,8 @@ unrun baseline, not a pass.
 
 `mark-landing-test.md` is generated rather than committed, because it holds real `file://` links and the Fixture learns its own absolute paths only at build time. It walks Mark Landing: an Attachment File Link carrying an Annotation Anchor, the wikilink spelling of the same Anchor, the degradation cases, and the Zotero deep link ZotLit leaves to Zotero.
 
+`note-path-collisions.md` walks what a new note does when its path is taken: an import that skips an existing note, a new Literature Note that takes a random suffix, and the same two beside a note whose name differs only in case, which fail on macOS and Windows. Each case lists its steps and its expected outcome.
+
 `query-files/Reading annotations.zotquery` is a Query File with two Annotations views, grouped by Item: "All annotations" shows every Annotation of the Target Libraries, and "Figures" shows the Annotations tagged `figure`. Open it to check the Query File tab.
 
 `literatures/rougierTenSimpleRules2014.md` is the Literature Note the default note template renders: the Zotero and Attachment links, then a managed region whose Annotations are a Query Block. Below the managed region, the note embeds the "This item" view of `query-files/Lab annotations.zotquery`, so one note holds both a Query Block and a Query File embed. Use it to check that an edit in the embed saves to the Query File, and that **Update Note** leaves the embed in place. The build takes the Annotations section from the shipped `content` template, so the note follows the template.
