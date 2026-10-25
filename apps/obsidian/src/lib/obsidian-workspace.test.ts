@@ -226,3 +226,59 @@ it.effect("delivers a deferred file-open on requestActiveLeafEvents", () =>
     expect(source.getActiveFile()?.path).toBe("a.md");
   }),
 );
+
+it.effect("streams each active-leaf-change and css-change", () =>
+  Effect.gen(function* () {
+    const source = new MemoryWorkspace();
+    const { workspace } = yield* open(layerWorkspaceFrom(source));
+    const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {});
+    const seen = yield* workspace.changes.pipe(
+      Stream.map((event) =>
+        event._tag === "active-leaf-change"
+          ? `${event._tag} ${event.leaf === leaf}`
+          : event._tag,
+      ),
+      Stream.take(3),
+      Stream.runCollect,
+      Effect.forkChild({ startImmediately: true }),
+    );
+    source.trigger("active-leaf-change", leaf);
+    source.trigger("css-change");
+    source.trigger("active-leaf-change", null);
+    expect(yield* Fiber.join(seen)).toEqual([
+      "active-leaf-change true",
+      "css-change",
+      "active-leaf-change false",
+    ]);
+  }),
+);
+
+it.effect("reads the open leaves of one view type", () =>
+  Effect.gen(function* () {
+    const source = new MemoryWorkspace();
+    const { workspace } = yield* open(layerWorkspaceFrom(source));
+    const view = new MarkdownView(
+      stubService<WorkspaceLeaf>("WorkspaceLeaf", {}),
+    );
+    const leaf = source.openLeaf("graph", view);
+    expect(yield* workspace.leavesOfType("graph")).toEqual([leaf]);
+    expect(yield* workspace.leavesOfType("localgraph")).toEqual([]);
+  }),
+);
+
+it.effect(
+  "reads the saved layout, and null where the build has no reader",
+  () =>
+    Effect.gen(function* () {
+      const source = new MemoryWorkspace();
+      source.savedLayout = { main: { id: "root" } };
+      const { workspace } = yield* open(layerWorkspaceFrom(source));
+      expect(yield* workspace.readWorkspaceFile).toEqual({
+        main: { id: "root" },
+      });
+      const bare = new MemoryWorkspace();
+      Object.assign(bare, { readWorkspaceFile: undefined });
+      const { workspace: moved } = yield* open(layerWorkspaceFrom(bare));
+      expect(yield* moved.readWorkspaceFile).toBeNull();
+    }),
+);

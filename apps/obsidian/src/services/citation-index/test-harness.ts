@@ -86,6 +86,7 @@ type Callback = (...args: unknown[]) => void;
 export class MockMetadataCache implements MetadataCacheSource {
   readonly fileCache = new Map<string, CachedMetadata>();
   readonly files = new Map<string, TFile>();
+  readonly resolvedLinks: Record<string, Record<string, number>> = {};
   vault?: MockVault;
 
   readonly #listeners: Record<string, Set<Callback>> = {

@@ -4,7 +4,7 @@
 // describes it. Views, leaves, `Component`s and React handlers stay edges and
 // keep `app.workspace`.
 import { Context, Effect, Layer } from "effect";
-import type { Scope, Stream } from "effect";
+import type { Cause, Scope, Stream } from "effect";
 import { MarkdownView } from "obsidian";
 import type {
   Editor,
@@ -38,6 +38,7 @@ export type WorkspaceSource = Pick<
   | "getLeaf"
   | "trigger"
   | "requestActiveLeafEvents"
+  | "readWorkspaceFile"
 > &
   ObsidianEventEmitter;
 
@@ -46,7 +47,14 @@ export type WorkspaceEvent =
   /** The active file changed; `null` when no file is active. */
   | { readonly _tag: "file-open"; readonly file: TFile | null }
   /** A leaf opened, closed or moved. */
-  | { readonly _tag: "layout-change" };
+  | { readonly _tag: "layout-change" }
+  /** The active leaf changed; `null` when no leaf is active. */
+  | {
+      readonly _tag: "active-leaf-change";
+      readonly leaf: WorkspaceLeaf | null;
+    }
+  /** The theme or a CSS snippet changed, so a CSS variable may read anew. */
+  | { readonly _tag: "css-change" };
 
 /** Where a file menu opened: Obsidian's `source` name, and the leaf of a view's own menu. */
 export interface FileMenuOrigin {
@@ -75,6 +83,14 @@ export interface WorkspaceShape {
    * re-render reaches.
    */
   readonly markdownViews: Effect.Effect<readonly MarkdownView[]>;
+  /** Each open leaf of view type `type` now, in every window, in Obsidian's leaf order. */
+  leavesOfType(type: string): Effect.Effect<readonly WorkspaceLeaf[]>;
+  /**
+   * Obsidian's undocumented `readWorkspaceFile()`: the serialized layout
+   * Obsidian restored this session's leaves from. `null` when the build has
+   * no such reader; a rejected read fails with its cause.
+   */
+  readonly readWorkspaceFile: Effect.Effect<unknown, Cause.UnknownError>;
   /**
    * Obsidian's `updateOptions()`: every editor reads the registered editor
    * extensions again, so a change to a registered extension array applies.
@@ -151,6 +167,12 @@ export const makeWorkspace = Effect.fnUntraced(function* (
   yield* events.listen(source, "layout-change", () => ({
     _tag: "layout-change",
   }));
+  yield* events.listen(
+    source,
+    "active-leaf-change",
+    (leaf: WorkspaceLeaf | null) => ({ _tag: "active-leaf-change", leaf }),
+  );
+  yield* events.listen(source, "css-change", () => ({ _tag: "css-change" }));
 
   /** Register `name` on the current Scope; each call runs `toEffect` synchronously with the caller's context. */
   const menuHook = <Args extends unknown[], R>(
@@ -183,6 +205,15 @@ export const makeWorkspace = Effect.fnUntraced(function* (
         .getLeavesOfType("markdown")
         .flatMap(({ view }) => (view instanceof MarkdownView ? [view] : [])),
     ).pipe(Effect.withSpan("Workspace.markdownViews")),
+    leavesOfType: Effect.fn("Workspace.leavesOfType")((type) =>
+      Effect.sync(() => source.getLeavesOfType(type)),
+    ),
+    readWorkspaceFile: Effect.suspend(() => {
+      const read = source.readWorkspaceFile?.bind(source);
+      return read === undefined
+        ? Effect.succeed(null)
+        : Effect.tryPromise(() => read());
+    }).pipe(Effect.withSpan("Workspace.readWorkspaceFile")),
     updateOptions: Effect.sync(() => source.updateOptions()).pipe(
       Effect.withSpan("Workspace.updateOptions"),
     ),

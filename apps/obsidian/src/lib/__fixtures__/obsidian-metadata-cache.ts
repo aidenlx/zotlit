@@ -16,6 +16,8 @@ export class MemoryMetadataCache implements MetadataCacheSource {
   readonly entries = new Map<string, CachedMetadata>();
   /** The file each linkpath resolves to, whatever the source note; the test sets it. */
   readonly links = new Map<string, TFile>();
+  /** Obsidian's `resolvedLinks`: the link counts by source and target path; the test sets it. */
+  resolvedLinks: Record<string, Record<string, number>> = {};
   /** Mirrors Obsidian's `isCacheClean()`: no parse pending, resolver idle. */
   clean = false;
   readonly #listeners = new Map<string, Set<Callback>>();
