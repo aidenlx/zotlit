@@ -8,7 +8,7 @@ import { ObsidianApp } from "@/lib/obsidian-app";
 /** Obsidian's platform flags, as `Platform` holds them. */
 export type ObsidianPlatform = Readonly<typeof Platform>;
 
-/** Where the plugin runs: platform, Obsidian version, UI language, vault folder. */
+/** Where the plugin runs: platform, Obsidian version, UI language, vault name and folder. */
 export class ObsidianEnv extends Context.Service<
   ObsidianEnv,
   {
@@ -17,6 +17,8 @@ export class ObsidianEnv extends Context.Service<
     readonly apiVersion: string;
     /** Obsidian's UI language, from `getLanguage()`. */
     readonly language: string;
+    /** The vault's name, from `Vault.getName()`. */
+    readonly vaultName: string;
     /** The vault's folder on disk. Desktop-only plugin: the adapter is always a `FileSystemAdapter`. */
     readonly basePath: string;
   }
@@ -32,6 +34,7 @@ export const layerObsidianEnv: Layer.Layer<ObsidianEnv, never, ObsidianApp> =
         platform: { ...Platform },
         apiVersion,
         language: getLanguage(),
+        vaultName: app.vault.getName(),
         basePath: (app.vault.adapter as FileSystemAdapter).getBasePath(),
       });
     }),

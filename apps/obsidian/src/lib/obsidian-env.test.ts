@@ -15,38 +15,44 @@ afterEach(() => {
 });
 
 describe("layerObsidianEnv", () => {
-  it.effect("reads the platform, version, language and vault folder once", () =>
-    Effect.gen(function* () {
-      setMockPlatform({ isMacOS: true, isWin: false, isDesktopApp: true });
-      let reads = 0;
-      const app = stubService<App>("App", {
-        vault: stubService<Vault>("Vault", {
-          adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
-            getBasePath: () => {
-              reads += 1;
-              return "/Users/me/vault";
-            },
+  it.effect(
+    "reads the platform, version, language, vault name and folder once",
+    () =>
+      Effect.gen(function* () {
+        setMockPlatform({ isMacOS: true, isWin: false, isDesktopApp: true });
+        let reads = 0;
+        const app = stubService<App>("App", {
+          vault: stubService<Vault>("Vault", {
+            getName: () => "Research",
+            adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
+              getBasePath: () => {
+                reads += 1;
+                return "/Users/me/vault";
+              },
+            }),
           }),
-        }),
-      });
-      const env = yield* ObsidianEnv.pipe(
-        Effect.provide(
-          layerObsidianEnv.pipe(Layer.provide(Layer.succeed(ObsidianApp, app))),
-        ),
-      );
+        });
+        const env = yield* ObsidianEnv.pipe(
+          Effect.provide(
+            layerObsidianEnv.pipe(
+              Layer.provide(Layer.succeed(ObsidianApp, app)),
+            ),
+          ),
+        );
 
-      expect(env).toMatchObject({
-        platform: { isMacOS: true, isWin: false, isDesktopApp: true },
-        apiVersion: "1.0.0-test",
-        language: "en",
-        basePath: "/Users/me/vault",
-      });
-      // The mock flags are reset: a later read of the env must not reach them.
-      resetMockPlatform();
-      expect(env.platform.isMacOS).toBe(true);
-      expect(env.basePath).toBe("/Users/me/vault");
-      expect(reads).toBe(1);
-    }),
+        expect(env).toMatchObject({
+          platform: { isMacOS: true, isWin: false, isDesktopApp: true },
+          apiVersion: "1.0.0-test",
+          language: "en",
+          vaultName: "Research",
+          basePath: "/Users/me/vault",
+        });
+        // The mock flags are reset: a later read of the env must not reach them.
+        resetMockPlatform();
+        expect(env.platform.isMacOS).toBe(true);
+        expect(env.basePath).toBe("/Users/me/vault");
+        expect(reads).toBe(1);
+      }),
   );
 });
 

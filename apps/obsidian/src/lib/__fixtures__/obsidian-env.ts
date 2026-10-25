@@ -9,6 +9,7 @@ export interface TestObsidianEnvOptions {
   readonly platform?: Partial<ObsidianPlatform>;
   readonly apiVersion?: string;
   readonly language?: string;
+  readonly vaultName?: string;
   readonly basePath?: string;
 }
 
@@ -36,6 +37,7 @@ export function testObsidianEnv(
     },
     apiVersion: options.apiVersion ?? "1.0.0-test",
     language: options.language ?? "en",
+    vaultName: options.vaultName ?? "Vault",
     basePath: options.basePath ?? "/vault",
   });
 }
