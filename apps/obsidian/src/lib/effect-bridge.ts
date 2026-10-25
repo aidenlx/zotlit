@@ -64,7 +64,10 @@ function bridgeOver(
 }
 
 export function effectBridge<R>(
-  runtime: ManagedRuntime.ManagedRuntime<R, never>,
+  runtime: Pick<
+    ManagedRuntime.ManagedRuntime<R, never>,
+    "runSync" | "runFork" | "scope"
+  >,
 ): EffectBridge {
   // Pending Exit runs stay in the runtime's scope, so unload interrupts them.
   return bridgeOver(

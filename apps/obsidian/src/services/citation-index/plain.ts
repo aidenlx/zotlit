@@ -1,7 +1,7 @@
 /** Citation services for views and legacy services, on the plugin runtime. */
 import { Cause, Effect, Exit, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
-import { isScopeClosed } from "@/lib/effect-scope";
+import { effectBridge } from "@/lib/effect-bridge";
 
 import type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 import {
@@ -40,35 +40,37 @@ export function plainCitationLookup(
       "runPromiseExit" | "runFork" | "scope"
     >,
 ): PlainCitationLookup {
+  const bridge = effectBridge(runtime);
   const service = runtime.runSync(CitationLookup);
-  const run = Effect.runSyncWith(runtime.runSync(Effect.context<never>()));
-  const closed = () => isScopeClosed(runtime.scope);
   const released = () =>
     new DOMException("Citation Lookup released", "AbortError");
   return {
     get status() {
-      return run(service.current).status;
+      return bridge.runSync(service.current).status;
     },
     changes: service.changes,
     async read(request, { signal } = {}) {
-      if (closed()) throw released();
+      if (bridge.closed()) throw released();
       // Capture the caller's selection before crossing the async runtime boundary.
       const selected = {
         citekeys: [...(request.citekeys ?? [])],
         indexedKeys: [...(request.indexedKeys ?? [])],
         annotationKeys: [...(request.annotationKeys ?? [])],
       };
-      const exit = await runtime.runPromiseExit(service.read(selected), {
+      const exit = await bridge.runPromiseExit(service.read(selected), {
         signal,
       });
       if (Exit.isSuccess(exit)) return exit.value;
-      if (closed() || Cause.hasInterruptsOnly(exit.cause)) throw released();
+      if (bridge.closed() || Cause.hasInterruptsOnly(exit.cause))
+        throw released();
       throw Cause.squash(exit.cause);
     },
     observe: (changed) =>
-      closed() ? inertObservation() : runtime.runSync(service.observe(changed)),
+      bridge.closed()
+        ? inertObservation()
+        : bridge.runSync(service.observe(changed)),
     async whenResolved() {
-      if (!closed()) await runtime.runPromiseExit(service.whenResolved());
+      if (!bridge.closed()) await bridge.runPromiseExit(service.whenResolved());
     },
     changed: lookupChanged(service),
     "status-changed": lookupStatusChanged(service),
@@ -85,23 +87,20 @@ export function plainCitationIndex(
     "runSync" | "runPromiseExit" | "runFork" | "scope"
   >,
 ) {
+  const bridge = effectBridge(runtime);
   const service = runtime.runSync(CitationIndex);
-  const context = runtime.runSync(Effect.context<never>());
-  const run = Effect.runSyncWith(context);
-  const runReleased = Effect.runPromiseWith(context);
-  const closed = () => isScopeClosed(runtime.scope);
   async function invoke<A, E>(effect: Effect.Effect<A, E>): Promise<A> {
-    let exit = closed()
-      ? await runReleased(Effect.exit(effect))
-      : await runtime.runPromiseExit(effect);
+    let exit = bridge.closed()
+      ? await bridge.runPromise(Effect.exit(effect))
+      : await bridge.runPromiseExit(effect);
     // A call interrupted by unload reads the released service's terminal state.
     if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) {
-      await runReleased(
+      await bridge.runPromise(
         Stream.runHead(
           service.changes.pipe(Stream.filter((state) => state.stopped)),
         ),
       );
-      exit = await runReleased(Effect.exit(effect));
+      exit = await bridge.runPromise(Effect.exit(effect));
     }
     if (Exit.isSuccess(exit)) return exit.value;
     const error = Cause.squash(exit.cause);
@@ -109,10 +108,10 @@ export function plainCitationIndex(
   }
   return {
     get coverage() {
-      return run(service.current).coverage;
+      return bridge.runSync(service.current).coverage;
     },
     get current() {
-      return run(service.current);
+      return bridge.runSync(service.current);
     },
     changes: service.changes,
     changed: service.events.pipe(
@@ -134,19 +133,21 @@ export function plainCitationIndex(
       Stream.map(() => undefined),
     ),
     observeCitedBy: (...args: Parameters<typeof service.observeCitedBy>) =>
-      closed() ? () => {} : runtime.runSync(service.observeCitedBy(...args)),
+      bridge.closed()
+        ? () => {}
+        : runtime.runSync(service.observeCitedBy(...args)),
     syntaxes: (...args: Parameters<typeof service.syntaxes>) =>
-      run(service.syntaxes(...args)),
+      bridge.runSync(service.syntaxes(...args)),
     citationKeys: (...args: Parameters<typeof service.citationKeys>) =>
-      run(service.citationKeys(...args)),
+      bridge.runSync(service.citationKeys(...args)),
     annotationCitationKeys: (
       ...args: Parameters<typeof service.annotationCitationKeys>
-    ) => run(service.annotationCitationKeys(...args)),
+    ) => bridge.runSync(service.annotationCitationKeys(...args)),
     getAnnotationUses: (
       ...args: Parameters<typeof service.getAnnotationUses>
-    ) => run(service.getAnnotationUses(...args)),
+    ) => bridge.runSync(service.getAnnotationUses(...args)),
     citationsByPath: (...args: Parameters<typeof service.citationsByPath>) =>
-      run(service.citationsByPath(...args)),
+      bridge.runSync(service.citationsByPath(...args)),
     getFileScan: (...args: Parameters<typeof service.getFileScan>) =>
       invoke(service.getFileScan(...args)),
     getDocumentCitationSet: (
