@@ -39,7 +39,7 @@ export const makeRecoveringParseClient = Effect.fnUntraced(function* (
     yield* Ref.set(available, Deferred.makeUnsafe<Live>());
     yield* Deferred.succeed(replaced, undefined);
     yield* Scope.close(connectionScope, Exit.void);
-    return yield* Effect.fail(death);
+    return yield* death;
   }).pipe(
     Effect.scoped,
     Effect.tapError((error) =>
@@ -53,9 +53,9 @@ export const makeRecoveringParseClient = Effect.fnUntraced(function* (
   const parse = Effect.fnUntraced(
     function* (request: ParseRequest) {
       if (isScopeClosed(lifetimeScope)) {
-        return yield* Effect.fail(
-          new ParseFailed({ message: "Parse worker unavailable" }),
-        );
+        return yield* new ParseFailed({
+          message: "Parse worker unavailable",
+        });
       }
       const live = yield* Deferred.await(yield* Ref.get(available)).pipe(
         Effect.timeoutOrElse({

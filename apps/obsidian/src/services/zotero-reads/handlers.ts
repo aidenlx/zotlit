@@ -328,8 +328,7 @@ export function handlersLayer(options?: HandlersOptions) {
         return Effect.acquireRelease(
           Effect.gen(function* () {
             const entry = pinned.get(snapshot);
-            if (!entry)
-              return yield* Effect.fail(new SnapshotExpired({ snapshot }));
+            if (!entry) return yield* new SnapshotExpired({ snapshot });
             yield* Ref.update(entry.counters, (before) => ({
               ...before,
               active: before.active + 1,

@@ -492,9 +492,9 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
     .withPermits(1)(
       Effect.gen(function* () {
         if (isScopeClosed(hostScope))
-          return yield* Effect.fail(
-            new DbUnavailable({ message: "The database worker stopped" }),
-          );
+          return yield* new DbUnavailable({
+            message: "The database worker stopped",
+          });
         const current = yield* Ref.get(runtime);
         return current.current ? current.current.client : yield* connectNew;
       }),

@@ -29,11 +29,9 @@ export const verifySnapshot = Effect.fnUntraced(function* (
       ? yield* verifyInProcess(path)
       : yield* verifyInWorker(path);
   if (result !== "ok")
-    return yield* Effect.fail(
-      new DbUnavailable({
-        message: "SQLite rejected the database read snapshot",
-      }),
-    );
+    return yield* new DbUnavailable({
+      message: "SQLite rejected the database read snapshot",
+    });
 });
 
 function verifyInProcess(path: string) {

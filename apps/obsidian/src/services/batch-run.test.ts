@@ -570,7 +570,7 @@ describe("runBatch", () => {
     const effect = Effect.uninterruptible(
       Effect.gen(function* () {
         abort.abort();
-        return yield* Effect.fail(error);
+        return yield* error;
       }),
     );
 
