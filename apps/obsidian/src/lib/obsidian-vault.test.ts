@@ -70,6 +70,22 @@ it.effect("reads the live layer's vault from ObsidianApp", () =>
   }),
 );
 
+it.effect("reads a path through the adapter, failing with what it threw", () =>
+  Effect.gen(function* () {
+    const source = new MemoryVault();
+    source.contents.set("raw.md", "on disk");
+    const { vault } = yield* open(layerVaultFrom(source));
+    expect(yield* vault.readPath("raw.md")).toBe("on disk");
+    const error = yield* Effect.flip(vault.readPath("gone.md"));
+    expect(error).toMatchObject({
+      _tag: "VaultError",
+      operation: "readPath",
+      path: "gone.md",
+      cause: { code: "ENOENT" },
+    });
+  }),
+);
+
 it.effect("lists the vault's Markdown files", () =>
   Effect.gen(function* () {
     const source = new MemoryVault();

@@ -6,6 +6,7 @@
 import { Context, Effect, Layer } from "effect";
 import type { Stream } from "effect";
 import type {
+  DataAdapter,
   DataWriteOptions,
   TAbstractFile,
   TFile,
@@ -46,14 +47,22 @@ export type VaultSource = Pick<
   | "getFolderByPath"
   | "getAbstractFileByPath"
   | "getMarkdownFiles"
-> &
-  ObsidianEventEmitter;
+> & {
+  /** The vault's adapter, read by path. */
+  readonly adapter: Pick<DataAdapter, "read">;
+} & ObsidianEventEmitter;
 
 export interface VaultShape {
   /** The file's content, read from disk. */
   read(file: TFile): Effect.Effect<string, VaultError>;
   /** The file's content, from Obsidian's cache when it holds it. */
   cachedRead(file: TFile): Effect.Effect<string, VaultError>;
+  /**
+   * The text at the vault path `path`, read from disk through the vault's
+   * adapter, whether or not the vault cache holds a file there. `cause`
+   * holds what the adapter threw, such as an `ENOENT` error.
+   */
+  readPath(path: string): Effect.Effect<string, VaultError>;
   /** Rewrite the file's content with `fn` in one step; the new content. */
   process(
     file: TFile,
@@ -127,6 +136,9 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
     ),
     cachedRead: Effect.fn("Vault.cachedRead")((file) =>
       call("cachedRead", file.path, () => source.cachedRead(file)),
+    ),
+    readPath: Effect.fn("Vault.readPath")((path) =>
+      call("readPath", path, () => source.adapter.read(path)),
     ),
     process: Effect.fn("Vault.process")((file, fn, options) =>
       call("process", file.path, () => source.process(file, fn, options)),

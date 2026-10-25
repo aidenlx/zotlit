@@ -207,6 +207,12 @@ export class MockVault implements VaultSource {
     return Promise.resolve(this.bodies.get(file.path) ?? "");
   }
 
+  /** The Citation Index reads no path through the adapter. */
+  readonly adapter = {
+    read: (path: string): Promise<string> =>
+      Promise.reject(new Error(`The harness reads no path: ${path}`)),
+  };
+
   process(file: TFile): Promise<string> {
     return Promise.reject(
       new Error(`The harness writes no note: ${file.path}`),

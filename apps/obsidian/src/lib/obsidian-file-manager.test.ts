@@ -112,6 +112,18 @@ it.effect("forwards subpath and alias to Obsidian's generateMarkdownLink", () =>
   }),
 );
 
+it.effect("asks Obsidian for an attachment's free path", () =>
+  Effect.gen(function* () {
+    const source = new MemoryFileManager();
+    const ask = vi.spyOn(source, "getAvailablePathForAttachment");
+    const files = yield* over(source);
+    expect(
+      yield* files.getAvailablePathForAttachment("image.png", "notes/a.md"),
+    ).toBe("image.png");
+    expect(ask).toHaveBeenCalledExactlyOnceWith("image.png", "notes/a.md");
+  }),
+);
+
 it.effect(
   "fails a rejected rename with VaultError and Obsidian's message",
   () =>
