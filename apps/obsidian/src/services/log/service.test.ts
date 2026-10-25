@@ -32,23 +32,23 @@ const logging = Effect.fnUntraced(function* (
   const started = yield* Queue.unbounded<LogConfig>();
   let failNext = options.failFirstConfigure ?? false;
   const output = LogOutput.of({
-    configureSync: (config) =>
+    configureSync: Effect.fn("LogOutput.configureSync")((config) =>
       Effect.sync(() => {
         events.push("configureSync");
         configs.push(config);
       }),
-    configure: (config) =>
-      Effect.gen(function* () {
-        events.push("configure");
-        yield* Queue.offer(started, config);
-        yield* Effect.sleep(CONFIGURE_TIME);
-        if (failNext) {
-          failNext = false;
-          return yield* Effect.fail(new Error("boom"));
-        }
-        events.push("configured");
-        configs.push(config);
-      }),
+    ),
+    configure: Effect.fn("LogOutput.configure")(function* (config) {
+      events.push("configure");
+      yield* Queue.offer(started, config);
+      yield* Effect.sleep(CONFIGURE_TIME);
+      if (failNext) {
+        failNext = false;
+        return yield* Effect.fail(new Error("boom"));
+      }
+      events.push("configured");
+      configs.push(config);
+    }),
     reset: Effect.sync(() => {
       events.push("reset");
     }),

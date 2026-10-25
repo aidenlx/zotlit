@@ -449,10 +449,11 @@ export const layerLocalServer: Layer.Layer<
       dbUpdated: Stream.fromPubSub(dbUpdated),
       updateManyRequests: Stream.fromPubSub(updateMany),
       importNotesRequests: Stream.fromPubSub(importNotes),
-      mount: (basePath, routes) =>
+      mount: Effect.fn("LocalServer.mount")((basePath, routes) =>
         Effect.sync(() => {
           app.route(basePath, routes);
         }),
+      ),
     });
   }).pipe(withLogCategory("local-server")),
 );

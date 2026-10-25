@@ -62,11 +62,13 @@ export const makeFileManager = Effect.fnUntraced(function* (
 ) {
   const vault = yield* Vault;
   return FileManager.of({
-    processFrontMatter: (file, fn) =>
-      Effect.tryPromise({
-        try: () => source.processFrontMatter(file, fn),
-        catch: vaultError("processFrontMatter", file.path),
-      }),
+    processFrontMatter: Effect.fn("FileManager.processFrontMatter")(
+      (file, fn) =>
+        Effect.tryPromise({
+          try: () => source.processFrontMatter(file, fn),
+          catch: vaultError("processFrontMatter", file.path),
+        }),
+    ),
     renameFile: Effect.fn("FileManager.renameFile")(function* (file, newPath) {
       // As Obsidian's `Vault.rename`: the normalized path, and no move when
       // it is the file's own.
@@ -80,15 +82,17 @@ export const makeFileManager = Effect.fnUntraced(function* (
         catch: vaultError("renameFile", file.path),
       });
     }),
-    generateMarkdownLink: (file, sourcePath, options = {}) =>
-      Effect.sync(() =>
-        source.generateMarkdownLink(
-          file,
-          sourcePath,
-          options.subpath,
-          options.alias,
+    generateMarkdownLink: Effect.fn("FileManager.generateMarkdownLink")(
+      (file, sourcePath, options = {}) =>
+        Effect.sync(() =>
+          source.generateMarkdownLink(
+            file,
+            sourcePath,
+            options.subpath,
+            options.alias,
+          ),
         ),
-      ),
+    ),
   });
 });
 

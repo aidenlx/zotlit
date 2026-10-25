@@ -23,7 +23,9 @@ export function layerPluginData(
     PluginData,
     PluginData.of({
       load: Effect.tryPromise((): Promise<unknown> => plugin.loadData()),
-      save: (data) => Effect.tryPromise(() => plugin.saveData(data)),
+      save: Effect.fn("PluginData.save")((data) =>
+        Effect.tryPromise(() => plugin.saveData(data)),
+      ),
     }),
   );
 }

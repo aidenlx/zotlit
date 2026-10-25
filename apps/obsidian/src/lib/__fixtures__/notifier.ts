@@ -24,7 +24,7 @@ export function testNotifier() {
     return notice;
   };
   const service = Notifier.of({
-    show: (message, options) =>
+    show: Effect.fn("Notifier.show")((message, options) =>
       Effect.sync(() => {
         const notice = record(message, options?.duration);
         return {
@@ -33,7 +33,7 @@ export function testNotifier() {
           }),
           setMessage: (next) => Effect.sync(() => notice.messages.push(next)),
         };
-      }),
+      })),
     progress: Effect.acquireRelease(
       Effect.sync(() => {
         let notice: RecordedNotice | null = null;

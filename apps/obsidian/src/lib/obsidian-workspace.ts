@@ -127,7 +127,7 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     activeMarkdownView: Effect.sync(() =>
       source.getActiveViewOfType(MarkdownView),
     ),
-    onFileMenu: (handler) =>
+    onFileMenu: Effect.fn("Workspace.onFileMenu")((handler) =>
       menuHook(
         "file-menu",
         // oxlint-disable-next-line max-params -- Obsidian's own `file-menu` shape.
@@ -138,12 +138,14 @@ export const makeWorkspace = Effect.fnUntraced(function* (
           leaf: WorkspaceLeaf | undefined,
         ) => handler(menu, file, { source: from, leaf }),
       ),
-    onEditorMenu: (handler) =>
+    ),
+    onEditorMenu: Effect.fn("Workspace.onEditorMenu")((handler) =>
       menuHook(
         "editor-menu",
         (menu: Menu, editor: Editor, info: MarkdownView | MarkdownFileInfo) =>
           handler(menu, editor, info),
       ),
+    ),
   });
 });
 

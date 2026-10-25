@@ -351,8 +351,9 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
         changes,
         refresh,
         notifyExternalChange: Effect.ignore(refresh),
-        configure: (next) =>
+        configure: Effect.fn("Connection.configure")((next) =>
           Ref.set(config, next).pipe(Effect.andThen(Effect.ignore(refresh))),
+        ),
         databaseGeneration: databaseGenerations.databaseGeneration,
         databaseFile: databaseGenerations.databaseFile,
       });

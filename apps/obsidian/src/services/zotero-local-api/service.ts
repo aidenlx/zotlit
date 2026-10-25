@@ -243,45 +243,64 @@ export function layerZoteroLocalApi(options: {
       const byTag = <T extends LocalApiEvent["_tag"]>(tag: T) =>
         filterTag(events, tag);
       return ZoteroLocalApi.of({
-        demandSource: () => Effect.sync(() => session.demandSource()),
+        demandSource: Effect.fn("ZoteroLocalApi.demandSource")(() =>
+          Effect.sync(() => session.demandSource()),
+        ),
         state: Effect.sync(() => session.state),
-        probe: () => Effect.promise(() => session.probe()),
-        writeStateFor: (attachmentKey) =>
-          Effect.sync(() => session.writeStateFor(attachmentKey)),
-        remembered: () => Effect.promise(() => session.remembered()),
+        probe: Effect.fn("ZoteroLocalApi.probe")(() =>
+          Effect.promise(() => session.probe()),
+        ),
+        writeStateFor: Effect.fn("ZoteroLocalApi.writeStateFor")(
+          (attachmentKey) =>
+            Effect.sync(() => session.writeStateFor(attachmentKey)),
+        ),
+        remembered: Effect.fn("ZoteroLocalApi.remembered")(() =>
+          Effect.promise(() => session.remembered()),
+        ),
         // A gesture with no signal keeps the shared request alive, so an
         // interrupt does not abandon it.
-        authorize: (signal) => Effect.promise(() => session.authorize(signal)),
-        forgetAuthorization: () =>
-          Effect.promise(() => session.forgetAuthorization()),
+        authorize: Effect.fn("ZoteroLocalApi.authorize")((signal) =>
+          Effect.promise(() => session.authorize(signal)),
+        ),
+        forgetAuthorization: Effect.fn("ZoteroLocalApi.forgetAuthorization")(
+          () => Effect.promise(() => session.forgetAuthorization()),
+        ),
         // A write runs to its answer once sent: an interrupt would leave its
         // outcome unknown. So it takes no abort signal, and it is
         // uninterruptible, so a scope close waits for a write that was sent.
-        authorizedSend: (path, options) =>
-          Effect.uninterruptible(
-            Effect.promise(() => session.authorizedSend(path, options)),
-          ),
-        writeLastRead: (attachmentKey, serverID, instant) =>
-          Effect.uninterruptible(
-            Effect.promise(() =>
-              session.writeLastRead(attachmentKey, serverID, instant),
+        authorizedSend: Effect.fn("ZoteroLocalApi.authorizedSend")(
+          (path, options) =>
+            Effect.uninterruptible(
+              Effect.promise(() => session.authorizedSend(path, options)),
             ),
-          ),
-        readAnnotation: (annotationKey, attachmentKey, signal) =>
-          Effect.promise((interrupt) =>
-            session.readAnnotation(
-              annotationKey,
-              attachmentKey,
-              signal ? AbortSignal.any([signal, interrupt]) : interrupt,
+        ),
+        writeLastRead: Effect.fn("ZoteroLocalApi.writeLastRead")(
+          (attachmentKey, serverID, instant) =>
+            Effect.uninterruptible(
+              Effect.promise(() =>
+                session.writeLastRead(attachmentKey, serverID, instant),
+              ),
             ),
-          ),
-        listAnnotations: (attachmentKey, signal) =>
-          Effect.promise((interrupt) =>
-            session.listAnnotations(
-              attachmentKey,
-              signal ? AbortSignal.any([signal, interrupt]) : interrupt,
+        ),
+        readAnnotation: Effect.fn("ZoteroLocalApi.readAnnotation")(
+          (annotationKey, attachmentKey, signal) =>
+            Effect.promise((interrupt) =>
+              session.readAnnotation(
+                annotationKey,
+                attachmentKey,
+                signal ? AbortSignal.any([signal, interrupt]) : interrupt,
+              ),
             ),
-          ),
+        ),
+        listAnnotations: Effect.fn("ZoteroLocalApi.listAnnotations")(
+          (attachmentKey, signal) =>
+            Effect.promise((interrupt) =>
+              session.listAnnotations(
+                attachmentKey,
+                signal ? AbortSignal.any([signal, interrupt]) : interrupt,
+              ),
+            ),
+        ),
         changes: byTag("changed").pipe(Stream.as(undefined)),
         capabilityChanges: byTag("capability-changed").pipe(
           Stream.as(undefined),

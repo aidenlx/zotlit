@@ -51,8 +51,12 @@ export function layerLogOutput(
   return Layer.succeed(
     LogOutput,
     LogOutput.of({
-      configureSync: (config) => Effect.try(() => configureSync(config)),
-      configure: (config) => Effect.tryPromise(() => configure(config)),
+      configureSync: Effect.fn("LogOutput.configureSync")((config) =>
+        Effect.try(() => configureSync(config)),
+      ),
+      configure: Effect.fn("LogOutput.configure")((config) =>
+        Effect.tryPromise(() => configure(config)),
+      ),
       reset: Effect.tryPromise(() => reset()),
       openFile: Effect.acquireDisposable(
         Effect.tryPromise(() => createVaultFileSink(adapter, path)),

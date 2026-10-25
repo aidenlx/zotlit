@@ -155,7 +155,9 @@ const makeUseLedger = Effect.gen(function* () {
   return UseLedger.of({
     current,
     changes: SubscriptionRef.changes(ledger),
-    get: (itemKey) => Effect.map(current, (entries) => entries[itemKey]),
+    get: Effect.fn("UseLedger.get")((itemKey) =>
+      Effect.map(current, (entries) => entries[itemKey]),
+    ),
     uses: Effect.map(current, (entries) =>
       Object.fromEntries(
         Object.entries(entries).map(([key, use]) => [
@@ -165,7 +167,7 @@ const makeUseLedger = Effect.gen(function* () {
       ),
     ),
     record,
-    withoutNoteUse: (file, open) =>
+    withoutNoteUse: Effect.fn("UseLedger.withoutNoteUse")((file, open) =>
       Effect.acquireUseRelease(
         Effect.sync(() => {
           flush();
@@ -183,6 +185,7 @@ const makeUseLedger = Effect.gen(function* () {
             }
           }),
       ),
+    ),
   });
 }).pipe(withLogCategory("use-ledger"));
 

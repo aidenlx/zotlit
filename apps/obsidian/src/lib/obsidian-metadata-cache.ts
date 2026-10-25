@@ -91,7 +91,9 @@ export const makeMetadataCache = Effect.fnUntraced(function* (
   }));
   yield* events.listen(source, "resolved", () => ({ _tag: "resolved" }));
   return MetadataCache.of({
-    fileCache: (file) => Effect.sync(() => source.getFileCache(file)),
+    fileCache: Effect.fn("MetadataCache.fileCache")((file) =>
+      Effect.sync(() => source.getFileCache(file)),
+    ),
     changes: events.stream,
     whenResolved: whenResolved(source),
   });

@@ -359,13 +359,17 @@ export const layerCitationPopover: Layer.Layer<
     }
 
     return CitationPopover.of({
-      show: (request) =>
+      show: Effect.fn("CitationPopover.show")((request) =>
         Effect.sync(() => {
           void showVisit(request);
         }),
-      showWork: (request) => Effect.promise(() => showVisit(request)),
-      hide: (parent, targetEl) =>
+      ),
+      showWork: Effect.fn("CitationPopover.showWork")((request) =>
+        Effect.promise(() => showVisit(request)),
+      ),
+      hide: Effect.fn("CitationPopover.hide")((parent, targetEl) =>
         Effect.sync(() => visits.hide(parent, targetEl)),
+      ),
     });
   }).pipe(withLogCategory("citation-popover")),
 );

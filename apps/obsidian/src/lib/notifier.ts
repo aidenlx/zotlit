@@ -42,7 +42,7 @@ export class Notifier extends Context.Service<
 export const layerNotifier: Layer.Layer<Notifier> = Layer.succeed(
   Notifier,
   Notifier.of({
-    show: (message, options) =>
+    show: Effect.fn("Notifier.show")((message, options) =>
       Effect.sync(() => {
         const notice = new BaseNotice(message, options?.duration);
         return {
@@ -50,6 +50,7 @@ export const layerNotifier: Layer.Layer<Notifier> = Layer.succeed(
           setMessage: (next) => Effect.sync(() => void notice.setMessage(next)),
         };
       }),
+    ),
     progress: Effect.map(
       Effect.acquireDisposable(Effect.sync(() => new LazyNotice())),
       (notice) => ({

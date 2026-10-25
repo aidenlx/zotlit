@@ -66,7 +66,9 @@ export const layerAnnotationPopover: Layer.Layer<
     );
     return AnnotationPopover.of({
       // The core catches read failures, and this starts its first read now.
-      show: (request) => Effect.promise(() => core.show(request)),
+      show: Effect.fn("AnnotationPopover.show")((request) =>
+        Effect.promise(() => core.show(request)),
+      ),
     });
   }).pipe(withLogCategory("annotation-popover")),
 );
