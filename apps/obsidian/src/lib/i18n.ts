@@ -64,7 +64,11 @@ export function languagePackEdge(
     getSituation: () => runtime.runSync(pack.situation),
     subscribe: (listener) =>
       subscribe(runtime, Stream.drop(pack.changes, 1), listener),
-    install: () => void runtime.runFork(toastLanguagePackInstall),
+    // In the runtime's Scope, so unload ends the toast with the download.
+    install: () =>
+      void runtime.runFork(
+        Effect.forkIn(toastLanguagePackInstall, runtime.scope),
+      ),
     reset: () => runtime.runSync(pack.reset),
   };
 }

@@ -74,4 +74,21 @@ describe("the setting tab's Language Pack edge", () => {
         expect([...device.storage.keys()]).toEqual([]);
       }),
   );
+
+  it.effect("resets in place while a download is in flight", () =>
+    Effect.gen(function* () {
+      const device = fakeDevice();
+      device.held = new Promise<void>(() => {});
+      const pack = yield* startOn(device, { language: "zh" });
+      const { edge } = yield* edgeOver(pack);
+
+      edge.install();
+      yield* eventually(() => device.requests.length > 0);
+      expect(edge.getSituation().kind).toBe("downloading");
+
+      edge.reset();
+      expect(edge.getSituation().kind).toBe("installable");
+      expect([...device.storage.keys()]).toEqual([]);
+    }),
+  );
 });
