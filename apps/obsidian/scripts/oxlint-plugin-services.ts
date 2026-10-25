@@ -425,39 +425,106 @@ export const plainAdapterStreams: Rule = {
   },
 };
 
+const CAPABILITY_TAGS: Readonly<Record<string, string>> = {
+  vault: "Vault tag (@/lib/obsidian-vault)",
+  metadataCache: "MetadataCache tag (@/lib/obsidian-metadata-cache)",
+};
+
+/** `app`, or a member named `app`: `this.app`, `plugin.app`, `this.#app`. */
+function isApp(node: AstNode | undefined): boolean {
+  if (node?.type === "Identifier") return node.name === "app";
+  return (
+    node?.type === "MemberExpression" &&
+    !node.computed &&
+    (node.property?.type === "Identifier" ||
+      node.property?.type === "PrivateIdentifier") &&
+    node.property.name === "app"
+  );
+}
+
+/** `<app>.<name>`, a non-computed member of the Obsidian `App`. */
+function appMember(node: AstNode | undefined): string | undefined {
+  return node?.type === "MemberExpression" &&
+    !node.computed &&
+    isApp(node.object) &&
+    typeof node.property?.name === "string"
+    ? node.property.name
+    : undefined;
+}
+
 /**
- * Inside a layer, Obsidian events enter through `obsidianEvents` from
- * `@/lib/effect-obsidian-events` (policies/events.md → Obsidian events), which gives one ordered intake and a failure
- * boundary per event. A bare `registerEvent` gives neither. A function nested
- * in an Effect generator counts too, such as the acquire callback of
- * `Effect.acquireDisposable`.
+ * A file that imports Effect reaches Obsidian through the capability tags
+ * (policies/events.md → Obsidian events): `Vault`, `MetadataCache`,
+ * `Workspace`, `FileManager` and `PluginHost`, each from `@/lib/obsidian-*` or
+ * `@/lib/plugin-host`. A tag's events are its `changes` Stream; an event with
+ * no tag yet enters through `obsidianEvents` from
+ * `@/lib/effect-obsidian-events`. Both register on the layer's Scope.
+ * Reported: `app.vault` and `app.metadataCache`, a call to `registerEvent`,
+ * and `.on(` on a member of `app` (`app.workspace.on(…)`). `app` is an `app`
+ * identifier or any member named `app` (`this.app`, `plugin.app`,
+ * `this.#app`).
+ *
+ * "Imports Effect" is `importsEffect` (`./oxlint-ast.ts`), as for
+ * `clock-time`. The tags themselves, and the backlog, are listed in
+ * oxlint.config.ts.
  */
-export const obsidianEventsIntake: Rule = {
+export const obsidianCapabilities: Rule = {
   meta: {
     type: "problem",
     docs: {
-      description: "Require obsidianEvents for Obsidian events in a layer.",
+      description:
+        "Require the Obsidian capability tags in a file that imports Effect.",
     },
     messages: {
-      intake:
-        "Register Obsidian events through obsidianEvents from @/lib/effect-obsidian-events: one ordered intake with a failure boundary per event (policies/events.md).",
+      capability:
+        "Read `app.{{name}}` through the {{tag}}; a file that imports Effect takes Obsidian from the capability tags (policies/events.md → Obsidian events).",
+      event:
+        "Take `app.{{name}}` events from its capability tag's `changes` Stream (Vault, MetadataCache, Workspace); an event the tag does not expose enters through obsidianEvents from @/lib/effect-obsidian-events (policies/events.md → Obsidian events).",
+      registerEvent:
+        "Take Obsidian events from a capability tag's `changes` Stream, or, for a source or event with no tag yet, from obsidianEvents in @/lib/effect-obsidian-events: one ordered intake with a failure boundary per event (policies/events.md → Obsidian events).",
     },
     schema: [],
   },
   create(context) {
-    const insideEffect = (node: AstNode) => {
-      for (let at = node.parent; at; at = at.parent)
-        if (isEffectGenerator(at)) return true;
-      return false;
-    };
+    let effectNative = false;
+    /** `<app>.<name>.on`, the callee of an event registration. */
+    const isAppOn = (node: AstNode | undefined) =>
+      node?.type === "MemberExpression" &&
+      !node.computed &&
+      node.property?.name === "on" &&
+      appMember(node.object) !== undefined;
     return {
+      Program(program) {
+        effectNative = importsEffect((program as ModuleProgram).body ?? []);
+      },
+      MemberExpression(node) {
+        if (!effectNative) return;
+        const name = appMember(node as AstNode);
+        const tag = name === undefined ? undefined : CAPABILITY_TAGS[name];
+        // `app.vault.on(…)` is reported once, as an event.
+        if (!tag || isAppOn(node.parent as AstNode)) return;
+        context.report({
+          node: node as never,
+          messageId: "capability",
+          data: { name: name!, tag },
+        });
+      },
       CallExpression(node) {
+        if (!effectNative) return;
+        const callee = node.callee as AstNode;
         if (
-          node.callee.type === "Identifier" &&
-          node.callee.name === "registerEvent" &&
-          insideEffect(node as AstNode)
+          (callee.type === "Identifier" && callee.name === "registerEvent") ||
+          (callee.type === "MemberExpression" &&
+            !callee.computed &&
+            callee.property?.name === "registerEvent")
         )
-          context.report({ node, messageId: "intake" });
+          context.report({ node, messageId: "registerEvent" });
+        else if (isAppOn(callee))
+          context.report({
+            node: callee as never,
+            messageId: "event",
+            data: { name: String(appMember(callee.object)) },
+          });
       },
     };
   },
@@ -874,7 +941,7 @@ export default {
     "no-default-runtime": noDefaultRuntime,
     "no-legacy-service": noLegacyService,
     "no-nanoevents": noNanoevents,
-    "obsidian-events-intake": obsidianEventsIntake,
+    "obsidian-capabilities": obsidianCapabilities,
     "plain-adapter-streams": plainAdapterStreams,
     "scope-closed": scopeClosed,
     "service-tag-id": serviceTagId,

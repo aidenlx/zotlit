@@ -7,6 +7,7 @@ import type {
   DataWriteOptions,
   TAbstractFile,
   TFile,
+  TFolder,
   Vault as ObsidianVault,
 } from "obsidian";
 
@@ -42,6 +43,7 @@ export type VaultSource = Pick<
   | "create"
   | "trash"
   | "getFileByPath"
+  | "getFolderByPath"
   | "getAbstractFileByPath"
 > &
   ObsidianEventEmitter;
@@ -71,6 +73,8 @@ export interface VaultShape {
   trash(file: TAbstractFile, system: boolean): Effect.Effect<void, VaultError>;
   /** The file at `path` now, `null` when there is none. */
   getFileByPath(path: string): Effect.Effect<TFile | null>;
+  /** The folder at `path` in the vault cache (case-sensitive), `null` when there is none. */
+  getFolderByPath(path: string): Effect.Effect<TFolder | null>;
   /** The file or folder at `path` in the vault cache (case-sensitive), `null` when there is none. */
   getAbstractFileByPath(path: string): Effect.Effect<TAbstractFile | null>;
   /** Each vault event, in Obsidian's order, from when the consumer's Stream starts. */
@@ -129,6 +133,7 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
     trash: (file, system) =>
       call("trash", file.path, () => source.trash(file, system)),
     getFileByPath: (path) => Effect.sync(() => source.getFileByPath(path)),
+    getFolderByPath: (path) => Effect.sync(() => source.getFolderByPath(path)),
     getAbstractFileByPath: (path) =>
       Effect.sync(() => source.getAbstractFileByPath(path)),
     changes: events.stream,
