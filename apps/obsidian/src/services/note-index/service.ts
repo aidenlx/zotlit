@@ -5,7 +5,7 @@ import { NON_VAULT_PROPERTY_KEYS } from "@/lib/constants";
 import { Context, Deferred, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
-import { forkEach } from "@/lib/effect-stream";
+import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
@@ -38,9 +38,6 @@ interface Read {
 /** A file that is gone or not Markdown: no keys, no frontmatter. */
 const NONE: Read = { contributions: EMPTY_CONTRIBUTIONS, frontmatter: null };
 type Reading = Read | typeof UNREAD;
-
-/** The vault events the index follows: a file left or moved. */
-type VaultMove = Extract<VaultEvent, { _tag: "delete" | "rename" }>;
 
 export type NoteIndexChange =
   | { readonly type: "indexed" }
@@ -130,7 +127,7 @@ const makeNoteIndex = Effect.gen(function* () {
   const pendingBarriers = new Set<Deferred.Deferred<void>>();
   const events = yield* obsidianEvents<{
     metadata: [MetadataEvent];
-    vault: [VaultMove];
+    vault: [Extract<VaultEvent, { _tag: "delete" | "rename" }>];
     "rename-settled": [TFile, Deferred.Deferred<void>];
     layout: [];
     clean: [];
@@ -238,12 +235,7 @@ const makeNoteIndex = Effect.gen(function* () {
     // forkEach hands each over inside Obsidian's callback.
     yield* forkEach(metadata.changes, events.callback("metadata"));
     yield* forkEach(
-      vault.changes.pipe(
-        Stream.filter(
-          (change): change is VaultMove =>
-            change._tag === "delete" || change._tag === "rename",
-        ),
-      ),
+      filterTag(vault.changes, "delete", "rename"),
       events.callback("vault"),
     );
     app.workspace.onLayoutReady(events.callback("layout"));

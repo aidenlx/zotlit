@@ -2956,10 +2956,18 @@ export const layerTemplate = Layer.effect(
           switch (event.type) {
             case "vault": {
               const [change] = event.args;
-              if (change._tag === "rename")
-                engine.onRename(change.file, change.oldPath);
-              else if (change._tag === "delete") engine.onDelete(change.file);
-              else engine.onCreateOrModify(change.file);
+              switch (change._tag) {
+                case "create":
+                case "modify":
+                  engine.onCreateOrModify(change.file);
+                  break;
+                case "rename":
+                  engine.onRename(change.file, change.oldPath);
+                  break;
+                case "delete":
+                  engine.onDelete(change.file);
+                  break;
+              }
               break;
             }
             case "flush":
