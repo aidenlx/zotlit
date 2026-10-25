@@ -2,6 +2,7 @@ import { defineConfig } from "oxlint";
 
 import { testBaselineOverrides } from "@zotlit/config/oxlint";
 import baseConfig, {
+  datePattern,
   itemQuerySchemaPaths,
   parentImportPattern,
   uniqueIdPaths,
@@ -42,6 +43,7 @@ const effectWrapperPaths = [
 const commonImports = {
   patterns: [
     parentImportPattern,
+    datePattern,
     {
       group: ["**/citation-index/scan", "./scan"],
       importNames: [
@@ -122,7 +124,7 @@ export default defineConfig({
       rules: {
         "no-restricted-imports": [
           "error",
-          { ...runtimeImports, patterns: [parentImportPattern] },
+          { ...runtimeImports, patterns: [parentImportPattern, datePattern] },
         ],
       },
     },
@@ -451,6 +453,82 @@ export default defineConfig({
       rules: { "zotlit-services/clock-time": "off" },
     },
     {
+      // Date adapter: Obsidian's YAML frontmatter can hand in a Date.
+      files: [
+        "src/lib/frontmatter-date.ts",
+        "src/lib/frontmatter-date.test.ts",
+      ],
+      rules: {
+        "effecttsgo/global-date": "off",
+        "no-restricted-globals": "off",
+      },
+    },
+    {
+      files: ["src/**/*.{ts,tsx}"],
+      excludeFiles: [
+        // Converts between Effect's DateTime and Clock and the Temporal of plain code.
+        "src/lib/effect-clock.ts",
+      ],
+      rules: { "zotlit-services/temporal-in-effect": "error" },
+    },
+    {
+      // Rewritten by effect/drop-port; the date rule follows after it merges.
+      files: [
+        "src/services/zotero-local-api/**",
+        "src/services/annotation-repository/repository.ts",
+        "src/services/annotation-repository/notices.ts",
+        "src/services/annotation-repository/service.ts",
+        "src/services/annotation-repository/__fixtures__.ts",
+        "src/services/build.ts",
+      ],
+      rules: {
+        "zotlit-services/temporal-in-effect": "off",
+        "no-restricted-globals": "off",
+        "typescript/no-restricted-types": "off",
+      },
+    },
+    {
+      // DateTime backlog: Effect code that still holds Temporal. Move it to
+      // DateTime, Duration and Clock, then remove the file from the list.
+      files: [
+        "src/lib/effect-log-port.test.ts",
+        "src/lib/effect-log.test.ts",
+        "src/services/annotation-repository/actions.test.ts",
+        "src/services/annotation-repository/scale.test.ts",
+        "src/services/attachment-resolver/__fixtures__.ts",
+        "src/services/citation-index/lookup-service.test.ts",
+        "src/services/citation-index/lookup-service.ts",
+        "src/services/citation-index/sources.test.ts",
+        "src/services/citation-text/service.ts",
+        "src/services/item-query/measure.ts",
+        "src/services/item-query/service.ts",
+        "src/services/note-feature/insert-annotation.test.ts",
+        "src/services/note-feature/operations.membership.test.ts",
+        "src/services/note-feature/operations.test.ts",
+        "src/services/note-feature/operations.ts",
+        "src/services/note-feature/update-batch.test.ts",
+        "src/services/note-import/batch-import.test.ts",
+        "src/services/note-import/service.test.ts",
+        "src/services/pandoc/__fixtures__/citation-surfaces.ts",
+        "src/services/pdf-annotation-editor/__fixtures__.ts",
+        "src/services/pdf-annotation-editor/service.test.ts",
+        "src/services/query-client/__fixtures__.ts",
+        "src/services/query-client/service.ts",
+        "src/services/template-workbench/cli.test.ts",
+        "src/services/template/service.test.ts",
+        "src/services/use-ledger/__fixtures__.ts",
+        "src/services/use-ledger/plain.ts",
+        "src/services/use-ledger/service.ts",
+        "src/services/zotero-reads/handlers.test.ts",
+        "src/services/zotero-reads/rpc.ts",
+        "src/services/zotero-reads/zotero-reads.test.ts",
+        "src/views/annot-view/view.tsx",
+        "src/views/library/view.test.ts",
+        "src/views/query-view/mixed-query.bench.ts",
+      ],
+      rules: { "zotlit-services/temporal-in-effect": "off" },
+    },
+    {
       files: ["src/services/**/plain.ts"],
       rules: { "zotlit-services/plain-adapter-streams": "error" },
     },
@@ -516,7 +594,7 @@ export default defineConfig({
         "no-restricted-imports": [
           "error",
           {
-            patterns: [parentImportPattern],
+            patterns: [parentImportPattern, datePattern],
             paths: [...effectWrapperPaths, ...obsidianImportPaths],
           },
         ],
@@ -559,6 +637,7 @@ export default defineConfig({
         "no-restricted-imports": [
           "error",
           {
+            patterns: [datePattern],
             paths: itemQuerySchemaPaths,
           },
         ],
@@ -575,7 +654,7 @@ export default defineConfig({
       // The rule tests reach the package-local Oxlint modules in scripts/.
       files: ["src/lint/*.test.ts"],
       rules: {
-        "no-restricted-imports": "off",
+        "no-restricted-imports": ["error", { patterns: [datePattern] }],
       },
     },
     {
@@ -671,6 +750,7 @@ export default defineConfig({
           "error",
           {
             patterns: [
+              datePattern,
               {
                 group: ["../src/**", "!../src/services/managed-binary/pin.ts"],
                 allowTypeImports: true,

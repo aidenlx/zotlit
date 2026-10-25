@@ -12,8 +12,9 @@ describe("classifyDiskData", () => {
     expect(classifyDiskData([1, 2, 3]).kind).toBe("malformed");
     expect(classifyDiskData("string").kind).toBe("malformed");
     expect(classifyDiskData(42).kind).toBe("malformed");
-    // oxlint-disable-next-line effecttsgo/global-date -- a Date is one of the values on disk that is not plain data.
-    expect(classifyDiskData(new Date()).kind).toBe("malformed");
+    expect(
+      classifyDiskData(Temporal.Instant.fromEpochMilliseconds(0)).kind,
+    ).toBe("malformed");
     expect(classifyDiskData(new Map()).kind).toBe("malformed");
   });
 
