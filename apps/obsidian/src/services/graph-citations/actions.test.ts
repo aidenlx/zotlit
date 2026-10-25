@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { createMockPlugin, Keymap } from "@mock/obsidian";
+import { Effect } from "effect";
 import { TFile } from "obsidian";
 import type {
   App,
@@ -11,8 +12,9 @@ import type {
   Workspace,
   WorkspaceLeaf,
 } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 
 import {
@@ -28,6 +30,10 @@ import { FakeColorGroupSection, FakeControlSection } from "./test-double";
 /** Every command id, in registration order. */
 const ALL_COMMAND_IDS = ["open-citation-graph", "open-local-citation-graph"];
 
+/** What the commands run Graph Citations' Effects through. */
+const bridge = openTestBridge();
+afterAll(() => bridge[Symbol.asyncDispose]());
+
 /** A note the local command can graph. */
 const DRAFT = new TFile();
 DRAFT.path = "Draft.md";
@@ -42,8 +48,6 @@ interface OpenedLeaf {
 interface FixtureOptions {
   graphEnabled?: boolean;
   activeFile?: TFile | null;
-  /** Whether Graph Citations started; a failed start rejects its `ready`. */
-  started?: boolean;
   /** The vault-wide "Show citations in graph view" setting. */
   featureEnabled?: boolean;
 }
@@ -85,24 +89,19 @@ function setup(options: FixtureOptions = {}) {
     },
   });
   const plugin = createMockPlugin();
-  const ready =
-    (options.started ?? true)
-      ? Promise.resolve()
-      : Promise.reject(new Error("start failed"));
-  // Awaited by the readiness check alone in some cases, so it never counts as
-  // an unhandled rejection.
-  ready.catch(() => {});
   const presetApplied = Promise.withResolvers<void>();
   const deps: GraphCitationsActionDeps = {
     app,
     graphCitations: {
-      ready,
-      enabled: options.featureEnabled ?? true,
-      applyPreset: vi.fn((leaf: WorkspaceLeaf) => {
-        preset.push({ leaf, showing: leafStates.get(leaf)?.state?.type });
-        presetApplied.resolve();
-      }),
+      enabled: Effect.succeed(options.featureEnabled ?? true),
+      applyPreset: vi.fn((leaf: WorkspaceLeaf) =>
+        Effect.sync(() => {
+          preset.push({ leaf, showing: leafStates.get(leaf)?.state?.type });
+          presetApplied.resolve();
+        }),
+      ),
     },
+    bridge,
   };
   addGraphCitationsActions(plugin, deps);
   const command = (id: string): Command => plugin.commands.get(id)!;
@@ -190,21 +189,22 @@ describe("addGraphCitationsActions", () => {
       };
       using _rows = installDisplayRows(engine, { saved: null });
       expect(engine.options["zotlit-author-title-labels"]).toBe(false);
-      fixture.deps.graphCitations.applyPreset = (leaf) => {
-        Object.assign(leaf, {
-          view: {
-            getViewType: () =>
-              id === "open-citation-graph" ? "graph" : "localgraph",
-            dataEngine: engine,
-            engine,
-          },
+      fixture.deps.graphCitations.applyPreset = (leaf) =>
+        Effect.sync(() => {
+          Object.assign(leaf, {
+            view: {
+              getViewType: () =>
+                id === "open-citation-graph" ? "graph" : "localgraph",
+              dataEngine: engine,
+              engine,
+            },
+          });
+          applyCitationGraphPreset(leaf, {
+            wikilinkCitations: false,
+            color: { a: 1, rgb: 0xe8622c },
+          });
+          fixture.commandSettled();
         });
-        applyCitationGraphPreset(leaf, {
-          wikilinkCitations: false,
-          color: { a: 1, rgb: 0xe8622c },
-        });
-        fixture.commandSettled();
-      };
 
       await fixture.run(id);
 
@@ -247,16 +247,6 @@ describe("addGraphCitationsActions", () => {
     expect(fixture.preset).toEqual([]);
   });
 
-  it("opens nothing while Graph Citations failed to start", async () => {
-    const fixture = setup({ started: false, activeFile: DRAFT });
-
-    await fixture.run("open-citation-graph");
-    await openLocalCitationGraph(fixture.deps, DRAFT);
-
-    expect(fixture.opened).toEqual([]);
-    expect(fixture.preset).toEqual([]);
-  });
-
   it("opens nothing while the vault-wide setting is off", async () => {
     const fixture = setup({ featureEnabled: false, activeFile: DRAFT });
 
@@ -278,15 +268,13 @@ describe("addGraphCitationsActions", () => {
 });
 
 describe("citationGraphReadiness", () => {
-  it("tells the three ways it cannot be opened apart", async () => {
-    await expect(
-      citationGraphReadiness(setup({ graphEnabled: false }).deps),
-    ).resolves.toBe("core-plugin-disabled");
-    await expect(
-      citationGraphReadiness(setup({ started: false }).deps),
-    ).resolves.toBe("unavailable");
-    await expect(
-      citationGraphReadiness(setup({ featureEnabled: false }).deps),
-    ).resolves.toBe("feature-off");
+  it("tells the two ways it cannot be opened apart", () => {
+    expect(citationGraphReadiness(setup({ graphEnabled: false }).deps)).toBe(
+      "core-plugin-disabled",
+    );
+    expect(citationGraphReadiness(setup({ featureEnabled: false }).deps)).toBe(
+      "feature-off",
+    );
+    expect(citationGraphReadiness(setup().deps)).toBe("ready");
   });
 });

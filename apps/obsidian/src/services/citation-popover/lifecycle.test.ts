@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { Effect } from "effect";
-import type { App, HoverParent } from "obsidian";
+import type { HoverParent, MetadataCache, Workspace } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -393,7 +393,11 @@ describe("Citation Popover visits", () => {
           viewType: "graph",
         }),
         {
-          app: stubService<App>("App", {}),
+          workspace: stubService<Pick<Workspace, "trigger">>("Workspace", {}),
+          metadataCache: stubService<Pick<MetadataCache, "getCache">>(
+            "MetadataCache",
+            {},
+          ),
           settings: stubService<Pick<PluginSettings["Service"], "current">>(
             "PluginSettings",
             {

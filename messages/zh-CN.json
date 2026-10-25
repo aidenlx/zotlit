@@ -812,7 +812,6 @@
   "graph_citations_citekey_copy_failed": "无法复制文献引用标识。",
   "graph_citations_add_literature_notes_group": "添加文献笔记分组",
   "graph_citations_core_plugin_disabled": "“关系图谱”核心插件已停用。请在“设置 → 核心插件”中启用它。",
-  "graph_citations_unavailable": "引用关系图谱不可用。",
   "graph_citations_disabled": "“在关系图谱中显示引用”已关闭。请在“设置 → ZotLit → 引文”中启用它。",
   "settings_citation_editor_heading": "文内引用",
   "settings_citation_show_formatted_name": "显示格式化引用",

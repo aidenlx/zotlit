@@ -161,7 +161,6 @@ export default defineConfig({
         "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
         "src/services/excerpt-image/prepare.ts",
-        "src/services/graph-citations/service.ts",
         "src/services/local-bridge/service.ts",
         "src/services/note-feature/operations.ts",
         "src/services/note-feature/update-batch.ts",
@@ -264,7 +263,6 @@ export default defineConfig({
       // Legacy classes that hold the App (`app`, `#app`, `#deps.app`). A file
       // moves off the list when its service converts to Effect.
       files: [
-        "src/services/graph-citations/service.ts",
         "src/services/profile/service.ts",
         "src/services/template/migration.ts",
         "src/services/template/service.ts",
@@ -392,7 +390,6 @@ export default defineConfig({
         "src/services/database/reap-temps.ts",
         "src/services/excerpt-image/prepare.ts",
         "src/services/excerpt-image/request.ts",
-        "src/services/graph-citations/service.ts",
         "src/services/local-bridge/reads.ts",
         "src/services/local-bridge/vault-targets.ts",
         "src/services/note-feature/annotation-citation.ts",
@@ -654,7 +651,6 @@ export default defineConfig({
         "src/services/attachment-import/service.ts",
         "src/services/excerpt-image/display.ts",
         "src/services/excerpt-image/service.ts",
-        "src/services/graph-citations/service.ts",
         "src/services/local-bridge/service.ts",
         "src/services/pdf-annotation-editor/service.ts",
       ],

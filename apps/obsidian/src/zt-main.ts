@@ -323,6 +323,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     addGraphCitationsActions(this, {
       app: this.app,
       graphCitations: services.graphCitations,
+      bridge: services.bridge,
     });
     const attachmentOpenDeps = {
       app: this.app,

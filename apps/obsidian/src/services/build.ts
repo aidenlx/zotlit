@@ -556,30 +556,5 @@ export async function buildServices(
         return runtime.runSync(CitekeyEditor);
       },
     })
-    .use({
-      graphCitations: ({
-        zoteroReads,
-        libraryScope,
-        citationIndex,
-        citationLookup,
-        noteIndex,
-        citekeyEditor,
-        citationPopover,
-        settings,
-        bridge,
-      }) =>
-        new GraphCitations({
-          runtime,
-          app: plugin.app,
-          reads: zoteroReads,
-          libraryScope,
-          citationIndex,
-          citationLookup,
-          noteIndex,
-          citekeyEditor,
-          citationPopover,
-          settings,
-          bridge,
-        }),
-    });
+    .useValue({ graphCitations: () => runtime.runSync(GraphCitations) });
 }
