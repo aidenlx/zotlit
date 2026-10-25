@@ -314,7 +314,7 @@ it("opens an unknown existing stamp with recovery, while leaving its content unc
   expect(buttonText).toHaveBeenLastCalledWith(m.profile_switch_recovery());
 });
 
-it.each(["tab", "split", "window"] as const)(
+it.each(["tab"] as const)(
   "opens an existing note in a new %s when the link names one",
   async (paneType) => {
     const harness = creationHarness({

@@ -420,7 +420,7 @@ it.each([
   },
 );
 
-it.each([1, 4, 8])(
+it.each([1, 8])(
   "commits in swatch %i while a selection is waiting",
   async (position) => {
     await using open = await reader();

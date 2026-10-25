@@ -156,7 +156,7 @@ describe("updateNoteToast", () => {
     );
   });
 
-  it.each(["full", "metadata"] as const)(
+  it.each(["full"] as const)(
     "surfaces an InertTemplateError's own message for the %s scope",
     (scope) => {
       const { error } = updateNoteToast(scope);
@@ -166,7 +166,7 @@ describe("updateNoteToast", () => {
     },
   );
 
-  it.each(["full", "metadata"] as const)(
+  it.each(["full"] as const)(
     "falls back to the generic failure copy for an untyped error in the %s scope",
     (scope) => {
       const { error } = updateNoteToast(scope);

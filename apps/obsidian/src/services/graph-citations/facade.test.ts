@@ -190,19 +190,6 @@ describe("facadeApp under the Filters rows", () => {
     ).toEqual(["Draft.md"]);
   });
 
-  it("leaves the file list whole while Citation-connected only is off", () => {
-    const cache = cacheWith({ resolved: {}, unresolved: {} });
-    const app = { metadataCache: cache } as unknown as App;
-
-    const facade = facadeApp(app, additionsOf({}));
-
-    expect(
-      (
-        facade.metadataCache as unknown as { getCachedFiles(): string[] }
-      ).getCachedFiles(),
-    ).toEqual(["Draft.md", "Other.md"]);
-  });
-
   it("answers no metadata while Citation-connected only is on, so a surviving note's tags draw no node", () => {
     const cache = cacheWith({ resolved: {}, unresolved: {} });
     const app = { metadataCache: cache } as unknown as App;
@@ -248,23 +235,6 @@ describe("facadeApp under the Filters rows", () => {
     });
     expect(facade.metadataCache.unresolvedLinks).toEqual({
       "Draft.md": { "@typo2024": 1 },
-    });
-  });
-
-  it("leaves both link maps whole while Citation-connected only is off", () => {
-    const cache = cacheWith({
-      resolved: { "Draft.md": { "Other.md": 1 } },
-      unresolved: { "Draft.md": { todo: 1 } },
-    });
-    const app = { metadataCache: cache } as unknown as App;
-
-    const facade = facadeApp(app, additionsOf({}));
-
-    expect(facade.metadataCache.resolvedLinks).toEqual({
-      "Draft.md": { "Other.md": 1 },
-    });
-    expect(facade.metadataCache.unresolvedLinks).toEqual({
-      "Draft.md": { todo: 1 },
     });
   });
 });

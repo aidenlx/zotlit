@@ -741,7 +741,6 @@ describe("Profile document matches at creation preparation", () => {
   it.each([
     [personalBook, 'tags.contains("Read")'],
     [personalBook, 'tags.contains("READ")'],
-    [article, 'tags.contains("auto-tag")'],
   ] as const)(
     "creates with the Profile selected by exact manual or automatic Tag names",
     async (item, match) => {

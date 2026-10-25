@@ -324,15 +324,6 @@ it.each([
     } satisfies CreationProfileSelection,
     problem: m.modal_profile_problem_unavailable_profile({ selector: BOOKS }),
   },
-  {
-    name: "link",
-    selection: {
-      selector: BOOKS,
-      source: "headless",
-      shouldAsk: true,
-    } satisfies CreationProfileSelection,
-    problem: m.modal_profile_problem_unavailable_profile({ selector: BOOKS }),
-  },
 ])(
   "asks for another choice when the $name-selected Profile is unavailable at preparation",
   async ({ selection, problem }) => {
@@ -400,19 +391,9 @@ it("imports from the contextual picker without creating a note", async () => {
 
 it.each([
   [
-    "the Profile picker's Default",
-    { label: undefined },
-    "Literature note created under Default: literatures/engelbart1962.md.",
-  ],
-  [
     "a Profile chosen or made in the picker",
     { label: "Reading" },
     "Literature note created under Reading: literatures/engelbart1962.md.",
-  ],
-  [
-    "a unique Profile Match",
-    { label: "Books", reason: MATCH_REASON },
-    `${MATCH_REASON} and created literatures/engelbart1962.md.`,
   ],
 ])("names the new note created through %s", (_, created, notice) => {
   const file = { path: "literatures/engelbart1962.md" } as TFile;

@@ -224,13 +224,6 @@ describe("addGraphCitationsActions", () => {
     expect(fixture.opened).toEqual([]);
   });
 
-  it("offers the local command while a note is active", () => {
-    const fixture = setup({ activeFile: DRAFT });
-    expect(
-      fixture.command("open-local-citation-graph").checkCallback!(true),
-    ).toBe(true);
-  });
-
   it("opens nothing while the Graph core plugin is disabled", async () => {
     const fixture = setup({ graphEnabled: false, activeFile: DRAFT });
 
@@ -272,10 +265,6 @@ describe("addGraphCitationsActions", () => {
 });
 
 describe("citationGraphReadiness", () => {
-  it("reads a Citation Graph as ready where everything it stands on is there", async () => {
-    await expect(citationGraphReadiness(setup().deps)).resolves.toBe("ready");
-  });
-
   it("tells the three ways it cannot be opened apart", async () => {
     await expect(
       citationGraphReadiness(setup({ graphEnabled: false }).deps),

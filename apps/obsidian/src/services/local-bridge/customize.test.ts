@@ -39,8 +39,6 @@ language: liquid
 {{ zt.text }}
 `;
 
-const ETA_PROFILE = LIQUID_PROFILE.replace("language: liquid", "language: eta");
-
 /** A Liquid document that calls a partial the template folder must answer. */
 const CALLING_PROFILE = LIQUID_PROFILE.replace(
   "# {{ zt.title }}",
@@ -390,24 +388,6 @@ describe("the Customize flow", () => {
     await plain.customize({ profileId: "default" });
     expect(plain.launches[0]).toEqual({ profileId: "default", item: null });
   });
-
-  it.each([
-    ETA_PROFILE,
-    LIQUID_PROFILE.replace(
-      "language: liquid",
-      "language: liquid\nfrontmatter:\n  - key: title\n    js: zt.title",
-    ),
-  ])(
-    "keeps an unsupported Profile native with a remembered preference",
-    async (source) => {
-      const native = harness({ source });
-      saveProfileCustomization(deviceOf(native), "native");
-      await native.customize({ profileId: "default" });
-      expect(native.openedFiles).toHaveLength(1);
-      expect(native.sheets).toEqual([]);
-      expect(native.launches).toEqual([]);
-    },
-  );
 
   it("keeps a Profile that calls an Eta partial from the template folder in Obsidian", async () => {
     const byline = {

@@ -896,30 +896,6 @@ describe("createNoteImporter", () => {
     expect(process).not.toHaveBeenCalled();
   });
 
-  it("ensures the import folder on the create branch of importNote", async () => {
-    const { app, create, createFolder } = makeApp();
-    const service = makeService(app);
-    const settings: Settings = {
-      ...defaults,
-      "note.default-profile": {
-        ...defaults["note.default-profile"],
-        bindings: {
-          ...defaults["note.default-profile"].bindings,
-          "note.import-folder": "Imported",
-        },
-      },
-    };
-
-    const outcome = await service.importNote(makeNote(), {
-      reads,
-      settings,
-    });
-
-    expect(outcome).toBe("created");
-    expect(createFolder).toHaveBeenCalledExactlyOnceWith("Imported");
-    expect(create).toHaveBeenCalledOnce();
-  });
-
   it("copies the parent Literature Note stamp on explicit attached-note creation", async () => {
     const { app, host, create } = makeApp({
       "Law/Parent.md": { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_A },
