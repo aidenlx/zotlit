@@ -1,6 +1,6 @@
 // A device for the Language Pack: Obsidian's storage, its language, and the
 // network, all in memory.
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Exit, Layer } from "effect";
 import type { App } from "obsidian";
 
 import { layerFakeFetch } from "@/lib/__fixtures__/fake-fetch";
@@ -102,15 +102,13 @@ export const startOn = Effect.fn("test.startOn")(function* (
 });
 
 /**
- * Yield until `done` holds, for a forked fiber (a toast) to take in what just
- * happened; dies after a bounded number of turns.
+ * Yield until `assert` passes, for a forked fiber (a toast) to take in what
+ * just happened. After a bounded number of turns, the case dies with the last
+ * assertion failure.
  */
-export const eventually = (done: () => boolean) =>
+export const eventually = (assert: () => void) =>
   Effect.yieldNow.pipe(
-    Effect.repeat({ until: done, times: 1000 }),
-    Effect.andThen(
-      Effect.suspend(() =>
-        done() ? Effect.void : Effect.die(new Error("never settled")),
-      ),
-    ),
+    Effect.andThen(Effect.exit(Effect.sync(assert))),
+    Effect.repeat({ until: Exit.isSuccess, times: 1000 }),
+    Effect.flatten,
   );

@@ -67,7 +67,11 @@ export interface ProgressCopy {
   readonly success: NoticeMessage;
   /** The error message, or the message for the error the task failed with. */
   readonly error: NoticeMessage | ((error: unknown) => NoticeMessage);
-  /** How long the success message stays; 2 s when absent. */
+  /**
+   * How long the success message stays.
+   *
+   * @default "2 seconds"
+   */
   readonly successDuration?: Duration.Input;
 }
 
@@ -75,11 +79,12 @@ export interface ProgressCopy {
  * Report a task's outcome the way `toast.promise` does: the loading message
  * after 200 ms when the task has not finished (so a fast task does not flash
  * it), then the success message for 2 s (or `successDuration`) or the error
- * message for 4 s. An
- * interrupted task counts as a success, an abort shows nothing, and an error
- * is logged.
+ * message for 4 s. An interrupted task counts as a success, an abort shows
+ * nothing, and an error is logged.
  *
- * @param outcome Completes with the task's Exit once the task ends.
+ * @param outcome Completes with the task's Exit once the task ends. It runs
+ *   again after the loading delay, so it awaits a task started elsewhere
+ *   (`Fiber.await`, `Deferred.await`) rather than running the task.
  */
 export const reportProgress = Effect.fn("Notifier.reportProgress")(function* <
   A,

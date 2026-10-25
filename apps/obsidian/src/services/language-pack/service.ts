@@ -14,6 +14,7 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect";
+import type { Exit } from "effect";
 import { HttpClient, HttpClientError } from "effect/http";
 
 import {
@@ -121,6 +122,16 @@ export class LanguagePack extends Context.Service<
      * before it is cached.
      */
     readonly reset: Effect.Effect<void, LanguagePackStorageFailed>;
+    /**
+     * The outcome of the consented refresh that startup began, awaited
+     * whenever it is read, also after the refresh ended. None when startup
+     * began no refresh.
+     */
+    readonly refresh: Option.Option<
+      Effect.Effect<
+        Exit.Exit<LanguagePackRestartNotice, LanguagePackInstallError>
+      >
+    >;
   }
 >()("zotlit/language-pack/LanguagePack") {}
 
@@ -328,6 +339,11 @@ export function layerLanguagePack(
           "Reset Language Packs: cleared the cache and consent of every locale",
         ).pipe(Effect.annotateLogs({ locales, pluginVersion }));
       });
+      const asReset = <E>(effect: Effect.Effect<void, E>) =>
+        effect.pipe(
+          withLogCategory("i18n"),
+          Effect.withSpan("LanguagePack.reset"),
+        );
 
       if (remote === undefined) {
         const situation = yield* SubscriptionRef.make(UNAVAILABLE);
@@ -345,10 +361,8 @@ export function layerLanguagePack(
           decline: Effect.void,
           // The bundled base pack is always live, so only other locales'
           // leftovers are there to clear.
-          reset: clearStoredPacks.pipe(
-            withLogCategory("i18n"),
-            Effect.withSpan("LanguagePack.reset"),
-          ),
+          reset: asReset(clearStoredPacks),
+          refresh: Option.none(),
         });
       }
 
@@ -485,7 +499,10 @@ export function layerLanguagePack(
         }),
       );
 
-      if (found === "refresh") yield* startDownload;
+      const refresh =
+        found === "refresh"
+          ? Option.some(Fiber.await(yield* startDownload))
+          : Option.none();
 
       const install = Effect.gen(function* () {
         const running = yield* Ref.get(inFlight);
@@ -509,8 +526,8 @@ export function layerLanguagePack(
         }));
       }).pipe(withLogCategory("i18n"), Effect.withSpan("LanguagePack.decline"));
 
-      const reset = turn
-        .withPermits(1)(
+      const reset = asReset(
+        turn.withPermits(1)(
           Effect.gen(function* () {
             const running = yield* Ref.get(inFlight);
             if (Option.isSome(running)) yield* Fiber.interrupt(running.value);
@@ -525,8 +542,8 @@ export function layerLanguagePack(
               downloading: false,
             }));
           }),
-        )
-        .pipe(withLogCategory("i18n"), Effect.withSpan("LanguagePack.reset"));
+        ),
+      );
 
       const situation = situationOf(pack);
       return LanguagePack.of({
@@ -541,6 +558,7 @@ export function layerLanguagePack(
         install,
         decline,
         reset,
+        refresh,
       });
     }),
   );

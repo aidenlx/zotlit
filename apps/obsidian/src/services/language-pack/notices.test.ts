@@ -9,7 +9,7 @@ import { testNotifier } from "@/lib/__fixtures__/notifier";
 import type { RecordedNotice } from "@/lib/__fixtures__/notifier";
 import * as m from "@/lib/i18n/generated/messages";
 
-import { eventually, fakeDevice, startOn } from "./__fixtures__";
+import { CHINESE_PACK, eventually, fakeDevice, startOn } from "./__fixtures__";
 import type { FakeDevice } from "./__fixtures__";
 import { layerLanguagePackNotices } from "./notices";
 import { LanguagePack } from "./service";
@@ -21,6 +21,13 @@ const loadOn = Effect.fn("test.loadOn")(function* (
   options: { language: string; pluginVersion?: string },
 ) {
   const pack = yield* startOn(device, options);
+  return { pack, notices: yield* registerNotices(pack) };
+});
+
+/** Register the startup notices over `pack`, as the service graph does. */
+const registerNotices = Effect.fn("test.registerNotices")(function* (
+  pack: LanguagePack["Service"],
+) {
   const notifier = testNotifier();
   yield* Layer.build(
     layerLanguagePackNotices.pipe(
@@ -28,7 +35,7 @@ const loadOn = Effect.fn("test.loadOn")(function* (
       Layer.provide(notifier.layer),
     ),
   );
-  return { pack, notices: notifier.notices };
+  return notifier.notices;
 });
 
 /** The first situation that is not `kind`, once the pack reaches it. */
@@ -107,7 +114,7 @@ describe("Language Pack startup notices", () => {
         yield* leaving(pack, "offered");
         expect(notices[0]?.hidden).toBe(true);
         yield* leaving(pack, "downloading");
-        yield* eventually(() => notices.length > 1);
+        yield* eventually(() => expect(notices).toHaveLength(2));
 
         expect(notices[1]?.messages.map(textOf)).toEqual([
           m.notice_language_pack_restart(),
@@ -155,11 +162,46 @@ describe("Language Pack startup notices", () => {
 
         answer();
         yield* leaving(pack, "downloading");
-        yield* eventually(() => (notices[0]?.messages.length ?? 0) > 1);
+        yield* eventually(() => expect(notices[0]?.messages).toHaveLength(2));
         expect(notices[0]?.messages.map(textOf)).toEqual([
           m.notice_language_pack_downloading(),
           m.notice_language_pack_restart(),
         ]);
+      }),
+  );
+
+  it.effect.each([
+    [
+      "the restart notice",
+      CHINESE_PACK,
+      () => m.notice_language_pack_restart(),
+    ],
+    [
+      "the failure",
+      { status: 503, text: "unavailable" },
+      () =>
+        m.notice_language_pack_download_failed({
+          message:
+            "https://github.com/aidenlx/zotlit/releases/download/res-2.0.0/zh-CN.json responded 503",
+        }),
+    ],
+  ] as const)(
+    "a consented refresh that ends before the notices register still shows %s",
+    ([, answer, expected]) =>
+      Effect.gen(function* () {
+        const device = fakeDevice();
+        yield* (yield* startOn(device, {
+          language: "zh",
+          pluginVersion: "1.0.0",
+        })).install;
+        device.answer = answer;
+
+        const pack = yield* startOn(device, { language: "zh" });
+        yield* leaving(pack, "downloading");
+        const notices = yield* registerNotices(pack);
+        yield* eventually(() => expect(notices).toHaveLength(1));
+
+        expect(notices[0]?.messages.map(textOf)).toEqual([expected()]);
       }),
   );
 
@@ -186,7 +228,7 @@ describe("Language Pack startup notices", () => {
       buttonsOf(notices[0])[1]!.click();
       yield* leaving(pack, "offered");
       yield* leaving(pack, "downloading");
-      yield* eventually(() => notices.length > 1);
+      yield* eventually(() => expect(notices).toHaveLength(2));
 
       expect(notices[1]?.messages.map(textOf)).toEqual([expected()]);
     }),

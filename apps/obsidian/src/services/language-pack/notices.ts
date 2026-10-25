@@ -1,6 +1,7 @@
 // UI seam for the Language Pack: the startup consent notice and the download
 // toast shared by every Install button.
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Fiber, Layer, Option, Stream } from "effect";
+import type { Exit } from "effect";
 
 import { logAndContinue } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
@@ -9,18 +10,24 @@ import { Notifier, reportProgress } from "@/lib/notifier";
 import type { NoticeHandle } from "@/lib/notifier";
 
 import { LanguagePack, LanguagePackDownloadFailed } from "./service";
+import type {
+  LanguagePackInstallError,
+  LanguagePackRestartNotice,
+} from "./service";
 
 /** The restart notice matters more than a transient toast, so it lingers. */
 const RESTART_NOTICE_DURATION = "10 seconds";
 
 /**
- * Install the Language Pack behind a toast: loading while the download runs,
- * then the restart notice or the failure. A call while a download is in flight
- * reports that download.
+ * Report an install behind the download toast: loading while the download
+ * runs, then the restart notice or the failure.
  */
-export const toastLanguagePackInstall = Effect.gen(function* () {
-  const pack = yield* LanguagePack;
-  yield* reportProgress(Effect.exit(pack.install), {
+const reportInstall = (
+  outcome: Effect.Effect<
+    Exit.Exit<LanguagePackRestartNotice, LanguagePackInstallError>
+  >,
+) =>
+  reportProgress(outcome, {
     loading: m.notice_language_pack_downloading(),
     success: m.notice_language_pack_restart(),
     // A pack from a newer lineage than this build reads is a plugin-version
@@ -33,12 +40,22 @@ export const toastLanguagePackInstall = Effect.gen(function* () {
           }),
     successDuration: RESTART_NOTICE_DURATION,
   });
+
+/**
+ * Install the Language Pack behind the download toast. A call while a
+ * download is in flight reports that download.
+ */
+export const toastLanguagePackInstall = Effect.gen(function* () {
+  const pack = yield* LanguagePack;
+  // Started once: the toast awaits it again after its loading delay.
+  const install = yield* Effect.forkChild(pack.install);
+  yield* reportInstall(Fiber.await(install));
 }).pipe(Effect.withSpan("LanguagePackNotices.toastInstall"));
 
 /**
  * What startup shows: the consent notice while the pack is offered, or the
- * toast of a consented refresh already downloading. The toast and the notice
- * end with the layer.
+ * toast of the consented refresh startup began, also when that refresh ended
+ * before this layer built. The toast and the notice end with the layer.
  */
 export const layerLanguagePackNotices: Layer.Layer<
   never,
@@ -47,14 +64,10 @@ export const layerLanguagePackNotices: Layer.Layer<
 > = Layer.effectDiscard(
   Effect.gen(function* () {
     const pack = yield* LanguagePack;
-    const situation = yield* pack.situation;
-    switch (situation.kind) {
-      case "offered":
-        yield* showInstallOffer;
-        break;
-      case "downloading":
-        yield* Effect.forkScoped(toastLanguagePackInstall);
-        break;
+    if (Option.isSome(pack.refresh)) {
+      yield* Effect.forkScoped(reportInstall(pack.refresh.value));
+    } else if ((yield* pack.situation).kind === "offered") {
+      yield* showInstallOffer;
     }
   }),
 );
