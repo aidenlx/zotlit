@@ -13,8 +13,16 @@
         "name": "@effect/language-service",
         // effect-fn-opportunity names its fix Effect.fn("<Tag>.<method>").
         "effectFn": ["inferred-span"],
-        // The worker RPC and the HTTP clients use these on purpose.
-        "allowedUnstableApis": ["effect/http", "effect/rpc", "effect/workers"]
+        // The worker RPC, the HTTP clients and the tests use these on purpose.
+        "allowedUnstableApis": [
+          "@effect/platform-browser",
+          "@effect/platform-node",
+          "@effect/vitest",
+          "effect/http",
+          "effect/rpc",
+          "effect/testing",
+          "effect/workers"
+        ]
       }
     ],
     "types": ["node-24"],
