@@ -866,7 +866,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         await waitFor(async () => {
           resolution = await obJson<{ kind: string; attachmentKey?: string }>(
             vaultId!,
-            `JSON.stringify(app.plugins.plugins.zotlit.services.attachmentResolver.resolve(app.vault.adapter.getFullPath(${JSON.stringify(attachmentPath)})))`,
+            `JSON.stringify(((z)=>z.bridge.runSync(z.attachmentResolver.resolve(app.vault.adapter.getFullPath(${JSON.stringify(attachmentPath)}))))(app.plugins.plugins.zotlit.services))`,
           ).catch(() => resolution);
           return resolution !== undefined && resolution.kind !== "pending";
         });
