@@ -157,23 +157,6 @@ declare module "obsidian" {
      * branch, not a crash.
      */
     readWorkspaceFile?(): Promise<unknown>;
-    /**
-     * The `obsidian://` action handlers. `unregister` drops `action` only
-     * while `handler` is the one it holds. Internal; verified against Obsidian
-     * 1.15.0. Read it only through
-     * `src/lib/obsidian-private/plugin-registrations.ts`.
-     */
-    protocolHandler?: {
-      unregister?(action: string, handler?: ObsidianProtocolHandler): void;
-    };
-    /**
-     * Drops an editor extension and reconfigures the open editors; a no-op
-     * for one it does not hold. Internal; verified against Obsidian 1.15.0.
-     * Read it only through `src/lib/obsidian-private/plugin-registrations.ts`.
-     */
-    unregisterEditorExtension?(
-      extension: import("@codemirror/state").Extension,
-    ): void;
 
     on(
       name: "zotlit:insert-template-field",
@@ -258,12 +241,6 @@ declare module "obsidian" {
       getViewCreatorByType(
         type: string,
       ): ((leaf: WorkspaceLeaf) => View) | undefined;
-      /**
-       * Drops a view type; a no-op for a type it does not hold. Internal;
-       * verified against Obsidian 1.15.0. Read it only through
-       * `src/lib/obsidian-private/plugin-registrations.ts`.
-       */
-      unregisterView?(type: string): void;
     };
     /**
      * Draws `![[file.ext]]` for each file extension. Internal; verified
@@ -818,12 +795,6 @@ declare module "obsidian" {
     ): void;
     /** Scroll the row for `definition` into view and flash it. Requires `tab` to be the rendered tab or sub-page. */
     scrollToDefinition(tab: SettingTab, definition: SettingDefinition): void;
-    /**
-     * Drops a plugin's tab; a no-op for one it does not hold. Internal;
-     * verified against Obsidian 1.15.0. Read it only through
-     * `src/lib/obsidian-private/plugin-registrations.ts`.
-     */
-    removeSettingTab?(tab: SettingTab): void;
   }
 
   /** Flattened index over every registered tab's `settingItems`. */
