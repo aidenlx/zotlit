@@ -2,21 +2,19 @@
 // in-memory credential store: what each dialog outcome leaves the session in,
 // and what each refusal of a write does to the key in hand.
 
+import { DateTime, Duration } from "effect";
 import { TestClock } from "effect/testing";
 import { expect, it, vi } from "vitest";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
-import { toInstant } from "@/lib/effect-clock";
 
 import {
   authorized,
-  cooldownOf,
   denied,
   keyRejected,
   libraryReadOnly,
   localApiClient,
   localApiDisabled,
-  NOW,
   rateLimited,
   rootOk,
   serverChanged,
@@ -220,18 +218,18 @@ it("holds Zotero's cooldown, with the Retry-After it named", async () => {
   expect(limited).toEqual({
     failure: {
       kind: "cooldown",
-      retryAfter: cooldownOf(60),
+      retryAfter: Duration.seconds(60),
     },
   });
   expect(bridge.runSync(service.writeStateFor(null)).cooldownUntil).toEqual(
-    toInstant(NOW).add({ seconds: 60 }),
+    DateTime.makeUnsafe("2026-09-16T15:53:21Z"),
   );
   // A second gesture inside the cooldown asks Zotero nothing: the rate limit is
   // what a sixth dialog request in a minute costs.
   expect(again).toEqual({
     failure: {
       kind: "cooldown",
-      retryAfter: cooldownOf(60),
+      retryAfter: Duration.seconds(60),
     },
   });
   expect(
@@ -441,6 +439,27 @@ it("starts a new request for a press after the last one settled", async () => {
   expect(
     requests.filter(({ url }) => url.pathname === "/api/local/authorize"),
   ).toHaveLength(2);
+});
+
+it("clears the slot of a request that finishes without suspending", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { service, bridge, zoteroPref } = await setup(stack);
+  // With no port, the request answers `unreachable` before the starter resumes.
+  zoteroPref.httpPort = null;
+  let changes = 0;
+  stack.defer(
+    bridge.subscribe(service.capabilityChanges, () => (changes += 1)),
+  );
+
+  const first = await bridge.runPromise(service.authorize);
+  const second = await bridge.runPromise(service.authorize);
+
+  expect(first).toEqual({ failure: { kind: "unreachable" } });
+  expect(second).toEqual({ failure: { kind: "unreachable" } });
+  // The first press moves the capability (the probe lands), and each of the
+  // two requests announces its start and its end.
+  await vi.waitFor(() => expect(changes).toBe(5));
+  expect(bridge.runSync(service.writeStateFor(null)).authorizing).toBe(false);
 });
 
 it("says a request is in flight only while Zotero's dialog waits", async () => {

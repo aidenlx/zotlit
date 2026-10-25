@@ -164,7 +164,7 @@ export async function sendToZotero(
   );
   if (isTransportAbort(error)) throw new AbortError();
   throw new TypeError("fetch failed", {
-    cause: HttpClientError.isHttpClientError(error) ? error.reason : error,
+    cause: transportReason(error),
   });
 }
 
@@ -173,14 +173,17 @@ export async function sendToZotero(
  * one: the request left and no answer came, so its outcome is unknown.
  */
 export function isTransportAbort(error: unknown): boolean {
-  const reason = HttpClientError.isHttpClientError(error)
-    ? error.reason
-    : error;
+  const reason = transportReason(error);
   const cause =
     typeof reason === "object" && reason !== null && "cause" in reason
       ? reason.cause
       : undefined;
   return isAbort(reason) || isAbort(cause);
+}
+
+/** What the transport reported: the reason inside an `HttpClientError`, else the error itself. */
+function transportReason(error: unknown): unknown {
+  return HttpClientError.isHttpClientError(error) ? error.reason : error;
 }
 
 function isAbort(error: unknown): boolean {

@@ -475,6 +475,7 @@ export default defineConfig({
       excludeFiles: [
         // Converts between Effect's DateTime and Clock and the Temporal of plain code.
         "src/lib/effect-clock.ts",
+        "src/lib/effect-clock.test.ts",
       ],
       rules: { "zotlit-services/temporal-in-effect": "error" },
     },

@@ -10,13 +10,11 @@ import {
   PubSub,
   Ref,
   Semaphore,
-  SynchronizedRef,
 } from "effect";
 import * as v from "valibot";
 
 import { parseIndexedKey } from "@zotlit/db";
 
-import { fromInstant, toInstant } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import {
   exchangeWithZotero,
@@ -45,7 +43,6 @@ import type {
   LocalApiAnnotation,
   LocalApiFailure,
   LocalApiResult,
-  WriteAuthorizationState,
   ZoteroReply,
 } from "./wire";
 import type { WriteAuthorizationStore } from "./write-authorization";
@@ -107,6 +104,22 @@ export type LocalApiState =
       authorized: boolean;
     }
   | { kind: "unavailable"; failure: LocalApiFailure };
+
+/**
+ * What the write path knows about one Attachment beside the Capability Probe.
+ * The repository folds it into that Attachment's Editing Capability; none of it
+ * outlives the session.
+ *
+ * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
+ */
+export interface WriteAuthorizationState {
+  /** A gesture is at Zotero's dialog now. */
+  authorizing: boolean;
+  /** Zotero refused a write to this Attachment's library this session. */
+  libraryReadOnly: boolean;
+  /** When Zotero's dialog rate limit lifts, or null while none is running. */
+  cooldownUntil: DateTime.Utc | null;
+}
 
 export type LocalApiEvent =
   /**
@@ -250,11 +263,10 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
     stale: false,
   });
   /**
-   * The authorization request at Zotero's dialog now; null while none runs.
-   * Starting one forks a fiber, so the slot is a `SynchronizedRef`: the request
-   * clears it only after the start has stored it.
+   * Settles with the authorization request at Zotero's dialog now; null while
+   * none runs.
    */
-  const authorizing = yield* SynchronizedRef.make<Fiber.Fiber<
+  const authorizing = yield* Ref.make<Deferred.Deferred<
     LocalApiResult<void>
   > | null>(null);
   /**
@@ -563,14 +575,6 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
     return done;
   });
 
-  // Untraced: the annotation repository runs this through `runSync` many times
-  // per render.
-  const demandSourceNow = Effect.fnUntraced(function* () {
-    const current = yield* Ref.get(state);
-    if (current.kind === "unprobed") yield* startProbe("first demand");
-    return current.kind === "available" ? current.source : null;
-  });
-
   const reprobe = Effect.fnUntraced(function* (
     reason: string,
     options?: { moved?: boolean; silent?: boolean; stale?: boolean },
@@ -584,7 +588,7 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
       const now = yield* DateTime.now;
       yield* Ref.set(
         cooldownUntil,
-        fromInstant(toInstant(now).add(failure.retryAfter)),
+        DateTime.addDuration(now, failure.retryAfter),
       );
       yield* publish({ _tag: "capability-changed" });
     }
@@ -605,7 +609,7 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
     }
     const failure: LocalApiFailure = {
       kind: "cooldown",
-      retryAfter: toInstant(current).until(toInstant(until)),
+      retryAfter: DateTime.distance(current, until),
     };
     return failure;
   });
@@ -652,7 +656,6 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
   const authorizeBody: Effect.Effect<LocalApiResult<void>> = Effect.gen(
     function* () {
       const probing = yield* startProbe("authorization gesture");
-      yield* publish({ _tag: "capability-changed" });
       yield* Deferred.await(probing);
       const current = yield* Ref.get(state);
       if (current.kind !== "available") {
@@ -692,21 +695,38 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
    *
    * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
    */
-  const request = SynchronizedRef.modifyEffect(authorizing, (flight) =>
-    flight !== null
-      ? Effect.succeed([flight, flight] as const)
-      : authorizeBody.pipe(
-          // The request leaves the slot before it announces its end, and a
-          // fiber's finalizers run before the waiters that join it resume.
-          Effect.ensuring(
-            SynchronizedRef.set(authorizing, null).pipe(
-              Effect.andThen(publish({ _tag: "capability-changed" })),
-            ),
+  const request = Effect.gen(function* () {
+    const [done, started] = yield* Ref.modify(
+      authorizing,
+      (
+        slot,
+      ): readonly [
+        readonly [Deferred.Deferred<LocalApiResult<void>>, boolean],
+        Deferred.Deferred<LocalApiResult<void>> | null,
+      ] => {
+        if (slot !== null) return [[slot, false], slot];
+        const fresh = Deferred.makeUnsafe<LocalApiResult<void>>();
+        return [[fresh, true], fresh];
+      },
+    );
+    if (started) {
+      // The slot is claimed, so a surface that reads on this event sees the
+      // request in flight however the fork below is scheduled.
+      yield* publish({ _tag: "capability-changed" });
+      yield* authorizeBody.pipe(
+        // The request leaves the slot, then settles its waiters, then
+        // announces its end.
+        Effect.onExit((exit) =>
+          Ref.set(authorizing, null).pipe(
+            Effect.andThen(Deferred.done(done, exit)),
+            Effect.andThen(publish({ _tag: "capability-changed" })),
           ),
-          Effect.forkIn(scope, { startImmediately: true }),
-          Effect.map((started) => [started, started] as const),
         ),
-  );
+        Effect.forkIn(scope, { startImmediately: true }),
+      );
+    }
+    return yield* Deferred.await(done);
+  });
 
   /**
    * What a refused write says about the session: a key Zotero no longer honours
@@ -817,7 +837,6 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
     instant: DateTime.Utc;
     phase: Ref.Ref<WriteBackPhase>;
   }) {
-    yield* Ref.set(phase, "reading");
     const parsed = parseIndexedKey(attachmentKey);
     if (!parsed || parsed.groupID !== null) {
       yield* writeBackSkipped(attachmentKey, "not a personal attachment");
@@ -843,6 +862,7 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
       return;
     }
     const path = `/api/users/0/items/${parsed.key}`;
+    yield* Ref.set(phase, "reading");
     const reply = yield* send(path, { serverID });
     if ((yield* heldServerID) !== serverID) {
       yield* writeBackSkipped(attachmentKey, "source changed");
@@ -982,18 +1002,23 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
      *
      * @returns the source, or null while another source must answer instead.
      */
-    demandSource: demandSourceNow().pipe(withLogCategory(LOG_CATEGORY)),
+    // Untraced: the annotation repository runs this through `runSync` many
+    // times per render.
+    demandSource: Effect.gen(function* () {
+      const current = yield* Ref.get(state);
+      if (current.kind === "unprobed") yield* startProbe("first demand");
+      return current.kind === "available" ? current.source : null;
+    }).pipe(withLogCategory(LOG_CATEGORY)),
 
     /**
      * What the last Capability Probe learned, for the repository that computes
      * the Editing Capability from it. Asking does not arm a probe.
      */
+    // Untraced: the annotation repository runs this through `runSync` many
+    // times per render.
     state: Effect.map(Ref.get(state), (current): LocalApiState =>
       current.kind === "unprobed" ? { kind: "probing" } : current,
-    ).pipe(
-      Effect.withSpan("ZoteroLocalApi.state"),
-      withLogCategory(LOG_CATEGORY),
-    ),
+    ).pipe(withLogCategory(LOG_CATEGORY)),
 
     /**
      * Run the Capability Probe now — an edit gesture, or the settings action.
@@ -1012,21 +1037,21 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
      *   the session itself — what the settings row shows, where no one library
      *   can be read-only.
      */
-    writeStateFor: Effect.fn("ZoteroLocalApi.writeStateFor")(function* (
+    // Untraced: the annotation repository runs this through `runSync` many
+    // times per render.
+    writeStateFor: Effect.fnUntraced(function* (
       attachmentKey: string | null,
     ): Effect.fn.Return<WriteAuthorizationState> {
       const parsed =
         attachmentKey === null ? null : parseIndexedKey(attachmentKey);
-      const authorizingNow = (yield* SynchronizedRef.get(authorizing)) !== null;
+      const authorizingNow = (yield* Ref.get(authorizing)) !== null;
       const libraryReadOnly =
         parsed !== null &&
         (yield* Ref.get(readOnlyLibraries)).has(libraryPath(parsed));
-      const until = yield* Ref.get(cooldownUntil);
       return {
         authorizing: authorizingNow,
         libraryReadOnly,
-        // The state goes to plain callers, which read it as Temporal.
-        cooldownUntil: until === null ? null : toInstant(until),
+        cooldownUntil: yield* Ref.get(cooldownUntil),
       };
     }, withLogCategory(LOG_CATEGORY)),
 
@@ -1055,7 +1080,7 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
      *
      * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
      */
-    authorize: Effect.flatMap(request, (fiber) => Fiber.join(fiber)).pipe(
+    authorize: request.pipe(
       Effect.withSpan("ZoteroLocalApi.authorize"),
       withLogCategory(LOG_CATEGORY),
     ),
@@ -1095,7 +1120,8 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
         Effect.onInterrupt(() =>
           Effect.flatMap(Ref.get(phase), (reached) => {
             switch (reached) {
-              // It never started: the deadline or the scope ended its wait.
+              // It had sent nothing: the deadline or the scope ended its wait in
+              // the queue, or its checks before the GET.
               case "queued":
                 return writeBackSkipped(attachmentKey, "cancelled");
               // The deadline or the scope aborted the GET, an unknown outcome.

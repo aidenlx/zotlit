@@ -25,6 +25,7 @@ import { yieldToMain } from "@/lib/yield-to-main";
 import { excerptFingerprint } from "@/services/excerpt-image/contract";
 import type { Held } from "@/services/query-client/service";
 import type { QueryClients } from "@/services/query-client/service";
+import { cooldownFailure } from "@/services/zotero-local-api/plain";
 import type {
   LocalApiAnnotation,
   LocalApiFailure,
@@ -3328,10 +3329,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
       case "authorizing":
         return { kind: "unauthorized" };
       case "cooldown":
-        return {
-          kind: "cooldown",
-          retryAfter: this.#now().until(capability.retryAfter),
-        };
+        return cooldownFailure(this.#now().until(capability.retryAfter));
       case "read-only":
         if (
           capability.reason === "probing" ||
