@@ -3,12 +3,13 @@ import type { Plugin } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
 import { Layer } from "@/lib/effect";
-import { nodeFetch } from "@/lib/node-fetch";
 import { layerNotifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerObsidianEnv } from "@/lib/obsidian-env";
 import { layerMetadataCache } from "@/lib/obsidian-metadata-cache";
 import { layerPluginHost } from "@/lib/plugin-host";
+import type { ZoteroHttp } from "@/lib/zotero-http";
+import { layerZoteroHttpNode } from "@/lib/zotero-http-node";
 import { openLibraryView } from "@/views/library/register";
 
 import { layerAnnotationLinkReading } from "./annotation-popover/reading";
@@ -124,6 +125,7 @@ export function pluginLayer(
   | NoteIndex
   | LocalServer
   | ZoteroLocalApi
+  | ZoteroHttp
   | Template
   | TemplateMigration
 > {
@@ -167,7 +169,6 @@ export function pluginLayer(
       // The Remembered Write Authorization lives in Obsidian's Keychain,
       // where the user can see and delete it — never in synced settings.
       layerZoteroLocalApi({
-        fetch: nodeFetch,
         credentials: new SecretWriteAuthorizationStore({
           secrets: plugin.app.secretStorage,
         }),
@@ -200,6 +201,7 @@ export function pluginLayer(
         layerNoteIndex.pipe(startingAs("NoteIndex")),
         layerCitationParse.pipe(startingAs("CitationParse")),
         layerQueryClients.pipe(startingAs("QueryClients")),
+        layerZoteroHttpNode.pipe(startingAs("ZoteroHttp")),
       ),
     ),
     Layer.provide(obsidian),

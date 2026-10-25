@@ -32,7 +32,9 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
-import type { FetchLike, NodeFetchInit } from "@/lib/node-fetch";
+import { layerRouteTableHttpClient } from "@/lib/http-client";
+import { layerZoteroHttp } from "@/lib/zotero-http";
+import type { ZoteroHttp } from "@/lib/zotero-http";
 import { LocalServer } from "@/services/local-server/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
@@ -246,63 +248,38 @@ export interface ZoteroAnswers {
 const ITEM_PATH = /^\/api\/(?:users|groups)\/\d+\/items\/[^/]+$/;
 
 /**
- * The transport seam under the client: a `fetch` that replays answers, and
- * every request it was given.
+ * The `ZoteroHttp` client over a route table that replays answers, and every
+ * request it was given, as it would go on the wire.
  */
 export function fakeZotero(answers: ZoteroAnswers = {}): {
-  fetch: FetchLike;
+  http: Layer.Layer<ZoteroHttp>;
   requests: ZoteroRequest[];
 } {
   const requests: ZoteroRequest[] = [];
-  const fetch = vi.fn((input: string | URL, init?: NodeFetchInit) => {
-    const url = new URL(input);
-    const request: ZoteroRequest = {
-      url,
-      headers: new Headers(init?.headers),
-      method: init?.method ?? "GET",
-      body: typeof init?.body === "string" ? init.body : null,
-    };
-    requests.push(request);
-    init?.signal?.throwIfAborted();
-    if (url.pathname === "/api/") {
-      return untilAborted((answers.root ?? rootOk)(), init?.signal);
-    }
-    if (url.pathname === "/api/local/authorize") {
-      const authorize =
-        answers.authorize ?? (() => authorized({ remember: true }));
-      return untilAborted(authorize(request), init?.signal);
-    }
-    if (url.pathname.endsWith("/children")) {
-      const children = answers.children ?? (() => annotationPage([]));
-      return untilAborted(children(childrenRequest(url)), init?.signal);
-    }
-    const write = answers.write ?? (() => writeAccepted());
-    if (
-      answers.item &&
-      request.method === "GET" &&
-      ITEM_PATH.test(url.pathname)
-    ) {
-      return untilAborted(answers.item(request), init?.signal);
-    }
-    return untilAborted(write(request), init?.signal);
-  });
-  return { fetch, requests };
-}
-
-/** A request in flight fails the moment its caller abandons it, as Node's does. */
-function untilAborted(
-  answer: Response | Promise<Response>,
-  signal: AbortSignal | undefined,
-): Promise<Response> {
-  if (!signal || answer instanceof Response) return Promise.resolve(answer);
-  return Promise.race([
-    answer,
-    new Promise<never>((_, reject) => {
-      signal.addEventListener("abort", () => reject(signal.reason), {
-        once: true,
-      });
-    }),
-  ]);
+  const http = layerZoteroHttp.pipe(
+    Layer.provide(
+      layerRouteTableHttpClient(({ url, headers, method, body }) => {
+        const request: ZoteroRequest = { url, headers, method, body };
+        requests.push(request);
+        if (url.pathname === "/api/") return (answers.root ?? rootOk)();
+        if (url.pathname === "/api/local/authorize") {
+          const authorize =
+            answers.authorize ?? (() => authorized({ remember: true }));
+          return authorize(request);
+        }
+        if (url.pathname.endsWith("/children")) {
+          const children = answers.children ?? (() => annotationPage([]));
+          return children(childrenRequest(url));
+        }
+        const write = answers.write ?? (() => writeAccepted());
+        if (answers.item && method === "GET" && ITEM_PATH.test(url.pathname)) {
+          return answers.item(request);
+        }
+        return write(request);
+      }),
+    ),
+  );
+  return { http, requests };
 }
 
 /**
@@ -709,7 +686,7 @@ export function foreignServer(status = 404): Response {
   });
 }
 
-/** A connection that nothing answered, as `nodeFetch` reports one. */
+/** A connection that nothing answered: the route throws, as a refused one fails. */
 export function unreachable(): never {
   throw new TypeError("fetch failed", { cause: new Error("ECONNREFUSED") });
 }
@@ -735,7 +712,7 @@ export async function localApiClient(
   answers: ZoteroAnswers = {},
   options: ClientOptions = {},
 ) {
-  const { fetch, requests } = fakeZotero(answers);
+  const { http, requests } = fakeZotero(answers);
   const stack = new AsyncDisposableStack();
   const dbUpdated = Effect.runSync(PubSub.unbounded<DbUpdated>());
   stack.defer(() => {
@@ -793,7 +770,6 @@ export async function localApiClient(
     dbUpdated: Stream.fromPubSub(dbUpdated),
   });
   const localApiLayer = layerZoteroLocalApi({
-    fetch,
     credentials,
     probeDeadline:
       options.probeDeadline ?? (() => new AbortController().signal),
@@ -803,6 +779,7 @@ export async function localApiClient(
       Layer.mergeAll(
         Layer.succeed(ZoteroPref, pref),
         Layer.succeed(LocalServer, server),
+        http,
       ),
     ),
   );
