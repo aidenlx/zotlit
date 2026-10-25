@@ -42,6 +42,7 @@ import { plainCitationParse } from "./citation-parse/plain";
 import { CitationParse } from "./citation-parse/service";
 import { CitationPopover } from "./citation-popover/service";
 import { plainCitationText } from "./citation-text/plain";
+import { citekeyNoteCreation } from "./citekey-editor/note-creation";
 import { CitekeyEditor } from "./citekey-editor/service";
 import type { CitekeyNoteCreation } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
@@ -60,7 +61,7 @@ import { plainLibraryScope } from "./library-scope/plain";
 import { LocalBridgeService } from "./local-bridge/service";
 import { LocalServer } from "./local-server/service";
 import { bindManagedBinary } from "./managed-binary/handle";
-import { createNoteFeature, createNoteInteractively } from "./note-feature";
+import { createNoteFeature } from "./note-feature";
 import type { NoteFeature } from "./note-feature";
 import { createBatchImport } from "./note-import/batch-import";
 import type { BatchImport } from "./note-import/batch-import";
@@ -558,20 +559,15 @@ export async function buildServices(
         importProfile,
         zoteroPref,
       }) => {
-        bindNoteCreation({
-          createNote: (item) =>
-            createNoteInteractively(
-              {
-                app: plugin.app,
-                noteFeature,
-                createProfile,
-                importProfile,
-                zoteroPref,
-              },
-              item,
-              { direct: true },
-            ),
-        });
+        bindNoteCreation(
+          citekeyNoteCreation({
+            app: plugin.app,
+            noteFeature,
+            createProfile,
+            importProfile,
+            zoteroPref,
+          }),
+        );
         return runtime.runSync(CitekeyEditor);
       },
     })

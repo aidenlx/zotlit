@@ -1,12 +1,16 @@
 import { it } from "@effect/vitest";
-import { Context, Effect, Fiber, Layer, Stream } from "effect";
+import { Context, Effect, Fiber, Layer, Queue, Stream } from "effect";
 import { TFile } from "obsidian";
-import { describe, expect } from "vitest";
+import type { App } from "obsidian";
+import { describe, expect, vi } from "vitest";
 
 import type { Item } from "@zotlit/db";
 
 import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
+import * as m from "@/lib/i18n/generated/messages";
+import type { ProfileId } from "@/lib/profile-stamp";
 import { lookupAnswerFor } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitationLookupRequest } from "@/services/citation-index/lookup";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
@@ -14,6 +18,12 @@ import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
 import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
 import { LibraryScope } from "@/services/library-scope/service";
+import type {
+  CreationProfileSelection,
+  InteractiveCreationDeps,
+  PreparedCreationProfile,
+} from "@/services/note-feature";
+import type { CreationPlan } from "@/services/note-feature/operations";
 import { createNoteHost } from "@/services/note-index/__fixtures__";
 import { layerNoteIndex } from "@/services/note-index/service";
 import {
@@ -29,7 +39,10 @@ import {
   seedWorksSql,
 } from "@/services/zotero-reads/test-utils";
 import type { SeededWork } from "@/services/zotero-reads/test-utils";
+import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
+import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
 
+import { citekeyNoteCreation } from "./note-creation";
 import { CitekeyEditor, layerCitekeyEditor } from "./service";
 import type { CitekeyEditorEvent, CitekeyNoteCreation } from "./service";
 
@@ -139,10 +152,20 @@ const openEditor = Effect.fnUntraced(function* ({
   const editor = Context.get(context, CitekeyEditor);
   const settings = Context.get(context, PluginSettings);
   const events: CitekeyEditorEvent[] = [];
-  yield* Stream.runForEach(editor.events, (event) =>
-    Effect.sync(() => events.push(event)),
-  ).pipe(Effect.forkScoped({ startImmediately: true }));
-  return { editor, settings, events, workspace, citekeysRead };
+  const arrivals = yield* Queue.unbounded<CitekeyEditorEvent>();
+  yield* Stream.runForEach(editor.events, (event) => {
+    events.push(event);
+    return Queue.offer(arrivals, event);
+  }).pipe(Effect.forkScoped({ startImmediately: true }));
+  return {
+    editor,
+    settings,
+    events,
+    /** Completes once `count` more events have reached `events`. */
+    received: (count: number) => Queue.takeN(arrivals, count),
+    workspace,
+    citekeysRead,
+  };
 });
 
 const paper = {
@@ -260,10 +283,10 @@ describe("CitekeyEditor navigation", () => {
 
   it.effect("reports a citekey that names no Item", () =>
     Effect.gen(function* () {
-      const { editor, events, workspace } = yield* openEditor();
+      const { editor, events, received, workspace } = yield* openEditor();
 
       yield* editor.openCitekey("nobody2024", false);
-      yield* Effect.yieldNow;
+      yield* received(1);
 
       expect(events).toEqual([
         { _tag: "citekey-not-found", citekey: "nobody2024" },
@@ -276,13 +299,13 @@ describe("CitekeyEditor navigation", () => {
     "reports a missing citekey as a database problem while the database is not ready",
     () =>
       Effect.gen(function* () {
-        const { editor, events } = yield* openEditor({
+        const { editor, events, received } = yield* openEditor({
           readsState: "degraded",
         });
 
         yield* editor.openCitekey("nobody2024", false);
         yield* editor.openIndexedKey("PAPER234", false);
-        yield* Effect.yieldNow;
+        yield* received(2);
 
         expect(events).toEqual([
           { _tag: "db-unavailable", citekey: "nobody2024" },
@@ -293,10 +316,10 @@ describe("CitekeyEditor navigation", () => {
 
   it.effect("reports an Indexed Key the database holds no Item for", () =>
     Effect.gen(function* () {
-      const { editor, events } = yield* openEditor();
+      const { editor, events, received } = yield* openEditor();
 
       yield* editor.openIndexedKey("GONE2345", false);
-      yield* Effect.yieldNow;
+      yield* received(1);
 
       expect(events).toEqual([{ _tag: "item-unavailable", reason: "item" }]);
     }),
@@ -347,7 +370,7 @@ describe("CitekeyEditor ambiguous citation keys", () => {
     "reports every candidate with its summary, Library name, and bare Zotero item key",
     () =>
       Effect.gen(function* () {
-        const { editor, events, workspace } = yield* openEditor({
+        const { editor, events, received, workspace } = yield* openEditor({
           resolutions: { doe2024: AMBIGUOUS },
           works: [
             zoteroItem(11, "A study of citations", "Doe"),
@@ -356,7 +379,7 @@ describe("CitekeyEditor ambiguous citation keys", () => {
         });
 
         yield* editor.openCitekey("doe2024", false);
-        yield* Effect.yieldNow;
+        yield* received(1);
 
         expect(workspace.opened).toEqual([]);
         expect(events).toHaveLength(1);
@@ -406,12 +429,13 @@ describe("CitekeyEditor ambiguous citation keys", () => {
     "opens a chosen candidate by its exact Indexed Key without resolving the key again",
     () =>
       Effect.gen(function* () {
-        const { editor, events, workspace, citekeysRead } = yield* openEditor({
-          notes: { "Roe 2025.md": "REBB3456g7" },
-          resolutions: { doe2024: AMBIGUOUS },
-        });
+        const { editor, events, received, workspace, citekeysRead } =
+          yield* openEditor({
+            notes: { "Roe 2025.md": "REBB3456g7" },
+            resolutions: { doe2024: AMBIGUOUS },
+          });
         yield* editor.openCitekey("doe2024", "tab");
-        yield* Effect.yieldNow;
+        yield* received(1);
         citekeysRead.length = 0;
         const [event] = events;
         if (event?._tag !== "citekey-ambiguous")
@@ -425,4 +449,121 @@ describe("CitekeyEditor ambiguous citation keys", () => {
         expect(citekeysRead).toEqual([]);
       }),
   );
+});
+
+vi.mock("@/views/quick-switch/profile-picker", () => ({
+  chooseLiteratureNoteProfile: vi.fn(),
+}));
+
+const books = "Bk3Qn7XvT2Lp" as ProfileId;
+const creationItem = {
+  itemID: 11,
+  libraryID: 1,
+  indexedKey: "PAPER234",
+  key: "PAPER234",
+} as Item;
+
+/** The creation flow over a Note Feature that plans `selection` for every Item. */
+function creation(
+  selection: CreationProfileSelection = {
+    selector: "default",
+    source: "bound",
+    shouldAsk: true,
+  },
+) {
+  const create = vi.fn(async () => ({
+    outcome: "created" as const,
+    file: Object.assign(new TFile(), { path: "Books/Paper.md" }),
+  }));
+  const previews: PreparedCreationProfile[] = [
+    {
+      selector: "default",
+      label: undefined,
+      folder: "Literature",
+      citationStyle: null,
+      document: undefined,
+      path: "Literature/Paper.md",
+      create: vi.fn(),
+    },
+    {
+      selector: books,
+      label: "Books",
+      folder: "Books",
+      citationStyle: null,
+      document: undefined,
+      path: "Books/Paper.md",
+      create,
+    },
+  ];
+  const port = citekeyNoteCreation({
+    app: stubService<App>("App", {}),
+    createProfile: stubService<InteractiveCreationDeps["createProfile"]>(
+      "CreateProfile",
+      {},
+    ),
+    importProfile: stubService<InteractiveCreationDeps["importProfile"]>(
+      "ImportProfile",
+      {},
+    ),
+    zoteroPref: { dataDir: "/zotero" },
+    noteFeature: stubService<InteractiveCreationDeps["noteFeature"]>(
+      "NoteFeature",
+      {
+        planCreations: async (keys: readonly string[]) =>
+          new Map<string, CreationPlan>(
+            keys.map((key) => [
+              key,
+              { item: creationItem, selection, previews },
+            ]),
+          ),
+      },
+    ),
+  });
+  return { port, create };
+}
+
+// The note creation flow a citekey opens a new note through, as build.ts binds
+// it: the citation names one Item, so creation runs direct.
+describe("CitekeyEditor note creation binding", () => {
+  it("waits for the Profile choice before it creates the note", async () => {
+    const { port, create } = creation();
+    const choice = Promise.withResolvers<
+      LiteratureNoteProfileChoice | undefined
+    >();
+    vi.mocked(chooseLiteratureNoteProfile).mockReset();
+    vi.mocked(chooseLiteratureNoteProfile).mockReturnValue(choice.promise);
+
+    const creating = port.createNote(creationItem);
+    await vi.waitFor(() =>
+      expect(chooseLiteratureNoteProfile).toHaveBeenCalledOnce(),
+    );
+    expect(create).not.toHaveBeenCalled();
+
+    choice.resolve({ id: books, label: "Books" });
+    expect((await creating)?.path).toBe("Books/Paper.md");
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it("creates at once under a match-selected Profile, without the picker", async () => {
+    const { port, create } = creation({
+      selector: books,
+      source: "match",
+      shouldAsk: true,
+      reason: m.profile_match_selected({ profile: "Books" }),
+    });
+    vi.mocked(chooseLiteratureNoteProfile).mockReset();
+
+    expect((await port.createNote(creationItem))?.path).toBe("Books/Paper.md");
+    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it("creates nothing when the Profile choice is dismissed", async () => {
+    const { port, create } = creation();
+    vi.mocked(chooseLiteratureNoteProfile).mockReset();
+    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue(undefined);
+
+    expect(await port.createNote(creationItem)).toBeNull();
+    expect(create).not.toHaveBeenCalled();
+  });
 });
