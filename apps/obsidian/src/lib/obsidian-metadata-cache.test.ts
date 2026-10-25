@@ -40,9 +40,7 @@ function file(path: string): TFile {
 
 /** The layer built on a Scope of its own, closed with the case's Scope. */
 const open = Effect.fnUntraced(function* (layer: Layer.Layer<MetadataCache>) {
-  const scope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
-    Scope.close(scope, Exit.void),
-  );
+  const scope = yield* Scope.fork(yield* Effect.scope);
   const context = yield* Layer.buildWithScope(layer, scope);
   return { scope, metadata: Context.get(context, MetadataCache) };
 });

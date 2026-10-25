@@ -36,9 +36,7 @@ function file(path: string): TFile {
 
 /** The layer built on a Scope of its own, closed with the case's Scope. */
 const open = Effect.fnUntraced(function* (layer: Layer.Layer<Workspace>) {
-  const scope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
-    Scope.close(scope, Exit.void),
-  );
+  const scope = yield* Scope.fork(yield* Effect.scope);
   const context = yield* Layer.buildWithScope(layer, scope);
   return { scope, workspace: Context.get(context, Workspace) };
 });
@@ -121,7 +119,7 @@ it.effect(
     Effect.gen(function* () {
       const source = new MemoryWorkspace();
       const { workspace } = yield* open(layerWorkspaceFrom(source));
-      const menuScope = yield* Scope.make();
+      const menuScope = yield* Scope.fork(yield* Effect.scope);
       yield* workspace
         .onFileMenu((menu, target, { source: from }) =>
           Effect.sync(() => {
