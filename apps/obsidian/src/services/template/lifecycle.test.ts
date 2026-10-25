@@ -1,6 +1,7 @@
 import { TestClock } from "effect/testing";
 import { expect, expectTypeOf, vi } from "vitest";
 
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import {
   Context,
   Effect,
@@ -14,7 +15,6 @@ import { buildRuntime } from "@/lib/effect-layer";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import { PluginSettings } from "@/services/settings/service";
 
 import { createTemplateHost, templateOf, templateOver } from "./__fixtures__";
@@ -191,7 +191,7 @@ it.effect(
           openPrompt,
         }).pipe(
           Layer.provideMerge(templateOver(host)),
-          Layer.provide(Layer.succeed(ObsidianApp, host.app)),
+          Layer.provide(layerHostApp(host.app)),
           Layer.provideMerge(Layer.succeedContext(context)),
         ),
         stack,
@@ -407,7 +407,7 @@ it.effect(
           openPrompt: () => {},
         }).pipe(
           Layer.provideMerge(templateOver(host)),
-          Layer.provide(Layer.succeed(ObsidianApp, host.app)),
+          Layer.provide(layerHostApp(host.app)),
         ),
       );
       const migration = Context.get(services, TemplateMigration);

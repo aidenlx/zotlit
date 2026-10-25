@@ -4,6 +4,7 @@ import type { App, TFile } from "obsidian";
 import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Effect, Layer, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
@@ -112,10 +113,11 @@ export function citationPopoverFixture(
   options: { logs?: Layer.Layer<never> } = {},
 ): CitationPopoverFixture {
   const stack = new AsyncDisposableStack();
-  // A host without a metadata cache or a vault gets an empty in-memory one.
+  // A host without a metadata cache, a vault or a workspace gets an empty in-memory one.
   const app = {
     metadataCache: new MemoryMetadataCache(),
     vault: new MemoryVault(),
+    workspace: new MemoryWorkspace(),
     ...deps.app,
   } as unknown as App;
   let revision = 0;

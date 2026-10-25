@@ -2,6 +2,8 @@ import { delay } from "@std/async";
 import type { App, EventRef } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+
 import { buildNoteIndex } from "./note-index/__fixtures__";
 import type { PlainNoteIndex } from "./note-index/plain";
 import { Service, ServiceContainer } from "./service-base";
@@ -71,7 +73,7 @@ it("disposes services newest first, so an older service keeps its vault and meta
   const app = {
     vault,
     metadataCache,
-    workspace: { onLayoutReady: () => undefined },
+    workspace: new MemoryWorkspace(),
   } as unknown as App;
 
   const stack = new AsyncDisposableStack();

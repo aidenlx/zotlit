@@ -15,6 +15,7 @@ import {
 import { VaultError } from "@/lib/vault-errors";
 
 import { MemoryFileManager } from "./__fixtures__/obsidian-file-manager";
+import { MemoryWorkspace } from "./__fixtures__/obsidian-workspace";
 
 function file(path: string): TFile {
   const file = new TFile();
@@ -130,6 +131,7 @@ it.effect("builds over a test host's app that has no file manager", () =>
   Effect.gen(function* () {
     const app = {
       metadataCache: { on() {}, offref() {} },
+      workspace: new MemoryWorkspace(),
       vault: { on() {}, offref() {} },
     } as unknown as App;
     yield* Effect.service(FileManager).pipe(Effect.provide(layerHostApp(app)));

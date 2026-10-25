@@ -10,6 +10,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { Notifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { Workspace } from "@/lib/obsidian-workspace";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 import type {
@@ -61,11 +62,16 @@ export function layerRelease(options: {
   /** The plugin's current version, from the manifest. */
   readonly version: string;
   readonly openFirstScreen?: () => void | Promise<void>;
-}): Layer.Layer<Release, never, ObsidianApp | Notifier | PluginSettings> {
+}): Layer.Layer<
+  Release,
+  never,
+  ObsidianApp | Workspace | Notifier | PluginSettings
+> {
   return Layer.effect(
     Release,
     Effect.gen(function* () {
       const app = yield* ObsidianApp;
+      const workspace = yield* Workspace;
       const settings = yield* PluginSettings;
       const notifier = yield* Notifier;
       const checked = yield* Deferred.make<void>();
@@ -235,7 +241,7 @@ export function layerRelease(options: {
         }
       });
 
-      // `onLayoutReady` is a one-shot with no unregister, so gate the deferred
+      // Layout-ready is a one-shot with no unregister, so gate the deferred
       // check on disposal to avoid touching settings after the plugin unloads.
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
@@ -245,7 +251,10 @@ export function layerRelease(options: {
 
       // The launch check needs settings loaded and the workspace ready to open
       // leaves; the layer settles before the check runs.
-      app.workspace.onLayoutReady(events.callback("layoutReady"));
+      yield* workspace.layoutReady.pipe(
+        Effect.andThen(Effect.sync(() => events.callback("layoutReady")())),
+        Effect.forkScoped({ startImmediately: true }),
+      );
       yield* events
         .consume(() =>
           runCheck().pipe(

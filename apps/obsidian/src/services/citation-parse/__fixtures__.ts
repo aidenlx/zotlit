@@ -1,34 +1,23 @@
 // The real parse layer over a controllable Obsidian layout boundary.
-import type { App } from "obsidian";
-
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { ObsidianApp } from "@/lib/obsidian-app";
+import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 
 import { plainCitationParse } from "./plain";
 import { layerCitationParse } from "./service";
 
 function openParseHarness(ready: boolean) {
   const stack = new AsyncDisposableStack();
-  const deferred = {
-    callback: () => {},
-  };
-  const app = {
-    workspace: {
-      onLayoutReady: (callback: () => void) => {
-        if (ready) callback();
-        else deferred.callback = callback;
-      },
-    },
-  } as unknown as App;
+  const workspace = new MemoryWorkspace({ layoutReady: ready });
   const runtime = buildRuntime(
-    layerCitationParse.pipe(Layer.provide(Layer.succeed(ObsidianApp, app))),
+    layerCitationParse.pipe(Layer.provide(layerWorkspaceFrom(workspace))),
     stack,
   );
   return {
     runtime,
     parser: plainCitationParse(runtime),
-    layoutReady: () => deferred.callback(),
+    layoutReady: () => workspace.layoutReady(),
     context: () => runtime.context(),
     resources: stack.move(),
   };

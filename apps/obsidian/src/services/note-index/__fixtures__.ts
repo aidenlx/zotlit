@@ -5,6 +5,7 @@ import type { App, CachedMetadata, EventRef } from "obsidian";
 
 import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
@@ -150,26 +151,10 @@ class MockVault {
   }
 }
 
-class MockWorkspace {
-  layoutReady = false;
-  readonly #callbacks: Callback[] = [];
-
-  onLayoutReady(callback: () => void): void {
-    if (this.layoutReady) callback();
-    else this.#callbacks.push(callback);
-  }
-
-  /** Layout settles after the cache initializes, so it runs queued callbacks then. */
-  ready(): void {
-    this.layoutReady = true;
-    for (const callback of this.#callbacks.splice(0)) callback();
-  }
-}
-
 export interface Harness {
   app: App;
   metadataCache: MockMetadataCache;
-  workspace: MockWorkspace;
+  workspace: MemoryWorkspace;
   service: PlainNoteIndex & {
     runtime: import("@/lib/effect-stream").SubscriptionRuntime;
   };
@@ -210,7 +195,7 @@ export function startup(
 ): void {
   harness.metadataCache.watchVault(harness.vault);
   harness.metadataCache.resolve();
-  harness.workspace.ready();
+  harness.workspace.layoutReady();
 }
 
 export function cache(options: {
@@ -259,9 +244,10 @@ export function createNoteHost(
   options: { enabledAtRuntime?: boolean; cleanCacheHook?: boolean } = {},
 ) {
   const metadataCache = new MockMetadataCache();
-  const workspace = new MockWorkspace();
+  const workspace = new MemoryWorkspace({
+    layoutReady: options.enabledAtRuntime,
+  });
   metadataCache.clean = options.enabledAtRuntime ?? false;
-  workspace.layoutReady = options.enabledAtRuntime ?? false;
   if (options.cleanCacheHook === false) {
     // A build that dropped the internal hook.
     Object.defineProperty(metadataCache, "onCleanCache", { value: undefined });

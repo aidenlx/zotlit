@@ -143,6 +143,39 @@ describe("NoteIndex", () => {
       }),
   );
 
+  // Layout-ready comes from the Workspace tag and the change from the
+  // MetadataCache tag; the index still takes them in Obsidian's order.
+  it.effect(
+    "keeps Obsidian's order of layout-ready and a metadata change in one tick",
+    () =>
+      Effect.gen(function* () {
+        const { service, vault, metadataCache, workspace } = yield* makeHarness(
+          { "paper.md": cache({ itemKey: ITEM_A }) },
+          { enabledAtRuntime: false },
+        );
+        metadataCache.watchVault(vault);
+        metadataCache.resolve();
+        const changes: string[] = [];
+        subscribe(service.runtime, service["indexed"], () =>
+          changes.push("indexed"),
+        );
+        subscribe(service.runtime, service["frontmatter-changed"], (file) =>
+          changes.push(`frontmatter ${file.path}`),
+        );
+
+        const file = vault.files.get("paper.md")!;
+        workspace.layoutReady();
+        metadataCache.change(file, cache({ itemKey: ITEM_B }));
+        yield* Effect.promise(() => service.whenSettled());
+
+        // The Full Scan runs first and indexes the old key; the change then
+        // moves the note to the new key.
+        expect(changes).toEqual(["indexed", "frontmatter paper.md"]);
+        expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
+        expect(paths(service.getNotesByItemKey(ITEM_B))).toEqual(["paper.md"]);
+      }),
+  );
+
   it.effect("runs the Full Scan at once when enabled at runtime", () =>
     Effect.gen(function* () {
       const { service } = yield* makeHarness(
@@ -460,7 +493,7 @@ describe("NoteIndex", () => {
         const gate = service.whenIndexed();
 
         metadataCache.watchVault(vault);
-        workspace.ready();
+        workspace.layoutReady();
         expect(service.getIndexedItemKeys()).toEqual([]);
         metadataCache.resolve();
 

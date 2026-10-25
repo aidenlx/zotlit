@@ -1,7 +1,10 @@
 import { TestClock } from "effect/testing";
+import { TFile } from "obsidian";
 import { expect, vi } from "vitest";
 
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { Effect, Logger } from "@/lib/effect";
 import { LogCategory } from "@/lib/effect-log";
 import { it } from "@/lib/effect-vitest";
@@ -64,22 +67,22 @@ it.effect(
   "stops recording and releases its listeners when its scope closes",
   () =>
     Effect.gen(function* () {
-      const offref = vi.fn();
       const save = vi.fn();
       const metadataCache = new MemoryMetadataCache();
+      const workspace = new MemoryWorkspace();
       const app = fakeApp({
         load: () => undefined,
         save,
-        offref,
+        workspace,
         metadataCache,
       });
 
       const ledger = yield* Effect.scoped(useLedgerOf(app));
       yield* ledger.record("AAAAAAAA", "opened");
 
-      // The workspace listener is the ledger's; the metadata cache's belongs
-      // to the MetadataCache tag, which closes with it here.
-      expect(offref).toHaveBeenCalledTimes(1);
+      // The workspace and metadata cache listeners close with the ledger and
+      // with the tags it reads, which close with it here.
+      expect(workspace.listenerCount("file-open")).toBe(0);
       expect(metadataCache.listenerCount("changed")).toBe(0);
       expect(yield* ledger.current).toEqual({});
       expect(save).not.toHaveBeenCalled();
@@ -108,5 +111,75 @@ it.effect(
 
       expect(yield* ledger.current).toEqual({});
       expect(logged).toEqual([{ level: "Warn", category: ["use-ledger"] }]);
+    }),
+);
+
+// Failure modes: a note Obsidian restores at startup counts as opened, or a
+// note opened once the layout is ready records no Use.
+it.effect("records an opened Item note only once the layout is ready", () =>
+  Effect.gen(function* () {
+    const metadataCache = new MemoryMetadataCache();
+    const workspace = new MemoryWorkspace();
+    const note = new TFile();
+    note.path = "Paper.md";
+    note.extension = "md";
+    metadataCache.setCache(note.path, {
+      frontmatter: { [FIELD_ZOTERO_KEY]: "AAAAAAAA" },
+    });
+    const ledger = yield* useLedgerOf(
+      fakeApp({ load: () => undefined, workspace, metadataCache }),
+    );
+
+    workspace.open(note);
+    expect(yield* ledger.get("AAAAAAAA")).toBeUndefined();
+
+    workspace.layoutReady();
+    workspace.open(note);
+    expect((yield* ledger.get("AAAAAAAA"))?.kind).toBe("opened");
+  }),
+);
+
+// Failure modes: an open Obsidian deferred from before a Companion update is
+// dropped as the update's own, or the update's own navigation counts as a Use.
+it.effect(
+  "counts a deferred open before an update and not the update's own",
+  () =>
+    Effect.gen(function* () {
+      const metadataCache = new MemoryMetadataCache();
+      const deferred: TFile[] = [];
+      const workspace = Object.assign(
+        new MemoryWorkspace({ layoutReady: true }),
+        {
+          // Obsidian's debounced active-leaf events: `run` delivers now.
+          requestActiveLeafEvents: {
+            run: () => {
+              for (const file of deferred.splice(0)) workspace.open(file);
+            },
+          },
+        },
+      );
+      const note = new TFile();
+      note.path = "Paper.md";
+      note.extension = "md";
+      metadataCache.setCache(note.path, {
+        frontmatter: { [FIELD_ZOTERO_KEY]: "AAAAAAAA" },
+      });
+      const ledger = yield* useLedgerOf(
+        fakeApp({ load: () => undefined, workspace, metadataCache }),
+      );
+
+      yield* TestClock.adjust(1);
+      deferred.push(note);
+      yield* ledger.withoutNoteUse(
+        note,
+        Effect.gen(function* () {
+          yield* TestClock.adjust(1);
+          workspace.open(note);
+        }),
+      );
+
+      expect((yield* ledger.get("AAAAAAAA"))?.instant.epochMilliseconds).toBe(
+        1,
+      );
     }),
 );

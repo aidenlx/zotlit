@@ -6,12 +6,14 @@ import { citekeysToCiteTemplateData } from "@zotlit/db";
 import { LegacyTemplateConversionError } from "@zotlit/templates/facade";
 
 import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -69,7 +71,7 @@ async function makeHarness(
     files.set("templates/zotlit-profile.default.md", {
       path: "templates/zotlit-profile.default.md",
     });
-  let layoutReady: (() => void | Promise<void>) | undefined;
+  const workspace = new MemoryWorkspace();
   const create = vi.fn(async (path: string, source: string) => {
     const file = { path, source };
     files.set(path, file);
@@ -141,11 +143,7 @@ async function makeHarness(
           create,
         },
         fileManager: { trashFile },
-        workspace: {
-          onLayoutReady: (callback: () => void | Promise<void>) => {
-            layoutReady = callback;
-          },
-        },
+        workspace,
       } as unknown as App,
       settings,
       bridge,
@@ -169,7 +167,7 @@ async function makeHarness(
     create,
     files,
     layoutReady: async () => {
-      await layoutReady?.();
+      workspace.layoutReady();
       await service.whenSettled();
     },
     openPrompt,
@@ -670,18 +668,13 @@ async function makeVaultHarness(
   const localStorage = new Map<string, unknown>(
     options?.javascriptTemplates ? [["zotlit-javascript-templates", "1"]] : [],
   );
-  let layoutReady: (() => void | Promise<void>) | undefined;
+  const workspace = new MemoryWorkspace();
   const trashFile = vi.fn(async (file: { path: string }) => {
     vault.deleteFile(file.path);
   });
   const app = {
     vault,
-    workspace: {
-      updateOptions: vi.fn(),
-      onLayoutReady: (callback: () => void | Promise<void>) => {
-        layoutReady = callback;
-      },
-    },
+    workspace: Object.assign(workspace, { updateOptions: vi.fn() }),
     fileManager: { trashFile },
     loadLocalStorage: (key: string) => localStorage.get(key) ?? null,
     saveLocalStorage: (key: string, data: unknown) => {
@@ -736,7 +729,7 @@ async function makeVaultHarness(
   const owned = stack.move();
   return {
     layoutReady: async () => {
-      await layoutReady?.();
+      workspace.layoutReady();
       await service.whenSettled();
     },
     openPrompt,
@@ -1372,6 +1365,7 @@ async function buildMigration(
   const runtime = buildRuntime(
     layerTemplateMigration(options).pipe(
       Layer.provide(Layer.succeed(ObsidianApp, options.app)),
+      Layer.provide(layerWorkspaceFrom(options.app.workspace)),
       Layer.provide(templateSettings(options.settings)),
       Layer.provide(
         Layer.succeed(

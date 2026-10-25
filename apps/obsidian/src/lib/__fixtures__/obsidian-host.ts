@@ -12,6 +12,7 @@ import type {
 } from "obsidian";
 import { vi } from "vitest";
 
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { parseFrontMatter } from "@/lib/live-text";
 
 type VaultEvent = "create" | "modify" | "rename" | "delete";
@@ -407,13 +408,13 @@ export function createObsidianHost(files: Record<string, string> = {}) {
   const metadataCache = new HostMetadataCache(vault);
   for (const file of vault.files.values()) metadataCache.follow(file);
   const views: HostTextView[] = [];
-  const workspace = {
+  // The layout is ready, as for a plugin enabled at runtime.
+  const workspace = Object.assign(new MemoryWorkspace({ layoutReady: true }), {
     updateOptions: vi.fn(),
-    onLayoutReady: (callback: () => void) => callback(),
     iterateAllLeaves: (callback: (leaf: WorkspaceLeaf) => void) => {
       for (const view of views) callback({ view } as unknown as WorkspaceLeaf);
     },
-  };
+  });
   const app = { vault, metadataCache, workspace };
 
   const onChange = (file: unknown) => {

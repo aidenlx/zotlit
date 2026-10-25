@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 
 import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
@@ -175,7 +176,10 @@ export function citationTextFixture(
     layerCitationText(deps.openDocuments).pipe(
       Layer.provide(
         Layer.mergeAll(
-          layerHostApp(deps.app),
+          // A host without a workspace gets an empty in-memory one.
+          layerHostApp(
+            Object.assign({ workspace: new MemoryWorkspace() }, deps.app),
+          ),
           Layer.succeed(
             CitationIndex,
             stubService<CitationIndex["Service"]>("CitationIndex", {

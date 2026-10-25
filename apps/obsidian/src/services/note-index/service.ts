@@ -11,6 +11,7 @@ import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import type { VaultEvent } from "@/lib/obsidian-vault";
+import { Workspace } from "@/lib/obsidian-workspace";
 import { DEFAULT_PROFILE, profileStampOf } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 
@@ -119,6 +120,7 @@ export class NoteIndex extends Context.Service<
 const makeNoteIndex = Effect.gen(function* () {
   const app = yield* ObsidianApp;
   const metadata = yield* MetadataCache;
+  const workspace = yield* Workspace;
   const vault = yield* Vault;
   const changes = yield* PubSub.unbounded<NoteIndexChange>();
   yield* Effect.addFinalizer(() => PubSub.shutdown(changes));
@@ -238,14 +240,19 @@ const makeNoteIndex = Effect.gen(function* () {
       filterTag(vault.changes, "delete", "rename"),
       events.callback("vault"),
     );
-    app.workspace.onLayoutReady(events.callback("layout"));
+    // Started immediately: a ready layout completes at once, so the event is
+    // queued here; else it is queued inside Obsidian's layout-ready callback.
+    yield* workspace.layoutReady.pipe(
+      Effect.andThen(Effect.sync(() => events.callback("layout")())),
+      Effect.forkScoped({ startImmediately: true }),
+    );
     // Start immediately so a ready layout and clean cache finish the Full Scan
     // before acquisition returns, as they did through the synchronous callbacks.
     yield* events
       .consume(consume)
       .pipe(Effect.forkScoped({ startImmediately: true }));
 
-    // `onLayoutReady` and `onCleanCache` are one-shots with no unregister, so
+    // Layout-ready and `onCleanCache` are one-shots with no unregister, so
     // the scan gates on disposal instead. Callers parked on `whenIndexed()`
     // are torn down alongside the service and would otherwise wait on
     // nothing, so disposal settles them.
@@ -482,7 +489,7 @@ const makeNoteIndex = Effect.gen(function* () {
 export const layerNoteIndex: Layer.Layer<
   NoteIndex,
   never,
-  ObsidianApp | MetadataCache | Vault
+  ObsidianApp | MetadataCache | Vault | Workspace
 > = Layer.effect(NoteIndex, makeNoteIndex);
 
 function serializeFrontmatter(cache: CachedMetadata | null): string {
