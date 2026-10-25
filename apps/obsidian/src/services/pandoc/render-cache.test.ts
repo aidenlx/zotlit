@@ -1,6 +1,8 @@
+import { it } from "@effect/vitest";
+import { Context, Effect, Fiber, Layer, Queue, Stream } from "effect";
+import "@mock/dom-parser";
 import { TestClock } from "effect/testing";
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
-import "@mock/dom-parser";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect } from "vitest";
@@ -9,9 +11,7 @@ import type { CslItemData } from "@zotlit/db";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Context, Effect, Fiber, Layer, Queue, Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { profileRuntimeOf } from "@/services/profile/__fixtures__";
 import type { Held } from "@/services/query-client/service";
@@ -72,7 +72,7 @@ it.effect.each(["Profile", "preference override"] as const)(
               Layer.succeed(
                 PandocEngine,
                 stubService<PandocEngine["Service"]>("PandocEngine", {
-                  getStatus: () => Effect.succeed({ kind: "absent" }),
+                  getStatus: Effect.succeed({ kind: "absent" }),
                   changes: Stream.never,
                 }),
               ),
@@ -394,8 +394,8 @@ class PandocEngineStub {
   readonly binary = stubService<ManagedBinaryApi<CitationEngine>>(
     "PandocEngine",
     {
-      getStatus: () => Effect.sync(() => this.#status),
-      getEngine: () => Effect.promise(() => Promise.resolve(this.engine)),
+      getStatus: Effect.sync(() => this.#status),
+      getEngine: Effect.promise(() => Promise.resolve(this.engine)),
       changes: Stream.suspend(() =>
         this.#events.stream.pipe(
           Stream.map(() => this.#status),

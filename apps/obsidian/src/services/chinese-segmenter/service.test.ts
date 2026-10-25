@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { cut_for_search, initSync } from "jieba-wasm/web";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -5,8 +7,6 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { describe, expect, vi } from "vitest";
 
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { openManagedBinary } from "@/services/managed-binary/__fixtures__";
 import type { BinaryPin } from "@/services/managed-binary/service";
 import { memoryDevice } from "@/services/managed-binary/test-utils";
@@ -55,10 +55,10 @@ describe("Chinese Segmenter", () => {
     Effect.promise(async () => {
       const device = memoryDevice();
       await using segmenter = await open(device);
-      await segmenter.handle.runPromise(segmenter.service.install());
+      await segmenter.handle.runPromise(segmenter.service.install);
 
       const { module } = (await segmenter.handle.runPromise(
-        segmenter.service.getEngine(),
+        segmenter.service.getEngine,
       ))!;
       initSync({ module });
 
@@ -91,11 +91,11 @@ describe("Chinese Segmenter", () => {
         });
 
         await expect(
-          segmenter.handle.runPromise(segmenter.service.install()),
+          segmenter.handle.runPromise(segmenter.service.install),
         ).rejects.toThrow();
 
         expect(
-          segmenter.handle.runSync(segmenter.service.getStatus()),
+          segmenter.handle.runSync(segmenter.service.getStatus),
         ).toMatchObject({
           kind: "failed",
           failure: { code: "init-failed" },

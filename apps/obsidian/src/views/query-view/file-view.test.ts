@@ -2,13 +2,13 @@
 // The Query File tab writes a toolbar change to its file at once, through
 // its own save, and the toolbar says when the write failed.
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import { Stream } from "effect";
 import type { WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";

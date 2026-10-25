@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Deferred, Effect, Fiber, Layer } from "effect";
 import { TestClock } from "effect/testing";
 import type { Command } from "obsidian";
 import { describe, expect, vi } from "vitest";
@@ -5,8 +7,6 @@ import { describe, expect, vi } from "vitest";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { testPluginHost } from "@/lib/__fixtures__/plugin-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Deferred, Effect, Fiber, Layer } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
@@ -14,12 +14,13 @@ import { layerDatabaseActions } from "./actions";
 
 const REFRESH_COMMAND = "refresh-zotero-data";
 
-function layerCommand(refresh: ZoteroReads["Service"]["refresh"]) {
+/** `refresh` runs each time the refresh Effect runs, so a spy counts the runs. */
+function layerCommand(refresh: () => ZoteroReads["Service"]["refresh"]) {
   return Effect.gen(function* () {
     const host = testPluginHost();
     const notifier = testNotifier();
     const reads = stubService<ZoteroReads["Service"]>("ZoteroReads", {
-      refresh,
+      refresh: Effect.suspend(refresh),
     });
 
     yield* Layer.build(

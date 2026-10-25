@@ -1,9 +1,8 @@
+import { it } from "@effect/vitest";
+import { Effect, Queue } from "effect";
 import { expect, vi } from "vitest";
 
-import { Effect, Queue } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
-
-import { makeParseHarness } from "./__fixtures__";
+import { cancellableParse, makeParseHarness } from "./__fixtures__";
 import { ParseFailed } from "./client";
 
 vi.mock("virtual:citation-parse-worker", () => ({ default: "" }));
@@ -68,13 +67,13 @@ it.effect(
       layoutReady();
       const worker = yield* Queue.take(spawned);
       worker.dispatchEvent(new MessageEvent("message", { data: [0] }));
-      const controller = new AbortController();
-      const pending = parser.parse(
-        { path: "draft.md", generation: 1, text: "" },
-        controller.signal,
-      );
+      const { pending, cancel } = cancellableParse(parser, {
+        path: "draft.md",
+        generation: 1,
+        text: "",
+      });
       yield* Queue.take(sent);
-      controller.abort();
+      cancel();
       yield* Effect.promise(() =>
         expect(pending).rejects.toMatchObject({ name: "AbortError" }),
       );

@@ -5,12 +5,12 @@
 // citation popover.
 //
 // @see apps/obsidian/docs/adr/0074-library-view-rows-act-as-quick-switcher-results.md
+import { Effect } from "effect";
 import type { Editor, MarkdownFileInfo, PaneType } from "obsidian";
 
 import { itemSelectUri, parseIndexedKey } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
-import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import * as toast from "@/lib/toast";

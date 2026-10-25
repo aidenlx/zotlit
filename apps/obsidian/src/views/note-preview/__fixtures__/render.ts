@@ -1,4 +1,4 @@
-import { Stream } from "@/lib/effect";
+import { Stream } from "effect";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { plainTestParseClient } from "@/lib/__fixtures__/parse-client";
@@ -6,7 +6,7 @@ import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 // Live database and TemplateService boundaries for native preview tests.
 import type { DatabaseSync } from "node:sqlite";
 import type { App } from "obsidian";
-import { Effect } from "@/lib/effect";
+import { Effect } from "effect";
 import { expect, vi } from "vitest";
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";

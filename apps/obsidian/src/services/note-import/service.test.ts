@@ -1,3 +1,4 @@
+import { Effect, Stream } from "effect";
 import { stringifyYaml } from "obsidian";
 import type { App, TFile } from "obsidian";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,7 +10,6 @@ import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { renderAnnotationSources } from "@/lib/annotation-render";
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
-import { Effect, Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { VaultSource } from "@/lib/obsidian-vault";

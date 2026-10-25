@@ -1,8 +1,4 @@
-import { TestClock } from "effect/testing";
-import { describe, expect, vi } from "vitest";
-
-import { logLibrary } from "@zotlit/shared/logging";
-
+import { it } from "@effect/vitest";
 import {
   Cause,
   DateTime,
@@ -12,8 +8,11 @@ import {
   Queue,
   Ref,
   References,
-} from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
+} from "effect";
+import { TestClock } from "effect/testing";
+import { describe, expect, vi } from "vitest";
+
+import { logLibrary } from "@zotlit/shared/logging";
 
 import { LogCategory, withLogCategory } from "./effect-log";
 import {

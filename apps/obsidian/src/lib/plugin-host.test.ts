@@ -1,9 +1,9 @@
+import { it } from "@effect/vitest";
+import { Effect, Exit, Scope } from "effect";
 import type { App, Command, Plugin, PluginSettingTab } from "obsidian";
 import { describe, expect, it as plainIt, vi } from "vitest";
 
 import type { CliHost } from "@/lib/cli-command";
-import { Effect, Exit, Scope } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { makePluginHost } from "./plugin-host";
 

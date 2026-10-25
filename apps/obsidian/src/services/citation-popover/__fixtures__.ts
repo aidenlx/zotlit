@@ -1,4 +1,6 @@
 // A Citation Popover built from its real layer over test-owned service reads.
+import { Effect, Layer, Stream } from "effect";
+import type { ManagedRuntime } from "effect";
 import type { App, TFile } from "obsidian";
 
 import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
@@ -6,8 +8,6 @@ import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache"
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Effect, Layer, Stream } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import type {
   CitationLookupAnswer,
@@ -143,7 +143,7 @@ export function citationPopoverFixture(
               ({
                 ItemsByIndexedKeys: () => Effect.succeed(new Map()),
               } as unknown as ZoteroReadsApi),
-            snapshot: Effect.acquireRelease(
+            snapshot: Effect.acquireDisposable(
               Effect.tryPromise({
                 try: () => deps.db.acquireRead(),
                 catch: (error) =>
@@ -152,7 +152,6 @@ export function citationPopoverFixture(
                       error instanceof Error ? error.message : String(error),
                   }),
               }),
-              (lease) => Effect.promise(() => lease[Symbol.asyncDispose]()),
             ).pipe(Effect.map((lease) => lease.reads)),
           }),
         ),
@@ -202,12 +201,10 @@ export function citationPopoverFixture(
         Layer.succeed(
           CitationText,
           stubService<CitationText["Service"]>("CitationText", {
-            read: (path, options) =>
-              Effect.promise(() =>
+            read: (path) =>
+              Effect.promise((signal) =>
                 deps.citationText
-                  ? deps.citationText.read(path, {
-                      signal: options?.signal ?? new AbortController().signal,
-                    })
+                  ? deps.citationText.read(path, { signal })
                   : Promise.resolve(null),
               ).pipe(Effect.map((value) => value as DocumentCitations | null)),
           }),
@@ -234,12 +231,10 @@ export function citationPopoverFixture(
                       reason: "engine-absent",
                     } as const),
               ).pipe(Effect.map((value) => value as BibliographyRenderOutcome)),
-            readBibliography: (items, options) =>
-              Effect.promise(() =>
+            readBibliography: (items) =>
+              Effect.promise((signal) =>
                 deps.bibliographyRender.readBibliography
-                  ? deps.bibliographyRender.readBibliography(items, {
-                      signal: options?.signal ?? new AbortController().signal,
-                    })
+                  ? deps.bibliographyRender.readBibliography(items, { signal })
                   : Promise.resolve(null),
               ).pipe(
                 Effect.map((value) => value as BibliographyRenderResult | null),

@@ -1,19 +1,18 @@
 // Read-fallback priority at the database source boundary.
 
+import { Effect } from "effect";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 
-import { Effect } from "@/lib/effect";
-
-vi.mock("@/lib/reflink", () => {
-  class ReflinkUnsupportedError extends Error {}
+vi.mock("@/lib/reflink", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/reflink")>();
   return {
-    ReflinkUnsupportedError,
+    ...actual,
     reflink: vi.fn(async () => {
-      throw new ReflinkUnsupportedError();
+      throw new actual.ReflinkUnsupportedError();
     }),
   };
 });

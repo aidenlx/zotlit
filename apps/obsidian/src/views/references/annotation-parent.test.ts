@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { Effect, Layer, Stream } from "effect";
 import type { EventRef, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import {
@@ -8,7 +9,6 @@ import {
 import { expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Effect, Layer, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import {
   annotationRows,
@@ -70,9 +70,9 @@ it("#1704 refreshes an Annotation Citation's parent in References after a databa
       binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
         "PandocEngine",
         {
-          getStatus: () => Effect.succeed({ kind: "absent" }),
+          getStatus: Effect.succeed({ kind: "absent" }),
           changes: Stream.empty,
-          decline: () => Effect.void,
+          decline: Effect.void,
         },
       ),
       runSync: Effect.runSync,

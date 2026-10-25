@@ -3,10 +3,9 @@
 // interrupts a run still in flight. ZotLitPlugin.registerCliHandler then
 // turns a failure into the text Obsidian prints (`cli-rejection.ts`).
 
+import { Cause, Exit } from "effect";
+import type { Effect, ManagedRuntime } from "effect";
 import type { CliData, CliFlags, PluginManifest } from "obsidian";
-
-import { Cause, Exit } from "@/lib/effect";
-import type { Effect, ManagedRuntime } from "@/lib/effect";
 
 /** A command's answer to the caller's parameters: the text it prints. */
 export type CliCommandHandler = (

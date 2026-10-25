@@ -1,5 +1,4 @@
-import { expect } from "vitest";
-
+import { it } from "@effect/vitest";
 import {
   Cause,
   Context,
@@ -12,10 +11,11 @@ import {
   Queue,
   Stream,
   SubscriptionRef,
-} from "@/lib/effect";
+} from "effect";
+import { expect } from "vitest";
+
 import { LogCategory } from "@/lib/effect-log";
 import { filterTag, forkEach, subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 
 type Tagged =
   | { readonly _tag: "a"; readonly n: number }

@@ -1,12 +1,35 @@
+import { Context, Effect, Layer, Schema } from "effect";
 import { HttpClient, HttpClientError } from "effect/http";
 import type { App } from "obsidian";
 
-import { Context, Effect, Layer } from "@/lib/effect";
 import { layerRequestUrlHttpClient } from "@/lib/http-client";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import { createOpfsBinaryStore } from "./store";
 import type { BinaryStore } from "./store";
+
+/**
+ * A managed binary step failed: the store, the download, the engine, or the
+ * install. `message` is the original's, which the failure status and the logs
+ * show; `cause` holds the original where there is one.
+ */
+export class ManagedBinaryError extends Schema.TaggedError<
+  ManagedBinaryError,
+  { readonly brand: unique symbol }
+>()("ManagedBinaryError", {
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
+
+/** What a host API threw, as a {@link ManagedBinaryError} with its message. */
+export function managedBinaryError(cause: unknown): ManagedBinaryError {
+  return cause instanceof ManagedBinaryError
+    ? cause
+    : new ManagedBinaryError({
+        message: Error.isError(cause) ? cause.message : String(cause),
+        cause,
+      });
+}
 
 /** Host APIs adapted at the platform boundary. */
 export interface ManagedBinaryHostPorts {
@@ -16,20 +39,22 @@ export interface ManagedBinaryHostPorts {
 }
 
 export interface EffectBinaryStore {
-  list(): Effect.Effect<string[], Error>;
-  read(name: string): Effect.Effect<Blob | undefined, Error>;
+  readonly list: Effect.Effect<string[], ManagedBinaryError>;
+  read(name: string): Effect.Effect<Blob | undefined, ManagedBinaryError>;
   write(
     name: string,
     bytes: Uint8Array<ArrayBuffer>,
-  ): Effect.Effect<void, Error>;
-  rename(from: string, to: string): Effect.Effect<void, Error>;
-  remove(name: string): Effect.Effect<void, Error>;
-  clear(): Effect.Effect<void, Error>;
+  ): Effect.Effect<void, ManagedBinaryError>;
+  rename(from: string, to: string): Effect.Effect<void, ManagedBinaryError>;
+  remove(name: string): Effect.Effect<void, ManagedBinaryError>;
+  readonly clear: Effect.Effect<void, ManagedBinaryError>;
 }
 
 export interface ManagedBinaryPorts {
   openStore(directory: string): Effect.Effect<EffectBinaryStore>;
-  download(url: string): Effect.Effect<Uint8Array<ArrayBuffer>, Error>;
+  download(
+    url: string,
+  ): Effect.Effect<Uint8Array<ArrayBuffer>, ManagedBinaryError>;
   consent: {
     loadLocalStorage(key: string): Effect.Effect<unknown>;
     saveLocalStorage(key: string, value: unknown): Effect.Effect<void>;
@@ -68,28 +93,38 @@ export const layerManagedBinaryPlatform = layerManagedBinaryPlatformWith.pipe(
 export const downloadBytes = (
   http: HttpClient.HttpClient,
   url: string,
-): Effect.Effect<Uint8Array<ArrayBuffer>, Error> =>
+): Effect.Effect<Uint8Array<ArrayBuffer>, ManagedBinaryError> =>
   http.get(url).pipe(
-    Effect.flatMap((response) =>
-      response.status >= 400
-        ? Effect.fail(new Error(`Request failed, status ${response.status}`))
-        : response.arrayBuffer,
+    Effect.flatMap(
+      (
+        response,
+      ): Effect.Effect<
+        ArrayBuffer,
+        ManagedBinaryError | HttpClientError.HttpClientError
+      > =>
+        response.status >= 400
+          ? Effect.fail(
+              new ManagedBinaryError({
+                message: `Request failed, status ${response.status}`,
+              }),
+            )
+          : response.arrayBuffer,
     ),
     Effect.map((buffer) => new Uint8Array(buffer)),
     Effect.mapError((error) =>
-      HttpClientError.isHttpClientError(error) &&
-      error.reason.cause instanceof Error
-        ? error.reason.cause
-        : error,
+      managedBinaryError(
+        HttpClientError.isHttpClientError(error) &&
+          error.reason.cause instanceof Error
+          ? error.reason.cause
+          : error,
+      ),
     ),
   );
 
-const attempt = <A>(run: () => Promise<A>): Effect.Effect<A, Error> =>
-  Effect.tryPromise({
-    try: run,
-    catch: (error) =>
-      error instanceof Error ? error : new Error(String(error)),
-  });
+const attempt = <A>(
+  run: () => Promise<A>,
+): Effect.Effect<A, ManagedBinaryError> =>
+  Effect.tryPromise({ try: run, catch: managedBinaryError });
 
 /** Wrap Promise and synchronous host APIs once, at their boundary. */
 export function managedBinaryPorts(
@@ -110,12 +145,12 @@ function devicePorts(
     ) {
       const store = yield* Effect.sync(() => host.openStore(directory));
       return {
-        list: () => attempt(() => store.list()),
+        list: attempt(() => store.list()),
         read: (name) => attempt(() => store.read(name)),
         write: (name, bytes) => attempt(() => store.write(name, bytes)),
         rename: (from, to) => attempt(() => store.rename(from, to)),
         remove: (name) => attempt(() => store.remove(name)),
-        clear: () => attempt(() => store.clear()),
+        clear: attempt(() => store.clear()),
       } satisfies EffectBinaryStore;
     }),
     consent: {

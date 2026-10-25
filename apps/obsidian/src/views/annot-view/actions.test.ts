@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 import { Menu } from "@mock/obsidian";
+import { Effect } from "effect";
 import type { MouseEvent } from "react";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import * as confirmation from "@/lib/confirm";
-import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import { annotation } from "@/services/pdf-annotation-editor/__fixtures__";

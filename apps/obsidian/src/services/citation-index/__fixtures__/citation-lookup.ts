@@ -1,6 +1,6 @@
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 
-import { Stream } from "@/lib/effect";
+import { Stream } from "effect";
 import type { PlainCitationLookup } from "@/services/citation-index/plain";
 
 import type {

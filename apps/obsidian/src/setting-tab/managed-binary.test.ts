@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 import { ButtonComponent, Setting } from "@mock/obsidian";
+import { Effect, Stream } from "effect";
 import type { Setting as ObsidianSetting, SettingDefinition } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Effect, Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type {
   ManagedBinaryApi,
@@ -59,10 +59,10 @@ function binary(status: ManagedBinaryStatus): ManagedBinaryActions & {
     binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
       "ManagedBinary",
       {
-        getStatus: () => Effect.succeed(status),
+        getStatus: Effect.succeed(status),
         changes: Stream.empty,
-        install,
-        uninstall,
+        install: Effect.suspend(install),
+        uninstall: Effect.suspend(uninstall),
       },
     ),
     runSync: Effect.runSync,

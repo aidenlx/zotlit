@@ -4,7 +4,7 @@
 import type { TFile } from "obsidian";
 
 import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
-import { Effect } from "@/lib/effect";
+import { Effect } from "effect";
 import { makeFileManager } from "@/lib/obsidian-file-manager";
 import type {
   FileManager,

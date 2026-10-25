@@ -1,5 +1,17 @@
 // The ZoteroReads handler layer: each operation composes @zotlit/db query functions over a borrowed Connection.
 import { chunk } from "@std/collections/chunk";
+import {
+  Cause,
+  Effect,
+  Exit,
+  Fiber,
+  FiberMap,
+  Layer,
+  Ref,
+  Scope,
+  Semaphore,
+  Stream,
+} from "effect";
 
 import {
   CollectionCache,
@@ -45,18 +57,6 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { ItemIndex, layerItemIndex } from "@zotlit/item-lookup";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 
-import {
-  Cause,
-  Effect,
-  Exit,
-  Fiber,
-  FiberMap,
-  Layer,
-  Ref,
-  Scope,
-  Semaphore,
-  Stream,
-} from "@/lib/effect";
 import { makeAttachmentFileResolver } from "@/services/item-query/attachment-files";
 import { runQueryJob } from "@/services/item-query/job";
 
@@ -328,8 +328,7 @@ export function handlersLayer(options?: HandlersOptions) {
         return Effect.acquireRelease(
           Effect.gen(function* () {
             const entry = pinned.get(snapshot);
-            if (!entry)
-              return yield* Effect.fail(new SnapshotExpired({ snapshot }));
+            if (!entry) return yield* new SnapshotExpired({ snapshot });
             yield* Ref.update(entry.counters, (before) => ({
               ...before,
               active: before.active + 1,

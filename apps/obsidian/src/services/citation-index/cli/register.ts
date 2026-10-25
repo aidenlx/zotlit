@@ -3,10 +3,10 @@
 // Command, flag, and diagnostic text is all hardcoded English: an
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
+import { Effect, Layer } from "effect";
 import type { App, CliFlag, CliFlags } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
-import { Effect, Layer } from "@/lib/effect";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { PluginHost } from "@/lib/plugin-host";
 import { CitationIndex } from "@/services/citation-index/service";

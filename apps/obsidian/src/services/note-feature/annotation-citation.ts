@@ -1,3 +1,6 @@
+// Renders an Annotation's page-pinned citation for the annotation view's "Copy citation".
+import { Effect } from "effect";
+
 import {
   buildAnnotationsTemplateData,
   resolveIndexedKeyLibraryIn,
@@ -7,8 +10,6 @@ import {
   annotationCitation,
   buildAnnotationResolvers,
 } from "@/lib/annotation-render";
-// Renders an Annotation's page-pinned citation for the annotation view's "Copy citation".
-import { Effect } from "@/lib/effect";
 
 import type { NoteFeatureDeps } from "./context";
 

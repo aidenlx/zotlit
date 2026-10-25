@@ -1,6 +1,4 @@
-import { TestClock } from "effect/testing";
-import { expect } from "vitest";
-
+import { it } from "@effect/vitest";
 import {
   Context,
   Deferred,
@@ -9,8 +7,10 @@ import {
   Layer,
   PubSub,
   Stream,
-} from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
+} from "effect";
+import { TestClock } from "effect/testing";
+import { expect } from "vitest";
+
 import { layerQueryClients } from "@/services/query-client/service";
 import { layerPluginSettings } from "@/services/settings/service";
 import { layerRcRef } from "@/services/zotero-reads/connection";

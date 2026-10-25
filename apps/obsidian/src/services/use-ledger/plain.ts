@@ -1,8 +1,7 @@
 // The Use Ledger for callers outside Effect: legacy services and views.
+import { Effect } from "effect";
+import type { ManagedRuntime, Stream } from "effect";
 import type { TFile } from "obsidian";
-
-import { Effect } from "@/lib/effect";
-import type { ManagedRuntime, Stream } from "@/lib/effect";
 
 import { UseLedger } from "./service";
 import type { Ledger, Use, UseKind } from "./service";

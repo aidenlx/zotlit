@@ -1,11 +1,11 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { TestClock } from "effect/testing";
 import { stringifyYaml } from "obsidian";
 import { describe, expect, vi } from "vitest";
 
 import { TemplateFacade } from "@zotlit/templates/facade";
 
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import { PROFILE_ID_LENGTH } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";

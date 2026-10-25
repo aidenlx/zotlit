@@ -11,10 +11,10 @@ export interface EmbeddedWorkerOptions {
   entry: string;
   /**
    * Build settings the worker shares with the plugin bundle (`define`,
-   * `resolve`, `minify`, ...). Node builtins listed in `external` stay
+   * `resolve`, `minify`, ...) and the plugins of its own build. Node builtins listed in `external` stay
    * `require()` calls that resolve through the worker's Node integration.
    */
-  config: Pick<InlineConfig, "define" | "resolve" | "mode"> & {
+  config: Pick<InlineConfig, "define" | "resolve" | "mode" | "plugins"> & {
     external: string[];
     minify: boolean;
     sourcemap: boolean | "inline";

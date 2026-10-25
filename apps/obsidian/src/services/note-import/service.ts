@@ -1,5 +1,6 @@
 // Materializes Zotero Child Notes into flat Markdown mirrors on command, and
 // links a Literature Note to each of its Child Notes.
+import { Effect } from "effect";
 import { normalizePath, stringifyYaml } from "obsidian";
 import type {
   FileManager,
@@ -32,7 +33,6 @@ import {
   FIELD_ZOTERO_NOTE_KEY,
   stringifyInstant,
 } from "@/lib/constants";
-import { Effect } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import {
   ensureFolder,

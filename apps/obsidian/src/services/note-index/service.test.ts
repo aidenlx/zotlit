@@ -1,9 +1,9 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import type { App, CachedMetadata, TFile } from "obsidian";
 import { describe, expect } from "vitest";
 
-import { Effect } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import type { ProfileId } from "@/lib/profile-stamp";
 
 import { makeHarness, startup, cache, paths, makeFile } from "./__fixtures__";

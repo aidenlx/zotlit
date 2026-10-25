@@ -1,10 +1,10 @@
 // The file manager as a capability tag: the link, rename and Properties calls
 // ZotLit makes, without the Obsidian `App`. It copies the MetadataCache tag's
 // shape (policies/events.md, Capability tags); the file manager has no events.
+import { Context, Effect, Layer } from "effect";
 import { normalizePath } from "obsidian";
 import type { FileManager as ObsidianFileManager, TFile } from "obsidian";
 
-import { Context, Effect, Layer } from "@/lib/effect";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { Vault } from "@/lib/obsidian-vault";
 import { FileExists, vaultError } from "@/lib/vault-errors";
@@ -62,11 +62,13 @@ export const makeFileManager = Effect.fnUntraced(function* (
 ) {
   const vault = yield* Vault;
   return FileManager.of({
-    processFrontMatter: (file, fn) =>
-      Effect.tryPromise({
-        try: () => source.processFrontMatter(file, fn),
-        catch: vaultError("processFrontMatter", file.path),
-      }),
+    processFrontMatter: Effect.fn("FileManager.processFrontMatter")(
+      (file, fn) =>
+        Effect.tryPromise({
+          try: () => source.processFrontMatter(file, fn),
+          catch: vaultError("processFrontMatter", file.path),
+        }),
+    ),
     renameFile: Effect.fn("FileManager.renameFile")(function* (file, newPath) {
       // As Obsidian's `Vault.rename`: the normalized path, and no move when
       // it is the file's own.
@@ -80,15 +82,17 @@ export const makeFileManager = Effect.fnUntraced(function* (
         catch: vaultError("renameFile", file.path),
       });
     }),
-    generateMarkdownLink: (file, sourcePath, options = {}) =>
-      Effect.sync(() =>
-        source.generateMarkdownLink(
-          file,
-          sourcePath,
-          options.subpath,
-          options.alias,
+    generateMarkdownLink: Effect.fn("FileManager.generateMarkdownLink")(
+      (file, sourcePath, options = {}) =>
+        Effect.sync(() =>
+          source.generateMarkdownLink(
+            file,
+            sourcePath,
+            options.subpath,
+            options.alias,
+          ),
         ),
-      ),
+    ),
   });
 });
 

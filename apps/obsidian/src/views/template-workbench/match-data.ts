@@ -1,3 +1,6 @@
+// Match vocabulary spans every Library in the pinned live database.
+import { Effect } from "effect";
+
 import { parseIndexedKey } from "@zotlit/db";
 import { planItemFilter, testItemSeed } from "@zotlit/item-query";
 import type {
@@ -6,8 +9,6 @@ import type {
   WorkbenchMatchResult,
 } from "@zotlit/workbench/ui";
 
-// Match vocabulary spans every Library in the pinned live database.
-import { Effect } from "@/lib/effect";
 import type { QueryService } from "@/services/item-query/service";
 import {
   resolveLibraryScope,

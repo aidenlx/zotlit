@@ -19,6 +19,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import packageJson from "./package.json" with { type: "json" };
 import { resolveChineseSegmenterPin } from "./scripts/chinese-segmenter.ts";
 import { deriveDevVersion } from "./scripts/dev-version.ts";
+import { effectEntry, effectEntryCheck } from "./scripts/effect-entry.ts";
 import { embeddedWorker } from "./scripts/embedded-worker.ts";
 import { pandocFilterVariants } from "./scripts/lua-filter.ts";
 import { resolvePandocEnginePin } from "./scripts/pandoc-engine.ts";
@@ -78,19 +79,6 @@ export default defineConfig(({ mode }) => {
     },
     conditions: ["module", "node", "development|production"],
     tsconfigPaths: true,
-  };
-  const workerResolveConfig = {
-    ...resolveConfig,
-    alias: [
-      {
-        find: /^@\/lib\/effect$/,
-        replacement: resolve(import.meta.dirname, "src/lib/effect-worker.ts"),
-      },
-      ...Object.entries(resolveConfig.alias).map(([find, replacement]) => ({
-        find,
-        replacement,
-      })),
-    ],
   };
   const define = {
     __DEV__: JSON.stringify(isDev),
@@ -171,6 +159,8 @@ export default defineConfig(({ mode }) => {
             ? undefined
             : { port: i18nDevServerPort },
       }),
+      effectEntry("renderer"),
+      effectEntryCheck("renderer"),
       preact(),
       tailwindcss(),
       pandocFilterVariants(),
@@ -183,7 +173,8 @@ export default defineConfig(({ mode }) => {
         config: {
           mode,
           define,
-          resolve: workerResolveConfig,
+          resolve: resolveConfig,
+          plugins: [effectEntry("worker"), effectEntryCheck("worker")],
           external: builtins,
           minify: isProd,
           sourcemap: isProd ? false : "inline",
@@ -199,7 +190,8 @@ export default defineConfig(({ mode }) => {
         config: {
           mode,
           define,
-          resolve: workerResolveConfig,
+          resolve: resolveConfig,
+          plugins: [effectEntry("worker"), effectEntryCheck("worker")],
           external: builtins,
           minify: isProd,
           sourcemap: isProd ? false : "inline",

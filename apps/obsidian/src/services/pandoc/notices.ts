@@ -1,6 +1,7 @@
 // Lifecycle notices for citation formatting prerequisites.
-import { Effect, Layer } from "@/lib/effect";
-import type { Scope, Stream } from "@/lib/effect";
+import { Effect, Layer } from "effect";
+import type { Scope, Stream } from "effect";
+
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";

@@ -3,10 +3,10 @@
 // built-in citation text when the vault holds none, so a first edit starts
 // from the text ZotLit actually renders.
 
+import { Effect, Layer } from "effect";
+import type { Scope } from "effect";
 import type { App } from "obsidian";
 
-import { Effect, Layer } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -42,7 +42,7 @@ export const layerCitationTemplateActions: Layer.Layer<
     yield* addCitationTemplateActions(host, {
       template: {
         materializeCitationTemplate: () =>
-          runPromise(template.materializeCitationTemplate()),
+          runPromise(template.materializeCitationTemplate),
       },
     });
   }),

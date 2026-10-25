@@ -156,7 +156,7 @@ function renderEditingRow(
   const refreshRemembered = (): void => {
     const read = ++reads;
     void ctx.bridge
-      .runPromise(ctx.writeAuthorization.remembered())
+      .runPromise(ctx.writeAuthorization.remembered)
       .then((value) => {
         if (read !== reads) return;
         remembered = value;
@@ -188,7 +188,7 @@ function renderEditingRow(
           checking = true;
           apply();
           try {
-            await ctx.bridge.runPromise(ctx.annotations.probe());
+            await ctx.bridge.runPromise(ctx.annotations.probe);
             const result = editingCapabilityCopy(
               ctx.bridge.runSync(ctx.annotations.capability),
               Temporal.Now.instant(),
@@ -210,7 +210,7 @@ function renderEditingRow(
       forgetButton = button;
       button.setButtonText(m.settings_zotero_editing_forget()).onClick(() => {
         void ctx.bridge
-          .runPromise(ctx.writeAuthorization.forgetAuthorization())
+          .runPromise(ctx.writeAuthorization.forgetAuthorization)
           .then(refreshRemembered)
           .catch((error: unknown) => {
             logger.warn("Cannot forget the Remembered Write Authorization", {
@@ -222,7 +222,7 @@ function renderEditingRow(
 
   apply();
   refreshRemembered();
-  void ctx.bridge.runPromise(ctx.annotations.probe());
+  void ctx.bridge.runPromise(ctx.annotations.probe);
   // An Allow editing from outside this row, such as a notice's button, can
   // save or drop a key, and the capability moves with it. The status redraws
   // at once; the key's line follows when the keystore answers.

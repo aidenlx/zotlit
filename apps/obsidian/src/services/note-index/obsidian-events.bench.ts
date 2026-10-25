@@ -1,15 +1,14 @@
 // #1705: the reviewer's 50,000-event probe, through the real NoteIndex.
 // Run on an idle host: pnpm --filter @zotlit/obsidian bench src/services/note-index/obsidian-events.bench.ts
 // Three warm-ups, nine measured bursts; acquisition and assertions are untimed.
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { mkdir, writeFile } from "node:fs/promises";
 import { cpus } from "node:os";
 import { join } from "node:path";
 import { expect } from "vitest";
 
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
-
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { cache, createNoteHost, noteIndexOf } from "./__fixtures__";
 
@@ -34,9 +33,9 @@ it.live("measures metadata event dispatch (#1705)", () =>
             type === "ignored" ? txt : file,
             type === "changed" && i % 2 ? b : a,
           );
-        yield* index.whenSettled();
+        yield* index.whenSettled;
         if (run >= 0) samples.push(performance.now() - start);
-        expect(yield* index.getIndexedItemKeys()).toEqual([
+        expect(yield* index.getIndexedItemKeys).toEqual([
           type === "changed" ? "ZZZ99999" : "ABCD2345",
         ]);
       }

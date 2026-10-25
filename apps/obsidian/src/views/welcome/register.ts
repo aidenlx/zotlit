@@ -3,9 +3,9 @@
 // Zotero data directory this device does not have.
 //
 // @see apps/obsidian/docs/adr/0077-the-library-view-is-the-first-screen.md
+import { Stream } from "effect";
 import type { App, Plugin } from "obsidian";
 
-import { Stream } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";

@@ -1,5 +1,6 @@
-import { Cause, Deferred, Effect, Exit, Layer } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
+import { Cause, Deferred, Effect, Exit, Layer } from "effect";
+import type { Scope } from "effect";
+
 import * as m from "@/lib/i18n/generated/messages";
 import type { Notifier } from "@/lib/notifier";
 import { reportProgress } from "@/lib/notifier";
@@ -37,9 +38,9 @@ export const layerDatabaseActions: Layer.Layer<
         }),
         layerScope,
       );
-      yield* reads
-        .refresh()
-        .pipe(Effect.onExit((exit) => Deferred.succeed(outcome, exit)));
+      yield* reads.refresh.pipe(
+        Effect.onExit((exit) => Deferred.succeed(outcome, exit)),
+      );
     });
     yield* host.addCommand({
       id: "refresh-zotero-data",

@@ -1,8 +1,6 @@
 // Citation Lookup: fresh command reads and view-owned Held Reads of requested keys.
 import { QueryObserver } from "@tanstack/query-core";
 import type { QueryObserverOptions } from "@tanstack/query-core";
-import type { RpcClientError } from "effect/rpc";
-
 import {
   Cause,
   Context,
@@ -15,7 +13,9 @@ import {
   Scope,
   Stream,
   SubscriptionRef,
-} from "@/lib/effect";
+} from "effect";
+import type { RpcClientError } from "effect/rpc";
+
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import { LibraryScope } from "@/services/library-scope/service";
@@ -54,7 +54,7 @@ export class CitationLookup extends Context.Service<
     >;
     observe(changed: () => void): Effect.Effect<CitationLookupObservation>;
     /** Wait for the current publication attempt, including failure or unload. */
-    whenResolved(): Effect.Effect<void>;
+    readonly whenResolved: Effect.Effect<void>;
   }
 >()("zotlit/citation-index/CitationLookup") {}
 
@@ -373,11 +373,11 @@ export const layerCitationLookup = Layer.effect(
       invalidated,
       read,
       observe,
-      whenResolved: Effect.fn("CitationLookup.whenResolved")(function* () {
+      whenResolved: Effect.gen(function* () {
         // Let queued dependency notifications start their replacement attempt.
         yield* Effect.yieldNow;
         if (refresh) yield* Fiber.await(refresh);
-      }),
+      }).pipe(Effect.withSpan("CitationLookup.whenResolved")),
     });
   }).pipe(withLogCategory("citation-index")),
 );

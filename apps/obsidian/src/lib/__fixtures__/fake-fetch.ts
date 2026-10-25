@@ -1,7 +1,7 @@
 // Effect's own fetch client over a test's `fetch`, in place of the network.
 import { FetchHttpClient, HttpClient } from "effect/http";
 
-import { Effect, Layer } from "@/lib/effect";
+import { Effect, Layer } from "effect";
 
 /**
  * `FetchHttpClient` over `fetch`. The client merges the context it was built

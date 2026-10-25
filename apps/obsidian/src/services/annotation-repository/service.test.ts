@@ -1537,7 +1537,7 @@ it("retains a paused draft until an explicit save after authorization returns", 
           ),
       });
     repository.editTextField("comment", "PUPR5FG5", "Keep these words");
-    await bridge.runPromise(localApiService.forgetAuthorization());
+    await bridge.runPromise(localApiService.forgetAuthorization);
     repository.editTextField("comment", "PUPR5FG5", "Blocked typing");
     expect(repository.textDraftFor("comment", "PUPR5FG5")?.text).toBe(
       "Keep these words",
@@ -1592,7 +1592,7 @@ it("saves text typed during a held draft's save once that save lands", async () 
       },
     );
     repository.editTextField("comment", "PUPR5FG5", "Held words");
-    await bridge.runPromise(localApiService.forgetAuthorization());
+    await bridge.runPromise(localApiService.forgetAuthorization);
     await localApi.authorize();
 
     const saving = repository.submitTextField("comment", "PUPR5FG5");
@@ -5897,7 +5897,7 @@ it("holds a tag draft when editing becomes unavailable, until Save tags after it
   );
 
   repository.editTags("PUPR5FG5", ["review", "nlp", "todo"]);
-  await bridge.runPromise(localApiService.forgetAuthorization());
+  await bridge.runPromise(localApiService.forgetAuthorization);
   expect(repository.tagDraftFor("PUPR5FG5")?.manualSave).toBe(true);
   // The editor closes as editing goes, and adds the text still typed first.
   repository.editTags("PUPR5FG5", ["review", "nlp", "todo", "figure"]);
@@ -6072,7 +6072,7 @@ it("discards a held tag draft and keeps the tags Zotero holds", async () => {
     zotero.answers,
   );
   repository.editTags("PUPR5FG5", ["figure"]);
-  await bridge.runPromise(localApiService.forgetAuthorization());
+  await bridge.runPromise(localApiService.forgetAuthorization);
   await repository.submitTags("PUPR5FG5", { automatic: true });
 
   repository.discardTagDraft("PUPR5FG5");

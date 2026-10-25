@@ -1,6 +1,7 @@
 // The bridge that puts a legacy Service into the plugin's Effect Layer graph.
-import { Cause, Effect, Layer } from "@/lib/effect";
-import type { Context, Scope } from "@/lib/effect";
+import { Cause, Effect, Layer } from "effect";
+import type { Context, Scope } from "effect";
+
 import { withLogCategory } from "@/lib/effect-log";
 
 import { superviseReady } from "./service-base";

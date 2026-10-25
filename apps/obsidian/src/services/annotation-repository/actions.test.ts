@@ -1,9 +1,9 @@
 import { createMockPlugin } from "@mock/obsidian";
+import { Effect } from "effect";
 import type { Command } from "obsidian";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
-import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { addAnnotationHistoryActions, historyOutcomeNotice } from "./actions";

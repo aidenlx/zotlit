@@ -1,5 +1,6 @@
 // A Managed Binary service with runners captured at build, for callers outside Effect.
-import type { Effect } from "@/lib/effect";
+import type { Effect } from "effect";
+
 import type { EffectBridge } from "@/lib/effect-bridge";
 
 import type { ManagedBinaryApi } from "./service";

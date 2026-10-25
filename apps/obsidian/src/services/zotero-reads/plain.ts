@@ -1,5 +1,6 @@
 /** Database reads for views and legacy services, on the plugin runtime. */
-import type { ManagedRuntime, Stream } from "@/lib/effect";
+import type { ManagedRuntime, Stream } from "effect";
+
 import { effectBridge, valueOr } from "@/lib/effect-bridge";
 
 import {
@@ -60,10 +61,10 @@ export function plainZoteroReads(
     acquireRead: () => acquireReadLease(service, bridge),
     refresh: async () => {
       if (bridge.closed()) return;
-      valueOr(await bridge.runPromiseExit(service.refresh()), undefined);
+      valueOr(await bridge.runPromiseExit(service.refresh), undefined);
     },
     notifyExternalChange: () => {
-      if (!bridge.closed()) runtime.runFork(service.notifyExternalChange());
+      if (!bridge.closed()) runtime.runFork(service.notifyExternalChange);
     },
     changes: service.changes,
     "refresh-requested": refreshRequested(service),

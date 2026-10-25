@@ -1,4 +1,5 @@
-import { Effect, PubSub, Stream } from "@/lib/effect";
+import { Effect, PubSub, Stream } from "effect";
+
 import { logAndContinue } from "@/lib/effect-log";
 import { obsidianListener } from "@/lib/obsidian-event-source";
 import type { ObsidianEventEmitter } from "@/lib/obsidian-event-source";

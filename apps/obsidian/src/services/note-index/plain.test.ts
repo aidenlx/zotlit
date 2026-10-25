@@ -1,8 +1,8 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { expect } from "vitest";
 
-import { Effect } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 
 import { cache, makeHarness } from "./__fixtures__";
 import type { NoteIndexChange } from "./service";

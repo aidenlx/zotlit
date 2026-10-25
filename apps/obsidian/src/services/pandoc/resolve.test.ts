@@ -1,8 +1,7 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import type { LinkCache } from "obsidian";
 import { describe, expect, vi } from "vitest";
-
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { resolveCitations } from "./resolve";
 import type { ResolvePorts, ResolveResponse, ResolvedItem } from "./resolve";

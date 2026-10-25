@@ -3,6 +3,8 @@
 // with `VaultError` (`@/lib/vault-errors`); an expected outcome is a tagged
 // error the tag decides from the vault cache first. It copies the shape of
 // `MetadataCache`; policies/events.md (Capability tags) describes it.
+import { Context, Effect, Layer } from "effect";
+import type { Stream } from "effect";
 import type {
   DataWriteOptions,
   TAbstractFile,
@@ -11,8 +13,6 @@ import type {
   Vault as ObsidianVault,
 } from "obsidian";
 
-import { Context, Effect, Layer } from "@/lib/effect";
-import type { Stream } from "@/lib/effect";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { obsidianEventSource } from "@/lib/obsidian-event-source";
 import type { ObsidianEventEmitter } from "@/lib/obsidian-event-source";
@@ -119,23 +119,34 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
     file,
   }));
   return Vault.of({
-    read: (file) => call("read", file.path, () => source.read(file)),
-    cachedRead: (file) =>
+    read: Effect.fn("Vault.read")((file) =>
+      call("read", file.path, () => source.read(file)),
+    ),
+    cachedRead: Effect.fn("Vault.cachedRead")((file) =>
       call("cachedRead", file.path, () => source.cachedRead(file)),
-    process: (file, fn, options) =>
+    ),
+    process: Effect.fn("Vault.process")((file, fn, options) =>
       call("process", file.path, () => source.process(file, fn, options)),
-    create: (path, data, options) =>
+    ),
+    create: Effect.fn("Vault.create")((path, data, options) =>
       Effect.suspend((): Effect.Effect<TFile, FileExists | VaultError> =>
         source.getAbstractFileByPath(path) === null
           ? call("create", path, () => source.create(path, data, options))
           : Effect.fail(new FileExists({ path })),
       ),
-    trash: (file, system) =>
+    ),
+    trash: Effect.fn("Vault.trash")((file, system) =>
       call("trash", file.path, () => source.trash(file, system)),
-    getFileByPath: (path) => Effect.sync(() => source.getFileByPath(path)),
-    getFolderByPath: (path) => Effect.sync(() => source.getFolderByPath(path)),
-    getAbstractFileByPath: (path) =>
+    ),
+    getFileByPath: Effect.fn("Vault.getFileByPath")((path) =>
+      Effect.sync(() => source.getFileByPath(path)),
+    ),
+    getFolderByPath: Effect.fn("Vault.getFolderByPath")((path) =>
+      Effect.sync(() => source.getFolderByPath(path)),
+    ),
+    getAbstractFileByPath: Effect.fn("Vault.getAbstractFileByPath")((path) =>
       Effect.sync(() => source.getAbstractFileByPath(path)),
+    ),
     changes: events.stream,
   });
 });

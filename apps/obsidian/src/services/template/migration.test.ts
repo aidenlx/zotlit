@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Context, Effect, Layer } from "effect";
 import { TestClock } from "effect/testing";
 import type { App } from "obsidian";
 import { afterEach, beforeEach, describe, expect, vi } from "vitest";
@@ -8,9 +10,7 @@ import { LegacyTemplateConversionError } from "@zotlit/templates/facade";
 import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { it } from "@/lib/effect-vitest";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import { buildSettings } from "@/services/settings/__fixtures__";
@@ -24,7 +24,7 @@ import { layerTemplateMigration } from "./migration";
 import type { TemplateMigrationOptions } from "./migration";
 import { plainTemplateMigration } from "./plain";
 import type { PlainTemplate } from "./plain";
-import { Template } from "./service";
+import { Template, templateFailure } from "./service";
 import type { LegacyTemplateDocuments } from "./service";
 
 async function makeHarness(
@@ -90,12 +90,13 @@ async function makeHarness(
         return snapshot();
       }),
   );
-  const flush = vi.fn(() => Effect.void);
+  /** Called once per run of the `flush` Effect, so a test orders the flushes. */
+  const flushRuns = vi.fn(() => Effect.void);
   const settings = Object.assign(
     stubService<PluginSettings["Service"]>("PluginSettings", {
       current: Effect.sync(snapshot),
     }),
-    { update, flush },
+    { update, flush: Effect.suspend(flushRuns) },
   );
   const bridge = { runSync: Effect.runSync, runPromise: Effect.runPromise };
   const template = {
@@ -173,6 +174,7 @@ async function makeHarness(
     bridge,
     service,
     settings,
+    flushRuns,
     template,
     trashFile,
   };
@@ -297,9 +299,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         expect(harness.settings.update).toHaveBeenCalledWith({
           "note.template-conversion-pending": false,
         });
-        expect(harness.settings.flush).toHaveBeenCalledBefore(
-          harness.trashFile,
-        );
+        expect(harness.flushRuns).toHaveBeenCalledBefore(harness.trashFile);
         expect(harness.trashFile).toHaveBeenCalledTimes(3);
         expect(harness.files.has("templates/zotlit-profile.default.md")).toBe(
           true,
@@ -314,7 +314,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           pendingCleanup: [],
         });
         expect(
-          harness.settings.flush.mock.invocationCallOrder.at(-1),
+          harness.flushRuns.mock.invocationCallOrder.at(-1),
         ).toBeGreaterThan(harness.trashFile.mock.invocationCallOrder.at(-1)!);
       }),
   );
@@ -621,9 +621,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           filename: { citationKey: "doePaper" },
           annotation: { text: "Excerpt" },
         });
-        expect(harness.settings.flush).toHaveBeenCalledBefore(
-          harness.trashFile,
-        );
+        expect(harness.flushRuns).toHaveBeenCalledBefore(harness.trashFile);
       }),
   );
 
@@ -1416,13 +1414,13 @@ async function buildMigration(
         Layer.succeed(
           Template,
           stubService<Template["Service"]>("Template", {
-            refresh: () => Effect.promise(() => template.refresh()),
-            getLegacyLiteratureNoteTemplateFiles: () =>
-              Effect.sync(() =>
-                template.getLegacyLiteratureNoteTemplateFiles(),
-              ),
-            getLegacyTemplateDocuments: () =>
-              Effect.sync(() => template.getLegacyTemplateDocuments()),
+            refresh: Effect.promise(() => template.refresh()),
+            getLegacyLiteratureNoteTemplateFiles: Effect.sync(() =>
+              template.getLegacyLiteratureNoteTemplateFiles(),
+            ),
+            getLegacyTemplateDocuments: Effect.sync(() =>
+              template.getLegacyTemplateDocuments(),
+            ),
             // The fake template converts to the fields migration reads only.
             convertLegacyLiteratureNoteTemplates: ((data: {
               note: object;
@@ -1431,14 +1429,14 @@ async function buildMigration(
             }) =>
               Effect.tryPromise({
                 try: () => template.convertLegacyLiteratureNoteTemplates(data),
-                catch: (error) => error,
+                catch: templateFailure,
               })) as unknown as Template["Service"]["convertLegacyLiteratureNoteTemplates"],
             convertLegacyTemplateDocuments: ((
               refs: readonly import("@zotlit/db").CiteRef[],
             ) =>
               Effect.tryPromise({
                 try: () => template.convertLegacyTemplateDocuments(refs),
-                catch: (error) => error,
+                catch: templateFailure,
               })) as unknown as Template["Service"]["convertLegacyTemplateDocuments"],
           }),
         ),

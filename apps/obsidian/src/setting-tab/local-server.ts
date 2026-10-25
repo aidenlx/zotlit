@@ -1,10 +1,10 @@
 // The Advanced page's Local server group: the one loopback listener, the
 // toggle of each service it hosts, and the port it actually bound. The live
 // update switch sits on the Zotero page beside the Companion it answers.
+import { Stream } from "effect";
 import type { SettingGroupItem } from "obsidian";
 
 import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
-import { Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";

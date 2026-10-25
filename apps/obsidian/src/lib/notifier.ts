@@ -1,7 +1,8 @@
 // Obsidian notices as a service the Effect layers show their toasts through.
+import { Cause, Context, Effect, Exit, Layer, Option } from "effect";
+import type { Scope } from "effect";
+
 import { AbortError } from "@/lib/abort-error";
-import { Cause, Context, Effect, Exit, Layer, Option } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
 
@@ -41,7 +42,7 @@ export class Notifier extends Context.Service<
 export const layerNotifier: Layer.Layer<Notifier> = Layer.succeed(
   Notifier,
   Notifier.of({
-    show: (message, options) =>
+    show: Effect.fn("Notifier.show")((message, options) =>
       Effect.sync(() => {
         const notice = new BaseNotice(message, options?.duration);
         return {
@@ -49,6 +50,7 @@ export const layerNotifier: Layer.Layer<Notifier> = Layer.succeed(
           setMessage: (next) => Effect.sync(() => void notice.setMessage(next)),
         };
       }),
+    ),
     progress: Effect.map(
       Effect.acquireDisposable(Effect.sync(() => new LazyNotice())),
       (notice) => ({

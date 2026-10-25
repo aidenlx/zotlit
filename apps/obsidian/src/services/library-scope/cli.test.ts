@@ -1,9 +1,9 @@
+import { it } from "@effect/vitest";
+import { Effect, Layer } from "effect";
 import { describe, expect } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Effect, Layer } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { PluginHost } from "@/lib/plugin-host";
 import type { PluginHostShape } from "@/lib/plugin-host";
 

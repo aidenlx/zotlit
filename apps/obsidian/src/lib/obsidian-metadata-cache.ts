@@ -1,14 +1,14 @@
 // The metadata cache as a capability tag: the reads ZotLit makes and the
 // events it follows, without the Obsidian `App`. Later tags copy its shape;
 // policies/events.md (Capability tags) describes it.
+import { Context, Effect, Layer } from "effect";
+import type { Stream } from "effect";
 import type {
   CachedMetadata,
   MetadataCache as ObsidianMetadataCache,
   TFile,
 } from "obsidian";
 
-import { Context, Effect, Layer } from "@/lib/effect";
-import type { Stream } from "@/lib/effect";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { obsidianEventSource } from "@/lib/obsidian-event-source";
 import type { ObsidianEventEmitter } from "@/lib/obsidian-event-source";
@@ -91,7 +91,10 @@ export const makeMetadataCache = Effect.fnUntraced(function* (
   }));
   yield* events.listen(source, "resolved", () => ({ _tag: "resolved" }));
   return MetadataCache.of({
-    fileCache: (file) => Effect.sync(() => source.getFileCache(file)),
+    // Untraced: the Note Index reads it per note in a loop over the vault.
+    fileCache: Effect.fnUntraced(function* (file) {
+      return yield* Effect.sync(() => source.getFileCache(file));
+    }),
     changes: events.stream,
     whenResolved: whenResolved(source),
   });

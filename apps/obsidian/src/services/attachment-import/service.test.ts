@@ -1,3 +1,4 @@
+import { Effect, Stream } from "effect";
 import {
   mkdir,
   mkdtemp,
@@ -15,7 +16,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { copyAttachments } from "@/lib/copy-attachments";
-import { Effect, Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import { defaults } from "@/services/settings/schema";
 

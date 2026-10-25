@@ -1,9 +1,9 @@
 // Once-per-launch release check: onboarding branch, the update the banner announces, Release Note.
 
+import { Cause, Context, Deferred, Effect, Layer } from "effect";
 import { TFile } from "obsidian";
 
 import { DOCS_COMPANION } from "@/lib/constants";
-import { Cause, Context, Deferred, Effect, Layer } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import * as m from "@/lib/i18n/generated/messages";
@@ -41,19 +41,19 @@ export class Release extends Context.Service<
      * Viewer leaf when that core plugin is enabled, else the system browser. The
      * external page only ever opens from a user action, never automatically.
      */
-    openReleaseNote(): Effect.Effect<void>;
+    readonly openReleaseNote: Effect.Effect<void>;
     /**
      * Clear the Migration Prompt flag by hand. The setting-tab reminder's
      * "Mark as done" control and the dismiss control of the Welcome View banner
      * wire this up. No-op when the flag is already clear.
      */
-    acknowledgeMigration(): Effect.Effect<void, SettingsMutationError>;
+    readonly acknowledgeMigration: Effect.Effect<void, SettingsMutationError>;
     /**
      * Mark the update of the running version as seen, so the banner announces
      * the next one only: "What's new" and the banner's dismiss control wire
      * this up. No-op when no update is pending.
      */
-    acknowledgeUpdate(): Effect.Effect<void, SettingsMutationError>;
+    readonly acknowledgeUpdate: Effect.Effect<void, SettingsMutationError>;
     /** True when `folderPath` holds at least one ejected `zt-*.eta.md` template. */
     hasV1Templates(folderPath: string): Effect.Effect<boolean>;
   }
@@ -91,58 +91,54 @@ export function layerRelease(options: {
             ) ?? false,
         );
 
-      const openReleaseNote = Effect.fn("Release.openReleaseNote")(
-        function* () {
-          const url = releaseNoteUrl(options.version);
-          const { workspace } = app;
-          if (!app.internalPlugins.getEnabledPluginById(WEBVIEWER_PLUGIN_ID)) {
-            window.open(url);
-            yield* Effect.logInfo("Opened Release Note").pipe(
-              Effect.annotateLogs({ url, target: "system-browser" }),
-            );
-            return;
-          }
-          const leaf =
-            workspace.getLeavesOfType(WEBVIEWER_VIEW_TYPE)[0] ??
-            workspace.getLeaf("tab");
-          yield* Effect.promise(async () => {
-            await leaf.setViewState({
-              type: WEBVIEWER_VIEW_TYPE,
-              active: true,
-              state: { url },
-            });
-            void workspace.revealLeaf(leaf);
-          });
+      const openReleaseNote = Effect.gen(function* () {
+        const url = releaseNoteUrl(options.version);
+        const { workspace } = app;
+        if (!app.internalPlugins.getEnabledPluginById(WEBVIEWER_PLUGIN_ID)) {
+          window.open(url);
           yield* Effect.logInfo("Opened Release Note").pipe(
-            Effect.annotateLogs({ url, target: "web-viewer" }),
+            Effect.annotateLogs({ url, target: "system-browser" }),
           );
-        },
+          return;
+        }
+        const leaf =
+          workspace.getLeavesOfType(WEBVIEWER_VIEW_TYPE)[0] ??
+          workspace.getLeaf("tab");
+        yield* Effect.promise(async () => {
+          await leaf.setViewState({
+            type: WEBVIEWER_VIEW_TYPE,
+            active: true,
+            state: { url },
+          });
+          void workspace.revealLeaf(leaf);
+        });
+        yield* Effect.logInfo("Opened Release Note").pipe(
+          Effect.annotateLogs({ url, target: "web-viewer" }),
+        );
+      }).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("Cannot open the release note").pipe(
             Effect.annotateLogs({ error: Cause.squash(cause) }),
           ),
         ),
+        Effect.withSpan("Release.openReleaseNote"),
       );
 
-      const acknowledgeMigration = Effect.fn("Release.acknowledgeMigration")(
-        function* () {
-          const current = yield* settings.current;
-          if (current["release.migration-pending"] !== true) return;
-          yield* settings.update({ "release.migration-pending": false });
-          yield* Effect.logInfo("Migration Prompt acknowledged");
-        },
-      );
+      const acknowledgeMigration = Effect.gen(function* () {
+        const current = yield* settings.current;
+        if (current["release.migration-pending"] !== true) return;
+        yield* settings.update({ "release.migration-pending": false });
+        yield* Effect.logInfo("Migration Prompt acknowledged");
+      }).pipe(Effect.withSpan("Release.acknowledgeMigration"));
 
-      const acknowledgeUpdate = Effect.fn("Release.acknowledgeUpdate")(
-        function* () {
-          const current = yield* settings.current;
-          if (current["release.update-pending"] !== true) return;
-          yield* settings.update({ "release.update-pending": false });
-          yield* Effect.logInfo("Update acknowledged").pipe(
-            Effect.annotateLogs({ version: options.version }),
-          );
-        },
-      );
+      const acknowledgeUpdate = Effect.gen(function* () {
+        const current = yield* settings.current;
+        if (current["release.update-pending"] !== true) return;
+        yield* settings.update({ "release.update-pending": false });
+        yield* Effect.logInfo("Update acknowledged").pipe(
+          Effect.annotateLogs({ version: options.version }),
+        );
+      }).pipe(Effect.withSpan("Release.acknowledgeUpdate"));
 
       const recordState = Effect.fn("Release.recordState")(function* (
         current: Readonly<Settings>,
@@ -180,7 +176,7 @@ export function layerRelease(options: {
             renderer.addAction((button) => {
               button
                 .setButtonText(m.notice_update_see_whats_new())
-                .onClick(() => void runPromise(openReleaseNote()));
+                .onClick(() => void runPromise(openReleaseNote));
             });
             renderer.addAction((button) => {
               button

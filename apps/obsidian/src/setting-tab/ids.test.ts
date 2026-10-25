@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { Effect, Stream } from "effect";
 import type {
   App,
   SettingDefinitionItem,
@@ -11,7 +12,6 @@ import { expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Effect, Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
@@ -89,7 +89,7 @@ function ctx(): SettingTabContext {
       binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
         "PandocEngine",
         {
-          getStatus: () => Effect.succeed({ kind: "absent" }),
+          getStatus: Effect.succeed({ kind: "absent" }),
           changes: Stream.empty,
         },
       ),
@@ -100,7 +100,7 @@ function ctx(): SettingTabContext {
       binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
         "ChineseSegmenter",
         {
-          getStatus: () => Effect.succeed({ kind: "absent" }),
+          getStatus: Effect.succeed({ kind: "absent" }),
           changes: Stream.empty,
         },
       ),
@@ -113,8 +113,8 @@ function ctx(): SettingTabContext {
     },
     writeAuthorization: {
       allowEditing: () => {},
-      forgetAuthorization: () => Effect.void,
-      remembered: () => Effect.succeed(false),
+      forgetAuthorization: Effect.void,
+      remembered: Effect.succeed(false),
     },
     requestUpdate: () => {},
   } as unknown as SettingTabContext;

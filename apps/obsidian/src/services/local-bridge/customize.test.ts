@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { Effect, SubscriptionRef } from "effect";
 import type { App } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,7 +9,6 @@ import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Effect, SubscriptionRef } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import type { LocalServer } from "@/services/local-server/service";
 import { defaults } from "@/services/settings/schema";
@@ -143,7 +143,7 @@ function harness({
     webWorkbenchEnabled,
     app,
     settings: {
-      current: Effect.sync(() => settings),
+      current: Effect.succeed(settings),
       update: (patch: Parameters<CustomizeDeps["settings"]["update"]>[0]) =>
         Effect.sync(() => {
           update(

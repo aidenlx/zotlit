@@ -1,8 +1,8 @@
 // The local image command reads one database Snapshot and renders in the renderer.
+import { Effect } from "effect";
 import { stat } from "node:fs/promises";
 
 import type { CliHost } from "@/lib/cli-command";
-import { Effect } from "@/lib/effect";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 

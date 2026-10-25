@@ -1,5 +1,7 @@
 // The plugin as a service the Effect layers register their commands on.
 import type { Extension } from "@codemirror/state";
+import { Context, Effect, Layer } from "effect";
+import type { Scope } from "effect";
 import type {
   Command,
   ObsidianProtocolHandler,
@@ -9,8 +11,6 @@ import type {
 } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
-import { Context, Effect, Layer } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
 import {
   removeSettingTab,
   unregisterEditorExtension,

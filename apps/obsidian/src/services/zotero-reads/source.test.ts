@@ -95,12 +95,10 @@ function testPorts() {
   const watchers: FakeWatcher[] = [];
   const reads: PreparedRead[] = [];
   const releases: PreparedRead[] = [];
-  const releaseGate = Effect.runSync(
-    Ref.make<{
-      entered: Deferred.Deferred<void>;
-      release: Deferred.Deferred<void>;
-    } | null>(null),
-  );
+  const releaseGate = Ref.makeUnsafe<{
+    entered: Deferred.Deferred<void>;
+    release: Deferred.Deferred<void>;
+  } | null>(null);
   const ports = {
     prepareRead: vi.fn<SourcePorts["prepareRead"]>(
       (mode: ReadsConfig["readMode"], path: string) =>
@@ -152,7 +150,7 @@ async function startSource(
   initial: ReadsConfig | null,
   ports: Partial<SourcePorts>,
 ) {
-  const scope = Effect.runSync(Scope.make());
+  const scope = Scope.makeUnsafe();
   const context = await Effect.runPromise(
     Layer.buildWithScope(
       Layer.provideMerge(layerSource({ ports }), TestClock.layer()),
@@ -248,7 +246,7 @@ function emitDirEvent(watchers: FakeWatcher[], filename: string): void {
 
 /** A held `prepareRead`: it waits for `release`, then reads for real. */
 function holdRead(ports: ReturnType<typeof testPorts>["ports"]) {
-  const held = Effect.runSync(Deferred.make<void>());
+  const held = Deferred.makeUnsafe<void>();
   ports.prepareRead.mockImplementationOnce((mode, path) =>
     Effect.andThen(Deferred.await(held), prepareRead(mode, path)),
   );
@@ -532,7 +530,7 @@ describe("ZoteroReads source", () => {
       ports: ReturnType<typeof testPorts>["ports"],
       message: string,
     ) {
-      const held = Effect.runSync(Deferred.make<void>());
+      const held = Deferred.makeUnsafe<void>();
       ports.prepareRead.mockImplementationOnce(() =>
         Effect.andThen(
           Deferred.await(held),
@@ -689,8 +687,8 @@ describe("ZoteroReads source", () => {
     // Releasing read #2 is slow; a read arriving meanwhile must get read #3
     // and keep it after the release completes.
     const gate = {
-      entered: Effect.runSync(Deferred.make<void>()),
-      release: Effect.runSync(Deferred.make<void>()),
+      entered: Deferred.makeUnsafe<void>(),
+      release: Deferred.makeUnsafe<void>(),
     };
     Effect.runSync(Ref.set(releaseGate, gate));
     writeLibrary(dbPath, 3);
@@ -920,7 +918,7 @@ describe("ZoteroReads source", () => {
       await using source = await startSource(config(), ports);
       await source.idle();
       const fingerprint = await Effect.runPromise(snapshotSource(dbPath));
-      const gate = Effect.runSync(Deferred.make<SourceFingerprint, never>());
+      const gate = Deferred.makeUnsafe<SourceFingerprint, never>();
       using cleanup = new DisposableStack();
       cleanup.defer(() => Effect.runSync(Deferred.succeed(gate, fingerprint)));
       ports.snapshotSource.mockImplementationOnce(() => awaitFingerprint(gate));
@@ -951,7 +949,7 @@ describe("ZoteroReads source", () => {
       const next = join(dir, "next.sqlite");
       writeLibrary(next, 3);
       const fingerprint = await Effect.runPromise(snapshotSource(dbPath));
-      const gate = Effect.runSync(Deferred.make<SourceFingerprint, never>());
+      const gate = Deferred.makeUnsafe<SourceFingerprint, never>();
       using cleanup = new DisposableStack();
       cleanup.defer(() => Effect.runSync(Deferred.succeed(gate, fingerprint)));
       ports.snapshotSource.mockImplementationOnce(() => awaitFingerprint(gate));
@@ -1072,7 +1070,7 @@ describe("ZoteroReads source", () => {
 
       // Inside the gate the timer has already cleared itself, so switching
       // auto-refresh off cannot cancel the tick; it must refuse on its own.
-      const gate = Effect.runSync(Deferred.make<SourceFingerprint, never>());
+      const gate = Deferred.makeUnsafe<SourceFingerprint, never>();
       ports.snapshotSource.mockImplementationOnce(() => awaitFingerprint(gate));
       writeLibrary(dbPath, 2);
       emitDirEvent(watchers, "zotero.sqlite");
@@ -1097,7 +1095,7 @@ describe("ZoteroReads source", () => {
       const source = await startSource(config(), ports);
       await source.version();
 
-      const gate = Effect.runSync(Deferred.make<SourceFingerprint, never>());
+      const gate = Deferred.makeUnsafe<SourceFingerprint, never>();
       ports.snapshotSource.mockImplementationOnce(() => awaitFingerprint(gate));
       writeLibrary(dbPath, 2);
       emitDirEvent(watchers, "zotero.sqlite");
@@ -1121,8 +1119,8 @@ describe("ZoteroReads source", () => {
       await source.version();
       const boundAtStartup = ports.watch.mock.calls.length;
 
-      const acquired = Effect.runSync(Deferred.make<PreparedRead>());
-      const late = Effect.runSync(Deferred.make<void>());
+      const acquired = Deferred.makeUnsafe<PreparedRead>();
+      const late = Deferred.makeUnsafe<void>();
       ports.prepareRead.mockImplementationOnce((mode, path) =>
         Effect.gen(function* () {
           const read = yield* prepareRead(mode, path);
@@ -1155,7 +1153,7 @@ describe("ZoteroReads source", () => {
       const source = await startSource(config(), ports);
       await source.version();
 
-      const late = Effect.runSync(Deferred.make<PreparedRead, DbUnavailable>());
+      const late = Deferred.makeUnsafe<PreparedRead, DbUnavailable>();
       ports.prepareRead.mockImplementationOnce(() => Deferred.await(late));
       await source.idle();
       const before = source.events.length;
@@ -1182,8 +1180,8 @@ describe("ZoteroReads source", () => {
       // Releasing the previous read removes its clone: a real await, and a
       // window for teardown while the new client is being handed over.
       const gate = {
-        entered: Effect.runSync(Deferred.make<void>()),
-        release: Effect.runSync(Deferred.make<void>()),
+        entered: Deferred.makeUnsafe<void>(),
+        release: Deferred.makeUnsafe<void>(),
       };
       Effect.runSync(Ref.set(releaseGate, gate));
       source.detach(source.reads.Refresh());

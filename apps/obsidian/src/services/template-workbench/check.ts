@@ -1,4 +1,5 @@
 // Saved-source checking and attempt retention. Output flags only disclose completed work.
+import { Clock, Effect, Result, Schema } from "effect";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
@@ -35,7 +36,6 @@ import {
   amendRejection,
 } from "@/lib/cli-params";
 import type { CliOutput, CliParamName, CliRejection } from "@/lib/cli-params";
-import { Clock, Effect, Result, Schema } from "@/lib/effect";
 import { instantClock } from "@/lib/effect-clock";
 import { PROFILE_OUTPUTS } from "@/views/note-preview/check-profile";
 import type { ProfileCheck } from "@/views/note-preview/check-profile";
@@ -736,17 +736,14 @@ export function createCheckHandler(deps: CheckDeps): CliCommandHandler {
         sourceContext = { ...sourceContext, documentPath: params.draft };
         const path = params.draft;
         const read = yield* Effect.result(
-          Effect.tryPromise({
-            try: (signal) => {
-              if (!isAbsolute(path))
-                throw new Error("Use an absolute scratch-file path for draft.");
-              return readFile(path, { encoding: "utf8", signal });
-            },
-            catch: (error) => error,
+          Effect.tryPromise((signal) => {
+            if (!isAbsolute(path))
+              throw new Error("Use an absolute scratch-file path for draft.");
+            return readFile(path, { encoding: "utf8", signal });
           }),
         );
         if (Result.isFailure(read)) {
-          const error = read.failure;
+          const error = read.failure.cause;
           return finish(sourceContext, {
             ok: false,
             input,

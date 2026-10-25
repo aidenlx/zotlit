@@ -1,12 +1,12 @@
 // @vitest-environment happy-dom
+import { it } from "@effect/vitest";
+import { Stream } from "effect";
+import { Effect } from "effect";
 import { expect } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Stream } from "@/lib/effect";
-import { Effect } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
-import { it } from "@/lib/effect-vitest";
 import type { LocalServer } from "@/services/local-server/service";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { settingsRuntimeOf } from "@/services/settings/__fixtures__";
@@ -79,7 +79,7 @@ it.effect(
       expect(tab.getControlValue("note-profile:default:folder")).toBe(
         "Research",
       );
-      yield* settings.flush();
+      yield* settings.flush;
       expect(disk).toMatchObject({
         __VERSION__: 11,
         "citation.at-trigger": true,

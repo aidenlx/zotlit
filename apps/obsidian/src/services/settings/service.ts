@@ -73,9 +73,6 @@
  *   `saveData()`.
  */
 
-import type { Plugin } from "obsidian";
-import * as v from "valibot";
-
 import {
   Cause,
   Context,
@@ -84,11 +81,15 @@ import {
   Fiber,
   Layer,
   PubSub,
+  Result,
   Schema,
   Scope,
   Stream,
   SubscriptionRef,
-} from "@/lib/effect";
+} from "effect";
+import type { Plugin } from "obsidian";
+import * as v from "valibot";
+
 import { withLogCategory } from "@/lib/effect-log";
 import { layerPluginData, PluginData } from "@/lib/plugin-data";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
@@ -199,15 +200,21 @@ export interface PluginSettingsOptions {
 const LAST_WRITE = Symbol.for("zotlit.settings.last-write");
 type Handoff = { [LAST_WRITE]?: Promise<void> };
 
-export class SettingsMutationError extends Schema.TaggedError<SettingsMutationError>()(
-  "SettingsMutationError",
-  { message: Schema.String, cause: Schema.Defect() },
-) {}
+export class SettingsMutationError extends Schema.TaggedError<
+  SettingsMutationError,
+  { readonly brand: unique symbol }
+>()("SettingsMutationError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
-export class SettingsPersistenceError extends Schema.TaggedError<SettingsPersistenceError>()(
-  "SettingsPersistenceError",
-  { message: Schema.String, cause: Schema.Defect() },
-) {}
+export class SettingsPersistenceError extends Schema.TaggedError<
+  SettingsPersistenceError,
+  { readonly brand: unique symbol }
+>()("SettingsPersistenceError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
 const mutationFailure = (cause: unknown) =>
   new SettingsMutationError({
@@ -238,8 +245,8 @@ export class PluginSettings extends Context.Service<
     updateDefaultLiteratureNoteProfileBindings(
       patch: Partial<ResolvedLiteratureNoteProfileBindings>,
     ): Effect.Effect<void, SettingsMutationError>;
-    flush(): Effect.Effect<void, SettingsPersistenceError>;
-    release(): Effect.Effect<void>;
+    readonly flush: Effect.Effect<void, SettingsPersistenceError>;
+    readonly release: Effect.Effect<void>;
   }
 >()("zotlit/settings/PluginSettings") {}
 
@@ -304,7 +311,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
   const performSave = Effect.fn("PluginSettings.save")(function* () {
     dirty = false;
     if (loadFailure)
-      return yield* Effect.fail(persistenceFailure(Cause.squash(loadFailure)));
+      return yield* persistenceFailure(Cause.squash(loadFailure));
     const payload = {
       [VERSION_KEY]: CURRENT_VERSION,
       ...Object.fromEntries(broken),
@@ -335,7 +342,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     return fiber;
   });
 
-  const flush = Effect.fn("PluginSettings.flush")(function* () {
+  const flush = Effect.gen(function* () {
     while (dirty || pendingWrite) {
       if (timer) {
         timer.interruptUnsafe();
@@ -344,13 +351,13 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
       const pending = dirty ? yield* performSave() : pendingWrite;
       if (pending) yield* Fiber.join(pending);
     }
-  }, Effect.uninterruptible);
+  }).pipe(Effect.uninterruptible, Effect.withSpan("PluginSettings.flush"));
 
   // Obsidian unload is synchronous. The Promise is also the reload handoff;
   // the save it waits for belongs to `writes`, which scope close drains.
   const handOff = Effect.fn("PluginSettings.handOff")(function* () {
     const write = runPromise(
-      flush().pipe(
+      flush.pipe(
         Effect.catchCause((cause) =>
           reportFailure("settings save on unload failed", cause),
         ),
@@ -367,12 +374,10 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     const candidate: Settings = { ...defaults, ...nextOverrides };
     const result = v.safeParse(schema, candidate);
     if (!result.success)
-      return yield* Effect.fail(
-        new SettingsMutationError({
-          message: `SettingsService.${op}(): invalid settings — ${v.summarize(result.issues)}`,
-          cause: result.issues,
-        }),
-      );
+      return yield* new SettingsMutationError({
+        message: `SettingsService.${op}(): invalid settings — ${v.summarize(result.issues)}`,
+        cause: result.issues,
+      });
     overrides = nextOverrides;
     broken = nextBroken;
     yield* SubscriptionRef.set(state, candidate);
@@ -380,8 +385,8 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     if (timer) timer.interruptUnsafe();
     timer = yield* Effect.forkIn(
       Effect.sleep(SAVE_DEBOUNCE_MS).pipe(
-        Effect.andThen(flush()),
-        Effect.catchCause(() => Effect.void),
+        Effect.andThen(flush),
+        Effect.ignoreCause,
       ),
       writes,
     );
@@ -780,7 +785,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     Effect.sync(() => {
       closed = true;
     }).pipe(
-      Effect.andThen(flush()),
+      Effect.andThen(flush),
       Effect.catchCause((cause) =>
         reportFailure("settings save on close failed", cause),
       ),
@@ -813,11 +818,11 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
       }));
     }),
     flush,
-    release: Effect.fn("PluginSettings.release")(function* () {
+    release: Effect.gen(function* () {
       if (closed) return;
       released = true;
       yield* handOff();
-    }),
+    }).pipe(Effect.withSpan("PluginSettings.release")),
   });
 }, withLogCategory("settings"));
 
@@ -861,15 +866,14 @@ const runMigrationHook = Effect.fn("PluginSettings.migrate")(function* (
   raw: unknown,
   stage: string,
 ): Effect.fn.Return<Record<string, unknown> | null> {
-  let migrated: unknown;
-  try {
-    migrated = hook(raw);
-  } catch (error) {
+  const run = yield* Effect.result(Effect.try(() => hook(raw)));
+  if (Result.isFailure(run)) {
     yield* Effect.logWarning("Migration threw; falling back to defaults").pipe(
-      Effect.annotateLogs({ error, stage }),
+      Effect.annotateLogs({ error: run.failure.cause, stage }),
     );
     return null;
   }
+  const migrated = run.success;
   if (!isPlainObject(migrated)) {
     yield* Effect.logWarning(
       "Migration returned a non-plain value; falling back to defaults",

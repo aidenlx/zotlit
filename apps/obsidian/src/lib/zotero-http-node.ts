@@ -1,8 +1,8 @@
 // The Zotero loopback client over Node's own HTTP stack, for desktop only.
 
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
+import { Layer } from "effect";
 
-import { Layer } from "@/lib/effect";
 import { layerZoteroHttp } from "@/lib/zotero-http";
 import type { ZoteroHttp } from "@/lib/zotero-http";
 

@@ -1,11 +1,11 @@
 // ItemView orchestrator for the References Sidebar: reads the active document's Citations from the index and renders them through the Pandoc engine.
+import { Stream } from "effect";
 import { ItemView } from "obsidian";
 import type { App, TFile, WorkspaceLeaf } from "obsidian";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import { writeClipboardRichText } from "@/lib/clipboard";
-import { Stream } from "@/lib/effect";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
@@ -211,7 +211,7 @@ export class ReferencesView extends ItemView {
       onOpenEngineSettings: () => this.#deps.openSettings(),
       onChangeStyle: () => this.#deps.openStyleSettings(),
       onDismissEngineHint: () =>
-        pandocEngine.runSync(pandocEngine.binary.decline()),
+        pandocEngine.runSync(pandocEngine.binary.decline),
       getCopySnapshot: () => this.#copySnapshot,
       writeClipboard: writeClipboardRichText,
       notify: (message) => void new BaseNotice(message),
@@ -483,16 +483,15 @@ export class ReferencesView extends ItemView {
     // Retained formatted entries answer for the render that is about to be
     // replaced, so the reload alone puts copy out of reach, before its read.
     this.#formatting =
-      this.#deps.pandocEngine.runSync(
-        this.#deps.pandocEngine.binary.getStatus(),
-      ).kind === "installed"
+      this.#deps.pandocEngine.runSync(this.#deps.pandocEngine.binary.getStatus)
+        .kind === "installed"
         ? "pending"
         : "unavailable";
     this.#refreshCopy();
     this.#publishResolution();
     const sources = this.#sources;
     const engine = this.#deps.pandocEngine.runSync(
-      this.#deps.pandocEngine.binary.getStatus(),
+      this.#deps.pandocEngine.binary.getStatus,
     );
     const entries = buildReferenceEntries(citations, {
       bibliography: {

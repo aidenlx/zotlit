@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { TFile } from "@mock/obsidian";
+import { Effect } from "effect";
 import type { Command, TFile as ObsidianFile } from "obsidian";
 import { expect, it, vi } from "vitest";
 
-import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE } from "@/views/template-workbench/view";
 

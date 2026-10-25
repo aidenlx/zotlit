@@ -1,6 +1,7 @@
 // The Chinese Segmenter as a Managed Binary: the pinned web-target `jieba-wasm` binary.
 
-import { Context } from "@/lib/effect";
+import { Context } from "effect";
+
 import { layerManagedBinary } from "@/services/managed-binary/service";
 import type {
   ManagedBinary,

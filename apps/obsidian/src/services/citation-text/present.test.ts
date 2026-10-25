@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { describe, expect } from "vitest";
 
 import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
 
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import {
   lookupAnswer,
   lookupForWorks,

@@ -1,9 +1,9 @@
 // Web Worker entry: serves the ZoteroReads handler layer over the worker-runner protocol.
 // Obsidian runs workers with Node integration, so `node:sqlite` and `node:fs`
 // load here through the worker's `require`.
+import { Effect, Layer, Logger, Ref } from "effect";
 import { RpcServer, RpcWorker } from "effect/rpc";
 
-import { Effect, Layer, Logger, Ref } from "@/lib/effect";
 import { layerLibraryLogPort, makePortLogger } from "@/lib/effect-log-port";
 import { prepareRead } from "@/services/database/read-source";
 

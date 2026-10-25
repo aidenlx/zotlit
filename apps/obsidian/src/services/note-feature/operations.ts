@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { getFrontMatterInfo } from "obsidian";
 import type { CachedMetadata, TFile } from "obsidian";
 
@@ -20,7 +21,6 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
-import { Effect } from "@/lib/effect";
 import { ensureParentFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import {
@@ -736,7 +736,7 @@ async function prepareCreationPreviews(
             })),
           }),
       },
-      { signal: options.signal, onProgress: () => {} },
+      { onProgress: () => {} },
       (slice) => {
         for (const { itemID, facets } of slice) {
           const item = itemsByID.get(itemID)!;

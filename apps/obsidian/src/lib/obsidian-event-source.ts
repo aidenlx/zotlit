@@ -1,9 +1,8 @@
 // The event side of an Obsidian capability tag: one listener per Obsidian event
 // name, all publishing into one PubSub for the source. The pattern is in
 // policies/events.md.
+import { Effect, PubSub, Stream } from "effect";
 import type { Events } from "obsidian";
-
-import { Effect, PubSub, Stream } from "@/lib/effect";
 
 /** An Obsidian object that emits events: the vault, the metadata cache, the workspace. */
 export type ObsidianEventEmitter = Pick<Events, "on" | "offref">;

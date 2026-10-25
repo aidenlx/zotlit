@@ -1,13 +1,13 @@
-import type { App, CliFlag, CliFlags, FileSystemAdapter } from "obsidian";
-import { apiVersion } from "obsidian";
-
-import type { VersionedCliHost } from "@/lib/cli-command";
 // Registers the Workbench commands with Obsidian's CLI.
 //
 // Command, flag, guide, and diagnostic text is all hardcoded English: an
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
-import { Effect } from "@/lib/effect";
+import { Effect } from "effect";
+import type { App, CliFlag, CliFlags, FileSystemAdapter } from "obsidian";
+import { apiVersion } from "obsidian";
+
+import type { VersionedCliHost } from "@/lib/cli-command";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import type { PlainNoteIndex } from "@/services/note-index/plain";

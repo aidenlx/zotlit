@@ -51,8 +51,8 @@ Use the source as the canonical reference. Do not copy service/container/plugin-
 
 New services are Effect services: a `Context.Service` tag and a scoped `Layer`, composed in `pluginLayer`. `buildServices` builds that graph first, as a `ManagedRuntime` from `buildRuntime` (`@/lib/effect-layer`), then the legacy container; disposing the runtime closes the graph after the last container service, so a container service never outlives a layer it uses. Settings and logging build below every other layer, so a service logs from its first line. `UseLedger` (`apps/obsidian/src/services/use-ledger/`) is the converted example; its `__fixtures__.ts` builds its layer over a fake App for tests.
 
-- Import Effect from `@/lib/effect`. Its run entry points carry the browser scheduler and the logger, and no graph service.
-- The tag shape is Effect-native: each method is an `Effect.fn("<Tag>.<method>")` generator returning an `Effect`. Events are Streams and state:
+- Import Effect from `effect`; the `effectEntry` Vite plugin (`apps/obsidian/scripts/effect-entry.ts`) resolves it to `src/lib/effect.ts`. Its run entry points carry the browser scheduler and the logger, and no graph service.
+- The tag shape is Effect-native: each method with arguments is `Effect.fn("<Tag>.<method>")`, a generator or a body that returns an `Effect` (`Effect.fnUntraced` on a per-message or per-item hot path; a test double stays a plain function). A member with no arguments is a `readonly` `Effect` value traced with `Effect.withSpan("<Tag>.<member>")`, and callers write `yield* service.refresh`, not `service.refresh()` (`effecttsgo/lazy-effect` reports a zero-argument method); its test double is an Effect value too. Events are Streams and state:
   - What others watch is a `SubscriptionRef`, exposed as `SubscriptionRef.changes(ref)`: it replays the current value and ends when the layer's finalizer runs `PubSub.shutdown(ref.pubsub)`. A stream that ends on a terminal state adds `Stream.takeUntil`.
   - A discrete occurrence is a `PubSub` exposed as a Stream.
   - A condition a late subscriber must still see (stopped, failed, finished) is state.

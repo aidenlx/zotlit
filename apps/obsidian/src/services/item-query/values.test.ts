@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import type { CliData } from "obsidian";
 import { expect } from "vitest";
 
@@ -6,8 +8,6 @@ import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import { CliRejection } from "@/lib/cli-params";
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 

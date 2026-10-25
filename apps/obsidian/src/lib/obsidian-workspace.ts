@@ -3,6 +3,8 @@
 // the shape of ./obsidian-metadata-cache; policies/events.md (Capability tags)
 // describes it. Views, leaves, `Component`s and React handlers stay edges and
 // keep `app.workspace`.
+import { Context, Effect, Layer } from "effect";
+import type { Scope, Stream } from "effect";
 import { MarkdownView } from "obsidian";
 import type {
   Editor,
@@ -14,8 +16,6 @@ import type {
   WorkspaceLeaf,
 } from "obsidian";
 
-import { Context, Effect, Layer } from "@/lib/effect";
-import type { Scope, Stream } from "@/lib/effect";
 import { logAndContinue } from "@/lib/effect-log";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import {
@@ -127,7 +127,7 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     activeMarkdownView: Effect.sync(() =>
       source.getActiveViewOfType(MarkdownView),
     ),
-    onFileMenu: (handler) =>
+    onFileMenu: Effect.fn("Workspace.onFileMenu")((handler) =>
       menuHook(
         "file-menu",
         // oxlint-disable-next-line max-params -- Obsidian's own `file-menu` shape.
@@ -138,12 +138,14 @@ export const makeWorkspace = Effect.fnUntraced(function* (
           leaf: WorkspaceLeaf | undefined,
         ) => handler(menu, file, { source: from, leaf }),
       ),
-    onEditorMenu: (handler) =>
+    ),
+    onEditorMenu: Effect.fn("Workspace.onEditorMenu")((handler) =>
       menuHook(
         "editor-menu",
         (menu: Menu, editor: Editor, info: MarkdownView | MarkdownFileInfo) =>
           handler(menu, editor, info),
       ),
+    ),
   });
 });
 

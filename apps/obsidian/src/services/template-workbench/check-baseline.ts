@@ -1,6 +1,7 @@
-import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 // Select one read-only update input before resolving the Profile to check.
-import { Effect, Result } from "@/lib/effect";
+import { Effect, Result } from "effect";
+
+import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 import { readLiveText } from "@/lib/live-text";
 import { parseProfileStamp } from "@/lib/profile-stamp";
 import { previewBaseline } from "@/views/note-preview/baseline";
@@ -74,23 +75,21 @@ export const selectCheckBaseline = Effect.fnUntraced(function* (
       path = selected.path;
       kind = "real";
       const read = yield* Effect.result(
-        Effect.tryPromise({
-          try: () => readLiveText(deps.app, selected),
-          catch: (error) => error,
-        }),
+        Effect.tryPromise(() => readLiveText(deps.app, selected)),
       );
-      if (Result.isFailure(read)) return failed(read.failure);
+      if (Result.isFailure(read)) return failed(read.failure.cause);
       source = read.success;
     }
   }
-  try {
-    const stamp = parseProfileStamp(
-      previewBaseline(source, "", null).frontmatter[
-        FIELD_LITERATURE_NOTE_PROFILE
-      ],
-    );
-    return { ok: true as const, source, kind, path, stamp };
-  } catch (error) {
-    return failed(error);
-  }
+  const stamp = yield* Effect.result(
+    Effect.try(() =>
+      parseProfileStamp(
+        previewBaseline(source, "", null).frontmatter[
+          FIELD_LITERATURE_NOTE_PROFILE
+        ],
+      ),
+    ),
+  );
+  if (Result.isFailure(stamp)) return failed(stamp.failure.cause);
+  return { ok: true as const, source, kind, path, stamp: stamp.success };
 });

@@ -1,9 +1,6 @@
 // The renderer owns persisted note scans and citation membership; the parse client owns Markdown.
 
 import { abortable } from "@std/async/abortable";
-import { TFile } from "obsidian";
-import type { App, TAbstractFile } from "obsidian";
-
 import {
   Cause,
   Clock,
@@ -16,7 +13,10 @@ import {
   Scope,
   Stream,
   SubscriptionRef,
-} from "@/lib/effect";
+} from "effect";
+import { TFile } from "obsidian";
+import type { App, TAbstractFile } from "obsidian";
+
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { isScopeClosed } from "@/lib/effect-scope";
@@ -273,7 +273,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
           ? inertObservation()
           : run(lookup.observe(changed)),
       whenResolved: () =>
-        runPromiseExit(lookup.whenResolved()).then(() => undefined),
+        runPromiseExit(lookup.whenResolved).then(() => undefined),
     };
     const joinSources = (
       citations: Parameters<typeof readReferenceSources>[1],
@@ -328,7 +328,11 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
     let backfillBuild = -1;
     let backfillFailed = false;
     let stopped = false;
-    const lifetimeStop = new AbortController();
+    // Aborted as the layer stops, before the child scope closes.
+    const lifetimeScope = yield* Scope.fork(yield* Scope.Scope);
+    const lifetimeSignal = yield* Effect.abortSignal.pipe(
+      Scope.provide(lifetimeScope),
+    );
     const state = yield* SubscriptionRef.make<CitationIndexState>({
       backfilled,
       backfillFailed,
@@ -396,8 +400,8 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       } = {},
     ): Promise<DocumentCitationSet> {
       const lifetime = signal
-        ? AbortSignal.any([signal, lifetimeStop.signal])
-        : lifetimeStop.signal;
+        ? AbortSignal.any([signal, lifetimeSignal])
+        : lifetimeSignal;
       lifetime.throwIfAborted();
       const scan =
         parsed?.record ?? (await abortable(coverFile(file), lifetime));
@@ -538,7 +542,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
 
     function getParsedNote(
       file: TFile,
-      signal = lifetimeStop.signal,
+      signal = lifetimeSignal,
     ): Promise<ParsedNote> {
       return readParsedNote(file, {
         vault: app.vault,
@@ -547,10 +551,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       });
     }
 
-    async function getParsedDocument(
-      file: TFile,
-      signal = lifetimeStop.signal,
-    ) {
+    async function getParsedDocument(file: TFile, signal = lifetimeSignal) {
       for (;;) {
         const generation = generations.get(file.path);
         const { mtime, size } = file.stat;
@@ -806,7 +807,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
           ? yield* Effect.tryPromise(() =>
               composeDocument(file, scan, {
                 ...captured,
-                lifetime: lifetimeStop.signal,
+                lifetime: lifetimeSignal,
               }),
             )
           : null;
@@ -1102,7 +1103,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       pendingScans.get(path)?.stop.abort();
       generations.set(path, generation);
       const stop = new AbortController();
-      const signal = AbortSignal.any([stop.signal, lifetimeStop.signal]);
+      const signal = AbortSignal.any([stop.signal, lifetimeSignal]);
       const pending = {
         path,
         generation,
@@ -1217,7 +1218,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         const { mtime, size } = file.stat;
         const body = await abortable(
           app.vault.cachedRead(file),
-          lifetimeStop.signal,
+          lifetimeSignal,
         );
         if (stale(build)) return null;
         if (
@@ -1552,9 +1553,10 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         stopped = true;
-        lifetimeStop.abort();
-        publishState();
-      }),
+      }).pipe(
+        Effect.andThen(Scope.close(lifetimeScope, Exit.void)),
+        Effect.andThen(Effect.sync(publishState)),
+      ),
     );
     const intake = yield* obsidianEvents<{
       metadata: [MetadataEvent];
@@ -1681,21 +1683,32 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       ) {
         return yield* Effect.tryPromise(() => getFileScan(...args));
       }),
+      // Interruption cancels these reads; the index's lifetime still bounds them.
       getDocumentCitationSet: Effect.fn("CitationIndex.getDocumentCitationSet")(
-        function* (...args: Parameters<typeof getDocumentCitationSet>) {
-          return yield* Effect.tryPromise(() =>
-            getDocumentCitationSet(...args),
+        function* (
+          file: TFile,
+          options: Omit<
+            NonNullable<Parameters<typeof getDocumentCitationSet>[1]>,
+            "signal"
+          > = {},
+        ) {
+          return yield* Effect.tryPromise((signal) =>
+            getDocumentCitationSet(file, { ...options, signal }),
           );
         },
       ),
       getParsedNote: Effect.fn("CitationIndex.getParsedNote")(function* (
-        ...args: Parameters<typeof getParsedNote>
+        file: TFile,
       ) {
-        return yield* Effect.tryPromise(() => getParsedNote(...args));
+        return yield* Effect.tryPromise((signal) =>
+          getParsedNote(file, AbortSignal.any([signal, lifetimeSignal])),
+        );
       }),
       getParsedDocument: Effect.fn("CitationIndex.getParsedDocument")(
-        function* (...args: Parameters<typeof getParsedDocument>) {
-          return yield* Effect.tryPromise(() => getParsedDocument(...args));
+        function* (file: TFile) {
+          return yield* Effect.tryPromise((signal) =>
+            getParsedDocument(file, AbortSignal.any([signal, lifetimeSignal])),
+          );
         },
       ),
       whenIndexed: Effect.fn("CitationIndex.whenIndexed")(function* (

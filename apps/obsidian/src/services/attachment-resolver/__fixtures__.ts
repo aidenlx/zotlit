@@ -1,11 +1,11 @@
-import { expect } from "vitest";
+import { Effect, Stream } from "effect";
 // The Attachment resolver for real, over an in-process Zotero database seeded
 // with the rows a suite names. The resolver's own suite and the opener suites
 // build on it, so a lookup answers as the real index answers it. The database
 // read is the only seam: it can be held, failed, or left unopened.
+import { expect } from "vitest";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
-import { Effect, Stream } from "@/lib/effect";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {

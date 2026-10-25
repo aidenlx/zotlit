@@ -24,12 +24,18 @@ const obsidianImportPaths = [
   ...uniqueIdPaths,
 ];
 
-// Effect tests run with the services the plugin's entry points add.
-const effectTestPaths = [
+// The wrappers are applied by the effectEntry Vite plugin
+// (scripts/effect-entry.ts); code imports the package names.
+const effectWrapperPaths = [
   {
-    name: "@effect/vitest",
+    name: "@/lib/effect",
     message:
-      "Use @/lib/effect-vitest: its Effect tests run with the plugin's browser scheduler and loggers.",
+      'Import from "effect": the effectEntry Vite plugin (scripts/effect-entry.ts) resolves "effect" to this wrapper.',
+  },
+  {
+    name: "@/lib/effect-vitest",
+    message:
+      'Import from "@effect/vitest": the effectEntry Vite plugin (scripts/effect-entry.ts) resolves "@effect/vitest" to this wrapper in tests.',
   },
 ];
 
@@ -55,28 +61,22 @@ const runtimeImports = {
   ...commonImports,
   paths: [
     {
-      name: "@/lib/effect",
+      name: "effect",
       importNames: ["ManagedRuntime", "Scheduler"],
       allowTypeImports: true,
       message:
-        "Start Effects through Effect in @/lib/effect; its entry points supply the browser scheduler.",
-    },
-    {
-      name: "effect",
-      allowTypeImports: true,
-      message:
-        "Use @/lib/effect: Obsidian's renderer and workers default to Chromium MessageChannel scheduling. Node setImmediate can starve browser tasks.",
+        "Run Effects with the run functions of Effect from effect instead; they supply the browser scheduler.",
     },
     {
       name: "effect/Effect",
       allowTypeImports: true,
-      message: "Use Effect from @/lib/effect for Chromium scheduling.",
+      message: "Import Effect from effect.",
     },
     {
       name: "effect/ManagedRuntime",
       allowTypeImports: true,
       message:
-        "Use the Effect entry points in @/lib/effect for Chromium scheduling.",
+        "Use the Effect entry points from effect for Chromium scheduling.",
     },
     {
       name: "effect/Scheduler",
@@ -84,7 +84,7 @@ const runtimeImports = {
       message:
         "Obsidian scheduling is owned by @/lib/effect-runtime and @/lib/browser-scheduler.",
     },
-    ...effectTestPaths,
+    ...effectWrapperPaths,
     ...commonImports.paths,
   ],
 };
@@ -217,7 +217,7 @@ export default defineConfig({
     },
     {
       // These tests exercise the run entry points themselves.
-      files: ["src/lib/effect-runtime.test.ts"],
+      files: ["src/lib/effect-runtime.test.ts", "src/lib/effect-entry.test.ts"],
       rules: { "zotlit-effect-tests/no-effect-run-in-test": "off" },
     },
     {
@@ -241,6 +241,18 @@ export default defineConfig({
         "src/lib/obsidian-*.ts",
       ],
       rules: { "zotlit-services/obsidian-capabilities": "error" },
+    },
+    // A test double needs no span: service methods are Effect.fn in the plugin
+    // code only.
+    {
+      files: [
+        "**/*.test.*",
+        "**/*.bench.ts",
+        "**/*.browser-test.ts",
+        "**/__fixtures__/**",
+        "**/__fixtures__.ts",
+      ],
+      rules: { "effecttsgo/effect-fn-opportunity": "off" },
     },
     // Capability backlog: files that import Effect and still reach the App,
     // grouped by what blocks the change. A file moves off its list when it
@@ -505,21 +517,24 @@ export default defineConfig({
           "error",
           {
             patterns: [parentImportPattern],
-            paths: [...effectTestPaths, ...obsidianImportPaths],
+            paths: [...effectWrapperPaths, ...obsidianImportPaths],
           },
         ],
       },
     },
     {
+      // The wrappers, which reach the real package (NATIVE in scripts/effect-entry.ts).
       files: [
+        "src/lib/browser-scheduler.ts",
         "src/lib/effect.ts",
-        "src/lib/effect-worker.ts",
-        "src/lib/effect-runtime.ts",
         "src/lib/effect-layer.ts",
         "src/lib/effect-log.ts",
+        "src/lib/effect-runtime.ts",
+        "src/lib/effect-runtime-factory.ts",
         "src/lib/effect-services.ts",
         "src/lib/effect-vitest.ts",
-        "src/lib/browser-scheduler.ts",
+        "src/lib/effect-worker.ts",
+        "src/lib/effect-worker-runtime.ts",
       ],
       rules: { "no-restricted-imports": ["error", commonImports] },
     },

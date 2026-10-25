@@ -1,8 +1,8 @@
+import { it } from "@effect/vitest";
+import { Effect, Exit, Fiber, Queue, Stream } from "effect";
 import { expect } from "vitest";
 
-import { Effect, Exit, Fiber, Queue, Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 
 import { readsFixture } from "./__fixtures__";
 import { layerRcRef } from "./connection";
@@ -43,7 +43,7 @@ it.effect(
       yield* Effect.scoped(
         Effect.gen(function* () {
           const reads = yield* service.snapshot;
-          yield* service.refresh();
+          yield* service.refresh;
           expect((yield* reads.Libraries({}))[0]!.version).toBe(1);
           expect((yield* service.reads.Libraries({}))[0]!.version).toBe(2);
           expect(log).toEqual(["open #1", "open #2"]);
@@ -72,7 +72,7 @@ it.effect(
           (event) => event._tag === "refresh-failed",
         ),
       ).pipe(Effect.forkChild({ startImmediately: true }));
-      expect(Exit.isFailure(yield* Effect.exit(service.refresh()))).toBe(true);
+      expect(Exit.isFailure(yield* Effect.exit(service.refresh))).toBe(true);
       expect(yield* Fiber.join(failure)).toMatchObject({
         value: { _tag: "refresh-failed", error: { _tag: "DbUnavailable" } },
       });
@@ -147,7 +147,7 @@ it.effect("reports the Read Mode of each serving connection", () =>
       Queue.offerUnsafe(changes, next.activeReadMode),
     );
     mode = "immutable";
-    yield* service.refresh();
+    yield* service.refresh;
     expect(yield* Queue.take(changes)).toBe("immutable");
   }),
 );

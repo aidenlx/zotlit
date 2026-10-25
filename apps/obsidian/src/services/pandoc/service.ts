@@ -1,8 +1,8 @@
 // The Pandoc engine as a Managed Binary: the pinned `pandoc.wasm` inside the official release archive.
 
+import { Context } from "effect";
 import { unzipSync } from "fflate";
 
-import { Context } from "@/lib/effect";
 import { layerManagedBinary } from "@/services/managed-binary/service";
 import type {
   ManagedBinary,

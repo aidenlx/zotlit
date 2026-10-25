@@ -1,10 +1,10 @@
 // Regression tests for #1650: Enter in an Item picker chose a row of an
 // earlier query's answer while the typed query's answer was pending.
+import { Effect } from "effect";
 import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Effect } from "@/lib/effect";
 import type { Settings } from "@/services/settings/schema";
 import type { PluginSettings } from "@/services/settings/service";
 

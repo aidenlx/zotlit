@@ -1,7 +1,6 @@
 // A write the Local API session sent runs to its answer, whatever interrupts its caller.
+import { Fiber } from "effect";
 import { expect, it } from "vitest";
-
-import { Fiber } from "@/lib/effect";
 
 import { localApiClient, rootOk, writeAccepted } from "./__fixtures__";
 

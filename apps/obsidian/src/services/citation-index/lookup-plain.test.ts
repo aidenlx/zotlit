@@ -1,9 +1,9 @@
+import { it } from "@effect/vitest";
+import { Stream } from "effect";
+import { Effect } from "effect";
 import { expect } from "vitest";
 
-import { Stream } from "@/lib/effect";
-import { Effect } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import { layerRcRef } from "@/services/zotero-reads/connection";
 import {
   inProcessClient,

@@ -1,7 +1,6 @@
+import { it } from "@effect/vitest";
+import { Cause, Effect, Exit, Schema } from "effect";
 import { describe, expect } from "vitest";
-
-import { Cause, Effect, Exit, Schema } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import {
   cliDefault,

@@ -47,7 +47,7 @@ export function managedBinaryDefinition(
   binary: ManagedBinaryActions,
   copy: ManagedBinaryCopy,
 ): SettingDefinition<SettingsKey> {
-  const status = binary.runSync(binary.binary.getStatus());
+  const status = binary.runSync(binary.binary.getStatus);
   return {
     id: copy.id,
     name: copy.name,
@@ -101,7 +101,7 @@ function renderActions(
           // See the blur comment in resources.ts: the reconciler skips
           // re-rendering the row that holds document.activeElement.
           btn.buttonEl.blur();
-          void toast.promise(binary.runPromise(binary.binary.uninstall()), {
+          void toast.promise(binary.runPromise(binary.binary.uninstall), {
             success: copy.notices.removed,
             error: copy.notices.removeFailed,
           });
@@ -117,7 +117,7 @@ function renderActions(
       .setDisabled(status.kind === "installing")
       .onClick(() => {
         btn.buttonEl.blur();
-        void toast.promise(binary.runPromise(binary.binary.install()), {
+        void toast.promise(binary.runPromise(binary.binary.install), {
           loading: copy.notices.downloading,
           success: copy.notices.installed,
           error: copy.notices.installFailed,

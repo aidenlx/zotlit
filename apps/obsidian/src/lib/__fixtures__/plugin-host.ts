@@ -1,7 +1,7 @@
 // A PluginHost for tests: it keeps what a layer registers until the layer closes.
 import type { App, Command, PluginManifest } from "obsidian";
 
-import { Effect, Layer } from "@/lib/effect";
+import { Effect, Layer } from "effect";
 import { PluginHost } from "@/lib/plugin-host";
 import type { PluginHostShape } from "@/lib/plugin-host";
 

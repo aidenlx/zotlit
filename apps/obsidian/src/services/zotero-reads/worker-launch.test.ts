@@ -1,7 +1,6 @@
+import { Effect, Layer } from "effect";
 import { Rpc, RpcGroup, RpcServer } from "effect/rpc";
 import { expect, it, vi } from "vitest";
-
-import { Effect, Layer } from "@/lib/effect";
 
 import { launchWorker } from "./worker-launch";
 import type { WorkerScope } from "./worker-launch";

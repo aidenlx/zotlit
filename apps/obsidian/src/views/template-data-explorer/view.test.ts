@@ -1,12 +1,12 @@
 // @vitest-environment happy-dom
 import type { ItemView as MockItemView } from "@mock/obsidian";
+import { Effect } from "effect";
+import { Stream } from "effect";
 import type { App, EventRef, WorkspaceLeaf, ViewStateResult } from "obsidian";
 import { act } from "preact/test-utils";
 import { expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Effect } from "@/lib/effect";
-import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import { loadTemplateData } from "@/services/template-workbench/data";

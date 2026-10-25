@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Cause, Effect, Exit, Fiber, Logger, References } from "effect";
 import {
   chmod,
   mkdir,
@@ -10,11 +12,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect } from "vitest";
 
-import { Effect, Logger, References } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
-
 import { LogCategory } from "./effect-log-category";
 import { sweepTempDirectory, sweepTempDirectoryEffect } from "./temp-sweep";
+import type { TempSweepOptions } from "./temp-sweep";
 
 let directory: string;
 
@@ -39,12 +39,14 @@ function sweep(
   isResidue: (name: string, path: string) => Promise<boolean> | boolean,
   signal?: AbortSignal,
 ): Promise<void> {
-  return sweepTempDirectory({
-    directory,
-    kind: "test entry",
-    isResidue,
+  return sweepTempDirectory(
+    {
+      directory,
+      kind: "test entry",
+      isResidue,
+    },
     signal,
-  });
+  );
 }
 
 interface LogRecord {
@@ -54,23 +56,48 @@ interface LogRecord {
   readonly annotations: Readonly<Record<string, unknown>>;
 }
 
+/** A logger layer that records every log, at every level, into `records`. */
+function capture(records: LogRecord[]) {
+  return Logger.layer([
+    Logger.make(({ logLevel, message, fiber }) => {
+      records.push({
+        level: logLevel,
+        message,
+        category: fiber.getRef(LogCategory),
+        annotations: fiber.getRef(References.CurrentLogAnnotations),
+      });
+    }),
+  ]);
+}
+
 /** Run `sweep` and return what it logged, at every level. */
-const logsOf = Effect.fnUntraced(function* (
-  sweepOptions: Parameters<typeof sweepTempDirectoryEffect>[0],
-) {
+const logsOf = Effect.fnUntraced(function* (sweepOptions: TempSweepOptions) {
   const records: LogRecord[] = [];
-  const capture = Logger.make(({ logLevel, message, fiber }) => {
-    records.push({
-      level: logLevel,
-      message,
-      category: fiber.getRef(LogCategory),
-      annotations: fiber.getRef(References.CurrentLogAnnotations),
-    });
-  });
   yield* sweepTempDirectoryEffect(sweepOptions).pipe(
-    Effect.provide(Logger.layer([capture])),
+    Effect.provide(capture(records)),
   );
   return records;
+});
+
+/**
+ * Run the sweep in its own fiber and return what it logged and how it ended.
+ * `interrupt` stops that fiber; `early` interrupts it before it starts.
+ */
+const interruptedLogsOf = Effect.fnUntraced(function* (
+  build: (interrupt: () => void) => TempSweepOptions,
+  { early = false }: { early?: boolean } = {},
+) {
+  const records: LogRecord[] = [];
+  let run: Fiber.Fiber<void> | undefined;
+  const interrupt = () => run?.interruptUnsafe();
+  run = yield* Effect.forkChild(
+    sweepTempDirectoryEffect(build(interrupt)).pipe(
+      Effect.provide(capture(records)),
+    ),
+    { startImmediately: false },
+  );
+  if (early) interrupt();
+  return { records, exit: yield* Fiber.await(run) };
 });
 
 describe("sweepTempDirectory", () => {
@@ -158,32 +185,30 @@ describe("sweepTempDirectoryEffect", () => {
     }),
   );
 
-  it.effect(
-    "logs nothing when the signal aborts before or during the walk",
-    () =>
-      Effect.gen(function* () {
-        yield* Effect.promise(() => writeFile(join(directory, "drop"), "x"));
-        yield* Effect.promise(() => writeFile(join(directory, "other"), "x"));
-        const before = yield* logsOf({
-          directory,
-          kind: "test entry",
-          isResidue: () => true,
-          signal: AbortSignal.abort(),
-        });
-        const controller = new AbortController();
-        const during = yield* logsOf({
-          directory,
-          kind: "test entry",
-          isResidue: () => {
-            controller.abort();
-            throw new Error("cannot decide");
-          },
-          signal: controller.signal,
-        });
-        expect(before).toEqual([]);
-        expect(during).toEqual([]);
-        expect(yield* Effect.promise(names)).toEqual(["drop", "other"]);
-      }),
+  it.effect("logs nothing when interrupted before or during the walk", () =>
+    Effect.gen(function* () {
+      yield* Effect.promise(() => writeFile(join(directory, "drop"), "x"));
+      yield* Effect.promise(() => writeFile(join(directory, "other"), "x"));
+      const before = yield* interruptedLogsOf(
+        () => ({ directory, kind: "test entry", isResidue: () => true }),
+        { early: true },
+      );
+      const during = yield* interruptedLogsOf((interrupt) => ({
+        directory,
+        kind: "test entry",
+        isResidue: () => {
+          interrupt();
+          throw new Error("cannot decide");
+        },
+      }));
+      for (const { records, exit } of [before, during]) {
+        expect(records).toEqual([]);
+        expect(
+          Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause),
+        ).toBe(true);
+      }
+      expect(yield* Effect.promise(names)).toEqual(["drop", "other"]);
+    }),
   );
 
   it.effect(

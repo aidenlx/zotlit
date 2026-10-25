@@ -5,6 +5,7 @@
 // Every answer is built from what a template renders. Absolute paths, note
 // bodies, attachment contents, and image bytes are kept out by the shared
 // exporter and by the vault-target module, and none is assembled here.
+import { Effect } from "effect";
 import type { App } from "obsidian";
 
 import type { Item } from "@zotlit/db";
@@ -25,7 +26,6 @@ import type {
   SnapshotSelection,
 } from "@zotlit/workbench/snapshot";
 
-import { Effect } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { profileRevision } from "@/lib/profile-revision";

@@ -1,9 +1,8 @@
 // The worker side of a database worker's life: it serves the RPC server over
 // the worker's global scope and answers the renderer's close message.
 import * as BrowserWorkerRunner from "@effect/platform-browser/BrowserWorkerRunner";
+import { Effect, Layer } from "effect";
 import { RpcServer } from "effect/rpc";
-
-import { Effect, Layer } from "@/lib/effect";
 
 import { WORKER_CLOSED } from "./worker-signal";
 

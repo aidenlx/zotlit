@@ -1,12 +1,12 @@
 import type { Extension } from "@codemirror/state";
+// The citekey editor treatment service: it follows the settings that switch the
+// CodeMirror extension on and owns the click that opens a citekey's note.
+import { Effect } from "effect";
 import type { App, Plugin } from "obsidian";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
-// The citekey editor treatment service: it follows the settings that switch the
-// CodeMirror extension on and owns the click that opens a citekey's note.
-import { Effect } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";

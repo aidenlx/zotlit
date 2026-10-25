@@ -153,10 +153,9 @@ describe("ZoteroReads ItemQuery", () => {
         Effect.gen(function* () {
           const reads = yield* client;
           const running = yield* Effect.forkChild(
-            Effect.all(
-              [first, bulkExport(scenario, "second")].map((job) =>
-                reads.ItemQuery({ job }),
-              ),
+            Effect.forEach(
+              [first, bulkExport(scenario, "second")],
+              (job) => reads.ItemQuery({ job }),
               { concurrency: "unbounded" },
             ),
           );

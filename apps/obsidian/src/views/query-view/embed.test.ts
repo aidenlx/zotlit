@@ -4,13 +4,13 @@
 // and loaded, and the file's text on disk changing under it. What it shares
 // with the Query Block is in `note-host.test.ts`.
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import { Stream } from "effect";
 import type { App, EmbedContext } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import type {
   QueryViewOutcome,

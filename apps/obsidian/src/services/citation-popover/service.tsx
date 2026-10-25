@@ -1,8 +1,8 @@
 // The Citation Popover: document citation entries and source-less works under the vault presentation.
+import { Cause, Context, Effect, Layer } from "effect";
 import type { App, HoverParent, TFile } from "obsidian";
 import type { ReactNode } from "react";
 
-import { Cause, Context, Effect, Layer } from "@/lib/effect";
 import { scopedBridge, valueOr } from "@/lib/effect-bridge";
 import { bridgeLog, withLogCategory } from "@/lib/effect-log";
 import { filterTag } from "@/lib/effect-stream";
@@ -87,7 +87,11 @@ interface PopoverReads {
   ): Promise<CitationLookupAnswer>;
   getDocumentCitationSet(
     file: TFile,
-    options: Parameters<CitationIndex["Service"]["getDocumentCitationSet"]>[1],
+    options: Parameters<
+      CitationIndex["Service"]["getDocumentCitationSet"]
+    >[1] & {
+      signal: AbortSignal;
+    },
   ): Promise<DocumentCitationSet>;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: {
@@ -265,11 +269,11 @@ export const layerCitationPopover: Layer.Layer<
         if (answer === undefined) throw lookupReleased();
         return answer;
       },
-      async getDocumentCitationSet(file, options) {
+      async getDocumentCitationSet(file, { signal, ...options }) {
         const result = await held(
           index.getDocumentCitationSet(file, options),
           undefined,
-          { signal: options?.signal },
+          { signal },
         ).catch((error: unknown) => {
           // The read is a `tryPromise`: throw what the index rejected with.
           throw Cause.isUnknownError(error) ? error.cause : error;
@@ -285,7 +289,12 @@ export const layerCitationPopover: Layer.Layer<
       },
       async readText(path, { signal }) {
         if (bridge.closed()) return null;
-        return held(text.read(path, { signal }), null, { signal });
+        return held(
+          // The read is a `tryPromise`: reject with what the read rejected with.
+          text.read(path).pipe(Effect.mapError(({ cause }) => cause)),
+          null,
+          { signal },
+        );
       },
       vaultPresentation: () => bridge.runSync(render.state).vaultPresentation,
       async renderBibliography(items, presentation) {
@@ -295,11 +304,9 @@ export const layerCitationPopover: Layer.Layer<
         } as const);
       },
       async readBibliography(items, { signal }) {
-        const result = await held(
-          render.readBibliography(items, { signal }),
-          undefined,
-          { signal },
-        );
+        const result = await held(render.readBibliography(items), undefined, {
+          signal,
+        });
         if (result === undefined)
           throw new DOMException("Held read released", "AbortError");
         return result;
@@ -359,13 +366,17 @@ export const layerCitationPopover: Layer.Layer<
     }
 
     return CitationPopover.of({
-      show: (request) =>
+      show: Effect.fn("CitationPopover.show")((request) =>
         Effect.sync(() => {
           void showVisit(request);
         }),
-      showWork: (request) => Effect.promise(() => showVisit(request)),
-      hide: (parent, targetEl) =>
+      ),
+      showWork: Effect.fn("CitationPopover.showWork")((request) =>
+        Effect.promise(() => showVisit(request)),
+      ),
+      hide: Effect.fn("CitationPopover.hide")((parent, targetEl) =>
         Effect.sync(() => visits.hide(parent, targetEl)),
+      ),
     });
   }).pipe(withLogCategory("citation-popover")),
 );

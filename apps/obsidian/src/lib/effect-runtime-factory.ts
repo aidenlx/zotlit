@@ -1,5 +1,4 @@
 import * as Context from "effect/Context";
-// oxlint-disable-next-line no-restricted-imports -- The factory wraps the native run* functions that `effect-runtime` and `effect-worker-runtime` re-export.
 import * as NativeEffect from "effect/Effect";
 
 /**

@@ -9,6 +9,25 @@
     // by their .ts paths.
     "allowImportingTsExtensions": true,
     "isolatedDeclarations": false,
+    // Read by the effecttsgo lint rules. Keep tsconfig.app.json and
+    // tsconfig.test.json the same: each file takes the options of its tsconfig.
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        // effect-fn-opportunity names its fix Effect.fn("<Tag>.<method>").
+        "effectFn": ["inferred-span"],
+        // The worker RPC, the HTTP clients and the tests use these on purpose.
+        "allowedUnstableApis": [
+          "@effect/platform-browser",
+          "@effect/platform-node",
+          "@effect/vitest",
+          "effect/http",
+          "effect/rpc",
+          "effect/testing",
+          "effect/workers"
+        ]
+      }
+    ],
     "types": ["node-24"],
     "jsx": "react-jsx",
     "paths": {
@@ -17,6 +36,6 @@
       "@mock/*": ["./__mocks__/*"]
     }
   },
-  "include": ["./src/**/*.ts", "./__mocks__/**/*.ts"],
+  "include": ["./src/**/*.ts", "./src/**/*.test.tsx", "./__mocks__/**/*.ts"],
   "exclude": ["./node_modules", "./dist", "./dist-dev"]
 }

@@ -3,7 +3,7 @@
 import { TFile, TFolder } from "obsidian";
 import type { DataWriteOptions, EventRef, TAbstractFile } from "obsidian";
 
-import { Effect } from "@/lib/effect";
+import { Effect } from "effect";
 import { makeVault } from "@/lib/obsidian-vault";
 import type { Vault, VaultSource } from "@/lib/obsidian-vault";
 

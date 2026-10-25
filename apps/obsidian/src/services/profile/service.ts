@@ -1,4 +1,18 @@
 // Registry and file operations for Literature Note Profiles.
+import {
+  Cause,
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  PubSub,
+  Schema,
+  Scope,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 import { customAlphabet } from "nanoid";
 import { join } from "node:path/posix";
 import type { App, TFile } from "obsidian";
@@ -22,20 +36,6 @@ import {
 import type { LiteratureNotePartialUnpack } from "@zotlit/templates/literature-note-pack";
 
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
-import {
-  Cause,
-  Context,
-  Deferred,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  PubSub,
-  Schema,
-  Scope,
-  Stream,
-  SubscriptionRef,
-} from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { ensureParentFolder, normalizeFolderPath } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
@@ -921,15 +921,16 @@ class ProfileEngine {
           } else {
             await ensureParentFolder(this.#deps.app, path);
             await this.#deps.runPromise(
-              this.#deps.vault
-                .create(path, importedContent)
-                .pipe(
-                  Effect.catchTag("FileExists", (error) =>
-                    Effect.fail(
-                      new Error(m.profile_import_changed(), { cause: error }),
-                    ),
+              this.#deps.vault.create(path, importedContent).pipe(
+                Effect.catchTag("FileExists", (error) =>
+                  Effect.fail(
+                    new ProfileImportChanged({
+                      message: m.profile_import_changed(),
+                      cause: error,
+                    }),
                   ),
                 ),
+              ),
             );
           }
           await this.#settle();
@@ -1378,10 +1379,25 @@ export type ProfileOperations = Pick<
   | "delete"
 >;
 
-export class ProfileOperationError extends Schema.TaggedError<ProfileOperationError>()(
-  "ProfileOperationError",
-  { message: Schema.String, cause: Schema.Defect() },
-) {}
+/**
+ * The import target changed after the plan was made: another file took its
+ * path. `message` is the notice text; `cause` holds the vault's refusal.
+ */
+export class ProfileImportChanged extends Schema.TaggedError<
+  ProfileImportChanged,
+  { readonly brand: unique symbol }
+>()("ProfileImportChanged", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
+export class ProfileOperationError extends Schema.TaggedError<
+  ProfileOperationError,
+  { readonly brand: unique symbol }
+>()("ProfileOperationError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
 export interface ProfileState {
   readonly loaded: boolean;
@@ -1520,18 +1536,18 @@ export const layerProfile = Layer.effect(
         },
         exportLiteratureNotePackSource: (...args) =>
           runPromise(template.exportLiteratureNotePackSource(...args)),
-        getPartialEntries: () => read(template.getPartialEntries()),
+        getPartialEntries: () => read(template.getPartialEntries),
         planPartialUnpack: (...args) =>
           read(template.planPartialUnpack(...args)),
         unpackPartials: (...args) =>
           runPromise(template.unpackPartials(...args)),
         getLiteratureNoteTemplateStatuses: () =>
-          read(template.getLiteratureNoteTemplateStatuses()),
+          read(template.getLiteratureNoteTemplateStatuses),
         waitUntilSettled: (...args) =>
           runPromise(template.waitUntilSettled(...args)),
       },
       noteIndex: {
-        whenIndexed: () => preflight(noteIndex.whenIndexed()),
+        whenIndexed: () => preflight(noteIndex.whenIndexed),
         getNotesByProfile: (selector) =>
           runSync(noteIndex.getNotesByProfile(selector)),
       },

@@ -27,6 +27,16 @@
  * @see https://github.com/zotero/zotero/blob/10.0.0/chrome/content/zotero/xpcom/db.js#L1551
  */
 
+import {
+  Cause,
+  Deferred,
+  Duration,
+  Effect,
+  Ref,
+  Schedule,
+  Schema,
+} from "effect";
+import type { Scope } from "effect";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, open, rm, stat } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
@@ -35,10 +45,9 @@ import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { ZOTERO_DB_READ_TEMP_PREFIX } from "@/lib/constants";
-import { Cause, Deferred, Duration, Effect, Ref, Schedule } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log-category";
-import { isErrno } from "@/lib/errno";
+import { isErrno, systemCallError } from "@/lib/errno";
+import type { SystemCallError } from "@/lib/errno";
 import { reflink, ReflinkUnsupportedError } from "@/lib/reflink";
 import type { ZoteroReadMode } from "@/services/settings/schema";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
@@ -140,12 +149,23 @@ const logWarning = (
   );
 
 /** A failed read attempt whose destination is clean and safe to retry. */
-class UnstableSnapshotError extends Error {
-  constructor() {
-    super("Zotero database changed while preparing a read snapshot");
-    this.name = "UnstableSnapshotError";
+class UnstableSnapshotError extends Schema.TaggedError<
+  UnstableSnapshotError,
+  { readonly brand: unique symbol }
+>()("UnstableSnapshotError", {}) {
+  override get message(): string {
+    return "Zotero database changed while preparing a read snapshot";
   }
 }
+
+/**
+ * A read snapshot could not be prepared: no parent was left, the source kept
+ * changing, or it changed while it was fingerprinted.
+ */
+class ReadSnapshotError extends Schema.TaggedError<
+  ReadSnapshotError,
+  { readonly brand: unique symbol }
+>()("ReadSnapshotError", { message: Schema.String }) {}
 
 /** The message callers see for a failed read-source operation. */
 function toDbUnavailable(cause: unknown): DbUnavailable {
@@ -159,9 +179,9 @@ function toDbUnavailable(cause: unknown): DbUnavailable {
 }
 
 /** Run one Node filesystem operation at the database port. */
-function fsCall<A>(run: () => Promise<A>): Effect.Effect<A, unknown> {
+function fsCall<A>(run: () => Promise<A>): Effect.Effect<A, SystemCallError> {
   // boundary: node:fs/promises is Promise-based; wrap each call once.
-  return Effect.tryPromise({ try: run, catch: (error) => error });
+  return Effect.tryPromise({ try: run, catch: systemCallError });
 }
 
 export function buildSqliteUri(
@@ -229,7 +249,7 @@ const makePendingRead = Effect.fnUntraced(function* () {
   return {
     result: Deferred.await(deferred),
     complete,
-    fail: (error: unknown) =>
+    fail: (error: PrepareReadError) =>
       Effect.gen(function* () {
         const current = yield* Ref.get(state);
         if (!current.canceled)
@@ -249,7 +269,7 @@ function acquireRead(
   configuredMode: ConfiguredReadMode,
   sourcePath: string,
   owner?: string,
-): Effect.Effect<AcquiredRead, unknown> {
+): Effect.Effect<AcquiredRead, PrepareReadError> {
   return Effect.gen(function* () {
     if (configuredMode === "immutable") {
       const fallbackReason = yield* staleWalReason(sourcePath);
@@ -265,18 +285,18 @@ function acquireRead(
       return yield* prepareTempRead("copy", sourcePath, { owner });
 
     return yield* prepareTempRead("reflink", sourcePath, { owner }).pipe(
-      Effect.catch((error) =>
-        error instanceof ReflinkUnsupportedError
-          ? prepareTempRead("copy", sourcePath, { owner }).pipe(
-              Effect.map((acquired) => ({
-                ...acquired,
-                read: {
-                  ...acquired.read,
-                  fallbackReason: "reflink-unsupported" as const,
-                },
-              })),
-            )
-          : Effect.fail(error),
+      Effect.catchIf(
+        (error) => error instanceof ReflinkUnsupportedError,
+        () =>
+          prepareTempRead("copy", sourcePath, { owner }).pipe(
+            Effect.map((acquired) => ({
+              ...acquired,
+              read: {
+                ...acquired.read,
+                fallbackReason: "reflink-unsupported" as const,
+              },
+            })),
+          ),
       ),
     );
   });
@@ -309,14 +329,14 @@ const prepareImmutableRead = Effect.fnUntraced(function* (
     immutable: true,
     owner,
   }).pipe(
-    Effect.catch((error) =>
-      error instanceof ReflinkUnsupportedError
-        ? prepareTempRead("copy", sourcePath, {
-            includeWal: false,
-            immutable: true,
-            owner,
-          })
-        : Effect.fail(error),
+    Effect.catchIf(
+      (error) => error instanceof ReflinkUnsupportedError,
+      () =>
+        prepareTempRead("copy", sourcePath, {
+          includeWal: false,
+          immutable: true,
+          owner,
+        }),
     ),
   );
 });
@@ -336,11 +356,15 @@ const prepareTempRead = Effect.fnUntraced(function* (
   options: { includeWal?: boolean; immutable?: boolean; owner?: string } = {},
 ) {
   const plan = yield* planParents(sourcePath);
-  const tryParent = (index: number): Effect.Effect<AcquiredRead, unknown> => {
+  const tryParent = (
+    index: number,
+  ): Effect.Effect<AcquiredRead, PrepareReadError> => {
     const parent = plan.parents[index];
     if (parent === undefined)
       return Effect.fail(
-        new Error("No database read snapshot parent was available"),
+        new ReadSnapshotError({
+          message: "No database read snapshot parent was available",
+        }),
       );
     return cloneInto(sourcePath, { parent, mode, ...options }).pipe(
       Effect.tap(() =>
@@ -351,14 +375,16 @@ const prepareTempRead = Effect.fnUntraced(function* (
           mode,
         }),
       ),
-      Effect.catch((error) =>
-        index < plan.parents.length - 1 && error instanceof SnapshotParentError
-          ? logDebug("Database read snapshot parent unusable, falling back", {
-              error,
-              parent,
-              reason: plan.reason,
-            }).pipe(Effect.andThen(tryParent(index + 1)))
-          : Effect.fail(error),
+      Effect.catchIf(
+        (error) =>
+          index < plan.parents.length - 1 &&
+          error instanceof SnapshotParentError,
+        (error) =>
+          logDebug("Database read snapshot parent unusable, falling back", {
+            error,
+            parent,
+            reason: plan.reason,
+          }).pipe(Effect.andThen(tryParent(index + 1))),
       ),
     );
   };
@@ -373,12 +399,26 @@ const prepareTempRead = Effect.fnUntraced(function* (
  * an unreadable source — reaches every candidate alike and propagates from the
  * first.
  */
-class SnapshotParentError extends Error {
-  constructor(parent: string, cause: unknown) {
-    super(`Cannot create a database read snapshot under ${parent}`, { cause });
-    this.name = "SnapshotParentError";
+class SnapshotParentError extends Schema.TaggedError<
+  SnapshotParentError,
+  { readonly brand: unique symbol }
+>()("SnapshotParentError", { parent: Schema.String, cause: Schema.Defect() }) {
+  override get message(): string {
+    return `Cannot create a database read snapshot under ${this.parent}`;
   }
 }
+
+/**
+ * Every failure of preparing one read snapshot: the source pair could not be
+ * fingerprinted, no parent or stable copy was left, the volume cannot clone,
+ * the parent refused the snapshot, or a system call on the source failed.
+ */
+type PrepareReadError =
+  | DbUnavailable
+  | ReadSnapshotError
+  | ReflinkUnsupportedError
+  | SnapshotParentError
+  | SystemCallError;
 
 const planParents = Effect.fnUntraced(function* (sourcePath: string) {
   const [tempDevice, databaseDevice] = yield* Effect.all([
@@ -450,10 +490,10 @@ const cloneInto = Effect.fnUntraced(function* (
             cloneUnsupported,
           });
           if (cloneUnsupported)
-            return yield* Effect.fail(new ReflinkUnsupportedError(error));
+            return yield* new ReflinkUnsupportedError({ cause: error });
           if (isParentWriteFailure(error))
-            return yield* Effect.fail(new SnapshotParentError(parent, error));
-          return yield* Effect.fail(error);
+            return yield* new SnapshotParentError({ parent, cause: error });
+          return yield* error;
         }),
       ),
     );
@@ -464,14 +504,14 @@ const cloneInto = Effect.fnUntraced(function* (
       times: CLONE_ATTEMPTS - 1,
       while: (error) => error instanceof UnstableSnapshotError,
     }),
-    Effect.catch((error) =>
-      error instanceof UnstableSnapshotError
-        ? Effect.fail(
-            new Error(
-              "Zotero database changed while preparing a read snapshot",
-            ),
-          )
-        : Effect.fail(error),
+    Effect.catchIf(
+      (error) => error instanceof UnstableSnapshotError,
+      () =>
+        Effect.fail(
+          new ReadSnapshotError({
+            message: "Zotero database changed while preparing a read snapshot",
+          }),
+        ),
     ),
   );
 });
@@ -537,7 +577,7 @@ const cloneAttempt = Effect.fnUntraced(function* (
     afterWalState: observed.after?.wal.state,
     afterWalSize: walGenerationSize(observed.after?.wal),
   });
-  if (!matches) return yield* Effect.fail(new UnstableSnapshotError());
+  if (!matches) return yield* new UnstableSnapshotError();
   yield* verifySnapshot(path);
   const uriOptions: SqliteUriOptions = immutable
     ? { mode: "ro", immutable: true }
@@ -575,9 +615,7 @@ const createSnapshotDir = Effect.fnUntraced(function* (
         ),
       ),
     ),
-    Effect.catch((cause) =>
-      Effect.fail(new SnapshotParentError(parent, cause)),
-    ),
+    Effect.mapError((cause) => new SnapshotParentError({ parent, cause })),
   );
 });
 
@@ -603,7 +641,13 @@ const copySource = Effect.fnUntraced(function* (
     return yield* fsCall(() => copyFile(sourcePath, targetPath)).pipe(
       Effect.asVoid,
     );
-  return yield* fsCall(() => reflink(sourcePath, targetPath));
+  // `reflink` rejects with its own `ReflinkUnsupportedError`, which the
+  // fallback reads by class; anything else is the system call's failure.
+  return yield* Effect.tryPromise({
+    try: () => reflink(sourcePath, targetPath),
+    catch: (error) =>
+      error instanceof ReflinkUnsupportedError ? error : systemCallError(error),
+  });
 });
 
 /**
@@ -685,9 +729,9 @@ const mainIdentity = Effect.fnUntraced(function* (path: string) {
       const digest = yield* fileDigest(file);
       const stats = yield* fileStat(file);
       if (!sameFileState(before, stats))
-        return yield* Effect.fail(
-          new Error("SQLite database changed while it was fingerprinted"),
-        );
+        return yield* new ReadSnapshotError({
+          message: "SQLite database changed while it was fingerprinted",
+        });
       return {
         exists: true,
         dev: stats.dev,
@@ -699,10 +743,9 @@ const mainIdentity = Effect.fnUntraced(function* (path: string) {
       };
     }),
   ).pipe(
-    Effect.catch((error) =>
-      isErrno(error, "ENOENT")
-        ? Effect.succeed({ exists: false as const })
-        : Effect.fail(error),
+    Effect.catchIf(
+      (error) => isErrno(error, "ENOENT"),
+      () => Effect.succeed({ exists: false as const }),
     ),
   );
 });

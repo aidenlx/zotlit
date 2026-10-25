@@ -1,6 +1,6 @@
 # Logging
 
-Effect is the logging API: `Effect.logInfo` and its siblings, with fields through `Effect.annotateLogs` and timing through `Effect.withLogSpan`. Categories: `["zotlit", "<workspace>", ...]`; see each package's `AGENTS.md` for how a log names its category.
+Effect is the logging API: `Effect.logInfo` and its siblings, with fields through `Effect.annotateLogs` and timing through `Effect.withLogSpan`. In `apps/obsidian`, `effecttsgo/global-console`, `effecttsgo/global-console-in-effect` and `zotlit-logging/no-logtape-in-effect-file` report the other APIs. Categories: `["zotlit", "<workspace>", ...]`; see each package's `AGENTS.md` for how a log names its category.
 
 LogTape is the sink backend: in `apps/obsidian`, `layerLogging` configures it and `logTapeLogger` carries Effect's records to its sinks. A legacy file that already calls a LogTape logger keeps it until the file is reworked, and the change that reworks it moves its logs to Effect in the same diff.
 

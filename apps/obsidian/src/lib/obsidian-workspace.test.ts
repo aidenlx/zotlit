@@ -1,13 +1,5 @@
+import { it } from "@effect/vitest";
 import { Menu } from "@mock/obsidian";
-import { MarkdownView, TFile } from "obsidian";
-import type {
-  Editor,
-  Workspace as WorkspaceApi,
-  WorkspaceLeaf,
-} from "obsidian";
-import { expect } from "vitest";
-
-import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   Context,
   Effect,
@@ -17,8 +9,16 @@ import {
   Logger,
   Scope,
   Stream,
-} from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
+} from "effect";
+import { MarkdownView, TFile } from "obsidian";
+import type {
+  Editor,
+  Workspace as WorkspaceApi,
+  WorkspaceLeaf,
+} from "obsidian";
+import { expect } from "vitest";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import {
   layerWorkspace,

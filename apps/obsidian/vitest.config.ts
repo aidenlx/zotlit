@@ -4,6 +4,7 @@ import { defineConfig } from "vitest/config";
 
 import { testDefaults } from "@zotlit/config/vitest";
 
+import { effectEntry } from "./scripts/effect-entry.ts";
 import { pandocFilterVariants } from "./scripts/lua-filter.ts";
 
 const packageRoot = import.meta.dirname;
@@ -52,7 +53,11 @@ export default defineConfig({
       sha256: "0".repeat(64),
     }),
   },
-  plugins: [preact(), pandocFilterVariants()],
+  plugins: [
+    effectEntry("renderer", { vitest: true }),
+    preact(),
+    pandocFilterVariants(),
+  ],
   test: {
     ...testDefaults,
     // `include`/`exclude` live on the two projects below, not here: Vite's

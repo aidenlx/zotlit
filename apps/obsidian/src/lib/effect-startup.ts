@@ -1,4 +1,4 @@
-import { Effect, Fiber } from "@/lib/effect";
+import { Effect, Fiber } from "effect";
 
 /** Bound plugin startup while the first external read continues on its Scope. */
 export const startupBarrier = Effect.fn("startupBarrier")(function* <R, R2>(

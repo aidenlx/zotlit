@@ -1,8 +1,5 @@
 // Web Worker adapter, renderer side: spawns the ZoteroReads worker and keeps one client across worker deaths.
 import * as BrowserWorker from "@effect/platform-browser/BrowserWorker";
-import { RpcClient, RpcClientError, RpcSchema, RpcWorker } from "effect/rpc";
-import { tmpdir } from "node:os";
-
 import {
   Cause,
   Deferred,
@@ -16,7 +13,10 @@ import {
   Scope,
   Semaphore,
   Stream,
-} from "@/lib/effect";
+} from "effect";
+import { RpcClient, RpcClientError, RpcSchema, RpcWorker } from "effect/rpc";
+import { tmpdir } from "node:os";
+
 import { withLogCategory } from "@/lib/effect-log";
 import { layerHostLogPort } from "@/lib/effect-log-port";
 import { isScopeClosed } from "@/lib/effect-scope";
@@ -492,9 +492,9 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
     .withPermits(1)(
       Effect.gen(function* () {
         if (isScopeClosed(hostScope))
-          return yield* Effect.fail(
-            new DbUnavailable({ message: "The database worker stopped" }),
-          );
+          return yield* new DbUnavailable({
+            message: "The database worker stopped",
+          });
         const current = yield* Ref.get(runtime);
         return current.current ? current.current.client : yield* connectNew;
       }),

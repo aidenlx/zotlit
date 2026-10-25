@@ -1,11 +1,10 @@
+import { it } from "@effect/vitest";
+import { Cause, Effect, Exit, Fiber, Queue } from "effect";
 import type { RpcMessage } from "effect/rpc";
 import { TestClock } from "effect/testing";
 import { expect, vi } from "vitest";
 
-import { Cause, Effect, Exit, Fiber, Queue } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
-
-import { makeParseHarness } from "./__fixtures__";
+import { cancellableParse, makeParseHarness } from "./__fixtures__";
 import { ParseWorkerDied } from "./client";
 import { makeRecoveringParseClient } from "./recovering-client";
 import { connectParseWorker } from "./worker-host";
@@ -179,7 +178,7 @@ it.effect(
         const client = yield* makeRecoveringParseClient(
           connectParseWorker("worker source"),
         );
-        yield* client.start();
+        yield* client.start;
         const pending = yield* client
           .parse({ path: "draft.md", generation: 1, text: "" })
           .pipe(Effect.forkChild);
@@ -223,10 +222,11 @@ it.effect.each([false, true])(
       }
       const worker = yield* Queue.take(spawned);
       worker.dispatchEvent(new MessageEvent("message", { data: [0] }));
-      const pending = parser.parse(
-        { path: "draft.md", generation: 1, text: "" },
-        new AbortController().signal,
-      );
+      const { pending } = cancellableParse(parser, {
+        path: "draft.md",
+        generation: 1,
+        text: "",
+      });
       const request = yield* Queue.take(worker.sent);
       if (request._tag !== "Request") throw new Error("Expected parse request");
       worker.reply(request.id, "draft.md", 1);
@@ -273,7 +273,7 @@ it.effect(
       const client = yield* makeRecoveringParseClient(
         connectParseWorker("worker source"),
       );
-      yield* client.start();
+      yield* client.start;
       const pending = yield* client
         .parse({ path: "draft.md", generation: 1, text: "" })
         .pipe(Effect.forkChild);

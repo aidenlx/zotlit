@@ -1,6 +1,7 @@
 /** Document citation text for the editor and reading surfaces. */
-import { Stream } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
+import { Cause, Effect, Exit, Stream } from "effect";
+import type { ManagedRuntime } from "effect";
+
 import { effectBridge, valueOr } from "@/lib/effect-bridge";
 
 import { CitationText } from "./service";
@@ -31,12 +32,21 @@ export function plainCitationText(
     ),
     peek: (path: string) =>
       bridge.closed() ? null : bridge.runSync(service.peek(path)),
-    async read(path: string, options?: { signal?: AbortSignal }) {
+    async read(path: string, { signal }: { signal?: AbortSignal } = {}) {
       if (bridge.closed()) return null;
-      return valueOr(
-        await bridge.runPromiseExit(service.read(path, options)),
-        null,
+      const exit = await bridge.runPromiseExit(
+        // The read is a `tryPromise`: reject with what the read rejected with.
+        service.read(path).pipe(Effect.mapError(({ cause }) => cause)),
+        signal === undefined ? undefined : { signal },
       );
+      // The caller's signal interrupts the read and rejects with its reason.
+      if (
+        signal?.aborted &&
+        Exit.isFailure(exit) &&
+        Cause.hasInterruptsOnly(exit.cause)
+      )
+        throw signal.reason;
+      return valueOr(exit, null);
     },
   };
 }

@@ -10,6 +10,8 @@ import { defineConfig } from "vitest/config";
 
 import { testDefaults } from "@zotlit/config/vitest";
 
+import { effectEntry } from "./scripts/effect-entry.ts";
+
 const packageRoot = import.meta.dirname;
 
 export default defineConfig({
@@ -39,7 +41,7 @@ export default defineConfig({
       sha256: "0".repeat(64),
     }),
   },
-  plugins: [preact()],
+  plugins: [effectEntry("renderer", { vitest: true }), preact()],
   test: {
     ...testDefaults,
     include: ["src/**/*.bench.ts"],

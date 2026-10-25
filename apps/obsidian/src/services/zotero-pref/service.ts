@@ -4,6 +4,16 @@
  * no file watcher. Reads run on the layer Scope; failures publish degraded
  * state with empty preferences. Unset overrides restore automatic detection.
  */
+import {
+  Cause,
+  Context,
+  Effect,
+  Layer,
+  PubSub,
+  Schema,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -12,17 +22,10 @@ import { pathToFileURL } from "node:url";
 import { sourceIdFromUris } from "@zotlit/protocol";
 
 import { COMPANION_ADDON_ID, ZOTERO_DB_FILENAME } from "@/lib/constants";
-import {
-  Cause,
-  Context,
-  Effect,
-  Layer,
-  PubSub,
-  Stream,
-  SubscriptionRef,
-} from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
+import { systemCallError } from "@/lib/errno";
+import type { SystemCallError } from "@/lib/errno";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import {
@@ -49,7 +52,7 @@ import type { PrefValue } from "./prefs-file";
 export class ZoteroPrefFiles extends Context.Service<
   ZoteroPrefFiles,
   {
-    read(path: string): Effect.Effect<string, Error>;
+    read(path: string): Effect.Effect<string, SystemCallError>;
   }
 >()("zotlit/zotero-pref/ZoteroPrefFiles") {}
 
@@ -57,11 +60,16 @@ export const layerZoteroPrefFiles = Layer.succeed(ZoteroPrefFiles, {
   read: Effect.fn("ZoteroPrefFiles.read")(function* (path: string) {
     return yield* Effect.tryPromise({
       try: (signal) => readFile(path, { encoding: "utf8", signal }),
-      catch: (error) =>
-        error instanceof Error ? error : new Error(String(error)),
+      catch: systemCallError,
     });
   }),
 });
+
+/** `profiles.ini` names no default profile; the prefs load degrades. */
+class NoDefaultZoteroProfile extends Schema.TaggedError<
+  NoDefaultZoteroProfile,
+  { readonly brand: unique symbol }
+>()("NoDefaultZoteroProfile", { message: Schema.String }) {}
 
 /** A profile resolved to its absolute directory, for the settings picker. */
 export interface ZoteroProfileInfo {
@@ -96,8 +104,8 @@ export class ZoteroPref extends Context.Service<
     setProfileDir(dir: string | null): Effect.Effect<void>;
     setDataDir(dir: string | null): Effect.Effect<void>;
     /** Read the add-on list fresh, so a new Companion install is visible. */
-    companionInstalled(): Effect.Effect<boolean>;
-    listProfiles(): Effect.Effect<ZoteroProfileInfo[]>;
+    readonly companionInstalled: Effect.Effect<boolean>;
+    readonly listProfiles: Effect.Effect<ZoteroProfileInfo[]>;
   }
 >()("zotlit/zotero-pref/ZoteroPref") {}
 
@@ -152,11 +160,9 @@ export const layerZoteroPref = Layer.effect(
           const { root, profiles } = yield* readProfiles();
           const profile = selectDefaultProfile(profiles);
           if (!profile)
-            return yield* Effect.fail(
-              new Error(
-                `No default Zotero profile found in ${join(root, PROFILES_INI_FILENAME)}`,
-              ),
-            );
+            return yield* new NoDefaultZoteroProfile({
+              message: `No default Zotero profile found in ${join(root, PROFILES_INI_FILENAME)}`,
+            });
           profileDir = resolveProfileDir(root, profile);
         }
         return parsePrefsJs(
@@ -266,39 +272,39 @@ export const layerZoteroPref = Layer.effect(
       }),
       setDataDir,
       setProfileDir,
-      companionInstalled: Effect.fn("ZoteroPref.companionInstalled")(
-        function* () {
-          const { resolvedProfileDir: profileDir } = yield* current;
-          if (!profileDir) return false;
-          return yield* files.read(join(profileDir, EXTENSIONS_FILENAME)).pipe(
-            Effect.map((content) => isAddonActive(content, COMPANION_ADDON_ID)),
-            Effect.catchCause((error) =>
-              Effect.logDebug("Cannot read the Zotero add-on list").pipe(
-                Effect.annotateLogs({ error, profileDir }),
-                Effect.as(false),
-              ),
-            ),
-          );
-        },
-        withLogCategory("zotero-pref"),
-      ),
-      listProfiles: Effect.fn("ZoteroPref.listProfiles")(function* () {
-        return yield* readProfiles().pipe(
-          Effect.map(({ root, profiles }) =>
-            profiles.map((p) => ({
-              name: p.name,
-              dir: resolveProfileDir(root, p),
-              isDefault: p.isDefault,
-            })),
-          ),
+      companionInstalled: Effect.gen(function* () {
+        const { resolvedProfileDir: profileDir } = yield* current;
+        if (!profileDir) return false;
+        return yield* files.read(join(profileDir, EXTENSIONS_FILENAME)).pipe(
+          Effect.map((content) => isAddonActive(content, COMPANION_ADDON_ID)),
           Effect.catchCause((error) =>
-            Effect.logWarning("Failed to list Zotero profiles").pipe(
-              Effect.annotateLogs({ error }),
-              Effect.as<ZoteroProfileInfo[]>([]),
+            Effect.logDebug("Cannot read the Zotero add-on list").pipe(
+              Effect.annotateLogs({ error, profileDir }),
+              Effect.as(false),
             ),
           ),
         );
-      }, withLogCategory("zotero-pref")),
+      }).pipe(
+        withLogCategory("zotero-pref"),
+        Effect.withSpan("ZoteroPref.companionInstalled"),
+      ),
+      listProfiles: readProfiles().pipe(
+        Effect.map(({ root, profiles }) =>
+          profiles.map((p) => ({
+            name: p.name,
+            dir: resolveProfileDir(root, p),
+            isDefault: p.isDefault,
+          })),
+        ),
+        Effect.catchCause((error) =>
+          Effect.logWarning("Failed to list Zotero profiles").pipe(
+            Effect.annotateLogs({ error }),
+            Effect.as<ZoteroProfileInfo[]>([]),
+          ),
+        ),
+        withLogCategory("zotero-pref"),
+        Effect.withSpan("ZoteroPref.listProfiles"),
+      ),
     });
   }).pipe(withLogCategory("zotero-pref")),
 );

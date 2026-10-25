@@ -1,5 +1,6 @@
 // The Effect service over the Zotero Local API session.
-import { Clock, Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
+import { Clock, Context, Effect, Layer, PubSub, Stream } from "effect";
+
 import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag, forkEach } from "@/lib/effect-stream";
@@ -57,7 +58,7 @@ export class ZoteroLocalApi extends Context.Service<
      *
      * @returns the source, or null while another source must answer instead.
      */
-    demandSource(): Effect.Effect<LocalApiSource | null>;
+    readonly demandSource: Effect.Effect<LocalApiSource | null>;
     /**
      * What the last Capability Probe learned, for the repository that computes
      * the Editing Capability from it. Asking does not arm a probe.
@@ -67,7 +68,7 @@ export class ZoteroLocalApi extends Context.Service<
      * Run the Capability Probe now — an edit gesture, or the settings action.
      * Concurrent calls join the probe already running.
      */
-    probe(): Effect.Effect<void>;
+    readonly probe: Effect.Effect<void>;
     /**
      * What the write path knows, for the Editing Capability the repository
      * computes.
@@ -76,7 +77,7 @@ export class ZoteroLocalApi extends Context.Service<
       attachmentKey: string | null,
     ): Effect.Effect<WriteAuthorizationState>;
     /** Whether a Remembered Write Authorization is stored, for the settings row. */
-    remembered(): Effect.Effect<boolean>;
+    readonly remembered: Effect.Effect<boolean>;
     /**
      * Ask Zotero for a Write Authorization from Allow editing in the
      * Annotation View or settings. Nothing else may call
@@ -103,7 +104,7 @@ export class ZoteroLocalApi extends Context.Service<
      * gesture asks Zotero again; Zotero's own "Clear Write Authorizations" is the
      * other half of the same revocation and needs no help from here.
      */
-    forgetAuthorization(): Effect.Effect<void>;
+    readonly forgetAuthorization: Effect.Effect<void>;
     /**
      * One request that spends a Write Authorization — the seam every write goes
      * through, with the method, body and preconditions its caller builds
@@ -242,45 +243,64 @@ export function layerZoteroLocalApi(options: {
       const byTag = <T extends LocalApiEvent["_tag"]>(tag: T) =>
         filterTag(events, tag);
       return ZoteroLocalApi.of({
-        demandSource: () => Effect.sync(() => session.demandSource()),
+        demandSource: Effect.sync(() => session.demandSource()).pipe(
+          Effect.withSpan("ZoteroLocalApi.demandSource"),
+        ),
         state: Effect.sync(() => session.state),
-        probe: () => Effect.promise(() => session.probe()),
-        writeStateFor: (attachmentKey) =>
-          Effect.sync(() => session.writeStateFor(attachmentKey)),
-        remembered: () => Effect.promise(() => session.remembered()),
+        probe: Effect.promise(() => session.probe()).pipe(
+          Effect.withSpan("ZoteroLocalApi.probe"),
+        ),
+        writeStateFor: Effect.fn("ZoteroLocalApi.writeStateFor")(
+          (attachmentKey) =>
+            Effect.sync(() => session.writeStateFor(attachmentKey)),
+        ),
+        remembered: Effect.promise(() => session.remembered()).pipe(
+          Effect.withSpan("ZoteroLocalApi.remembered"),
+        ),
         // A gesture with no signal keeps the shared request alive, so an
         // interrupt does not abandon it.
-        authorize: (signal) => Effect.promise(() => session.authorize(signal)),
-        forgetAuthorization: () =>
-          Effect.promise(() => session.forgetAuthorization()),
+        authorize: Effect.fn("ZoteroLocalApi.authorize")((signal) =>
+          Effect.promise(() => session.authorize(signal)),
+        ),
+        forgetAuthorization: Effect.promise(() =>
+          session.forgetAuthorization(),
+        ).pipe(Effect.withSpan("ZoteroLocalApi.forgetAuthorization")),
         // A write runs to its answer once sent: an interrupt would leave its
         // outcome unknown. So it takes no abort signal, and it is
         // uninterruptible, so a scope close waits for a write that was sent.
-        authorizedSend: (path, options) =>
-          Effect.uninterruptible(
-            Effect.promise(() => session.authorizedSend(path, options)),
-          ),
-        writeLastRead: (attachmentKey, serverID, instant) =>
-          Effect.uninterruptible(
-            Effect.promise(() =>
-              session.writeLastRead(attachmentKey, serverID, instant),
+        authorizedSend: Effect.fn("ZoteroLocalApi.authorizedSend")(
+          (path, options) =>
+            Effect.uninterruptible(
+              Effect.promise(() => session.authorizedSend(path, options)),
             ),
-          ),
-        readAnnotation: (annotationKey, attachmentKey, signal) =>
-          Effect.promise((interrupt) =>
-            session.readAnnotation(
-              annotationKey,
-              attachmentKey,
-              signal ? AbortSignal.any([signal, interrupt]) : interrupt,
+        ),
+        writeLastRead: Effect.fn("ZoteroLocalApi.writeLastRead")(
+          (attachmentKey, serverID, instant) =>
+            Effect.uninterruptible(
+              Effect.promise(() =>
+                session.writeLastRead(attachmentKey, serverID, instant),
+              ),
             ),
-          ),
-        listAnnotations: (attachmentKey, signal) =>
-          Effect.promise((interrupt) =>
-            session.listAnnotations(
-              attachmentKey,
-              signal ? AbortSignal.any([signal, interrupt]) : interrupt,
+        ),
+        readAnnotation: Effect.fn("ZoteroLocalApi.readAnnotation")(
+          (annotationKey, attachmentKey, signal) =>
+            Effect.promise((interrupt) =>
+              session.readAnnotation(
+                annotationKey,
+                attachmentKey,
+                signal ? AbortSignal.any([signal, interrupt]) : interrupt,
+              ),
             ),
-          ),
+        ),
+        listAnnotations: Effect.fn("ZoteroLocalApi.listAnnotations")(
+          (attachmentKey, signal) =>
+            Effect.promise((interrupt) =>
+              session.listAnnotations(
+                attachmentKey,
+                signal ? AbortSignal.any([signal, interrupt]) : interrupt,
+              ),
+            ),
+        ),
         changes: byTag("changed").pipe(Stream.as(undefined)),
         capabilityChanges: byTag("capability-changed").pipe(
           Stream.as(undefined),

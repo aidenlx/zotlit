@@ -1,8 +1,8 @@
 import type { QueryFunction, QueryKey } from "@tanstack/query-core";
+import { Clock, Context, Effect, Exit, Layer, Scope } from "effect";
 // A real QueryClients layer for consumer tests outside Effect.
 import { TestClock } from "effect/testing";
 
-import { Clock, Context, Effect, Exit, Layer, Scope } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 
 import { plainQueryClients } from "./plain";
@@ -22,11 +22,9 @@ export function taggedQueryClients(
     client: queries.client,
     invalidate: (key) => Effect.sync(() => queries.invalidate(key)),
     peek: <T>(key: QueryKey) => Effect.sync(() => queries.peek<T>(key)),
-    read: <T>(key: QueryKey, queryFn: QueryFunction<T>, signal?: AbortSignal) =>
-      Effect.tryPromise({
-        try: () => queries.read(key, queryFn, signal),
-        catch: (error) => error,
-      }),
+    read: <T>(key: QueryKey, queryFn: QueryFunction<T>) =>
+      // The real read settles a failure as what the key holds: it never fails.
+      Effect.promise((signal) => queries.read(key, queryFn, signal)),
     watch: <T>(prefix: QueryKey, on: HeldReadEvents<T>) =>
       Effect.sync(() => queries.watch(prefix, on)),
   };

@@ -1,6 +1,7 @@
 /** Zotero preferences for settings, views, and legacy services. */
-import { Effect, Stream } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
+import { Effect, Stream } from "effect";
+import type { ManagedRuntime } from "effect";
+
 import { effectBridge } from "@/lib/effect-bridge";
 
 import type { PrefValue } from "./prefs-file";
@@ -59,8 +60,8 @@ export function plainZoteroPref(
     get: (name) => bridge.runSync(pref.get(name)),
     setProfileDir: (dir) => bridge.runSync(pref.setProfileDir(dir)),
     setDataDir: (dir) => bridge.runSync(pref.setDataDir(dir)),
-    companionInstalled: () => bridge.runPromise(pref.companionInstalled()),
-    listProfiles: () => bridge.runPromise(pref.listProfiles()),
+    companionInstalled: () => bridge.runPromise(pref.companionInstalled),
+    listProfiles: () => bridge.runPromise(pref.listProfiles),
     changes: pref.changes,
     changed: pref.changes.pipe(
       Stream.changesWith((a, b) => a.prefs === b.prefs),

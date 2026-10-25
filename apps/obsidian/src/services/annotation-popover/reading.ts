@@ -1,12 +1,12 @@
+import { Effect, Layer } from "effect";
 import { MarkdownRenderChild } from "obsidian";
-import type { MarkdownPostProcessorContext } from "obsidian";
 // The reading-mode surface of annotation hover: a rendered Durable Annotation
 // Link shows the Annotation it names.
+import type { MarkdownPostProcessorContext } from "obsidian";
 
 import { parseAnnotationOpenUri } from "@zotlit/db";
 import type { AnnotationOpenUriOptions } from "@zotlit/db";
 
-import { Effect, Layer } from "@/lib/effect";
 import { scopedBridge } from "@/lib/effect-bridge";
 import { PluginHost } from "@/lib/plugin-host";
 import type { PluginHostShape } from "@/lib/plugin-host";

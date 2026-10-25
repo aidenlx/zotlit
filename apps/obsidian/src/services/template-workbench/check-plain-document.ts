@@ -2,13 +2,14 @@
 // plain draft, rendered against one caller root. The entry module keeps request
 // parsing, the flag guards, Check Attempt retention, and answer assembly, and
 // hands this branch every input it reads.
+import { Effect, Schema } from "effect";
+
 import type { CitationTemplateData, CitationVariant } from "@zotlit/db";
 import { parsePlainTemplateDocument } from "@zotlit/templates/facade";
 import { serializeTemplateData } from "@zotlit/workbench/explorer";
 import { isCitationExampleId } from "@zotlit/workbench/render";
 import type { RenderCallerSource } from "@zotlit/workbench/render";
 
-import { Effect } from "@/lib/effect";
 import { parseProfileSelector } from "@/lib/profile-stamp";
 import { checkDiagnostic } from "@/views/note-preview/check-profile";
 import type { ProfileCheck } from "@/views/note-preview/check-profile";
@@ -28,9 +29,26 @@ import type { InspectDiagnosticCode } from "./inspect-contract";
 export const RESERVED_PARTIAL_NAME =
   "RESERVED_PARTIAL_NAME" satisfies InspectDiagnosticCode;
 
-/** What the checked source, or a Template it runs, threw. */
-const attempt = <A>(evaluate: () => A) =>
-  Effect.try({ try: evaluate, catch: (error) => error });
+/**
+ * The checked source, or a Template it runs, threw `cause`, or the check
+ * refused the source with the Error in `cause`. The check's answer reads
+ * `cause`, as {@link thrown} gives it.
+ */
+export class CheckSourceThrew extends Schema.TaggedError<
+  CheckSourceThrew,
+  { readonly brand: unique symbol }
+>()("CheckSourceThrew", { cause: Schema.Defect() }) {}
+
+/** Runs `evaluate`, failing with what it threw as a {@link CheckSourceThrew}. */
+export const attempt = <A>(evaluate: () => A) =>
+  Effect.try({
+    try: evaluate,
+    catch: (cause) => new CheckSourceThrew({ cause }),
+  });
+
+/** What a failed check reports: what was thrown, or the failure itself. */
+export const thrown = (error: unknown): unknown =>
+  error instanceof CheckSourceThrew ? error.cause : error;
 
 /** Checks a document the Profile branch does not own, and returns the answer. */
 export const checkPlainDocument = Effect.fn(
@@ -142,9 +160,9 @@ export const checkPlainDocument = Effect.fn(
         ? undefined
         : deps.profile.resolveProfile(selector);
     if (!profile)
-      return yield* Effect.fail(
-        new Error("The selected Profile does not resolve."),
-      );
+      return yield* new CheckSourceThrew({
+        cause: new Error("The selected Profile does not resolve."),
+      });
     documentContext = {
       ...documentContext,
       answer: {
@@ -222,27 +240,28 @@ export const checkPlainDocument = Effect.fn(
       ),
     );
     documentContext = { ...documentContext, dataRevision };
-    try {
-      const rendered =
-        document.kind === "citation"
-          ? deps.templates.renderCitationSource(
-              source,
-              loaded.data as CitationTemplateData,
-            )
-          : deps.templates.renderPartialSource(source, loaded.data, {
-              name: document.label,
-            });
-      checks[document.kind] = {
-        status: "passed",
-        diagnostics: [],
-        output: rendered,
-      };
-    } catch (error) {
-      checks[document.kind] = {
-        status: "failed",
-        diagnostics: [checkDiagnostic(error, caller)],
-      };
-    }
+    checks[document.kind] = yield* Effect.try(() =>
+      document.kind === "citation"
+        ? deps.templates.renderCitationSource(
+            source,
+            loaded.data as CitationTemplateData,
+          )
+        : deps.templates.renderPartialSource(source, loaded.data, {
+            name: document.label,
+          }),
+    ).pipe(
+      Effect.match({
+        onSuccess: (rendered): ProfileCheck => ({
+          status: "passed",
+          diagnostics: [],
+          output: rendered,
+        }),
+        onFailure: (error): ProfileCheck => ({
+          status: "failed",
+          diagnostics: [checkDiagnostic(error.cause, caller)],
+        }),
+      }),
+    );
     const after = JSON.parse(yield* inspect(inspectRequest)) as InspectedSource;
     const profileAfter = JSON.parse(
       yield* inspectBindings({
@@ -296,7 +315,7 @@ export const checkPlainDocument = Effect.fn(
   }).pipe(
     Effect.catch((error) =>
       Effect.sync((): CheckOutcome => {
-        const diagnostic = checkDiagnostic(error, caller);
+        const diagnostic = checkDiagnostic(thrown(error), caller);
         checks.structure = { status: "failed", diagnostics: [diagnostic] };
         return {
           context: documentContext,

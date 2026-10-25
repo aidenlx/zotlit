@@ -1,6 +1,5 @@
 // The bridge that runs Effects for plain code, and the helper that reads an Exit back.
-import { describe, expect } from "vitest";
-
+import { it } from "@effect/vitest";
 import {
   Cause,
   Effect,
@@ -10,8 +9,8 @@ import {
   Schema,
   Scope,
   Stream,
-} from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
+} from "effect";
+import { describe, expect } from "vitest";
 
 import { openTestBridge } from "./__fixtures__/effect-bridge";
 import { scopedBridge, valueOr } from "./effect-bridge";

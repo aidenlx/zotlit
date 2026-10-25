@@ -1,10 +1,9 @@
 // A scoped RPC client on a browser Worker or MessagePort.
 import * as BrowserWorker from "@effect/platform-browser/BrowserWorker";
+import { Cause, Context, Effect, Layer, Schema } from "effect";
 import { RpcClient, RpcClientError } from "effect/rpc";
 import type { RpcMessage, RpcSerialization } from "effect/rpc";
 import { Worker } from "effect/workers";
-
-import { Cause, Context, Effect, Layer, Schema } from "@/lib/effect";
 
 import { CitationParseRpc } from "./rpc";
 
@@ -24,18 +23,18 @@ const singleWorkerProtocol = RpcClient.Protocol.make(
       return id === undefined ? Effect.void : writeResponse(id, response);
     };
     yield* worker.run(receive).pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause)
-          ? Effect.failCause(cause)
-          : receive({
-              _tag: "ClientProtocolError",
-              error: new RpcClientError.RpcClientError({
-                reason: new RpcClientError.RpcClientDefect({
-                  message: "Parse worker protocol failed",
-                  cause: Cause.squash(cause),
-                }),
+      Effect.catchCauseIf(
+        (cause) => !Cause.hasInterruptsOnly(cause),
+        (cause) =>
+          receive({
+            _tag: "ClientProtocolError",
+            error: new RpcClientError.RpcClientError({
+              reason: new RpcClientError.RpcClientDefect({
+                message: "Parse worker protocol failed",
+                cause: Cause.squash(cause),
               }),
             }),
+          }),
       ),
       Effect.forkScoped,
     );

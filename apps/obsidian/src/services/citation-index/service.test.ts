@@ -1,12 +1,12 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
 import type { CachedMetadata } from "obsidian";
 import { afterEach, describe, expect } from "vitest";
 
 import { effectTestParse } from "@/lib/__fixtures__/parse-client";
-import { Effect } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { buildSeededSettings } from "@/services/settings/__fixtures__";

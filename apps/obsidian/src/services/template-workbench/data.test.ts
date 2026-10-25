@@ -1,4 +1,6 @@
+import { it } from "@effect/vitest";
 import Ajv2020 from "ajv/dist/2020";
+import { Effect } from "effect";
 import type { DatabaseSync } from "node:sqlite";
 import type { CliData } from "obsidian";
 import { describe, expect } from "vitest";
@@ -17,8 +19,6 @@ import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
 import {

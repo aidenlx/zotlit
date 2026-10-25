@@ -1,8 +1,8 @@
+import { Context, Deferred, Effect, Layer, PubSub, Stream } from "effect";
 import { TFile } from "obsidian";
 import type { App, CachedMetadata, TAbstractFile } from "obsidian";
 
 import { NON_VAULT_PROPERTY_KEYS } from "@/lib/constants";
-import { Context, Deferred, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { filterTag, forkEach } from "@/lib/effect-stream";
@@ -105,15 +105,15 @@ export class NoteIndex extends Context.Service<
       literatureNotes: TFile[];
       importedNotes: TFile[];
     }>;
-    getPropertyNames(): Effect.Effect<string[]>;
-    getIndexedItemKeys(): Effect.Effect<string[]>;
+    readonly getPropertyNames: Effect.Effect<string[]>;
+    readonly getIndexedItemKeys: Effect.Effect<string[]>;
     /**
      * Settles after the Full Scan, or when the layer closes. Await this before
      * create-vs-existing decisions: a pre-scan read can mint a duplicate.
      */
-    whenIndexed(): Effect.Effect<void>;
+    readonly whenIndexed: Effect.Effect<void>;
     /** Waits for queued rename reads, including those that change no keys. */
-    whenSettled(): Effect.Effect<void>;
+    readonly whenSettled: Effect.Effect<void>;
   }
 >()("zotlit/note-index/NoteIndex") {}
 
@@ -196,30 +196,28 @@ const makeNoteIndex = Effect.gen(function* () {
    * but Obsidian's reserved keys and ZotLit's system keys: the names a vault
    * property can take.
    */
-  const getPropertyNames = Effect.fn("NoteIndex.getPropertyNames")(() =>
-    Effect.gen(function* () {
-      const names = new Set<string>();
-      for (const [file, contribution] of contribByFile) {
-        if (contribution.itemKey === null || contribution.noteKey !== null)
-          continue;
-        const frontmatter = (yield* metadata.fileCache(file))?.frontmatter;
-        for (const name of Object.keys(frontmatter ?? {}))
-          if (!NON_VAULT_PROPERTY_KEYS.has(name)) names.add(name);
-      }
-      return [...names].sort((a, b) => a.localeCompare(b));
-    }),
-  );
+  const getPropertyNames = Effect.gen(function* () {
+    const names = new Set<string>();
+    for (const [file, contribution] of contribByFile) {
+      if (contribution.itemKey === null || contribution.noteKey !== null)
+        continue;
+      const frontmatter = (yield* metadata.fileCache(file))?.frontmatter;
+      for (const name of Object.keys(frontmatter ?? {}))
+        if (!NON_VAULT_PROPERTY_KEYS.has(name)) names.add(name);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }).pipe(Effect.withSpan("NoteIndex.getPropertyNames"));
 
   /** Indexed keys that currently have at least one Literature Note. */
-  const getIndexedItemKeys = Effect.fn("NoteIndex.getIndexedItemKeys")(() =>
-    Effect.sync(() => [...notesByItemKey.keys()]),
+  const getIndexedItemKeys = Effect.sync(() => [...notesByItemKey.keys()]).pipe(
+    Effect.withSpan("NoteIndex.getIndexedItemKeys"),
   );
 
-  const whenIndexed = Effect.fn("NoteIndex.whenIndexed")(function* () {
-    yield* Deferred.await(indexed);
-  });
+  const whenIndexed = Deferred.await(indexed).pipe(
+    Effect.withSpan("NoteIndex.whenIndexed"),
+  );
 
-  const whenSettled = Effect.fn("NoteIndex.whenSettled")(function* () {
+  const whenSettled = Effect.gen(function* () {
     if (disposed) return;
     // The consumer must reach this marker before we snapshot pending renames.
     const barrier = yield* Deferred.make<void>();
@@ -229,7 +227,7 @@ const makeNoteIndex = Effect.gen(function* () {
     yield* Effect.forEach([...pendingRenames], Deferred.await, {
       discard: true,
     });
-  });
+  }).pipe(Effect.withSpan("NoteIndex.whenSettled"));
 
   // Acquire listeners after the functions below have been initialized.
   const listen = Effect.fn("NoteIndex.listen")(function* () {

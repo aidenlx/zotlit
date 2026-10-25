@@ -91,7 +91,7 @@ export class LibraryViewStorage {
       .catch(() => {})
       .then(() => {
         this.#queued = null;
-        const writing = this.#bridge.runPromise(this.#settings.flush());
+        const writing = this.#bridge.runPromise(this.#settings.flush);
         this.#writing = writing;
         writing
           .finally(() => {

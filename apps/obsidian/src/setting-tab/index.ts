@@ -1,7 +1,7 @@
+import { Stream } from "effect";
 import { PluginSettingTab } from "obsidian";
 import type { SettingDefinitionItem } from "obsidian";
 
-import { Stream } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";

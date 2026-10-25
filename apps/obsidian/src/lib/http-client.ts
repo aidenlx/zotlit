@@ -1,11 +1,10 @@
 // The Effect `HttpClient` over Obsidian's `requestUrl`, for remote calls.
 
+import { Effect, Layer } from "effect";
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
 import type { HttpClientRequest } from "effect/http";
 import { requestUrl } from "obsidian";
 import type { RequestUrlParam, RequestUrlResponse } from "obsidian";
-
-import { Effect, Layer } from "@/lib/effect";
 
 /** Statuses the `Response` constructor refuses a body for. */
 const NULL_BODY_STATUS: ReadonlySet<number> = new Set([

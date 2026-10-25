@@ -661,7 +661,7 @@ const DEFAULT_RUNTIME_CALLS = new Set([
   "runCallback",
 ]);
 
-const EFFECT_SOURCES = new Set(["@/lib/effect", "effect"]);
+const EFFECT_SOURCES = new Set(["effect"]);
 
 interface ImportNode extends AstNode {
   readonly source?: AstNode;
@@ -677,8 +677,8 @@ interface ImportNode extends AstNode {
  * plugin logger and log level, and it gets none of the plugin's services.
  * Plugin code runs an Effect through the container bridge, a layer's own
  * context runner (`Effect.runSyncWith(yield* Effect.context())`), or a
- * runtime (`runtime.runSync`). Only the `Effect` imported from `effect` or
- * `@/lib/effect` is checked, so those calls stay valid. Files that create a
+ * runtime (`runtime.runSync`). Only the `Effect` imported from `effect` is
+ * checked, so those calls stay valid. Files that create a
  * runtime, and the backlog, are listed in oxlint.config.ts.
  */
 export const noDefaultRuntime: Rule = {

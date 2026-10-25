@@ -1,7 +1,7 @@
+import { Effect, Stream } from "effect";
 import { afterAll, expect, it, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
-import { Effect, Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { LocalApiResult } from "@/services/zotero-local-api/service";
 
@@ -23,14 +23,12 @@ function seam() {
       capabilityChanges: Stream.never,
       annotationChanged: Stream.never,
       writeConflicts: Stream.never,
-      probe: vi.fn(() =>
-        Effect.promise(async () => {
-          ran.push("probe");
-          await new Promise<void>((resolve) => {
-            release = resolve;
-          });
-        }),
-      ),
+      probe: Effect.promise(async () => {
+        ran.push("probe");
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      }),
     },
     bridge,
     writes: {
@@ -82,7 +80,7 @@ function answering(...answers: LocalApiResult<void>[]) {
       capabilityChanges: Stream.never,
       annotationChanged: Stream.never,
       writeConflicts: Stream.never,
-      probe: () => Effect.void,
+      probe: Effect.void,
     },
     bridge,
     writes: { authorize, on: () => () => undefined },

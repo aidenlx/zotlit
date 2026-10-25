@@ -1,6 +1,6 @@
 // Runners for entering Effect services from legacy classes and Promise code.
-import { Cause, Context, Effect, Exit, Fiber, Scope } from "@/lib/effect";
-import type { ManagedRuntime, Stream } from "@/lib/effect";
+import { Cause, Context, Effect, Exit, Fiber, Scope } from "effect";
+import type { ManagedRuntime, Stream } from "effect";
 
 import { isScopeClosed } from "./effect-scope";
 import { subscribe } from "./effect-stream";

@@ -1,5 +1,4 @@
 // Worker Effect entry point: the same API as `effect.ts`, without LogTape.
-// Both embedded workers reach it through the `@/lib/effect` alias in `vite.config.ts`.
-// oxlint-disable-next-line no-restricted-imports -- This is the worker-native Effect entry point.
+// The effectEntry Vite plugin (scripts/effect-entry.ts) resolves `effect` to it in both embedded workers.
 export * from "effect";
 export * as Effect from "./effect-worker-runtime";

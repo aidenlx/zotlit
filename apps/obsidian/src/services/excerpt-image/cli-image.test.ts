@@ -1,7 +1,6 @@
+import { it } from "@effect/vitest";
+import { Deferred, Effect, Fiber } from "effect";
 import { expect } from "vitest";
-
-import { Deferred, Effect, Fiber } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { redPng } from "./__fixtures__/png";
 import { answerAnnotationImage } from "./cli-image";

@@ -7,6 +7,7 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
+import { Effect, Schema, SchemaIssue } from "effect";
 import { isAbsolute } from "node:path";
 import type { CliData } from "obsidian";
 
@@ -27,7 +28,6 @@ import {
   amendRejection,
 } from "@/lib/cli-params";
 import type { CliParamName, CliRejection } from "@/lib/cli-params";
-import { Effect, Schema, SchemaIssue } from "@/lib/effect";
 import {
   compareSelectors,
   selectorKey,
@@ -82,7 +82,7 @@ function textOf<T>(
 ) {
   return Schema.String.pipe(
     cliMapEffect((text: string, parseOptions) =>
-      Schema.decodeUnknownEffect(pick(text))(text, {
+      Schema.decodeEffect(pick(text))(text, {
         ...parseOptions,
         ...options,
       }).pipe(Effect.mapError(({ issue }) => issue)),

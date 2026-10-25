@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 // One initiating import batch reusing one retention, through the real writer.
+import { Effect, Stream } from "effect";
 import {
   mkdir,
   mkdtemp,
@@ -22,7 +23,6 @@ import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Effect, Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import type { VaultSource } from "@/lib/obsidian-vault";
 import { AttachmentImportService } from "@/services/attachment-import/service";

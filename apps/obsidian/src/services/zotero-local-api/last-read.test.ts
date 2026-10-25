@@ -1,8 +1,8 @@
+import { Effect } from "effect";
 import { expect, it, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Effect } from "@/lib/effect";
 import type { ZoteroReads } from "@/services/zotero-reads/service";
 
 import {

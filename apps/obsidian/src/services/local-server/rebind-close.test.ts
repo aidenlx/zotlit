@@ -1,8 +1,8 @@
 // Closing the Local Server while a rebind is binding: the close waits for it.
 import type { ServerType } from "@hono/node-server";
+import { Stream } from "effect";
 import { expect, it, vi } from "vitest";
 
-import { Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
 
 import { buildLocalServer } from "./__fixtures__";

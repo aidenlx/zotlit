@@ -1,9 +1,9 @@
 // Contract 4 selectors, diagnostics and output over the real Citation Index.
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { expect } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import {
   annotationRows,
   annotationUri,

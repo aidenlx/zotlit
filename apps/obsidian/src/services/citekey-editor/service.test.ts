@@ -1,4 +1,5 @@
 import type { Extension } from "@codemirror/state";
+import { Effect, Layer, PubSub, Stream } from "effect";
 import { MarkdownView } from "obsidian";
 import type { HoverLinkSource, TFile } from "obsidian";
 import {
@@ -9,7 +10,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Item } from "@zotlit/db";
 
-import { Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";

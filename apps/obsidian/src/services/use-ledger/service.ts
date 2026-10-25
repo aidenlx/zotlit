@@ -1,7 +1,3 @@
-import type { App, TFile } from "obsidian";
-
-import { isIndexedKey } from "@zotlit/db";
-
 import {
   Clock,
   Context,
@@ -11,8 +7,12 @@ import {
   PubSub,
   Schema,
   SubscriptionRef,
-} from "@/lib/effect";
-import type { Stream } from "@/lib/effect";
+} from "effect";
+import type { Stream } from "effect";
+import type { App, TFile } from "obsidian";
+
+import { isIndexedKey } from "@zotlit/db";
+
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -155,7 +155,9 @@ const makeUseLedger = Effect.gen(function* () {
   return UseLedger.of({
     current,
     changes: SubscriptionRef.changes(ledger),
-    get: (itemKey) => Effect.map(current, (entries) => entries[itemKey]),
+    get: Effect.fn("UseLedger.get")((itemKey) =>
+      Effect.map(current, (entries) => entries[itemKey]),
+    ),
     uses: Effect.map(current, (entries) =>
       Object.fromEntries(
         Object.entries(entries).map(([key, use]) => [
@@ -165,7 +167,7 @@ const makeUseLedger = Effect.gen(function* () {
       ),
     ),
     record,
-    withoutNoteUse: (file, open) =>
+    withoutNoteUse: Effect.fn("UseLedger.withoutNoteUse")((file, open) =>
       Effect.acquireUseRelease(
         Effect.sync(() => {
           flush();
@@ -183,6 +185,7 @@ const makeUseLedger = Effect.gen(function* () {
             }
           }),
       ),
+    ),
   });
 }).pipe(withLogCategory("use-ledger"));
 
@@ -197,13 +200,10 @@ export const layerUseLedger: Layer.Layer<
  * builds during plugin load, so a failed read must not stop the plugin.
  */
 function readSaved(app: App): Effect.Effect<Record<string, Use>> {
-  return Effect.try({
-    try: () => loadUses(app.loadLocalStorage(STORAGE_KEY)),
-    catch: (error) => error,
-  }).pipe(
+  return Effect.try(() => loadUses(app.loadLocalStorage(STORAGE_KEY))).pipe(
     Effect.catch((error) =>
       Effect.logWarning("Could not read the saved Uses; starting empty").pipe(
-        Effect.annotateLogs({ error }),
+        Effect.annotateLogs({ error: error.cause }),
         Effect.as({}),
       ),
     ),

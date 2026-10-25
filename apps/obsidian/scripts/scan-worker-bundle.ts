@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import type { MessagePort } from "node:worker_threads";
 import { build } from "vite";
 
+import { effectEntry } from "./effect-entry.js";
 import { embeddedWorker } from "./embedded-worker.js";
 
 export interface BenchmarkParseRequest {
@@ -22,9 +23,11 @@ export interface BenchmarkParseClient<Reply> extends AsyncDisposable {
 
 // Both imports of renderer code stay inside Vite: the Node script loads only
 // the guarded bundle, with the same RPC codecs and scheduler as production.
+// A path under scripts/, so effectEntry applies to the entry's imports.
+const CLIENT_ENTRY_ID = resolve(import.meta.dirname, "scan-benchmark-entry.js");
 const CLIENT_ENTRY = `
 export { default } from "virtual:scan-worker";
-import { Effect, Scope } from "@/lib/effect";
+import { Effect, Scope } from "effect";
 import { openScope } from "@/lib/effect-scope";
 import { decodeParseReply } from "@/services/citation-parse/client";
 import { makeParseWorkerClient } from "@/services/citation-parse/worker-client";
@@ -66,14 +69,17 @@ export async function scanWorkerBundle<Reply>(): Promise<{
     plugins: [
       {
         name: "scan-benchmark-entry",
-        resolveId: (id) => (id === "virtual:scan-benchmark" ? id : null),
-        load: (id) => (id === "virtual:scan-benchmark" ? CLIENT_ENTRY : null),
+        resolveId: (id) => (id === CLIENT_ENTRY_ID ? id : null),
+        load: (id) => (id === CLIENT_ENTRY_ID ? CLIENT_ENTRY : null),
       },
+      effectEntry("renderer"),
       embeddedWorker({
         id: "virtual:scan-worker",
         entry: resolve(packageRoot, "src/services/citation-parse/worker.ts"),
         config: {
           resolve: resolveConfig,
+          // The renderer entry, as the `@` alias gave this worker before.
+          plugins: [effectEntry("renderer")],
           external: [],
           minify: false,
           sourcemap: false,
@@ -83,8 +89,8 @@ export async function scanWorkerBundle<Reply>(): Promise<{
     ],
     build: {
       write: false,
-      lib: { entry: "virtual:scan-benchmark", formats: ["es"] },
-      rolldownOptions: { input: "virtual:scan-benchmark" },
+      lib: { entry: CLIENT_ENTRY_ID, formats: ["es"] },
+      rolldownOptions: { input: CLIENT_ENTRY_ID },
     },
   });
   const outputs = Array.isArray(result) ? result : [result];

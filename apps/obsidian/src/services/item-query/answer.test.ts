@@ -1,3 +1,6 @@
+import { it } from "@effect/vitest";
+import { Cause, Effect, Exit, Fiber, Scheduler } from "effect";
+import type { Scope } from "effect";
 import { StatementSync } from "node:sqlite";
 import type { CliData } from "obsidian";
 import { afterEach, describe, expect, vi } from "vitest";
@@ -12,9 +15,6 @@ import {
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 import { ItemQueryScheduler } from "@zotlit/item-query";
 
-import { Cause, Effect, Exit, Fiber, Scheduler } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import {
   DEFAULT_LIBRARY_SCOPE,
   MY_LIBRARY_SCOPE,
@@ -119,20 +119,40 @@ function setup(scenario: ScenarioDatabase, overrides: TestDeps = {}) {
 }
 
 /**
- * Run `effect` to its exit; aborting `signal`, as a cancel does, interrupts
- * it wherever it is.
+ * Interrupts the run {@link exitOf} binds it to, as a cancel does, wherever
+ * that run is. A call before the run is bound interrupts it before it starts.
  */
+interface Interrupt {
+  (): void;
+  bind(run: Fiber.Fiber<unknown>): void;
+}
+
+function interruptHandle(): Interrupt {
+  let bound: Fiber.Fiber<unknown> | undefined;
+  let requested = false;
+  return Object.assign(
+    () => {
+      requested = true;
+      bound?.interruptUnsafe();
+    },
+    {
+      bind(run: Fiber.Fiber<unknown>) {
+        bound = run;
+        if (requested) run.interruptUnsafe();
+      },
+    },
+  );
+}
+
+/** Run `effect` to its exit; `interrupt` interrupts it wherever it is. */
 function exitOf<A>(
   effect: Effect.Effect<A>,
-  signal: AbortSignal,
+  interrupt: Interrupt,
 ): Effect.Effect<Exit.Exit<A>> {
   return Effect.gen(function* () {
-    // Scheduled, not started: the listener is in place before the run's
-    // first step.
+    // Scheduled, not started: the handle is bound before the run's first step.
     const run = yield* Effect.forkChild(effect, { startImmediately: false });
-    const interrupt = () => run.interruptUnsafe();
-    if (signal.aborted) interrupt();
-    else signal.addEventListener("abort", interrupt, { once: true });
+    interrupt.bind(run);
     return yield* Fiber.await(run);
   });
 }
@@ -247,14 +267,14 @@ describe("zotlit:query answer", () => {
         const scenario = yield* scenarioOf();
         seedBulkLibrary(scenario.sqlite, 600);
         fastClock();
-        const controller = new AbortController();
+        const interrupt = interruptHandle();
 
         const exit = yield* exitOf(
-          queryOf(scenario, { onAnswerStep: () => controller.abort() })({
+          queryOf(scenario, { onAnswerStep: () => interrupt() })({
             ...BULK,
             fields: "[]",
           }),
-          controller.signal,
+          interrupt,
         );
 
         expectInterrupted(exit);
@@ -944,14 +964,14 @@ describe("zotlit:query cancellation", () => {
   it.effect("ends interrupted when the interrupt comes before it answers", () =>
     Effect.gen(function* () {
       const scenario = yield* scenarioOf();
-      const controller = new AbortController();
+      const interrupt = interruptHandle();
       const { query } = setup(scenario);
 
       // A named Library starts execution without awaiting the default scope.
-      controller.abort();
+      interrupt();
 
       expectInterrupted(
-        yield* exitOf(query({ library: "personal" }), controller.signal),
+        yield* exitOf(query({ library: "personal" }), interrupt),
       );
     }),
   );
@@ -959,7 +979,7 @@ describe("zotlit:query cancellation", () => {
   it.effect("stops database reads before an interrupted run settles", () =>
     Effect.gen(function* () {
       const scenario = yield* scenarioOf();
-      const controller = new AbortController();
+      const interrupt = interruptHandle();
       const { run, query } = setup(scenario);
       // Warm the copy, then count the reads of one complete run.
       yield* run({ fields: '["title"]' });
@@ -974,16 +994,13 @@ describe("zotlit:query cancellation", () => {
       // Interrupt inside the third database read of the query.
       const events: string[] = [];
       read.mockImplementation(function (this: StatementSync, ...values) {
-        if (events.push("read") === 3) controller.abort();
+        if (events.push("read") === 3) interrupt();
         return Reflect.apply(readRows, this, values) as ReturnType<
           StatementSync["all"]
         >;
       });
 
-      const exit = yield* exitOf(
-        query({ fields: '["title"]' }),
-        controller.signal,
-      );
+      const exit = yield* exitOf(query({ fields: '["title"]' }), interrupt);
       events.push("settled");
 
       expectInterrupted(exit);
@@ -1200,15 +1217,15 @@ describe("zotlit:query export writer", () => {
       Effect.gen(function* () {
         const scenario = yield* scenarioOf();
         seedBulkLibrary(scenario.sqlite, 600);
-        const controller = new AbortController();
+        const interrupt = interruptHandle();
         // The head, then the first chunk of rows: the interrupt comes there.
         const { events, run } = memoryExport(scenario, (count) =>
           Effect.sync(() => {
-            if (count === 2) controller.abort();
+            if (count === 2) interrupt();
           }),
         );
 
-        const exit = yield* exitOf(run, controller.signal);
+        const exit = yield* exitOf(run, interrupt);
 
         expect(
           Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause),

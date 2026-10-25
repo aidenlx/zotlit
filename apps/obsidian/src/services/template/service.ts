@@ -1,3 +1,14 @@
+import {
+  Context,
+  Effect,
+  Fiber,
+  Layer,
+  PubSub,
+  Scope,
+  Stream,
+  SubscriptionRef,
+} from "effect";
+import type { Cause } from "effect";
 import { dirname, join } from "node:path/posix";
 import { TFile } from "obsidian";
 import type { App, TAbstractFile } from "obsidian";
@@ -52,17 +63,6 @@ import {
 } from "@zotlit/templates/obsidian";
 
 import { RESERVED_KEYS } from "@/lib/constants";
-import {
-  Context,
-  Effect,
-  Fiber,
-  Layer,
-  PubSub,
-  Scope,
-  Stream,
-  SubscriptionRef,
-} from "@/lib/effect";
-import type { Cause } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { forkEach } from "@/lib/effect-stream";
@@ -2669,17 +2669,20 @@ export class Template extends Context.Service<
       TemplateFailure
     >;
     readonly loaded: Effect.Effect<boolean, TemplateFailure>;
-    getUnrecognizedFiles(): Effect.Effect<readonly string[], TemplateFailure>;
-    getTemplateFileStatuses(): Effect.Effect<
+    readonly getUnrecognizedFiles: Effect.Effect<
+      readonly string[],
+      TemplateFailure
+    >;
+    readonly getTemplateFileStatuses: Effect.Effect<
       readonly TemplateFileStatus[],
       TemplateFailure
     >;
-    getCitationTemplateStatus(): Effect.Effect<
+    readonly getCitationTemplateStatus: Effect.Effect<
       CitationTemplateStatus,
       TemplateFailure
     >;
-    materializeCitationTemplate(): Effect.Effect<TFile, TemplateFailure>;
-    restoreCitationTemplate(): Effect.Effect<void, TemplateFailure>;
+    readonly materializeCitationTemplate: Effect.Effect<TFile, TemplateFailure>;
+    readonly restoreCitationTemplate: Effect.Effect<void, TemplateFailure>;
     getLiteratureNoteTemplate(
       reference: string,
     ): Effect.Effect<
@@ -2693,7 +2696,7 @@ export class Template extends Context.Service<
       data: T,
       options: { profile: ResolvedProfile },
     ): Effect.Effect<string, TemplateFailure>;
-    getLiteratureNoteTemplateStatuses(): Effect.Effect<
+    readonly getLiteratureNoteTemplateStatuses: Effect.Effect<
       readonly LiteratureNoteTemplateStatus[],
       TemplateFailure
     >;
@@ -2718,7 +2721,7 @@ export class Template extends Context.Service<
         onMissingPartial?: (name: string) => void;
       },
     ): Effect.Effect<string, TemplateFailure>;
-    refresh(): Effect.Effect<void, TemplateFailure>;
+    readonly refresh: Effect.Effect<void, TemplateFailure>;
     waitUntilSettled(
       timeoutMs: number,
     ): Effect.Effect<SettleOutcome, TemplateFailure>;
@@ -2726,7 +2729,7 @@ export class Template extends Context.Service<
       readonly CompiledFrontmatterField[],
       TemplateFailure
     >;
-    getFrontmatterFieldStatus(): Effect.Effect<
+    readonly getFrontmatterFieldStatus: Effect.Effect<
       FrontmatterFieldStatus,
       TemplateFailure
     >;
@@ -2758,12 +2761,12 @@ export class Template extends Context.Service<
     getPartialDocument(
       name: string,
     ): Effect.Effect<SharedPartialDocument | null, TemplateFailure>;
-    getPartialNames(): Effect.Effect<readonly string[], TemplateFailure>;
-    getPartialDocuments(): Effect.Effect<
+    readonly getPartialNames: Effect.Effect<readonly string[], TemplateFailure>;
+    readonly getPartialDocuments: Effect.Effect<
       readonly SharedPartialDocument[],
       TemplateFailure
     >;
-    getPartialEntries(): Effect.Effect<
+    readonly getPartialEntries: Effect.Effect<
       readonly LiteratureNoteTemplatePartial[],
       TemplateFailure
     >;
@@ -2774,7 +2777,7 @@ export class Template extends Context.Service<
       plan: readonly LiteratureNotePartialUnpack[],
       options?: { replace?: readonly string[] },
     ): Effect.Effect<PartialUnpackOutcome, TemplateFailure>;
-    getReservedPartialFiles(): Effect.Effect<
+    readonly getReservedPartialFiles: Effect.Effect<
       readonly { name: string; path: string }[],
       TemplateFailure
     >;
@@ -2801,11 +2804,11 @@ export class Template extends Context.Service<
     getTemplateSource(
       name: TemplateName,
     ): Effect.Effect<string, TemplateFailure>;
-    getLegacyLiteratureNoteTemplateFiles(): Effect.Effect<
+    readonly getLegacyLiteratureNoteTemplateFiles: Effect.Effect<
       readonly string[],
       TemplateFailure
     >;
-    getLegacyTemplateDocuments(): Effect.Effect<
+    readonly getLegacyTemplateDocuments: Effect.Effect<
       LegacyTemplateDocuments,
       TemplateFailure
     >;
@@ -3044,39 +3047,29 @@ export const layerTemplate = Layer.effect(
         () => engine.javascriptTemplatesEnabled,
       ),
       loaded: attempt(() => engine.loaded),
-      getUnrecognizedFiles: Effect.fn("Template.getUnrecognizedFiles")(
-        function* () {
-          return yield* attempt(() => engine.getUnrecognizedFiles());
-        },
+      getUnrecognizedFiles: attempt(() => engine.getUnrecognizedFiles()).pipe(
+        Effect.withSpan("Template.getUnrecognizedFiles"),
       ),
-      getTemplateFileStatuses: Effect.fn("Template.getTemplateFileStatuses")(
-        function* () {
-          return yield* attempt(() => engine.getTemplateFileStatuses());
-        },
-      ),
-      getCitationTemplateStatus: Effect.fn(
-        "Template.getCitationTemplateStatus",
-      )(function* () {
-        return yield* attempt(() => engine.getCitationTemplateStatus());
-      }),
-      materializeCitationTemplate: Effect.fn(
-        "Template.materializeCitationTemplate",
-      )(function* () {
-        return yield* write(
+      getTemplateFileStatuses: attempt(() =>
+        engine.getTemplateFileStatuses(),
+      ).pipe(Effect.withSpan("Template.getTemplateFileStatuses")),
+      getCitationTemplateStatus: attempt(() =>
+        engine.getCitationTemplateStatus(),
+      ).pipe(Effect.withSpan("Template.getCitationTemplateStatus")),
+      materializeCitationTemplate: Effect.suspend(() =>
+        write(
           attemptPromise(() => engine.materializeCitationTemplate()).pipe(
             Effect.uninterruptible,
           ),
-        );
-      }),
-      restoreCitationTemplate: Effect.fn("Template.restoreCitationTemplate")(
-        function* () {
-          return yield* write(
-            attemptPromise(() => engine.restoreCitationTemplate()).pipe(
-              Effect.uninterruptible,
-            ),
-          );
-        },
-      ),
+        ),
+      ).pipe(Effect.withSpan("Template.materializeCitationTemplate")),
+      restoreCitationTemplate: Effect.suspend(() =>
+        write(
+          attemptPromise(() => engine.restoreCitationTemplate()).pipe(
+            Effect.uninterruptible,
+          ),
+        ),
+      ).pipe(Effect.withSpan("Template.restoreCitationTemplate")),
       getLiteratureNoteTemplate: Effect.fn(
         "Template.getLiteratureNoteTemplate",
       )(function* (reference: string) {
@@ -3101,11 +3094,9 @@ export const layerTemplate = Layer.effect(
           );
         },
       ),
-      getLiteratureNoteTemplateStatuses: Effect.fn(
-        "Template.getLiteratureNoteTemplateStatuses",
-      )(function* () {
-        return yield* attempt(() => engine.getLiteratureNoteTemplateStatuses());
-      }),
+      getLiteratureNoteTemplateStatuses: attempt(() =>
+        engine.getLiteratureNoteTemplateStatuses(),
+      ).pipe(Effect.withSpan("Template.getLiteratureNoteTemplateStatuses")),
       renderLiteratureNoteTemplateSource: Effect.fn(
         "Template.renderLiteratureNoteTemplateSource",
       )(function* <T extends object>(source: string, data: T) {
@@ -3143,9 +3134,9 @@ export const layerTemplate = Layer.effect(
           ),
         );
       }),
-      refresh: Effect.fn("Template.refresh")(function* () {
-        return yield* owned(attemptPromise(() => engine.refresh()));
-      }),
+      refresh: Effect.suspend(() =>
+        owned(attemptPromise(() => engine.refresh())),
+      ).pipe(Effect.withSpan("Template.refresh")),
       waitUntilSettled: Effect.fn("Template.waitUntilSettled")(function* (
         timeoutMs: number,
       ) {
@@ -3154,11 +3145,9 @@ export const layerTemplate = Layer.effect(
         );
       }),
       frontmatterFields: attempt(() => engine.frontmatterFields),
-      getFrontmatterFieldStatus: Effect.fn(
-        "Template.getFrontmatterFieldStatus",
-      )(function* () {
-        return yield* attempt(() => engine.getFrontmatterFieldStatus());
-      }),
+      getFrontmatterFieldStatus: attempt(() =>
+        engine.getFrontmatterFieldStatus(),
+      ).pipe(Effect.withSpan("Template.getFrontmatterFieldStatus")),
       evaluateFrontmatterFields: Effect.fn(
         "Template.evaluateFrontmatterFields",
       )(function* (fields: readonly FrontmatterField[], zt: object) {
@@ -3193,17 +3182,15 @@ export const layerTemplate = Layer.effect(
       ) {
         return yield* attempt(() => engine.getPartialDocument(name));
       }),
-      getPartialNames: Effect.fn("Template.getPartialNames")(function* () {
-        return yield* attempt(() => engine.getPartialNames());
-      }),
-      getPartialDocuments: Effect.fn("Template.getPartialDocuments")(
-        function* () {
-          return yield* attempt(() => engine.getPartialDocuments());
-        },
+      getPartialNames: attempt(() => engine.getPartialNames()).pipe(
+        Effect.withSpan("Template.getPartialNames"),
       ),
-      getPartialEntries: Effect.fn("Template.getPartialEntries")(function* () {
-        return yield* attempt(() => engine.getPartialEntries());
-      }),
+      getPartialDocuments: attempt(() => engine.getPartialDocuments()).pipe(
+        Effect.withSpan("Template.getPartialDocuments"),
+      ),
+      getPartialEntries: attempt(() => engine.getPartialEntries()).pipe(
+        Effect.withSpan("Template.getPartialEntries"),
+      ),
       planPartialUnpack: Effect.fn("Template.planPartialUnpack")(function* (
         bundled: readonly LiteratureNoteTemplatePartial[],
       ) {
@@ -3219,11 +3206,9 @@ export const layerTemplate = Layer.effect(
           ),
         );
       }),
-      getReservedPartialFiles: Effect.fn("Template.getReservedPartialFiles")(
-        function* () {
-          return yield* attempt(() => engine.getReservedPartialFiles());
-        },
-      ),
+      getReservedPartialFiles: attempt(() =>
+        engine.getReservedPartialFiles(),
+      ).pipe(Effect.withSpan("Template.getReservedPartialFiles")),
       createPartial: Effect.fn("Template.createPartial")(function* (
         name: string,
         options: { source?: string; language?: TemplateLanguage } = {},
@@ -3274,18 +3259,12 @@ export const layerTemplate = Layer.effect(
           attemptPromise(() => engine.getTemplateSource(name)),
         );
       }),
-      getLegacyLiteratureNoteTemplateFiles: Effect.fn(
-        "Template.getLegacyLiteratureNoteTemplateFiles",
-      )(function* () {
-        return yield* attempt(() =>
-          engine.getLegacyLiteratureNoteTemplateFiles(),
-        );
-      }),
-      getLegacyTemplateDocuments: Effect.fn(
-        "Template.getLegacyTemplateDocuments",
-      )(function* () {
-        return yield* attempt(() => engine.getLegacyTemplateDocuments());
-      }),
+      getLegacyLiteratureNoteTemplateFiles: attempt(() =>
+        engine.getLegacyLiteratureNoteTemplateFiles(),
+      ).pipe(Effect.withSpan("Template.getLegacyLiteratureNoteTemplateFiles")),
+      getLegacyTemplateDocuments: attempt(() =>
+        engine.getLegacyTemplateDocuments(),
+      ).pipe(Effect.withSpan("Template.getLegacyTemplateDocuments")),
       convertLegacyTemplateDocuments: Effect.fn(
         "Template.convertLegacyTemplateDocuments",
       )(function* (refs: readonly CiteRef[]) {

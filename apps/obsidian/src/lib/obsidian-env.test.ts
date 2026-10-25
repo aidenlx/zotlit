@@ -1,9 +1,9 @@
+import { it } from "@effect/vitest";
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import { Effect, Layer } from "effect";
 import type { App } from "obsidian";
 import { afterEach, describe, expect } from "vitest";
 
-import { Effect, Layer } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import { layerTestObsidianEnv } from "./__fixtures__/obsidian-env";

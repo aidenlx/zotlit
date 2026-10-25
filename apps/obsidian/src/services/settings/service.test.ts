@@ -1,8 +1,8 @@
+import { it } from "@effect/vitest";
+import { Effect, Fiber, Logger, Queue } from "effect";
 import { beforeEach, describe, expect, vi } from "vitest";
 
-import { Effect, Fiber, Logger, Queue } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import { highlightEmoji } from "@/lib/highlight-mapping";
 
 import { settingsRuntimeOf } from "./__fixtures__";
@@ -113,8 +113,8 @@ const makeService = Effect.fnUntraced(function* (
         bridge.runSync(
           settings.updateDefaultLiteratureNoteProfileBindings(patch),
         ),
-      flush: () => bridge.runPromise(settings.flush()),
-      release: () => bridge.runSync(settings.release()),
+      flush: () => bridge.runPromise(settings.flush),
+      release: () => bridge.runSync(settings.release),
       changes: settings.changes,
     },
   };

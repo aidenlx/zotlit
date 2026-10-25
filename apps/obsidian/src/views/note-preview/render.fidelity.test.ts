@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // What the Note Preview shows against what the real create path writes: one
 // fixture Item, one Profile source, the write captured through an in-memory vault.
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
@@ -8,7 +9,6 @@ import { getItemsByKey } from "@zotlit/db";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
-import { Effect } from "@/lib/effect";
 import type { VaultSource } from "@/lib/obsidian-vault";
 import type { NoteFeatureDeps } from "@/services/note-feature/context";
 import { createNoteFeature } from "@/services/note-feature/operations";

@@ -1,6 +1,6 @@
 // boundary: Promise and AbortSignal facade for callers outside Effect.
-import { Cause, Effect, Exit } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
+import { Cause, Effect, Exit } from "effect";
+import type { ManagedRuntime } from "effect";
 
 import type { ParseReply } from "./client";
 import { CitationParse } from "./service";

@@ -1,5 +1,5 @@
 // Names the plugin-graph Layer whose acquisition died, so plugin load fails loud.
-import { Cause, Effect, Layer } from "@/lib/effect";
+import { Cause, Effect, Layer } from "effect";
 
 /**
  * A defect during one service's acquisition. Plugin load stops on it:

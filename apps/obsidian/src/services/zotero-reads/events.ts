@@ -1,6 +1,7 @@
 // The ZoteroReads event Streams shared by the service and its plain adapter.
-import { Stream } from "@/lib/effect";
-import type { Stream as StreamType } from "@/lib/effect";
+import { Stream } from "effect";
+import type { Stream as StreamType } from "effect";
+
 import { filterTag } from "@/lib/effect-stream";
 
 import type { ZoteroReads, ZoteroReadsEvent } from "./service";

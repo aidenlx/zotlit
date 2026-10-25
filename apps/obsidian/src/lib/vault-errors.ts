@@ -1,7 +1,7 @@
 // The typed failures of the Vault and FileManager capability tags. An expected
 // outcome is its own tagged error, which the tag decides from the vault cache
 // before it calls Obsidian; `VaultError` is every other rejection.
-import { Schema } from "@/lib/effect";
+import { Schema } from "effect";
 
 /**
  * The vault cache holds a file or folder at `path`, so the tag did not call
@@ -9,7 +9,10 @@ import { Schema } from "@/lib/effect";
  * not in the cache, and a disk that folds case then fails the call as a
  * `VaultError`.
  */
-export class FileExists extends Schema.TaggedError<FileExists>()("FileExists", {
+export class FileExists extends Schema.TaggedError<
+  FileExists,
+  { readonly brand: unique symbol }
+>()("FileExists", {
   /** The vault path that is taken. */
   path: Schema.String,
 }) {
@@ -23,7 +26,10 @@ export class FileExists extends Schema.TaggedError<FileExists>()("FileExists", {
  * A vault or file manager call rejected. `message` is Obsidian's own, for logs and
  * notices; `cause` holds what Obsidian threw. Nothing classifies it.
  */
-export class VaultError extends Schema.TaggedError<VaultError>()("VaultError", {
+export class VaultError extends Schema.TaggedError<
+  VaultError,
+  { readonly brand: unique symbol }
+>()("VaultError", {
   /** The Obsidian method that rejected, such as `renameFile`. */
   operation: Schema.String,
   /** The vault path the call acted on. */

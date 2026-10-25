@@ -1,12 +1,12 @@
 // What counts as a stale database read clone, next to the code that makes one.
 
+import { Cause, Effect, Exit } from "effect";
 import { tmpdir } from "node:os";
 
 import { ZOTERO_DB_READ_TEMP_PREFIX } from "@/lib/constants";
-import { Effect } from "@/lib/effect";
-import { isErrno } from "@/lib/errno";
+import { isErrno, systemCallError } from "@/lib/errno";
 import { sweepTempDirectoryEffect } from "@/lib/temp-sweep";
-import type { ReapTempsOptions } from "@/lib/temp-sweep";
+import type { PlainReapTempsOptions, ReapTempsOptions } from "@/lib/temp-sweep";
 
 /**
  * Remove clone temp dirs left behind by crashed runs. Each dir is tagged with
@@ -16,13 +16,11 @@ import type { ReapTempsOptions } from "@/lib/temp-sweep";
  * concurrently-running Obsidian never has its active clones reaped.
  */
 export const reapReadClonesEffect = Effect.fnUntraced(function* ({
-  signal,
   parent = tmpdir(),
 }: ReapTempsOptions = {}) {
   yield* sweepTempDirectoryEffect({
     directory: parent,
     kind: "database read clone",
-    signal,
     isResidue: (name) => {
       const pid = parseTempPid(name);
       return pid !== null && pid !== process.pid && !isPidLive(pid);
@@ -30,9 +28,21 @@ export const reapReadClonesEffect = Effect.fnUntraced(function* ({
   });
 });
 
-/** Run the launch sweep through the existing Promise-shaped lifecycle call. */
-export function reapReadClones(options: ReapTempsOptions = {}): Promise<void> {
-  return Effect.runPromise(reapReadClonesEffect(options));
+/**
+ * Run the launch sweep through the existing Promise-shaped lifecycle call. An
+ * abort of `signal` interrupts the sweep, which then resolves quietly.
+ */
+export async function reapReadClones({
+  signal,
+  ...options
+}: PlainReapTempsOptions = {}): Promise<void> {
+  if (signal?.aborted) return;
+  const exit = await Effect.runPromiseExit(
+    reapReadClonesEffect(options),
+    signal === undefined ? undefined : { signal },
+  );
+  if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
+    throw Cause.squash(exit.cause);
 }
 
 /**
@@ -51,14 +61,14 @@ export const reapWorkerClones = Effect.fnUntraced(function* ({
   /** Every directory that worker may have placed a clone in. */
   parents: readonly string[];
 }) {
-  yield* Effect.all(
-    parents.map((directory) =>
+  yield* Effect.forEach(
+    parents,
+    (directory) =>
       sweepTempDirectoryEffect({
         directory,
         kind: "database read clone",
         isResidue: (name) => parseTempOwner(name) === owner,
       }),
-    ),
     { concurrency: "unbounded" },
   );
 });
@@ -88,7 +98,7 @@ function isPidLive(pid: number): boolean {
       try: () => {
         process.kill(pid, 0);
       },
-      catch: (error) => error,
+      catch: systemCallError,
     }).pipe(
       Effect.match({
         onSuccess: () => true,
