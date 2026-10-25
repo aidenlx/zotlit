@@ -11,15 +11,7 @@
       {
         "name": "@effect/language-service",
         "effectFn": ["inferred-span"],
-        "allowedUnstableApis": [
-          "@effect/platform-browser",
-          "@effect/platform-node",
-          "@effect/vitest",
-          "effect/http",
-          "effect/rpc",
-          "effect/testing",
-          "effect/workers"
-        ]
+        "allowedUnstableApis": ["effect/rpc", "effect/workers"]
       }
     ],
     "types": ["node"]

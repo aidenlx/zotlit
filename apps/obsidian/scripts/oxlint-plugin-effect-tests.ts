@@ -24,7 +24,7 @@ const isViTimer = (name: string) => /Timers|SystemTime/.test(name);
 const VI = new Set(["vi"]);
 
 /** Modules exporting the `Effect` namespace by that name. */
-const EFFECT_NAMESPACE_MODULES = new Set(["effect", "@/lib/effect"]);
+const EFFECT_NAMESPACE_MODULES = new Set(["effect"]);
 /** Modules that are the `Effect` namespace, run entry points included. */
 const EFFECT_MODULES = new Set(["effect/Effect", "@/lib/effect-runtime"]);
 

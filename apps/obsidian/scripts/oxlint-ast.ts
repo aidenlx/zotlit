@@ -60,7 +60,6 @@ function isEffectModule(source: string): boolean {
   return (
     source === "effect" ||
     source.startsWith("effect/") ||
-    source === "@/lib/effect" ||
     source.startsWith("@/lib/effect-")
   );
 }
@@ -79,7 +78,7 @@ function isBridgeType(statement: ModuleStatement, source: string): boolean {
 
 /**
  * Whether a module imports Effect: any import or re-export from `effect`,
- * `@/lib/effect` or one of their submodules, but not a type-only import of the
+ * one of its submodules or an `@/lib/effect-*` module, but not a type-only import of the
  * bridge.
  */
 export function importsEffect(statements: readonly ModuleStatement[]): boolean {

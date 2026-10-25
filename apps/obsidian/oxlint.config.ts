@@ -65,7 +65,7 @@ const runtimeImports = {
       importNames: ["ManagedRuntime", "Scheduler"],
       allowTypeImports: true,
       message:
-        "Start Effects through Effect from effect; its entry points supply the browser scheduler.",
+        "Run Effects with the run functions of Effect from effect instead; they supply the browser scheduler.",
     },
     {
       name: "effect/Effect",

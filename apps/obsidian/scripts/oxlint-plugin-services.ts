@@ -661,7 +661,7 @@ const DEFAULT_RUNTIME_CALLS = new Set([
   "runCallback",
 ]);
 
-const EFFECT_SOURCES = new Set(["@/lib/effect", "effect"]);
+const EFFECT_SOURCES = new Set(["effect"]);
 
 interface ImportNode extends AstNode {
   readonly source?: AstNode;

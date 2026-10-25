@@ -63,11 +63,8 @@ export function testBaselineOverrides(directory?: string) {
 
 /**
  * `@effect/tsgo` rules that are off by default and that this repository turns
- * on (an opt-in): `global-date`, `global-date-in-effect`,
- * `global-fetch-in-effect`, `global-timers-in-effect`, `process-env-in-effect`
- * here, and `global-console`, `global-console-in-effect` in
- * apps/obsidian/oxlint.config.ts. Every other rule keeps the level of the
- * `recommended` preset.
+ * on (apps/obsidian/oxlint.config.ts opts in to the console rules). Every
+ * other rule keeps the level of the `recommended` preset.
  */
 const effectOptInRules = [
   "global-date",
