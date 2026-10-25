@@ -655,8 +655,8 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const f = yield* acquireAsyncDisposable(() =>
-          harness(undefined, undefined, context),
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => harness(undefined, undefined, context)),
         );
         const plan = yield* Effect.promise(() =>
           f.profile.prepareImport(document()),
@@ -678,8 +678,8 @@ describe("PlainProfile", () => {
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
-        const f = yield* acquireAsyncDisposable(() =>
-          harness(undefined, undefined, context),
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => harness(undefined, undefined, context)),
         );
         yield* Effect.promise(() =>
           f.vault.createFolder("templates/zotlit-profile.default.md"),
