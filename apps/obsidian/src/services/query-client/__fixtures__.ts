@@ -10,6 +10,7 @@ import type { PlainQueryClients } from "./plain";
 import type { QueryClients } from "./service";
 import type { HeldReadEvents } from "./service";
 import { layerQueryClients } from "./service";
+import type { TestClock as QueryTestClock } from "./test-clock";
 
 /** A plain test client with the Effect surface `ExcerptDisplayService` reads. */
 export function taggedQueryClients(
@@ -32,7 +33,7 @@ export function taggedQueryClients(
 
 export function buildQueryClients(
   stack: AsyncDisposableStack,
-  now?: () => Temporal.Instant,
+  now?: QueryTestClock["now"],
 ): PlainQueryClients & {
   runtime: import("@/lib/effect-stream").SubscriptionRuntime;
 } {
@@ -59,7 +60,7 @@ export function buildQueryClients(
 
 /** A consumer fixture whose owner disposes its runtime. */
 export function queryClientsFixture(
-  now?: () => Temporal.Instant,
+  now?: QueryTestClock["now"],
 ): PlainQueryClients &
   AsyncDisposable & {
     runtime: import("@/lib/effect-stream").SubscriptionRuntime;

@@ -496,24 +496,6 @@ export default defineConfig({
       },
     },
     {
-      // DateTime backlog: Effect code that still holds Temporal. Move it to
-      // DateTime, Duration and Clock, then remove the file from the list.
-      files: [
-        "src/services/annotation-repository/actions.test.ts",
-        "src/services/annotation-repository/scale.test.ts",
-        "src/services/attachment-resolver/__fixtures__.ts",
-        "src/services/citation-index/lookup-service.test.ts",
-        "src/services/citation-index/sources.test.ts",
-        "src/services/citation-text/service.ts",
-        "src/services/pandoc/__fixtures__/citation-surfaces.ts",
-        "src/services/pdf-annotation-editor/__fixtures__.ts",
-        "src/services/pdf-annotation-editor/service.test.ts",
-        "src/services/query-client/__fixtures__.ts",
-        "src/services/query-client/service.ts",
-      ],
-      rules: { "zotlit-services/temporal-in-effect": "off" },
-    },
-    {
       files: ["src/services/**/plain.ts"],
       rules: { "zotlit-services/plain-adapter-streams": "error" },
     },

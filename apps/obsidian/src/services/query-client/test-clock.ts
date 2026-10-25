@@ -1,6 +1,6 @@
 // The clock a test hands the query client, for the reads whose cooldown is read against it.
 
-import { FAILURE_COOLDOWN } from "./service";
+import { FAILURE_COOLDOWN_MILLIS } from "./service";
 
 export interface TestClock {
   /** The clock to hand the QueryClients fixture. */
@@ -21,7 +21,9 @@ export function testClock(): TestClock {
   return {
     now: () => Temporal.Now.instant().add(offset),
     passCooldown: () => {
-      offset = offset.add(FAILURE_COOLDOWN).add({ milliseconds: 1 });
+      offset = offset
+        .add({ milliseconds: FAILURE_COOLDOWN_MILLIS })
+        .add({ milliseconds: 1 });
     },
   };
 }

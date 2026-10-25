@@ -7,7 +7,15 @@ import {
   QueryClient,
 } from "@tanstack/query-core";
 import type { Query, QueryFunction, QueryKey } from "@tanstack/query-core";
-import { Clock, Context, Effect, Layer, PubSub, Stream } from "effect";
+import {
+  Clock,
+  Context,
+  Duration,
+  Effect,
+  Layer,
+  PubSub,
+  Stream,
+} from "effect";
 
 import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
@@ -34,7 +42,7 @@ export interface Held<T> {
  * pause a persistent fault — a broken style, a locked database — would re-run
  * its read on every redraw.
  */
-export const FAILURE_COOLDOWN = Temporal.Duration.from({ seconds: 5 });
+export const FAILURE_COOLDOWN_MILLIS = Duration.toMillis(Duration.seconds(5));
 
 /** The attempt's outcome, retained before a display caller chooses a held value. */
 type ReadResult<T> =
@@ -222,7 +230,7 @@ const makeQueryClients = Effect.gen(function* () {
    * one read answer every surface that asks for the same key at once.
    *
    * A key whose last read errored is served from what it holds for
-   * {@link FAILURE_COOLDOWN} without reading again. A read an invalidation
+   * {@link FAILURE_COOLDOWN_MILLIS} without reading again. A read an invalidation
    * cancelled is asked once more, so a cancellation is never an answer.
    *
    * @returns the value the read committed, or null where it failed.
@@ -381,8 +389,7 @@ const makeQueryClients = Effect.gen(function* () {
     if (
       state?.status === "error" &&
       failedAt !== undefined &&
-      now().epochMilliseconds - failedAt <
-        FAILURE_COOLDOWN.total("milliseconds")
+      now().epochMilliseconds - failedAt < FAILURE_COOLDOWN_MILLIS
     ) {
       run(
         Effect.logTrace("Failed held read served without a fresh one").pipe(
