@@ -64,10 +64,6 @@ describe("InsertCitationModal keymap", () => {
     )?.func;
   }
 
-  it("registers a Shift+Enter handler", () => {
-    expect(findShiftEnter(makeModal())).toBeDefined();
-  });
-
   it("selects the highlighted suggestion when Shift+Enter fires", () => {
     const modal = makeModal();
     const select = vi

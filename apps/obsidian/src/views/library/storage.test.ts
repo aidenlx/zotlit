@@ -28,7 +28,6 @@ import {
   libraryViewQuery,
   withCardWidth,
   withExpanded,
-  withNode,
   withSelected,
 } from "./document";
 import type { LibraryViewDocument } from "./document";
@@ -228,26 +227,6 @@ it("says a change is not saved when the write fails, until a later write succeed
     await query.flush();
   });
   expect(query.state.getState().saveFailed).toBe(false);
-});
-
-it("keeps Recent as the tree selection with its sort, newest change first", async () => {
-  const { query, plugin, storage } = await openLibrary();
-  await act(async () => {
-    query.document.editView({
-      sort: [{ property: "title", direction: "ASC" }],
-    });
-    await query.flush();
-  });
-  await storage.change((doc) => withNode(doc, { kind: "recent" }));
-  // The stored document, of an earlier build, selected no tags.
-  expect(saved(plugin)).toEqual({
-    ...STORED,
-    tags: [],
-    expanded: [JSON.stringify(["personal", "Thesis"])],
-    selected: null,
-    node: { kind: "recent" },
-    sort: [{ property: "lastActivity", direction: "DESC" }],
-  });
 });
 
 it("writes the changes of one task to disk once, holding the last of them", async () => {

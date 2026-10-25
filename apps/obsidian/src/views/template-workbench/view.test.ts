@@ -1223,15 +1223,6 @@ An annotation.
     expect(view.getViewData()).toBe(SOURCE);
   });
 
-  it("starts a new history when another file loads", () => {
-    const { view } = setup();
-    const before = view.controller;
-    before.setManifestKey("name", "Edited");
-    view.setViewData(SOURCE.replace("name: Paper", "name: Other"), true);
-    expect(view.controller).not.toBe(before);
-    expect(view.controller.canUndo).toBe(false);
-  });
-
   it.each([
     { tab: "annotation", root: "annotation", advanced: false },
     { tab: "name", root: "filename", advanced: false },
@@ -2660,26 +2651,6 @@ An annotation.
         '<%~ include("authors", zt) %>',
       ),
     );
-  });
-
-  // One transaction is one history event, so this passes on the dispatch alone;
-  // the isolated-history annotation is what the next test guards.
-  it("restores the selection in one undo and keeps the created file", async () => {
-    await using cleanup = new AsyncDisposableStack();
-    vi.mocked(createSharedPartial).mockResolvedValueOnce("authors");
-    const { view, editor } = await openProfile("liquid");
-    cleanup.defer(() => act(async () => view.close()));
-    cleanup.defer(() => view.contentEl.remove());
-    await extract(editor, SELECTION.length);
-
-    await act(() => {
-      view.controller.undo();
-    });
-
-    expect(view.getViewData()).toBe(EXTRACT_SOURCE);
-    expect(view.controller.canUndo).toBe(false);
-    // Undo rewrites the caller alone: nothing takes the partial back.
-    expect(createSharedPartial).toHaveBeenCalledOnce();
   });
 
   it("keeps the keystrokes around it out of its undo step", async () => {

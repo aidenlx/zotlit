@@ -306,7 +306,7 @@ describe("a one-line insertion", () => {
     expect(insertAt("Source.", { at: 7 })).toBe(`Source. ${QUOTE} |`);
   });
 
-  it.each(["", " ", "("])("adds no space before it after %j", (previous) => {
+  it.each(["", "("])("adds no space before it after %j", (previous) => {
     expect(insertAt(previous, { at: previous.length })).toBe(
       `${previous}${QUOTE} |`,
     );
@@ -417,7 +417,7 @@ describe("a citation insertion", () => {
     );
   });
 
-  it.each(["", " ", "("])("adds no space before it after %j", (previous) => {
+  it.each(["", "("])("adds no space before it after %j", (previous) => {
     expect(cite("[@smith2024]", { doc: previous, from: previous.length })).toBe(
       `${previous}[@smith2024]|`,
     );

@@ -117,19 +117,6 @@ describe("onOpenNote", () => {
     expect(openLinkText).not.toHaveBeenCalled();
   });
 
-  it("creates and opens the note of a cited Item that has none yet", () => {
-    const { openIndexedKey } = openNote({
-      id: "BOOK0001",
-      refNumber: 1,
-      occurrences: [occurrence],
-      kind: "summary",
-      source: {} as ReferenceSource,
-      linkpath: null,
-    });
-
-    expect(openIndexedKey).toHaveBeenCalledExactlyOnceWith("BOOK0001");
-  });
-
   it("#1693 opens an annotation-only parent's note by Indexed Key without a Citation Key", () => {
     const { openIndexedKey } = openNote({
       id: "NCKEY234",

@@ -115,12 +115,6 @@ function findExactHandler(
  * keypress reached no handler and the modal just sat there.
  */
 describe("QuickSwitchModal keymap", () => {
-  it("registers a Mod+Enter handler", () => {
-    onPlatform(true);
-
-    expect(findHandler(makeModal(), "Mod")).toBeDefined();
-  });
-
   it("selects the highlighted suggestion when Mod+Enter fires", () => {
     onPlatform(true);
     const modal = makeModal();

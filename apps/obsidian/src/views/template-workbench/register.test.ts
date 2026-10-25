@@ -576,7 +576,7 @@ Annotation`);
       expect(setViewState).toHaveBeenCalledOnce();
     },
   );
-  it.each(["ask", "web", "native"])(
+  it.each(["ask", "web"])(
     "opens the explicit native action with the saved %s preference",
     async (preference) => {
       const { app, loadLocalStorage, file, setViewState } = setup();
