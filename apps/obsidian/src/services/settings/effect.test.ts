@@ -403,9 +403,7 @@ it.effect("#1705 a failed write leaves flush safe after runtime disposal", () =>
     });
     bridge.runSync(settings.update({ "server.hostname": "/edited" }));
     yield* Effect.promise(() =>
-      bridge.runPromise(
-        settings.flush().pipe(Effect.catchCause(() => Effect.void)),
-      ),
+      bridge.runPromise(settings.flush().pipe(Effect.ignoreCause)),
     );
     yield* Effect.promise(close);
     yield* Effect.promise(() =>
