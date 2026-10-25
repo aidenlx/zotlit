@@ -26,19 +26,25 @@ Mark each plugin UI root (`ItemView.contentEl`, modal `contentEl`, settings pane
 
 ## Effect
 
-Review Effect code against the docs of the installed `effect` package, the version the code runs: `node_modules/effect/AGENTS.md`, and the topic folders of `node_modules/effect/ai-docs/src/` — `01_effect` (basics, Schema, services, errors, resources, running), `03_stream`, `04_integration/10_managed-runtime.ts`, `08_observability`, `09_testing`. Cite the doc for each finding. A departure from a documented pattern carries a comment that names its reason. The `effecttsgo/*` rules (`@effect/tsgo`, enabled in `packages/config/oxlint.base.ts`) cover the mechanical Effect patterns; review the rest.
+Review Effect code against the docs of the installed `effect` package, the version the code runs: `node_modules/effect/AGENTS.md`, and the topic folders of `node_modules/effect/ai-docs/src/` — `01_effect` (basics, Schema, services, errors, resources, running), `03_stream`, `04_integration/10_managed-runtime.ts`, `08_observability`, `09_testing`. Cite the doc for each finding. A departure from a documented pattern carries a comment that names its reason.
+
+The `effecttsgo/*` rules (`@effect/tsgo`, configured in `packages/config/oxlint.base.ts`) check the mechanical Effect patterns, at the level of the `recommended` preset:
+
+- **Gate (error):** `class-self-mismatch`, `effect-fn-implicit-any`, `floating-effect`, `floating-effect-in-vitest`, `missing-effect-context`, `missing-effect-error`, `missing-layer-context`, `missing-return-yield-star`, `missing-star-in-yield-effect-gen`, `overridden-schema-constructor`, `schema-literal-non-finite`, `schema-opaque-instance-member`. The opt-in rules are also errors: `global-date`, `global-date-in-effect`, `global-fetch-in-effect`, `global-timers-in-effect`, `process-env-in-effect`, and in this app `global-console`, `global-console-in-effect`.
+- **Warn:** every other preset rule (`effect-fn-opportunity`, `lazy-effect`, `schema-number`, `unknown-in-effect-catch` and the rewrite hints). A warning does not fail the lint, but a change that adds one fixes it in the same change. The warnings that the code has now are a backlog, not a pattern to copy.
+- **Not checked:** the rules do not see where a failure is handled, whether a step must be uninterruptible, how a layer releases what it acquires, or whether a test proves the behavior. Review these by hand (the list below).
 
 Check in particular:
 
-- **Service methods** return Effects, and callers outside Effect go through the container's `bridge` ([Services](policies/services.md) → Bridge). A method written as a generator is `Effect.fn("<Tag>.<method>")` (`01_effect/01_basics/02_effect-fn.ts`, `01_effect/03_services/01_service.ts`); a read derived from state (`Effect.map` over a `SubscriptionRef`) or a single combinator call (`Effect.acquireUseRelease`) stays a plain expression.
+- **Service methods** return Effects, and callers outside Effect go through the container's `bridge` ([Services](policies/services.md) → Bridge). Every service method is `Effect.fn("<Tag>.<method>")` (`01_effect/01_basics/02_effect-fn.ts`, `01_effect/03_services/01_service.ts`), a generator or a body that returns an Effect; `effecttsgo/effect-fn-opportunity` reports a method that is not.
 - **Crossing in** from plain code runs through the plugin's `ManagedRuntime` (`buildRuntime` in `src/lib/effect-layer.ts`). An Obsidian event enters a layer from the source's capability tag (`changes`, narrowed with `filterTag` and handled with `forkEach`); a capability tag registers it through `obsidianEventSource`, and an event from a source with no tag yet enters through `obsidianEvents` ([Events](policies/events.md)); any other Obsidian callback registered there runs through a runner made from the layer's own context (`Effect.runSyncWith(yield* Effect.context<never>())`), so it keeps the layer's services and Clock.
 - **Failures** are typed in the error channel and handled where a decision is made; a boundary that must not fail catches the whole `Cause` (`catchCause`) and logs it. Unknown persisted data decodes through `Schema` (`decodeUnknownOption` to degrade).
-- **Time** comes from `Clock` (`instantClock` for a `Temporal.Instant`), so `TestClock` drives it.
+- **Time** comes from `Clock` (`instantClock` for a `Temporal.Instant`), so `TestClock` drives it. `effecttsgo/global-date`, `effecttsgo/global-date-in-effect` and `zotlit-services/clock-time` report a read of the system time.
 - **Interruption**: a step that must finish once started — applying a configuration, a write with its own cleanup — is `Effect.uninterruptible`, and its test proves a scope close waits for it.
 
 ## Logging
 
-Log through Effect, with the category set by `withLogCategory` from `@/lib/effect-log` (under parent `["zotlit", "obsidian"]`) and fields as annotations:
+Log through Effect, with the category set by `withLogCategory` from `@/lib/effect-log` (under parent `["zotlit", "obsidian"]`) and fields as annotations. `effecttsgo/global-console` and `effecttsgo/global-console-in-effect` report a `console` call, and `zotlit-logging/no-logtape-in-effect-file` reports a LogTape logger in a file that imports Effect:
 
 ```ts
 Effect.logWarning("Could not read the saved Uses; starting empty").pipe(
