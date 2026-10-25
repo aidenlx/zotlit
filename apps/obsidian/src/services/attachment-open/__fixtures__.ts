@@ -4,8 +4,6 @@
 
 import { Effect } from "effect";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { effectBridge } from "@/lib/effect-bridge";
 import {
   DATA_DIR,
   resolverHarness,
@@ -88,7 +86,7 @@ export async function openerHarness(
     ...options,
   });
   const opener = createTargetOpener({
-    attachments: harness.resolver,
+    attachments: harness.service,
     reader: {
       open: (attachment, pane): Promise<ReaderOutcome> => {
         if (missing.includes(attachment.absolutePath))
@@ -99,7 +97,7 @@ export async function openerHarness(
     },
     native: native ?? ((url) => void handed.push(url)),
     settings: { current: Effect.sync(() => settings) },
-    bridge: effectBridge(testRuntime()),
+    bridge: harness.bridge,
     vaultBasePath: VAULT,
     platform: "linux",
   });

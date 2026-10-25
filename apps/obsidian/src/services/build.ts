@@ -201,14 +201,8 @@ export async function buildServices(
     })
     .useValue({ excerptImage: () => runtime.runSync(ExcerptImages) })
     .useValue({ excerptDisplay: () => runtime.runSync(ExcerptDisplays) })
-    .use({
-      attachmentResolver: ({ zoteroReads, queryClient, zoteroPref }) =>
-        new AttachmentResolver({
-          runtime,
-          reads: zoteroReads,
-          queries: queryClient,
-          zoteroPref,
-        }),
+    .useValue({
+      attachmentResolver: () => runtime.runSync(AttachmentResolver),
     })
     .useValue({
       // Every ZotLit gesture that opens an Attachment, and File Link Capture

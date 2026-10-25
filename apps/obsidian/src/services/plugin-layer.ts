@@ -25,6 +25,8 @@ import { layerAnnotationPopover } from "./annotation-popover/service";
 import type { AnnotationPopover } from "./annotation-popover/service";
 import { layerAnnotationRepository } from "./annotation-repository/service";
 import type { AnnotationRepository } from "./annotation-repository/service";
+import { layerAttachmentResolver } from "./attachment-resolver/service";
+import type { AttachmentResolver } from "./attachment-resolver/service";
 import { layerChineseSegmenter } from "./chinese-segmenter/service";
 import type { ChineseSegmenter } from "./chinese-segmenter/service";
 import { layerCitationsCli } from "./citation-index/cli/register";
@@ -138,6 +140,7 @@ export function pluginLayer(
   | CitationLookup
   | Profile
   | LibraryScope
+  | AttachmentResolver
   | ZoteroReads
   | PluginSettings
   | Release
@@ -183,6 +186,7 @@ export function pluginLayer(
       Layer.mergeAll(
         layerLibraryScope.pipe(startingAs("LibraryScope")),
         layerProfile.pipe(startingAs("Profile")),
+        layerAttachmentResolver().pipe(startingAs("AttachmentResolver")),
       ),
     ),
     Layer.provideMerge(

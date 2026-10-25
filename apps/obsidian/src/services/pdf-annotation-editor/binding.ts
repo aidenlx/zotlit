@@ -169,7 +169,10 @@ export type AnnotationReads = Pick<
 >;
 
 /** What a binding names its Attachment through, and hears a re-resolution on. */
-export type AttachmentReads = Pick<AttachmentResolver, "resolve" | "on">;
+export type AttachmentReads = Pick<
+  AttachmentResolver["Service"],
+  "resolve" | "resolutionsChanged"
+>;
 
 /**
  * The two gestures the Editing Capability affordance drives, which render and
@@ -563,7 +566,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     // over an open PDF tab — is told `pending`, and takes its answer here.
     this.#surfaces.defer(() => this.#cancelScroll());
     this.#surfaces.defer(
-      this.#attachments.on("resolutions-changed", () =>
+      this.#bridge.subscribe(this.#attachments.resolutionsChanged, () =>
         this.#resolve(absolutePath),
       ),
     );
@@ -597,9 +600,9 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     const named = peekPendingAnchor(this.#view.leaf)?.attachment ?? null;
     if (named === null || named === this.#attachment.attachmentKey)
       return false;
-    const resolution = this.#attachments.resolve(this.#absolutePath, {
-      attachmentKey: named,
-    });
+    const resolution = this.#bridge.runSync(
+      this.#attachments.resolve(this.#absolutePath, { attachmentKey: named }),
+    );
     return (
       resolution.kind === "resolved" &&
       resolution.attachmentKey !== this.#attachment.attachmentKey
@@ -616,9 +619,11 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
    */
   #resolve(absolutePath: string): void {
     if (this.#surfaces.disposed || this.#attachment.kind !== "pending") return;
-    this.#attachment = this.#attachments.resolve(absolutePath, {
-      attachmentKey: peekPendingAnchor(this.#view.leaf)?.attachment ?? null,
-    });
+    this.#attachment = this.#bridge.runSync(
+      this.#attachments.resolve(absolutePath, {
+        attachmentKey: peekPendingAnchor(this.#view.leaf)?.attachment ?? null,
+      }),
+    );
     logger.debug("PDF view resolved", {
       path: this.#filePath,
       attachment: this.#attachment,

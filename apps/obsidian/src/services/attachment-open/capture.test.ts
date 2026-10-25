@@ -44,13 +44,13 @@ async function host(
 ) {
   const native = vi.fn((..._args: Parameters<Window["open"]>) => null);
   const target = { open: native } as unknown as Window;
-  const { opener, resolver, opened } = await openerHarness(stack, {
+  const { opener, service, opened } = await openerHarness(stack, {
     missing,
     native: (url) => void target.open(url, EXTERNAL_TARGET),
   });
   const registration = registerFileLinkCapture({
     opener,
-    attachments: resolver,
+    attachments: service,
     settings: {
       current: Effect.succeed({
         "reader.open-file-links": enabled,

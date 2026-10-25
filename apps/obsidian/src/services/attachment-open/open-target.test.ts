@@ -60,8 +60,8 @@ describe("open", () => {
   // not the one the path chooses, and the reader binds that one.
   it("opens the Attachment it was asked for where another keeps the same file", async () => {
     await using stack = new AsyncDisposableStack();
-    const { opener, opened, resolver } = await openerHarness(stack);
-    expect(resolver.resolve(FILES.rougier)).toMatchObject({
+    const { opener, opened, service, bridge } = await openerHarness(stack);
+    expect(bridge.runSync(service.resolve(FILES.rougier))).toMatchObject({
       attachmentKey: "RGRPDF24",
     });
 
@@ -154,10 +154,13 @@ describe("open", () => {
   // than sending a PDF this computer holds to Zotero.
   it("waits for the first index before it decides", async () => {
     await using stack = new AsyncDisposableStack();
-    const { opener, opened, handed, resolver } = await openerHarness(stack, {
-      prime: false,
+    const { opener, opened, handed, service, bridge } = await openerHarness(
+      stack,
+      { prime: false },
+    );
+    expect(bridge.runSync(service.lookup("RGRPDF24"))).toEqual({
+      kind: "pending",
     });
-    expect(resolver.lookup("RGRPDF24")).toEqual({ kind: "pending" });
 
     await expect(
       opener.open({ kind: "attachment", attachmentKey: "RGRPDF24" }, false),

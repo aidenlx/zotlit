@@ -21,6 +21,7 @@ import {
 
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { getLogger } from "@/lib/log";
+import { indexedWithin } from "@/services/attachment-resolver/service";
 import type {
   AttachmentLookup,
   AttachmentResolver,
@@ -78,7 +79,7 @@ export type NativeOpener = (url: string) => void;
 
 export interface TargetOpenerDeps {
   attachments: Pick<
-    AttachmentResolver,
+    AttachmentResolver["Service"],
     "resolve" | "lookup" | "warm" | "indexed"
   >;
   reader: TargetReader;
@@ -88,7 +89,7 @@ export interface TargetOpenerDeps {
    * Durable Annotation Link is ZotLit's to follow.
    */
   settings: Pick<PluginSettings["Service"], "current">;
-  bridge: Pick<EffectBridge, "runSync">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
   /** The vault's own directory, for telling an in-vault file from one outside. */
   vaultBasePath: string;
   /** @default process.platform */
@@ -174,17 +175,20 @@ export function createTargetOpener({
    * first index; still `pending` when that wait ends.
    */
   const lookup = async (attachmentKey: string): Promise<AttachmentLookup> => {
-    const found = attachments.lookup(attachmentKey);
+    const found = bridge.runSync(attachments.lookup(attachmentKey));
     if (found.kind !== "pending") return found;
     logger.debug("Target waits for the Attachment index", { attachmentKey });
-    attachments.warm();
-    if (!(await indexedWithin(attachments.indexed, indexWait))) {
+    bridge.runSync(attachments.warm);
+    const indexed = await bridge.runPromise(
+      indexedWithin(attachments, indexWait.total("milliseconds")),
+    );
+    if (!indexed) {
       logger.debug("Target gave up on the Attachment index", {
         attachmentKey,
       });
       return { kind: "pending" };
     }
-    return attachments.lookup(attachmentKey);
+    return bridge.runSync(attachments.lookup(attachmentKey));
   };
 
   const followFile = (
@@ -197,7 +201,7 @@ export function createTargetOpener({
     } catch {
       return null;
     }
-    const resolution = attachments.resolve(absolutePath);
+    const resolution = bridge.runSync(attachments.resolve(absolutePath));
     if (resolution.kind !== "resolved" || !resolution.openable) return null;
     return read(
       openable(
@@ -239,8 +243,8 @@ export function createTargetOpener({
       });
       return null;
     }
-    const attachment = attachments.lookup(
-      formatIndexedKey(link.attachmentKey, link.groupID),
+    const attachment = bridge.runSync(
+      attachments.lookup(formatIndexedKey(link.attachmentKey, link.groupID)),
     );
     if (attachment.kind !== "resolved" || !attachment.openable) {
       logger.debug("Durable Annotation Link left to Zotero", {
@@ -311,25 +315,6 @@ export function createTargetOpener({
       return null;
     },
   };
-}
-
-/**
- * Whether `indexed` settled within `wait`. The resolver retries a failed
- * build, so `indexed` never rejects; it only settles late or not at all.
- */
-async function indexedWithin(
-  indexed: Promise<void>,
-  wait: Temporal.Duration,
-): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<false>((resolve) => {
-    timer = setTimeout(() => resolve(false), wait.total("milliseconds"));
-  });
-  try {
-    return await Promise.race([indexed.then(() => true), timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 /**
