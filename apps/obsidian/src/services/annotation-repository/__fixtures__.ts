@@ -42,6 +42,7 @@ import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
 import type { WireTag } from "@/services/zotero-local-api/wire";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type {
   ZoteroReadLease,
@@ -225,20 +226,26 @@ export async function setup(
       PubSub.publishUnsafe(dbBus, { _tag: "changed" });
     },
   };
+  // A rejection from a test's mock stands for a database that cannot answer,
+  // the failure the real service reports.
+  const unavailable = (error: unknown) =>
+    error instanceof DbUnavailable
+      ? error
+      : new DbUnavailable({
+          message: error instanceof Error ? error.message : String(error),
+        });
   const readsService = stubService<ZoteroReads["Service"]>("ZoteroReads", {
     snapshot: Effect.acquireDisposable(
       Effect.tryPromise({
         try: () => acquireRead(),
-        catch: (error) => error,
+        catch: unavailable,
       }),
-    ).pipe(
-      Effect.map((lease) => lease.reads),
-    ) as ZoteroReads["Service"]["snapshot"],
+    ).pipe(Effect.map((lease) => lease.reads)),
     refresh: () =>
       Effect.tryPromise({
         try: () => refresh(),
-        catch: (error) => error,
-      }) as ReturnType<ZoteroReads["Service"]["refresh"]>,
+        catch: unavailable,
+      }),
     events: Stream.fromPubSub(dbBus),
   });
 
