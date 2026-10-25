@@ -85,7 +85,9 @@ export function inProcessReadsService(
   return testReads(
     Effect.andThen(
       Effect.promise(() => opening),
-      Effect.map(inProcessClient(layerRcRef(opener), handlers), wrap),
+      Effect.map(inProcessClient(layerRcRef(opener), handlers), (client) =>
+        wrap(client),
+      ),
     ),
   );
 }

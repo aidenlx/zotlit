@@ -190,7 +190,9 @@ function openValidated(
     catch: toDbUnavailable,
   }).pipe(
     Effect.flatMap((client) =>
-      validateClient(client).pipe(Effect.mapError(toDbUnavailable)),
+      validateClient(client).pipe(
+        Effect.mapError((cause) => toDbUnavailable(cause)),
+      ),
     ),
   );
 }
@@ -310,7 +312,7 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
             serving: databaseGenerations.databaseFile(client),
           })),
         ),
-        Effect.map(bareClient),
+        Effect.map((client) => bareClient(client)),
         Effect.tap(() =>
           Effect.gen(function* () {
             const wasReady = (yield* Ref.get(status)).state === "ready";

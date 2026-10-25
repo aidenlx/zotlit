@@ -313,12 +313,15 @@ function acquireRead(
  * Zotero read back as five rows from a main+WAL clone and as zero rows from an
  * `immutable` read of the same source.
  */
-export const staleWalReason = Effect.fnUntraced(function* (sourcePath: string) {
-  const wal = yield* walGeneration(`${sourcePath}-wal`);
-  return wal.state === "present" || wal.state === "unstable"
-    ? "wal-not-replayed"
-    : undefined;
-}, Effect.mapError(toDbUnavailable));
+export const staleWalReason = Effect.fnUntraced(
+  function* (sourcePath: string) {
+    const wal = yield* walGeneration(`${sourcePath}-wal`);
+    return wal.state === "present" || wal.state === "unstable"
+      ? "wal-not-replayed"
+      : undefined;
+  },
+  Effect.mapError((cause) => toDbUnavailable(cause)),
+);
 
 const prepareImmutableRead = Effect.fnUntraced(function* (
   sourcePath: string,
@@ -657,13 +660,16 @@ const copySource = Effect.fnUntraced(function* (
  *
  * @see `sourceMoved` in `layerSource` (zotero-reads/source.ts) for the gate this feeds.
  */
-export const snapshotSource = Effect.fnUntraced(function* (sourcePath: string) {
-  const pair = yield* snapshotPair(sourcePath, {
-    walPath: `${sourcePath}-wal`,
-    journalPath: `${sourcePath}-journal`,
-  });
-  return { path: sourcePath, ...pair };
-}, Effect.mapError(toDbUnavailable));
+export const snapshotSource = Effect.fnUntraced(
+  function* (sourcePath: string) {
+    const pair = yield* snapshotPair(sourcePath, {
+      walPath: `${sourcePath}-wal`,
+      journalPath: `${sourcePath}-journal`,
+    });
+    return { path: sourcePath, ...pair };
+  },
+  Effect.mapError((cause) => toDbUnavailable(cause)),
+);
 
 export function sourceFingerprintsEqual(
   a: SourceFingerprint,

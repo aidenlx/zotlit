@@ -327,7 +327,7 @@ describe("ZoteroReads source", () => {
     );
     const seed = await source.run(
       Stream.runHead(source.reads.Changes()).pipe(
-        Effect.map(Option.getOrThrow),
+        Effect.map((option) => Option.getOrThrow(option)),
       ),
     );
     expect(seed).toEqual({
