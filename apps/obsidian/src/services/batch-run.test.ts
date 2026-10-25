@@ -202,14 +202,11 @@ describe("executeBatchRun", () => {
         const started = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         const run = vi.fn((t: BatchRunTask) =>
-          Effect.tryPromise({
-            try: async () => {
-              if (t.id !== 1) return "created" as const;
-              started.resolve();
-              await release.promise;
-              return "created" as const;
-            },
-            catch: (error) => error,
+          Effect.tryPromise(async () => {
+            if (t.id !== 1) return "created" as const;
+            started.resolve();
+            await release.promise;
+            return "created" as const;
           }),
         );
 
