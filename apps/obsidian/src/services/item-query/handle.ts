@@ -5,7 +5,10 @@ import type { EffectBridge } from "@/lib/effect-bridge";
 import type { QueryViewOutcome, QueryViewRequest } from "./query-view";
 import type { QueryService } from "./service";
 
-/** {@link QueryService} for callers outside Effect. */
+/**
+ * {@link QueryService} for callers outside Effect: an edge handle
+ * (`policies/services.md` → Edge handle).
+ */
 export interface QueryHandle {
   /**
    * Run the typed query of a Query View. An abort of `signal`, or the unload,
