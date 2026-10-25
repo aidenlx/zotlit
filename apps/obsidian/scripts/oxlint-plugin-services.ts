@@ -510,43 +510,6 @@ export const layerStreamConsumer: Rule = {
   },
 };
 
-const SUBSCRIPTION_REF = new Set(["SubscriptionRef"]);
-
-/**
- * A service exposes its `SubscriptionRef` through `changesUntil` from
- * `@/lib/effect-stream` (policies/events.md → State or event), which attaches
- * a consumer before layer acquisition returns and ends every subscriber when
- * the service stops. A bare `SubscriptionRef.changes` does neither, so its
- * subscribers outlive the layer.
- */
-export const stateStream: Rule = {
-  meta: {
-    type: "problem",
-    docs: {
-      description: "Require changesUntil to expose a SubscriptionRef.",
-    },
-    messages: {
-      changesUntil:
-        "Expose the state with `changesUntil(state, until)` from @/lib/effect-stream: `until` is the service's stop signal or a terminal-state predicate.",
-    },
-    schema: [],
-  },
-  create(context) {
-    return {
-      CallExpression(node) {
-        if (
-          isMemberOf(
-            node.callee as AstNode,
-            SUBSCRIPTION_REF,
-            (name) => name === "changes",
-          )
-        )
-          context.report({ node, messageId: "changesUntil" });
-      },
-    };
-  },
-};
-
 const CAUSE_OR_EXIT = new Set(["Cause", "Exit"]);
 
 /**
@@ -915,7 +878,6 @@ export default {
     "plain-adapter-streams": plainAdapterStreams,
     "scope-closed": scopeClosed,
     "service-tag-id": serviceTagId,
-    "state-stream": stateStream,
     "worker-rpc": workerRpc,
   },
 };

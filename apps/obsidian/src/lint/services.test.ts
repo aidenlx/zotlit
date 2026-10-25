@@ -14,7 +14,6 @@ import {
   plainAdapterStreams,
   scopeClosed,
   serviceTagId,
-  stateStream,
   workerRpc,
 } from "../../scripts/oxlint-plugin-services";
 
@@ -263,25 +262,6 @@ tester.run("scope-closed", scopeClosed, {
     {
       code: 'if ("Closed" === scope.state._tag) return;',
       errors: [{ messageId: "helper" }],
-    },
-  ],
-});
-
-tester.run("state-stream", stateStream, {
-  valid: [
-    "const changes = changesUntil(state, Deferred.await(stopped));",
-    "const changes = changesUntil(state, (value) => value.stopped);",
-    // A Stream's own changes operator is not the SubscriptionRef one.
-    "const next = Stream.changes(values);",
-  ],
-  invalid: [
-    {
-      code: "const changes = SubscriptionRef.changes(state);",
-      errors: [{ messageId: "changesUntil" }],
-    },
-    {
-      code: "return { changes: SubscriptionRef.changes(state).pipe(Stream.map(clone)) };",
-      errors: [{ messageId: "changesUntil" }],
     },
   ],
 });

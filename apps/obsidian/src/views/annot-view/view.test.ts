@@ -12,7 +12,6 @@ import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Effect, Stream, SubscriptionRef } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
-import { changesUntil } from "@/lib/effect-stream";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationList,
@@ -232,11 +231,11 @@ async function openSidebar(
   const readerClosed = Effect.runSync(SubscriptionRef.make(false));
   const liveUpdate = stubService<LocalServer["Service"]>("LocalServer", {
     available: SubscriptionRef.get(available),
-    availableChanges: changesUntil(available, Effect.never),
+    availableChanges: SubscriptionRef.changes(available),
     readerTarget: SubscriptionRef.get(readerTarget),
-    readerTargetChanges: changesUntil(readerTarget, Effect.never),
+    readerTargetChanges: SubscriptionRef.changes(readerTarget),
     readerClosed: SubscriptionRef.get(readerClosed),
-    readerClosedChanges: changesUntil(readerClosed, Effect.never),
+    readerClosedChanges: SubscriptionRef.changes(readerClosed),
   });
   const deps = {
     runtime,

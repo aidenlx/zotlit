@@ -5,7 +5,6 @@ import {
   Context,
   Deferred,
   Effect,
-  Fiber,
   Layer,
   Logger,
   ManagedRuntime,
@@ -15,32 +14,8 @@ import {
   SubscriptionRef,
 } from "@/lib/effect";
 import { LogCategory } from "@/lib/effect-log";
-import { changesUntil, forkEach, subscribe } from "@/lib/effect-stream";
+import { forkEach, subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
-
-it.effect(
-  "#1705: scoped state consumers retain immediate updates and end when the service stops",
-  () =>
-    Effect.gen(function* () {
-      const state = yield* SubscriptionRef.make(0);
-      const stopped = yield* Deferred.make<void>();
-      const delivered = yield* Queue.unbounded<number>();
-      const stream = changesUntil(state, Deferred.await(stopped));
-      const listening = yield* Stream.runForEach(stream, (value) =>
-        Queue.offer(delivered, value),
-      ).pipe(Effect.forkScoped({ startImmediately: true }));
-      yield* SubscriptionRef.set(state, 1);
-      yield* SubscriptionRef.set(state, 2);
-      expect(yield* Queue.take(delivered)).toBe(0);
-      expect(yield* Queue.take(delivered)).toBe(1);
-      expect(yield* Queue.take(delivered)).toBe(2);
-      expect(yield* Stream.runCollect(Stream.take(stream, 1))).toEqual([2]);
-      yield* Deferred.succeed(stopped, undefined);
-      yield* Fiber.join(listening);
-      yield* SubscriptionRef.set(state, 3);
-      expect(yield* Queue.size(delivered)).toBe(0);
-    }),
-);
 
 // #1705: a callback defect belongs to one delivery, not the subscription.
 it.effect(

@@ -24,7 +24,7 @@ import {
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { acquireDisposable } from "@/lib/effect-scope";
-import { changesUntil, forkEach } from "@/lib/effect-stream";
+import { forkEach } from "@/lib/effect-stream";
 import { mapsEqual } from "@/lib/maps-equal";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { workspaceOpenDocuments } from "@/lib/open-documents";
@@ -751,7 +751,9 @@ export const layerCitationText = (open?: OpenDocuments) =>
       );
       return {
         current: SubscriptionRef.get(state),
-        changes: changesUntil(state, (value) => value.stopped),
+        changes: SubscriptionRef.changes(state).pipe(
+          Stream.takeUntil((value) => value.stopped),
+        ),
         events: Stream.fromPubSub(bus),
         peek: Effect.fn("CitationText.peek")(function* (path: string) {
           return yield* Effect.sync(() => peek(path));

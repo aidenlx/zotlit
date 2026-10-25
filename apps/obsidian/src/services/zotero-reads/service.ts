@@ -16,7 +16,6 @@ import {
 } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
-import { changesUntil } from "@/lib/effect-stream";
 import type { EffectiveReadMode } from "@/services/database/read-source";
 
 import type { ZoteroReadsClient } from "./in-process";
@@ -113,7 +112,6 @@ export function layerZoteroReads<R>(
         activeReadMode: null,
       });
       const events = yield* PubSub.unbounded<ZoteroReadsEvent>();
-      const stopped = yield* Deferred.make<void>();
       const seeded = yield* Deferred.make<void>();
       let closed = false;
       const client = yield* makeClient;
@@ -190,7 +188,7 @@ export function layerZoteroReads<R>(
       yield* Effect.addFinalizer(() =>
         Effect.gen(function* () {
           closed = true;
-          yield* Deferred.succeed(stopped, undefined);
+          yield* PubSub.shutdown(state.pubsub);
           yield* PubSub.shutdown(events);
         }),
       );
@@ -235,7 +233,7 @@ export function layerZoteroReads<R>(
       );
       return ZoteroReads.of({
         current,
-        changes: changesUntil(state, Deferred.await(stopped)),
+        changes: SubscriptionRef.changes(state),
         events: Stream.fromPubSub(events),
         reads: bindReads(client),
         snapshot,
