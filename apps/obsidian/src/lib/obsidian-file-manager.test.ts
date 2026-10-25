@@ -8,7 +8,7 @@ import { expect, vi } from "vitest";
 
 import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Effect, Exit, Layer } from "@/lib/effect";
+import { Effect, Layer } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import {
@@ -119,16 +119,14 @@ it.effect(
       const cause = new Error("Destination file already exists!");
       source.failNext = cause;
       const files = yield* over(source);
-      const exit = yield* Effect.exit(files.renameFile(file("a.md"), "b.md"));
-      expect(exit).toEqual(
-        Exit.fail(
-          new VaultError({
-            operation: "renameFile",
-            path: "a.md",
-            message: "Destination file already exists!",
-            cause,
-          }),
-        ),
+      const error = yield* Effect.flip(files.renameFile(file("a.md"), "b.md"));
+      expect(error).toEqual(
+        new VaultError({
+          operation: "renameFile",
+          path: "a.md",
+          message: "Destination file already exists!",
+          cause,
+        }),
       );
     }),
 );

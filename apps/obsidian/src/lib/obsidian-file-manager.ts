@@ -67,20 +67,19 @@ export const makeFileManager = Effect.fnUntraced(function* (
         try: () => source.processFrontMatter(file, fn),
         catch: vaultError("processFrontMatter", file.path),
       }),
-    renameFile: (file, newPath) =>
-      Effect.gen(function* () {
-        // As Obsidian's `Vault.rename`: the normalized path, and no move when
-        // it is the file's own.
-        const path = normalizePath(newPath);
-        const held = yield* vault.getAbstractFileByPath(path);
-        if (held !== null && held !== file)
-          return yield* new FileExists({ path });
-        yield* Effect.tryPromise({
-          // Obsidian moves `file.path` on success; name the path it had.
-          try: () => source.renameFile(file, newPath),
-          catch: vaultError("renameFile", file.path),
-        });
-      }),
+    renameFile: Effect.fn("FileManager.renameFile")(function* (file, newPath) {
+      // As Obsidian's `Vault.rename`: the normalized path, and no move when
+      // it is the file's own.
+      const path = normalizePath(newPath);
+      const held = yield* vault.getAbstractFileByPath(path);
+      if (held !== null && held !== file)
+        return yield* new FileExists({ path });
+      yield* Effect.tryPromise({
+        // Obsidian moves `file.path` on success; name the path it had.
+        try: () => source.renameFile(file, newPath),
+        catch: vaultError("renameFile", file.path),
+      });
+    }),
     generateMarkdownLink: (file, sourcePath, options = {}) =>
       Effect.sync(() =>
         source.generateMarkdownLink(
