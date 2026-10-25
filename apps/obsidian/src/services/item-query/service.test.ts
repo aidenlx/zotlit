@@ -26,10 +26,10 @@ import { valueText } from "@zotlit/item-query";
 import type { ProjectionJson } from "@zotlit/item-query";
 import { delimited } from "@zotlit/shared/delimited";
 
-import { stubService } from "@/lib/__fixtures__/service-stub";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 import { UseLedger } from "@/services/use-ledger/service";
 import type { Ledger } from "@/services/use-ledger/service";
+import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
 import { layerRcRef } from "@/services/zotero-reads/connection";
 import type { ConnectionOpener } from "@/services/zotero-reads/connection";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
@@ -1457,7 +1457,7 @@ it.effect("tells a Query View of a Use recorded after it subscribes", () =>
     const ledger = yield* SubscriptionRef.make<Ledger>({});
     const layer = layerTestQueryService(
       {
-        reads: stubService<ZoteroReads["Service"]["reads"]>("ZoteroReads", {}),
+        reads: readsAnswering({}),
         source: {
           sourceId: "captured-source",
           databasePath: "",
