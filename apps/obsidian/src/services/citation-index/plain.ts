@@ -71,7 +71,7 @@ export function plainCitationLookup(
         ? inertObservation()
         : bridge.runSync(service.observe(changed)),
     async whenResolved() {
-      if (!bridge.closed()) await bridge.runPromiseExit(service.whenResolved());
+      if (!bridge.closed()) await bridge.runPromiseExit(service.whenResolved);
     },
     changed: lookupChanged(service),
     "status-changed": lookupStatusChanged(service),

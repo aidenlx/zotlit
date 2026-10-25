@@ -616,12 +616,12 @@ export interface TemplateMigrationOptions {
 export class TemplateMigration extends Context.Service<
   TemplateMigration,
   {
-    whenSettled(): Effect.Effect<void>;
-    convert(): Effect.Effect<
+    readonly whenSettled: Effect.Effect<void>;
+    readonly convert: Effect.Effect<
       LiteratureNoteTemplateMigrationResult,
       TemplateFailure
     >;
-    retryCleanup(): Effect.Effect<
+    readonly retryCleanup: Effect.Effect<
       Extract<LiteratureNoteTemplateMigrationResult, { outcome: "converted" }>,
       TemplateFailure
     >;
@@ -655,14 +655,14 @@ export function layerTemplateMigration(options: TemplateMigrationOptions) {
           update: (patch) => {
             run(settings.update(patch));
           },
-          flush: () => runPromise(settings.flush()),
+          flush: () => runPromise(settings.flush),
         },
         template: {
-          refresh: () => runPromise(template.refresh()),
+          refresh: () => runPromise(template.refresh),
           getLegacyLiteratureNoteTemplateFiles: () =>
-            run(template.getLegacyLiteratureNoteTemplateFiles()),
+            run(template.getLegacyLiteratureNoteTemplateFiles),
           getLegacyTemplateDocuments: () =>
-            run(template.getLegacyTemplateDocuments()),
+            run(template.getLegacyTemplateDocuments),
           convertLegacyLiteratureNoteTemplates: (data) =>
             runPromise(template.convertLegacyLiteratureNoteTemplates(data)),
           convertLegacyTemplateDocuments: (refs) =>
@@ -733,25 +733,25 @@ export function layerTemplateMigration(options: TemplateMigrationOptions) {
         }),
       );
       return TemplateMigration.of({
-        whenSettled: Effect.fn("TemplateMigration.whenSettled")(function* () {
+        whenSettled: Effect.gen(function* () {
           if (closed) return;
           const waiter = yield* Deferred.make<void>();
           waiters.add(waiter);
           intake.callback("settled")(waiter);
           yield* Deferred.await(waiter);
-        }),
-        convert: Effect.fn("TemplateMigration.convert")(function* () {
-          return yield* owned(
+        }).pipe(Effect.withSpan("TemplateMigration.whenSettled")),
+        convert: Effect.suspend(() =>
+          owned(
             attemptPromise(() => engine.convert()).pipe(Effect.uninterruptible),
-          );
-        }),
-        retryCleanup: Effect.fn("TemplateMigration.retryCleanup")(function* () {
-          return yield* owned(
+          ),
+        ).pipe(Effect.withSpan("TemplateMigration.convert")),
+        retryCleanup: Effect.suspend(() =>
+          owned(
             attemptPromise(() => engine.retryCleanup()).pipe(
               Effect.uninterruptible,
             ),
-          );
-        }),
+          ),
+        ).pipe(Effect.withSpan("TemplateMigration.retryCleanup")),
       });
     }),
   );

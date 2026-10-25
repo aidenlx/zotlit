@@ -87,17 +87,17 @@ describe("Managed Binary with a bare .wasm pin", () => {
         const download = serve(SEGMENTER);
         await using opened = await open(SEGMENTER, device, download);
         const { service, handle } = opened;
-        expect(handle.runSync(service.getStatus())).toEqual({ kind: "absent" });
+        expect(handle.runSync(service.getStatus)).toEqual({ kind: "absent" });
         expect(download).not.toHaveBeenCalled();
 
-        await handle.runPromise(service.install());
+        await handle.runPromise(service.install);
 
         expect(download).toHaveBeenCalledWith(SEGMENTER.pin.url);
         expect(device.names(SEGMENTER.id)).toEqual([CACHED]);
         expect(device.files(SEGMENTER.id).get(CACHED)).toEqual(
           SEGMENTER_BINARY,
         );
-        expect(handle.runSync(service.getStatus())).toEqual({
+        expect(handle.runSync(service.getStatus)).toEqual({
           kind: "installed",
           version: SEGMENTER.pin.version,
           binary: { directory: "chinese-segmenter", name: CACHED },
@@ -111,9 +111,9 @@ describe("Managed Binary with a bare .wasm pin", () => {
       await using opened = await open(SEGMENTER, device);
       const { service, handle } = opened;
 
-      const done = handle.runPromise(service.install());
+      const done = handle.runPromise(service.install);
 
-      expect(handle.runSync(service.getStatus())).toEqual({
+      expect(handle.runSync(service.getStatus)).toEqual({
         kind: "installing",
         done: expect.any(Promise),
         binary: null,
@@ -127,18 +127,18 @@ describe("Managed Binary with a bare .wasm pin", () => {
       const device = memoryDevice();
       await using opened = await open(SEGMENTER, device);
       const { service, handle } = opened;
-      await handle.runPromise(service.install());
+      await handle.runPromise(service.install);
       const installed = { directory: "chinese-segmenter", name: CACHED };
 
-      const done = handle.runPromise(service.install());
+      const done = handle.runPromise(service.install);
 
-      expect(handle.runSync(service.getStatus())).toEqual({
+      expect(handle.runSync(service.getStatus)).toEqual({
         kind: "installing",
         done: expect.any(Promise),
         binary: installed,
       });
       await done;
-      expect(handle.runSync(service.getStatus())).toEqual({
+      expect(handle.runSync(service.getStatus)).toEqual({
         kind: "installed",
         version: SEGMENTER.pin.version,
         binary: installed,
@@ -154,9 +154,9 @@ describe("Managed Binary with a bare .wasm pin", () => {
       );
       await using opened = await open({ ...SEGMENTER, createEngine }, device);
       const { service, handle } = opened;
-      await handle.runPromise(service.install());
+      await handle.runPromise(service.install);
 
-      await handle.runPromise(service.getEngine());
+      await handle.runPromise(service.getEngine);
 
       const [passed] = createEngine.mock.calls[0]!;
       expect(new Uint8Array(await passed.arrayBuffer())).toEqual(
@@ -191,10 +191,10 @@ describe("Managed Binary with a bare .wasm pin", () => {
         );
         const { service, handle } = opened;
 
-        const first = handle.runPromise(service.install());
+        const first = handle.runPromise(service.install);
         await starting.promise;
-        const second = handle.runPromise(service.install());
-        const during = handle.runSync(service.getStatus()).kind;
+        const second = handle.runPromise(service.install);
+        const during = handle.runSync(service.getStatus).kind;
         release.resolve();
         await Promise.all([first, second]);
 
@@ -202,7 +202,7 @@ describe("Managed Binary with a bare .wasm pin", () => {
         expect(download).toHaveBeenCalledOnce();
         expect(createEngine).toHaveBeenCalledOnce();
         expect(disposed).toBe(1);
-        expect(handle.runSync(service.getStatus())).toEqual({
+        expect(handle.runSync(service.getStatus)).toEqual({
           kind: "installed",
           version: SEGMENTER.pin.version,
           binary: { directory: "chinese-segmenter", name: CACHED },
@@ -222,9 +222,9 @@ describe("Managed Binary with a bare .wasm pin", () => {
         );
         const { service, handle } = opened;
 
-        await expect(handle.runPromise(service.install())).rejects.toThrow();
+        await expect(handle.runPromise(service.install)).rejects.toThrow();
 
-        expect(handle.runSync(service.getStatus())).toEqual({
+        expect(handle.runSync(service.getStatus)).toEqual({
           kind: "failed",
           failure: {
             code: "hash-mismatch",
@@ -243,26 +243,22 @@ describe("Managed Binary with a bare .wasm pin", () => {
         const device = memoryDevice();
         {
           await using first = await open(SEGMENTER, device);
-          first.handle.runSync(first.service.decline());
-          expect(first.handle.runSync(first.service.getStatus())).toEqual({
+          first.handle.runSync(first.service.decline);
+          expect(first.handle.runSync(first.service.getStatus)).toEqual({
             kind: "declined",
           });
         }
 
         await using restarted = await open(SEGMENTER, device);
-        expect(restarted.handle.runSync(restarted.service.getStatus())).toEqual(
-          {
-            kind: "declined",
-          },
-        );
+        expect(restarted.handle.runSync(restarted.service.getStatus)).toEqual({
+          kind: "declined",
+        });
 
-        await restarted.handle.runPromise(restarted.service.install());
-        await restarted.handle.runPromise(restarted.service.uninstall());
-        expect(restarted.handle.runSync(restarted.service.getStatus())).toEqual(
-          {
-            kind: "absent",
-          },
-        );
+        await restarted.handle.runPromise(restarted.service.install);
+        await restarted.handle.runPromise(restarted.service.uninstall);
+        expect(restarted.handle.runSync(restarted.service.getStatus)).toEqual({
+          kind: "absent",
+        });
       }),
   );
 
@@ -273,12 +269,12 @@ describe("Managed Binary with a bare .wasm pin", () => {
         const device = memoryDevice();
         await using opened = await open(SEGMENTER, device);
         const { service, handle } = opened;
-        await handle.runPromise(service.install());
+        await handle.runPromise(service.install);
 
-        await handle.runPromise(service.uninstall());
+        await handle.runPromise(service.uninstall);
 
         expect(device.names(SEGMENTER.id)).toEqual([]);
-        expect(handle.runSync(service.getStatus())).toEqual({ kind: "absent" });
+        expect(handle.runSync(service.getStatus)).toEqual({ kind: "absent" });
       }),
   );
 
@@ -294,7 +290,7 @@ describe("Managed Binary with a bare .wasm pin", () => {
         await using opened = await open(SEGMENTER, device);
         const { service, handle } = opened;
 
-        await handle.runPromise(service.install());
+        await handle.runPromise(service.install);
 
         expect(device.names(SEGMENTER.id)).toEqual([CACHED, inFlight].sort());
       }),
@@ -308,26 +304,26 @@ describe("two Managed Binaries on one device", () => {
       await using segmenter = await open(SEGMENTER, device);
       await using other = await open(OTHER, device);
 
-      await segmenter.handle.runPromise(segmenter.service.install());
+      await segmenter.handle.runPromise(segmenter.service.install);
 
       expect(
-        segmenter.handle.runSync(segmenter.service.getStatus()),
+        segmenter.handle.runSync(segmenter.service.getStatus),
       ).toMatchObject({ kind: "installed" });
-      expect(other.handle.runSync(other.service.getStatus())).toEqual({
+      expect(other.handle.runSync(other.service.getStatus)).toEqual({
         kind: "absent",
       });
       expect(device.names(OTHER.id)).toEqual([]);
 
-      await other.handle.runPromise(other.service.install());
+      await other.handle.runPromise(other.service.install);
       expect(device.names(SEGMENTER.id)).toEqual([CACHED]);
       expect(device.names(OTHER.id)).toEqual([`${OTHER.pin.sha256}.wasm`]);
 
-      await segmenter.handle.runPromise(segmenter.service.uninstall());
+      await segmenter.handle.runPromise(segmenter.service.uninstall);
 
-      expect(segmenter.handle.runSync(segmenter.service.getStatus())).toEqual({
+      expect(segmenter.handle.runSync(segmenter.service.getStatus)).toEqual({
         kind: "absent",
       });
-      expect(other.handle.runSync(other.service.getStatus())).toMatchObject({
+      expect(other.handle.runSync(other.service.getStatus)).toMatchObject({
         kind: "installed",
       });
       expect(device.names(OTHER.id)).toEqual([`${OTHER.pin.sha256}.wasm`]);
@@ -339,16 +335,16 @@ describe("two Managed Binaries on one device", () => {
       const device = memoryDevice();
       {
         await using segmenter = await open(SEGMENTER, device);
-        segmenter.handle.runSync(segmenter.service.decline());
+        segmenter.handle.runSync(segmenter.service.decline);
       }
 
       await using segmenter = await open(SEGMENTER, device);
       await using other = await open(OTHER, device);
 
-      expect(segmenter.handle.runSync(segmenter.service.getStatus())).toEqual({
+      expect(segmenter.handle.runSync(segmenter.service.getStatus)).toEqual({
         kind: "declined",
       });
-      expect(other.handle.runSync(other.service.getStatus())).toEqual({
+      expect(other.handle.runSync(other.service.getStatus)).toEqual({
         kind: "absent",
       });
     }),

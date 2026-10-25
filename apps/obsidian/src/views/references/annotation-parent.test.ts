@@ -70,9 +70,9 @@ it("#1704 refreshes an Annotation Citation's parent in References after a databa
       binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
         "PandocEngine",
         {
-          getStatus: () => Effect.succeed({ kind: "absent" }),
+          getStatus: Effect.succeed({ kind: "absent" }),
           changes: Stream.empty,
-          decline: () => Effect.void,
+          decline: Effect.void,
         },
       ),
       runSync: Effect.runSync,

@@ -61,10 +61,10 @@ export function plainZoteroReads(
     acquireRead: () => acquireReadLease(service, bridge),
     refresh: async () => {
       if (bridge.closed()) return;
-      valueOr(await bridge.runPromiseExit(service.refresh()), undefined);
+      valueOr(await bridge.runPromiseExit(service.refresh), undefined);
     },
     notifyExternalChange: () => {
-      if (!bridge.closed()) runtime.runFork(service.notifyExternalChange());
+      if (!bridge.closed()) runtime.runFork(service.notifyExternalChange);
     },
     changes: service.changes,
     "refresh-requested": refreshRequested(service),

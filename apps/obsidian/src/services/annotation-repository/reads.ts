@@ -12,7 +12,7 @@ export async function refreshDatabase(
   db: Pick<ZoteroReads["Service"], "refresh">,
 ): Promise<void> {
   if (bridge.closed()) return;
-  valueOr(await bridge.runPromiseExit(db.refresh()), undefined);
+  valueOr(await bridge.runPromiseExit(db.refresh), undefined);
 }
 
 export async function readHeld<T>(

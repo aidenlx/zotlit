@@ -59,10 +59,10 @@ function binary(status: ManagedBinaryStatus): ManagedBinaryActions & {
     binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
       "ManagedBinary",
       {
-        getStatus: () => Effect.succeed(status),
+        getStatus: Effect.succeed(status),
         changes: Stream.empty,
-        install,
-        uninstall,
+        install: Effect.suspend(install),
+        uninstall: Effect.suspend(uninstall),
       },
     ),
     runSync: Effect.runSync,

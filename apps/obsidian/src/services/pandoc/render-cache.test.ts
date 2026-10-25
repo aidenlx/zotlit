@@ -72,7 +72,7 @@ it.effect.each(["Profile", "preference override"] as const)(
               Layer.succeed(
                 PandocEngine,
                 stubService<PandocEngine["Service"]>("PandocEngine", {
-                  getStatus: () => Effect.succeed({ kind: "absent" }),
+                  getStatus: Effect.succeed({ kind: "absent" }),
                   changes: Stream.never,
                 }),
               ),
@@ -394,8 +394,8 @@ class PandocEngineStub {
   readonly binary = stubService<ManagedBinaryApi<CitationEngine>>(
     "PandocEngine",
     {
-      getStatus: () => Effect.sync(() => this.#status),
-      getEngine: () => Effect.promise(() => Promise.resolve(this.engine)),
+      getStatus: Effect.sync(() => this.#status),
+      getEngine: Effect.promise(() => Promise.resolve(this.engine)),
       changes: Stream.suspend(() =>
         this.#events.stream.pipe(
           Stream.map(() => this.#status),

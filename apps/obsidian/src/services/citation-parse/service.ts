@@ -36,7 +36,7 @@ export const layerCitationParse = Layer.effect(
       Effect.forkScoped({ startImmediately: true }),
     );
     yield* events
-      .consume(() => client.start())
+      .consume(() => client.start)
       .pipe(Effect.forkScoped({ startImmediately: true }));
     return CitationParse.of({
       // Untraced: a citation scan sends one request per note.

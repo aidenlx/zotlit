@@ -42,8 +42,8 @@ it.effect(
         cache({ itemKey: "ABCD2345", properties: { recursive } }),
       );
       host.metadataCache.change(file, cache({ itemKey: "ZZZ99999" }));
-      yield* index.whenSettled();
-      expect(yield* index.getIndexedItemKeys()).toEqual(["ZZZ99999"]);
+      yield* index.whenSettled;
+      expect(yield* index.getIndexedItemKeys).toEqual(["ZZZ99999"]);
     }),
 );
 
@@ -63,11 +63,11 @@ it.effect(
         cache({ itemKey: "ABCD2345", properties: { recursive } }),
       );
       const file = host.vault.renameFile("paper.txt", "paper.md");
-      yield* index.whenSettled();
-      expect(yield* index.getIndexedItemKeys()).toEqual([]);
+      yield* index.whenSettled;
+      expect(yield* index.getIndexedItemKeys).toEqual([]);
       host.metadataCache.change(file, cache({ itemKey: "ZZZ99999" }));
-      yield* index.whenSettled();
-      expect(yield* index.getIndexedItemKeys()).toEqual(["ZZZ99999"]);
+      yield* index.whenSettled;
+      expect(yield* index.getIndexedItemKeys).toEqual(["ZZZ99999"]);
     }),
 );
 
@@ -82,13 +82,13 @@ it.effect(
       });
       const index = yield* noteIndexOf(host.app);
       startup(host);
-      yield* index.whenIndexed();
+      yield* index.whenIndexed;
       host.metadataCache.change(
         host.vault.files.get("paper.md")!,
         cache({ itemKey: "ZZZ99999" }),
       );
-      yield* index.whenSettled();
-      expect(yield* index.getIndexedItemKeys()).toEqual(["ZZZ99999"]);
+      yield* index.whenSettled;
+      expect(yield* index.getIndexedItemKeys).toEqual(["ZZZ99999"]);
     }),
 );
 
@@ -102,7 +102,7 @@ it.effect(
         { enabledAtRuntime: true },
       );
       const index = yield* noteIndexOf(host.app);
-      yield* index.whenIndexed();
+      yield* index.whenIndexed;
       const changes = yield* Queue.unbounded<NoteIndexChange>();
       yield* Stream.runForEach(index.changes, (change) =>
         Queue.offer(changes, change),
@@ -111,8 +111,8 @@ it.effect(
       host.metadataCache.change(file, cache({ itemKey: "ABCD2345" }));
       host.vault.deleteFile("paper.md");
       host.metadataCache.change(file, cache({ itemKey: "ZZZ99999" }));
-      yield* index.whenSettled();
-      expect(yield* index.getIndexedItemKeys()).toEqual(["ZZZ99999"]);
+      yield* index.whenSettled;
+      expect(yield* index.getIndexedItemKeys).toEqual(["ZZZ99999"]);
       const received: NoteIndexChange[] = [];
       for (let i = 0; i < 5; i++) received.push(yield* Queue.take(changes));
       expect(received.map((change) => change.type)).toEqual([
@@ -155,9 +155,9 @@ it.effect(
         "paper.md": cache({ itemKey: "ABCD2345" }),
       });
       const index = yield* noteIndexOf(host.app);
-      const pending = yield* index
-        .whenIndexed()
-        .pipe(Effect.forkChild({ startImmediately: true }));
+      const pending = yield* index.whenIndexed.pipe(
+        Effect.forkChild({ startImmediately: true }),
+      );
       expect(pending.pollUnsafe()).toBeUndefined();
       host.workspace.layoutReady();
       expect(pending.pollUnsafe()).toBeUndefined();
@@ -180,14 +180,14 @@ it.effect("whenSettled waits for queued renames to restore their keys", () =>
       { enabledAtRuntime: true },
     );
     const index = yield* noteIndexOf(host.app);
-    yield* index.whenSettled();
+    yield* index.whenSettled;
     host.vault.renameFile("first.md", "first.txt");
     host.vault.renameFile("second.md", "second.txt");
-    expect(yield* index.getIndexedItemKeys()).toEqual([]);
+    expect(yield* index.getIndexedItemKeys).toEqual([]);
     host.vault.renameFile("first.txt", "first.md");
     host.vault.renameFile("second.txt", "second.md");
-    yield* index.whenSettled();
-    expect(yield* index.getIndexedItemKeys()).toEqual(["ABCD2345", "ZZZ99999"]);
+    yield* index.whenSettled;
+    expect(yield* index.getIndexedItemKeys).toEqual(["ABCD2345", "ZZZ99999"]);
   }),
 );
 
@@ -208,14 +208,14 @@ it.effect(
       );
       const index = Context.get(context, NoteIndex);
       host.vault.renameFile("paper.txt", "paper.md");
-      const pending = yield* index
-        .whenSettled()
-        .pipe(Effect.forkChild({ startImmediately: true }));
+      const pending = yield* index.whenSettled.pipe(
+        Effect.forkChild({ startImmediately: true }),
+      );
       expect(pending.pollUnsafe()).toBeUndefined();
       yield* Scope.close(scope, Exit.void);
       yield* Fiber.join(pending);
-      yield* index.whenSettled();
-      expect(yield* index.getIndexedItemKeys()).toEqual([]);
+      yield* index.whenSettled;
+      expect(yield* index.getIndexedItemKeys).toEqual([]);
     }),
 );
 
@@ -232,7 +232,7 @@ it.effect("scope close stops metadata and vault updates", () =>
     );
     const context = yield* Layer.buildWithScope(noteIndexOver(host.app), scope);
     const index = Context.get(context, NoteIndex);
-    yield* index.whenIndexed();
+    yield* index.whenIndexed;
     const file = host.vault.files.get("paper.md")!;
     expect(yield* index.getNotesByItemKey("ABCD2345")).toEqual([file]);
     yield* Scope.close(scope, Exit.void);
@@ -252,7 +252,7 @@ it.effect(
         { enabledAtRuntime: true },
       );
       const index = yield* noteIndexOf(host.app);
-      yield* index.whenIndexed();
+      yield* index.whenIndexed;
       const changes = yield* Queue.unbounded<NoteIndexChange>();
       yield* Stream.runForEach(index.changes, (change) =>
         Queue.offer(changes, change),
@@ -266,7 +266,7 @@ it.effect(
       });
       host.vault.deleteFile("paper.md");
       expect(yield* Queue.take(changes)).toEqual({ type: "changed", file });
-      expect(yield* index.getIndexedItemKeys()).toEqual([]);
+      expect(yield* index.getIndexedItemKeys).toEqual([]);
     }),
 );
 
@@ -285,11 +285,11 @@ it.effect.each(["layout", "clean-cache"] as const)(
         scope,
       );
       const index = Context.get(context, NoteIndex);
-      const pending = yield* index.whenIndexed().pipe(Effect.forkChild);
+      const pending = yield* index.whenIndexed.pipe(Effect.forkChild);
       if (phase !== "layout") host.workspace.layoutReady();
       yield* Scope.close(scope, Exit.void);
       yield* Fiber.join(pending);
       startup(host);
-      expect(yield* index.getIndexedItemKeys()).toEqual([]);
+      expect(yield* index.getIndexedItemKeys).toEqual([]);
     }),
 );

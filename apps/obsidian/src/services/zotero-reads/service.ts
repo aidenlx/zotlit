@@ -71,11 +71,11 @@ export class ZoteroReads extends Context.Service<
       DbUnavailable | RpcClientError.RpcClientError,
       Scope.Scope
     >;
-    refresh(): Effect.Effect<
+    readonly refresh: Effect.Effect<
       void,
       DbUnavailable | RpcClientError.RpcClientError
     >;
-    notifyExternalChange(): Effect.Effect<void>;
+    readonly notifyExternalChange: Effect.Effect<void>;
   }
 >()("zotlit/zotero-reads/ZoteroReads") {}
 
@@ -237,26 +237,26 @@ export function layerZoteroReads<R>(
         events: Stream.fromPubSub(events),
         reads: bindReads(client),
         snapshot,
-        refresh: Effect.fn("ZoteroReads.refresh")(function* () {
+        refresh: Effect.gen(function* () {
           if (closed) return;
           yield* PubSub.publish(events, { _tag: "refresh-requested" });
           yield* client.Refresh();
-        }),
-        notifyExternalChange: Effect.fn("ZoteroReads.notifyExternalChange")(
-          function* () {
-            if (closed) return;
-            yield* PubSub.publish(events, { _tag: "refresh-requested" });
-            yield* client
-              .NotifyExternalChange()
-              .pipe(
-                Effect.catchCause((error) =>
-                  Effect.logWarning(
-                    "External change signal not delivered",
-                  ).pipe(Effect.annotateLogs({ error })),
+        }).pipe(Effect.withSpan("ZoteroReads.refresh")),
+        notifyExternalChange: Effect.gen(function* () {
+          if (closed) return;
+          yield* PubSub.publish(events, { _tag: "refresh-requested" });
+          yield* client
+            .NotifyExternalChange()
+            .pipe(
+              Effect.catchCause((error) =>
+                Effect.logWarning("External change signal not delivered").pipe(
+                  Effect.annotateLogs({ error }),
                 ),
-              );
-          },
+              ),
+            );
+        }).pipe(
           withLogCategory("zotero-reads"),
+          Effect.withSpan("ZoteroReads.notifyExternalChange"),
         ),
       });
     }).pipe(withLogCategory("zotero-reads")),

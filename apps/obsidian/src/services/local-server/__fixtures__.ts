@@ -35,8 +35,8 @@ export async function buildLocalServer(
   const noteIndexLayer = Layer.succeed(
     NoteIndex,
     stubService<NoteIndex["Service"]>("NoteIndex", {
-      whenIndexed: () => Effect.void,
-      getIndexedItemKeys: () => Effect.succeed(["ABCD2345"]),
+      whenIndexed: Effect.void,
+      getIndexedItemKeys: Effect.succeed(["ABCD2345"]),
     }),
   );
   const runtime = buildRuntime(

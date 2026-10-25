@@ -119,7 +119,7 @@ export class WelcomeBanner extends Component {
   #keep(patch: SettingsPatch): void {
     const { bridge, settings } = this.#deps;
     bridge.runSync(settings.update(patch));
-    bridge.runPromise(settings.flush()).catch((error: unknown) => {
+    bridge.runPromise(settings.flush).catch((error: unknown) => {
       logger.warn("The Welcome View banner could not keep its state", {
         error,
       });
@@ -135,8 +135,8 @@ export class WelcomeBanner extends Component {
     const { bridge, release } = this.#deps;
     this.#store.setState({ converted: false });
     try {
-      bridge.runSync(release.acknowledgeMigration());
-      bridge.runSync(release.acknowledgeUpdate());
+      bridge.runSync(release.acknowledgeMigration);
+      bridge.runSync(release.acknowledgeUpdate);
     } catch (error) {
       logger.warn("The Welcome View banner could not acknowledge the release", {
         error,
@@ -267,8 +267,8 @@ export class WelcomeBanner extends Component {
       dismiss: () => this.dismiss(),
       showSteps: (shown) => this.#keep({ "welcome.steps-shown": shown }),
       openReleaseNote: () => {
-        void bridge.runPromise(release.openReleaseNote());
-        bridge.runSync(release.acknowledgeUpdate());
+        void bridge.runPromise(release.openReleaseNote);
+        bridge.runSync(release.acknowledgeUpdate);
       },
       ...this.#deps.setupActions,
       ...this.#host,

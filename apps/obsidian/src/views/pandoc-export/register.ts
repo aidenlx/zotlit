@@ -93,7 +93,7 @@ export async function runPandocExport(
 ): Promise<void> {
   const { app, bridge, pandocEngine, zoteroPref, settings } = deps;
   if (
-    pandocEngine.runSync(pandocEngine.binary.getStatus()).kind !== "installed"
+    pandocEngine.runSync(pandocEngine.binary.getStatus).kind !== "installed"
   ) {
     showEngineMissing(deps.openSettings);
     return;
@@ -167,9 +167,7 @@ export async function runPandocExport(
 
   let output: Uint8Array;
   try {
-    const engine = await pandocEngine.runPromise(
-      pandocEngine.binary.getEngine(),
-    );
+    const engine = await pandocEngine.runPromise(pandocEngine.binary.getEngine);
     if (!engine) return;
     const result = await exportCitedDocument(
       {

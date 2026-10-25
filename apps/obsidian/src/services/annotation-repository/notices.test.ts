@@ -23,14 +23,12 @@ function seam() {
       capabilityChanges: Stream.never,
       annotationChanged: Stream.never,
       writeConflicts: Stream.never,
-      probe: vi.fn(() =>
-        Effect.promise(async () => {
-          ran.push("probe");
-          await new Promise<void>((resolve) => {
-            release = resolve;
-          });
-        }),
-      ),
+      probe: Effect.promise(async () => {
+        ran.push("probe");
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      }),
     },
     bridge,
     writes: {
@@ -82,7 +80,7 @@ function answering(...answers: LocalApiResult<void>[]) {
       capabilityChanges: Stream.never,
       annotationChanged: Stream.never,
       writeConflicts: Stream.never,
-      probe: () => Effect.void,
+      probe: Effect.void,
     },
     bridge,
     writes: { authorize, on: () => () => undefined },

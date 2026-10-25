@@ -585,21 +585,19 @@ describe("CitationText", () => {
                   binary: stubService<ManagedBinaryApi<CitationEngine>>(
                     "PandocEngine",
                     {
-                      getStatus: () =>
-                        Effect.succeed({
-                          kind: "installed",
-                          version: "3.10",
-                          binary: {
-                            directory: "pandoc-engine",
-                            name: "pandoc.wasm",
-                          },
-                        }),
+                      getStatus: Effect.succeed({
+                        kind: "installed",
+                        version: "3.10",
+                        binary: {
+                          directory: "pandoc-engine",
+                          name: "pandoc.wasm",
+                        },
+                      }),
                       changes: Stream.empty,
-                      getEngine: () =>
-                        Effect.succeed({
-                          renderCitations,
-                          renderBibliography,
-                        } as never),
+                      getEngine: Effect.succeed({
+                        renderCitations,
+                        renderBibliography,
+                      } as never),
                     },
                   ),
                 },

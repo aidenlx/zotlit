@@ -33,9 +33,9 @@ it.live("measures metadata event dispatch (#1705)", () =>
             type === "ignored" ? txt : file,
             type === "changed" && i % 2 ? b : a,
           );
-        yield* index.whenSettled();
+        yield* index.whenSettled;
         if (run >= 0) samples.push(performance.now() - start);
-        expect(yield* index.getIndexedItemKeys()).toEqual([
+        expect(yield* index.getIndexedItemKeys).toEqual([
           type === "changed" ? "ZZZ99999" : "ABCD2345",
         ]);
       }

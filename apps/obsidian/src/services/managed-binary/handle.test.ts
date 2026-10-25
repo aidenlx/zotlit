@@ -44,9 +44,9 @@ it.effect(
         },
       );
       const { handle, runtime, service } = binary;
-      await handle.runPromise(service.install());
-      await handle.runPromise(service.getEngine());
-      const snapshot = handle.runSync(service.getStatus());
+      await handle.runPromise(service.install);
+      await handle.runPromise(service.getEngine);
+      const snapshot = handle.runSync(service.getStatus);
       let changes = 0;
       const unsubscribe = subscribe(
         runtime,
@@ -57,15 +57,13 @@ it.effect(
       );
       await binary[Symbol.asyncDispose]();
       expect(releases).toBe(1);
-      expect(handle.runSync(service.getStatus())).toBe(snapshot);
-      await expect(handle.runPromise(service.getEngine())).resolves.toBeNull();
+      expect(handle.runSync(service.getStatus)).toBe(snapshot);
+      await expect(handle.runPromise(service.getEngine)).resolves.toBeNull();
+      await expect(handle.runPromise(service.install)).resolves.toBeUndefined();
       await expect(
-        handle.runPromise(service.install()),
+        handle.runPromise(service.uninstall),
       ).resolves.toBeUndefined();
-      await expect(
-        handle.runPromise(service.uninstall()),
-      ).resolves.toBeUndefined();
-      expect(() => handle.runSync(service.decline())).not.toThrow();
+      expect(() => handle.runSync(service.decline)).not.toThrow();
       const afterClose = subscribe(
         runtime,
         Stream.drop(service.changes, 1),
@@ -76,7 +74,7 @@ it.effect(
       afterClose();
       unsubscribe();
       expect(changes).toBe(0);
-      expect(handle.runSync(service.getStatus())).toBe(snapshot);
+      expect(handle.runSync(service.getStatus)).toBe(snapshot);
       expect(downloads).toBe(1);
       expect(starts).toBe(1);
       expect(device.names("test-binary")).toEqual([
@@ -115,13 +113,13 @@ it.effect("keeps a throwing listener subscribed for immediate changes", () =>
       () => {
         changes++;
         if (changes === 1) throw new Error("listener failed");
-        if (handle.runSync(service.getStatus()).kind === "installed")
+        if (handle.runSync(service.getStatus).kind === "installed")
           installed.resolve();
       },
     );
     expect(changes).toBe(0);
-    handle.runSync(service.decline());
-    const installing = handle.runPromise(service.install());
+    handle.runSync(service.decline);
+    const installing = handle.runPromise(service.install);
     download.resolve(bytes);
     await installing;
     await installed.promise;
@@ -163,23 +161,23 @@ it.effect("joins two installs and stops notifying after unsubscribe", () =>
       runtime,
       Stream.drop(service.changes, 1),
       () => {
-        seen.push(handle.runSync(service.getStatus()).kind);
-        if (handle.runSync(service.getStatus()).kind === "installing")
+        seen.push(handle.runSync(service.getStatus).kind);
+        if (handle.runSync(service.getStatus).kind === "installing")
           changed.resolve();
       },
     );
-    const first = handle.runPromise(service.install());
-    const second = handle.runPromise(service.install());
+    const first = handle.runPromise(service.install);
+    const second = handle.runPromise(service.install);
     await changed.promise;
-    const installing = handle.runSync(service.getStatus());
-    expect(handle.runSync(service.getStatus())).toBe(installing);
+    const installing = handle.runSync(service.getStatus);
+    expect(handle.runSync(service.getStatus)).toBe(installing);
     unsubscribe();
     download.resolve(bytes);
     await Promise.all([first, second]);
-    await handle.runPromise(service.uninstall());
-    handle.runSync(service.decline());
+    await handle.runPromise(service.uninstall);
+    handle.runSync(service.decline);
     expect(downloads).toBe(1);
     expect(seen).toEqual(["installing"]);
-    expect(handle.runSync(service.getStatus())).toEqual({ kind: "declined" });
+    expect(handle.runSync(service.getStatus)).toEqual({ kind: "declined" });
   }),
 );

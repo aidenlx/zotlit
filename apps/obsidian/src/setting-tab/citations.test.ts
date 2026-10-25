@@ -39,7 +39,7 @@ describe("hover settings", () => {
         binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
           "PandocEngine",
           {
-            getStatus: () => Effect.succeed({ kind: "absent" }),
+            getStatus: Effect.succeed({ kind: "absent" }),
           },
         ),
         runSync: Effect.runSync,
@@ -84,7 +84,7 @@ describe("citation source settings", () => {
         binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
           "PandocEngine",
           {
-            getStatus: () => Effect.succeed({ kind: "absent" }),
+            getStatus: Effect.succeed({ kind: "absent" }),
           },
         ),
         runSync: Effect.runSync,

@@ -155,7 +155,7 @@ it.effect(
         revision: null,
       });
       yield* TestClock.adjust("1 second");
-      yield* f.service.whenResolved();
+      yield* f.service.whenResolved;
       expect(yield* Stream.runHead(f.service.changes)).toMatchObject({
         value: { status: "fresh", revision: expect.any(String) },
       });

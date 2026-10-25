@@ -9,7 +9,7 @@ import type { ParseClient, ParseRequest } from "./client";
 import type { ParseConnection } from "./worker-host";
 
 export interface RecoveringParseClient extends ParseClient {
-  start(): Effect.Effect<void>;
+  readonly start: Effect.Effect<void>;
 }
 
 export const makeRecoveringParseClient = Effect.fnUntraced(function* (
@@ -96,7 +96,7 @@ export const makeRecoveringParseClient = Effect.fnUntraced(function* (
   );
 
   return {
-    start: Effect.fn("RecoveringParseClient.start")(function* () {
+    start: Effect.gen(function* () {
       if (isScopeClosed(lifetimeScope)) return;
       if (yield* Ref.getAndSet(started, true)) return;
       yield* serve.pipe(
@@ -108,7 +108,7 @@ export const makeRecoveringParseClient = Effect.fnUntraced(function* (
         ),
         Effect.forkIn(lifetimeScope, { startImmediately: true }),
       );
-    }),
+    }).pipe(Effect.withSpan("RecoveringParseClient.start")),
     parse: (request) =>
       parse(request).pipe(
         Effect.tapError((error) =>

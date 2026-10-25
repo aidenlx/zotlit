@@ -147,12 +147,12 @@ describe("Pandoc Engine", () => {
       const opened = await harness();
       const { service, handle, store, download } = opened;
 
-      await handle.runPromise(service.install());
+      await handle.runPromise(service.install);
 
       expect(download).toHaveBeenCalledWith(PIN.url);
       expect(store.files.get(CACHED_NAME)).toEqual(BINARY);
       expect([...store.files.keys()]).toEqual([CACHED_NAME]);
-      expect(handle.runSync(service.getStatus())).toEqual({
+      expect(handle.runSync(service.getStatus)).toEqual({
         kind: "installed",
         version: PIN.version,
         binary: { directory: "pandoc-engine", name: CACHED_NAME },
@@ -169,9 +169,9 @@ describe("Pandoc Engine", () => {
       });
       const { service, handle, store } = opened;
 
-      await expect(handle.runPromise(service.install())).rejects.toThrow();
+      await expect(handle.runPromise(service.install)).rejects.toThrow();
 
-      expect(handle.runSync(service.getStatus())).toEqual({
+      expect(handle.runSync(service.getStatus)).toEqual({
         kind: "failed",
         failure: {
           code: "download-failed",
@@ -193,13 +193,13 @@ describe("Pandoc Engine", () => {
         });
         const { service, handle, download } = opened;
 
-        expect(handle.runSync(service.getStatus())).toEqual({
+        expect(handle.runSync(service.getStatus)).toEqual({
           kind: "installed",
           version: PIN.version,
           binary: { directory: "pandoc-engine", name: CACHED_NAME },
         });
 
-        await handle.runPromise(service.install());
+        await handle.runPromise(service.install);
 
         expect(download).not.toHaveBeenCalled();
         await opened[Symbol.asyncDispose]();
@@ -212,8 +212,8 @@ describe("Pandoc Engine", () => {
       const { service, handle, download } = opened;
 
       await Promise.all([
-        handle.runPromise(service.install()),
-        handle.runPromise(service.install()),
+        handle.runPromise(service.install),
+        handle.runPromise(service.install),
       ]);
 
       expect(download).toHaveBeenCalledTimes(1);
@@ -235,11 +235,11 @@ describe("Pandoc Engine", () => {
         });
         const { service, handle, store } = opened;
 
-        await handle.runPromise(service.install());
+        await handle.runPromise(service.install);
 
         expect(store.files.get(CACHED_NAME)).toEqual(BINARY);
         expect([...store.files.keys()]).toEqual([CACHED_NAME]);
-        expect(handle.runSync(service.getStatus())).toEqual({
+        expect(handle.runSync(service.getStatus)).toEqual({
           kind: "installed",
           version: PIN.version,
           binary: { directory: "pandoc-engine", name: CACHED_NAME },
@@ -264,14 +264,14 @@ describe("Pandoc Engine", () => {
         });
         const { service, handle, store } = opened;
 
-        const install = handle.runPromise(service.install());
-        const uninstall = handle.runPromise(service.uninstall());
+        const install = handle.runPromise(service.install);
+        const uninstall = handle.runPromise(service.uninstall);
         arrive();
         await install;
         await uninstall;
 
         expect([...store.files.keys()]).toEqual([]);
-        expect(handle.runSync(service.getStatus())).toEqual({ kind: "absent" });
+        expect(handle.runSync(service.getStatus)).toEqual({ kind: "absent" });
         await opened[Symbol.asyncDispose]();
       }),
   );
@@ -287,12 +287,12 @@ describe("Pandoc Engine", () => {
         listener,
       );
 
-      await handle.runPromise(service.install());
+      await handle.runPromise(service.install);
       expect(listener.mock.calls.length).toBeGreaterThanOrEqual(2);
 
       unsubscribe();
-      await handle.runPromise(service.uninstall());
-      expect(handle.runSync(service.getStatus())).toEqual({ kind: "absent" });
+      await handle.runPromise(service.uninstall);
+      expect(handle.runSync(service.getStatus)).toEqual({ kind: "absent" });
       expect(listener.mock.calls.length).toBeGreaterThanOrEqual(2);
       await opened[Symbol.asyncDispose]();
     }),
@@ -305,11 +305,11 @@ describe("Pandoc Engine", () => {
         const opened = await harness();
         const { service, handle, createEngine } = opened;
 
-        await expect(handle.runPromise(service.getEngine())).rejects.toThrow(
+        await expect(handle.runPromise(service.getEngine)).rejects.toThrow(
           /not installed/,
         );
 
-        expect(handle.runSync(service.getStatus())).toEqual({ kind: "absent" });
+        expect(handle.runSync(service.getStatus)).toEqual({ kind: "absent" });
         expect(createEngine).not.toHaveBeenCalled();
         await opened[Symbol.asyncDispose]();
       }),
@@ -325,21 +325,21 @@ describe("Pandoc Engine", () => {
           .mockResolvedValue(fakeEngine());
         const opened = await harness({ createEngine });
         const { service, handle } = opened;
-        await handle.runPromise(service.install());
+        await handle.runPromise(service.install);
 
-        await expect(handle.runPromise(service.getEngine())).rejects.toThrow(
+        await expect(handle.runPromise(service.getEngine)).rejects.toThrow(
           /bad magic/,
         );
-        expect(handle.runSync(service.getStatus())).toEqual({
+        expect(handle.runSync(service.getStatus)).toEqual({
           kind: "failed",
           failure: { code: "init-failed", detail: "CompileError: bad magic" },
         });
 
         // Re-installing finds the content-addressed binary still cached and moves
         // the status back to `installed`, so the engine can be tried again.
-        await handle.runPromise(service.install());
+        await handle.runPromise(service.install);
         await expect(
-          handle.runPromise(service.getEngine()),
+          handle.runPromise(service.getEngine),
         ).resolves.toBeDefined();
         await opened[Symbol.asyncDispose]();
       }),
@@ -360,18 +360,16 @@ describe("Pandoc Engine", () => {
       const listener = vi.fn();
       subscribe(runtime, Stream.drop(service.changes, 1), listener);
 
-      await expect(handle.runPromise(service.getEngine())).rejects.toThrow(
+      await expect(handle.runPromise(service.getEngine)).rejects.toThrow(
         /bad magic/,
       );
 
       expect(store.files.has(CACHED_NAME)).toBe(false);
-      expect(handle.runSync(service.getStatus())).toEqual({ kind: "absent" });
+      expect(handle.runSync(service.getStatus)).toEqual({ kind: "absent" });
       expect(listener).toHaveBeenCalled();
 
-      await handle.runPromise(service.install());
-      await expect(
-        handle.runPromise(service.getEngine()),
-      ).resolves.toBeDefined();
+      await handle.runPromise(service.install);
+      await expect(handle.runPromise(service.getEngine)).resolves.toBeDefined();
       await opened[Symbol.asyncDispose]();
     }),
   );
@@ -383,10 +381,10 @@ describe("Pandoc Engine", () => {
         createEngine: () => Promise.resolve(fakeEngine(dispose)),
       });
       const { service, handle, createEngine } = opened;
-      await handle.runPromise(service.install());
+      await handle.runPromise(service.install);
 
-      const engine = await handle.runPromise(service.getEngine());
-      expect(await handle.runPromise(service.getEngine())).toBe(engine);
+      const engine = await handle.runPromise(service.getEngine);
+      expect(await handle.runPromise(service.getEngine)).toBe(engine);
       expect(createEngine).toHaveBeenCalledTimes(1);
       const [passed] = createEngine.mock.calls[0]!;
       expect(passed).toBeInstanceOf(Blob);
@@ -404,10 +402,10 @@ describe("Pandoc Engine", () => {
         createEngine: () => Promise.resolve(fakeEngine(dispose)),
       });
       const { service, handle } = opened;
-      await handle.runPromise(service.install());
-      await handle.runPromise(service.getEngine());
+      await handle.runPromise(service.install);
+      await handle.runPromise(service.getEngine);
 
-      await handle.runPromise(service.uninstall());
+      await handle.runPromise(service.uninstall);
 
       expect(dispose).toHaveBeenCalledOnce();
       await opened[Symbol.asyncDispose]();

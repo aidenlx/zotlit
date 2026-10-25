@@ -341,14 +341,13 @@ beforeEach(async () => {
         binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
           "PandocEngine",
           {
-            getStatus: () =>
-              Effect.succeed({
-                kind: "installed",
-                version: "test",
-                binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
-              }),
+            getStatus: Effect.succeed({
+              kind: "installed",
+              version: "test",
+              binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
+            }),
             changes: Stream.empty,
-            decline: () => Effect.void,
+            decline: Effect.void,
           },
         ),
         runSync: Effect.runSync,

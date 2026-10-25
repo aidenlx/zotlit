@@ -104,12 +104,12 @@ function cachedBinaryName(pin: BinaryPin): string {
 
 /** Effect-native operations; the layer owns startup, installs, and engines. */
 export interface ManagedBinaryApi<Engine extends Disposable | AsyncDisposable> {
-  getStatus(): Effect.Effect<ManagedBinaryStatus>;
+  readonly getStatus: Effect.Effect<ManagedBinaryStatus>;
   readonly changes: Stream.Stream<ManagedBinaryStatus>;
-  getEngine(): Effect.Effect<Engine | null, Error>;
-  install(): Effect.Effect<void, Error>;
-  uninstall(): Effect.Effect<void, Error>;
-  decline(): Effect.Effect<void>;
+  readonly getEngine: Effect.Effect<Engine | null, Error>;
+  readonly install: Effect.Effect<void, Error>;
+  readonly uninstall: Effect.Effect<void, Error>;
+  readonly decline: Effect.Effect<void>;
 }
 
 /** One descriptor becomes one independently scoped service under its own tag. */
@@ -166,7 +166,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
       withLogCategory(...binary.logCategory),
     );
   const isCached = Effect.fn("ManagedBinary.isCached")(function* () {
-    return yield* store.list().pipe(
+    return yield* store.list.pipe(
       Effect.map((names) => names.includes(name)),
       Effect.catch((error) =>
         log("Cannot read the binary cache", { error }, "warn").pipe(
@@ -268,7 +268,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
     }
   });
   yield* Effect.addFinalizer(dropEngine);
-  const getEngine = Effect.fn("ManagedBinary.getEngine")(function* () {
+  const getEngine = Effect.gen(function* () {
     if (closed) return null;
     if (!engine) {
       if ((yield* SubscriptionRef.get(status)).kind !== "installed")
@@ -292,7 +292,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
         }),
       ),
     );
-  });
+  }).pipe(Effect.withSpan("ManagedBinary.getEngine"));
   const fetchBinary = Effect.fn("ManagedBinary.fetchBinary")(function* () {
     const { url, sha256 } = binary.pin;
     yield* log("Downloading the binary", { url });
@@ -318,7 +318,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   });
   const prune = Effect.fn("ManagedBinary.prune")(
     function* () {
-      for (const entry of yield* store.list()) {
+      for (const entry of yield* store.list) {
         if (entry !== name && entry.endsWith(BINARY_SUFFIX))
           yield* store.remove(entry);
       }
@@ -351,7 +351,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
       binary: location,
     });
   });
-  const install = Effect.fn("ManagedBinary.install")(function* () {
+  const install = Effect.gen(function* () {
     if (closed) return;
     const current = yield* SubscriptionRef.get(status);
     if (current.kind === "installing")
@@ -370,8 +370,8 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
       binary: current.kind === "installed" ? current.binary : null,
     });
     yield* Fiber.join(fiber);
-  });
-  const uninstall = Effect.fn("ManagedBinary.uninstall")(function* () {
+  }).pipe(Effect.withSpan("ManagedBinary.install"));
+  const uninstall = Effect.gen(function* () {
     if (closed) return;
     const fiber = yield* Effect.forkIn(
       Effect.gen(function* () {
@@ -379,7 +379,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
         if (current.kind === "installing")
           yield* attempt(() => current.done).pipe(Effect.ignore);
         yield* dropEngine();
-        yield* store.clear();
+        yield* store.clear;
         yield* consent.saveLocalStorage(declinedKey, null);
         yield* log("Removed the binary cache", { pin: binary.pin });
         yield* setStatus({ kind: "absent" });
@@ -388,13 +388,13 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
       { uninterruptible: true },
     );
     yield* Fiber.join(fiber);
-  });
-  const decline = Effect.fn("ManagedBinary.decline")(function* () {
+  }).pipe(Effect.withSpan("ManagedBinary.uninstall"));
+  const decline = Effect.gen(function* () {
     if (closed) return;
     yield* consent.saveLocalStorage(declinedKey, true);
     if ((yield* SubscriptionRef.get(status)).kind === "absent")
       yield* setStatus({ kind: "declined" });
-  });
+  }).pipe(Effect.withSpan("ManagedBinary.decline"));
   yield* Effect.addFinalizer(() =>
     Effect.gen(function* () {
       closed = true;
@@ -402,7 +402,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
     }),
   );
   return {
-    getStatus: () => SubscriptionRef.get(status),
+    getStatus: SubscriptionRef.get(status),
     changes: SubscriptionRef.changes(status),
     getEngine,
     install,

@@ -1111,7 +1111,7 @@ it("opens no tag editor while no tag session can start", async () => {
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   // The repository forgets this device's write authorization before the reader
   // hears that editing is no longer writable.
-  await h.bridge.runPromise(h.localApiService.forgetAuthorization());
+  await h.bridge.runPromise(h.localApiService.forgetAuthorization);
   await h.repository.probe();
 
   expect(h.popup()).not.toBeNull();
@@ -1191,7 +1191,7 @@ it("falls back to the comment field, and closes the editor, when no draft can be
   click(h.page.div, ON_WORD);
   // The repository forgets this device's write authorization before the reader
   // hears that editing is no longer writable.
-  await h.bridge.runPromise(h.localApiService.forgetAuthorization());
+  await h.bridge.runPromise(h.localApiService.forgetAuthorization);
   await h.repository.probe();
 
   expect(h.popup()).not.toBeNull();

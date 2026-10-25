@@ -62,9 +62,9 @@ it.effect("releases the shared engine when its layer scope closes", () =>
       Effect.gen(function* () {
         const context = yield* Layer.build(layer);
         const binary = Context.get(context, TestBinary);
-        yield* binary.install();
-        const engine = yield* binary.getEngine();
-        expect(yield* binary.getEngine()).toBe(engine);
+        yield* binary.install;
+        const engine = yield* binary.getEngine;
+        expect(yield* binary.getEngine).toBe(engine);
         expect(releases).toBe(0);
       }),
     );
@@ -86,13 +86,13 @@ it.effect("publishes the current status and each later change", () =>
         { startImmediately: true },
       );
       expect(yield* Queue.take(statuses)).toEqual({ kind: "absent" });
-      yield* binary.decline();
+      yield* binary.decline;
       expect(yield* Queue.take(statuses)).toEqual({ kind: "declined" });
-      const install = yield* Effect.forkChild(binary.install());
+      const install = yield* Effect.forkChild(binary.install);
       expect((yield* Queue.take(statuses)).kind).toBe("installing");
       yield* Fiber.join(install);
       expect((yield* Queue.take(statuses)).kind).toBe("installed");
-      yield* binary.uninstall();
+      yield* binary.uninstall;
       expect(yield* Queue.take(statuses)).toEqual({ kind: "absent" });
     }),
   ),
@@ -125,9 +125,9 @@ it.effect.each([false, true])(
         }),
       ).pipe(Effect.provideService(Scope.Scope, scope));
       const binary = Context.get(context, TestBinary);
-      if (!startOnInstall) yield* binary.install();
+      if (!startOnInstall) yield* binary.install;
       const operation = yield* Effect.forkChild(
-        startOnInstall ? binary.install() : binary.getEngine(),
+        startOnInstall ? binary.install : binary.getEngine,
       );
       yield* Deferred.await(started);
       const close = yield* Effect.forkChild(Scope.close(scope, Exit.void));
@@ -164,7 +164,7 @@ it.effect("drives download, store, and consent Effects with TestClock", () =>
           Layer.succeed(ManagedBinaryPlatform, {
             openStore: () =>
               Effect.succeed({
-                list: () => Effect.sync(() => [...files.keys()]),
+                list: Effect.sync(() => [...files.keys()]),
                 read: (name: string) =>
                   Effect.sync(() =>
                     files.has(name) ? new Blob([files.get(name)!]) : undefined,
@@ -184,7 +184,7 @@ it.effect("drives download, store, and consent Effects with TestClock", () =>
                   Effect.sync(() => {
                     files.delete(name);
                   }),
-                clear: () => Effect.sync(() => files.clear()),
+                clear: Effect.sync(() => files.clear()),
               }),
             download: () => Effect.sleep("1 second").pipe(Effect.as(BYTES)),
             consent: {
@@ -198,23 +198,23 @@ it.effect("drives download, store, and consent Effects with TestClock", () =>
         ),
       );
       const binary = Context.get(yield* Layer.build(layer), TestBinary);
-      const installing = yield* Effect.forkChild(binary.install(), {
+      const installing = yield* Effect.forkChild(binary.install, {
         startImmediately: true,
       });
       expect(consent).toBeNull();
       yield* TestClock.adjust("1 second");
       yield* Deferred.await(writing);
       expect(files.size).toBe(0);
-      expect((yield* binary.getStatus()).kind).toBe("installing");
+      expect((yield* binary.getStatus).kind).toBe("installing");
       yield* TestClock.adjust("1 second");
       yield* Fiber.join(installing);
-      expect((yield* binary.getStatus()).kind).toBe("installed");
+      expect((yield* binary.getStatus).kind).toBe("installed");
       expect([...files.keys()]).toEqual([`${PIN.sha256}.wasm`]);
-      yield* binary.uninstall();
-      yield* binary.decline();
+      yield* binary.uninstall;
+      yield* binary.decline;
       expect(consent).toBe(true);
       expect(files.size).toBe(0);
-      expect((yield* binary.getStatus()).kind).toBe("declined");
+      expect((yield* binary.getStatus).kind).toBe("declined");
     }),
   ),
 );

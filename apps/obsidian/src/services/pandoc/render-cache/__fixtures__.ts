@@ -135,8 +135,8 @@ export async function bibliographyRenderFixture(
         Layer.succeed(
           PandocEngine,
           stubService<PandocEngine["Service"]>("PandocEngine", {
-            getStatus: () => options.pandocEngine.binary.getStatus(),
-            getEngine: () => options.pandocEngine.binary.getEngine(),
+            getStatus: options.pandocEngine.binary.getStatus,
+            getEngine: options.pandocEngine.binary.getEngine,
             changes: options.pandocEngine.binary.changes,
           }),
         ),

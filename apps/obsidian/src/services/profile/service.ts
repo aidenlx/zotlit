@@ -1523,18 +1523,18 @@ export const layerProfile = Layer.effect(
         },
         exportLiteratureNotePackSource: (...args) =>
           runPromise(template.exportLiteratureNotePackSource(...args)),
-        getPartialEntries: () => read(template.getPartialEntries()),
+        getPartialEntries: () => read(template.getPartialEntries),
         planPartialUnpack: (...args) =>
           read(template.planPartialUnpack(...args)),
         unpackPartials: (...args) =>
           runPromise(template.unpackPartials(...args)),
         getLiteratureNoteTemplateStatuses: () =>
-          read(template.getLiteratureNoteTemplateStatuses()),
+          read(template.getLiteratureNoteTemplateStatuses),
         waitUntilSettled: (...args) =>
           runPromise(template.waitUntilSettled(...args)),
       },
       noteIndex: {
-        whenIndexed: () => preflight(noteIndex.whenIndexed()),
+        whenIndexed: () => preflight(noteIndex.whenIndexed),
         getNotesByProfile: (selector) =>
           runSync(noteIndex.getNotesByProfile(selector)),
       },

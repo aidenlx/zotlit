@@ -113,8 +113,8 @@ const makeService = Effect.fnUntraced(function* (
         bridge.runSync(
           settings.updateDefaultLiteratureNoteProfileBindings(patch),
         ),
-      flush: () => bridge.runPromise(settings.flush()),
-      release: () => bridge.runSync(settings.release()),
+      flush: () => bridge.runPromise(settings.flush),
+      release: () => bridge.runSync(settings.release),
       changes: settings.changes,
     },
   };

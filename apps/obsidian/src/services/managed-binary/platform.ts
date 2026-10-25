@@ -16,7 +16,7 @@ export interface ManagedBinaryHostPorts {
 }
 
 export interface EffectBinaryStore {
-  list(): Effect.Effect<string[], Error>;
+  readonly list: Effect.Effect<string[], Error>;
   read(name: string): Effect.Effect<Blob | undefined, Error>;
   write(
     name: string,
@@ -24,7 +24,7 @@ export interface EffectBinaryStore {
   ): Effect.Effect<void, Error>;
   rename(from: string, to: string): Effect.Effect<void, Error>;
   remove(name: string): Effect.Effect<void, Error>;
-  clear(): Effect.Effect<void, Error>;
+  readonly clear: Effect.Effect<void, Error>;
 }
 
 export interface ManagedBinaryPorts {
@@ -110,12 +110,12 @@ function devicePorts(
     ) {
       const store = yield* Effect.sync(() => host.openStore(directory));
       return {
-        list: () => attempt(() => store.list()),
+        list: attempt(() => store.list()),
         read: (name) => attempt(() => store.read(name)),
         write: (name, bytes) => attempt(() => store.write(name, bytes)),
         rename: (from, to) => attempt(() => store.rename(from, to)),
         remove: (name) => attempt(() => store.remove(name)),
-        clear: () => attempt(() => store.clear()),
+        clear: attempt(() => store.clear()),
       } satisfies EffectBinaryStore;
     }),
     consent: {

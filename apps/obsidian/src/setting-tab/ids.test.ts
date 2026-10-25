@@ -89,7 +89,7 @@ function ctx(): SettingTabContext {
       binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
         "PandocEngine",
         {
-          getStatus: () => Effect.succeed({ kind: "absent" }),
+          getStatus: Effect.succeed({ kind: "absent" }),
           changes: Stream.empty,
         },
       ),
@@ -100,7 +100,7 @@ function ctx(): SettingTabContext {
       binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
         "ChineseSegmenter",
         {
-          getStatus: () => Effect.succeed({ kind: "absent" }),
+          getStatus: Effect.succeed({ kind: "absent" }),
           changes: Stream.empty,
         },
       ),
@@ -113,8 +113,8 @@ function ctx(): SettingTabContext {
     },
     writeAuthorization: {
       allowEditing: () => {},
-      forgetAuthorization: () => Effect.void,
-      remembered: () => Effect.succeed(false),
+      forgetAuthorization: Effect.void,
+      remembered: Effect.succeed(false),
     },
     requestUpdate: () => {},
   } as unknown as SettingTabContext;

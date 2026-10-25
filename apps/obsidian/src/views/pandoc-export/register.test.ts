@@ -162,23 +162,21 @@ function openVault({
         binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
           "PandocEngine",
           {
-            getStatus: () =>
-              Effect.succeed(
-                engineInstalled
-                  ? {
-                      kind: "installed",
-                      version: "test",
-                      binary: {
-                        directory: "pandoc-engine",
-                        name: "pandoc.wasm",
-                      },
-                    }
-                  : { kind: "absent" },
-              ),
-            getEngine: () =>
-              Effect.promise(getEngine).pipe(
-                Effect.map(() => ({ [Symbol.dispose]: () => undefined })),
-              ),
+            getStatus: Effect.succeed(
+              engineInstalled
+                ? {
+                    kind: "installed",
+                    version: "test",
+                    binary: {
+                      directory: "pandoc-engine",
+                      name: "pandoc.wasm",
+                    },
+                  }
+                : { kind: "absent" },
+            ),
+            getEngine: Effect.promise(getEngine).pipe(
+              Effect.map(() => ({ [Symbol.dispose]: () => undefined })),
+            ),
           },
         ),
         runSync: Effect.runSync,

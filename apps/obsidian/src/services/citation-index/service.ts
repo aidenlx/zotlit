@@ -273,7 +273,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
           ? inertObservation()
           : run(lookup.observe(changed)),
       whenResolved: () =>
-        runPromiseExit(lookup.whenResolved()).then(() => undefined),
+        runPromiseExit(lookup.whenResolved).then(() => undefined),
     };
     const joinSources = (
       citations: Parameters<typeof readReferenceSources>[1],

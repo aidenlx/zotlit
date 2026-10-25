@@ -1287,7 +1287,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     // dialog; only Allow editing does.
     if (editingLive(this.#capability())) return;
     this.#gesturing = this.#bridge
-      .runPromise(this.#annotations.probe())
+      .runPromise(this.#annotations.probe)
       .then(() => {
         if (this.#surfaces.disposed) return;
         if (this.#attachment.kind !== "resolved") return;

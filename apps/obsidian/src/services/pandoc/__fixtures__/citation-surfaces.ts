@@ -182,15 +182,14 @@ const WASM_PATH = join(
 function pandocEngineHandle(engine: CitationEngine) {
   return {
     binary: stubService<ManagedBinaryApi<CitationEngine>>("PandocEngine", {
-      getStatus: () =>
-        Effect.succeed({
+      getStatus: Effect.succeed({
           kind: "installed",
           version: "test",
           binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
         }),
       changes: Stream.empty,
-      getEngine: () => Effect.succeed(engine),
-      decline: () => Effect.void,
+      getEngine: Effect.succeed(engine),
+      decline: Effect.void,
     }),
     runSync: Effect.runSync,
     runPromise: Effect.runPromise,
