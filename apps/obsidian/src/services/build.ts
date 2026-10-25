@@ -6,6 +6,7 @@ import { DisposableAbortController } from "@/lib/disposables";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import { revealSetting } from "@/lib/open-settings";
+import { ZoteroHttp } from "@/lib/zotero-http";
 import { libraryTagNamesOf } from "@/services/database/library-tag-names";
 import {
   createProfileCreator,
@@ -166,6 +167,7 @@ export async function buildServices(
       zoteroPref: () => plainZoteroPref(runtime),
     })
     .useValue({ localServer: () => runtime.runSync(LocalServer) })
+    .useValue({ zoteroHttp: () => runtime.runSync(ZoteroHttp) })
     .useValue({
       chineseSegmenter: () =>
         bindManagedBinary(bridge, runtime.runSync(ChineseSegmenter)),

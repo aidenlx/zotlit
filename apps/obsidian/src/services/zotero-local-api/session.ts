@@ -5,8 +5,8 @@ import { parseIndexedKey } from "@zotlit/db";
 
 import { AbortError } from "@/lib/abort-error";
 import { getLogger } from "@/lib/log";
-import { parseJson, zoteroOrigin } from "@/lib/zotero-http";
-import type { ZoteroTransport } from "@/lib/zotero-http";
+import { parseJson, sendToZotero, zoteroOrigin } from "@/lib/zotero-http";
+import type { ZoteroHttp, ZoteroMethod, ZoteroRunner } from "@/lib/zotero-http";
 
 import {
   API_VERSION,
@@ -152,7 +152,17 @@ export type LocalApiEvent =
   | { readonly _tag: "write-refusals-retired" };
 
 export interface LocalApiSessionDeps {
-  fetch: ZoteroTransport;
+  /** The `ZoteroHttp` loopback client. */
+  http: ZoteroHttp["Service"];
+  /**
+   * Runs each exchange, from the context of the layer that holds the session
+   * but outside its Scope. A sent write must reach its answer, and a scope
+   * close must not interrupt it: the service makes writes uninterruptible, and
+   * a runner tied to the Scope (`scopedBridge`) would still interrupt the
+   * exchange fiber under them. Reads are abandoned through their signals and
+   * the session's read lifetime instead.
+   */
+  run: ZoteroRunner;
   /** Zotero's HTTP port. */
   httpPort: () => number | null;
   publish: (event: LocalApiEvent) => void;
@@ -187,7 +197,8 @@ type ProbeState = LocalApiState | { kind: "unprobed" };
  * @see apps/obsidian/docs/adr/0036-local-api-enablement-is-a-guided-manual-step-in-zotero.md
  */
 export class LocalApiSession implements AsyncDisposable {
-  readonly #fetch;
+  readonly #http;
+  readonly #run;
   readonly #httpPort;
   readonly #publish;
   readonly #credentials;
@@ -226,7 +237,8 @@ export class LocalApiSession implements AsyncDisposable {
   readonly #readLifetime = new AbortController();
 
   constructor({
-    fetch,
+    http,
+    run,
     httpPort,
     publish,
     credentials,
@@ -234,7 +246,8 @@ export class LocalApiSession implements AsyncDisposable {
       AbortSignal.timeout(PROBE_TIMEOUT.total("milliseconds")),
     now = () => Temporal.Now.instant(),
   }: LocalApiSessionDeps) {
-    this.#fetch = fetch;
+    this.#http = http;
+    this.#run = run;
     this.#httpPort = httpPort;
     this.#publish = publish;
     this.#credentials = credentials;
@@ -384,7 +397,7 @@ export class LocalApiSession implements AsyncDisposable {
       expectedServerID?: string;
       /** Background read Uses update state without edit notices. */
       silent?: boolean;
-      method: string;
+      method: ZoteroMethod;
       body?: string;
       headers?: Readonly<Record<string, string>>;
       signal?: AbortSignal;
@@ -1056,7 +1069,7 @@ export class LocalApiSession implements AsyncDisposable {
     options: {
       serverID: string | null;
       signal?: AbortSignal;
-      method?: string;
+      method?: ZoteroMethod;
       body?: string;
       headers?: Readonly<Record<string, string>>;
     },
@@ -1066,10 +1079,11 @@ export class LocalApiSession implements AsyncDisposable {
       logger.debug("Zotero runs on a port its profile cannot disclose");
       return { failure: { kind: "unreachable" } };
     }
-    const url = `${zoteroOrigin(port)}${path}`;
     const { serverID, signal, method, body } = options;
     try {
-      const response = await this.#fetch(url, {
+      const reply: ZoteroReply = await sendToZotero(this.#run, this.#http, {
+        port,
+        path,
         method,
         body,
         headers: {
@@ -1079,17 +1093,15 @@ export class LocalApiSession implements AsyncDisposable {
         },
         signal,
       });
-      const reply: ZoteroReply = {
-        status: response.status,
-        headers: response.headers,
-        text: await response.text(),
-      };
       const failure = classifyReply(reply, serverID);
       return failure ? { failure } : { value: reply };
     } catch (error) {
       if (AbortError.test(error))
         return { failure: { kind: "unknown-outcome" } };
-      logger.debug("Zotero's HTTP server did not answer", { url, error });
+      logger.debug("Zotero's HTTP server did not answer", {
+        url: `${zoteroOrigin(port)}${path}`,
+        error,
+      });
       return { failure: { kind: "unreachable" } };
     }
   }

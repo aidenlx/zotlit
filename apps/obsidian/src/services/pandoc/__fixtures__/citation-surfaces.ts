@@ -56,6 +56,7 @@ type ProfileFixture = Pick<Settings, "profiles" | "defaultDocument">;
 import { seedWorksSql } from "@/services/zotero-reads/test-utils";
 import { applyCitationPresentation } from "@/views/citation-presentation/presentation";
 import type { CitationPresentationChoice } from "@/views/citation-presentation/presentation";
+import { routeTableHttpClient } from "@/lib/http-client";
 import { runPandocExport } from "@/views/pandoc-export/register";
 import type { PandocExportDeps } from "@/views/pandoc-export/register";
 import { ReferencesView } from "@/views/references/view";
@@ -651,6 +652,10 @@ function exportAdapter({
       dataDir,
       get: () => true,
     } as unknown as PandocExportDeps["zoteroPref"],
+    // The bibliography fetch is mocked, so nothing reaches Zotero.
+    zoteroHttp: routeTableHttpClient(() => {
+      throw new Error("No Zotero in this fixture");
+    }),
     settings,
     bridge: settings.bridge,
     openSettings: () => undefined,
