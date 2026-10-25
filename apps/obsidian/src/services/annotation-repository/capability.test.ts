@@ -6,6 +6,7 @@ import type {
   WriteAuthorizationState,
 } from "@/services/zotero-local-api/service";
 
+import { cooldownFailureOf, utcAt } from "./__fixtures__/capability";
 import { editingCapabilityOf } from "./capability";
 import type { EditingCapability } from "./capability";
 
@@ -67,10 +68,7 @@ it.each<LocalApiFailure>([{ kind: "unauthorized" }, { kind: "denied" }])(
 );
 
 it("turns Zotero's cooldown into the instant it ends", () => {
-  const failure: LocalApiFailure = {
-    kind: "cooldown",
-    retryAfter: Temporal.Duration.from({ seconds: 97 }),
-  };
+  const failure: LocalApiFailure = cooldownFailureOf(97);
 
   expect(capabilityOf({ kind: "unavailable", failure })).toEqual({
     kind: "cooldown",
@@ -116,7 +114,10 @@ it("reads a library Zotero refuses writes to as read-only, whatever else holds",
 
 it("counts down Zotero's dialog cooldown only while it blocks the asking", () => {
   const cooldownUntil = NOW.add({ seconds: 44 });
-  const cooling = { ...NO_WRITES, cooldownUntil };
+  const cooling = {
+    ...NO_WRITES,
+    cooldownUntil: utcAt(cooldownUntil.epochMilliseconds),
+  };
 
   expect(
     capabilityOf(
@@ -136,7 +137,7 @@ it("counts down Zotero's dialog cooldown only while it blocks the asking", () =>
   expect(
     capabilityOf(
       { kind: "available", source: SOURCE, authorized: false },
-      { ...NO_WRITES, cooldownUntil: NOW },
+      { ...NO_WRITES, cooldownUntil: utcAt(NOW.epochMilliseconds) },
     ),
   ).toEqual({ kind: "authorization-required" });
 });

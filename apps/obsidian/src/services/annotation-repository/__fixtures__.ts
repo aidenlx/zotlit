@@ -1,4 +1,13 @@
-import { Context, Effect, Exit, Layer, PubSub, Scope, Stream } from "effect";
+import {
+  Context,
+  DateTime,
+  Effect,
+  Exit,
+  Layer,
+  PubSub,
+  Scope,
+  Stream,
+} from "effect";
 import { vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
@@ -12,6 +21,7 @@ import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
+import { toInstant } from "@/lib/effect-clock";
 import { buildRuntime } from "@/lib/effect-layer";
 import { ExcerptImages } from "@/services/excerpt-image/layer";
 import type { AvailableExcerpt } from "@/services/excerpt-image/service";
@@ -62,7 +72,7 @@ import type {
 } from "./repository";
 import { layerAnnotationRepository, AnnotationRepository } from "./service";
 
-export const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
+export const NOW = toInstant(DateTime.makeUnsafe("2026-09-16T15:52:21Z"));
 
 // The Fixture's own rows are the oracle: the same item ids, keys, types,
 // colours, sort indexes and positions it builds on `rougier-2014.pdf`, which
@@ -249,13 +259,14 @@ export async function setup(
   });
 
   const {
-    client: localApi,
+    disposable: localApiDisposable,
     service: localApiService,
+    bridge: localApiBridge,
     requests,
     serverEvents,
     prefEvents,
   } = await localApiClient(answers, clientOptions);
-  stack.use(localApi);
+  stack.use(localApiDisposable);
   const pref = Layer.succeed(
     ZoteroPref,
     stubService<ZoteroPref["Service"]>("ZoteroPref", {
@@ -322,8 +333,8 @@ export async function setup(
     acquireRead,
     excerptBaselines,
     queryClient,
-    localApi,
     localApiService,
+    localApiBridge,
     bridge,
     requests,
     serverEvents,

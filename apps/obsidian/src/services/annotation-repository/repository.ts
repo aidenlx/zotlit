@@ -25,11 +25,13 @@ import { yieldToMain } from "@/lib/yield-to-main";
 import { excerptFingerprint } from "@/services/excerpt-image/contract";
 import type { Held } from "@/services/query-client/service";
 import type { QueryClients } from "@/services/query-client/service";
-import type { LocalApiPort } from "@/services/zotero-local-api/port";
+import { cooldownFailure } from "@/services/zotero-local-api/plain";
 import type {
   LocalApiAnnotation,
   LocalApiFailure,
   LocalApiSource,
+  LocalApiState,
+  ZoteroLocalApi,
 } from "@/services/zotero-local-api/service";
 import {
   libraryPath,
@@ -63,7 +65,7 @@ import type {
 } from "./history";
 import { firstLockRefusal, lockOf } from "./lock";
 import type { AnnotationLock, LockedVerb, LockReason } from "./lock";
-import { readAll, readHeld, refreshDatabase } from "./reads";
+import { listLocalApi, readAll, readHeld, refreshDatabase } from "./reads";
 import {
   resolvesSilently,
   sameStoredGeometry,
@@ -525,11 +527,12 @@ export interface AnnotationRepositoryCoreDeps {
     "client" | "invalidate" | "keysUnder" | "peek" | "read"
   >;
   localApi: Pick<
-    LocalApiPort,
+    ZoteroLocalApi["Service"],
     | "authorizedSend"
+    | "capabilityChanges"
+    | "changes"
     | "demandSource"
     | "listAnnotations"
-    | "on"
     | "probe"
     | "readAnnotation"
     | "state"
@@ -928,9 +931,11 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
         void this.#refreshLocks();
       }),
     );
-    this.#stack.defer(this.#localApi.on("changed", () => this.#sourceMoved()));
     this.#stack.defer(
-      this.#localApi.on("capability-changed", () => {
+      this.#bridge.subscribe(this.#localApi.changes, () => this.#sourceMoved()),
+    );
+    this.#stack.defer(
+      this.#bridge.subscribe(this.#localApi.capabilityChanges, () => {
         for (const field of TEXT_FIELDS) {
           const drafts = this.#drafts[field];
           for (const [id, draft] of drafts) {
@@ -964,6 +969,14 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
   }
 
   readonly #publish;
+
+  #source(): LocalApiSource | null {
+    return this.#bridge.runSync(this.#localApi.demandSource);
+  }
+
+  #apiState(): LocalApiState {
+    return this.#bridge.runSync(this.#localApi.state);
+  }
 
   // After the plugin closes, a read helper answers as the bridge's `closed` says.
   #refreshDatabase(): Promise<void> {
@@ -1010,7 +1023,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
    * read again after a database change is let go on time all the same.
    */
   async #read(attachmentKey: string): Promise<AnnotationList | null> {
-    const source = this.#localApi.demandSource();
+    const source = this.#source();
     const binding = this.#databaseBindings.get(attachmentKey);
     if (
       source &&
@@ -1181,7 +1194,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
 
   /** Probes source availability, refreshes the active adapter, then reads it. */
   async #refresh(attachmentKey: string): Promise<AnnotationList | null> {
-    await this.#localApi.probe();
+    await this.#bridge.runPromise(this.#localApi.probe);
     if (this.#compatibleApiSource(attachmentKey) === null) {
       // A failed refresh keeps the previous database serving, so the read
       // below still answers; a database that cannot serve fails that read.
@@ -1237,7 +1250,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
    * anything announces itself through `capability-changed`.
    */
   async probe(): Promise<void> {
-    await this.#localApi.probe();
+    await this.#bridge.runPromise(this.#localApi.probe);
   }
 
   /**
@@ -1286,8 +1299,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
     annotationKey: string,
   ): DraftFields[F] | null {
     const serverID =
-      this.#localApi.demandSource()?.serverID ??
-      this.#draftSources[field].get(annotationKey);
+      this.#source()?.serverID ?? this.#draftSources[field].get(annotationKey);
     return serverID
       ? (this.#drafts[field].get(indexedID(serverID, annotationKey)) ?? null)
       : null;
@@ -1322,7 +1334,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
     annotationKey: string,
     text?: string,
   ): TextFieldDraft | null {
-    const source = this.#localApi.demandSource();
+    const source = this.#source();
     const standing = this.#draftFor(field, annotationKey);
     const held = standing ? null : this.#holding(annotationKey);
     if (!standing && (!source || !held)) return null;
@@ -1613,7 +1625,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
   editTags(annotationKey: string, names?: readonly string[]): TagDraft | null {
     const standing = this.tagDraftFor(annotationKey);
     if (standing?.state.kind === "pending") return standing;
-    const source = this.#localApi.demandSource();
+    const source = this.#source();
     const held = standing ? null : this.#holding(annotationKey);
     if (!standing && (!source || !held)) return null;
     const attachmentKey = standing?.attachmentKey ?? held!.attachmentKey;
@@ -1793,12 +1805,14 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
     const library = libraryPath(parsed);
     const request = createRequest(library, whole, this.#writeToken());
     const source = this.#compatibleApiSource(attachmentKey);
-    const reply = await this.#localApi.authorizedSend(request.path, {
-      library,
-      method: request.method,
-      headers: request.headers,
-      body: request.body,
-    });
+    const reply = await this.#bridge.runPromise(
+      this.#localApi.authorizedSend(request.path, {
+        library,
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+      }),
+    );
     if (!source || !(await this.#sourceStillBound(attachmentKey, source))) {
       return { kind: "failed", failure: { kind: "server-changed" } };
     }
@@ -2200,12 +2214,12 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
   #capability(attachmentKey: string | null): EditingCapability {
     const capability =
       attachmentKey !== null &&
-      this.#localApi.demandSource() &&
+      this.#source() &&
       !this.#compatibleApiSource(attachmentKey)
         ? ({ kind: "read-only", reason: "server-changed" } as const)
         : editingCapabilityOf(
-            this.#localApi.state,
-            this.#localApi.writeStateFor(attachmentKey),
+            this.#apiState(),
+            this.#bridge.runSync(this.#localApi.writeStateFor(attachmentKey)),
             this.#now,
           );
     const described = describeCapability(capability);
@@ -2257,7 +2271,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
     // drawn and a Write Conflict standing on the Annotation stays.
     const locked = this.#lockRefusal(annotationKey, command.write);
     if (locked) return { kind: "failed", failure: locked };
-    const expectedServerID = this.#localApi.demandSource()?.serverID ?? null;
+    const expectedServerID = this.#source()?.serverID ?? null;
     const generation = this.#commandGeneration;
     const held = this.#holding(annotationKey);
     const proposal: PendingProposal | null =
@@ -2346,10 +2360,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
     if (command.generation !== this.#commandGeneration) {
       return { kind: "failed", failure: { kind: "unknown-outcome" } };
     }
-    if (
-      (this.#localApi.demandSource()?.serverID ?? null) !==
-      command.expectedServerID
-    ) {
+    if ((this.#source()?.serverID ?? null) !== command.expectedServerID) {
       return { kind: "failed", failure: { kind: "server-changed" } };
     }
     const parsed = parseIndexedKey(annotationKey);
@@ -2395,12 +2406,14 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
       held.record,
     );
     const source = this.#compatibleApiSource(held.attachmentKey);
-    const reply = await this.#localApi.authorizedSend(path, {
-      library,
-      method,
-      headers,
-      body,
-    });
+    const reply = await this.#bridge.runPromise(
+      this.#localApi.authorizedSend(path, {
+        library,
+        method,
+        headers,
+        body,
+      }),
+    );
     if (
       !source ||
       !(await this.#sourceStillBound(held.attachmentKey, source))
@@ -3170,7 +3183,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
       if (left > 0) this.#writesInFlight.set(attachmentKey, left);
       else {
         this.#writesInFlight.delete(attachmentKey);
-        if (!this.#localApi.demandSource()) {
+        if (!this.#source()) {
           void this.read(attachmentKey).catch((error: unknown) => {
             logger.debug(
               "The database fallback after a write could not be read",
@@ -3316,10 +3329,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
       case "authorizing":
         return { kind: "unauthorized" };
       case "cooldown":
-        return {
-          kind: "cooldown",
-          retryAfter: this.#now().until(capability.retryAfter),
-        };
+        return cooldownFailure(this.#now().until(capability.retryAfter));
       case "read-only":
         if (
           capability.reason === "probing" ||
@@ -3367,9 +3377,8 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
     }
     if (failure.kind !== "conflict") return { kind: "failed", failure };
 
-    const fresh = await this.#localApi.readAnnotation(
-      annotationKey,
-      held.attachmentKey,
+    const fresh = await this.#bridge.runPromise(
+      this.#localApi.readAnnotation(annotationKey, held.attachmentKey),
     );
     if ("failure" in fresh) {
       logger.debug("A conflicted annotation could not be read back", {
@@ -3436,9 +3445,8 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
         value: { kind: "deleted", annotationKey, ...(lock && { lock }) },
       };
     }
-    const fresh = await this.#localApi.readAnnotation(
-      annotationKey,
-      attachmentKey,
+    const fresh = await this.#bridge.runPromise(
+      this.#localApi.readAnnotation(annotationKey, attachmentKey),
     );
     if ("failure" in fresh) {
       logger.debug("A written annotation could not be read back", {
@@ -3502,7 +3510,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
 
   /** The repository owns the records visible to readers and write commands. */
   #holding(annotationKey: string): HeldAnnotation | null {
-    const source = this.#localApi.demandSource();
+    const source = this.#source();
     for (const [attachmentKey, list] of this.#publishedLists) {
       if (
         source
@@ -3555,7 +3563,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
   async #prepareWrite(
     annotationKey: string,
   ): Promise<HeldAnnotation | null | "server-changed"> {
-    const source = this.#localApi.demandSource();
+    const source = this.#source();
     if (!source) return this.#holding(annotationKey);
     const attachmentKey = this.#attachmentHolding(annotationKey);
     if (attachmentKey) {
@@ -3936,7 +3944,11 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
     signal: AbortSignal,
   ): Promise<AnnotationList> {
     const [result] = await Promise.all([
-      this.#localApi.listAnnotations(attachmentKey, signal),
+      listLocalApi(
+        { bridge: this.#bridge, api: this.#localApi },
+        attachmentKey,
+        signal,
+      ),
       this.#readLocks(attachmentKey),
     ]);
     if ("failure" in result) throw new LocalApiReadFailed(result.failure);
@@ -4144,7 +4156,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
   #sourceMoved(): void {
     this.#invalidate([ANNOTATIONS, ZOTERO_LOCAL_API]);
     const held = this.#attachmentsHeld([ANNOTATIONS]);
-    const source = this.#localApi.demandSource();
+    const source = this.#source();
     logger.debug("The Zotero Local API source moved", {
       attachments: held.length,
       source,
@@ -4326,7 +4338,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
   }
 
   #compatibleApiSource(attachmentKey: string | null): LocalApiSource | null {
-    const api = this.#localApi.demandSource();
+    const api = this.#source();
     if (!api) return null;
     const sources =
       attachmentKey === null
@@ -4350,7 +4362,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
     expected: LocalApiSource,
   ): Promise<boolean> {
     for (;;) {
-      const state = this.#localApi.state;
+      const state = this.#apiState();
       if (
         state.kind === "available"
           ? state.source.serverID !== expected.serverID

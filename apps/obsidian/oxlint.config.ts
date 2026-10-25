@@ -488,6 +488,7 @@ export default defineConfig({
       excludeFiles: [
         // Converts between Effect's DateTime and Clock and the Temporal of plain code.
         "src/lib/effect-clock.ts",
+        "src/lib/effect-clock.test.ts",
       ],
       rules: { "zotlit-services/temporal-in-effect": "error" },
     },
@@ -501,22 +502,6 @@ export default defineConfig({
         "src/services/zotero-reads/instant-codec.ts",
       ],
       rules: { "zotlit-services/temporal-in-effect": "off" },
-    },
-    {
-      // Rewritten by effect/drop-port; the date rule follows after it merges.
-      files: [
-        "src/services/zotero-local-api/**",
-        "src/services/annotation-repository/repository.ts",
-        "src/services/annotation-repository/notices.ts",
-        "src/services/annotation-repository/service.ts",
-        "src/services/annotation-repository/__fixtures__.ts",
-        "src/services/build.ts",
-      ],
-      rules: {
-        "zotlit-services/temporal-in-effect": "off",
-        "no-restricted-globals": "off",
-        "typescript/no-restricted-types": "off",
-      },
     },
     {
       files: ["src/services/**/plain.ts"],

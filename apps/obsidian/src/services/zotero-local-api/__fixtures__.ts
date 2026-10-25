@@ -22,7 +22,7 @@
 //
 // @see docs/fixture.md — "Trial the Zotero Local API"
 // @see https://github.com/aidenlx/zotlit/issues/1143
-import { Effect, Layer, PubSub, Stream } from "effect";
+import { DateTime, Effect, Layer, PubSub, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { vi } from "vitest";
 
@@ -38,7 +38,6 @@ import { LocalServer } from "@/services/local-server/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 
-import { localApiPort } from "./port";
 import { layerZoteroLocalApi, ZoteroLocalApi } from "./service";
 import type { WireTag } from "./wire";
 
@@ -703,12 +702,10 @@ export function unreachable(): never {
 export interface ClientOptions {
   /** A Remembered Write Authorization for the session's server, if any. */
   key?: string;
-  /** The deadline a Capability Probe runs under. @default one that never fires */
-  probeDeadline?: () => AbortSignal;
 }
 
 /** The instant a fixture's TestClock stands at until a test moves it. */
-export const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
+export const NOW = DateTime.makeUnsafe("2026-09-16T15:52:21Z");
 
 /**
  * One TestClock for a fixture's runtime, standing at {@link NOW} before any
@@ -716,14 +713,14 @@ export const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
  * `await runtime.runPromise(TestClock.adjust(duration))`.
  */
 export const testClockAtNow = Layer.provideMerge(
-  Layer.effectDiscard(TestClock.setTime(NOW.epochMilliseconds)),
+  Layer.effectDiscard(TestClock.setTime(DateTime.toEpochMillis(NOW))),
   TestClock.layer(),
 );
 
 /**
  * The client over a fake transport, with the two event sources it subscribes to
- * in the caller's hands. The probe's own deadline never fires unless a test
- * hands one over, so no test waits on a real clock.
+ * in the caller's hands. The probe's own deadline runs on the fixture's
+ * TestClock, so it fires only when a test moves the clock past it.
  */
 export async function localApiClient(
   answers: ZoteroAnswers = {},
@@ -786,11 +783,7 @@ export async function localApiClient(
   const server = stubService<LocalServer["Service"]>("LocalServer", {
     dbUpdated: Stream.fromPubSub(dbUpdated),
   });
-  const localApiLayer = layerZoteroLocalApi({
-    credentials,
-    probeDeadline:
-      options.probeDeadline ?? (() => new AbortController().signal),
-  }).pipe(
+  const localApiLayer = layerZoteroLocalApi({ credentials }).pipe(
     Layer.provideMerge(testClockAtNow),
     Layer.provide(
       Layer.mergeAll(
@@ -804,12 +797,9 @@ export async function localApiClient(
   await runtime.context();
   const service = runtime.runSync(ZoteroLocalApi);
   const bridge = effectBridge(runtime);
-  const port = localApiPort(service, bridge);
-  const client = Object.assign(port, {
-    [Symbol.asyncDispose]: () => stack.disposeAsync(),
-  });
   return {
-    client,
+    /** Closes the runtime the service lives in. */
+    disposable: { [Symbol.asyncDispose]: () => stack.disposeAsync() },
     service,
     runtime,
     bridge,

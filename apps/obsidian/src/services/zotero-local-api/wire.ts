@@ -1,6 +1,7 @@
 // The Zotero Local API's wire format: what one answer means, and what a record
 // must satisfy before anything believes it.
 
+import { Duration } from "effect";
 import * as v from "valibot";
 
 import {
@@ -129,7 +130,7 @@ export type LocalApiFailure =
   /** Another Zotero database answers on this port than the session holds. */
   | { kind: "server-changed" }
   /** `429` — Zotero's authorization dialog rate limit. */
-  | { kind: "cooldown"; retryAfter: Temporal.Duration }
+  | { kind: "cooldown"; retryAfter: Duration.Duration }
   /** `501`, or an API version that is not {@link API_VERSION}. */
   | { kind: "incompatible-zotero" }
   /** Zotero answered something this client cannot believe. */
@@ -146,7 +147,7 @@ export type LocalApiResult<T> = { value: T } | { failure: LocalApiFailure };
  *
  * @see https://github.com/zotero/zotero/blob/22f08d1ceddc8bad5718b3bc6eee9d3ae5dccc2c/chrome/content/zotero/xpcom/server/server_localAPI.js#L205-L221
  */
-const AUTHORIZE_RATE_LIMIT_WINDOW = Temporal.Duration.from({ seconds: 60 });
+const AUTHORIZE_RATE_LIMIT_WINDOW = Duration.seconds(60);
 
 /** One answer, read the way every transport presents it: header names lower case. */
 export interface ZoteroReply {
@@ -598,10 +599,10 @@ function isDenial(body: string): boolean {
   return typeof denied === "object" && denied !== null && "denied" in denied;
 }
 
-function retryAfter(headers: Headers): Temporal.Duration {
+function retryAfter(headers: Headers): Duration.Duration {
   const seconds = Number(headers.get("retry-after"));
   return Number.isSafeInteger(seconds) && seconds > 0
-    ? Temporal.Duration.from({ seconds })
+    ? Duration.seconds(seconds)
     : AUTHORIZE_RATE_LIMIT_WINDOW;
 }
 

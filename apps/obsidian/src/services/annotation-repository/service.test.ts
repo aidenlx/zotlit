@@ -773,7 +773,7 @@ it.each([
     const requested = Promise.withResolvers<void>();
     let unavailable = false;
     let loseRead = async () => {};
-    const { repository, localApi } = await setup(
+    const { repository, localApiService, localApiBridge } = await setup(
       stack,
       {
         children: () => {
@@ -794,7 +794,9 @@ it.each([
     );
     loseRead = async () => {
       unavailable = true;
-      await localApi.listAnnotations("RGRPDF24");
+      await localApiBridge.runPromise(
+        localApiService.listAnnotations("RGRPDF24"),
+      );
       await repository.read("RGRPDF24");
     };
     await repository.read("RGRPDF24");
@@ -1194,12 +1196,12 @@ it("ignores a cancelled empty read when reconciling a shared draft", async () =>
 
 it("answers the Editing Capability the Annotation Source leaves", async () => {
   await using stack = new AsyncDisposableStack();
-  const { repository, localApi } = await setup(stack, {
+  const { repository, localApiService, localApiBridge } = await setup(stack, {
     root: localApiDisabled,
   });
 
   const beforeProbe = repository.capabilityFor("RGRPDF24");
-  await localApi.probe();
+  await localApiBridge.runPromise(localApiService.probe);
   const disabled = repository.capabilityFor("RGRPDF24");
 
   expect(beforeProbe).toEqual({ kind: "read-only", reason: "probing" });
@@ -1227,7 +1229,7 @@ it("asks for authorization once a session stands, and keeps reading meanwhile", 
 
 it("answers the session's own capability, and announces when one moves", async () => {
   await using stack = new AsyncDisposableStack();
-  const { repository, localApi } = await setup(stack, {
+  const { repository, localApiService, localApiBridge } = await setup(stack, {
     children: () => annotationPage(ROUGIER_ANNOTATIONS),
   });
   let announced = 0;
@@ -1241,7 +1243,7 @@ it("answers the session's own capability, and announces when one moves", async (
     kind: "read-only",
     reason: "probing",
   });
-  await localApi.probe();
+  await localApiBridge.runPromise(localApiService.probe);
 
   // The settings row reads this one: it names no Attachment, so no library
   // Zotero refused a write to is part of it.
@@ -1525,7 +1527,7 @@ it("retains a paused draft until an explicit save after authorization returns", 
   useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
-    const { repository, localApi, localApiService, bridge, requests } =
+    const { repository, localApiService, bridge, requests, localApiBridge } =
       await writable(stack, {
         authorize: () => authorized({ remember: true }),
         item: () =>
@@ -1542,7 +1544,7 @@ it("retains a paused draft until an explicit save after authorization returns", 
     expect(repository.textDraftFor("comment", "PUPR5FG5")?.text).toBe(
       "Keep these words",
     );
-    await localApi.authorize();
+    await localApiBridge.runPromise(localApiService.authorize);
     const sent = requests.length;
     await vi.advanceTimersByTimeAsync(30_000);
     await repository.submitTextField("comment", "PUPR5FG5", {
@@ -1574,9 +1576,8 @@ it("saves text typed during a held draft's save once that save lands", async () 
     const first = Promise.withResolvers<Response>();
     const submitted: string[] = [];
     let version = 20;
-    const { repository, localApi, localApiService, bridge } = await writable(
-      stack,
-      {
+    const { repository, localApiService, bridge, localApiBridge } =
+      await writable(stack, {
         authorize: () => authorized({ remember: true }),
         write: (request) => {
           submitted.push(JSON.parse(request.body ?? "{}").annotationComment);
@@ -1589,11 +1590,10 @@ it("saves text typed during a held draft's save once that save lands", async () 
               version: version++,
             }),
           ),
-      },
-    );
+      });
     repository.editTextField("comment", "PUPR5FG5", "Held words");
     await bridge.runPromise(localApiService.forgetAuthorization);
-    await localApi.authorize();
+    await localApiBridge.runPromise(localApiService.authorize);
 
     const saving = repository.submitTextField("comment", "PUPR5FG5");
     await vi.waitFor(() => expect(submitted).toEqual(["Held words"]));
@@ -3276,17 +3276,22 @@ it("retains an acknowledged create when a concurrent read loses API availability
   await using stack = new AsyncDisposableStack();
   let loseRead = async () => {};
   let unavailable = false;
-  const { repository, localApi } = await writable(stack, {
-    children: () =>
-      unavailable ? unreachable() : annotationPage(ROUGIER_ANNOTATIONS),
-    write: async () => {
-      await loseRead();
-      return createAccepted(MADE);
+  const { repository, localApiService, localApiBridge } = await writable(
+    stack,
+    {
+      children: () =>
+        unavailable ? unreachable() : annotationPage(ROUGIER_ANNOTATIONS),
+      write: async () => {
+        await loseRead();
+        return createAccepted(MADE);
+      },
     },
-  });
+  );
   loseRead = async () => {
     unavailable = true;
-    await localApi.listAnnotations("RGRPDF24");
+    await localApiBridge.runPromise(
+      localApiService.listAnnotations("RGRPDF24"),
+    );
     await repository.read("RGRPDF24");
   };
   expect(await repository.createAnnotation("RGRPDF24", DRAFT)).toEqual({
@@ -5891,10 +5896,8 @@ it("hides an old database's tag draft when the database switches", async () => {
 it("holds a tag draft when editing becomes unavailable, until Save tags after it returns", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
-  const { repository, localApi, localApiService, bridge } = await writable(
-    stack,
-    zotero.answers,
-  );
+  const { repository, localApiService, bridge, localApiBridge } =
+    await writable(stack, zotero.answers);
 
   repository.editTags("PUPR5FG5", ["review", "nlp", "todo"]);
   await bridge.runPromise(localApiService.forgetAuthorization);
@@ -5913,7 +5916,7 @@ it("holds a tag draft when editing becomes unavailable, until Save tags after it
   expect(repository.editTags("FDRFQ7C2")).toBeNull();
 
   // Approval alone saves nothing, and neither does another close.
-  await localApi.authorize();
+  await localApiBridge.runPromise(localApiService.authorize);
   await repository.submitTags("PUPR5FG5", { automatic: true });
   expect(zotero.patches).toEqual([]);
 
@@ -5926,11 +5929,14 @@ it("holds a refused tag save with its reason until Save tags", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
   let refuse = true;
-  const { repository, localApi } = await writable(stack, {
-    ...zotero.answers,
-    write: (request) =>
-      refuse ? keyRejected() : zotero.answers.write(request),
-  });
+  const { repository, localApiService, localApiBridge } = await writable(
+    stack,
+    {
+      ...zotero.answers,
+      write: (request) =>
+        refuse ? keyRejected() : zotero.answers.write(request),
+    },
+  );
 
   repository.editTags("PUPR5FG5", ["review", "nlp", "todo", "figure"]);
   expect(await repository.submitTags("PUPR5FG5")).toEqual({
@@ -5945,7 +5951,7 @@ it("holds a refused tag save with its reason until Save tags", async () => {
   });
 
   refuse = false;
-  await localApi.authorize();
+  await localApiBridge.runPromise(localApiService.authorize);
   await repository.submitTags("PUPR5FG5", { automatic: true });
   expect(zotero.patches).toEqual([]);
   expect(await repository.submitTags("PUPR5FG5")).toEqual({ kind: "idle" });
@@ -6004,15 +6010,18 @@ it("saves the next session on close again once Save tags has saved a held draft"
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
   let refuse = true;
-  const { repository, localApi } = await writable(stack, {
-    ...zotero.answers,
-    write: (request) =>
-      refuse ? keyRejected() : zotero.answers.write(request),
-  });
+  const { repository, localApiService, localApiBridge } = await writable(
+    stack,
+    {
+      ...zotero.answers,
+      write: (request) =>
+        refuse ? keyRejected() : zotero.answers.write(request),
+    },
+  );
   repository.editTags("PUPR5FG5", ["review", "nlp", "todo", "figure"]);
   await repository.submitTags("PUPR5FG5", { automatic: true });
   refuse = false;
-  await localApi.authorize();
+  await localApiBridge.runPromise(localApiService.authorize);
   expect(await repository.submitTags("PUPR5FG5")).toEqual({ kind: "idle" });
   expect(zotero.patches).toHaveLength(1);
 
