@@ -2,12 +2,11 @@
 // the service graph, and the setting tab's handle on it.
 
 import { Effect, Stream } from "effect";
-import type { ManagedRuntime } from "effect";
 import type { App } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { runtimeServices } from "@/lib/effect-services";
-import { subscribe } from "@/lib/effect-stream";
-import type { Notifier } from "@/lib/notifier";
+import { Notifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerObsidianEnv } from "@/lib/obsidian-env";
 import { toastLanguagePackInstall } from "@/services/language-pack/notices";
@@ -51,24 +50,30 @@ export interface LanguagePackLifecycle {
   reset(): void;
 }
 
-/** The setting tab's {@link LanguagePackLifecycle}, run on the plugin's runtime. */
+/**
+ * The setting tab's {@link LanguagePackLifecycle}, run through the plugin's
+ * bridge on the services `build.ts` reads once.
+ */
 export function languagePackEdge(
-  runtime: Pick<
-    ManagedRuntime.ManagedRuntime<LanguagePack | Notifier, never>,
-    "runSync" | "runFork" | "scope"
-  >,
+  services: {
+    readonly pack: LanguagePack["Service"];
+    readonly notifier: Notifier["Service"];
+  },
+  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit" | "subscribe">,
 ): LanguagePackLifecycle {
-  const pack = runtime.runSync(LanguagePack);
+  const { pack, notifier } = services;
+  const toast = toastLanguagePackInstall.pipe(
+    Effect.provideService(LanguagePack, pack),
+    Effect.provideService(Notifier, notifier),
+  );
   return {
     endonym: pack.endonym,
-    getSituation: () => runtime.runSync(pack.situation),
+    getSituation: () => bridge.runSync(pack.situation),
     subscribe: (listener) =>
-      subscribe(runtime, Stream.drop(pack.changes, 1), listener),
+      bridge.subscribe(Stream.drop(pack.changes, 1), () => listener()),
     // In the runtime's Scope, so unload ends the toast with the download.
-    install: () =>
-      void runtime.runFork(
-        Effect.forkIn(toastLanguagePackInstall, runtime.scope),
-      ),
-    reset: () => runtime.runSync(pack.reset),
+    // The toast reports each failure itself, so the run cannot fail.
+    install: () => void bridge.runPromiseExit(toast),
+    reset: () => bridge.runSync(pack.reset),
   };
 }

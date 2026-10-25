@@ -10,7 +10,7 @@ import {
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 
-import { languagePackEdge, startI18n } from "./lib/i18n";
+import { startI18n } from "./lib/i18n";
 import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
 import { openSettingsTab } from "./lib/open-settings";
@@ -307,7 +307,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         release: services.release,
         pandocEngine: services.pandocEngine,
         chineseSegmenter: services.chineseSegmenter,
-        languagePack: languagePackEdge(services.runtime),
+        languagePack: services.languagePack,
       }),
     );
 

@@ -1,8 +1,9 @@
 import { it } from "@effect/vitest";
-import { Effect, Layer, ManagedRuntime, Stream } from "effect";
+import { Effect, Exit, Layer, ManagedRuntime, Scope, Stream } from "effect";
 import { describe, expect } from "vitest";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
+import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import {
   eventually,
@@ -14,7 +15,7 @@ import { LanguagePack } from "@/services/language-pack/service";
 import { languagePackEdge } from "./i18n";
 import { languagePackSettingCopy } from "./i18n/settings-copy";
 
-/** The setting tab's edge over a runtime that holds `pack`. */
+/** The setting tab's edge over a runtime that holds `pack`, as `build.ts` makes it. */
 const edgeOver = Effect.fn("test.edgeOver")(function* (
   pack: LanguagePack["Service"],
 ) {
@@ -27,7 +28,11 @@ const edgeOver = Effect.fn("test.edgeOver")(function* (
     ),
     (runtime) => runtime.disposeEffect,
   );
-  return { edge: languagePackEdge(runtime), notices: notifier.notices };
+  const edge = languagePackEdge(
+    { pack, notifier: notifier.service },
+    effectBridge(runtime),
+  );
+  return { edge, notices: notifier.notices, runtime };
 });
 
 describe("the setting tab's Language Pack edge", () => {
@@ -60,7 +65,7 @@ describe("the setting tab's Language Pack edge", () => {
           Stream.filter((situation) => situation.kind === "restart-pending"),
           Stream.runHead,
         );
-        yield* eventually(() => notices.length > 0);
+        yield* eventually(() => expect(notices).toHaveLength(1));
 
         expect(notices[0]?.messages).toEqual([
           m.notice_language_pack_restart(),
@@ -83,12 +88,44 @@ describe("the setting tab's Language Pack edge", () => {
       const { edge } = yield* edgeOver(pack);
 
       edge.install();
-      yield* eventually(() => device.requests.length > 0);
+      yield* eventually(() => expect(device.requests).toHaveLength(1));
       expect(edge.getSituation().kind).toBe("downloading");
 
       edge.reset();
       expect(edge.getSituation().kind).toBe("installable");
       expect([...device.storage.keys()]).toEqual([]);
     }),
+  );
+
+  it.effect(
+    "after unload, reads the last situation and starts nothing new",
+    () =>
+      Effect.gen(function* () {
+        const device = fakeDevice();
+        device.held = new Promise<void>(() => {});
+        // The pack's layer closes with the runtime, as at plugin unload.
+        const layerScope = yield* Scope.make();
+        const pack = yield* startOn(device, { language: "zh" }).pipe(
+          Scope.provide(layerScope),
+        );
+        const { edge, notices, runtime } = yield* edgeOver(pack);
+        edge.install();
+        yield* eventually(() => expect(device.requests).toHaveLength(1));
+        yield* runtime.disposeEffect;
+        yield* Scope.close(layerScope, Exit.void);
+        const seen: string[] = [];
+
+        expect(edge.getSituation().kind).toBe("downloading");
+        edge.subscribe(() => seen.push(edge.getSituation().kind));
+        edge.install();
+        yield* Effect.yieldNow;
+        expect(device.requests).toHaveLength(1);
+        expect(notices).toEqual([]);
+
+        edge.reset();
+        expect(edge.getSituation().kind).toBe("installable");
+        expect([...device.storage.keys()]).toEqual([]);
+        expect(seen).toEqual([]);
+      }),
   );
 });
