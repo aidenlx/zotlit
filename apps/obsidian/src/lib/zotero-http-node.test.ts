@@ -4,12 +4,18 @@ import type { AddressInfo } from "node:net";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { AbortError } from "@/lib/abort-error";
-import { ManagedRuntime } from "@/lib/effect";
+import { Layer, ManagedRuntime } from "@/lib/effect";
+import { runtimeServices } from "@/lib/effect-services";
 import { sendToZotero, ZoteroHttp } from "@/lib/zotero-http";
 import type { ZoteroAnswer, ZoteroRequest } from "@/lib/zotero-http";
 import { layerZoteroHttpNode } from "@/lib/zotero-http-node";
 
-const runtime = ManagedRuntime.make(layerZoteroHttpNode);
+// With the services every plugin runtime has, as `buildRuntime` adds them.
+const runtime = ManagedRuntime.make(
+  layerZoteroHttpNode.pipe(
+    Layer.provideMerge(Layer.succeedContext(runtimeServices)),
+  ),
+);
 afterAll(() => runtime.dispose());
 
 /** One round trip through the production `ZoteroHttp` client. */

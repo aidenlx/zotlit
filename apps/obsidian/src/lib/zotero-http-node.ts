@@ -1,10 +1,8 @@
 // The Zotero loopback client over Node's own HTTP stack, for desktop only.
 
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
-import { HttpClient } from "effect/http";
 
-import { Effect, Layer } from "@/lib/effect";
-import { withoutTracePropagation } from "@/lib/http-client";
+import { Layer } from "@/lib/effect";
 import { layerZoteroHttp } from "@/lib/zotero-http";
 import type { ZoteroHttp } from "@/lib/zotero-http";
 
@@ -20,13 +18,6 @@ import type { ZoteroHttp } from "@/lib/zotero-http";
  */
 export const layerZoteroHttpNode: Layer.Layer<ZoteroHttp> =
   layerZoteroHttp.pipe(
-    Layer.provide(
-      Layer.effect(
-        HttpClient.HttpClient,
-        Effect.map(HttpClient.HttpClient, withoutTracePropagation),
-      ).pipe(
-        Layer.provide(NodeHttpClient.layerNodeHttpNoAgent),
-        Layer.provide(NodeHttpClient.layerAgentOptions({ keepAlive: true })),
-      ),
-    ),
+    Layer.provide(NodeHttpClient.layerNodeHttpNoAgent),
+    Layer.provide(NodeHttpClient.layerAgentOptions({ keepAlive: true })),
   );

@@ -1,7 +1,7 @@
 import { Cause, Deferred, Effect, Exit, Layer } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
-import type { Notifier} from "@/lib/notifier";
+import type { Notifier } from "@/lib/notifier";
 import { reportProgress } from "@/lib/notifier";
 import { PluginHost } from "@/lib/plugin-host";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
