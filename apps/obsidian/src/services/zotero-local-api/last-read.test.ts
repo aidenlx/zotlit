@@ -43,12 +43,12 @@ function attachment(lastRead?: number) {
 }
 
 it("writes the exact read instant with the attachment object version and source precondition", async () => {
-  const { client, service, bridge, requests } = await localApiClient(
+  const { service, bridge, requests, disposable } = await localApiClient(
     { item: () => attachment() },
     { key: "remembered-key" },
   );
-  await using _owned = client;
-  await client.probe();
+  await using _owned = disposable;
+  await bridge.runPromise(service.probe);
   await bridge.runPromise(
     service.writeLastRead(ATTACHMENT_KEY, SERVER_ID, NOW),
   );
@@ -68,20 +68,20 @@ it("writes the exact read instant with the attachment object version and source 
 it.each([keyRejected, staleVersionPatch, unreachable, serverChanged])(
   "keeps a rejected read write silent",
   async (write) => {
-    const { client, service, bridge, credentials } = await localApiClient(
+    const { service, bridge, credentials, disposable } = await localApiClient(
       { item: () => attachment(), write: () => write() },
       { key: "remembered-key" },
     );
-    await using _owned = client;
-    await client.probe();
+    await using _owned = disposable;
+    await bridge.runPromise(service.probe);
     const refused = vi.fn();
     const changed = vi.fn();
-    client.on("write-refused", refused);
-    client.on("server-changed", changed);
+    bridge.subscribe(service.writeRefusals, refused);
+    bridge.subscribe(service.serverChanges, changed);
     await bridge.runPromise(
       service.writeLastRead(ATTACHMENT_KEY, SERVER_ID, NOW),
     );
-    await client.probe();
+    await bridge.runPromise(service.probe);
     expect(refused).not.toHaveBeenCalled();
     expect(changed).not.toHaveBeenCalled();
     expect(credentials.record?.key).toBe(
@@ -122,12 +122,12 @@ it.each([
 ])(
   "skips $name without a data request or authorization dialog",
   async ({ key, serverID, authorized, probe }) => {
-    const { client, service, bridge, requests } = await localApiClient(
+    const { service, bridge, requests, disposable } = await localApiClient(
       { item: () => attachment() },
       authorized ? { key: "remembered-key" } : {},
     );
-    await using _owned = client;
-    if (probe) await client.probe();
+    await using _owned = disposable;
+    if (probe) await bridge.runPromise(service.probe);
     const count = requests.length;
     await bridge.runPromise(service.writeLastRead(key, serverID, NOW));
     expect(requests).toHaveLength(count);
@@ -137,20 +137,20 @@ it.each([
 it("does not write after a source change while reading the attachment", async () => {
   const read = Promise.withResolvers<Response>();
   let serverID = SERVER_ID;
-  const { client, service, bridge, requests } = await localApiClient(
+  const { service, bridge, requests, disposable } = await localApiClient(
     {
       item: () => read.promise,
       root: () => rootOk({ "Zotero-Server-ID": serverID }),
     },
     { key: "remembered-key" },
   );
-  await using _owned = client;
-  await client.probe();
+  await using _owned = disposable;
+  await bridge.runPromise(service.probe);
   const writing = bridge.runPromise(
     service.writeLastRead(ATTACHMENT_KEY, SERVER_ID, NOW),
   );
   serverID = "BBBBBBBBBBBB";
-  await client.probe();
+  await bridge.runPromise(service.probe);
   read.resolve(attachment());
   await writing;
   expect(requests.filter(({ method }) => method === "PATCH")).toEqual([]);
@@ -158,7 +158,7 @@ it("does not write after a source change while reading the attachment", async ()
 
 it("silently adopts a source discovered by a rejected background write", async () => {
   let serverID = SERVER_ID;
-  const { client, service, bridge } = await localApiClient(
+  const { service, bridge, disposable } = await localApiClient(
     {
       item: () => attachment(),
       root: () => rootOk({ "Zotero-Server-ID": serverID }),
@@ -169,15 +169,15 @@ it("silently adopts a source discovered by a rejected background write", async (
     },
     { key: "remembered-key" },
   );
-  await using _owned = client;
-  await client.probe();
+  await using _owned = disposable;
+  await bridge.runPromise(service.probe);
   const notice = vi.fn();
-  client.on("server-changed", notice);
-  client.on("write-refused", notice);
+  bridge.subscribe(service.serverChanges, notice);
+  bridge.subscribe(service.writeRefusals, notice);
   await bridge.runPromise(
     service.writeLastRead(ATTACHMENT_KEY, SERVER_ID, NOW),
   );
-  expect(client.state).toMatchObject({
+  expect(bridge.runSync(service.state)).toMatchObject({
     kind: "available",
     source: { serverID: "BBBBBBBBBBBB" },
   });
@@ -185,28 +185,28 @@ it("silently adopts a source discovered by a rejected background write", async (
 });
 
 it("skips a remembered key removed since the probe before any data request", async () => {
-  const { client, service, bridge, requests, credentials } =
+  const { service, bridge, requests, credentials, disposable } =
     await localApiClient(
       { item: () => attachment() },
       { key: "remembered-key" },
     );
-  await using _owned = client;
-  await client.probe();
+  await using _owned = disposable;
+  await bridge.runPromise(service.probe);
   await credentials.forget();
   await bridge.runPromise(
     service.writeLastRead(ATTACHMENT_KEY, SERVER_ID, NOW),
   );
   expect(requests).toHaveLength(1);
-  expect(client.state).toMatchObject({ authorized: false });
+  expect(bridge.runSync(service.state)).toMatchObject({ authorized: false });
 });
 
 it("keeps a newer Zotero read when an older Use finishes later", async () => {
-  const { client, service, bridge, requests } = await localApiClient(
+  const { service, bridge, requests, disposable } = await localApiClient(
     { item: () => attachment(1789574000) },
     { key: "remembered-key" },
   );
-  await using _owned = client;
-  await client.probe();
+  await using _owned = disposable;
+  await bridge.runPromise(service.probe);
   await bridge.runPromise(
     service.writeLastRead(ATTACHMENT_KEY, SERVER_ID, NOW),
   );
@@ -214,12 +214,12 @@ it("keeps a newer Zotero read when an older Use finishes later", async () => {
 });
 
 it("leaves a closed Zotero alone after an unavailable probe", async () => {
-  const { client, service, bridge, requests } = await localApiClient(
+  const { service, bridge, requests, disposable } = await localApiClient(
     { root: unreachable },
     { key: "remembered-key" },
   );
-  await using _owned = client;
-  await client.probe();
+  await using _owned = disposable;
+  await bridge.runPromise(service.probe);
   await bridge.runPromise(
     service.writeLastRead(ATTACHMENT_KEY, SERVER_ID, NOW),
   );
@@ -279,7 +279,7 @@ it("keeps the newest read when two writes overlap at the same object version", a
   const firstWrite = Promise.withResolvers<void>();
   const firstStarted = Promise.withResolvers<void>();
   let stored = 0;
-  const { client, service, bridge } = await localApiClient(
+  const { service, bridge, disposable } = await localApiClient(
     {
       item: () => attachment(stored),
       write: async ({ body }) => {
@@ -294,8 +294,8 @@ it("keeps the newest read when two writes overlap at the same object version", a
     },
     { key: "remembered-key" },
   );
-  await using _owned = client;
-  await client.probe();
+  await using _owned = disposable;
+  await bridge.runPromise(service.probe);
   const older = bridge.runPromise(
     service.writeLastRead(ATTACHMENT_KEY, SERVER_ID, NOW),
   );
@@ -310,12 +310,12 @@ it("keeps the newest read when two writes overlap at the same object version", a
 });
 
 it("does not send a read after the client is disposed", async () => {
-  const { client, service, bridge, requests } = await localApiClient(
+  const { service, bridge, requests, disposable } = await localApiClient(
     { item: () => attachment() },
     { key: "remembered-key" },
   );
-  await client.probe();
-  await client[Symbol.asyncDispose]();
+  await bridge.runPromise(service.probe);
+  await disposable[Symbol.asyncDispose]();
   await bridge.runPromise(
     service.writeLastRead(ATTACHMENT_KEY, SERVER_ID, NOW),
   );

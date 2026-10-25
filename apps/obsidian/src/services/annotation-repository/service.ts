@@ -9,7 +9,6 @@ import { ExcerptImages } from "@/services/excerpt-image/layer";
 import { savedExcerptRequestOver } from "@/services/excerpt-image/request";
 import type { Held } from "@/services/query-client/service";
 import { QueryClients } from "@/services/query-client/service";
-import { localApiPort } from "@/services/zotero-local-api/port";
 import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
@@ -385,7 +384,7 @@ export function layerAnnotationRepository(options: {
               bridge,
               db: reads,
               queryClient: queries,
-              localApi: localApiPort(api, bridge),
+              localApi: api,
               publish: (event) => {
                 void PubSub.publishUnsafe(bus, event);
               },

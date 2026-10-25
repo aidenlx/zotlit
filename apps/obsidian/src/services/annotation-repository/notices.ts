@@ -6,7 +6,7 @@ import type { EffectBridge } from "@/lib/effect-bridge";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { Service } from "@/services/service-base";
-import type { LocalApiPort } from "@/services/zotero-local-api/port";
+import type { ZoteroLocalApi } from "@/services/zotero-local-api/service";
 
 import {
   allowEditingNotice,
@@ -77,7 +77,10 @@ export interface CapabilityNoticesDeps {
    * What a refused write, a swapped database and a retired mark are heard on,
    * and the one request Allow editing sends.
    */
-  writes: Pick<LocalApiPort, "authorize" | "on">;
+  writes: Pick<
+    ZoteroLocalApi["Service"],
+    "authorize" | "writeRefusals" | "serverChanges" | "writeRefusalsRetired"
+  >;
   /** Reveals the "Zotero editing" settings row. */
   openEditingSettings: () => void;
   /** Whether an Annotation View on screen already shows this card. */
@@ -144,7 +147,7 @@ export class CapabilityNotices extends Service<void> {
    * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
    */
   async allowEditing(): Promise<void> {
-    const result = await this.#writes.authorize();
+    const result = await this.#bridge.runPromise(this.#writes.authorize());
     const notice = allowEditingNotice(result);
     if (!notice) return;
     this.#showNotice(notice, () => void this.allowEditing());
@@ -212,17 +215,20 @@ export class CapabilityNotices extends Service<void> {
       ),
     );
     stack.defer(
-      this.#writes.on("write-refused", (failure, library) => {
-        this.#show(this.#ledger.writeRefused(failure, library));
-      }),
+      this.#bridge.subscribe(
+        this.#writes.writeRefusals,
+        ({ failure, library }) => {
+          this.#show(this.#ledger.writeRefused(failure, library));
+        },
+      ),
     );
     stack.defer(
-      this.#writes.on("server-changed", (serverID) => {
+      this.#bridge.subscribe(this.#writes.serverChanges, (serverID) => {
         this.#show(this.#ledger.serverChanged(serverID));
       }),
     );
     stack.defer(
-      this.#writes.on("write-refusals-retired", () => {
+      this.#bridge.subscribe(this.#writes.writeRefusalsRetired, () => {
         this.#ledger.writeRefusalsRetired();
       }),
     );

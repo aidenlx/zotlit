@@ -1,5 +1,7 @@
 import { expect, it } from "vitest";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
+
 import {
   annotationPage,
   ATTACHMENT_KEY,
@@ -22,19 +24,23 @@ import type {
   WireAnnotation,
   ZoteroAnswers,
 } from "./__fixtures__";
-import type { LocalApiPort } from "./port";
+import type {
+  LocalApiAnnotation,
+  LocalApiResult,
+  ZoteroLocalApi,
+} from "./service";
 
 it("probes lazily on the first demand and names the server the probe answered", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client, requests } = await setup(stack);
+  const { requests, service, bridge } = await setup(stack);
 
   // Nothing has asked yet, so nothing has been sent.
   expect(requests).toHaveLength(0);
-  const beforeProbe = client.demandSource();
-  await nextChange(client);
+  const beforeProbe = bridge.runSync(service.demandSource);
+  await nextChange(service, bridge);
 
   expect(beforeProbe).toBeNull();
-  expect(client.demandSource()).toEqual({
+  expect(bridge.runSync(service.demandSource)).toEqual({
     kind: "zotero-local-api",
     serverID: SERVER_ID,
   });
@@ -45,12 +51,12 @@ it("probes lazily on the first demand and names the server the probe answered", 
 
 it("carries the allowed-request and API version headers, and asks no cache", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client, requests } = await setup(stack, {
+  const { requests, service, bridge } = await setup(stack, {
     children: () => annotationPage(ROUGIER_ANNOTATIONS),
   });
 
-  await client.probe();
-  await client.listAnnotations(ATTACHMENT_KEY);
+  await bridge.runPromise(service.probe);
+  await bridge.runPromise(service.listAnnotations(ATTACHMENT_KEY));
 
   expect(requests).toHaveLength(2);
   for (const { headers } of requests) {
@@ -68,12 +74,14 @@ it("carries the allowed-request and API version headers, and asks no cache", asy
 
 it("reads every Annotation of one Attachment in Zotero's reading order", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     children: () => annotationPage(ROUGIER_ANNOTATIONS),
   });
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  const result = await client.listAnnotations(ATTACHMENT_KEY);
+  const result = await bridge.runPromise(
+    service.listAnnotations(ATTACHMENT_KEY),
+  );
 
   // The Fixture's own Sort Indexes give this order; the answer arrives in the
   // date order the list route sorts by.
@@ -116,7 +124,7 @@ it("reads every Annotation of one Attachment in Zotero's reading order", async (
 
 it("preserves template metadata supplied by the Local API", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     children: async () => {
       const response = annotationPage([ROUGIER_ANNOTATIONS[0]!]);
       const body = (await response.json()) as {
@@ -131,8 +139,10 @@ it("preserves template metadata supplied by the Local API", async () => {
       return new Response(JSON.stringify(body), { headers: response.headers });
     },
   });
-  await client.probe();
-  expect(read(await client.listAnnotations(ATTACHMENT_KEY))[0]).toMatchObject({
+  await bridge.runPromise(service.probe);
+  expect(
+    read(await bridge.runPromise(service.listAnnotations(ATTACHMENT_KEY)))[0],
+  ).toMatchObject({
     dateModified: "2026-09-20T01:02:03Z",
     authorName: "A. Reader",
     isExternal: true,
@@ -147,7 +157,7 @@ it.each([null, "", " ", "two"])(
   "rejects an empty page whose total header is %j",
   async (total) => {
     await using stack = new AsyncDisposableStack();
-    const { client } = await setup(stack, {
+    const { service, bridge } = await setup(stack, {
       children: () => {
         const response = annotationPage([]);
         if (total === null) response.headers.delete("Total-Results");
@@ -155,9 +165,11 @@ it.each([null, "", " ", "two"])(
         return response;
       },
     });
-    await client.probe();
+    await bridge.runPromise(service.probe);
 
-    expect(await client.listAnnotations(ATTACHMENT_KEY)).toEqual({
+    expect(
+      await bridge.runPromise(service.listAnnotations(ATTACHMENT_KEY)),
+    ).toEqual({
       failure: {
         kind: "invalid-response",
         issue: "annotation page named no valid total",
@@ -169,12 +181,14 @@ it.each([null, "", " ", "two"])(
 it("rejects a duplicate Annotation within one page", async () => {
   await using stack = new AsyncDisposableStack();
   const annotation = ROUGIER_ANNOTATIONS[0]!;
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     children: () => annotationPage([annotation, annotation]),
   });
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  expect(await client.listAnnotations(ATTACHMENT_KEY)).toEqual({
+  expect(
+    await bridge.runPromise(service.listAnnotations(ATTACHMENT_KEY)),
+  ).toEqual({
     failure: {
       kind: "invalid-response",
       issue: "annotation page repeated an annotation",
@@ -184,7 +198,7 @@ it("rejects a duplicate Annotation within one page", async () => {
 
 it("carries a page label and tags, in the order Zotero answered them", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     children: () =>
       annotationPage([
         {
@@ -194,9 +208,11 @@ it("carries a page label and tags, in the order Zotero answered them", async () 
         },
       ]),
   });
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  const result = await client.listAnnotations(ATTACHMENT_KEY);
+  const result = await bridge.runPromise(
+    service.listAnnotations(ATTACHMENT_KEY),
+  );
 
   expect(read(result)[0]).toMatchObject({
     pageLabel: "xiv",
@@ -206,41 +222,47 @@ it("carries a page label and tags, in the order Zotero answered them", async () 
 
 it("answers an empty tags list for an annotation with no tags key", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     // ROUGIER_ANNOTATIONS[0] sets no `tags`, so the wire item carries none.
     children: () => annotationPage([ROUGIER_ANNOTATIONS[0]!]),
   });
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  const result = await client.listAnnotations(ATTACHMENT_KEY);
+  const result = await bridge.runPromise(
+    service.listAnnotations(ATTACHMENT_KEY),
+  );
 
   expect(read(result)[0]).toMatchObject({ tags: [] });
 });
 
 it("reads an empty-string page label as null, the way Zotero stores an unset one", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     children: () =>
       annotationPage([{ ...ROUGIER_ANNOTATIONS[0]!, pageLabel: "" }]),
   });
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  const result = await client.listAnnotations(ATTACHMENT_KEY);
+  const result = await bridge.runPromise(
+    service.listAnnotations(ATTACHMENT_KEY),
+  );
 
   expect(read(result)[0]).toMatchObject({ pageLabel: null });
 });
 
 it("names the Attachment's Indexed Key as parentKey, group suffix included", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     children: ({ groupID, key }: ChildrenRequest) =>
       annotationPage([{ ...ROUGIER_ANNOTATIONS[0]!, groupID: groupID ?? 0 }], {
         parentItem: key,
       }),
   });
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  const result = await client.listAnnotations("SHAREPDFg42");
+  const result = await bridge.runPromise(
+    service.listAnnotations("SHAREPDFg42"),
+  );
 
   expect(read(result)[0]).toMatchObject({ parentKey: "SHAREPDFg42" });
 });
@@ -248,16 +270,18 @@ it("names the Attachment's Indexed Key as parentKey, group suffix included", asy
 it("follows the list route to its end, so an Attachment past one page is whole", async () => {
   await using stack = new AsyncDisposableStack();
   const total = 130;
-  const { client, requests } = await setup(stack, {
+  const { requests, service, bridge } = await setup(stack, {
     children: ({ start }: ChildrenRequest) =>
       annotationPage(manyAnnotations(start, Math.min(100, total - start)), {
         total,
         start,
       }),
   });
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  const result = await client.listAnnotations(ATTACHMENT_KEY);
+  const result = await bridge.runPromise(
+    service.listAnnotations(ATTACHMENT_KEY),
+  );
 
   expect(read(result)).toHaveLength(total);
   expect(new Set(read(result).map(({ key }) => key)).size).toBe(total);
@@ -275,16 +299,18 @@ it("follows the list route to its end, so an Attachment past one page is whole",
 
 it("rejects a collection whose total changes between pages", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     children: ({ start }: ChildrenRequest) =>
       annotationPage(manyAnnotations(start, start === 0 ? 100 : 30), {
         total: start === 0 ? 130 : 131,
         start,
       }),
   });
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  expect(await client.listAnnotations(ATTACHMENT_KEY)).toEqual({
+  expect(
+    await bridge.runPromise(service.listAnnotations(ATTACHMENT_KEY)),
+  ).toEqual({
     failure: {
       kind: "invalid-response",
       issue: "annotation total changed during pagination",
@@ -294,23 +320,27 @@ it("rejects a collection whose total changes between pages", async () => {
 
 it("answers an empty list for a key Zotero does not hold", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client } = await setup(stack);
-  await client.probe();
+  const { service, bridge } = await setup(stack);
+  await bridge.runPromise(service.probe);
 
-  expect(read(await client.listAnnotations("ABSENT24"))).toEqual([]);
+  expect(
+    read(await bridge.runPromise(service.listAnnotations("ABSENT24"))),
+  ).toEqual([]);
 });
 
 it("reads a group library through its own route", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client, requests } = await setup(stack, {
+  const { requests, service, bridge } = await setup(stack, {
     children: ({ groupID, key }: ChildrenRequest) =>
       annotationPage([{ ...ROUGIER_ANNOTATIONS[0]!, groupID: groupID ?? 0 }], {
         parentItem: key,
       }),
   });
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  const result = await client.listAnnotations("SHAREPDFg42");
+  const result = await bridge.runPromise(
+    service.listAnnotations("SHAREPDFg42"),
+  );
 
   expect(requests[1]?.url.pathname).toBe(
     "/api/groups/42/items/SHAREPDF/children",
@@ -346,7 +376,7 @@ it.each([
 
 it("names the field when an item is not the shape this client reads", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     children: () =>
       new Response(JSON.stringify([{ key: "PUPR5FG5", version: 11 }]), {
         status: 200,
@@ -357,9 +387,11 @@ it("names the field when an item is not the shape this client reads", async () =
         },
       }),
   });
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  const result = await client.listAnnotations(ATTACHMENT_KEY);
+  const result = await bridge.runPromise(
+    service.listAnnotations(ATTACHMENT_KEY),
+  );
 
   expect(result).toEqual({
     failure: {
@@ -371,14 +403,14 @@ it("names the field when an item is not the shape this client reads", async () =
 
 it("refuses a probe that answers no Zotero server id", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     root: () => rootOk({ "Zotero-Server-ID": "short" }),
   });
 
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  expect(client.demandSource()).toBeNull();
-  expect(client.state).toEqual({
+  expect(bridge.runSync(service.demandSource)).toBeNull();
+  expect(bridge.runSync(service.state)).toEqual({
     kind: "unavailable",
     failure: { kind: "invalid-response", issue: "server id short" },
   });
@@ -387,7 +419,7 @@ it("refuses a probe that answers no Zotero server id", async () => {
 it("reads a Zotero that sends no server id as too old to edit", async () => {
   await using stack = new AsyncDisposableStack();
   // Zotero 9 answers API version 3 on a read-only Local API with no server id.
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     root: () => {
       const reply = rootOk();
       reply.headers.delete("Zotero-Server-ID");
@@ -395,10 +427,10 @@ it("reads a Zotero that sends no server id as too old to edit", async () => {
     },
   });
 
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  expect(client.demandSource()).toBeNull();
-  expect(client.state).toEqual({
+  expect(bridge.runSync(service.demandSource)).toBeNull();
+  expect(bridge.runSync(service.state)).toEqual({
     kind: "unavailable",
     failure: { kind: "incompatible-zotero" },
   });
@@ -416,24 +448,27 @@ it.each([
   ],
 ] as const)("stands the source down on %s", async (_case, answer, kind) => {
   await using stack = new AsyncDisposableStack();
-  const { client } = await setup(stack, { root: answer });
+  const { service, bridge } = await setup(stack, { root: answer });
 
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  expect(client.demandSource()).toBeNull();
-  expect(client.state).toEqual({ kind: "unavailable", failure: { kind } });
+  expect(bridge.runSync(service.demandSource)).toBeNull();
+  expect(bridge.runSync(service.state)).toEqual({
+    kind: "unavailable",
+    failure: { kind },
+  });
 });
 
 it("reads a Zotero that speaks another API version off the root route's own header", async () => {
   await using stack = new AsyncDisposableStack();
   // The root route serves every version, so its header is the whole gate.
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     root: () => rootOk({ "Zotero-API-Version": "4" }),
   });
 
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  expect(client.state).toEqual({
+  expect(bridge.runSync(service.state)).toEqual({
     kind: "unavailable",
     failure: { kind: "incompatible-zotero" },
   });
@@ -441,18 +476,18 @@ it("reads a Zotero that speaks another API version off the root route's own head
 
 it("stands the source down when its own deadline ends the probe", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client, requests } = await setup(
+  const { requests, service, bridge } = await setup(
     stack,
     { root: () => rootOk() },
     { probeDeadline: () => AbortSignal.abort() },
   );
 
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
   // A Zotero that has not answered inside the deadline is not answering, which
   // is what a refused connection says too.
   expect(requests).toHaveLength(1);
-  expect(client.state).toEqual({
+  expect(bridge.runSync(service.state)).toEqual({
     kind: "unavailable",
     failure: { kind: "unreachable" },
   });
@@ -461,12 +496,14 @@ it("stands the source down when its own deadline ends the probe", async () => {
 it("carries Zotero's own cooldown out of a rate-limited answer", async () => {
   await using stack = new AsyncDisposableStack();
   // 97 is not Zotero's 60-second window, so only a parsed header answers it.
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     children: () => rateLimited({ retryAfter: 97 }),
   });
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  const result = await client.listAnnotations(ATTACHMENT_KEY);
+  const result = await bridge.runPromise(
+    service.listAnnotations(ATTACHMENT_KEY),
+  );
 
   expect(result).toEqual({
     failure: {
@@ -478,12 +515,14 @@ it("carries Zotero's own cooldown out of a rate-limited answer", async () => {
 
 it("falls back to Zotero's dialog window when a rate limit names no delay", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     children: () => rateLimited({ retryAfter: null }),
   });
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  const result = await client.listAnnotations(ATTACHMENT_KEY);
+  const result = await bridge.runPromise(
+    service.listAnnotations(ATTACHMENT_KEY),
+  );
 
   expect(result).toEqual({
     failure: {
@@ -496,15 +535,19 @@ it("falls back to Zotero's dialog window when a rate limit names no delay", asyn
 it("reports whether a Remembered Write Authorization exists for the session", async () => {
   await using stack = new AsyncDisposableStack();
   const key = "zaxj2JbsV79sbQDXS7REpa3Z3kRDIory";
-  const { client, credentials } = await setup(stack, {}, { key });
-  const { client: unauthorized } = await setup(stack);
+  const { credentials, service, bridge } = await setup(stack, {}, { key });
+  const { service: unauthorized, bridge: unauthorizedBridge } =
+    await setup(stack);
 
-  await client.probe();
-  await unauthorized.probe();
+  await bridge.runPromise(service.probe);
+  await unauthorizedBridge.runPromise(unauthorized.probe);
 
   expect(credentials.read).toHaveBeenCalledWith(SERVER_ID);
-  expect(client.state).toMatchObject({ kind: "available", authorized: true });
-  expect(unauthorized.state).toMatchObject({
+  expect(bridge.runSync(service.state)).toMatchObject({
+    kind: "available",
+    authorized: true,
+  });
+  expect(unauthorizedBridge.runSync(unauthorized.state)).toMatchObject({
     kind: "available",
     authorized: false,
   });
@@ -513,28 +556,30 @@ it("reports whether a Remembered Write Authorization exists for the session", as
 it("takes a Zotero database swapped under the port as a changed server", async () => {
   await using stack = new AsyncDisposableStack();
   let answering = SERVER_ID;
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     root: () => rootOk({ "Zotero-Server-ID": answering }),
     children: () => serverChanged("Zzzz11119999"),
   });
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
   answering = "Zzzz11119999";
-  const result = await client.listAnnotations(ATTACHMENT_KEY);
+  const result = await bridge.runPromise(
+    service.listAnnotations(ATTACHMENT_KEY),
+  );
 
   expect(result).toEqual({ failure: { kind: "server-changed" } });
   // The session is quarantined rather than swapped under the read in flight.
-  expect(client.demandSource()).toBeNull();
-  expect(client.state).toEqual({
+  expect(bridge.runSync(service.demandSource)).toBeNull();
+  expect(bridge.runSync(service.state)).toEqual({
     kind: "unavailable",
     failure: { kind: "server-changed" },
   });
 
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
   // The next probe adopts the database answering now: a fresh cache partition,
   // not a renamed object.
-  expect(client.demandSource()).toEqual({
+  expect(bridge.runSync(service.demandSource)).toEqual({
     kind: "zotero-local-api",
     serverID: "Zzzz11119999",
   });
@@ -542,26 +587,29 @@ it("takes a Zotero database swapped under the port as a changed server", async (
 
 it("leaves the session standing when a read is cancelled", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     children: () => annotationPage(ROUGIER_ANNOTATIONS),
   });
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  const result = await client.listAnnotations(
-    ATTACHMENT_KEY,
-    AbortSignal.abort(),
+  const result = await bridge.runPromise(
+    service.listAnnotations(ATTACHMENT_KEY, AbortSignal.abort()),
   );
 
   expect(result).toEqual({ failure: { kind: "unknown-outcome" } });
-  expect(client.demandSource()).not.toBeNull();
+  expect(bridge.runSync(service.demandSource)).not.toBeNull();
 });
 
 it("refuses to read at all while no session stands, rather than sending a request", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client, requests } = await setup(stack, { root: localApiDisabled });
-  await client.probe();
+  const { requests, service, bridge } = await setup(stack, {
+    root: localApiDisabled,
+  });
+  await bridge.runPromise(service.probe);
 
-  const result = await client.listAnnotations(ATTACHMENT_KEY);
+  const result = await bridge.runPromise(
+    service.listAnnotations(ATTACHMENT_KEY),
+  );
 
   expect(result).toEqual({ failure: { kind: "local-api-disabled" } });
   expect(requests).toHaveLength(1);
@@ -569,13 +617,14 @@ it("refuses to read at all while no session stands, rather than sending a reques
 
 it("probes again on the Freshness Signal and on a resolved-paths change", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client, requests, prefEvents, serverEvents } = await setup(stack);
-  await client.probe();
+  const { requests, prefEvents, serverEvents, service, bridge } =
+    await setup(stack);
+  await bridge.runPromise(service.probe);
 
-  const freshness = nextChange(client);
+  const freshness = nextChange(service, bridge);
   freshnessSignal(serverEvents);
   await freshness;
-  const moved = nextChange(client);
+  const moved = nextChange(service, bridge);
   prefEvents.emit("resolved-changed");
   await moved;
 
@@ -591,7 +640,7 @@ it("announces a Freshness Signal that arrived while a probe was running", async 
   const held = Promise.withResolvers<Response>();
   const reached = Promise.withResolvers<void>();
   let probes = 0;
-  const { client, serverEvents } = await setup(stack, {
+  const { serverEvents, service, bridge } = await setup(stack, {
     root: () => {
       probes += 1;
       if (probes > 1) return rootOk();
@@ -600,8 +649,8 @@ it("announces a Freshness Signal that arrived while a probe was running", async 
     },
   });
 
-  const announced = nextChange(client);
-  const probing = client.probe();
+  const announced = nextChange(service, bridge);
+  const probing = bridge.runPromise(service.probe);
   await reached.promise;
   // The signal lands mid-probe: coalesced into the probe in flight, never
   // dropped, because it is what invalidates the partition.
@@ -620,19 +669,26 @@ it("probes the new port when the resolved paths move while a probe is running, a
   const held = Promise.withResolvers<Response>();
   const reached = Promise.withResolvers<void>();
   let probes = 0;
-  const { client, requests, zoteroPref, prefEvents } = await setup(stack, {
-    root: () => {
-      probes += 1;
-      if (probes > 1) unreachable();
-      reached.resolve();
-      return held.promise;
+  const { requests, zoteroPref, prefEvents, service, bridge } = await setup(
+    stack,
+    {
+      root: () => {
+        probes += 1;
+        if (probes > 1) unreachable();
+        reached.resolve();
+        return held.promise;
+      },
     },
-  });
+  );
   const seen: unknown[] = [];
-  stack.defer(client.on("capability-changed", () => seen.push(client.state)));
-  stack.defer(client.on("server-changed", (id) => seen.push(id)));
+  stack.defer(
+    bridge.subscribe(service.capabilityChanges, () =>
+      seen.push(bridge.runSync(service.state)),
+    ),
+  );
+  stack.defer(bridge.subscribe(service.serverChanges, (id) => seen.push(id)));
 
-  const probing = client.probe();
+  const probing = bridge.runPromise(service.probe);
   await reached.promise;
   zoteroPref.httpPort = PORT + 1;
   prefEvents.emit("resolved-changed");
@@ -640,7 +696,7 @@ it("probes the new port when the resolved paths move while a probe is running, a
   await probing;
 
   const offline = { kind: "unavailable", failure: { kind: "unreachable" } };
-  expect(client.state).toEqual(offline);
+  expect(bridge.runSync(service.state)).toEqual(offline);
   expect(seen).toEqual([offline]);
   expect(requests.map(({ url }) => Number(url.port))).toEqual([PORT, PORT + 1]);
 });
@@ -651,22 +707,25 @@ it("probes the new port when the resolved paths move while a probe is running, a
 it("probes the new port when the resolved paths move after a probe commits its answer", async () => {
   await using stack = new AsyncDisposableStack();
   let probes = 0;
-  const { client, requests, zoteroPref, prefEvents } = await setup(stack, {
-    root: () => {
-      probes += 1;
-      return probes > 1 ? unreachable() : localApiDisabled();
+  const { requests, zoteroPref, prefEvents, service, bridge } = await setup(
+    stack,
+    {
+      root: () => {
+        probes += 1;
+        return probes > 1 ? unreachable() : localApiDisabled();
+      },
     },
-  });
-  const moveOnce = client.on("capability-changed", () => {
+  );
+  const moveOnce = bridge.subscribe(service.capabilityChanges, () => {
     moveOnce();
     zoteroPref.httpPort = PORT + 1;
     prefEvents.emit("resolved-changed");
   });
   stack.defer(moveOnce);
 
-  await client.probe();
+  await bridge.runPromise(service.probe);
 
-  expect(client.state).toEqual({
+  expect(bridge.runSync(service.state)).toEqual({
     kind: "unavailable",
     failure: { kind: "unreachable" },
   });
@@ -675,12 +734,15 @@ it("probes the new port when the resolved paths move after a probe commits its a
 
 it("holds the source it has while a second probe runs, and joins one in flight", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client, requests } = await setup(stack);
-  await client.probe();
+  const { requests, service, bridge } = await setup(stack);
+  await bridge.runPromise(service.probe);
 
-  await Promise.all([client.probe(), client.probe()]);
+  await Promise.all([
+    bridge.runPromise(service.probe),
+    bridge.runPromise(service.probe),
+  ]);
 
-  expect(client.demandSource()).not.toBeNull();
+  expect(bridge.runSync(service.demandSource)).not.toBeNull();
   expect(requests).toHaveLength(2);
 });
 
@@ -690,22 +752,24 @@ it("holds the source it has while a second probe runs, and joins one in flight",
 it("announces a capability change only when a probe changes what it learned", async () => {
   await using stack = new AsyncDisposableStack();
   let enabled = true;
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     root: () => (enabled ? rootOk() : localApiDisabled()),
   });
-  await client.probe();
+  await bridge.runPromise(service.probe);
   let announced = 0;
-  stack.defer(client.on("capability-changed", () => (announced += 1)));
+  stack.defer(
+    bridge.subscribe(service.capabilityChanges, () => (announced += 1)),
+  );
 
-  await client.probe();
+  await bridge.runPromise(service.probe);
   expect(announced).toBe(0);
 
   enabled = false;
-  await client.probe();
+  await bridge.runPromise(service.probe);
   expect(announced).toBe(1);
 });
 
-function read(result: Awaited<ReturnType<LocalApiPort["listAnnotations"]>>) {
+function read(result: LocalApiResult<readonly LocalApiAnnotation[]>) {
   if ("failure" in result) {
     throw new Error(`Expected a list, got ${result.failure.kind}`);
   }
@@ -715,11 +779,13 @@ function read(result: Awaited<ReturnType<LocalApiPort["listAnnotations"]>>) {
 /** The failure one broken record makes of the whole read. */
 async function failedRead(patch: Partial<WireAnnotation>) {
   await using stack = new AsyncDisposableStack();
-  const { client } = await setup(stack, {
+  const { service, bridge } = await setup(stack, {
     children: () => annotationPage([{ ...ROUGIER_ANNOTATIONS[0]!, ...patch }]),
   });
-  await client.probe();
-  const result = await client.listAnnotations(ATTACHMENT_KEY);
+  await bridge.runPromise(service.probe);
+  const result = await bridge.runPromise(
+    service.listAnnotations(ATTACHMENT_KEY),
+  );
   return "failure" in result ? result.failure : null;
 }
 
@@ -741,9 +807,12 @@ function pageKey(index: number): string {
   return `PAGE${tail}`;
 }
 
-function nextChange(client: LocalApiPort): Promise<void> {
+function nextChange(
+  service: ZoteroLocalApi["Service"],
+  bridge: EffectBridge,
+): Promise<void> {
   return new Promise<void>((resolve) => {
-    const off = client.on("changed", () => {
+    const off = bridge.subscribe(service.changes, () => {
       off();
       resolve();
     });
@@ -756,6 +825,6 @@ async function setup(
   options: ClientOptions = {},
 ) {
   const harness = await localApiClient(answers, options);
-  stack.use(harness.client);
+  stack.use(harness.disposable);
   return harness;
 }

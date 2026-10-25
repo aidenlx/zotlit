@@ -77,7 +77,6 @@ import { plainUseLedger } from "./use-ledger/plain";
 import { WikilinkEditor } from "./wikilink-editor/service";
 import { WikilinkReading } from "./wikilink-reading/service";
 import { writeReadUse } from "./zotero-local-api/last-read";
-import { localApiPort } from "./zotero-local-api/port";
 import { ZoteroLocalApi } from "./zotero-local-api/service";
 import { plainZoteroPref } from "./zotero-pref/plain";
 import { plainZoteroReads } from "./zotero-reads/plain";
@@ -135,7 +134,6 @@ export async function buildServices(
   const bridge = effectBridge(runtime);
   const zoteroReadsService = runtime.runSync(ZoteroReads);
   const zoteroLocalApiService = runtime.runSync(ZoteroLocalApi);
-  const localApi = localApiPort(zoteroLocalApiService, bridge);
   const vault = runtime.runSync(Vault);
   const fileManager = runtime.runSync(FileManager);
   const container = new ServiceContainer(stack, (key, error) => {
@@ -218,7 +216,7 @@ export async function buildServices(
         new CapabilityNotices({
           capabilities: annotationRepository,
           bridge,
-          writes: localApi,
+          writes: zoteroLocalApiService,
           openEditingSettings: () =>
             revealSetting(
               plugin.app,

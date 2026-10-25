@@ -38,7 +38,6 @@ import { LocalServer } from "@/services/local-server/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 
-import { localApiPort } from "./port";
 import { layerZoteroLocalApi, ZoteroLocalApi } from "./service";
 import type { WireTag } from "./wire";
 
@@ -804,12 +803,9 @@ export async function localApiClient(
   await runtime.context();
   const service = runtime.runSync(ZoteroLocalApi);
   const bridge = effectBridge(runtime);
-  const port = localApiPort(service, bridge);
-  const client = Object.assign(port, {
-    [Symbol.asyncDispose]: () => stack.disposeAsync(),
-  });
   return {
-    client,
+    /** Closes the runtime the service lives in. */
+    disposable: { [Symbol.asyncDispose]: () => stack.disposeAsync() },
     service,
     runtime,
     bridge,

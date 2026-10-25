@@ -249,13 +249,14 @@ export async function setup(
   });
 
   const {
-    client: localApi,
+    disposable: localApiDisposable,
     service: localApiService,
+    bridge: localApiBridge,
     requests,
     serverEvents,
     prefEvents,
   } = await localApiClient(answers, clientOptions);
-  stack.use(localApi);
+  stack.use(localApiDisposable);
   const pref = Layer.succeed(
     ZoteroPref,
     stubService<ZoteroPref["Service"]>("ZoteroPref", {
@@ -322,8 +323,8 @@ export async function setup(
     acquireRead,
     excerptBaselines,
     queryClient,
-    localApi,
     localApiService,
+    localApiBridge,
     bridge,
     requests,
     serverEvents,

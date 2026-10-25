@@ -9,7 +9,7 @@ it("lets an interrupt wait for a write that was sent, and the write completes", 
   const reached = Promise.withResolvers<void>();
   const answer = Promise.withResolvers<void>();
   let answered = false;
-  const { client, service, runtime } = await localApiClient(
+  const { service, runtime, disposable, bridge } = await localApiClient(
     {
       root: () => rootOk(),
       write: async () => {
@@ -21,8 +21,8 @@ it("lets an interrupt wait for a write that was sent, and the write completes", 
     },
     { key: "a-remembered-key" },
   );
-  stack.use(client);
-  await client.probe();
+  stack.use(disposable);
+  await bridge.runPromise(service.probe);
 
   const send = runtime.runFork(
     service.authorizedSend("/api/users/0/items/PUPR5FG5", {
