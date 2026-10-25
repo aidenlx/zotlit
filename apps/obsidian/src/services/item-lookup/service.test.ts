@@ -1,408 +1,494 @@
-import { Effect } from "effect";
-import { Stream } from "effect";
-import { describe, expect, it } from "vitest";
+import { it } from "@effect/vitest";
+import {
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Queue,
+  Scope,
+  SubscriptionRef,
+} from "effect";
+import { isDeepStrictEqual } from "node:util";
+import { describe, expect } from "vitest";
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
-import type { Library } from "@zotlit/db";
 
-import { testEvent } from "@/lib/__fixtures__/event-stream";
-import { testRuntime } from "@/lib/__fixtures__/runtime";
-import type { PlainLibraryScope } from "@/services/library-scope/plain";
-import type {
-  AvailableLibrary,
-  ResolvedLibraryScope,
-} from "@/services/library-scope/scope";
+import type { AvailableLibrary } from "@/services/library-scope/scope";
+import { layerRcRef } from "@/services/zotero-reads/connection";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import {
-  inProcessReadsService,
+  inProcessClient,
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 
+import {
+  layerLibraryScopeOf,
+  layerTestItemLookup,
+  scopeState,
+} from "./__fixtures__";
 import { ItemLookup } from "./service";
 import type { SearchHit } from "./service";
 
+const keys = (hits: readonly SearchHit[]) => hits.map((hit) => hit.item.key);
+
 describe("ItemLookup", () => {
-  it("answers through SearchItems with the Library Scope's ids", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    await using lookup = itemLookup(
-      reads,
-      new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
-    );
-
-    const hits = await lookup.search("Alpha", { limit: 5 });
-
-    expect(hits.map((hit) => hit.item.key)).toEqual(["LIBRARY2", "LIBRARY3"]);
-    expect(hits[0]!.matches).toEqual([[0, 5]]);
-    expect(reads.searches.at(-1)).toEqual({
-      libraryIDs: [USER_LIBRARY_ID, 2],
-      query: "Alpha",
-      limit: 5,
-    });
-  });
-
-  it("prioritizes and labels cited Items, forwarding them only for empty queries", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    await using lookup = itemLookup(
-      reads,
-      new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
-    );
-    using session = lookup.openSession();
-    const cited = ["LIBRARY3g2"];
-    const empty = await session.search(" ", { cited });
-    expect(empty.map((hit) => [hit.item.indexedKey, hit.cited])).toEqual([
-      ["LIBRARY3g2", true],
-      ["LIBRARY2", false],
-    ]);
-    expect(reads.searches.at(-1)).toMatchObject({ cited });
-    const typed = await session.search("Alpha", { cited });
-    expect(typed.map((hit) => [hit.item.indexedKey, hit.cited])).toEqual([
-      ["LIBRARY2", false],
-      ["LIBRARY3g2", true],
-    ]);
-    expect(reads.searches.at(-1)).not.toHaveProperty("cited");
-    expect((await session.search("")).every((hit) => !hit.cited)).toBe(true);
-  });
-
-  it("searches the Libraries a search names in place of the Library Scope, a session's too", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    await using lookup = itemLookup(
-      reads,
-      new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
-    );
-
-    const hits = await lookup.search("Alpha", { libraries: [library(2)] });
-    expect(hits.map((hit) => [hit.item.key, hit.library])).toEqual([
-      ["LIBRARY3", null],
-    ]);
-    expect(reads.searches.at(-1)?.libraryIDs).toEqual([2]);
-
-    using session = lookup.openSession();
-    await session.search("Alpha", { libraries: [library(USER_LIBRARY_ID)] });
-    expect(reads.searches.at(-1)?.libraryIDs).toEqual([USER_LIBRARY_ID]);
-  });
-
-  it("labels hits only when two Libraries are in scope", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    const libraryScope = new FakeLibraryScope();
-    await using lookup = itemLookup(reads, libraryScope);
-
-    expect((await lookup.search("")).map((hit) => hit.library)).toEqual([null]);
-
-    libraryScope.setLibraries([library(USER_LIBRARY_ID), library(2)]);
-    expect(
-      (await lookup.search("")).map((hit) => hit.library?.libraryID),
-    ).toEqual([USER_LIBRARY_ID, 2]);
-  });
-
-  it("takes labels from the scope it asked with, so a rename shows at once", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    const libraryScope = new FakeLibraryScope([
-      library(USER_LIBRARY_ID),
-      library(2),
-    ]);
-    await using lookup = itemLookup(reads, libraryScope);
-    await lookup.search("");
-
-    libraryScope.setLibraries([
-      library(USER_LIBRARY_ID),
-      { ...library(2), name: "Renamed" },
-    ]);
-    const hits = await lookup.search("");
-
-    expect(hits.map((hit) => hit.library?.name)).toEqual([null, "Renamed"]);
-  });
-
-  it("makes the next search after a scope change cover the new list only", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    const libraryScope = new FakeLibraryScope();
-    await using lookup = itemLookup(reads, libraryScope);
-    expect((await lookup.search(""))[0]?.item.libraryID).toBe(USER_LIBRARY_ID);
-
-    libraryScope.setLibraries([library(2)]);
-    const hits = await lookup.search("");
-
-    expect(hits.map((hit) => hit.item.libraryID)).toEqual([2]);
-    expect(reads.searches.at(-1)?.libraryIDs).toEqual([2]);
-  });
-
-  it("answers empty when the database is unavailable", async () => {
-    await using reads = readsOver(() => null);
-    await using lookup = itemLookup(reads);
-
-    await expect(lookup.search("anything")).resolves.toEqual([]);
-  });
-
-  it("answers empty without a request while no Library is in scope", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    const libraryScope = new FakeLibraryScope(null);
-    await using lookup = itemLookup(reads, libraryScope);
-
-    await expect(lookup.search("")).resolves.toEqual([]);
-    libraryScope.setLibraries([]);
-    await expect(lookup.search("")).resolves.toEqual([]);
-    expect(reads.searches).toEqual([]);
-  });
-
-  it("answers empty for a limit of zero", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    await using lookup = itemLookup(reads);
-    await lookup.ready;
-    const before = reads.searches.length;
-
-    await expect(lookup.search("", { limit: 0 })).resolves.toEqual([]);
-    expect(reads.searches).toHaveLength(before);
-  });
-
-  it("interrupts the previous request when the next keystroke searches, and answers both with the newest list", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    await using lookup = itemLookup(
-      reads,
-      new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
-    );
-    await lookup.search("");
-    using session = lookup.openSession();
-    const gate = reads.gateSearch();
-
-    const first = session.search("Alpha");
-    await expect.poll(() => reads.held).toBe(1);
-    const second = session.search("LIBRARY3");
-
-    const keys = async (answer: Promise<SearchHit[]>) =>
-      (await answer).map((hit) => hit.item.key);
-    expect(await keys(second)).toEqual(["LIBRARY3"]);
-    // A list drawn from the interrupted answer still matches the box.
-    expect(await keys(first)).toEqual(["LIBRARY3"]);
-    expect(reads.interrupted).toEqual(["Alpha"]);
-    gate.resolve();
-  });
-
-  it("answers a chain of interrupted keystrokes with the newest list", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    await using lookup = itemLookup(
-      reads,
-      new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
-    );
-    await lookup.search("");
-    using session = lookup.openSession();
-    const gates = [reads.gateSearch(), reads.gateSearch()];
-
-    const first = session.search("A");
-    await expect.poll(() => reads.held).toBe(1);
-    const second = session.search("Al");
-    await expect.poll(() => reads.searches.at(-1)?.query).toBe("Al");
-    const third = session.search("LIBRARY2");
-
-    const answers = await Promise.all([first, second, third]);
-    expect(answers.map((answer) => answer.map((hit) => hit.item.key))).toEqual([
-      ["LIBRARY2"],
-      ["LIBRARY2"],
-      ["LIBRARY2"],
-    ]);
-    expect(reads.interrupted).toEqual(["A", "Al"]);
-    for (const gate of gates) gate.resolve();
-  });
-
-  it("runs two sessions side by side, each answering its own list", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    await using lookup = itemLookup(
-      reads,
-      new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
-    );
-    await lookup.search("");
-    using picker = lookup.openSession();
-    using suggester = lookup.openSession();
-    const gates = [reads.gateSearch(), reads.gateSearch()];
-
-    const first = picker.search("Alpha");
-    await expect.poll(() => reads.held).toBe(1);
-    const second = suggester.search("LIBRARY3");
-    await expect.poll(() => reads.held).toBe(2);
-    for (const gate of gates) gate.resolve();
-
-    const keys = async (answer: Promise<SearchHit[]>) =>
-      (await answer).map((hit) => hit.item.key);
-    expect(await keys(first)).toEqual(["LIBRARY2", "LIBRARY3"]);
-    expect(await keys(second)).toEqual(["LIBRARY3"]);
-    expect(reads.interrupted).toEqual([]);
-  });
-
-  it("answers each one-shot search with its own list, beside a session's keystrokes and each other", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    await using lookup = itemLookup(
-      reads,
-      new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
-    );
-    await lookup.search("");
-    using session = lookup.openSession();
-    const gates = [reads.gateSearch(), reads.gateSearch(), reads.gateSearch()];
-
-    const recent = lookup.search("", { limit: 1 });
-    await expect.poll(() => reads.held).toBe(1);
-    const other = lookup.search("LIBRARY3");
-    await expect.poll(() => reads.held).toBe(2);
-    const keystroke = session.search("Alpha");
-    await expect.poll(() => reads.held).toBe(3);
-    const nextKeystroke = session.search("LIBRARY2");
-    await expect(nextKeystroke).resolves.toHaveLength(1);
-    for (const gate of gates) gate.resolve();
-
-    const keys = async (answer: Promise<SearchHit[]>) =>
-      (await answer).map((hit) => hit.item.key);
-    expect(await keys(recent)).toEqual(["LIBRARY2"]);
-    expect(await keys(other)).toEqual(["LIBRARY3"]);
-    expect(await keys(keystroke)).toEqual(["LIBRARY2"]);
-    expect(reads.interrupted).toEqual(["Alpha"]);
-  });
-
-  it("interrupts a session's pending search on close, and answers it and every later search empty", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    await using lookup = itemLookup(reads);
-    await lookup.search("");
-    const session = lookup.openSession();
-    const gate = reads.gateSearch();
-
-    const pending = session.search("Alpha");
-    await expect.poll(() => reads.held).toBe(1);
-    session.close();
-
-    await expect(pending).resolves.toEqual([]);
-    expect(reads.interrupted).toEqual(["Alpha"]);
-    const before = reads.searches.length;
-    await expect(session.search("Alpha")).resolves.toEqual([]);
-    expect(reads.searches).toHaveLength(before);
-    gate.resolve();
-  });
-
-  it("prewarms with an empty query and a limit of one on ready", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    await using lookup = itemLookup(reads);
-
-    await lookup.ready;
-
-    await expect
-      .poll(() => reads.searches)
-      .toEqual([
-        { libraryIDs: [USER_LIBRARY_ID], query: "", uses: {}, limit: 1 },
+  it.effect("answers through SearchItems with the Library Scope's ids", () =>
+    Effect.gen(function* () {
+      const reads = yield* readsOver(() => seed(perLibraryRows()));
+      const { lookup } = yield* lookupOver(reads, [
+        library(USER_LIBRARY_ID),
+        library(2),
       ]);
-  });
 
-  it("prewarms the new list on a Library Scope change", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    const libraryScope = new FakeLibraryScope();
-    await using lookup = itemLookup(reads, libraryScope);
-    await lookup.ready;
-    await expect.poll(() => reads.searches).toHaveLength(1);
+      const hits = yield* lookup.search("Alpha", { limit: 5 });
 
-    libraryScope.setLibraries([library(USER_LIBRARY_ID), library(2)]);
+      expect(keys(hits)).toEqual(["LIBRARY2", "LIBRARY3"]);
+      expect(hits[0]!.matches).toEqual([[0, 5]]);
+      expect(reads.searches.at(-1)).toEqual({
+        libraryIDs: [USER_LIBRARY_ID, 2],
+        query: "Alpha",
+        limit: 5,
+      });
+    }),
+  );
 
-    await expect
-      .poll(() => reads.searches.at(-1))
-      .toEqual({
+  it.effect(
+    "prioritizes and labels cited Items, forwarding them only for empty queries",
+    () =>
+      Effect.gen(function* () {
+        const reads = yield* readsOver(() => seed(perLibraryRows()));
+        const { lookup } = yield* lookupOver(reads, [
+          library(USER_LIBRARY_ID),
+          library(2),
+        ]);
+        const session = yield* lookup.openSession;
+        const cited = ["LIBRARY3g2"];
+        const empty = yield* session.search(" ", { cited });
+        expect(empty.map((hit) => [hit.item.indexedKey, hit.cited])).toEqual([
+          ["LIBRARY3g2", true],
+          ["LIBRARY2", false],
+        ]);
+        expect(reads.searches.at(-1)).toMatchObject({ cited });
+        const typed = yield* session.search("Alpha", { cited });
+        expect(typed.map((hit) => [hit.item.indexedKey, hit.cited])).toEqual([
+          ["LIBRARY2", false],
+          ["LIBRARY3g2", true],
+        ]);
+        expect(reads.searches.at(-1)).not.toHaveProperty("cited");
+        expect((yield* session.search("")).every((hit) => !hit.cited)).toBe(
+          true,
+        );
+      }),
+  );
+
+  it.effect(
+    "searches the Libraries a search names in place of the Library Scope, a session's too",
+    () =>
+      Effect.gen(function* () {
+        const reads = yield* readsOver(() => seed(perLibraryRows()));
+        const { lookup } = yield* lookupOver(reads, [
+          library(USER_LIBRARY_ID),
+          library(2),
+        ]);
+
+        const hits = yield* lookup.search("Alpha", { libraries: [library(2)] });
+        expect(hits.map((hit) => [hit.item.key, hit.library])).toEqual([
+          ["LIBRARY3", null],
+        ]);
+        expect(reads.searches.at(-1)?.libraryIDs).toEqual([2]);
+
+        const session = yield* lookup.openSession;
+        yield* session.search("Alpha", {
+          libraries: [library(USER_LIBRARY_ID)],
+        });
+        expect(reads.searches.at(-1)?.libraryIDs).toEqual([USER_LIBRARY_ID]);
+      }),
+  );
+
+  it.effect("labels hits only when two Libraries are in scope", () =>
+    Effect.gen(function* () {
+      const reads = yield* readsOver(() => seed(perLibraryRows()));
+      const { lookup, setLibraries } = yield* lookupOver(reads);
+
+      expect((yield* lookup.search("")).map((hit) => hit.library)).toEqual([
+        null,
+      ]);
+
+      yield* setLibraries([library(USER_LIBRARY_ID), library(2)]);
+      expect(
+        (yield* lookup.search("")).map((hit) => hit.library?.libraryID),
+      ).toEqual([USER_LIBRARY_ID, 2]);
+    }),
+  );
+
+  it.effect(
+    "takes labels from the scope it asked with, so a rename shows at once",
+    () =>
+      Effect.gen(function* () {
+        const reads = yield* readsOver(() => seed(perLibraryRows()));
+        const { lookup, setLibraries } = yield* lookupOver(reads, [
+          library(USER_LIBRARY_ID),
+          library(2),
+        ]);
+        yield* lookup.search("");
+
+        yield* setLibraries([
+          library(USER_LIBRARY_ID),
+          { ...library(2), name: "Renamed" },
+        ]);
+        const hits = yield* lookup.search("");
+
+        expect(hits.map((hit) => hit.library?.name)).toEqual([null, "Renamed"]);
+      }),
+  );
+
+  it.effect(
+    "makes the next search after a scope change cover the new list only",
+    () =>
+      Effect.gen(function* () {
+        const reads = yield* readsOver(() => seed(perLibraryRows()));
+        const { lookup, setLibraries } = yield* lookupOver(reads);
+        expect((yield* lookup.search(""))[0]?.item.libraryID).toBe(
+          USER_LIBRARY_ID,
+        );
+
+        yield* setLibraries([library(2)]);
+        const hits = yield* lookup.search("");
+
+        expect(hits.map((hit) => hit.item.libraryID)).toEqual([2]);
+        expect(reads.searches.at(-1)?.libraryIDs).toEqual([2]);
+      }),
+  );
+
+  it.effect("answers empty when the database is unavailable", () =>
+    Effect.gen(function* () {
+      const reads = yield* readsOver(() => null);
+      const { lookup } = yield* lookupOver(reads);
+
+      expect(yield* lookup.search("anything")).toEqual([]);
+    }),
+  );
+
+  it.effect(
+    "answers empty without a request while no Library is in scope",
+    () =>
+      Effect.gen(function* () {
+        const reads = yield* readsOver(() => seed(perLibraryRows()));
+        const { lookup, setLibraries } = yield* lookupOver(reads, null);
+
+        expect(yield* lookup.search("")).toEqual([]);
+        yield* setLibraries([]);
+        expect(yield* lookup.search("")).toEqual([]);
+        expect(reads.searches).toEqual([]);
+      }),
+  );
+
+  it.effect("answers empty for a limit of zero", () =>
+    Effect.gen(function* () {
+      const reads = yield* readsOver(() => seed(perLibraryRows()));
+      const { lookup } = yield* lookupOver(reads);
+      yield* Queue.take(reads.calls);
+      const before = reads.searches.length;
+
+      expect(yield* lookup.search("", { limit: 0 })).toEqual([]);
+      expect(reads.searches).toHaveLength(before);
+    }),
+  );
+
+  it.effect(
+    "interrupts the previous request when the next keystroke searches, and answers both with the newest list",
+    () =>
+      Effect.gen(function* () {
+        const reads = yield* readsOver(() => seed(perLibraryRows()));
+        const { lookup } = yield* lookupOver(reads, [
+          library(USER_LIBRARY_ID),
+          library(2),
+        ]);
+        yield* lookup.search("");
+        const session = yield* lookup.openSession;
+        const gate = yield* reads.gateSearch;
+
+        const first = yield* Effect.forkChild(session.search("Alpha"));
+        yield* gate.entered;
+        const second = yield* session.search("LIBRARY3");
+
+        expect(keys(second)).toEqual(["LIBRARY3"]);
+        // A list drawn from the interrupted answer still matches the box.
+        expect(keys(yield* Fiber.join(first))).toEqual(["LIBRARY3"]);
+        expect(reads.interrupted).toEqual(["Alpha"]);
+      }),
+  );
+
+  it.effect(
+    "answers a chain of interrupted keystrokes with the newest list",
+    () =>
+      Effect.gen(function* () {
+        const reads = yield* readsOver(() => seed(perLibraryRows()));
+        const { lookup } = yield* lookupOver(reads, [
+          library(USER_LIBRARY_ID),
+          library(2),
+        ]);
+        yield* lookup.search("");
+        const session = yield* lookup.openSession;
+        const gates = [yield* reads.gateSearch, yield* reads.gateSearch];
+
+        const first = yield* Effect.forkChild(session.search("A"));
+        yield* gates[0]!.entered;
+        const second = yield* Effect.forkChild(session.search("Al"));
+        yield* gates[1]!.entered;
+        const third = yield* session.search("LIBRARY2");
+
+        const answers = [yield* Fiber.join(first), yield* Fiber.join(second)];
+        expect([...answers, third].map(keys)).toEqual([
+          ["LIBRARY2"],
+          ["LIBRARY2"],
+          ["LIBRARY2"],
+        ]);
+        expect(reads.interrupted).toEqual(["A", "Al"]);
+      }),
+  );
+
+  it.effect("runs two sessions side by side, each answering its own list", () =>
+    Effect.gen(function* () {
+      const reads = yield* readsOver(() => seed(perLibraryRows()));
+      const { lookup } = yield* lookupOver(reads, [
+        library(USER_LIBRARY_ID),
+        library(2),
+      ]);
+      yield* lookup.search("");
+      const picker = yield* lookup.openSession;
+      const suggester = yield* lookup.openSession;
+      const gates = [yield* reads.gateSearch, yield* reads.gateSearch];
+
+      const first = yield* Effect.forkChild(picker.search("Alpha"));
+      yield* gates[0]!.entered;
+      const second = yield* Effect.forkChild(suggester.search("LIBRARY3"));
+      yield* gates[1]!.entered;
+      for (const gate of gates) yield* gate.open;
+
+      expect(keys(yield* Fiber.join(first))).toEqual(["LIBRARY2", "LIBRARY3"]);
+      expect(keys(yield* Fiber.join(second))).toEqual(["LIBRARY3"]);
+      expect(reads.interrupted).toEqual([]);
+    }),
+  );
+
+  it.effect(
+    "answers each one-shot search with its own list, beside a session's keystrokes and each other",
+    () =>
+      Effect.gen(function* () {
+        const reads = yield* readsOver(() => seed(perLibraryRows()));
+        const { lookup } = yield* lookupOver(reads, [
+          library(USER_LIBRARY_ID),
+          library(2),
+        ]);
+        yield* lookup.search("");
+        const session = yield* lookup.openSession;
+        const gates = [
+          yield* reads.gateSearch,
+          yield* reads.gateSearch,
+          yield* reads.gateSearch,
+        ];
+
+        const recent = yield* Effect.forkChild(lookup.search("", { limit: 1 }));
+        yield* gates[0]!.entered;
+        const other = yield* Effect.forkChild(lookup.search("LIBRARY3"));
+        yield* gates[1]!.entered;
+        const keystroke = yield* Effect.forkChild(session.search("Alpha"));
+        yield* gates[2]!.entered;
+        expect(yield* session.search("LIBRARY2")).toHaveLength(1);
+        for (const gate of gates) yield* gate.open;
+
+        expect(keys(yield* Fiber.join(recent))).toEqual(["LIBRARY2"]);
+        expect(keys(yield* Fiber.join(other))).toEqual(["LIBRARY3"]);
+        expect(keys(yield* Fiber.join(keystroke))).toEqual(["LIBRARY2"]);
+        expect(reads.interrupted).toEqual(["Alpha"]);
+      }),
+  );
+
+  it.effect(
+    "interrupts a session's pending search on close, and answers it and every later search empty",
+    () =>
+      Effect.gen(function* () {
+        const reads = yield* readsOver(() => seed(perLibraryRows()));
+        const { lookup } = yield* lookupOver(reads);
+        yield* lookup.search("");
+        const sessionScope = yield* Scope.make();
+        const session = yield* Scope.provide(lookup.openSession, sessionScope);
+        const gate = yield* reads.gateSearch;
+
+        const pending = yield* Effect.forkChild(session.search("Alpha"));
+        yield* gate.entered;
+        yield* Scope.close(sessionScope, Exit.void);
+
+        expect(yield* Fiber.join(pending)).toEqual([]);
+        expect(reads.interrupted).toEqual(["Alpha"]);
+        const before = reads.searches.length;
+        expect(yield* session.search("Alpha")).toEqual([]);
+        expect(reads.searches).toHaveLength(before);
+      }),
+  );
+
+  it.effect("prewarms with an empty query and a limit of one on start", () =>
+    Effect.gen(function* () {
+      const reads = yield* readsOver(() => seed(perLibraryRows()));
+      yield* lookupOver(reads);
+
+      expect(yield* Queue.take(reads.calls)).toEqual({
+        libraryIDs: [USER_LIBRARY_ID],
+        query: "",
+        uses: {},
+        limit: 1,
+      });
+      expect(reads.searches).toHaveLength(1);
+    }),
+  );
+
+  it.effect("prewarms the new list on a Library Scope change", () =>
+    Effect.gen(function* () {
+      const reads = yield* readsOver(() => seed(perLibraryRows()));
+      const { setLibraries } = yield* lookupOver(reads);
+      yield* Queue.take(reads.calls);
+
+      yield* setLibraries([library(USER_LIBRARY_ID), library(2)]);
+
+      expect(reads.searches.at(-1)).toEqual({
         libraryIDs: [USER_LIBRARY_ID, 2],
         query: "",
         uses: {},
         limit: 1,
       });
-  });
+    }),
+  );
 
-  it("keeps a pending search running through a rename and its prewarm", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    const libraryScope = new FakeLibraryScope([
-      library(USER_LIBRARY_ID),
-      library(2),
-    ]);
-    await using lookup = itemLookup(reads, libraryScope);
-    await lookup.search("");
-    using session = lookup.openSession();
-    const gate = reads.gateSearch();
+  it.effect(
+    "keeps a pending search running through a rename and its prewarm",
+    () =>
+      Effect.gen(function* () {
+        const reads = yield* readsOver(() => seed(perLibraryRows()));
+        const { lookup, setLibraries } = yield* lookupOver(reads, [
+          library(USER_LIBRARY_ID),
+          library(2),
+        ]);
+        yield* lookup.search("");
+        const session = yield* lookup.openSession;
+        const gate = yield* reads.gateSearch;
 
-    const search = session.search("Alpha");
-    await expect.poll(() => reads.held).toBe(1);
-    libraryScope.setLibraries([
-      library(USER_LIBRARY_ID),
-      { ...library(2), name: "Renamed" },
-    ]);
-    await expect.poll(() => reads.searches.at(-1)?.limit).toBe(1);
-    gate.resolve();
+        const search = yield* Effect.forkChild(session.search("Alpha"));
+        yield* gate.entered;
+        yield* setLibraries([
+          library(USER_LIBRARY_ID),
+          { ...library(2), name: "Renamed" },
+        ]);
+        yield* gate.open;
 
-    await expect(search).resolves.toHaveLength(2);
-    expect(reads.interrupted).toEqual([]);
-  });
+        expect(yield* Fiber.join(search)).toHaveLength(2);
+        expect(reads.interrupted).toEqual([]);
+      }),
+  );
 
-  it("drops a pending search's answer when a database switch gives its local id to another group", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    const group = (groupID: number): AvailableLibrary => ({
-      selector: { type: "group", groupID },
-      libraryID: 2,
-      name: `Group ${groupID}`,
-    });
-    const libraryScope = new FakeLibraryScope([group(10)]);
-    await using lookup = itemLookup(reads, libraryScope);
-    await lookup.search("");
-    using session = lookup.openSession();
-    const gate = reads.gateSearch();
+  it.effect(
+    "drops a pending search's answer when a database switch gives its local id to another group",
+    () =>
+      Effect.gen(function* () {
+        const reads = yield* readsOver(() => seed(perLibraryRows()));
+        const group = (groupID: number): AvailableLibrary => ({
+          selector: { type: "group", groupID },
+          libraryID: 2,
+          name: `Group ${groupID}`,
+        });
+        const { lookup, setLibraries } = yield* lookupOver(reads, [group(10)]);
+        yield* lookup.search("");
+        const session = yield* lookup.openSession;
+        const gate = yield* reads.gateSearch;
 
-    const search = session.search("Alpha");
-    await expect.poll(() => reads.held).toBe(1);
-    libraryScope.setLibraries([group(20)]);
+        const search = yield* Effect.forkChild(session.search("Alpha"));
+        yield* gate.entered;
+        yield* setLibraries([group(20)]);
 
-    await expect(search).resolves.toEqual([]);
-    expect(reads.interrupted).toEqual(["Alpha"]);
-    gate.resolve();
-  });
+        expect(yield* Fiber.join(search)).toEqual([]);
+        expect(reads.interrupted).toEqual(["Alpha"]);
+      }),
+  );
 
-  it("drops the pending search of every open session when the scope changes", async () => {
-    await using reads = readsOver(() => seed(perLibraryRows()));
-    const libraryScope = new FakeLibraryScope();
-    await using lookup = itemLookup(reads, libraryScope);
-    await lookup.search("");
-    using picker = lookup.openSession();
-    using suggester = lookup.openSession();
-    const gates = [reads.gateSearch(), reads.gateSearch()];
+  it.effect(
+    "drops the pending search of every open session when the scope changes",
+    () =>
+      Effect.gen(function* () {
+        const reads = yield* readsOver(() => seed(perLibraryRows()));
+        const { lookup, setLibraries } = yield* lookupOver(reads);
+        yield* lookup.search("");
+        const picker = yield* lookup.openSession;
+        const suggester = yield* lookup.openSession;
+        const gates = [yield* reads.gateSearch, yield* reads.gateSearch];
 
-    const pending = [picker.search("Alpha"), suggester.search("LIBRARY2")];
-    await expect.poll(() => reads.held).toBe(2);
-    libraryScope.setLibraries([library(2)]);
+        const pending = [
+          yield* Effect.forkChild(picker.search("Alpha")),
+          yield* Effect.forkChild(suggester.search("LIBRARY2")),
+        ];
+        for (const gate of gates) yield* gate.entered;
+        yield* setLibraries([library(2)]);
 
-    await expect(Promise.all(pending)).resolves.toEqual([[], []]);
-    expect(reads.interrupted.toSorted()).toEqual(["Alpha", "LIBRARY2"]);
-    for (const gate of gates) gate.resolve();
-  });
+        expect(yield* Fiber.joinAll(pending)).toEqual([[], []]);
+        expect(reads.interrupted.toSorted()).toEqual(["Alpha", "LIBRARY2"]);
+      }),
+  );
 
-  it.each([
+  it.effect.each<[string, readonly AvailableLibrary[]]>([
     ["another Library", [library(2)]],
     ["no Library", []],
   ])(
     "drops a pending search's answer when the scope changes to %s",
-    async (_case, libraries) => {
-      await using reads = readsOver(() => seed(perLibraryRows()));
-      const libraryScope = new FakeLibraryScope();
-      await using lookup = itemLookup(reads, libraryScope);
-      await lookup.search("");
-      const gate = reads.gateSearch();
+    ([, libraries]) =>
+      Effect.gen(function* () {
+        const reads = yield* readsOver(() => seed(perLibraryRows()));
+        const { lookup, setLibraries } = yield* lookupOver(reads);
+        yield* lookup.search("");
+        const gate = yield* reads.gateSearch;
 
-      const search = lookup.search("Alpha");
-      await expect.poll(() => reads.held).toBe(1);
-      libraryScope.setLibraries(libraries);
+        const search = yield* Effect.forkChild(lookup.search("Alpha"));
+        yield* gate.entered;
+        yield* setLibraries(libraries);
 
-      await expect(search).resolves.toEqual([]);
-      expect(reads.interrupted).toEqual(["Alpha"]);
-      gate.resolve();
-    },
+        expect(yield* Fiber.join(search)).toEqual([]);
+        expect(reads.interrupted).toEqual(["Alpha"]);
+      }),
   );
 });
 
-function itemLookup(
+/**
+ * The Item search over `reads`, with a Library Scope that holds `libraries`
+ * (unresolved for `null`), open for the case's Scope. `setLibraries` changes
+ * the scope, and returns once the search has seen the change: after the
+ * prewarm of a non-empty list.
+ */
+const lookupOver = Effect.fnUntraced(function* (
   reads: ObservedReads,
-  libraryScope: FakeLibraryScope = new FakeLibraryScope(),
-): ItemLookup {
-  return new ItemLookup({
-    runtime: testRuntime(),
-    useLedger: { uses: {} },
-    reads: reads.service,
-    libraryScope: libraryScope as unknown as PlainLibraryScope,
-  });
-}
+  libraries: readonly AvailableLibrary[] | null = [library(USER_LIBRARY_ID)],
+) {
+  const state = yield* SubscriptionRef.make(scopeState(libraries));
+  const context = yield* Layer.build(
+    layerTestItemLookup(reads.client, layerLibraryScopeOf(state)),
+  );
+  return {
+    lookup: Context.get(context, ItemLookup),
+    setLibraries: (next: readonly AvailableLibrary[]) =>
+      Effect.gen(function* () {
+        yield* SubscriptionRef.set(state, scopeState(next));
+        if (next.length === 0) return;
+        const libraryIDs = next.map((entry) => entry.libraryID);
+        yield* Queue.take(reads.calls).pipe(
+          Effect.repeat({
+            until: (call) =>
+              call.limit === 1 &&
+              call.query === "" &&
+              isDeepStrictEqual(call.libraryIDs, libraryIDs),
+          }),
+        );
+      }),
+  };
+});
 
 interface SearchPayload {
   libraryIDs: readonly number[];
@@ -410,28 +496,39 @@ interface SearchPayload {
   limit: number;
 }
 
-interface ObservedReads extends AsyncDisposable {
-  readonly service: ReturnType<typeof inProcessReadsService>;
+/** A held `SearchItems` call: `entered` once it waits, `open` lets it run. */
+interface Gate {
+  readonly entered: Effect.Effect<void>;
+  readonly open: Effect.Effect<void>;
+}
+
+interface ObservedReads {
+  readonly client: Effect.Effect<ZoteroReadsClient, never, Scope.Scope>;
   /** The payload of each `SearchItems` call, in call order. */
   readonly searches: SearchPayload[];
+  /** Each `SearchItems` call's payload, as it is made. */
+  readonly calls: Queue.Queue<SearchPayload>;
   /** The query of each `SearchItems` call that ended interrupted. */
   readonly interrupted: string[];
-  /** `SearchItems` calls the gate holds now. */
-  readonly held: number;
-  /** Hold the next `SearchItems` call until `resolve()`. */
-  gateSearch(): { resolve(): void };
+  /** Hold the next `SearchItems` call until its gate opens. */
+  readonly gateSearch: Effect.Effect<Gate>;
 }
 
 /**
- * A reads service on the in-process adapter over seeded `:memory:` databases;
+ * A reads client on the in-process adapter over seeded `:memory:` databases;
  * open #N runs `seedFor(N)`, and a `null` seed fails the open. `SearchItems`
  * is observed: each call is recorded, and a test can hold the next one.
  */
-function readsOver(seedFor: (open: number) => string | null): ObservedReads {
+const readsOver = Effect.fnUntraced(function* (
+  seedFor: (open: number) => string | null,
+) {
   const searches: SearchPayload[] = [];
   const interrupted: string[] = [];
-  const gates: Promise<void>[] = [];
-  let held = 0;
+  const calls = yield* Queue.unbounded<SearchPayload>();
+  const gates: {
+    entered: Deferred.Deferred<void>;
+    open: Deferred.Deferred<void>;
+  }[] = [];
 
   const wrap = (client: ZoteroReadsClient): ZoteroReadsClient => ({
     ...client,
@@ -444,16 +541,15 @@ function readsOver(seedFor: (open: number) => string | null): ObservedReads {
           options?: object,
         ) => Effect.Effect<unknown, unknown>
       )(payload, options);
-      return Effect.andThen(
-        gate
-          ? Effect.acquireUseRelease(
-              Effect.sync(() => (held += 1)),
-              () => Effect.promise(() => gate),
-              () => Effect.sync(() => (held -= 1)),
-            )
-          : Effect.void,
-        call,
-      ).pipe(
+      return Queue.offer(calls, payload).pipe(
+        Effect.andThen(
+          gate
+            ? Deferred.succeed(gate.entered, undefined).pipe(
+                Effect.andThen(Deferred.await(gate.open)),
+              )
+            : Effect.void,
+        ),
+        Effect.andThen(call),
         Effect.onInterrupt(() =>
           Effect.sync(() => interrupted.push(payload.query)),
         ),
@@ -461,22 +557,28 @@ function readsOver(seedFor: (open: number) => string | null): ObservedReads {
     }) as unknown as ZoteroReadsClient["SearchItems"],
   });
 
-  const service = inProcessReadsService(memoryOpener(seedFor).open, { wrap });
-  return {
-    service,
+  const reads: ObservedReads = {
+    client: Effect.map(
+      inProcessClient(layerRcRef(memoryOpener(seedFor).open)),
+      (client) => wrap(client),
+    ),
     searches,
+    calls,
     interrupted,
-    get held() {
-      return held;
-    },
-    gateSearch: () => {
-      const signal = Promise.withResolvers<void>();
-      gates.push(signal.promise);
-      return { resolve: () => signal.resolve() };
-    },
-    [Symbol.asyncDispose]: () => service[Symbol.asyncDispose](),
+    gateSearch: Effect.gen(function* () {
+      const gate = {
+        entered: yield* Deferred.make<void>(),
+        open: yield* Deferred.make<void>(),
+      };
+      gates.push(gate);
+      return {
+        entered: Deferred.await(gate.entered),
+        open: Effect.asVoid(Deferred.succeed(gate.open, undefined)),
+      };
+    }),
   };
-}
+  return reads;
+});
 
 /** One "Alpha" journal article per Library, keyed `LIBRARY<libraryID + 1>`. */
 function perLibraryRows(): {
@@ -527,44 +629,4 @@ function library(libraryID: number): AvailableLibrary {
         libraryID,
         name: `Group ${libraryID}`,
       };
-}
-
-class FakeLibraryScope {
-  #libraries: readonly AvailableLibrary[] | null;
-  readonly #events = testEvent<ResolvedLibraryScope | null>();
-  readonly changed = this.#events.stream;
-  readonly "libraries-changed" = Stream.empty;
-
-  readonly ready = Promise.resolve();
-
-  /** `null` leaves the scope unresolved. */
-  constructor(
-    libraries: readonly AvailableLibrary[] | null = [library(USER_LIBRARY_ID)],
-  ) {
-    this.#libraries = libraries;
-  }
-
-  get current(): ResolvedLibraryScope | null {
-    return this.#resolved();
-  }
-
-  resolveLibraries(_libraries: readonly Library[]): ResolvedLibraryScope {
-    return this.#resolved()!;
-  }
-
-  setLibraries(libraries: readonly AvailableLibrary[]): void {
-    this.#libraries = libraries;
-    this.#events.emit(this.#resolved());
-  }
-
-  #resolved(): ResolvedLibraryScope | null {
-    return (
-      this.#libraries && {
-        mode: "all",
-        invalid: false,
-        available: this.#libraries,
-        unavailable: [],
-      }
-    );
-  }
 }

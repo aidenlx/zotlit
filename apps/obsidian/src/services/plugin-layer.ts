@@ -56,6 +56,8 @@ import { layerExcerptImages } from "./excerpt-image/layer";
 import type { ExcerptImages } from "./excerpt-image/layer";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
 import type { ExcerptStore } from "./excerpt-image/store";
+import { layerItemLookup } from "./item-lookup/service";
+import type { ItemLookup } from "./item-lookup/service";
 import { layerLanguagePackNotices } from "./language-pack/notices";
 import { layerLanguagePack } from "./language-pack/service";
 import type {
@@ -145,6 +147,7 @@ export function pluginLayer(
   | AnnotationRepository
   | AnnotationPopover
   | CitekeyEditor
+  | ItemLookup
   | ExcerptDisplays
   | ExcerptImages
   | CitationText
@@ -188,6 +191,7 @@ export function pluginLayer(
     layerCitationPopover.pipe(startingAs("CitationPopover")),
     layerAnnotationPopover.pipe(startingAs("AnnotationPopover")),
     layerCitekeyEditor(noteCreation).pipe(startingAs("CitekeyEditor")),
+    layerItemLookup.pipe(startingAs("ItemLookup")),
   ).pipe(
     Layer.provideMerge(layerCitationText().pipe(startingAs("CitationText"))),
     Layer.provideMerge(layerCitationIndex().pipe(startingAs("CitationIndex"))),

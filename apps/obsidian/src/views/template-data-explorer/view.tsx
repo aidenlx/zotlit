@@ -26,7 +26,7 @@ import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
-import type { ItemLookup } from "@/services/item-lookup/service";
+import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { PluginSettings } from "@/services/settings/service";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
@@ -81,7 +81,7 @@ export interface ExplorerViewDeps extends TemplateDataDeps {
     | "refresh-requested"
     | "acquireRead"
   >;
-  itemLookup: Pick<ItemLookup, "search" | "openSession">;
+  itemLookup: Pick<ItemLookupHandle, "search" | "openSession">;
   settings: Pick<PluginSettings["Service"], "current" | "changes">;
   bridge: Pick<EffectBridge, "runSync">;
   templates: Pick<

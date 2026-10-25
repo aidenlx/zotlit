@@ -15,9 +15,10 @@ import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { CurrentAnswer } from "@/services/item-lookup/current-answer";
+import type { SearchSession } from "@/services/item-lookup/handle";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
-import type { SearchHit, SearchSession } from "@/services/item-lookup/service";
+import type { SearchHit } from "@/services/item-lookup/service";
 import { InertTemplateError } from "@/services/template/errors";
 import {
   isCitationCloser,

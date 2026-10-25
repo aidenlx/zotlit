@@ -12,18 +12,14 @@ import type { PluginSettings } from "@/services/settings/service";
 
 import { CurrentAnswer, takeEnter } from "./current-answer";
 import { FirstAnswerGate } from "./first-answer";
+import type { ItemLookupHandle, SearchSession } from "./handle";
 import { renderSuggestion as renderSearchHit } from "./render-hit";
 import { DEFAULT_LIMIT } from "./service";
-import type {
-  ItemLookup,
-  SearchHit,
-  SearchOptions,
-  SearchSession,
-} from "./service";
+import type { SearchHit, SearchOptions } from "./service";
 
 export interface ItemSearchDeps {
   app: App;
-  lookup: Pick<ItemLookup, "openSession">;
+  lookup: Pick<ItemLookupHandle, "openSession">;
   settings: Pick<PluginSettings["Service"], "current">;
   bridge: Pick<EffectBridge, "runSync">;
 }

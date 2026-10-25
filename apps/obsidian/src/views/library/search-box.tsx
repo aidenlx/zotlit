@@ -20,7 +20,10 @@ import { SearchInput } from "@/components/obsidian/search-input";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import type { ItemLookup, SearchSession } from "@/services/item-lookup/service";
+import type {
+  ItemLookupHandle,
+  SearchSession,
+} from "@/services/item-lookup/handle";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type {
   LibraryScope,
@@ -44,7 +47,7 @@ export const LIBRARY_SEARCH_LIMIT = 500;
 
 export interface LibrarySearchDeps {
   runtime: SubscriptionRuntime;
-  lookup: Pick<ItemLookup, "openSession">;
+  lookup: Pick<ItemLookupHandle, "openSession">;
   reads: Pick<
     PlainZoteroReads,
     | "changed"

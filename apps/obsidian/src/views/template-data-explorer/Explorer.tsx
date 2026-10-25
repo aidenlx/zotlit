@@ -16,7 +16,7 @@ import { IconButton } from "@/components/obsidian/icon-button";
 import { selectionControl } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
-import type { ItemLookup } from "@/services/item-lookup/service";
+import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import {
   ItemSelectionList,
   AnnotationSelectionList,
@@ -45,7 +45,7 @@ export function Explorer({
   onChooseAnnotation: () => void;
   onSelectItem: (item: WorkbenchItemChoice) => void;
   onSearchItem: () => void;
-  lookup: Pick<ItemLookup, "search">;
+  lookup: Pick<ItemLookupHandle, "search">;
   explorer: Omit<
     DataExplorerProps,
     | "data"

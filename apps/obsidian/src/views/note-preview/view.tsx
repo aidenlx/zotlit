@@ -51,7 +51,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { readLiveText } from "@/lib/live-text";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { openSettingsTab } from "@/lib/open-settings";
-import type { ItemLookup } from "@/services/item-lookup/service";
+import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { PlainProfile } from "@/services/profile/plain";
 import type { PluginSettings } from "@/services/settings/service";
 import {
@@ -97,7 +97,7 @@ import type { NativePreviewState } from "./session";
 
 export interface PreviewViewDeps extends NativeRenderDeps {
   settings: Pick<PluginSettings["Service"], "current" | "update">;
-  itemLookup: Pick<ItemLookup, "search" | "openSession">;
+  itemLookup: Pick<ItemLookupHandle, "search" | "openSession">;
   profile: Pick<
     PlainProfile,
     "getBuiltInSource" | "profiles" | "resolveProfile"

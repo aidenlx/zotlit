@@ -52,6 +52,7 @@ import { prepareSingleExcerpt } from "./excerpt-image/prepare-single";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
+import { bindItemLookup } from "./item-lookup/handle";
 import { ItemLookup } from "./item-lookup/service";
 import { QueryService } from "./item-query/service";
 import { LanguagePack } from "./language-pack/service";
@@ -405,14 +406,8 @@ export async function buildServices(
         return plainTemplateMigration(runtime);
       },
     })
-    .use({
-      itemLookup: ({ zoteroReads, libraryScope, useLedger }) =>
-        new ItemLookup({
-          runtime,
-          reads: zoteroReads,
-          libraryScope,
-          useLedger,
-        }),
+    .useValue({
+      itemLookup: () => bindItemLookup(bridge, runtime.runSync(ItemLookup)),
     })
     .useValue({
       noteFeature: ({

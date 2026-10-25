@@ -3,7 +3,7 @@ import type { App, Plugin } from "obsidian";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { TargetOpener } from "@/services/attachment-open/open-target";
-import type { ItemLookup } from "@/services/item-lookup/service";
+import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { NoteFeature } from "@/services/note-feature";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { PluginSettings } from "@/services/settings/service";
@@ -18,7 +18,7 @@ export interface QuickSwitchDeps {
   importProfile: ImportProfile;
   app: App;
   reads: Pick<PlainZoteroReads, "acquireRead">;
-  lookup: ItemLookup;
+  lookup: ItemLookupHandle;
   noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByItemKey">;
   noteFeature: Pick<NoteFeature, "createNote" | "planCreations">;
   settings: Pick<PluginSettings["Service"], "current">;

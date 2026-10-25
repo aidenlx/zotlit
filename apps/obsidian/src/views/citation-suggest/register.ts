@@ -7,7 +7,7 @@ import "./style.css";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type {} from "@/services/citation-index/service";
-import type { ItemLookup } from "@/services/item-lookup/service";
+import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { NoteFeature } from "@/services/note-feature";
 import type { PluginSettings } from "@/services/settings/service";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
@@ -19,7 +19,7 @@ import { InsertCitationModal } from "./insert-modal";
 
 export interface CitationSuggestDeps {
   app: App;
-  lookup: ItemLookup;
+  lookup: ItemLookupHandle;
   noteFeature: Pick<NoteFeature, "renderCitation">;
   settings: Pick<PluginSettings["Service"], "current">;
   bridge: Pick<EffectBridge, "runSync" | "runPromise">;

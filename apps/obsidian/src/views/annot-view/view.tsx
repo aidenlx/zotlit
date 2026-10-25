@@ -29,8 +29,8 @@ import type {
   HistoryDirection,
 } from "@/services/annotation-repository/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
+import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { pickItem } from "@/services/item-lookup/search-modal";
-import type { ItemLookup } from "@/services/item-lookup/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type {
   LocalServer,
@@ -162,7 +162,7 @@ export interface AnnotViewDeps extends QueryViewDeps {
     "open" | "refresh" | "revalidate"
   >;
   noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey">;
-  itemLookup: Pick<ItemLookup, "openSession">;
+  itemLookup: Pick<ItemLookupHandle, "openSession">;
   settings: Pick<PluginSettings["Service"], "current" | "update">;
 }
 
