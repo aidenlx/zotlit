@@ -304,7 +304,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
   const performSave = Effect.fn("PluginSettings.save")(function* () {
     dirty = false;
     if (loadFailure)
-      return yield* Effect.fail(persistenceFailure(Cause.squash(loadFailure)));
+      return yield* persistenceFailure(Cause.squash(loadFailure));
     const payload = {
       [VERSION_KEY]: CURRENT_VERSION,
       ...Object.fromEntries(broken),
@@ -367,12 +367,10 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     const candidate: Settings = { ...defaults, ...nextOverrides };
     const result = v.safeParse(schema, candidate);
     if (!result.success)
-      return yield* Effect.fail(
-        new SettingsMutationError({
-          message: `SettingsService.${op}(): invalid settings — ${v.summarize(result.issues)}`,
-          cause: result.issues,
-        }),
-      );
+      return yield* new SettingsMutationError({
+        message: `SettingsService.${op}(): invalid settings — ${v.summarize(result.issues)}`,
+        cause: result.issues,
+      });
     overrides = nextOverrides;
     broken = nextBroken;
     yield* SubscriptionRef.set(state, candidate);
