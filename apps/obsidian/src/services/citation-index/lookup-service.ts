@@ -5,6 +5,7 @@ import {
   Cause,
   Context,
   Deferred,
+  Duration,
   Effect,
   Exit,
   Fiber,
@@ -59,7 +60,7 @@ export class CitationLookup extends Context.Service<
 >()("zotlit/citation-index/CitationLookup") {}
 
 const LOOKUP_KEY = ["citation-lookup"] as const;
-const GC_TIME = Temporal.Duration.from({ minutes: 5 }).total("milliseconds");
+const GC_TIME = Duration.toMillis(Duration.minutes(5));
 
 /** Each Citation Lookup answer revision that replaces the previous one. */
 export function lookupChanged(
