@@ -425,11 +425,13 @@ export function layerAnnotationRepository(options: {
         ),
         // Untraced: the annotation view reads it once per changed Annotation.
         annotationState: Effect.fnUntraced(function* (annotationKey) {
-          return core.annotationState(annotationKey);
+          return yield* Effect.sync(() => core.annotationState(annotationKey));
         }),
         // Untraced: the annotation view reads it per Annotation and field.
         textDraftFor: Effect.fnUntraced(function* (field, annotationKey) {
-          return core.textDraftFor(field, annotationKey);
+          return yield* Effect.sync(() =>
+            core.textDraftFor(field, annotationKey),
+          );
         }),
         editTextField: Effect.fn("AnnotationRepository.editTextField")(
           (field, annotationKey, text) =>
@@ -455,7 +457,7 @@ export function layerAnnotationRepository(options: {
         ),
         // Untraced: the annotation view reads it per Annotation.
         tagDraftFor: Effect.fnUntraced(function* (annotationKey) {
-          return core.tagDraftFor(annotationKey);
+          return yield* Effect.sync(() => core.tagDraftFor(annotationKey));
         }),
         editTags: Effect.fn("AnnotationRepository.editTags")(
           (annotationKey, names) =>

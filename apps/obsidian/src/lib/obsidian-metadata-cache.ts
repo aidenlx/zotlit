@@ -93,7 +93,7 @@ export const makeMetadataCache = Effect.fnUntraced(function* (
   return MetadataCache.of({
     // Untraced: the Note Index reads it per note in a loop over the vault.
     fileCache: Effect.fnUntraced(function* (file) {
-      return source.getFileCache(file);
+      return yield* Effect.sync(() => source.getFileCache(file));
     }),
     changes: events.stream,
     whenResolved: whenResolved(source),
