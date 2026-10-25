@@ -86,6 +86,15 @@ const effectV3OnlyRules = [
   "scope-in-layer-effect",
 ].map((rule) => [`effecttsgo/${rule}`, "off"] as const);
 
+/**
+ * `@effect/tsgo` rules this repository turns off. `any-unknown-in-error-context`:
+ * `unknown` is the correct error at a Promise seam and in generic helpers that
+ * accept any Effect; the tsgo default is also off.
+ */
+const effectOffRules = ["any-unknown-in-error-context"].map(
+  (rule) => [`effecttsgo/${rule}`, "off"] as const,
+);
+
 export default defineConfig({
   extends: [recommended],
   options: {
@@ -108,6 +117,7 @@ export default defineConfig({
     "zotlit-build/no-undeclared-env": "error",
     ...Object.fromEntries(effectOptInRules),
     ...Object.fromEntries(effectV3OnlyRules),
+    ...Object.fromEntries(effectOffRules),
     "typescript/no-non-null-assertion": "off",
     "typescript/no-explicit-any": "off",
     "typescript/ban-ts-comment": "off",

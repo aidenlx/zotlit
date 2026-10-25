@@ -9,6 +9,7 @@
  * entirely, so a link keeps working for a Library the user never selected.
  */
 import { Effect } from "effect";
+import type { RpcClientError } from "effect/rpc";
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
 import type { Library } from "@zotlit/db";
@@ -18,6 +19,10 @@ import * as m from "@/lib/i18n/generated/messages";
 import { libraryLabel } from "@/services/library-scope/label";
 import { compareSelectors, selectorOf } from "@/services/library-scope/scope";
 import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
+import type {
+  DbUnavailable,
+  SnapshotExpired,
+} from "@/services/zotero-reads/rpc";
 import type {
   ZoteroReads,
   ZoteroReadsApi,
@@ -66,6 +71,15 @@ export type BatchScope =
   | { outcome: "resolved"; itemIDs: number[] };
 
 /**
+ * How reading a batch scope through ZoteroReads fails: the source is
+ * unavailable, the read snapshot expired, or the RPC transport failed.
+ */
+export type BatchScopeError =
+  | DbUnavailable
+  | SnapshotExpired
+  | RpcClientError.RpcClientError;
+
+/**
  * Resolve which item ids a batch run covers, rejecting a link aimed at a
  * Library this database no longer holds or at a collection it doesn't hold. An
  * existing but empty collection resolves to an empty id list, which the caller
@@ -80,7 +94,7 @@ export function resolveBatchScope(
   reads: ZoteroReadsApi,
   kind: BatchScopeKind,
   request: BatchScopeRequest,
-): Effect.Effect<BatchScope, unknown> {
+): Effect.Effect<BatchScope, BatchScopeError> {
   return Effect.gen(function* () {
     const { groupID, collectionKey } = request.target;
 
@@ -164,7 +178,7 @@ export function planBatchScope(
   deps: BatchScopePlanDeps,
   kind: BatchScopeKind,
   target: BatchTarget,
-): Effect.Effect<BatchScopePlan, unknown> {
+): Effect.Effect<BatchScopePlan, BatchScopeError> {
   return Effect.scoped(
     Effect.gen(function* () {
       const reads = yield* deps.zoteroReads.snapshot;

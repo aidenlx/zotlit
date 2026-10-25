@@ -60,10 +60,10 @@ export function createCitationsCliHandlers(
   deps: CitationsCliDeps,
 ): CitationsCliHandlers {
   const timeout = deps.settleTimeoutMs ?? 5_000;
-  const answer = <A extends object, E>(
+  const answer = <A extends object, E, ReadE>(
     command: CitationsCommand,
     decode: (params: CliData) => Effect.Effect<A, E>,
-    read: (request: A) => Effect.Effect<EnvelopeTail, unknown>,
+    read: (request: A) => Effect.Effect<EnvelopeTail, ReadE>,
   ): CliCommandHandler =>
     Effect.fn(`CitationsCli.${command}`)(
       function* (params: CliData) {

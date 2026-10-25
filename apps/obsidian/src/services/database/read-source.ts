@@ -249,7 +249,7 @@ const makePendingRead = Effect.fnUntraced(function* () {
   return {
     result: Deferred.await(deferred),
     complete,
-    fail: (error: unknown) =>
+    fail: (error: PrepareReadError) =>
       Effect.gen(function* () {
         const current = yield* Ref.get(state);
         if (!current.canceled)
@@ -269,7 +269,7 @@ function acquireRead(
   configuredMode: ConfiguredReadMode,
   sourcePath: string,
   owner?: string,
-): Effect.Effect<AcquiredRead, unknown> {
+): Effect.Effect<AcquiredRead, PrepareReadError> {
   return Effect.gen(function* () {
     if (configuredMode === "immutable") {
       const fallbackReason = yield* staleWalReason(sourcePath);
@@ -356,7 +356,9 @@ const prepareTempRead = Effect.fnUntraced(function* (
   options: { includeWal?: boolean; immutable?: boolean; owner?: string } = {},
 ) {
   const plan = yield* planParents(sourcePath);
-  const tryParent = (index: number): Effect.Effect<AcquiredRead, unknown> => {
+  const tryParent = (
+    index: number,
+  ): Effect.Effect<AcquiredRead, PrepareReadError> => {
     const parent = plan.parents[index];
     if (parent === undefined)
       return Effect.fail(
@@ -405,6 +407,18 @@ class SnapshotParentError extends Schema.TaggedError<
     return `Cannot create a database read snapshot under ${this.parent}`;
   }
 }
+
+/**
+ * Every failure of preparing one read snapshot: the source pair could not be
+ * fingerprinted, no parent or stable copy was left, the volume cannot clone,
+ * the parent refused the snapshot, or a system call on the source failed.
+ */
+type PrepareReadError =
+  | DbUnavailable
+  | ReadSnapshotError
+  | ReflinkUnsupportedError
+  | SnapshotParentError
+  | SystemCallError;
 
 const planParents = Effect.fnUntraced(function* (sourcePath: string) {
   const [tempDevice, databaseDevice] = yield* Effect.all([
