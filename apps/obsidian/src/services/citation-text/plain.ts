@@ -1,8 +1,9 @@
 /** Document citation text for the editor and reading surfaces. */
-import { Cause, Effect, Exit, Stream } from "effect";
+import { Effect, Stream } from "effect";
 import type { ManagedRuntime } from "effect";
 
-import { effectBridge, valueOr } from "@/lib/effect-bridge";
+import { effectBridge } from "@/lib/effect-bridge";
+import { settleAtEdge } from "@/lib/signal-edge";
 
 import { CitationText } from "./service";
 
@@ -40,13 +41,7 @@ export function plainCitationText(
         signal === undefined ? undefined : { signal },
       );
       // The caller's signal interrupts the read and rejects with its reason.
-      if (
-        signal?.aborted &&
-        Exit.isFailure(exit) &&
-        Cause.hasInterruptsOnly(exit.cause)
-      )
-        throw signal.reason;
-      return valueOr(exit, null);
+      return settleAtEdge(exit, signal, () => null);
     },
   };
 }

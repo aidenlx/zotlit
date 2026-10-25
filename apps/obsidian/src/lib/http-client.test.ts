@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Cause, Effect, Exit } from "effect";
 import { HttpClientRequest } from "effect/http";
 import type { RequestUrlParam, RequestUrlResponse } from "obsidian";
 import { describe, expect, vi } from "vitest";
@@ -81,6 +81,24 @@ describe("requestUrlHttpClient", () => {
       const error = yield* Effect.flip(client.get("https://example.com/"));
 
       expect(error.reason._tag).toBe("TransportError");
+    }),
+  );
+
+  it.effect("dies on a form body, and sends nothing", () =>
+    Effect.gen(function* () {
+      const send = fakeRequestUrl(200);
+      const client = requestUrlHttpClient(send);
+
+      const exit = yield* Effect.exit(
+        client.execute(
+          HttpClientRequest.post("https://example.com/upload").pipe(
+            HttpClientRequest.bodyFormData(new FormData()),
+          ),
+        ),
+      );
+
+      expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
+      expect(send).not.toHaveBeenCalled();
     }),
   );
 });

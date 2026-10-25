@@ -114,26 +114,30 @@ describe("sweepTempDirectory", () => {
     expect(await names()).toEqual(["keep"]);
   });
 
-  it("stops at an already-aborted signal without removing anything", async () => {
+  it("rejects with an already-aborted signal's reason without removing anything", async () => {
     await writeFile(join(directory, "drop"), "x");
+    const signal = AbortSignal.abort();
 
-    await sweep(() => true, AbortSignal.abort());
+    await expect(sweep(() => true, signal)).rejects.toBe(signal.reason);
 
     expect(await names()).toEqual(["drop"]);
   });
 
-  it("stops mid-walk once the signal aborts, keeping the rest", async () => {
+  it("stops mid-walk once the signal aborts, rejecting with its reason", async () => {
     for (const name of ["a", "b", "c", "d"]) {
       await writeFile(join(directory, name), "x");
     }
     const controller = new AbortController();
+    const reason = new Error("Unloaded");
     let seen = 0;
 
-    await sweep(() => {
-      seen += 1;
-      if (seen === 2) controller.abort();
-      return false;
-    }, controller.signal);
+    await expect(
+      sweep(() => {
+        seen += 1;
+        if (seen === 2) controller.abort(reason);
+        return false;
+      }, controller.signal),
+    ).rejects.toBe(reason);
 
     expect(seen).toBe(2);
     expect(await names()).toEqual(["a", "b", "c", "d"]);

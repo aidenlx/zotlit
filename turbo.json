@@ -2,6 +2,10 @@
   "$schema": "https://turborepo.dev/schema.json",
   "globalPassThroughEnv": [
     "AI_AGENT",
+    "CLAUDE_CODE",
+    "CLAUDECODE",
+    "CODEX_SANDBOX",
+    "CODEX_THREAD_ID",
     "ZOTLIT_DESKTOP_DIR",
     "ZOTLIT_DESKTOP_LEASE",
     "ZOTLIT_DESKTOP_SLOT",

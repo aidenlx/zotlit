@@ -428,6 +428,8 @@ export const plainAdapterStreams: Rule = {
 const CAPABILITY_TAGS: Readonly<Record<string, string>> = {
   vault: "Vault tag (@/lib/obsidian-vault)",
   metadataCache: "MetadataCache tag (@/lib/obsidian-metadata-cache)",
+  workspace: "Workspace tag (@/lib/obsidian-workspace)",
+  fileManager: "FileManager tag (@/lib/obsidian-file-manager)",
 };
 
 /** `app`, or a member named `app`: `this.app`, `plugin.app`, `this.#app`. */
@@ -459,7 +461,8 @@ function appMember(node: AstNode | undefined): string | undefined {
  * `@/lib/plugin-host`. A tag's events are its `changes` Stream; an event with
  * no tag yet enters through `obsidianEvents` from
  * `@/lib/effect-obsidian-events`. Both register on the layer's Scope.
- * Reported: `app.vault` and `app.metadataCache`, a call to `registerEvent`,
+ * Reported: `app.vault`, `app.metadataCache`, `app.workspace` and
+ * `app.fileManager`, a call to `registerEvent`,
  * and `.on(` on a member of `app` (`app.workspace.on(…)`). `app` is an `app`
  * identifier or any member named `app` (`this.app`, `plugin.app`,
  * `this.#app`).

@@ -287,7 +287,9 @@ export default defineConfig({
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
-      // No tag member yet: `vault.getMarkdownFiles`.
+      // No tag member yet: `vault.getMarkdownFiles`. citation-index/service.ts
+      // also calls `vault.getFileByPath` and `vault.cachedRead`, which the
+      // Vault tag has.
       files: [
         "src/services/citation-index/service.ts",
         "src/services/note-index/service.ts",
@@ -315,10 +317,27 @@ export default defineConfig({
     },
     {
       // No tag member yet: `metadataCache.getFirstLinkpathDest` and
-      // `metadataCache.getCache`.
+      // `metadataCache.getCache`. citation-text/service.ts also calls
+      // `vault.getFileByPath`, which the Vault tag has.
       files: [
         "src/services/citation-text/service.ts",
         "src/views/query-view/table-notes.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // No tag member yet: `workspace.updateOptions` (citekey-editor,
+      // wikilink-editor), `workspace.requestActiveLeafEvents` (use-ledger),
+      // `workspace.openLinkText` (companion-view), the side splits
+      // (library/view.ts), and the raw workspace that the editor lookup
+      // takes (library/view.ts, library/item-actions.ts).
+      files: [
+        "src/services/citekey-editor/service.ts",
+        "src/services/note-feature/companion-view.ts",
+        "src/services/use-ledger/service.ts",
+        "src/services/wikilink-editor/service.ts",
+        "src/views/library/item-actions.ts",
+        "src/views/library/view.ts",
       ],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
@@ -331,6 +350,8 @@ export default defineConfig({
       // Helpers and constructors that take a raw App object
       // (`documentPresentation(app.metadataCache, …)`,
       // `readProfileStamp(app.metadataCache, …)`, `vault: app.vault`).
+      // note-feature/operations.ts also listens to `metadataCache.on("changed")`
+      // in `parsedCache` through a local alias, which the rule does not see.
       files: [
         "src/services/build.ts",
         "src/services/citation-popover/service.tsx",
