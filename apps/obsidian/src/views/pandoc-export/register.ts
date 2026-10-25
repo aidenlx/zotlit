@@ -17,7 +17,7 @@ import { BaseNotice, LazyNotice } from "@/lib/notice";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
 import type { ZoteroHttp } from "@/lib/zotero-http";
 import type { PlainCitationLookup } from "@/services/citation-index/plain";
-import type { CitationParse } from "@/services/citation-parse/service";
+import { CitationParse } from "@/services/citation-parse/service";
 import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import {
@@ -183,7 +183,7 @@ export async function runPandocExport(
             ...engineStyle,
           },
           exportPorts(deps, engine),
-        ),
+        ).pipe(Effect.provideService(CitationParse, deps.citationParse)),
       ),
       null,
     );
@@ -258,7 +258,6 @@ function exportPorts(
   const { app, citationLookup, db, zoteroPref } = deps;
   return {
     engine,
-    citationParse: deps.citationParse,
     dataDir: () => zoteroPref.dataDir,
     resolveIndexedKey: (linkpath, sourcePath) =>
       resolveIndexedKey(linkpath, sourcePath, app),

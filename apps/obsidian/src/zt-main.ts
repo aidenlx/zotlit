@@ -640,7 +640,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     }
 
     registerPandocExport(this, {
-      citationParse: services.citationParser,
+      citationParse: services.citationParseService,
       profile: services.profile,
       app: this.app,
       db: services.zoteroReads,

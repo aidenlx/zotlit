@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import { unzipSync } from "fflate";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -12,6 +12,7 @@ import type { CslItemData } from "@zotlit/db";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/snapshot";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
+import { CitationParse } from "@/services/citation-parse/service";
 
 import type { BibliographyFailure, BibliographyItemRef } from "./bibliography";
 import { createCitationEngine } from "./engine";
@@ -130,7 +131,6 @@ function ports(fixture: Fixture): ExportPorts & {
     return Promise.resolve({ source: "local-api" as const, items });
   });
   return {
-    citationParse: inProcessParseClient,
     prepareDocument,
     renderPrepared,
     fetchBibliography,
@@ -170,12 +170,20 @@ function ports(fixture: Fixture): ExportPorts & {
   };
 }
 
+/** The export, parsing through the in-process parser. */
+const exportParsed = (...args: Parameters<typeof exportCitedDocument>) =>
+  exportCitedDocument(...args).pipe(
+    Effect.provide(
+      Layer.mock(CitationParse, { parse: inProcessParseClient.parse }),
+    ),
+  );
+
 const run = Effect.fnUntraced(function* (
   fixture: Fixture,
   request: Partial<Parameters<typeof exportCitedDocument>[0]> = {},
 ) {
   const wired = ports(fixture);
-  const result = yield* exportCitedDocument(
+  const result = yield* exportParsed(
     {
       document: { sourcePath: SOURCE, links: fixture.links ?? [] },
       markdown: (fixture.links ?? []).map((link) => link.original).join(" "),
@@ -764,7 +772,7 @@ describe(
       ({ markdown, styleXml, contains, absent, ibids = 0 }) =>
         Effect.gen(function* () {
           const engine = yield* realEngine;
-          const result = yield* exportCitedDocument(
+          const result = yield* exportParsed(
             {
               document: { sourcePath: SOURCE, links: [] },
               markdown,
@@ -797,7 +805,7 @@ describe(
       () =>
         Effect.gen(function* () {
           const engine = yield* realEngine;
-          const result = yield* exportCitedDocument(
+          const result = yield* exportParsed(
             {
               document: { sourcePath: SOURCE, links: [link("Zeta 2020")] },
               markdown: "%% [[Zeta 2020]] %%\n\nVisible [[Zeta 2020]].",
@@ -818,7 +826,7 @@ describe(
     it.effect("exports a citation after a currency opener (#1694)", () =>
       Effect.gen(function* () {
         const engine = yield* realEngine;
-        const result = yield* exportCitedDocument(
+        const result = yield* exportParsed(
           {
             document: { sourcePath: SOURCE, links: [] },
             markdown: "$5 [@zeta2020] x$",
@@ -882,7 +890,7 @@ describe(
       ({ markdown, contains }) =>
         Effect.gen(function* () {
           const engine = yield* realEngine;
-          const result = yield* exportCitedDocument(
+          const result = yield* exportParsed(
             {
               document: { sourcePath: SOURCE, links: [] },
               markdown,
@@ -910,7 +918,7 @@ describe(
     it.effect("cites the demo note through the bundled sandbox filter", () =>
       Effect.gen(function* () {
         const engine = yield* realEngine;
-        const result = yield* exportCitedDocument(
+        const result = yield* exportParsed(
           {
             document: { sourcePath: SOURCE, links: DEMO.links ?? [] },
             markdown: DEMO_MARKDOWN,
@@ -940,7 +948,7 @@ describe(
     it.effect("keeps export's explicit nocite membership (#1694)", () =>
       Effect.gen(function* () {
         const engine = yield* realEngine;
-        const result = yield* exportCitedDocument(
+        const result = yield* exportParsed(
           {
             document: { sourcePath: SOURCE, links: [] },
             markdown: '---\nnocite: "[@zeta2020]"\n---\n\nNo body citations.',
@@ -968,7 +976,7 @@ describe(
       () =>
         Effect.gen(function* () {
           const engine = yield* realEngine;
-          const result = yield* exportCitedDocument(
+          const result = yield* exportParsed(
             {
               document: { sourcePath: SOURCE, links: [link("Adams 2018")] },
               markdown: "Read [@zeta2020 with [[Adams 2018]]].",
@@ -995,7 +1003,7 @@ describe(
       () =>
         Effect.gen(function* () {
           const engine = yield* realEngine;
-          const result = yield* exportCitedDocument(
+          const result = yield* exportParsed(
             {
               document: { sourcePath: SOURCE, links: [] },
               markdown: "Read [@zeta2020 with @adams2018].",
@@ -1025,7 +1033,7 @@ describe(
     it.effect("keeps Pandoc's nocite wildcard whole", () =>
       Effect.gen(function* () {
         const engine = yield* realEngine;
-        const result = yield* exportCitedDocument(
+        const result = yield* exportParsed(
           {
             document: { sourcePath: SOURCE, links: DEMO.links ?? [] },
             markdown: `---\nnocite: "@*"\n---\n\n${DEMO_MARKDOWN}`,
@@ -1049,7 +1057,7 @@ describe(
       () =>
         Effect.gen(function* () {
           const engine = yield* realEngine;
-          const result = yield* exportCitedDocument(
+          const result = yield* exportParsed(
             {
               document: { sourcePath: SOURCE, links: [] },
               markdown:
@@ -1087,7 +1095,7 @@ describe(
     it.effect("cites the same note in the docx it writes", () =>
       Effect.gen(function* () {
         const engine = yield* realEngine;
-        const result = yield* exportCitedDocument(
+        const result = yield* exportParsed(
           {
             document: { sourcePath: SOURCE, links: DEMO.links ?? [] },
             markdown: DEMO_MARKDOWN,
@@ -1124,7 +1132,7 @@ describe(
     ) {
       const engine = yield* realEngine;
       const fixture: Fixture = { ...CITED, links: [link("Zeta 2020")] };
-      const result = yield* exportCitedDocument(
+      const result = yield* exportParsed(
         {
           document: { sourcePath: SOURCE, links: fixture.links ?? [] },
           markdown,
