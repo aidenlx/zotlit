@@ -10,6 +10,7 @@ import {
   Effect,
   Layer,
   PubSub,
+  Schema,
   Stream,
   SubscriptionRef,
 } from "effect";
@@ -23,6 +24,8 @@ import { sourceIdFromUris } from "@zotlit/protocol";
 import { COMPANION_ADDON_ID, ZOTERO_DB_FILENAME } from "@/lib/constants";
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
+import { systemCallError } from "@/lib/errno";
+import type { SystemCallError } from "@/lib/errno";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import {
@@ -49,7 +52,7 @@ import type { PrefValue } from "./prefs-file";
 export class ZoteroPrefFiles extends Context.Service<
   ZoteroPrefFiles,
   {
-    read(path: string): Effect.Effect<string, Error>;
+    read(path: string): Effect.Effect<string, SystemCallError>;
   }
 >()("zotlit/zotero-pref/ZoteroPrefFiles") {}
 
@@ -57,11 +60,16 @@ export const layerZoteroPrefFiles = Layer.succeed(ZoteroPrefFiles, {
   read: Effect.fn("ZoteroPrefFiles.read")(function* (path: string) {
     return yield* Effect.tryPromise({
       try: (signal) => readFile(path, { encoding: "utf8", signal }),
-      catch: (error) =>
-        error instanceof Error ? error : new Error(String(error)),
+      catch: systemCallError,
     });
   }),
 });
+
+/** `profiles.ini` names no default profile; the prefs load degrades. */
+class NoDefaultZoteroProfile extends Schema.TaggedError<
+  NoDefaultZoteroProfile,
+  { readonly brand: unique symbol }
+>()("NoDefaultZoteroProfile", { message: Schema.String }) {}
 
 /** A profile resolved to its absolute directory, for the settings picker. */
 export interface ZoteroProfileInfo {
@@ -152,11 +160,9 @@ export const layerZoteroPref = Layer.effect(
           const { root, profiles } = yield* readProfiles();
           const profile = selectDefaultProfile(profiles);
           if (!profile)
-            return yield* Effect.fail(
-              new Error(
-                `No default Zotero profile found in ${join(root, PROFILES_INI_FILENAME)}`,
-              ),
-            );
+            return yield* new NoDefaultZoteroProfile({
+              message: `No default Zotero profile found in ${join(root, PROFILES_INI_FILENAME)}`,
+            });
           profileDir = resolveProfileDir(root, profile);
         }
         return parsePrefsJs(

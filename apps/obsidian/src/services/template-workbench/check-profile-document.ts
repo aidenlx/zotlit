@@ -191,9 +191,9 @@ export const checkProfileDocument = Effect.fn(
           : deps.profile.resolveProfile(selector),
     );
     if (!profile)
-      return yield* Effect.fail(
-        new Error("The saved Profile does not resolve."),
-      );
+      return yield* new CheckSourceThrew({
+        cause: new Error("The saved Profile does not resolve."),
+      });
     if (draft)
       profileContext = {
         ...profileContext,
@@ -251,9 +251,9 @@ export const checkProfileDocument = Effect.fn(
       { concurrency: "unbounded" },
     );
     if (note.kind !== "data" || filename.kind !== "data")
-      return yield* Effect.fail(
-        new Error("The selected Zotero item is unavailable."),
-      );
+      return yield* new CheckSourceThrew({
+        cause: new Error("The selected Zotero item is unavailable."),
+      });
     const dataRevision = yield* attempt(() =>
       sourceRevision(
         JSON.stringify({

@@ -30,8 +30,9 @@ export const RESERVED_PARTIAL_NAME =
   "RESERVED_PARTIAL_NAME" satisfies InspectDiagnosticCode;
 
 /**
- * The checked source, or a Template it runs, threw `cause`. The check's
- * answer reads `cause`, as {@link thrown} gives it.
+ * The checked source, or a Template it runs, threw `cause`, or the check
+ * refused the source with the Error in `cause`. The check's answer reads
+ * `cause`, as {@link thrown} gives it.
  */
 export class CheckSourceThrew extends Schema.TaggedError<
   CheckSourceThrew,
@@ -159,9 +160,9 @@ export const checkPlainDocument = Effect.fn(
         ? undefined
         : deps.profile.resolveProfile(selector);
     if (!profile)
-      return yield* Effect.fail(
-        new Error("The selected Profile does not resolve."),
-      );
+      return yield* new CheckSourceThrew({
+        cause: new Error("The selected Profile does not resolve."),
+      });
     documentContext = {
       ...documentContext,
       answer: {

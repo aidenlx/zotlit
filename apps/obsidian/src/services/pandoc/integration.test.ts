@@ -12,6 +12,7 @@ import {
   createPandocIntegrationHandlers,
   PANDOC_FILES_COMMAND,
   PANDOC_GUIDE_COMMAND,
+  PandocParamsRejected,
 } from "./integration";
 
 const PLUGIN_VERSION = "2.0.1-test";
@@ -44,7 +45,7 @@ describe("Pandoc integration CLI", () => {
       const error = yield* Effect.flip(
         handlers[command]({ unexpected: "true" }),
       );
-      expect(error).toBeInstanceOf(TypeError);
+      expect(error).toBeInstanceOf(PandocParamsRejected);
       expect(error).toHaveProperty(
         "message",
         `Unknown parameter 'unexpected': ${command} takes no parameters.`,

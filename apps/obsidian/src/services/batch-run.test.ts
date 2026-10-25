@@ -1,5 +1,14 @@
 import { it } from "@effect/vitest";
-import { Cause, Effect, Exit, Fiber, Logger, References, Stream } from "effect";
+import {
+  Cause,
+  Effect,
+  Exit,
+  Fiber,
+  Logger,
+  References,
+  Schema,
+  Stream,
+} from "effect";
 import { describe, expect, vi } from "vitest";
 
 import type { Library } from "@zotlit/db";
@@ -29,6 +38,12 @@ import type {
 } from "./batch-run";
 import { planBatchScope, resolveBatchScope } from "./batch-scope";
 import { resolveLibraryScope } from "./library-scope/scope";
+
+/** The failure a test task answers its write with. */
+class WriteFailed extends Schema.TaggedError<
+  WriteFailed,
+  { readonly brand: unique symbol }
+>()("WriteFailed", { message: Schema.String }) {}
 
 /** Settle event recorder for a run's controls, plus the abort controller so a
  * test can cancel mid-run from inside a settle callback. */
@@ -241,7 +256,7 @@ describe("executeBatchRun", () => {
         concurrency: 4,
         run: (t) =>
           t.id === 2
-            ? Effect.fail(new Error("write blew up"))
+            ? Effect.fail(new WriteFailed({ message: "write blew up" }))
             : Effect.succeed("created" as const),
         onTaskFailed,
       });
@@ -393,7 +408,7 @@ describe("executeBatchRun", () => {
         tasks: [task(1)],
         controls,
         concurrency: 1,
-        run: () => Effect.fail(new Error("write blew up")),
+        run: () => Effect.fail(new WriteFailed({ message: "write blew up" })),
         haltOn: (error) => error instanceof ConfigError,
       });
 

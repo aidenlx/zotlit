@@ -8,6 +8,7 @@ import {
   Layer,
   Logger,
   Queue,
+  Schema,
   Scope,
   Stream,
 } from "effect";
@@ -29,6 +30,12 @@ import {
 import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
 
 import { MemoryMetadataCache } from "./__fixtures__/obsidian-metadata-cache";
+
+/** The failure a test handler answers an event with. */
+class HandlerFailed extends Schema.TaggedError<
+  HandlerFailed,
+  { readonly brand: unique symbol }
+>()("HandlerFailed", { message: Schema.String }) {}
 
 const NAMES = ["changed", "deleted", "resolve", "resolved"] as const;
 
@@ -192,7 +199,7 @@ it.effect("logs a failed handler and keeps the subscription", () =>
     const logs: unknown[] = [];
     yield* forkEach(filterTag(metadata.changes, "changed"), (event) =>
       event.file.path === "bad.md"
-        ? Effect.fail(new Error("handler failed"))
+        ? Effect.fail(new HandlerFailed({ message: "handler failed" }))
         : Queue.offer(received, event.file.path),
     ).pipe(
       Effect.provide(

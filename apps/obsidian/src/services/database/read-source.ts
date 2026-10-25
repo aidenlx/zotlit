@@ -27,7 +27,15 @@
  * @see https://github.com/zotero/zotero/blob/10.0.0/chrome/content/zotero/xpcom/db.js#L1551
  */
 
-import { Cause, Deferred, Duration, Effect, Ref, Schedule } from "effect";
+import {
+  Cause,
+  Deferred,
+  Duration,
+  Effect,
+  Ref,
+  Schedule,
+  Schema,
+} from "effect";
 import type { Scope } from "effect";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, open, rm, stat } from "node:fs/promises";
@@ -141,12 +149,23 @@ const logWarning = (
   );
 
 /** A failed read attempt whose destination is clean and safe to retry. */
-class UnstableSnapshotError extends Error {
-  constructor() {
-    super("Zotero database changed while preparing a read snapshot");
-    this.name = "UnstableSnapshotError";
+class UnstableSnapshotError extends Schema.TaggedError<
+  UnstableSnapshotError,
+  { readonly brand: unique symbol }
+>()("UnstableSnapshotError", {}) {
+  override get message(): string {
+    return "Zotero database changed while preparing a read snapshot";
   }
 }
+
+/**
+ * A read snapshot could not be prepared: no parent was left, the source kept
+ * changing, or it changed while it was fingerprinted.
+ */
+class ReadSnapshotError extends Schema.TaggedError<
+  ReadSnapshotError,
+  { readonly brand: unique symbol }
+>()("ReadSnapshotError", { message: Schema.String }) {}
 
 /** The message callers see for a failed read-source operation. */
 function toDbUnavailable(cause: unknown): DbUnavailable {
@@ -341,7 +360,9 @@ const prepareTempRead = Effect.fnUntraced(function* (
     const parent = plan.parents[index];
     if (parent === undefined)
       return Effect.fail(
-        new Error("No database read snapshot parent was available"),
+        new ReadSnapshotError({
+          message: "No database read snapshot parent was available",
+        }),
       );
     return cloneInto(sourcePath, { parent, mode, ...options }).pipe(
       Effect.tap(() =>
@@ -376,10 +397,12 @@ const prepareTempRead = Effect.fnUntraced(function* (
  * an unreadable source — reaches every candidate alike and propagates from the
  * first.
  */
-class SnapshotParentError extends Error {
-  constructor(parent: string, cause: unknown) {
-    super(`Cannot create a database read snapshot under ${parent}`, { cause });
-    this.name = "SnapshotParentError";
+class SnapshotParentError extends Schema.TaggedError<
+  SnapshotParentError,
+  { readonly brand: unique symbol }
+>()("SnapshotParentError", { parent: Schema.String, cause: Schema.Defect() }) {
+  override get message(): string {
+    return `Cannot create a database read snapshot under ${this.parent}`;
   }
 }
 
@@ -453,10 +476,10 @@ const cloneInto = Effect.fnUntraced(function* (
             cloneUnsupported,
           });
           if (cloneUnsupported)
-            return yield* Effect.fail(new ReflinkUnsupportedError(error));
+            return yield* new ReflinkUnsupportedError({ cause: error });
           if (isParentWriteFailure(error))
-            return yield* Effect.fail(new SnapshotParentError(parent, error));
-          return yield* Effect.fail(error);
+            return yield* new SnapshotParentError({ parent, cause: error });
+          return yield* error;
         }),
       ),
     );
@@ -471,7 +494,9 @@ const cloneInto = Effect.fnUntraced(function* (
       (error) => error instanceof UnstableSnapshotError,
       () =>
         Effect.fail(
-          new Error("Zotero database changed while preparing a read snapshot"),
+          new ReadSnapshotError({
+            message: "Zotero database changed while preparing a read snapshot",
+          }),
         ),
     ),
   );
@@ -538,7 +563,7 @@ const cloneAttempt = Effect.fnUntraced(function* (
     afterWalState: observed.after?.wal.state,
     afterWalSize: walGenerationSize(observed.after?.wal),
   });
-  if (!matches) return yield* Effect.fail(new UnstableSnapshotError());
+  if (!matches) return yield* new UnstableSnapshotError();
   yield* verifySnapshot(path);
   const uriOptions: SqliteUriOptions = immutable
     ? { mode: "ro", immutable: true }
@@ -576,7 +601,7 @@ const createSnapshotDir = Effect.fnUntraced(function* (
         ),
       ),
     ),
-    Effect.mapError((cause) => new SnapshotParentError(parent, cause)),
+    Effect.mapError((cause) => new SnapshotParentError({ parent, cause })),
   );
 });
 
@@ -690,9 +715,9 @@ const mainIdentity = Effect.fnUntraced(function* (path: string) {
       const digest = yield* fileDigest(file);
       const stats = yield* fileStat(file);
       if (!sameFileState(before, stats))
-        return yield* Effect.fail(
-          new Error("SQLite database changed while it was fingerprinted"),
-        );
+        return yield* new ReadSnapshotError({
+          message: "SQLite database changed while it was fingerprinted",
+        });
       return {
         exists: true,
         dev: stats.dev,

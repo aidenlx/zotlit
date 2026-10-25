@@ -921,15 +921,16 @@ class ProfileEngine {
           } else {
             await ensureParentFolder(this.#deps.app, path);
             await this.#deps.runPromise(
-              this.#deps.vault
-                .create(path, importedContent)
-                .pipe(
-                  Effect.catchTag("FileExists", (error) =>
-                    Effect.fail(
-                      new Error(m.profile_import_changed(), { cause: error }),
-                    ),
+              this.#deps.vault.create(path, importedContent).pipe(
+                Effect.catchTag("FileExists", (error) =>
+                  Effect.fail(
+                    new ProfileImportChanged({
+                      message: m.profile_import_changed(),
+                      cause: error,
+                    }),
                   ),
                 ),
+              ),
             );
           }
           await this.#settle();
@@ -1377,6 +1378,18 @@ export type ProfileOperations = Pick<
   | "prepareDelete"
   | "delete"
 >;
+
+/**
+ * The import target changed after the plan was made: another file took its
+ * path. `message` is the notice text; `cause` holds the vault's refusal.
+ */
+export class ProfileImportChanged extends Schema.TaggedError<
+  ProfileImportChanged,
+  { readonly brand: unique symbol }
+>()("ProfileImportChanged", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
 export class ProfileOperationError extends Schema.TaggedError<
   ProfileOperationError,

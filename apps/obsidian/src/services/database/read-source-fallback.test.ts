@@ -7,12 +7,12 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/reflink", () => {
-  class ReflinkUnsupportedError extends Error {}
+vi.mock("@/lib/reflink", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/reflink")>();
   return {
-    ReflinkUnsupportedError,
+    ...actual,
     reflink: vi.fn(async () => {
-      throw new ReflinkUnsupportedError();
+      throw new actual.ReflinkUnsupportedError();
     }),
   };
 });
