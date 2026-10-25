@@ -4,10 +4,7 @@
 // again when something outside their documents changed which links it touches.
 import { Effect, Layer } from "effect";
 import { setTooltip } from "obsidian";
-import type {
-  MarkdownPostProcessorContext,
-  Workspace as ObsidianWorkspace,
-} from "obsidian";
+import type { MarkdownPostProcessorContext } from "obsidian";
 
 import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
@@ -15,14 +12,17 @@ import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
-import { Workspace } from "@/lib/obsidian-workspace";
+import { Workspace, workspaceTrigger } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
 import { renderProfileRecovery } from "@/lib/profile-recovery";
+import {
+  rerenderReadingViewsIn,
+  retireReadingSurface,
+} from "@/lib/reading-surface";
 import {
   LiveSections,
   isDraftMarkdown,
   markdownViewOf,
-  rerenderReadingViews,
   sectionRange,
 } from "@/lib/reading-view";
 import {
@@ -30,8 +30,7 @@ import {
   citationOfRun,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
-import type { LiteratureNoteTarget, RunMember } from "@/lib/wikilink-citation";
-import { heldCitekeyOf } from "@/services/citation-index/lookup";
+import type { RunMember } from "@/lib/wikilink-citation";
 import type { CitationLookupAnswer } from "@/services/citation-index/service";
 import { CitationPopover } from "@/services/citation-popover/service";
 import {
@@ -50,7 +49,7 @@ import {
 import type { CitationHover } from "@/services/citekey-navigation";
 import {
   NoteIndex,
-  resolveLiteratureNoteIn,
+  literatureNoteTargetIn,
 } from "@/services/note-index/service";
 import { PluginSettings } from "@/services/settings/service";
 
@@ -109,39 +108,9 @@ export const layerWikilinkReading = Layer.effectDiscard(
     /** Set when the layer closes, which retires the treatment the post-processor applies. */
     let retired = false;
     /** What a hover raises its `hover-link` on, and a recovery button its Profile switch. */
-    const hoverWorkspace: Pick<ObsidianWorkspace, "trigger"> = {
-      trigger: (name, ...data) => run(workspace.trigger(name, ...data)),
-    };
+    const hoverWorkspace = workspaceTrigger(workspace, run);
 
-    /**
-     * The Literature Note `linkpath` names from `sourcePath`, or `null` when
-     * the target is missing or is an ordinary note.
-     */
-    const literatureNote = Effect.fnUntraced(function* (
-      linkpath: string,
-      sourcePath: string,
-      lookup: CitationLookupAnswer | null,
-    ) {
-      const note = yield* resolveLiteratureNoteIn(
-        metadata,
-        linkpath,
-        sourcePath,
-      );
-      if (!note) return null;
-      const target: LiteratureNoteTarget = {
-        ...note,
-        citationKey: heldCitekeyOf(lookup, note.indexedKey) ?? null,
-      };
-      return target;
-    });
-
-    /** A reading view holds what a post-processor produced until it renders again. */
-    const rerender = Effect.gen(function* () {
-      const count = rerenderReadingViews(yield* workspace.markdownViews);
-      yield* Effect.logDebug("Rerendering reading views").pipe(
-        Effect.annotateLogs({ count }),
-      );
-    });
+    const rerender = rerenderReadingViewsIn(workspace);
 
     /**
      * The Citation Runs of a section's native links, which is every run that
@@ -156,7 +125,12 @@ export const layerWikilinkReading = Layer.effectDiscard(
       sectionCitationRuns(el, (linktext) =>
         wikilinkCitation(linktext, {
           literatureNote: (linkpath) =>
-            run(literatureNote(linkpath, ctx.sourcePath, lookup)),
+            run(
+              literatureNoteTargetIn(metadata, linkpath, {
+                sourcePath: ctx.sourcePath,
+                lookup,
+              }),
+            ),
           enabled: display.enabled,
         }),
       );
@@ -361,14 +335,10 @@ export const layerWikilinkReading = Layer.effectDiscard(
       else if (event.type === "invalidated") sections.refresh();
     });
     // A reading view holds the text this layer wrote, so the views render
-    // again without it once it is gone. The flag goes first: the
-    // post-processor stays registered while this runs.
-    yield* Effect.addFinalizer(() =>
-      Effect.suspend(() => {
-        retired = true;
-        return rerender;
-      }),
-    );
+    // again without it once it is gone.
+    yield* retireReadingSurface(workspace, () => {
+      retired = true;
+    });
   }).pipe(withLogCategory("wikilink-reading")),
 );
 
