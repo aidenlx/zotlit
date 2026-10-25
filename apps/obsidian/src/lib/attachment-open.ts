@@ -1,7 +1,7 @@
 // Sending a reader to one Item's Attachments, shared by every surface that offers the action.
 
 import { Keymap, Menu, SuggestModal } from "obsidian";
-import type { App, PaneType, Workspace } from "obsidian";
+import type { App, PaneType } from "obsidian";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
 import { ATTACHMENT_ANCHOR_KEY, attachmentOpenUri } from "@zotlit/db";
@@ -10,6 +10,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { showMenuAtBox, showMenuAtButton } from "@/lib/menu";
 import type { MenuAnchor } from "@/lib/menu";
+import type { WorkspaceEventHost } from "@/lib/obsidian-workspace";
 import type {
   ReaderOutcome,
   TargetReader,
@@ -62,22 +63,17 @@ export type AttachmentOpenClickEvent =
   | MouseEvent
   | KeyboardEvent;
 
-/** What the Attachment menu reads of the host: the workspace it raises its menu event on. */
-export interface AttachmentMenuHost {
-  readonly workspace: Pick<Workspace, "trigger">;
-}
-
 /**
  * A pointer event shows a context menu at the click; no event (the protocol
  * handler, the command palette, the quick switcher) shows a Suggest modal
  * picker instead. The picker differs by invocation, not by reader. The modal
- * is hosted on the `App`; the menu needs only the workspace it raises
+ * is hosted on the `App`; the menu needs only the `host` workspace it raises
  * `zotlit:attachments-menu` on.
  */
 export type OpenAttachmentsOptions<T extends OpenableRow> =
   | {
       reader: AttachmentReader<T>;
-      app: AttachmentMenuHost;
+      host: WorkspaceEventHost;
       event: AttachmentOpenClickEvent;
       /**
        * The box and window the picker anchors to when the trigger cannot be
@@ -87,7 +83,7 @@ export type OpenAttachmentsOptions<T extends OpenableRow> =
        */
       anchor?: MenuAnchor;
     }
-  | { reader: AttachmentReader<T>; app: App };
+  | { reader: AttachmentReader<T>; app: App; event?: never };
 
 /** The DOM event a click carries, unwrapped from React's `SyntheticEvent`. */
 function nativeEventOf(
@@ -114,15 +110,15 @@ export function openAttachments<T extends OpenableRow>(
   if (rest.length === 0) {
     void reader.open(
       first,
-      "event" in options
+      "host" in options
         ? Keymap.isModEvent(nativeEventOf(options.event))
         : false,
     );
     return;
   }
-  if ("event" in options) {
+  if ("host" in options) {
     showAttachmentMenu(attachments, reader, {
-      app: options.app,
+      host: options.host,
       event: options.event,
       anchor: options.anchor,
     });
@@ -202,7 +198,7 @@ function showAttachmentMenu<T extends OpenableRow>(
   attachments: readonly T[],
   reader: AttachmentReader<T>,
   click: {
-    app: AttachmentMenuHost;
+    host: WorkspaceEventHost;
     event: AttachmentOpenClickEvent;
     anchor?: MenuAnchor;
   },
@@ -218,7 +214,7 @@ function showAttachmentMenu<T extends OpenableRow>(
     );
   }
   raiseMenu(menu, {
-    workspace: click.app.workspace,
+    workspace: click.host.workspace,
     name: "zotlit:attachments-menu",
     info: {
       attachments,

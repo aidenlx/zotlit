@@ -26,10 +26,7 @@ import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { filterTag, forkEach } from "@/lib/effect-stream";
 import { mapsEqual } from "@/lib/maps-equal";
-import {
-  MetadataCache,
-  metadataCacheReads,
-} from "@/lib/obsidian-metadata-cache";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
 import type { OpenDocuments } from "@/lib/open-documents";
@@ -492,7 +489,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
         // reading as though a vault selection were what the note declared.
         const presented = documentCitationPresentation(
           documentPresentation(
-            metadataCacheReads(metadata, run),
+            { getFileCache: (file) => run(metadata.fileCache(file)) },
             file,
             profile,
           ),

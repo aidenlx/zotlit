@@ -1,20 +1,17 @@
 // UI recovery for an unavailable Profile, shared by notes and citation surfaces.
-import type { App, Workspace } from "obsidian";
+import type { App } from "obsidian";
 
 import * as m from "./i18n/generated/messages";
 import { getLogger } from "./log";
 import { BaseNotice } from "./notice";
+import type { WorkspaceEventHost } from "./obsidian-workspace";
 import type { UnknownProfileDiagnostic } from "./profile-stamp";
 
 const logger = getLogger("profile-recovery");
 
-/** What a Profile switch is asked of: the app, or any host with its workspace's `trigger`. */
-export interface ProfileSwitchHost {
-  readonly workspace: Pick<Workspace, "trigger">;
-}
-
+/** Ask for a Profile switch on the host's workspace: the app, or the Workspace tag's trigger. */
 export function requestProfileSwitch(
-  host: ProfileSwitchHost,
+  host: WorkspaceEventHost,
   path: string,
 ): void {
   logger.debug("Requested Profile recovery for {path}", { path });
@@ -47,7 +44,7 @@ export function profileRecoveryNotice(
 /** One recovery control per reading section, cleared when its failure clears. */
 export function renderProfileRecovery(
   container: HTMLElement,
-  host: ProfileSwitchHost,
+  host: WorkspaceEventHost,
   options: { path?: string },
 ): void {
   container.querySelector("[data-profile-recovery]")?.remove();

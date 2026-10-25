@@ -1,21 +1,21 @@
 // The Citation Popover: document citation entries and source-less works under the vault presentation.
 import { Cause, Context, Effect, Layer } from "effect";
-import type { HoverParent, TFile } from "obsidian";
+import type {
+  HoverParent,
+  MetadataCache as ObsidianMetadataCache,
+  TFile,
+} from "obsidian";
 import type { ReactNode } from "react";
 
-import type { AttachmentMenuHost } from "@/lib/attachment-open";
 import { scopedBridge, valueOr } from "@/lib/effect-bridge";
 import { bridgeLog, withLogCategory } from "@/lib/effect-log";
 import { filterTag } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import {
-  MetadataCache,
-  metadataCacheReads,
-} from "@/lib/obsidian-metadata-cache";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace, workspaceTrigger } from "@/lib/obsidian-workspace";
+import type { WorkspaceEventHost } from "@/lib/obsidian-workspace";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
-import type { ProfileSwitchHost } from "@/lib/profile-recovery";
 import {
   describeCandidates,
   describeJoinedCandidates,
@@ -81,11 +81,11 @@ import type { HoverVisit } from "./visits";
 /** What one popover read reaches outside Effect. */
 interface PopoverReads {
   /** The workspace the popover raises its menu and Profile switch events on. */
-  host: AttachmentMenuHost & ProfileSwitchHost;
+  host: WorkspaceEventHost;
   /** The vault's file at `path`, `null` when it holds none. */
   fileAt(path: string): TFile | null;
   /** The metadata cache reads the hovered note's Citation Presentation takes. */
-  metadataCache: ReturnType<typeof metadataCacheReads>;
+  metadataCache: Pick<ObsidianMetadataCache, "getFileCache">;
   db: {
     readonly state: ZoteroReadsState["state"];
     readonly reads: ZoteroReadsApi;
@@ -257,7 +257,9 @@ export const layerCitationPopover: Layer.Layer<
     const deps: PopoverReads = {
       host: { workspace: workspaceTrigger(workspace, bridge.runSync) },
       fileAt: (path) => bridge.runSync(vault.getFileByPath(path)),
-      metadataCache: metadataCacheReads(metadata, bridge.runSync),
+      metadataCache: {
+        getFileCache: (file) => bridge.runSync(metadata.fileCache(file)),
+      },
       db: {
         get state() {
           return bridge.runSync(reads.current).state;
@@ -430,7 +432,7 @@ async function fill(
     return;
   }
   const actions = createCitationPopoverActions({
-    app: deps.host,
+    host: deps.host,
     open: (block, pane) => {
       if ("work" in request) {
         if (read.indexedKey) request.open(read.indexedKey, pane);
