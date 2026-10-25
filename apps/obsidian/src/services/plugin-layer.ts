@@ -1,4 +1,5 @@
 // The plugin's services that live in the Effect Layer graph, converted or bridged.
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { Layer } from "effect";
 import type { Plugin } from "obsidian";
 
@@ -240,5 +241,9 @@ export function pluginLayer(
     layerPandocResolve.pipe(startingAs("PandocResolve")),
     layerReleaseActions.pipe(startingAs("ReleaseActions")),
   ).pipe(Layer.provide(Layer.mergeAll(layerPluginHost(plugin), obsidian)));
-  return registrations.pipe(Layer.provideMerge(services));
+  // The Node file system, once for the whole graph: the temp sweeps read it.
+  return registrations.pipe(
+    Layer.provideMerge(services),
+    Layer.provide(NodeFileSystem.layer),
+  );
 }

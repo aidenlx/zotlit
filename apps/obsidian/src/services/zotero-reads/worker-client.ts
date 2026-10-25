@@ -1,11 +1,12 @@
 // Worker configuration follows the native dependency streams on the layer Scope.
-import { Effect, Ref, Stream } from "effect";
+import { Effect, FileSystem, Ref, Stream } from "effect";
 import workerSource from "virtual:zotero-reads-worker";
 
 import { sameSegmenterBinary } from "@zotlit/item-lookup";
 
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
+import { reapReadClonesEffect } from "@/services/database/reap-temps";
 import { PluginSettings } from "@/services/settings/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 
@@ -25,6 +26,11 @@ export const workerClient = Effect.fn("ZoteroReads.workerClient")(function* () {
   const pref = yield* ZoteroPref;
   const segmenter = yield* ChineseSegmenter;
   const { language } = yield* ObsidianEnv;
+  const fs = yield* FileSystem.FileSystem;
+  // Clear the read clones of crashed runs from the system temp folder once a
+  // launch. Forked on the layer's Scope: the launch never waits on it, and
+  // unload interrupts it.
+  yield* reapReadClonesEffect().pipe(Effect.forkScoped);
   const configuration = Effect.gen(function* () {
     const current = yield* settings.current;
     const status = yield* segmenter.getStatus;
@@ -42,7 +48,9 @@ export const workerClient = Effect.fn("ZoteroReads.workerClient")(function* () {
   });
   const config = yield* Ref.make(yield* configuration);
   const reads = yield* makeWorkerReads(
-    connectWorker(workerSource, Ref.get(config)),
+    connectWorker(workerSource, Ref.get(config)).pipe(
+      Effect.provideService(FileSystem.FileSystem, fs),
+    ),
   );
   const push = Effect.fn("ZoteroReads.configure")(function* () {
     const next = yield* configuration;

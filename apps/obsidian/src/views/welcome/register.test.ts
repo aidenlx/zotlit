@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { it } from "@effect/vitest";
-import { Effect, Stream } from "effect";
+import { Effect, FileSystem, Layer, Stream } from "effect";
 import type { App } from "obsidian";
 import { afterEach, expect, vi } from "vitest";
 
@@ -66,7 +66,7 @@ it.effect(
               existsSync: () => false,
               reapReadClones: () => Effect.void,
             },
-          }),
+          }).pipe(Layer.provide(FileSystem.layerNoop({}))),
         ),
       );
       yield* Stream.runHead(

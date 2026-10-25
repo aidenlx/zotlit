@@ -4,6 +4,7 @@
 // contract surface, not localized UI. See apps/obsidian/policies/cli-text.md.
 
 import { Effect, Layer } from "effect";
+import type { FileSystem } from "effect";
 import { isAbsolute, relative } from "node:path";
 import { normalizePath } from "obsidian";
 import type { App, CliData, CliFlag, CliFlags, TFile } from "obsidian";
@@ -51,6 +52,7 @@ import {
   PANDOC_FILES_COMMAND,
   PANDOC_GUIDE_COMMAND,
 } from "./integration";
+import { reapCslStore } from "./reap-temps";
 import { resolveCitations } from "./resolve";
 import type { ResolveDocument, ResolvedItem, ResolveResponse } from "./resolve";
 import { resolveInstalledStyle } from "./styles";
@@ -68,13 +70,25 @@ export interface PandocResolveDeps {
   profile: Pick<Profile["Service"], "loaded" | "profileOf">;
 }
 
-/** The `zotlit:resolve`, `zotlit:csl` and Pandoc integration commands. */
+/**
+ * The `zotlit:resolve`, `zotlit:csl` and Pandoc integration commands. The CSL
+ * store they materialize styles into ages out on its own clock: building the
+ * layer starts evicting the entries that ran out, on the layer's Scope, so the
+ * launch never waits on the sweep and unload interrupts it.
+ */
 export const layerPandocResolve: Layer.Layer<
   never,
   never,
-  PluginHost | ObsidianEnv | ZoteroReads | ZoteroPref | PluginSettings | Profile
+  | PluginHost
+  | ObsidianEnv
+  | ZoteroReads
+  | ZoteroPref
+  | PluginSettings
+  | Profile
+  | FileSystem.FileSystem
 > = Layer.effectDiscard(
   Effect.gen(function* () {
+    yield* reapCslStore().pipe(Effect.forkScoped);
     const host = yield* PluginHost;
     registerPandocResolve(host, {
       app: host.app,
