@@ -103,7 +103,9 @@ export const connectParseWorker = Effect.fnUntraced(function* (
     died: Deferred.await(death),
     parse: (request) =>
       Effect.raceFirst(
-        Deferred.await(death).pipe(Effect.flatMap(Effect.fail)),
+        Deferred.await(death).pipe(
+          Effect.flatMap((error) => Effect.fail(error)),
+        ),
         client.Parse(request).pipe(
           Effect.mapError(
             (error) => new ParseFailed({ message: String(error) }),

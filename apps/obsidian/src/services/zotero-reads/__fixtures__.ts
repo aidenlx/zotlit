@@ -18,7 +18,7 @@ export const readsFixture = Effect.fn("readsFixture")(function* (
   const context = yield* Effect.context<never>();
   const handle = yield* Effect.acquireRelease(
     Effect.promise(() => openReads(client, context)),
-    (handle) => Effect.promise(handle.close),
+    (handle) => Effect.promise(() => handle.close()),
   );
   return handle;
 });

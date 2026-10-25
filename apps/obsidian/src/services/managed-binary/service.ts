@@ -236,7 +236,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
             message: `The cached ${binary.label} binary is gone`,
           }),
       ),
-      Effect.tapError(failInit),
+      Effect.tapError((error) => failInit(error)),
     );
     return yield* attempt(() => binary.createEngine(blob)).pipe(
       Effect.catch(
@@ -286,7 +286,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
       yield* Scope.close(pending.scope, Exit.void);
     }
   });
-  yield* Effect.addFinalizer(dropEngine);
+  yield* Effect.addFinalizer(() => dropEngine());
   const getEngine = Effect.gen(function* () {
     if (closed) return null;
     if (!engine) {

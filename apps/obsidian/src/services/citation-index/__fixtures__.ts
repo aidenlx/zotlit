@@ -163,7 +163,7 @@ export const lookupFixture = Effect.fnUntraced(function* (
   const context = yield* Effect.context<never>();
   return yield* Effect.acquireRelease(
     Effect.promise(() => openLookup(client, context)),
-    (fixture) => Effect.promise(fixture.close),
+    (fixture) => Effect.promise(() => fixture.close()),
   );
 });
 

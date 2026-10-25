@@ -60,7 +60,7 @@ export const workerClient = Effect.fn("ZoteroReads.workerClient")(function* () {
     ],
     { concurrency: "unbounded" },
   ).pipe(
-    Stream.runForEach(push),
+    Stream.runForEach(() => push()),
     Effect.forkScoped({ startImmediately: true }),
   );
   // Reconcile while acquisition was waiting for the worker handshake.

@@ -124,7 +124,9 @@ export const verifySavedSources = Effect.fn(
           return Effect.void;
         }),
       );
-    const readAll = Effect.forEach(paths, read, { concurrency: "unbounded" });
+    const readAll = Effect.forEach(paths, (path) => read(path), {
+      concurrency: "unbounded",
+    });
     const requested = yield* readAll;
     while (true) {
       const changed = wake.promise;

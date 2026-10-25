@@ -172,8 +172,8 @@ export function registerPandocResolve(
                   Effect.as(null),
                 );
               return readItems(deps.reads, indexedKeys).pipe(
-                Effect.catch(unreadable),
-                Effect.catchDefect(unreadable),
+                Effect.catch((error) => unreadable(error)),
+                Effect.catchDefect((defect) => unreadable(defect)),
               );
             },
           },

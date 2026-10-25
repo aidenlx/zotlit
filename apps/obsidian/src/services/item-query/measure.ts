@@ -157,8 +157,10 @@ export function registerQueryMeasureCli(
       new TypeError(rejectionText(rejection));
     const measured = yield* decodeCliParams(runParams, measureParams, {
       command: QUERY_MEASURE_COMMAND,
-    }).pipe(Effect.mapError(rejected));
-    yield* decodeQuery(query).pipe(Effect.mapError(rejected));
+    }).pipe(Effect.mapError((rejection) => rejected(rejection)));
+    yield* decodeQuery(query).pipe(
+      Effect.mapError((rejection) => rejected(rejection)),
+    );
     return yield* measureRun({ queryService, query, measured });
   });
 

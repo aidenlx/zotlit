@@ -179,7 +179,9 @@ export function cliMapEffect<TFrom extends Schema.Top, TTo>(
           (_value: unknown): _value is TTo => true,
         ),
         {
-          decode: SchemaGetter.transformEffect(f),
+          decode: SchemaGetter.transformEffect((value, options) =>
+            f(value, options),
+          ),
           encode: SchemaGetter.forbidden(() => "CLI parameters only decode"),
         },
       ),

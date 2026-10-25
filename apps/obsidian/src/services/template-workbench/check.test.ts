@@ -118,7 +118,7 @@ async function fixture(
     check: (params: CliData = {}) =>
       command(TEMPLATE_CHECK_COMMAND)
         .handler({ ...params })
-        .pipe(Effect.map(assertRefusalsHint)),
+        .pipe(Effect.map((output) => assertRefusalsHint(output))),
     [Symbol.asyncDispose]: () => cleanup.disposeAsync(),
   };
 }

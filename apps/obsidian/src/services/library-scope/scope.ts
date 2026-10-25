@@ -148,7 +148,7 @@ export function selectorKeySchema(message: (text: string) => string) {
               ),
             );
       }),
-      encode: SchemaGetter.transform(selectorKey),
+      encode: SchemaGetter.transform((selector) => selectorKey(selector)),
     }),
   );
 }

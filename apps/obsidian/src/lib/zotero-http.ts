@@ -76,7 +76,7 @@ export const layerZoteroHttp: Layer.Layer<
   HttpClient.HttpClient
 > = Layer.effect(
   ZoteroHttp,
-  Effect.map(HttpClient.HttpClient, withZoteroHeaders),
+  Effect.map(HttpClient.HttpClient, (client) => withZoteroHeaders(client)),
 );
 
 /** One request to Zotero's HTTP server. */

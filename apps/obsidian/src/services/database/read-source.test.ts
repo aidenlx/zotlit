@@ -90,7 +90,9 @@ function inspectPrepared<A>(
   preparation: ReturnType<typeof prepareRead>,
   inspect: (prepared: PreparedRead) => A,
 ): Promise<A> {
-  return Effect.runPromise(Effect.scoped(Effect.map(preparation, inspect)));
+  return Effect.runPromise(
+    Effect.scoped(Effect.map(preparation, (prepared) => inspect(prepared))),
+  );
 }
 
 function runPrepared(preparation: ReturnType<typeof prepareRead>) {

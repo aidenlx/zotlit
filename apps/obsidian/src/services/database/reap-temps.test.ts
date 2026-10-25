@@ -49,7 +49,7 @@ describe("reapReadClonesEffect", () => {
     Effect.gen(function* () {
       yield* Effect.promise(() => readClone(DEAD_PID));
       yield* reapReadClonesEffect({ parent });
-      expect(yield* Effect.promise(names)).toEqual([]);
+      expect(yield* Effect.promise(() => names())).toEqual([]);
     }),
   );
 
@@ -57,7 +57,7 @@ describe("reapReadClonesEffect", () => {
     Effect.gen(function* () {
       const own = yield* Effect.promise(() => readClone(process.pid));
       yield* reapReadClonesEffect({ parent });
-      expect(yield* Effect.promise(names)).toEqual([own]);
+      expect(yield* Effect.promise(() => names())).toEqual([own]);
     }),
   );
 
@@ -65,7 +65,7 @@ describe("reapReadClonesEffect", () => {
     Effect.gen(function* () {
       const other = yield* Effect.promise(() => readClone(process.ppid));
       yield* reapReadClonesEffect({ parent });
-      expect(yield* Effect.promise(names)).toEqual([other]);
+      expect(yield* Effect.promise(() => names())).toEqual([other]);
     }),
   );
 
@@ -79,7 +79,7 @@ describe("reapReadClonesEffect", () => {
         writeFile(join(parent, `${ZOTERO_DB_READ_TEMP_PREFIX}-0-x`), "x"),
       );
       yield* reapReadClonesEffect({ parent });
-      expect(yield* Effect.promise(names)).toEqual([
+      expect(yield* Effect.promise(() => names())).toEqual([
         "unrelated-dir",
         `${ZOTERO_DB_READ_TEMP_PREFIX}-0-x`,
         `${ZOTERO_DB_READ_TEMP_PREFIX}notapid`,
@@ -105,7 +105,7 @@ describe("reapReadClonesEffect", () => {
     Effect.gen(function* () {
       yield* Effect.promise(() => readClone(DEAD_PID, "0123456789ab"));
       yield* reapReadClonesEffect({ parent });
-      expect(yield* Effect.promise(names)).toEqual([]);
+      expect(yield* Effect.promise(() => names())).toEqual([]);
     }),
   );
 
@@ -116,7 +116,7 @@ describe("reapReadClonesEffect", () => {
         startImmediately: false,
       });
       yield* Fiber.interrupt(reap);
-      expect(yield* Effect.promise(names)).toEqual([dead]);
+      expect(yield* Effect.promise(() => names())).toEqual([dead]);
     }),
   );
 });
@@ -134,7 +134,7 @@ describe("reapWorkerClones", () => {
         owner: DEAD_WORKER,
         parents: [parent, beside],
       });
-      expect(yield* Effect.promise(names)).toEqual([
+      expect(yield* Effect.promise(() => names())).toEqual([
         ZOTERO_DB_READ_PARENT_DIRNAME,
       ]);
       expect(yield* Effect.promise(() => readdir(beside))).toEqual([]);
@@ -151,7 +151,7 @@ describe("reapWorkerClones", () => {
         owner: DEAD_WORKER,
         parents: [parent],
       });
-      expect(yield* Effect.promise(names)).toEqual([live]);
+      expect(yield* Effect.promise(() => names())).toEqual([live]);
     }),
   );
 
@@ -176,7 +176,7 @@ describe("reapWorkerClones", () => {
           owner: DEAD_WORKER,
           parents: [parent],
         });
-        expect(yield* Effect.promise(names)).toEqual(
+        expect(yield* Effect.promise(() => names())).toEqual(
           [
             untagged,
             `${DEAD_WORKER}-aBcDeF`,
@@ -193,7 +193,7 @@ describe("reapWorkerClones", () => {
         owner: DEAD_WORKER,
         parents: [join(parent, "absent"), parent],
       });
-      expect(yield* Effect.promise(names)).toEqual([]);
+      expect(yield* Effect.promise(() => names())).toEqual([]);
     }),
   );
 });

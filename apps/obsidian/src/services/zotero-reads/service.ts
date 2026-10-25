@@ -164,7 +164,7 @@ export function layerZoteroReads<R>(
         if (event._tag !== "state") yield* PubSub.publish(events, event);
         yield* Deferred.succeed(seeded, undefined);
       });
-      yield* Stream.runForEach(client.Changes(), apply).pipe(
+      yield* Stream.runForEach(client.Changes(), (event) => apply(event)).pipe(
         Effect.onExit((exit) =>
           Effect.gen(function* () {
             if (
