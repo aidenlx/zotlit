@@ -155,6 +155,7 @@ export async function buildServices(
   await runtime.context();
   const bridge = effectBridge(runtime);
   const zoteroReadsService = runtime.runSync(ZoteroReads);
+  const libraryScopeService = runtime.runSync(LibraryScope);
   const zoteroLocalApiService = runtime.runSync(ZoteroLocalApi);
   const vault = runtime.runSync(Vault);
   const fileManager = runtime.runSync(FileManager);
@@ -318,7 +319,7 @@ export async function buildServices(
     .useValue({
       batchScope: () =>
         bindBatchScope(bridge, {
-          libraryScope: runtime.runSync(LibraryScope),
+          libraryScope: libraryScopeService,
           zoteroReads: zoteroReadsService,
         }),
     })
@@ -393,7 +394,7 @@ export async function buildServices(
               {
                 app: plugin.app,
                 zoteroReads,
-                libraryScope: runtime.runSync(LibraryScope),
+                libraryScope: libraryScopeService,
                 noteIndex,
                 settings,
                 templates: template,
@@ -469,7 +470,7 @@ export async function buildServices(
           noteIndex,
           zoteroPref,
           settings,
-          libraryScope: runtime.runSync(LibraryScope),
+          libraryScope: libraryScopeService,
           noteFeature,
         }),
     })
@@ -491,7 +492,7 @@ export async function buildServices(
           noteIndex,
           zoteroPref,
           settings,
-          libraryScope: runtime.runSync(LibraryScope),
+          libraryScope: libraryScopeService,
           noteFeature,
         }),
     })
