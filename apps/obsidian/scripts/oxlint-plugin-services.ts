@@ -3,12 +3,16 @@
 // classes, tag ids, Scope-owned resources, CLI registration, workers on
 // effect/rpc, Effect-native events and state, and failure boundaries. Rule
 // tests: src/lint/services.test.ts.
-import { isMemberOf } from "./oxlint-ast.ts";
-import type { AstNode, Rule } from "./oxlint-ast.ts";
+import { sep } from "node:path";
+
+import { importsEffect, isMemberOf } from "./oxlint-ast.ts";
+import type { AstNode, ModuleProgram, Rule } from "./oxlint-ast.ts";
 
 const EFFECT_GENERATOR_CALLEES = new Set(["gen", "fn", "fnUntraced"]);
 
 const EFFECT = new Set(["Effect"]);
+const DATE = new Set(["Date"]);
+const PERFORMANCE = new Set(["performance"]);
 
 /** `Effect.<name>`, where `name` is one of `names`. */
 function isEffectMember(
@@ -618,13 +622,293 @@ export const scopeClosed: Rule = {
   },
 };
 
+const DEFAULT_RUNTIME_CALLS = new Set([
+  "runSync",
+  "runPromise",
+  "runFork",
+  "runPromiseExit",
+  "runSyncExit",
+  "runCallback",
+]);
+
+const EFFECT_SOURCES = new Set(["@/lib/effect", "effect"]);
+
+interface ImportNode extends AstNode {
+  readonly source?: AstNode;
+  readonly specifiers?: readonly (AstNode & {
+    readonly imported?: AstNode;
+    readonly local?: AstNode;
+  })[];
+}
+
+/**
+ * `Effect.runSync`, `runPromise`, `runFork`, `runPromiseExit`, `runSyncExit`
+ * and `runCallback` run an Effect with an empty context: its logs skip the
+ * plugin logger and log level, and it gets none of the plugin's services.
+ * Plugin code runs an Effect through the container bridge, a layer's own
+ * context runner (`Effect.runSyncWith(yield* Effect.context())`), or a
+ * runtime (`runtime.runSync`). Only the `Effect` imported from `effect` or
+ * `@/lib/effect` is checked, so those calls stay valid. Files that create a
+ * runtime, and the backlog, are listed in oxlint.config.ts.
+ */
+export const noDefaultRuntime: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Forbid running an Effect with an empty context.",
+    },
+    messages: {
+      empty:
+        "run the Effect through the plugin's bridge, a layer's context runner or a runtime; `Effect.{{name}}` runs it with an empty context, so its logs skip the plugin logger",
+    },
+    schema: [],
+  },
+  create(context) {
+    const effectNames = new Set<string>();
+    return {
+      ImportDeclaration(node) {
+        const { source, specifiers } = node as unknown as ImportNode;
+        if (
+          typeof source?.value !== "string" ||
+          !EFFECT_SOURCES.has(source.value)
+        )
+          return;
+        for (const specifier of specifiers ?? []) {
+          if (
+            specifier.type === "ImportSpecifier" &&
+            specifier.imported?.name === "Effect" &&
+            typeof specifier.local?.name === "string"
+          )
+            effectNames.add(specifier.local.name);
+        }
+      },
+      CallExpression(node) {
+        const callee = node.callee as AstNode;
+        if (
+          isMemberOf(callee, effectNames, (name) =>
+            DEFAULT_RUNTIME_CALLS.has(name),
+          )
+        )
+          context.report({
+            node: callee as never,
+            messageId: "empty",
+            data: { name: String(callee.property?.name) },
+          });
+      },
+    };
+  },
+};
+
+/** The TypeScript fields `clockTime` reads. */
+interface TypeNode extends AstNode {
+  readonly typeAnnotation?: TypeNode;
+  readonly returnType?: TypeNode;
+  readonly typeName?: TypeNode;
+  readonly left?: TypeNode;
+  readonly right?: TypeNode;
+  readonly members?: readonly TypeNode[];
+  readonly types?: readonly TypeNode[];
+  readonly body?: TypeNode | readonly TypeNode[];
+  readonly declaration?: TypeNode | null;
+  readonly declarations?: readonly TypeNode[];
+  readonly id?: TypeNode;
+  readonly init?: TypeNode | null;
+  readonly params?: readonly TypeNode[];
+  readonly key?: TypeNode;
+  readonly extends?: readonly TypeNode[];
+  readonly expression?: TypeNode;
+}
+
+/** `Temporal.<name>` as a type name. */
+function isTemporalType(node: TypeNode | undefined, name: string): boolean {
+  const type = node?.type === "TSTypeReference" ? node.typeName : undefined;
+  return (
+    type?.type === "TSQualifiedName" &&
+    type.left?.type === "Identifier" &&
+    type.left.name === "Temporal" &&
+    type.right?.name === name
+  );
+}
+
+/** A function type that returns a `Temporal.Instant` or a `number`. */
+function isClockFunction(node: TypeNode | undefined): boolean {
+  if (!node) return false;
+  if (node.type === "TSUnionType")
+    return (node.types ?? []).some(isClockFunction);
+  if (node.type !== "TSFunctionType") return false;
+  const returned = node.returnType?.typeAnnotation;
+  return (
+    returned?.type === "TSNumberKeyword" || isTemporalType(returned, "Instant")
+  );
+}
+
+/** A `now` member whose type is a function returning an instant or a number. */
+function isNowMember(member: TypeNode): boolean {
+  const key = member.computed ? undefined : member.key;
+  if (key?.type !== "Identifier" || key.name !== "now") return false;
+  if (member.type === "TSMethodSignature") {
+    const returned = member.returnType?.typeAnnotation;
+    return (
+      returned?.type === "TSNumberKeyword" ||
+      isTemporalType(returned, "Instant")
+    );
+  }
+  return (
+    member.type === "TSPropertySignature" &&
+    isClockFunction(member.typeAnnotation?.typeAnnotation)
+  );
+}
+
+/**
+ * In an Effect-native file time comes from `Clock`, so `TestClock` drives it
+ * (CODING_STANDARDS.md → Effect → Time). A direct read of the system clock
+ * skips the Clock service. Under `src/services/**`, a layer constructor that
+ * takes a `now` function in its options asks its caller for a second clock;
+ * the layer reads `Clock.Clock` instead. The file that converts the Clock for
+ * a non-Effect core, and the backlog, are listed in oxlint.config.ts.
+ */
+export const clockTime: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Read time through Clock in a file that imports Effect.",
+    },
+    messages: {
+      clock:
+        "read time through `Clock` (`Clock.currentTimeMillis` or `DateTime.now` in Effect code; `instantClock(yield* Clock.Clock)` from `@/lib/effect-clock` for a non-Effect core), so a TestClock drives it",
+      option:
+        "do not take a `now` option; read time through `Clock` (`instantClock(yield* Clock.Clock)` from `@/lib/effect-clock`), so a TestClock drives it",
+    },
+    schema: [],
+  },
+  create(context) {
+    let effectNative = false;
+    let declarations: readonly TypeNode[] = [];
+    const inServices = context.filename
+      .replaceAll(sep, "/")
+      .includes("/src/services/");
+
+    /** Members of a parameter type: a literal, or an interface or alias of this file. */
+    const membersOf = (
+      type: TypeNode | undefined,
+      seen = new Set<TypeNode>(),
+    ): readonly TypeNode[] => {
+      if (!type || seen.has(type)) return [];
+      seen.add(type);
+      switch (type.type) {
+        case "TSTypeLiteral":
+          return type.members ?? [];
+        case "TSIntersectionType":
+        case "TSUnionType":
+          return (type.types ?? []).flatMap((part) => membersOf(part, seen));
+        case "TSInterfaceDeclaration": {
+          const body = type.body as TypeNode | undefined;
+          return body?.type === "TSInterfaceBody"
+            ? ((body.body as readonly TypeNode[] | undefined) ?? [])
+            : [];
+        }
+        case "TSTypeAliasDeclaration":
+          return membersOf(type.typeAnnotation, seen);
+        case "TSTypeReference": {
+          const name = type.typeName;
+          if (name?.type !== "Identifier") return [];
+          return declarations
+            .filter((declaration) => declaration.id?.name === name.name)
+            .flatMap((declaration) => membersOf(declaration, seen));
+        }
+        default:
+          return [];
+      }
+    };
+
+    /** A parameter named `now`, or an options parameter with a `now` member. */
+    const hasNowOption = (param: TypeNode): boolean => {
+      const target = param.type === "AssignmentPattern" ? param.left : param;
+      if (
+        target?.type === "Identifier" &&
+        target.name === "now" &&
+        isClockFunction(target.typeAnnotation?.typeAnnotation)
+      )
+        return true;
+      return membersOf(target?.typeAnnotation?.typeAnnotation).some(
+        isNowMember,
+      );
+    };
+
+    const checkLayer = (name: unknown, fn: TypeNode | null | undefined) => {
+      if (
+        !inServices ||
+        typeof name !== "string" ||
+        !name.startsWith("layer") ||
+        (fn?.type !== "FunctionDeclaration" &&
+          fn?.type !== "FunctionExpression" &&
+          fn?.type !== "ArrowFunctionExpression")
+      )
+        return;
+      for (const param of fn.params ?? [])
+        if (hasNowOption(param))
+          context.report({ node: param as never, messageId: "option" });
+    };
+
+    return {
+      Program(program) {
+        const body = (program as ModuleProgram).body ?? [];
+        effectNative = importsEffect(body);
+        declarations = body.flatMap((statement) => {
+          const node = statement as TypeNode;
+          const declaration =
+            node.type === "ExportNamedDeclaration" ? node.declaration : node;
+          return declaration?.type === "TSInterfaceDeclaration" ||
+            declaration?.type === "TSTypeAliasDeclaration"
+            ? [declaration]
+            : [];
+        });
+      },
+      ExportNamedDeclaration(node) {
+        const declaration = (node as TypeNode).declaration;
+        if (declaration?.type === "FunctionDeclaration")
+          checkLayer(declaration.id?.name, declaration);
+        if (declaration?.type === "VariableDeclaration")
+          for (const declarator of declaration.declarations ?? [])
+            checkLayer(declarator.id?.name, declarator.init);
+      },
+      CallExpression(node) {
+        if (!effectNative) return;
+        const callee = node.callee as TypeNode;
+        const system =
+          isMemberOf(callee, DATE, (name) => name === "now") ||
+          isMemberOf(callee, PERFORMANCE, (name) => name === "now") ||
+          (callee.type === "MemberExpression" &&
+            callee.object?.type === "MemberExpression" &&
+            !callee.object.computed &&
+            callee.object.object?.type === "Identifier" &&
+            callee.object.object.name === "Temporal" &&
+            callee.object.property?.name === "Now");
+        if (system) context.report({ node, messageId: "clock" });
+      },
+      NewExpression(node) {
+        const callee = node.callee as TypeNode;
+        if (
+          effectNative &&
+          callee.type === "Identifier" &&
+          callee.name === "Date" &&
+          node.arguments.length === 0
+        )
+          context.report({ node, messageId: "clock" });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-services" },
   rules: {
     "cli-command-registration": cliCommandRegistration,
+    "clock-time": clockTime,
     "effect-native-resources": effectNativeResources,
     "interrupt-predicate": interruptPredicate,
     "layer-stream-consumer": layerStreamConsumer,
+    "no-default-runtime": noDefaultRuntime,
     "no-legacy-service": noLegacyService,
     "no-nanoevents": noNanoevents,
     "obsidian-events-intake": obsidianEventsIntake,
