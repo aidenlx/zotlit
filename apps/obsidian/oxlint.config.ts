@@ -168,7 +168,6 @@ export default defineConfig({
         "src/services/note-import/batch-import.ts",
         "src/services/note-import/service.ts",
         "src/services/pandoc/document-presentation.ts",
-        "src/services/protocol/register.ts",
         "src/services/template/actions.ts",
         "src/views/annot-view/view.tsx",
         "src/views/library/item-actions.ts",
@@ -328,10 +327,7 @@ export default defineConfig({
       // No tag member yet: `workspace.requestActiveLeafEvents` (use-ledger),
       // the side splits (library/view.ts), and the raw workspace that the
       // editor lookup takes (library/view.ts, library/item-actions.ts).
-      // companion-view.ts holds the App until Note Feature converts; the
-      // Workspace tag has its `openLinkText`.
       files: [
-        "src/services/note-feature/companion-view.ts",
         "src/services/use-ledger/service.ts",
         "src/views/library/item-actions.ts",
         "src/views/library/view.ts",
@@ -365,7 +361,6 @@ export default defineConfig({
         "src/services/local-bridge/vault-targets.ts",
         "src/services/note-feature/update-single.ts",
         "src/services/note-import/service.ts",
-        "src/services/protocol/register.ts",
         "src/services/template-workbench/check-profile-document.ts",
         "src/views/note-preview/render.ts",
         "src/views/note-preview/session.ts",
@@ -413,14 +408,12 @@ export default defineConfig({
         "src/services/local-bridge/reads.ts",
         "src/services/local-bridge/vault-targets.ts",
         "src/services/note-feature/annotation-citation.ts",
-        "src/services/note-feature/companion-view.ts",
         "src/services/note-feature/operations.ts",
         "src/services/note-feature/update-batch.ts",
         "src/services/note-feature/update-single.ts",
         "src/services/note-import/batch-import.ts",
         "src/services/note-import/service.ts",
         "src/services/profile/service.ts",
-        "src/services/protocol/register.ts",
         "src/services/template-workbench/data.ts",
         "src/services/template/migration.ts",
         "src/views/annot-view/view.tsx",

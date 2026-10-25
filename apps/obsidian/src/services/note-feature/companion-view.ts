@@ -7,10 +7,12 @@ import type { ProtocolAction } from "@zotlit/protocol";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
+import { Workspace } from "@/lib/obsidian-workspace";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
-import type { PlainUseLedger } from "@/services/use-ledger/plain";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import { UseLedger } from "@/services/use-ledger/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import { createNoteInteractively } from "./creation-view";
 import type { InteractiveCreationDeps } from "./creation-view";
@@ -25,14 +27,20 @@ import {
   updateNoteToast,
 } from "./update-single";
 
-export interface CompanionNoteDeps extends InteractiveCreationDeps {
-  useLedger: Pick<PlainUseLedger, "withoutNoteUse">;
-  zoteroReads: Pick<PlainZoteroReads, "reads">;
+/**
+ * The legacy values the Companion flow still holds. Note Feature and the
+ * Profile factories convert in later slices; the flow reads the Zotero data
+ * folder from the ZoteroPref tag.
+ */
+export interface CompanionNoteDeps extends Omit<
+  InteractiveCreationDeps,
+  "zoteroPref"
+> {
   noteFeature: InteractiveCreationDeps["noteFeature"] &
     Pick<NoteFeature, "resolveCompanionNote" | "updateNote">;
 }
 
-export async function openCompanionNote(
+export const openCompanionNote = Effect.fn("openCompanionNote")(function* (
   deps: CompanionNoteDeps,
   ref: ItemRef,
   options: {
@@ -42,18 +50,23 @@ export async function openCompanionNote(
     /** Absent replaces the last active tab, as an Obsidian URI without one does. */
     paneType?: PaneType;
   },
-): Promise<void> {
-  const pane = options.paneType ?? false;
+) {
+  const workspace = yield* Workspace;
+  const useLedger = yield* UseLedger;
   const open = (file: TFile) => {
-    const navigate = () =>
-      deps.app.workspace.openLinkText(file.path, "", pane, { active: true });
+    const navigate = workspace.openLinkText(file.path, "", {
+      newLeaf: options.paneType ?? false,
+      state: { active: true },
+    });
     return options.action === "update"
-      ? deps.useLedger.withoutNoteUse(file, navigate)
-      : navigate();
+      ? useLedger.withoutNoteUse(file, navigate)
+      : navigate;
   };
-  const target = await deps.noteFeature.resolveCompanionNote(ref.indexedKey, {
-    profile: options.profile,
-  });
+  const target = yield* Effect.promise(() =>
+    deps.noteFeature.resolveCompanionNote(ref.indexedKey, {
+      profile: options.profile,
+    }),
+  );
   const notice = companionNoteNotice(deps.app, target);
   if (target.outcome === "refused") {
     new BaseNotice(notice!);
@@ -61,17 +74,19 @@ export async function openCompanionNote(
   }
   if (target.outcome === "existing") {
     const file = resolveLiteratureNoteWithWarning(target.files)!;
-    await open(file);
+    yield* open(file);
     if (target.keptProfile || target.diagnostic) {
       new BaseNotice(notice!);
     } else if (options.action === "update") {
       const scope = options.scope ?? "full";
-      await toast.promise(
-        deps.noteFeature.updateNote(file, {
-          indexedKey: ref.indexedKey,
-          scope,
-        }),
-        updateNoteToast(scope, { app: deps.app }),
+      yield* Effect.promise(() =>
+        toast.promise(
+          deps.noteFeature.updateNote(file, {
+            indexedKey: ref.indexedKey,
+            scope,
+          }),
+          updateNoteToast(scope, { app: deps.app }),
+        ),
       );
     }
     return;
@@ -80,21 +95,22 @@ export async function openCompanionNote(
     new BaseNotice(m.notice_update_metadata_no_note());
     return;
   }
-  const { reads } = deps.zoteroReads;
-  const item: Item | undefined = (
-    await Effect.runPromise(
-      reads.ItemsByIndexedKeys({ indexedKeys: [ref.indexedKey] }),
-    )
-  ).get(ref.indexedKey);
+  const { reads } = yield* ZoteroReads;
+  const item: Item | undefined = (yield* reads.ItemsByIndexedKeys({
+    indexedKeys: [ref.indexedKey],
+  })).get(ref.indexedKey);
   if (!item) return;
-  const file = await createNoteInteractively(deps, item, {
-    headless: options.profile,
-    direct: true,
-  });
+  const { dataDir } = yield* (yield* ZoteroPref).current;
+  const file = yield* Effect.promise(() =>
+    createNoteInteractively({ ...deps, zoteroPref: { dataDir } }, item, {
+      headless: options.profile,
+      direct: true,
+    }),
+  );
   if (file) {
-    await open(file);
+    yield* open(file);
   }
-}
+});
 
 export function companionNoteNotice(
   app: App,

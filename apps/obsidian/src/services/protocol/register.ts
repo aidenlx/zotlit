@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Data, Effect, Exit, Scope } from "effect";
 import type { ObsidianProtocolData, PaneType, Plugin } from "obsidian";
 
 import type { ItemRef } from "@zotlit/db";
@@ -28,64 +28,69 @@ import type { ProtocolAction } from "@zotlit/protocol";
 
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import type { AttachmentReader } from "@/lib/attachment-open";
-import type { EffectBridge } from "@/lib/effect-bridge";
+import { logAndContinue, withLogCategory } from "@/lib/effect-log";
+import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import { ObsidianEnv } from "@/lib/obsidian-env";
+import { Vault } from "@/lib/obsidian-vault";
+import { Workspace } from "@/lib/obsidian-workspace";
 import {
   parseProfileSelector,
   unknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
-import {
-  pdfPickerReader,
-  toObsidianOpenable,
-} from "@/services/attachment-open/actions";
+import { pdfPickerReader } from "@/services/attachment-open/actions";
 import type { TargetOpener } from "@/services/attachment-open/open-target";
+import { toObsidianOpenableAttachments } from "@/services/attachment-open/resolve";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
-import type { LocalServer } from "@/services/local-server/service";
+import { LocalServer } from "@/services/local-server/service";
+import type {
+  ImportNotesRequest,
+  UpdateManyRequest,
+} from "@/services/local-server/service";
 import { openCompanionNote } from "@/services/note-feature";
-import type { CompanionNoteDeps } from "@/services/note-feature";
 import {
   runBatchUpdate,
   runBatchUpdateAll,
 } from "@/services/note-feature/update-batch";
-import type { BatchUpdateResult } from "@/services/note-feature/update-batch";
+import type {
+  BatchUpdateDeps,
+  BatchUpdateResult,
+} from "@/services/note-feature/update-batch";
 import { noteOperationDiagnosticNotice } from "@/services/note-feature/update-single";
-import type { SingleUpdateDeps } from "@/services/note-feature/update-single";
 import type { BatchImport } from "@/services/note-import/batch-import";
 import {
   batchImportAllToast,
   batchImportToast,
 } from "@/services/note-import/batch-import-notices";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { UseLedger } from "@/services/use-ledger/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
-const logger = getLogger("protocol");
+/** The services a protocol handler reads through their tags. */
+export type ProtocolServices =
+  | LocalServer
+  | ObsidianEnv
+  | UseLedger
+  | Vault
+  | Workspace
+  | ZoteroPref
+  | ZoteroReads;
 
-export interface ProtocolDeps extends SingleUpdateDeps {
-  useLedger: CompanionNoteDeps["useLedger"];
+/**
+ * The legacy values the handlers still hold. Note Feature, batch import, the
+ * Profile factories and the Attachment opener convert in later slices, and the
+ * batch runners still take the whole {@link BatchUpdateDeps} bundle, plain
+ * adapters included.
+ */
+export interface ProtocolDeps extends BatchUpdateDeps {
   webWorkbenchEnabled: boolean;
-  createProfile: CompanionNoteDeps["createProfile"];
-  importProfile: CompanionNoteDeps["importProfile"];
   batchImport: Pick<BatchImport, "runBatchImport" | "runBatchImportAll">;
-  zoteroPref: Pick<
-    PlainZoteroPref,
-    "sourceId" | "dataDir" | "baseAttachmentPath"
-  >;
-  liveUpdate: Pick<
-    LocalServer["Service"],
-    "updateManyRequests" | "importNotesRequests"
-  >;
-  bridge: Pick<EffectBridge, "runSync" | "subscribe">;
-  zoteroReads: Pick<
-    PlainZoteroReads,
-    "state" | "reads" | "acquireRead" | "snapshot"
-  >;
   /** Opens the Attachment `open-attachment` names. */
   opener: Pick<TargetOpener, "open">;
 }
@@ -99,107 +104,138 @@ export interface ProtocolDeps extends SingleUpdateDeps {
  * decodes a different query shape (an item-id list) and routes to the batch
  * runner.
  *
- * Handlers auto-deregister when the plugin unloads.
+ * Handlers auto-deregister when the plugin unloads. Each Obsidian callback runs
+ * its handler with the services this Effect runs with, and a handler that fails
+ * is logged. A handler still running at unload runs to its end, as the
+ * Promise handlers did. The returned `Disposable` stops the requests the Local
+ * Server pushes.
  */
-export function registerProtocolHandlers(
-  plugin: Pick<Plugin, "registerObsidianProtocolHandler">,
-  deps: ProtocolDeps,
-): Disposable {
-  using stack = new DisposableStack();
-  for (const action of protocolActions) {
-    plugin.registerObsidianProtocolHandler(protocolActionId(action), (data) => {
-      void handleProtocol(action, data, deps);
-    });
-  }
-  plugin.registerObsidianProtocolHandler(batchProtocolActionId, (data) => {
-    void handleBatchProtocol(data, deps);
-  });
-  plugin.registerObsidianProtocolHandler(importProtocolActionId, (data) => {
-    void handleImportProtocol(data, deps);
-  });
-  plugin.registerObsidianProtocolHandler(importManyProtocolActionId, (data) => {
-    void handleImportManyProtocol(data, deps);
-  });
-  plugin.registerObsidianProtocolHandler(exploreProtocolActionId, (data) => {
-    void handleExploreProtocol(data, deps);
-  });
-  plugin.registerObsidianProtocolHandler(
-    openAttachmentProtocolActionId,
-    (data) => {
-      void handleOpenAttachmentProtocol(data, deps);
-    },
-  );
-  plugin.registerObsidianProtocolHandler(updateAllProtocolActionId, (data) => {
-    void handleUpdateAllProtocol(data, deps);
-  });
-  plugin.registerObsidianProtocolHandler(
-    importAllNotesProtocolActionId,
-    (data) => {
-      void handleImportAllNotesProtocol(data, deps);
-    },
-  );
+export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
+  function* (
+    plugin: Pick<Plugin, "registerObsidianProtocolHandler">,
+    deps: ProtocolDeps,
+  ) {
+    const run = Effect.runForkWith(yield* Effect.context<ProtocolServices>());
+    const register = (
+      id: string,
+      handle: (
+        data: ObsidianProtocolData,
+      ) => Effect.Effect<void, unknown, ProtocolServices>,
+    ) =>
+      // The callback returns the handler's fiber: Obsidian ignores it, and a
+      // test joins it.
+      plugin.registerObsidianProtocolHandler(id, (data) =>
+        run(
+          handle(data).pipe(
+            logAndContinue("Protocol handler failed", "protocol", {
+              action: id,
+            }),
+          ),
+        ),
+      );
 
-  if (deps.webWorkbenchEnabled)
-    plugin.registerObsidianProtocolHandler(
-      importProfileProtocolActionId,
-      (data) => {
-        void handleProfileImportProtocol(data, deps);
-      },
+    for (const action of protocolActions)
+      register(protocolActionId(action), (data) =>
+        handleProtocol(action, data, deps),
+      );
+    register(batchProtocolActionId, (data) => handleBatchProtocol(data, deps));
+    register(importProtocolActionId, (data) =>
+      handleImportProtocol(data, deps),
     );
+    register(importManyProtocolActionId, (data) =>
+      handleImportManyProtocol(data, deps),
+    );
+    register(exploreProtocolActionId, (data) =>
+      handleExploreProtocol(data, deps),
+    );
+    register(openAttachmentProtocolActionId, (data) =>
+      handleOpenAttachmentProtocol(data, deps),
+    );
+    register(updateAllProtocolActionId, (data) =>
+      handleUpdateAllProtocol(data, deps),
+    );
+    register(importAllNotesProtocolActionId, (data) =>
+      handleImportAllNotesProtocol(data, deps),
+    );
+    if (deps.webWorkbenchEnabled)
+      register(importProfileProtocolActionId, (data) =>
+        handleProfileImportProtocol(data, deps),
+      );
 
-  // A batch update pushed over HTTP (companion couldn't fit the ids in a URL)
-  // runs the same interactive flow as the `update-many` protocol link.
-  stack.defer(
-    deps.bridge.subscribe(deps.liveUpdate.updateManyRequests, (event) => {
-      const requested = resolveRequestedProfile(event.profileId);
-      if (!requested.ok) return;
-      void toast.promise(
+    const localServer = yield* LocalServer;
+    const scope = yield* Scope.make();
+    // A batch update pushed over HTTP (companion couldn't fit the ids in a URL)
+    // runs the same interactive flow as the `update-many` protocol link. Each
+    // run is detached, so a long batch does not hold back the next request.
+    yield* forkEach(localServer.updateManyRequests, (event) =>
+      Effect.forkDetach(updateManyRequested(event, deps)),
+    ).pipe(Scope.provide(scope));
+    // A batch import pushed over HTTP runs the same flow as the import-notes link.
+    yield* forkEach(localServer.importNotesRequests, (event) =>
+      Effect.forkDetach(importNotesRequested(event, deps)),
+    ).pipe(Scope.provide(scope));
+
+    return {
+      [Symbol.dispose]: () => {
+        run(Scope.close(scope, Exit.void));
+      },
+    } satisfies Disposable;
+  },
+);
+
+const updateManyRequested = Effect.fn("protocol.updateManyRequested")(
+  function* (event: UpdateManyRequest, deps: ProtocolDeps) {
+    const requested = resolveRequestedProfile(event.profileId);
+    if (!requested.ok) return;
+    yield* Effect.promise(() =>
+      toast.promise(
         runBatchUpdate(deps, event.items, {
           scope: event.scope,
           profile: requested.selector,
         }),
         { success: batchUpdateNotice },
-      );
-    }),
-  );
+      ),
+    );
+  },
+  logAndContinue("Pushed batch update failed", "protocol"),
+);
 
-  // A batch import pushed over HTTP runs the same flow as the import-notes link.
-  stack.defer(
-    deps.bridge.subscribe(deps.liveUpdate.importNotesRequests, (event) => {
-      void toast.promise(
+const importNotesRequested = Effect.fn("protocol.importNotesRequested")(
+  function* (event: ImportNotesRequest, deps: ProtocolDeps) {
+    yield* Effect.promise(() =>
+      toast.promise(
         deps.batchImport.runBatchImport(event.mode, event.items),
         batchImportToast({ app: deps.app }),
-      );
-    }),
-  );
+      ),
+    );
+  },
+  logAndContinue("Pushed batch import failed", "protocol"),
+);
 
-  return stack.move();
-}
-
-async function handleProtocol(
+const handleProtocol = Effect.fn("protocol.handleProtocol")(function* (
   action: ProtocolAction,
   data: ObsidianProtocolData,
   deps: ProtocolDeps,
-): Promise<void> {
-  const query = parseProtocolData(data, deps, {
+) {
+  const query = yield* parseProtocolData(data, {
     action,
     parse: parseProtocolQuery,
   });
   if (!query) return;
 
-  const ref = await resolveProtocolItem(query, deps, action);
+  const ref = yield* resolveProtocolItem(query, action);
   if (!ref) return;
 
   const requested = resolveRequestedProfile(query.profileId);
   if (!requested.ok) return;
 
-  await openCompanionNote(deps, ref, {
+  yield* openCompanionNote(deps, ref, {
     action,
     scope: query.scope,
     profile: requested.selector,
     paneType: query.paneType,
   });
-}
+});
 
 /**
  * A `profileId` param resolved into a selector. `ok: false` means the text
@@ -228,30 +264,31 @@ function resolveRequestedProfile(text: string | undefined): RequestedProfile {
  * which owns the database-ready gate, classification, and the confirm/progress
  * modal.
  */
-async function handleBatchProtocol(
-  data: ObsidianProtocolData,
-  deps: ProtocolDeps,
-): Promise<void> {
-  const action = "update-many";
-  const query = parseProtocolData(data, deps, {
-    action,
-    parse: parseProtocolBatchQuery,
-  });
-  if (!query) return;
+const handleBatchProtocol = Effect.fn("protocol.handleBatchProtocol")(
+  function* (data: ObsidianProtocolData, deps: ProtocolDeps) {
+    const action = "update-many";
+    const query = yield* parseProtocolData(data, {
+      action,
+      parse: parseProtocolBatchQuery,
+    });
+    if (!query) return;
 
-  const requested = resolveRequestedProfile(query.profileId);
-  if (!requested.ok) return;
+    const requested = resolveRequestedProfile(query.profileId);
+    if (!requested.ok) return;
 
-  await toast.promise(
-    runBatchUpdate(deps, query.items, {
-      scope: query.scope,
-      profile: requested.selector,
-    }),
-    {
-      success: batchUpdateNotice,
-    },
-  );
-}
+    yield* Effect.promise(() =>
+      toast.promise(
+        runBatchUpdate(deps, query.items, {
+          scope: query.scope,
+          profile: requested.selector,
+        }),
+        {
+          success: batchUpdateNotice,
+        },
+      ),
+    );
+  },
+);
 
 function batchUpdateNotice(result: BatchUpdateResult): string | undefined {
   switch (result.outcome) {
@@ -266,99 +303,106 @@ function batchUpdateNotice(result: BatchUpdateResult): string | undefined {
 }
 
 /** Handle `obsidian://zotlit/import-note`. */
-async function handleImportProtocol(
-  data: ObsidianProtocolData,
-  deps: ProtocolDeps,
-): Promise<void> {
-  const action = "import-note";
-  const query = parseProtocolData(data, deps, {
-    action,
-    parse: parseImportProtocolQuery,
-  });
-  if (!query) return;
+const handleImportProtocol = Effect.fn("protocol.handleImportProtocol")(
+  function* (data: ObsidianProtocolData, deps: ProtocolDeps) {
+    const action = "import-note";
+    const query = yield* parseProtocolData(data, {
+      action,
+      parse: parseImportProtocolQuery,
+    });
+    if (!query) return;
 
-  await toast.promise(
-    deps.batchImport.runBatchImport(query.mode, [query.item]),
-    batchImportToast({ app: deps.app }),
-  );
-}
+    yield* Effect.promise(() =>
+      toast.promise(
+        deps.batchImport.runBatchImport(query.mode, [query.item]),
+        batchImportToast({ app: deps.app }),
+      ),
+    );
+  },
+);
 
 /** Handle `obsidian://zotlit/import-notes`. */
-async function handleImportManyProtocol(
-  data: ObsidianProtocolData,
-  deps: ProtocolDeps,
-): Promise<void> {
-  const action = "import-notes";
-  const query = parseProtocolData(data, deps, {
-    action,
-    parse: parseImportManyProtocolQuery,
-  });
-  if (!query) return;
+const handleImportManyProtocol = Effect.fn("protocol.handleImportManyProtocol")(
+  function* (data: ObsidianProtocolData, deps: ProtocolDeps) {
+    const action = "import-notes";
+    const query = yield* parseProtocolData(data, {
+      action,
+      parse: parseImportManyProtocolQuery,
+    });
+    if (!query) return;
 
-  await toast.promise(
-    deps.batchImport.runBatchImport(query.mode, query.items),
-    batchImportToast({ app: deps.app }),
-  );
-}
+    yield* Effect.promise(() =>
+      toast.promise(
+        deps.batchImport.runBatchImport(query.mode, query.items),
+        batchImportToast({ app: deps.app }),
+      ),
+    );
+  },
+);
 
-async function handleExploreProtocol(
-  data: ObsidianProtocolData,
-  deps: ProtocolDeps,
-): Promise<void> {
-  const action = "explore";
-  const query = parseProtocolData(data, deps, {
-    action,
-    parse: parseExploreProtocolQuery,
-  });
-  if (!query) return;
+const handleExploreProtocol = Effect.fn("protocol.handleExploreProtocol")(
+  function* (data: ObsidianProtocolData, deps: ProtocolDeps) {
+    const action = "explore";
+    const query = yield* parseProtocolData(data, {
+      action,
+      parse: parseExploreProtocolQuery,
+    });
+    if (!query) return;
 
-  const ref = await resolveProtocolItem(query, deps, action);
-  if (!ref) return;
+    const ref = yield* resolveProtocolItem(query, action);
+    if (!ref) return;
 
-  await openTemplateDataExplorer(
-    deps.app,
-    {
-      itemIndexedKey: ref.indexedKey,
-      anchorAnnotationKey: query.annotation,
-    },
-    { paneType: query.paneType },
-  );
-}
+    yield* Effect.promise(() =>
+      openTemplateDataExplorer(
+        deps.app,
+        {
+          itemIndexedKey: ref.indexedKey,
+          anchorAnnotationKey: query.annotation,
+        },
+        { paneType: query.paneType },
+      ),
+    );
+  },
+);
 
 /**
  * Handle `obsidian://zotlit/open-attachment`. `query.item` may name either a
  * regular Item or an Attachment directly — `resolveProtocolItem` assumes a
  * regular item, so this branches for itself instead.
  */
-async function handleOpenAttachmentProtocol(
-  data: ObsidianProtocolData,
-  deps: ProtocolDeps,
-): Promise<void> {
+const handleOpenAttachmentProtocol = Effect.fn(
+  "protocol.handleOpenAttachmentProtocol",
+)(function* (data: ObsidianProtocolData, deps: ProtocolDeps) {
   const action = "open-attachment";
-  const query = parseProtocolData(data, deps, {
+  const query = yield* parseProtocolData(data, {
     action,
     parse: parseOpenAttachmentProtocolQuery,
   });
   if (!query) return;
 
-  if (deps.zoteroReads.state !== "ready") {
-    logger.warn("Protocol handler: database not ready", { action });
-    new BaseNotice(m.notice_protocol_db_unavailable());
-    return;
-  }
+  const zoteroReads = yield* ZoteroReads;
+  if (!(yield* databaseReady(zoteroReads, action))) return;
 
-  const { reads } = deps.zoteroReads;
-  const attachments = await Effect.runPromise(
-    reads.AttachmentsAt({ itemID: query.item }),
-  );
+  const attachments = yield* zoteroReads.reads.AttachmentsAt({
+    itemID: query.item,
+  });
 
-  const openable = toObsidianOpenable(attachments, deps);
+  const pref = yield* (yield* ZoteroPref).current;
+  const { basePath } = yield* ObsidianEnv;
+  const openable = toObsidianOpenableAttachments(attachments, {
+    pathContext: {
+      dataDir: pref.dataDir,
+      baseAttachmentPath: pref.baseAttachmentPath,
+    },
+    vaultBasePath: basePath,
+    platform: process.platform,
+  });
 
   openAttachments(openable, {
     reader: withPaneOverride(pdfPickerReader(deps.opener), query.paneType),
     app: deps.app,
   });
-}
+});
 
 /**
  * The Suggest modal's own click decides the pane (Mod-click/Mod-Enter) when
@@ -372,44 +416,46 @@ function withPaneOverride(
   return paneType ? withFixedPane(reader, paneType) : reader;
 }
 
-async function handleUpdateAllProtocol(
-  data: ObsidianProtocolData,
-  deps: ProtocolDeps,
-): Promise<void> {
-  const query = parseProtocolData(data, deps, {
-    action: "update-all",
-    parse: parseUpdateAllProtocolQuery,
-  });
-  if (!query) return;
+const handleUpdateAllProtocol = Effect.fn("protocol.handleUpdateAllProtocol")(
+  function* (data: ObsidianProtocolData, deps: ProtocolDeps) {
+    const query = yield* parseProtocolData(data, {
+      action: "update-all",
+      parse: parseUpdateAllProtocolQuery,
+    });
+    if (!query) return;
 
-  await toast.promise(
-    runBatchUpdateAll(deps, {
-      groupID: query.groupID,
-      collectionKey: query.collectionKey,
-    }),
-    { success: updateAllNotice },
-  );
-}
+    yield* Effect.promise(() =>
+      toast.promise(
+        runBatchUpdateAll(deps, {
+          groupID: query.groupID,
+          collectionKey: query.collectionKey,
+        }),
+        { success: updateAllNotice },
+      ),
+    );
+  },
+);
 
 /** Handle `obsidian://zotlit/import-all-notes`. */
-async function handleImportAllNotesProtocol(
-  data: ObsidianProtocolData,
-  deps: ProtocolDeps,
-): Promise<void> {
-  const query = parseProtocolData(data, deps, {
+const handleImportAllNotesProtocol = Effect.fn(
+  "protocol.handleImportAllNotesProtocol",
+)(function* (data: ObsidianProtocolData, deps: ProtocolDeps) {
+  const query = yield* parseProtocolData(data, {
     action: "import-all-notes",
     parse: parseImportAllNotesProtocolQuery,
   });
   if (!query) return;
 
-  await toast.promise(
-    deps.batchImport.runBatchImportAll({
-      groupID: query.groupID,
-      collectionKey: query.collectionKey,
-    }),
-    batchImportAllToast({ app: deps.app }),
+  yield* Effect.promise(() =>
+    toast.promise(
+      deps.batchImport.runBatchImportAll({
+        groupID: query.groupID,
+        collectionKey: query.collectionKey,
+      }),
+      batchImportAllToast({ app: deps.app }),
+    ),
   );
-}
+});
 
 function updateAllNotice(result: BatchUpdateResult): string | undefined {
   switch (result.outcome) {
@@ -428,97 +474,152 @@ function updateAllNotice(result: BatchUpdateResult): string | undefined {
   }
 }
 
+/**
+ * The link's query, or `null` when it does not parse (after the invalid-link
+ * notice) or names another Zotero.
+ */
 function parseProtocolData<Query extends { sourceId: string }>(
   data: ObsidianProtocolData,
-  deps: ProtocolDeps,
   options: {
     action: string;
     parse: (data: Record<string, unknown>) => Query;
   },
-): Query | null {
+): Effect.Effect<Query | null, never, ZoteroPref> {
   const { action, parse } = options;
+  return Effect.gen(function* () {
+    const parsed = yield* Effect.try(() => parse(data)).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Invalid protocol query").pipe(
+          Effect.annotateLogs({ action, error: error.cause }),
+          Effect.andThen(
+            Effect.sync(() => {
+              new BaseNotice(m.notice_protocol_invalid());
+            }),
+          ),
+          Effect.as(null),
+        ),
+      ),
+    );
+    if (!parsed) return null;
 
-  let query: Query;
-  try {
-    query = parse(data);
-  } catch (error) {
-    logger.warn("Invalid protocol query", { action, error });
-    new BaseNotice(m.notice_protocol_invalid());
-    return null;
-  }
+    const { sourceId } = yield* (yield* ZoteroPref).current;
+    if (!protocolSourceMatches(parsed, sourceId)) {
+      yield* Effect.logWarning("Protocol source id mismatch").pipe(
+        Effect.annotateLogs({
+          action,
+          received: parsed.sourceId,
+          expected: sourceId,
+        }),
+      );
+      return null;
+    }
 
-  if (!protocolSourceMatches(query, deps.zoteroPref.sourceId)) {
-    logger.warn("Protocol source id mismatch", {
-      action,
-      received: query.sourceId,
-      expected: deps.zoteroPref.sourceId,
-    });
-    return null;
-  }
-
-  return query;
+    return parsed;
+  }).pipe(withLogCategory("protocol"));
 }
 
-async function resolveProtocolItem(
-  query: { item: number },
-  deps: ProtocolDeps,
+/** Whether the database is ready; when it is not, show the notice and say so. */
+const databaseReady = Effect.fn("protocol.databaseReady")(function* (
+  zoteroReads: Pick<ZoteroReads["Service"], "current">,
   action: string,
-): Promise<ItemRef | null> {
-  if (deps.zoteroReads.state !== "ready") {
-    logger.warn("Protocol handler: database not ready", { action });
-    new BaseNotice(m.notice_protocol_db_unavailable());
-    return null;
-  }
+) {
+  if ((yield* zoteroReads.current).state === "ready") return true;
+  yield* Effect.logWarning("Protocol handler: database not ready").pipe(
+    Effect.annotateLogs({ action }),
+    withLogCategory("protocol"),
+  );
+  new BaseNotice(m.notice_protocol_db_unavailable());
+  return false;
+});
 
-  const { reads } = deps.zoteroReads;
-  const ref = await Effect.runPromise(readDisplayRef(reads, query.item));
-  if (!ref) {
-    logger.warn("Protocol handler: item not found", {
-      action,
-      itemID: query.item,
-    });
-    new BaseNotice(m.notice_protocol_item_not_found());
-    return null;
-  }
+const resolveProtocolItem = Effect.fn("protocol.resolveProtocolItem")(
+  function* (query: { item: number }, action: string) {
+    const zoteroReads = yield* ZoteroReads;
+    if (!(yield* databaseReady(zoteroReads, action))) return null;
 
-  const { itemID, libraryID, key, groupID, indexedKey } = ref;
-  return { itemID, libraryID, key, groupID, indexedKey };
-}
+    const ref = yield* readDisplayRef(zoteroReads.reads, query.item);
+    if (!ref) {
+      yield* Effect.logWarning("Protocol handler: item not found").pipe(
+        Effect.annotateLogs({ action, itemID: query.item }),
+        withLogCategory("protocol"),
+      );
+      new BaseNotice(m.notice_protocol_item_not_found());
+      return null;
+    }
+
+    const { itemID, libraryID, key, groupID, indexedKey } = ref;
+    const item: ItemRef = { itemID, libraryID, key, groupID, indexedKey };
+    return item;
+  },
+);
 
 /** Reuses the importer's clipboard reader and consent before opening the written file. */
-async function handleProfileImportProtocol(
-  data: ObsidianProtocolData,
-  deps: ProtocolDeps,
-): Promise<void> {
-  let paneType: PaneType | undefined;
-  try {
-    ({ paneType } = parseImportProfileProtocolQuery(data));
-  } catch (error) {
-    logger.debug("Refused clipboard Profile handoff", { error });
-    new BaseNotice(m.notice_protocol_invalid());
-    return;
-  }
-  try {
-    logger.debug("Opening clipboard Profile import");
-    const profile = await deps.importProfile({ source: "clipboard" });
-    if (!profile) {
-      logger.debug("Clipboard Profile import ended without a document");
-      return;
-    }
-    const file = deps.app.vault.getFileByPath(profile.path);
-    if (!file)
-      throw new Error(
-        `Imported Profile document is unavailable: ${profile.path}`,
-      );
-    // The workbench picks its own leaf; a named pane hands it one instead.
-    await openTemplateWorkbench(
-      deps.app,
-      file,
-      paneType ? { leaf: deps.app.workspace.getLeaf(paneType) } : {},
-    );
-    logger.debug("Opened imported Profile in editor", { path: profile.path });
-  } catch (error) {
-    logger.error("Failed to open clipboard Profile handoff", { error });
-    new BaseNotice(m.notice_profile_action_failed());
+const handleProfileImportProtocol = Effect.fn(
+  "protocol.handleProfileImportProtocol",
+)(function* (data: ObsidianProtocolData, deps: ProtocolDeps) {
+  const query = yield* Effect.try(() =>
+    parseImportProfileProtocolQuery(data),
+  ).pipe(
+    Effect.catch((error) =>
+      Effect.logDebug("Refused clipboard Profile handoff").pipe(
+        Effect.annotateLogs({ error: error.cause }),
+        Effect.andThen(
+          Effect.sync(() => {
+            new BaseNotice(m.notice_protocol_invalid());
+          }),
+        ),
+        Effect.as(null),
+      ),
+    ),
+  );
+  if (!query) return;
+  yield* openImportedProfile(deps, query.paneType).pipe(
+    Effect.catch((error) =>
+      Effect.logError("Failed to open clipboard Profile handoff").pipe(
+        Effect.annotateLogs({ error }),
+        Effect.andThen(
+          Effect.sync(() => {
+            new BaseNotice(m.notice_profile_action_failed());
+          }),
+        ),
+      ),
+    ),
+  );
+}, withLogCategory("protocol"));
+
+/** The Profile document the import wrote is not in the vault. */
+class ImportedProfileMissing extends Data.TaggedError(
+  "ImportedProfileMissing",
+)<{ readonly path: string }> {
+  override get message() {
+    return `Imported Profile document is unavailable: ${this.path}`;
   }
 }
+
+/** Import a Profile from the clipboard and open it in the workbench. */
+const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
+  function* (deps: ProtocolDeps, paneType: PaneType | undefined) {
+    yield* Effect.logDebug("Opening clipboard Profile import");
+    const profile = yield* Effect.tryPromise(() =>
+      deps.importProfile({ source: "clipboard" }),
+    );
+    if (!profile) {
+      yield* Effect.logDebug(
+        "Clipboard Profile import ended without a document",
+      );
+      return;
+    }
+    const file = yield* (yield* Vault).getFileByPath(profile.path);
+    if (!file) return yield* new ImportedProfileMissing({ path: profile.path });
+    // The workbench picks its own leaf; a named pane hands it one instead.
+    const options = paneType
+      ? { leaf: yield* (yield* Workspace).getLeaf(paneType) }
+      : {};
+    yield* Effect.tryPromise(() =>
+      openTemplateWorkbench(deps.app, file, options),
+    );
+    yield* Effect.logDebug("Opened imported Profile in editor").pipe(
+      Effect.annotateLogs({ path: profile.path }),
+    );
+  },
+);

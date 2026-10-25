@@ -8,12 +8,14 @@ import { layerRequestUrlHttpClient } from "@/lib/http-client";
 import { layerNotifier } from "@/lib/notifier";
 import type { Notifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import type { ObsidianEnv } from "@/lib/obsidian-env";
 import { layerObsidianEnv } from "@/lib/obsidian-env";
 import { layerFileManager } from "@/lib/obsidian-file-manager";
 import type { FileManager } from "@/lib/obsidian-file-manager";
 import { layerMetadataCache } from "@/lib/obsidian-metadata-cache";
 import { layerVault } from "@/lib/obsidian-vault";
 import type { Vault } from "@/lib/obsidian-vault";
+import type { Workspace } from "@/lib/obsidian-workspace";
 import { layerWorkspace } from "@/lib/obsidian-workspace";
 import { layerPluginHost } from "@/lib/plugin-host";
 import type { ZoteroHttp } from "@/lib/zotero-http";
@@ -180,6 +182,8 @@ export function pluginLayer(
   | TemplateMigration
   | Vault
   | FileManager
+  | Workspace
+  | ObsidianEnv
 > {
   // The file manager decides its outcomes from the vault's cache.
   const fileManager = layerFileManager.pipe(Layer.provide(layerVault));
@@ -268,7 +272,11 @@ export function pluginLayer(
       ),
     ),
     // The legacy note writers create and move through the tags (`build.ts`).
-    Layer.provideMerge(Layer.mergeAll(layerVault, fileManager)),
+    // The protocol handlers (`zt-main.ts`) also open notes through the
+    // Workspace and read the vault folder from the environment.
+    Layer.provideMerge(
+      Layer.mergeAll(layerVault, fileManager, layerWorkspace, layerObsidianEnv),
+    ),
     Layer.provideMerge(
       layerLanguagePack(languagePack).pipe(
         Layer.provide(layerRequestUrlHttpClient),
