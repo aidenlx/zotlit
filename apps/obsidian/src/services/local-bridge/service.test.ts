@@ -1,8 +1,8 @@
-import { Stream } from "effect";
-import type { App, Vault } from "obsidian";
+import { Effect, Layer, Stream } from "effect";
 import { expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
+import { CONTRACT_VERSION } from "@zotlit/db";
 import {
   BRIDGE_VERSION,
   CONNECT_FRAGMENT_CODE,
@@ -10,20 +10,31 @@ import {
   LOCAL_BRIDGE_PATHS,
 } from "@zotlit/workbench/bridge";
 
+import { MemoryDeviceStorage } from "@/lib/__fixtures__/obsidian-device-storage";
+import { layerTestObsidianEnv } from "@/lib/__fixtures__/obsidian-env";
+import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { DOCS_SITE_URL } from "@/lib/constants";
 import { effectBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
+import { buildRuntime } from "@/lib/effect-layer";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { buildLocalServer } from "@/services/local-server/__fixtures__";
-import type { ProfileReader } from "@/services/profile/service";
-import { buildSeededSettings } from "@/services/settings/__fixtures__";
+import type { LocalServer } from "@/services/local-server/service";
+import { NoteIndex } from "@/services/note-index/service";
+import type { ResolvedProfile } from "@/services/profile/bindings";
+import { Profile } from "@/services/profile/service";
 import type { PluginSettings, Settings } from "@/services/settings/service";
+import { Template } from "@/services/template/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
-import type { BridgeProfileWriter } from "./save";
-import { LocalBridgeService } from "./service";
-import type { LocalBridgeServiceDeps } from "./service";
+import { bindLocalBridge } from "./handle";
+import type { LocalBridgeHandle } from "./handle";
+import { layerLocalBridge, LocalBridge } from "./service";
+import type { WorkbenchLaunch } from "./service";
 
 const VAULT_NAME = "Research";
 /** A Profile id of the shape the registry mints: twelve alphanumerics. */
@@ -31,57 +42,47 @@ const BOOKS_PROFILE = "Bk7Qm2Xr9Tz4";
 
 const ITEM = { key: "IANNP5A2", title: "Why research findings are false" };
 
-/** Obsidian's vault-scoped localStorage, as a plain map a test can inspect. */
-function makeDevice(held: Map<string, unknown> = new Map()) {
-  return {
-    held,
-    app: stubService<App>("App", {
-      vault: stubService<Vault>("Vault", { getName: () => VAULT_NAME }),
-      loadLocalStorage: (key: string) => held.get(key) ?? null,
-      saveLocalStorage: (key: string, value: unknown) => {
-        if (value === null) held.delete(key);
-        else held.set(key, value);
-      },
-    }),
-  };
-}
+/** The Books document as the page submits it in a Save. */
+const BOOKS_SOURCE = `---
+id: ${BOOKS_PROFILE}
+name: Books
+version: 1.0.0
+contract: ${CONTRACT_VERSION}
+filename: '{{ zt.title }}'
+language: liquid
+---
+# {{ zt.title }}
 
-const PROFILES = stubService<BridgeProfileWriter>("BridgeProfileWriter", {
-  loaded: true,
-  resolveProfile: (selector: string) =>
-    selector === BOOKS_PROFILE
-      ? stubService<NonNullable<ReturnType<ProfileReader["resolveProfile"]>>>(
-          "ResolvedProfile",
-          { label: "Books" },
-        )
-      : undefined,
-  getSource: () => Promise.resolve(""),
+--- zotlit:annotation ---
+{{ zt.text }}
+`;
+
+/** The registry: Books resolves, and a Save of it lands. */
+const PROFILES = Layer.mock(Profile, {
+  loaded: Effect.succeed(true),
+  resolveProfile: (selector) =>
+    Effect.succeed(
+      selector === BOOKS_PROFILE
+        ? stubService<ResolvedProfile>("ResolvedProfile", { label: "Books" })
+        : undefined,
+    ),
+  getSource: () => Effect.succeed(""),
+  saveSource: () =>
+    Effect.succeed({ state: "saved" as const, revision: "written" }),
 });
 
 /**
  * The vault data the reads answer from. This suite is about the lifecycle and
  * the grant, so nothing here is asked for a value; `reads.test.ts` drives them.
  */
-const READ_DEPS: Pick<
-  LocalBridgeServiceDeps,
-  "zoteroReads" | "noteIndex" | "template" | "zoteroPref"
-> = {
-  zoteroReads: stubService<LocalBridgeServiceDeps["zoteroReads"]>(
-    "ZoteroReads",
-    {
-      acquireRead: () => Promise.reject(new Error("not used here")),
-    },
-  ),
-  noteIndex: stubService<LocalBridgeServiceDeps["noteIndex"]>("NoteIndex", {
-    whenIndexed: () => Promise.resolve(),
-    getNotesByItemKey: () => [],
-    getImportedNoteByNoteKey: () => [],
+const READ_SERVICES = Layer.mergeAll(
+  Layer.mock(ZoteroReads, { reads: stubService<ZoteroReadsApi>("Reads", {}) }),
+  Layer.mock(NoteIndex, { whenIndexed: Effect.void }),
+  Layer.mock(Template, {
+    exportLiteratureNotePackSource: (source: string) => Effect.succeed(source),
   }),
-  template: stubService<LocalBridgeServiceDeps["template"]>("PlainTemplate", {
-    exportLiteratureNotePackSource: (source: string) => Promise.resolve(source),
-  }),
-  zoteroPref: { dataDir: "" },
-};
+  Layer.mock(ZoteroPref, {}),
+);
 
 /** Resolve the port once the listener binds one. */
 async function whenListening(
@@ -110,12 +111,16 @@ interface CallInit {
 }
 
 interface Harness extends AsyncDisposable {
-  bridge: LocalBridgeService;
+  /** The bridge as the setting tab holds it. */
+  handle: LocalBridgeHandle;
+  launchUrl(launch: WorkbenchLaunch): string | null;
+  /** Close the bridge's layer, as an unload does, while the server stays up. */
+  unload(): Promise<void>;
   settings: PluginSettings["Service"];
   /** Every write to the store, which still goes through. */
   settingsUpdates: Mock<PluginSettings["Service"]["update"]>;
   settingsBridge: Pick<EffectBridge, "runSync">;
-  device: ReturnType<typeof makeDevice>;
+  device: MemoryDeviceStorage;
   /** A plain request against the bound port, the way the page makes one. */
   call(path: string, init?: CallInit): Promise<Response>;
   /** Open the launch URL the way the browser would, answering the credential. */
@@ -126,19 +131,10 @@ async function harness(
   options: {
     webWorkbenchEnabled?: boolean;
     settings?: Partial<Settings>;
-    device?: Map<string, unknown>;
+    device?: MemoryDeviceStorage;
   } = {},
 ): Promise<Harness> {
   await using stack = new AsyncDisposableStack();
-  const settings = stack.use(
-    await buildSeededSettings({
-      "server.enabled": true,
-      "server.port": 0,
-      ...options.settings,
-    }),
-  );
-  const settingsUpdates = vi.spyOn(settings, "update");
-  const device = makeDevice(options.device);
   const localServer = await buildLocalServer(
     {
       "server.enabled": true,
@@ -147,35 +143,55 @@ async function harness(
     },
     stack,
   );
-  const bridge = stack.use(
-    new LocalBridgeService({
-      bridge: effectBridge(localServer.runtime),
+  const settings = localServer.settings;
+  const settingsUpdates = vi.spyOn(settings, "update");
+  const device = options.device ?? new MemoryDeviceStorage();
+  // The bridge's layer closes on its own stack, before the server's.
+  const bridgeStack = stack.use(new AsyncDisposableStack());
+  const runtime = buildRuntime(
+    layerLocalBridge({
       webWorkbenchEnabled: options.webWorkbenchEnabled ?? true,
-      app: device.app,
-      settings,
-      profile: PROFILES,
-      localServer: localServer.server,
-      ...READ_DEPS,
       pluginVersion: "2.1.1",
-    }),
+    }).pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.succeedContext(
+            localServer.runtime.runSync(
+              Effect.context<LocalServer | PluginSettings>(),
+            ),
+          ),
+          PROFILES,
+          READ_SERVICES,
+          layerHost({ deviceStorage: device }),
+          layerTestObsidianEnv({ vaultName: VAULT_NAME }),
+        ),
+      ),
+    ),
+    bridgeStack,
   );
-  await bridge.ready;
+  await runtime.context();
+  const service = runtime.runSync(LocalBridge);
+  const handle = bindLocalBridge(effectBridge(runtime), service);
   const bound = await whenListening(localServer);
   const call = (path: string, init: CallInit = {}): Promise<Response> =>
     fetch(`http://127.0.0.1:${bound}${path}`, {
       ...init,
       headers: { Origin: DOCS_SITE_URL, ...init.headers },
     });
+  const launchUrl = (launch: WorkbenchLaunch) =>
+    runtime.runSync(service.launchUrl(launch));
   const lifetime = stack.move();
   return {
-    bridge,
+    handle,
+    launchUrl,
+    unload: () => bridgeStack.disposeAsync(),
     settings,
     settingsUpdates,
     settingsBridge: effectBridge(localServer.runtime),
     device,
     call,
     async connect(profileId = BOOKS_PROFILE) {
-      const url = bridge.launchUrl({ profileId, item: ITEM });
+      const url = launchUrl({ profileId, item: ITEM });
       const fragment = new URLSearchParams(new URL(url!).hash.slice(1));
       const res = await call(LOCAL_BRIDGE_PATHS.codeBootstrap, {
         method: "POST",
@@ -197,7 +213,7 @@ function authorized(credential: string): Record<string, string> {
 it("opens a version-2 grant from the launch URL it hands the browser", async () => {
   await using bridge = await harness();
 
-  const url = bridge.bridge.launchUrl({
+  const url = bridge.launchUrl({
     profileId: BOOKS_PROFILE,
     item: ITEM,
   })!;
@@ -240,7 +256,7 @@ it("names the built-in Profile the way the settings tab does", async () => {
   await using bridge = await harness();
   await bridge.connect("default");
 
-  expect(bridge.bridge.connection).toEqual({
+  expect(bridge.handle.connection).toEqual({
     origin: DOCS_SITE_URL,
     profileId: "default",
     profileName: m.settings_profile_default_name(),
@@ -254,15 +270,17 @@ it("writes nothing about the session to settings or device storage", async () =>
 
   expect(bridge.settingsUpdates).not.toHaveBeenCalled();
   // The installation id is the one device record, and it is not the secret.
-  expect([...bridge.device.held.keys()]).toEqual([
+  expect([...bridge.device.values.keys()]).toEqual([
     "zotlit-local-bridge-installation",
   ]);
-  expect([...bridge.device.held.values()]).not.toContain(credential);
+  expect(JSON.stringify([...bridge.device.values.values()])).not.toContain(
+    credential,
+  );
 });
 
 it("keeps the installation id across a reload and mints a fresh one per device", async () => {
-  const device = new Map<string, unknown>();
-  const idOf = async (held: Map<string, unknown>): Promise<string> => {
+  const device = new MemoryDeviceStorage();
+  const idOf = async (held: MemoryDeviceStorage): Promise<string> => {
     await using bridge = await harness({ device: held });
     const credential = await bridge.connect();
     const res = await bridge.call(LOCAL_BRIDGE_PATHS.resumeSession, {
@@ -276,17 +294,17 @@ it("keeps the installation id across a reload and mints a fresh one per device",
   // The same device storage, a fresh plugin load: the page's drafts still match.
   expect(await idOf(device)).toBe(first);
   // A second device sharing the synced vault has device storage of its own.
-  expect(await idOf(new Map())).not.toBe(first);
+  expect(await idOf(new MemoryDeviceStorage())).not.toBe(first);
 });
 
 it("revokes the credential when the plugin unloads", async () => {
   await using bridge = await harness();
   const credential = await bridge.connect();
-  expect(bridge.bridge.connection).not.toBe(null);
+  expect(bridge.handle.connection).not.toBe(null);
 
-  await bridge.bridge[Symbol.asyncDispose]();
+  await bridge.unload();
 
-  expect(bridge.bridge.connection).toBe(null);
+  expect(bridge.handle.connection).toBe(null);
   const res = await bridge.call(LOCAL_BRIDGE_PATHS.resumeSession, {
     headers: authorized(credential),
   });
@@ -297,13 +315,55 @@ it("ends the session on both sides when Obsidian disconnects", async () => {
   await using bridge = await harness();
   const credential = await bridge.connect();
 
-  bridge.bridge.disconnect();
+  bridge.handle.disconnect();
 
-  expect(bridge.bridge.connection).toBe(null);
+  expect(bridge.handle.connection).toBe(null);
   const res = await bridge.call(LOCAL_BRIDGE_PATHS.resumeSession, {
     headers: authorized(credential),
   });
   expect(res.status).toBe(401);
+});
+
+it("tells the setting tab of each connection change, and only of a change", async () => {
+  await using bridge = await harness();
+  const seen: (string | null)[] = [];
+  const off = bridge.handle.on("connection", (connection) =>
+    seen.push(connection?.profileName ?? null),
+  );
+
+  await bridge.connect();
+  bridge.handle.disconnect();
+  off();
+  // A change after the subscription ends reaches nothing.
+  await bridge.connect();
+
+  expect(seen).toEqual(["Books", null]);
+});
+
+it("announces a Save that landed in the vault", async () => {
+  await using bridge = await harness();
+  const saved: string[] = [];
+  const off = bridge.handle.on("profile-saved", (profileId) =>
+    saved.push(profileId),
+  );
+  const credential = await bridge.connect();
+
+  const res = await bridge.call(LOCAL_BRIDGE_PATHS.saveSelectedProfile, {
+    method: "POST",
+    headers: authorized(credential),
+    body: JSON.stringify({
+      reference: BOOKS_PROFILE,
+      expected: { state: "absent" },
+      source: BOOKS_SOURCE,
+    }),
+  });
+  off();
+
+  await expect(res.json()).resolves.toEqual({
+    state: "saved",
+    revision: "written",
+  });
+  expect(saved).toEqual([BOOKS_PROFILE]);
 });
 
 it("offers no launch and refuses the port while the Workbench toggle is off", async () => {
@@ -311,9 +371,7 @@ it("offers no launch and refuses the port while the Workbench toggle is off", as
     settings: { "server.workbench": false },
   });
 
-  expect(
-    bridge.bridge.launchUrl({ profileId: BOOKS_PROFILE, item: null }),
-  ).toBe(null);
+  expect(bridge.launchUrl({ profileId: BOOKS_PROFILE, item: null })).toBe(null);
   const res = await bridge.call(LOCAL_BRIDGE_PATHS.codeBootstrap, {
     method: "POST",
     body: JSON.stringify({ code: "anything" }),
@@ -330,9 +388,7 @@ it("refuses persisted bridge access when the build gate is off", async () => {
     settings: { "server.workbench": true },
   });
 
-  expect(
-    bridge.bridge.launchUrl({ profileId: BOOKS_PROFILE, item: null }),
-  ).toBe(null);
+  expect(bridge.launchUrl({ profileId: BOOKS_PROFILE, item: null })).toBe(null);
   const response = await bridge.call(LOCAL_BRIDGE_PATHS.codeBootstrap, {
     method: "OPTIONS",
   });
@@ -350,5 +406,5 @@ it("ends the live connection when the Workbench toggle is turned off", async () 
     bridge.settings.update({ "server.workbench": false }),
   );
 
-  expect(bridge.bridge.connection).toBe(null);
+  expect(bridge.handle.connection).toBe(null);
 });

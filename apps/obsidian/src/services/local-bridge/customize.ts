@@ -4,44 +4,33 @@
 //
 // The sheet itself is a port (`confirmLaunch`), so the decision this module
 // makes is testable apart from the modal that renders it.
-import { Effect, Stream } from "effect";
-import type { App, TFile } from "obsidian";
+import { Duration, Effect, Option, Stream } from "effect";
+import type { Context } from "effect";
+import type { CachedMetadata, TFile } from "obsidian";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import { BaseNotice } from "@/lib/notice";
+import { Notifier } from "@/lib/notifier";
+import { ObsidianEnv } from "@/lib/obsidian-env";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import { Workspace } from "@/lib/obsidian-workspace";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import type { LocalServer } from "@/services/local-server/service";
+import { LocalServer } from "@/services/local-server/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
-import type { PlainProfile } from "@/services/profile/plain";
-import type { PluginSettings } from "@/services/settings/service";
-import type { PlainTemplate } from "@/services/template/plain";
-import {
-  profileCustomization,
-  saveProfileCustomization,
-} from "@/views/template-workbench/preferences";
+import { Profile } from "@/services/profile/service";
+import { PluginSettings } from "@/services/settings/service";
+import { Template } from "@/services/template/service";
 import type { ProfileCustomization } from "@/views/template-workbench/preferences";
 
-import type { LocalBridgeService } from "./service";
+import { LocalBridge } from "./service";
 import type { SelectedItemIdentity } from "./sessions";
 import { unsupportedProfileSourceReason } from "./unsupported";
 
 /** How long a launch waits for the listener it just turned on. */
-const SERVER_START_TIMEOUT_MS = 10_000;
-
-/**
- * Whether web access is enabled. The chooser asks for approval before
- * enabling it for a web launch.
- */
-export function workbenchEnabled(
-  settings: Pick<PluginSettings["Service"], "current">,
-  effect: Pick<EffectBridge, "runSync">,
-): boolean {
-  return effect.runSync(settings.current)["server.workbench"];
-}
+const SERVER_START_TIMEOUT = Duration.seconds(10);
 
 /** What an entry action asks Customize to open. */
 export interface CustomizeRequest {
@@ -80,175 +69,184 @@ export type ConfirmLaunch = (
   details: LaunchSheetDetails,
 ) => Promise<LaunchConsent | null>;
 
-export interface CustomizeDeps {
-  webWorkbenchEnabled: boolean;
-  app: App;
-  settings: Pick<PluginSettings["Service"], "current" | "update">;
-  profile: Pick<PlainProfile, "profiles" | "defaultDocumentPath" | "getSource">;
-  template: Pick<PlainTemplate, "exportLiteratureNotePackSource">;
-  localServer: Pick<
-    LocalServer["Service"],
-    "effectivePort" | "effectivePortChanges"
-  >;
-  effect: Pick<EffectBridge, "runSync" | "subscribe">;
-  bridge: Pick<LocalBridgeService, "launchUrl">;
+/** What the flow reaches outside the services: the build, the UI and the device. */
+export interface CustomizePorts {
+  readonly webWorkbenchEnabled: boolean;
   /** This build's version, which a Profile's `minAppVersion` is read against. */
-  pluginVersion: string;
-  confirmLaunch: ConfirmLaunch;
-  openExternal: (url: string) => void;
-  openNative: (request: CustomizeRequest) => Promise<void>;
+  readonly pluginVersion: string;
+  readonly confirmLaunch: ConfirmLaunch;
+  readonly openExternal: (url: string) => void;
+  readonly openNative: (request: CustomizeRequest) => Promise<void>;
+  /** The destination this device remembers (`views/template-workbench/preferences`). */
+  readonly preference: () => ProfileCustomization;
+  readonly rememberPreference: (
+    value: Exclude<ProfileCustomization, "ask">,
+  ) => void;
 }
+
+/** The services the flow reads. */
+export type CustomizeServices =
+  | PluginSettings
+  | Profile
+  | Template
+  | LocalServer
+  | LocalBridge
+  | Notifier
+  | Workspace
+  | MetadataCache
+  | ObsidianEnv;
 
 /** Open a template in the chosen editor, with approval for web access. */
 export type CustomizeAction = (request: CustomizeRequest) => Promise<void>;
 
-export function createCustomize(deps: CustomizeDeps): CustomizeAction {
-  return async (request) => {
-    const item =
-      request.item === undefined ? activeNoteItem(deps.app) : request.item;
-    const nativeRequest = { ...request, item };
-    if (!deps.webWorkbenchEnabled) {
-      await deps.openNative(nativeRequest);
-      return;
-    }
-    const preference = profileCustomization(deps.app);
-    const source = await deps.profile.getSource(request.profileId);
-    const reason = unsupportedProfileSourceReason(
-      await withDependencies(deps, source),
-      deps.pluginVersion,
+/**
+ * The Customize flow for callers outside Effect: the entry actions, the
+ * setting tab and the Workbench view. A run rejects with what failed.
+ */
+export function bindCustomize(
+  bridge: Pick<EffectBridge, "runPromise">,
+  context: Context.Context<CustomizeServices>,
+  ports: CustomizePorts,
+): CustomizeAction {
+  return (request) =>
+    bridge.runPromise(
+      customize(request, ports).pipe(Effect.provideContext(context)),
     );
-    if (reason !== null) {
-      deps.effect.runSync(
-        Effect.logDebug("Customize kept the Profile in Obsidian").pipe(
-          Effect.annotateLogs({ reason }),
-          withLogCategory("local-bridge"),
-        ),
-      );
-      await deps.openNative(nativeRequest);
-      new BaseNotice(m.notice_workbench_unsupported_profile());
-      return;
-    }
-
-    if (
-      request.destination === "native" ||
-      (!request.destination && preference === "native")
-    ) {
-      await deps.openNative(nativeRequest);
-      return;
-    }
-
-    const turnServerOn =
-      deps.effect.runSync(deps.settings.current)["server.enabled"] !== true;
-    const turnWorkbenchOn = !workbenchEnabled(deps.settings, deps.effect);
-    if (turnServerOn || turnWorkbenchOn || preference !== "web") {
-      const consent = await deps.confirmLaunch({
-        website: new URL(DOCS_SITE_URL).host,
-        vault: deps.app.vault.getName(),
-        item: item?.title ?? item?.key ?? null,
-        template: templateName(deps, request.profileId),
-        turnServerOn,
-        turnWorkbenchOn,
-      });
-      if (consent === null) return;
-      if (consent.destination === "native") {
-        await deps.openNative(nativeRequest);
-        if (consent.remember) saveProfileCustomization(deps.app, "native");
-        return;
-      }
-      if (turnServerOn || turnWorkbenchOn)
-        deps.effect.runSync(
-          deps.settings.update({
-            ...(turnServerOn ? { "server.enabled": true } : {}),
-            ...(turnWorkbenchOn ? { "server.workbench": true } : {}),
-          }),
-        );
-      if (
-        turnServerOn &&
-        !(await whenListening(deps.localServer, deps.effect))
-      ) {
-        deps.effect.runSync(
-          Effect.logWarning(
-            "Customize gave up waiting for the local server",
-          ).pipe(withLogCategory("local-bridge")),
-        );
-        new BaseNotice(m.notice_workbench_server_failed());
-        return;
-      }
-      if (consent.remember) saveProfileCustomization(deps.app, "web");
-    }
-
-    const url = deps.bridge.launchUrl({ profileId: request.profileId, item });
-    if (url === null) {
-      new BaseNotice(m.notice_workbench_unavailable());
-      return;
-    }
-    deps.openExternal(url);
-  };
 }
+
+/** A port's Promise, failing with what it rejected with. */
+const port = <A>(evaluate: () => Promise<A>) =>
+  Effect.tryPromise({ try: evaluate, catch: (error) => error });
+
+export const customize = Effect.fn("LocalBridge.customize")(function* (
+  request: CustomizeRequest,
+  ports: CustomizePorts,
+) {
+  const item =
+    request.item === undefined ? yield* activeNoteItem : request.item;
+  const nativeRequest = { ...request, item };
+  const openNative = port(() => ports.openNative(nativeRequest));
+  if (!ports.webWorkbenchEnabled) {
+    yield* openNative;
+    return;
+  }
+  const preference = ports.preference();
+  const source = yield* (yield* Profile)
+    .getSource(request.profileId)
+    .pipe(Effect.mapError(({ cause }) => cause));
+  const reason = unsupportedProfileSourceReason(
+    yield* withDependencies(source),
+    ports.pluginVersion,
+  );
+  const notifier = yield* Notifier;
+  if (reason !== null) {
+    yield* Effect.logDebug("Customize kept the Profile in Obsidian").pipe(
+      Effect.annotateLogs({ reason }),
+      withLogCategory("local-bridge"),
+    );
+    yield* openNative;
+    yield* notifier.show(m.notice_workbench_unsupported_profile());
+    return;
+  }
+
+  if (
+    request.destination === "native" ||
+    (!request.destination && preference === "native")
+  ) {
+    yield* openNative;
+    return;
+  }
+
+  const settings = yield* PluginSettings;
+  const current = yield* settings.current;
+  const turnServerOn = current["server.enabled"] !== true;
+  const turnWorkbenchOn = !current["server.workbench"];
+  if (turnServerOn || turnWorkbenchOn || preference !== "web") {
+    const details: LaunchSheetDetails = {
+      website: new URL(DOCS_SITE_URL).host,
+      vault: (yield* ObsidianEnv).vaultName,
+      item: item?.title ?? item?.key ?? null,
+      template: yield* templateName(request.profileId),
+      turnServerOn,
+      turnWorkbenchOn,
+    };
+    const consent = yield* port(() => ports.confirmLaunch(details));
+    if (consent === null) return;
+    if (consent.destination === "native") {
+      yield* openNative;
+      if (consent.remember) ports.rememberPreference("native");
+      return;
+    }
+    if (turnServerOn || turnWorkbenchOn)
+      yield* settings.update({
+        ...(turnServerOn ? { "server.enabled": true } : {}),
+        ...(turnWorkbenchOn ? { "server.workbench": true } : {}),
+      });
+    if (turnServerOn && !(yield* whenListening)) {
+      yield* Effect.logWarning(
+        "Customize gave up waiting for the local server",
+      ).pipe(withLogCategory("local-bridge"));
+      yield* notifier.show(m.notice_workbench_server_failed());
+      return;
+    }
+    if (consent.remember) ports.rememberPreference("web");
+  }
+
+  const url = yield* (yield* LocalBridge).launchUrl({
+    profileId: request.profileId,
+    item,
+  });
+  if (url === null) {
+    yield* notifier.show(m.notice_workbench_unavailable());
+    return;
+  }
+  ports.openExternal(url);
+});
 
 /**
  * The Profile document with the partials it calls bundled in, so the check
  * sees a folder partial written in Eta the way the page would. A document that
  * cannot be bundled is checked as written.
  */
-async function withDependencies(
-  deps: Pick<CustomizeDeps, "template">,
-  source: string,
-): Promise<string> {
-  try {
-    return await deps.template.exportLiteratureNotePackSource(source, {
+const withDependencies = (source: string) =>
+  Template.use((template) =>
+    template.exportLiteratureNotePackSource(source, {
       onMissingPartial: () => {},
-    });
-  } catch {
-    return source;
-  }
-}
+    }),
+  ).pipe(Effect.orElseSucceed(() => source));
 
 /** `true` once the listener binds, `false` once the wait runs out. */
-function whenListening(
-  localServer: Pick<
-    LocalServer["Service"],
-    "effectivePort" | "effectivePortChanges"
-  >,
-  effect: Pick<EffectBridge, "runSync" | "subscribe">,
-): Promise<boolean> {
-  if (effect.runSync(localServer.effectivePort) !== null)
-    return Promise.resolve(true);
-  const { promise, resolve } = Promise.withResolvers<boolean>();
-  let off = () => {};
-  const timer = window.setTimeout(() => {
-    off();
-    resolve(false);
-  }, SERVER_START_TIMEOUT_MS);
-  off = effect.subscribe(
-    Stream.drop(localServer.effectivePortChanges, 1),
-    (port) => {
-      if (port === null) return;
-      window.clearTimeout(timer);
-      off();
-      resolve(true);
-    },
-  );
-  return promise;
-}
+const whenListening = LocalServer.use((server) =>
+  server.effectivePortChanges.pipe(
+    Stream.filter((bound) => bound !== null),
+    Stream.runHead,
+    Effect.map((bound) => Option.isSome(bound)),
+  ),
+).pipe(
+  Effect.timeoutOrElse({
+    duration: SERVER_START_TIMEOUT,
+    orElse: () => Effect.succeed(false),
+  }),
+);
 
 /** The paper the active Literature Note is about, or `null` for a Sample Item. */
-function activeNoteItem(app: App): SelectedItemIdentity | null {
-  const file = app.workspace.getActiveFile();
-  return file ? noteItem(app, file) : null;
-}
+const activeNoteItem = Effect.gen(function* () {
+  const file = yield* (yield* Workspace).getActiveFile;
+  if (!file) return null;
+  return noteItem(file, yield* (yield* MetadataCache).fileCache(file));
+});
 
-/** The paper a Literature Note is about, or `null` for any other note. */
-export function noteItem(app: App, file: TFile): SelectedItemIdentity | null {
-  const key = itemKeyFromFrontmatter(app.metadataCache.getFileCache(file));
+/** The paper a Literature Note is about, from its cache; `null` for any other note. */
+export function noteItem(
+  file: TFile,
+  cache: CachedMetadata | null,
+): SelectedItemIdentity | null {
+  const key = itemKeyFromFrontmatter(cache);
   return key === null ? null : { key, title: file.basename };
 }
 
-function templateName(deps: CustomizeDeps, profileId: ProfileSelector): string {
+const templateName = Effect.fnUntraced(function* (profileId: ProfileSelector) {
   if (profileId === DEFAULT_PROFILE) return m.settings_profile_default_name();
-  return profileEntry(deps, profileId)?.label ?? profileId;
-}
-
-function profileEntry(deps: CustomizeDeps, profileId: ProfileSelector) {
-  return deps.profile.profiles.find(({ id }) => id === profileId);
-}
+  const profiles = yield* (yield* Profile).profiles;
+  return profiles.find(({ id }) => id === profileId)?.label ?? profileId;
+});

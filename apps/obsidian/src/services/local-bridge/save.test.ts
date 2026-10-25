@@ -1,5 +1,6 @@
 // The write boundary, driven the way the page drives it: the Hono app in
 // process over a real Profile service and a fake vault.
+import { Effect } from "effect";
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
@@ -11,7 +12,7 @@ import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import { createLocalBridgeApp } from "./app";
 import { STABLE_DOCS_ORIGIN } from "./origins";
 import type { LocalBridgeReads } from "./reads";
-import { createLocalBridgeSave } from "./save";
+import { makeLocalBridgeSave } from "./save";
 import { BridgeSessions } from "./sessions";
 
 const BOOKS_PROFILE = "Bk7Qm2Xr9Tz4";
@@ -92,12 +93,12 @@ async function harness(
     allowedOrigins: [STABLE_DOCS_ORIGIN],
     sessions,
     reads: {} as LocalBridgeReads,
-    save: createLocalBridgeSave({
-      profile: fixture.profile,
-      template: fixture.template,
-      pluginVersion: "2.1.1",
-      onSaved: (profileId) => saved.push(profileId),
-    }),
+    save: fixture.runtime.runSync(
+      makeLocalBridgeSave({
+        pluginVersion: "2.1.1",
+        onSaved: (profileId) => Effect.sync(() => saved.push(profileId)),
+      }),
+    ),
     describeGrant: () => Promise.reject(new Error("not used here")),
   });
   const code = sessions.mintCode({

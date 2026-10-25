@@ -33,7 +33,6 @@ import {
   addCustomizeActions,
   customizeFileMenu,
 } from "./services/local-bridge/actions";
-import { createCustomize } from "./services/local-bridge/customize";
 import { createLaunchSheet } from "./services/local-bridge/launch-sheet";
 import { registerWorkbenchSavedNotice } from "./services/local-bridge/notices";
 import {
@@ -77,6 +76,10 @@ import {
   explorerFileMenu,
   registerTemplateDataExplorer,
 } from "./views/template-data-explorer/register";
+import {
+  profileCustomization,
+  saveProfileCustomization,
+} from "./views/template-workbench/preferences";
 import {
   openNativeProfile,
   templateWorkbenchFileMenu,
@@ -243,18 +246,13 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     );
 
     // One Customize flow shared by every entry action.
-    const customize = createCustomize({
+    const customize = services.bindCustomize({
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-      app: this.app,
-      settings: services.settings,
-      profile: services.profile,
-      template: services.template,
-      localServer: services.localServer,
-      effect: services.bridge,
-      bridge: services.localBridge,
       pluginVersion: this.manifest.version,
       confirmLaunch: createLaunchSheet(this.app),
       openExternal: (url) => window.open(url),
+      preference: () => profileCustomization(this.app),
+      rememberPreference: (value) => saveProfileCustomization(this.app, value),
       openNative: async ({ profileId, item, originatingNote }) => {
         const entry = services.profile.profiles.find(
           (profile) => profile.id === profileId,
@@ -308,9 +306,9 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     const customizeDeps = {
       settings: services.settings,
-      profile: services.profile,
+      profile: services.profileService,
       customize,
-      effect: services.bridge,
+      bridge: services.bridge,
     };
     addCustomizeActions(this, customizeDeps);
     addProfileActions(this, { importProfile: services.importProfile });

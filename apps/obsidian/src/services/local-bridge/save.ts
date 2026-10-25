@@ -6,6 +6,8 @@
 // the document reference names this Connection's Profile, the draft is a Liquid
 // Profile this build can run, it parses and compiles, its dependencies resolve
 // in this vault, and the vault still holds the revision the page loaded.
+import { Effect } from "effect";
+
 import { TemplateFacade } from "@zotlit/templates/facade";
 import { LiteratureNotePackError } from "@zotlit/templates/literature-note-pack";
 import type {
@@ -13,19 +15,12 @@ import type {
   SaveSelectedProfileResponse,
 } from "@zotlit/workbench/bridge";
 
-import { getLogger } from "@/lib/log";
-import type { PlainProfile } from "@/services/profile/plain";
-import type { PlainTemplate } from "@/services/template/plain";
+import { withLogCategory } from "@/lib/effect-log";
+import { Profile } from "@/services/profile/service";
+import { Template } from "@/services/template/service";
 
-import { ProfileDocumentMissingError, profileSelector } from "./reads";
-import type { BridgeProfileReader } from "./reads";
+import { profileDocumentMissing, profileSelector } from "./reads";
 import { unsupportedProfileReason } from "./unsupported";
-
-const logger = getLogger("local-bridge");
-
-/** The Profile service as the write boundary uses it: the reads plus the write. */
-export type BridgeProfileWriter = BridgeProfileReader &
-  Pick<PlainProfile, "saveSource">;
 
 /**
  * A Save answered. `reference-refused` is the one outcome the contract carries
@@ -36,16 +31,7 @@ export type LocalBridgeSaveOutcome =
   | SaveSelectedProfileResponse
   | { readonly state: "reference-refused" };
 
-export interface LocalBridgeSaveDeps {
-  profile: BridgeProfileWriter;
-  template: Pick<PlainTemplate, "exportLiteratureNotePackSource">;
-  /** This build's version, which a Profile's `minAppVersion` is read against. */
-  pluginVersion: string;
-  /** Fired once a Save has landed in the vault, never on a refusal. */
-  onSaved(profileId: string): void;
-}
-
-/** The write half of the Local Bridge, apart from HTTP. */
+/** The write half of the Local Bridge as the HTTP routes call it. */
 export interface LocalBridgeSave {
   /** @throws {@link ProfileDocumentMissingError} */
   saveSelectedProfile(
@@ -54,31 +40,65 @@ export interface LocalBridgeSave {
   ): Promise<LocalBridgeSaveOutcome>;
 }
 
-export function createLocalBridgeSave(
-  deps: LocalBridgeSaveDeps,
-): LocalBridgeSave {
-  return {
-    async saveSelectedProfile(profileId, request) {
-      // The reference the page holds is the Profile id and nothing else, so a
-      // draft for another Profile cannot reach this Connection's document.
-      if (request.reference !== profileId)
-        return { state: "reference-refused" };
-      const selector = profileSelector(profileId);
-      if (!selector || !deps.profile.resolveProfile(selector)) {
-        throw new ProfileDocumentMissingError(profileId);
-      }
-      const refusal = await sourceRefusal(deps, request.source, profileId);
-      if (refusal) return refusal;
-      const write = await deps.profile.saveSource(
-        selector,
-        request.source,
-        request.expected,
-      );
-      if (write.state === "saved") deps.onSaved(profileId);
-      return write;
-    },
+/**
+ * The Save for the HTTP routes, run over the services of the layer that makes
+ * it. `onSaved` runs once a Save has landed in the vault, never on a refusal.
+ */
+export const makeLocalBridgeSave = Effect.fnUntraced(function* (options: {
+  /** This build's version, which a Profile's `minAppVersion` is read against. */
+  readonly pluginVersion: string;
+  onSaved(profileId: string): Effect.Effect<void>;
+}) {
+  const run = Effect.runPromiseWith(
+    yield* Effect.context<Profile | Template>(),
+  );
+  const save: LocalBridgeSave = {
+    saveSelectedProfile: (profileId, request) =>
+      run(
+        saveSelectedProfile(profileId, request, options.pluginVersion).pipe(
+          Effect.tap((outcome) =>
+            outcome.state === "saved"
+              ? options.onSaved(profileId)
+              : Effect.void,
+          ),
+        ),
+      ),
   };
-}
+  return save;
+});
+
+/** Check one Save against the boundary, then write it through the Profile. */
+export const saveSelectedProfile = Effect.fn("LocalBridge.saveSelectedProfile")(
+  function* (
+    profileId: string,
+    request: SaveSelectedProfileRequest,
+    pluginVersion: string,
+  ) {
+    // The reference the page holds is the Profile id and nothing else, so a
+    // draft for another Profile cannot reach this Connection's document.
+    if (request.reference !== profileId) {
+      const refused: LocalBridgeSaveOutcome = { state: "reference-refused" };
+      return refused;
+    }
+    const profiles = yield* Profile;
+    const selector = profileSelector(profileId);
+    if (!selector || !(yield* profiles.resolveProfile(selector))) {
+      return yield* profileDocumentMissing(profileId);
+    }
+    const refusal = yield* sourceRefusal(
+      request.source,
+      profileId,
+      pluginVersion,
+    );
+    if (refusal) return refusal;
+    const write: LocalBridgeSaveOutcome = yield* profiles.saveSource(
+      selector,
+      request.source,
+      request.expected,
+    );
+    return write;
+  },
+);
 
 /**
  * The refusal this draft earns, or `undefined` for one the vault accepts. A
@@ -86,62 +106,82 @@ export function createLocalBridgeSave(
  * so every source the Profile renders is compiled and its dependencies resolved
  * before anything reaches the file.
  */
-async function sourceRefusal(
-  deps: LocalBridgeSaveDeps,
+const sourceRefusal = Effect.fnUntraced(function* (
   source: string,
   profileId: string,
-): Promise<SaveSelectedProfileResponse | undefined> {
+  pluginVersion: string,
+) {
   const facade = new TemplateFacade();
-  try {
+  const checked = yield* Effect.try(() => {
     const document = facade.parseLiteratureNoteTemplate(source);
-    if (document.manifest.id !== profileId) {
-      return { state: "refused", reason: "invalid-source" };
-    }
-    if (
-      unsupportedProfileReason(document.manifest, deps.pluginVersion) !== null
-    ) {
-      return { state: "refused", reason: "unsupported-profile" };
-    }
+    if (document.manifest.id !== profileId) return "invalid-source" as const;
+    if (unsupportedProfileReason(document.manifest, pluginVersion) !== null)
+      return "unsupported-profile" as const;
     for (const partial of document.manifest.partials ?? []) {
       facade.define(partial.name, partial.source, partial.language);
     }
     facade.compileLiteratureNoteTemplate(document);
-  } catch (error) {
-    return invalidSource(profileId, error);
-  }
-  try {
-    // The partials this draft calls, resolved the way the dependency bundle
-    // resolves them: a call this vault cannot answer refuses the Save rather
-    // than leaving behind a Profile the next render cannot run. A vault fault
-    // while reading a partial is the route's own failure, not a refusal.
-    const bundled = await deps.template.exportLiteratureNotePackSource(source);
-    const document = facade.parseLiteratureNoteTemplate(bundled);
-    if (
-      unsupportedProfileReason(document.manifest, deps.pluginVersion) !== null
-    )
-      return { state: "refused", reason: "unsupported-profile" };
-  } catch (error) {
-    if (!(error instanceof LiteratureNotePackError)) throw error;
-    return invalidSource(profileId, error);
-  }
+    return undefined;
+  }).pipe(
+    Effect.catch(({ cause }) =>
+      Effect.as(logInvalidSource(profileId, cause), "invalid-source" as const),
+    ),
+  );
+  if (checked !== undefined) return refused(checked);
+  // The partials this draft calls, resolved the way the dependency bundle
+  // resolves them: a call this vault cannot answer refuses the Save rather
+  // than leaving behind a Profile the next render cannot run. A vault fault
+  // while reading a partial is the route's own failure, not a refusal.
+  return yield* (yield* Template).exportLiteratureNotePackSource(source).pipe(
+    Effect.flatMap((bundled) =>
+      Effect.try(() => facade.parseLiteratureNoteTemplate(bundled)),
+    ),
+    Effect.map((document) =>
+      unsupportedProfileReason(document.manifest, pluginVersion) === null
+        ? undefined
+        : refused("unsupported-profile"),
+    ),
+    Effect.catchIf(
+      (error) => packError(error) !== undefined,
+      (error) =>
+        Effect.as(
+          logInvalidSource(profileId, packError(error)),
+          refused("invalid-source"),
+        ),
+    ),
+  );
+});
+
+const refused = (
+  reason: "invalid-source" | "unsupported-profile",
+): SaveSelectedProfileResponse => ({ state: "refused", reason });
+
+/** The pack error a failure carries, whether the Template or a parse raised it. */
+function packError(error: unknown): LiteratureNotePackError | undefined {
+  if (error instanceof LiteratureNotePackError) return error;
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "cause" in error &&
+    error.cause instanceof LiteratureNotePackError
+  )
+    return error.cause;
   return undefined;
 }
 
-/** The refusal an unparsable, uncompilable, or unresolvable draft earns. */
-function invalidSource(
-  profileId: string,
-  error: unknown,
-): SaveSelectedProfileResponse {
-  // The cause by name only: an error message can quote the draft.
-  logger.debug("Refused a Local Bridge Save at the source gate", {
-    operation: "selected-profile:save",
-    profileId,
-    cause:
-      error instanceof LiteratureNotePackError
-        ? error.code
-        : error instanceof Error
-          ? error.name
-          : typeof error,
-  });
-  return { state: "refused", reason: "invalid-source" };
+/** Log a refused draft by the name of its cause only: a message can quote the draft. */
+function logInvalidSource(profileId: string, error: unknown) {
+  return Effect.logDebug("Refused a Local Bridge Save at the source gate").pipe(
+    Effect.annotateLogs({
+      operation: "selected-profile:save",
+      profileId,
+      cause:
+        error instanceof LiteratureNotePackError
+          ? error.code
+          : error instanceof Error
+            ? error.name
+            : typeof error,
+    }),
+    withLogCategory("local-bridge"),
+  );
 }
