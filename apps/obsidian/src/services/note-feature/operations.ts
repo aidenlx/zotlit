@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { DateTime, Effect } from "effect";
 import { getFrontMatterInfo } from "obsidian";
 import type { CachedMetadata, TFile } from "obsidian";
 
@@ -21,6 +21,7 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
+import { toInstant } from "@/lib/effect-clock";
 import { ensureParentFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import {
@@ -1148,7 +1149,7 @@ function prepareProfileNote(
   const prepared = prepareManagedFrontmatter(
     document.frontmatter,
     note,
-    Temporal.Now.instant(),
+    toInstant(ctx.bridge.runSync(DateTime.now)),
   );
   if ("failures" in prepared)
     throw new Error(m.managed_frontmatter_refused_recovery());
@@ -1240,7 +1241,7 @@ async function replacedKeys(
       const evaluation = evalManagedFrontmatterEntries(
         spreads,
         context,
-        Temporal.Now.instant(),
+        toInstant(ctx.bridge.runSync(DateTime.now)),
       );
       for (const { key } of evaluation.values) keys.add(key);
     } finally {
@@ -1553,6 +1554,7 @@ async function applyManagedUpdate(
 ): Promise<UpdateResult> {
   const { context, itemKey, scope, profile, document, beforeWrite } = input;
   const prepared = prepareFrontmatter({
+    ctx,
     context,
     itemKey,
     document,
@@ -1662,6 +1664,7 @@ async function overwriteNote(
     },
   );
   const prepared = prepareFrontmatter({
+    ctx,
     context,
     itemKey: indexedKey,
     document,
@@ -1881,6 +1884,7 @@ function stampedSelector(
 }
 
 function prepareFrontmatter(input: {
+  ctx: Pick<NoteFeatureDeps, "bridge">;
   context: NoteTemplateContext;
   itemKey: string;
   document: ResolvedLiteratureNoteTemplate | undefined;
@@ -1892,7 +1896,7 @@ function prepareFrontmatter(input: {
   const result = prepareManagedFrontmatter(
     frontmatter,
     input.context,
-    Temporal.Now.instant(),
+    toInstant(input.ctx.bridge.runSync(DateTime.now)),
   );
   if ("prepared" in result) return result.prepared;
   return { diagnostic: frontmatterRefusal(result.failures, input) };
