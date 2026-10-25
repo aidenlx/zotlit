@@ -10,7 +10,7 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
-import { Clock, Effect, Exit, Result, Schema, Scope } from "effect";
+import { Cause, Clock, Effect, Exit, Fiber, Layer, Schema } from "effect";
 import type { CliData, CliFlags } from "obsidian";
 
 import type { ItemQueryReader } from "@zotlit/db/item-query";
@@ -24,10 +24,11 @@ import {
   rejectionText,
 } from "@/lib/cli-params";
 import type { CliOutput, CliRejection } from "@/lib/cli-params";
+import { PluginHost } from "@/lib/plugin-host";
 
 import { queryFlags } from "./contract";
 import { decodeQuery } from "./decode";
-import type { QueryService } from "./service";
+import { QueryService } from "./service";
 import type { CancellationEvent, WorkerMeasurement } from "./trace";
 
 export const QUERY_MEASURE_COMMAND = "zotlit:query-measure" as const;
@@ -117,6 +118,8 @@ export interface QueryMeasureReport {
 }
 
 const now = (): number => performance.now();
+const errorText = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
 const round = (ms: number): number => Math.round(ms * 100) / 100;
 
 /**
@@ -138,9 +141,20 @@ const measureParams = cliParams({
   heap: cliSwitch("heap is a switch: name it alone, as heap."),
 });
 
+/** The `zotlit:query-measure` command, over the plugin's ZotLit Query. */
+export const layerQueryMeasureCli: Layer.Layer<
+  never,
+  never,
+  PluginHost | QueryService
+> = Layer.effectDiscard(
+  Effect.gen(function* () {
+    registerQueryMeasureCli(yield* PluginHost, yield* QueryService);
+  }),
+);
+
 export function registerQueryMeasureCli(
   host: CliHost,
-  queryService: Pick<QueryService, "measure">,
+  queryService: Pick<QueryService["Service"], "measure">,
 ): void {
   const measure = Effect.fn("QueryCli.measure")(function* (params: CliData) {
     // A parameter of the run, also as a `--` token, is the run's own; the rest
@@ -182,7 +196,7 @@ const measureRun = Effect.fn("QueryCli.measureRun")(function* ({
   query,
   measured,
 }: {
-  queryService: Pick<QueryService, "measure">;
+  queryService: Pick<QueryService["Service"], "measure">;
   query: CliData;
   measured: CliOutput<typeof measureParams>;
 }) {
@@ -226,44 +240,39 @@ const measureRun = Effect.fn("QueryCli.measureRun")(function* ({
           document.removeEventListener("visibilitychange", onVisibility),
         ),
     );
-    // The timer cancels the run by closing this scope, which aborts its
-    // signal; the run still settles, so the report holds the cancel times.
-    const timerScope = yield* Scope.fork(yield* Scope.Scope);
-    const timer = yield* Effect.abortSignal.pipe(Scope.provide(timerScope));
+    const run = yield* Effect.forkScoped(
+      queryService.measure(query, {
+        completed: (report) => {
+          measurement = report;
+        },
+        cancelled: (event) => {
+          if (event.phase === "requested") firedAt ??= now();
+          cancellationEvents.push(event);
+        },
+        heap: measured.heap === true,
+      }),
+    );
+    // The timer cancels the run by interrupting it; the run still settles,
+    // so the report holds the cancel times.
     if (measured.cancelAfterMs !== undefined)
       yield* Effect.forkScoped(
         Effect.sleep(measured.cancelAfterMs).pipe(
-          Effect.andThen(Scope.close(timerScope, Exit.void)),
+          Effect.andThen(Fiber.interrupt(run)),
         ),
       );
-    return yield* Effect.result(
-      Effect.tryPromise((signal) =>
-        queryService.measure(query, AbortSignal.any([signal, timer]), {
-          completed: (report) => {
-            measurement = report;
-          },
-          cancelled: (event) => {
-            if (event.phase === "requested") firedAt ??= now();
-            cancellationEvents.push(event);
-          },
-          heap: measured.heap === true,
-        }),
-      ),
-    );
+    return yield* Fiber.await(run);
   }).pipe(Effect.scoped);
   const settledAt = now();
 
-  const answer = Result.isSuccess(settled) ? settled.success : undefined;
+  const answer = Exit.isSuccess(settled) ? settled.value : undefined;
   // The service reports each cancel request, also one that names the run.
-  const outcome: QueryMeasureReport["outcome"] = Result.isSuccess(settled)
+  const outcome: QueryMeasureReport["outcome"] = Exit.isSuccess(settled)
     ? "answered"
     : firedAt === undefined
       ? "failed"
       : "cancelled";
-  const error = Result.isFailure(settled)
-    ? settled.failure.cause instanceof Error
-      ? settled.failure.cause.message
-      : String(settled.failure.cause)
+  const error = Exit.isFailure(settled)
+    ? errorText(Cause.squash(settled.cause))
     : undefined;
 
   const envelope =

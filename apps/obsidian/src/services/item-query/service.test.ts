@@ -1,8 +1,16 @@
-import { Effect } from "effect";
+import { describe, expect, it, vi } from "@effect/vitest";
+import {
+  DateTime,
+  Effect,
+  Fiber,
+  Layer,
+  Option,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 import { chmod, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { FileManager, FileSystemAdapter, Vault } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import type { CliData } from "obsidian";
 
 import {
   BULK_LIBRARY,
@@ -15,75 +23,85 @@ import { valueText } from "@zotlit/item-query";
 import type { ProjectionJson } from "@zotlit/item-query";
 import { delimited } from "@zotlit/shared/delimited";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
-import {
-  buildUseLedger,
-  fakeApp,
-  inertUseLedger,
-} from "@/services/use-ledger/__fixtures__";
+import { UseLedger } from "@/services/use-ledger/service";
+import type { Ledger } from "@/services/use-ledger/service";
 import type { ConnectionOpener } from "@/services/zotero-reads/connection";
+import type { ZoteroReads } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
+import { buildQueryService, layerTestQueryService } from "./__fixtures__";
 import { queryCancelledText } from "./contract";
+import type { QueryViewRequest } from "./query-view";
 import { QueryService } from "./service";
 import type { QueryJob } from "./worker-protocol";
 
-function setup(
+async function setup(
   scenario: ScenarioDatabase,
   opener: ConnectionOpener = sharedClientOpener(scenario.db),
 ) {
   let leases = 0;
   const jobs: QueryJob[] = [];
-  const reads = inProcessReadsService(opener, {
-    wrap: (client) => ({
-      ...client,
-      ItemQuery: (payload, options) => {
-        jobs.push(payload.job);
-        return Effect.acquireUseRelease(
-          Effect.sync(() => {
-            leases++;
-          }),
-          () => client.ItemQuery(payload, options),
-          () =>
+  await using stack = new AsyncDisposableStack();
+  const reads = stack.use(
+    inProcessReadsService(opener, {
+      wrap: (client) => ({
+        ...client,
+        ItemQuery: (payload, options) => {
+          jobs.push(payload.job);
+          return Effect.acquireUseRelease(
             Effect.sync(() => {
-              leases--;
+              leases++;
             }),
-        );
-      },
-    }),
-  });
-  const service = new QueryService({
-    runtime: testRuntime(),
-    pluginVersion: "2.2.0-beta.2",
-    useLedger: inertUseLedger,
-    reads,
-    zoteroPref: {
-      sourceId: "captured-source",
-      databasePath: scenario.path,
-      dataDir: dirname(scenario.path),
-      baseAttachmentPath: join(dirname(scenario.path), "linked"),
-    },
-    libraryScope: {
-      effective: MY_LIBRARY_SCOPE,
-    },
-    vault: stubService<Vault>("Vault", {
-      getName: () => "Query tests",
-      adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
-        getBasePath: () => dirname(scenario.path),
+            () => client.ItemQuery(payload, options),
+            () =>
+              Effect.sync(() => {
+                leases--;
+              }),
+          );
+        },
       }),
     }),
-  });
-  const dispose = service[Symbol.asyncDispose].bind(service);
-  service[Symbol.asyncDispose] = async () => {
-    await dispose();
-    await reads[Symbol.asyncDispose]();
+  );
+  const { service, handle, bridge, cli } = await buildQueryService(
+    {
+      reads: reads.reads,
+      pluginVersion: "2.2.0-beta.2",
+      source: {
+        sourceId: "captured-source",
+        databasePath: scenario.path,
+        dataDir: dirname(scenario.path),
+        baseAttachmentPath: join(dirname(scenario.path), "linked"),
+      },
+      effective: () => MY_LIBRARY_SCOPE,
+      vaultName: "Query tests",
+      basePath: dirname(scenario.path),
+    },
+    stack,
+  );
+  const owned = stack.move();
+  // The CLI calls as Obsidian makes them; `signal` interrupts a call.
+  const calls = {
+    query: (params: CliData, signal: AbortSignal) =>
+      cli(service.query(params), signal),
+    schema: (params: CliData, signal: AbortSignal) =>
+      cli(service.schema(params), signal),
+    values: (params: CliData, signal: AbortSignal) =>
+      cli(service.values(params), signal),
+    run: (request: QueryViewRequest, signal: AbortSignal) =>
+      handle.run(request, signal),
+    customFieldNames: (signal: AbortSignal) => handle.customFieldNames(signal),
+    cancel: (id: string) => bridge.runSync(service.cancel(id)),
+    get runningJobs() {
+      return bridge.runSync(service.runningJobs);
+    },
+    [Symbol.asyncDispose]: () => owned.disposeAsync(),
   };
-  return { service, leases: () => leases, jobs };
+  return { service: calls, leases: () => leases, jobs };
 }
 const signal = () => new AbortController().signal;
 const bulk = {
@@ -152,7 +170,7 @@ describe.each(DATASETS)("$dataset CLI dataset through the service", (cli) => {
 
   it("answers the pretty versioned envelope of the source and keeps the id out of the request", async () => {
     using scenario = annotated();
-    const { service, leases, jobs } = setup(scenario);
+    const { service, leases, jobs } = await setup(scenario);
     await using _owned = service;
 
     const text = await service.query(
@@ -197,7 +215,7 @@ describe.each(DATASETS)("$dataset CLI dataset through the service", (cli) => {
 
   it("answers query-id-in-use for an id that a query of either dataset holds", async () => {
     using scenario = annotated();
-    const { service } = setup(scenario);
+    const { service } = await setup(scenario);
     await using _owned = service;
     const other = DATASETS.find((entry) => entry.dataset !== dataset)!;
     const first = service.query(
@@ -224,7 +242,7 @@ describe.each(DATASETS)("$dataset CLI dataset through the service", (cli) => {
 
   it("exports the inline envelope to a new file, answers its receipt, and keeps an existing file", async () => {
     using scenario = annotated();
-    const { service, leases } = setup(scenario);
+    const { service, leases } = await setup(scenario);
     await using _owned = service;
     const inline = await service.query(
       { from: dataset, ...cli.params },
@@ -263,16 +281,15 @@ describe.each(DATASETS)("$dataset CLI dataset through the service", (cli) => {
 
   it("cancels a named export by its id and frees the id", async () => {
     using scenario = annotated();
-    const { service, leases } = setup(scenario);
+    const { service, leases } = await setup(scenario);
     await using _owned = service;
-    await service.ready;
     const output = join(dirname(scenario.path), `cancelled-${dataset}.json`);
     const running = service.query(
       { from: dataset, ...cli.params, id: "shared", output },
       signal(),
     );
     const cancelled = expect(running).rejects.toMatchObject({
-      name: "AbortError",
+      _tag: "QueryCancelled",
       message: queryCancelledText("shared"),
     });
 
@@ -297,7 +314,7 @@ describe.each(DATASETS)("$dataset CLI dataset through the service", (cli) => {
 
   it("answers the schema download, source custom fields and CLI defaults", async () => {
     using scenario = annotated();
-    const { service, leases, jobs } = setup(scenario);
+    const { service, leases, jobs } = await setup(scenario);
     await using _owned = service;
 
     const text = await service.schema({ from: dataset }, signal());
@@ -356,7 +373,7 @@ describe.each(DATASETS)("$dataset CLI dataset through the service", (cli) => {
 
   it("answers a failure with its command: an unknown field, and an unavailable source", async () => {
     using scenario = annotated();
-    const available = setup(scenario);
+    const available = await setup(scenario);
     await using _available = available.service;
     expect(
       JSON.parse(
@@ -371,7 +388,7 @@ describe.each(DATASETS)("$dataset CLI dataset through the service", (cli) => {
       ok: false,
       diagnostic: { code: "unknown-field" },
     });
-    const unavailable = setup(scenario, () => {
+    const unavailable = await setup(scenario, () => {
       throw new Error("source closed");
     });
     await using _unavailable = unavailable.service;
@@ -394,7 +411,7 @@ describe.each(DATASETS)("$dataset CLI dataset through the service", (cli) => {
 describe("Item Query worker jobs", () => {
   it("reports invalid paths and write failures, and leaves no file on a query failure", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
-    const { service, leases } = setup(scenario);
+    const { service, leases } = await setup(scenario);
     await using _owned = service;
     expect(
       JSON.parse(
@@ -438,7 +455,7 @@ describe("Item Query worker jobs", () => {
       storage: "temp-directory",
       annotations: true,
     });
-    const { service, leases } = setup(scenario);
+    const { service, leases } = await setup(scenario);
     await using _owned = service;
     const params = {
       from: "items",
@@ -506,7 +523,7 @@ describe("Item Query worker jobs", () => {
 
   it("asks for an output file with CSV and TSV, and names the formats it writes", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
-    const { service, leases } = setup(scenario);
+    const { service, leases } = await setup(scenario);
     await using _owned = service;
     expect(
       JSON.parse(
@@ -549,7 +566,7 @@ describe("Item Query worker jobs", () => {
   it("bounds inline replies and exports every row of a large result", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 6000);
-    const { service } = setup(scenario);
+    const { service } = await setup(scenario);
     await using _owned = service;
     expect(
       JSON.parse(await service.query({ from: "items", ...bulk }, signal())),
@@ -592,9 +609,8 @@ describe("Item Query worker jobs", () => {
   it("cancels an export and a queued job, lets another query finish, and recovers a worker", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 20000);
-    const { service, leases } = setup(scenario);
+    const { service, leases } = await setup(scenario);
     await using _owned = service;
-    await service.ready;
     const output = join(dirname(scenario.path), "cancelled.json");
     const cancel = new AbortController();
     const queued = new AbortController();
@@ -641,16 +657,15 @@ describe("Item Query worker jobs", () => {
   it("cancels a named export while it writes rows, and leaves other queries running", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 20000);
-    const { service, leases } = setup(scenario);
+    const { service, leases } = await setup(scenario);
     await using _owned = service;
-    await service.ready;
     const output = join(dirname(scenario.path), "named.json");
     const running = service.query(
       { from: "items", ...bulk, id: "export", output },
       signal(),
     );
     const rejected = expect(running).rejects.toMatchObject({
-      name: "AbortError",
+      _tag: "QueryCancelled",
       message: queryCancelledText("export"),
     });
     const other = service.query(
@@ -698,7 +713,7 @@ describe("Item Query worker jobs", () => {
 
   it("frees the ID of a query that fails, and of a request that is invalid", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
-    const { service, leases } = setup(scenario);
+    const { service, leases } = await setup(scenario);
     await using _owned = service;
     expect(
       JSON.parse(
@@ -734,9 +749,8 @@ describe("Item Query worker jobs", () => {
 
   it("settles each race of completion and cancel with one outcome and a free ID", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
-    const { service, leases } = setup(scenario);
+    const { service, leases } = await setup(scenario);
     await using _owned = service;
-    await service.ready;
     const outcomes = new Set<string>();
     // Cancel after a growing number of timer turns, from before the lease
     // until completion wins.
@@ -770,7 +784,10 @@ describe("Item Query worker jobs", () => {
             { ok: true, published: true }
           : {
               requested: true,
-              error: { name: "AbortError" },
+              error: {
+                _tag: "QueryCancelled",
+                message: queryCancelledText("race"),
+              },
               published: false,
             },
       );
@@ -782,18 +799,18 @@ describe("Item Query worker jobs", () => {
   it("keeps the query of another vault with the same ID running", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 6000);
-    const first = setup(scenario);
-    const second = setup(scenario);
+    const first = await setup(scenario);
+    const second = await setup(scenario);
     await using _first = first.service;
     await using _second = second.service;
-    await Promise.all([first.service.ready, second.service.ready]);
     const output = join(dirname(scenario.path), "second.json");
     const cancelled = first.service.query(
       { from: "items", ...bulk, id: "job" },
       signal(),
     );
     const rejected = expect(cancelled).rejects.toMatchObject({
-      name: "AbortError",
+      _tag: "QueryCancelled",
+      message: queryCancelledText("job"),
     });
     const kept = second.service.query(
       { from: "items", ...bulk, id: "job", output },
@@ -812,13 +829,13 @@ describe("Item Query worker jobs", () => {
   it("cancels every named query on unload and frees their IDs", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 2000);
-    const { service, leases } = setup(scenario);
-    await service.ready;
+    const { service, leases } = await setup(scenario);
     const runs = ["a", "b", "c"].map((id) =>
       expect(
         service.query({ from: "items", ...bulk, id }, signal()),
       ).rejects.toMatchObject({
-        name: "AbortError",
+        _tag: "QueryCancelled",
+        message: "The query was cancelled.",
       }),
     );
     await service[Symbol.asyncDispose]();
@@ -830,11 +847,11 @@ describe("Item Query worker jobs", () => {
   it("unloads after active jobs release their connections and leases", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 2000);
-    const { service, leases } = setup(scenario);
-    await service.ready;
+    const { service, leases } = await setup(scenario);
     const running = service.query({ from: "items", ...bulk }, signal());
     const rejected = expect(running).rejects.toMatchObject({
-      name: "AbortError",
+      _tag: "QueryCancelled",
+      message: "The query was cancelled.",
     });
     // Unload closes the scope of the jobs: it interrupts each job and waits.
     await service[Symbol.asyncDispose]();
@@ -844,7 +861,8 @@ describe("Item Query worker jobs", () => {
     await expect(
       service.query({ from: "items" }, signal()),
     ).rejects.toMatchObject({
-      name: "AbortError",
+      _tag: "QueryCancelled",
+      message: "The query was cancelled.",
     });
   });
 });
@@ -854,7 +872,7 @@ it("resolves the file of each Attachment that an Annotation Query projects", asy
     storage: "temp-directory",
     annotations: true,
   });
-  const { service, leases } = setup(scenario);
+  const { service, leases } = await setup(scenario);
   await using _owned = service;
   const directory = join(dirname(scenario.path), "storage", "PDF2LIVE");
   await mkdir(directory, { recursive: true });
@@ -892,7 +910,7 @@ it.each([
   "renders Annotation filter faults through the worker: %s",
   async (filter, code, at) => {
     using scenario = openScenarioDatabase({ annotations: true });
-    const { service } = setup(scenario);
+    const { service } = await setup(scenario);
     await using _owned = service;
     const result = JSON.parse(
       await service.query(
@@ -921,7 +939,7 @@ it("writes Annotation warnings before rows in inline and exported results", asyn
     storage: "temp-directory",
     annotations: true,
   });
-  const { service } = setup(scenario);
+  const { service } = await setup(scenario);
   await using _owned = service;
   const params = { filter: 'item.date.year == "2014"' };
   const inline = await service.query(
@@ -960,7 +978,7 @@ it.each([
   "corrects Annotation request names in their JSON arguments: %j",
   async (params, path, suggestion) => {
     using scenario = openScenarioDatabase({ annotations: true });
-    const { service } = setup(scenario);
+    const { service } = await setup(scenario);
     await using _owned = service;
     const result = JSON.parse(
       await service.query(
@@ -980,7 +998,7 @@ it("describes all three Query Datasets once when from is omitted", async () => {
     storage: "temp-directory",
     annotations: true,
   });
-  const { service } = setup(scenario);
+  const { service } = await setup(scenario);
   await using _owned = service;
   const result = JSON.parse(await service.schema({}, signal()));
   expect(result).toMatchObject({
@@ -1016,7 +1034,7 @@ it("names the custom fields of the active source for the expression editors", as
     storage: "temp-directory",
     annotations: true,
   });
-  const { service } = setup(scenario);
+  const { service } = await setup(scenario);
   await using _owned = service;
   expect(await service.customFieldNames(signal())).toContain("review.status");
 });
@@ -1026,7 +1044,7 @@ it("returns Attachment rows and narrows the live schema to Attachments", async (
     storage: "temp-directory",
     annotations: true,
   });
-  const { service } = setup(scenario);
+  const { service } = await setup(scenario);
   await using _owned = service;
   const answer = JSON.parse(
     await service.query(
@@ -1073,7 +1091,7 @@ it("returns Attachment rows and narrows the live schema to Attachments", async (
 
 it("discovers Collection values through the query worker and reports invalid arguments", async () => {
   using scenario = openScenarioDatabase();
-  await using service = setup(scenario).service;
+  await using service = (await setup(scenario)).service;
   const found = JSON.parse(
     await service.values({ kind: "collections", match: "thesis" }, signal()),
   );
@@ -1101,7 +1119,7 @@ describe("typed Query View call", () => {
   it("returns every matching row with no default limit and no size cap", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 6000);
-    const { service, leases } = setup(scenario);
+    const { service, leases } = await setup(scenario);
     await using _owned = service;
 
     const outcome = await service.run(
@@ -1133,7 +1151,7 @@ describe("typed Query View call", () => {
   it("counts every match beside the rows that a limit returns", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 300);
-    const { service } = setup(scenario);
+    const { service } = await setup(scenario);
     await using _owned = service;
 
     const outcome = await service.run(
@@ -1158,7 +1176,7 @@ describe("typed Query View call", () => {
   it("returns the groups with their value, their count and the total count", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 300);
-    const { service } = setup(scenario);
+    const { service } = await setup(scenario);
     await using _owned = service;
 
     const outcome = await service.run(
@@ -1199,7 +1217,7 @@ describe("typed Query View call", () => {
 
   it("gives the diagnostic of zotlit:query as data", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
-    const { service, leases } = setup(scenario);
+    const { service, leases } = await setup(scenario);
     await using _owned = service;
     const filter = 'titel == "Exact"';
 
@@ -1215,7 +1233,7 @@ describe("typed Query View call", () => {
     expect(outcome).toEqual({ kind: "failed", diagnostic: cli.diagnostic });
     expect(leases()).toBe(0);
 
-    const unavailable = setup(scenario, () => {
+    const unavailable = await setup(scenario, () => {
       throw new Error("source closed");
     });
     await using _unavailable = unavailable.service;
@@ -1230,7 +1248,7 @@ describe("typed Query View call", () => {
   it("binds this to the Query Context of the request", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 30);
-    const { service } = setup(scenario);
+    const { service } = await setup(scenario);
     await using _owned = service;
     const item = `${bulkItemKey(7)}g${BULK_LIBRARY.groupID}`;
     const request = {
@@ -1262,7 +1280,7 @@ describe("typed Query View call", () => {
   it("leaves out each wrong Formula with its Diagnostic, and gives no warning for an unread Formula", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 3);
-    const { service } = setup(scenario);
+    const { service } = await setup(scenario);
     await using _owned = service;
     const request = {
       from: "items",
@@ -1313,9 +1331,8 @@ describe("typed Query View call", () => {
   it("stops a cancelled call with a cancelled outcome and keeps other queries running", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 20000);
-    const { service, leases, jobs } = setup(scenario);
+    const { service, leases, jobs } = await setup(scenario);
     await using _owned = service;
-    await service.ready;
     const request = {
       from: "items",
       libraries: bulkLibraries,
@@ -1348,29 +1365,53 @@ describe("typed Query View call", () => {
 
 // Failure mode: an open Query View keeps showing results ordered by stale
 // Uses after a new one is recorded.
-it("tells a Query View of a Use recorded after it subscribes", async () => {
-  await using stack = new AsyncDisposableStack();
-  const app = fakeApp({ load: () => undefined });
-  Object.assign(app, {
-    fileManager: stubService<FileManager>("FileManager", {}),
-  });
-  const useLedger = buildUseLedger(app, stack);
-  type QueryDeps = ConstructorParameters<typeof QueryService>[0];
-  const deps: QueryDeps = {
-    runtime: testRuntime(),
-    pluginVersion: "2.2.0-beta.2",
-    useLedger,
-    reads: stubService<QueryDeps["reads"]>("ZoteroReads", {}),
-    zoteroPref: stubService<QueryDeps["zoteroPref"]>("ZoteroPref", {
-      dataDir: "",
-    }),
-    libraryScope: { effective: { mode: "all" } },
-    vault: stubService<Vault>("Vault", {}),
-  };
-  const service = stack.use(new QueryService(deps));
-  const changed = vi.fn();
-  stack.defer(service.on("changed", changed));
+it.effect("tells a Query View of a Use recorded after it subscribes", () =>
+  Effect.gen(function* () {
+    const ledger = yield* SubscriptionRef.make<Ledger>({});
+    const layer = layerTestQueryService(
+      {
+        reads: stubService<ZoteroReads["Service"]["reads"]>("ZoteroReads", {}),
+        source: {
+          sourceId: "captured-source",
+          databasePath: "",
+          dataDir: "",
+          baseAttachmentPath: null,
+        },
+      },
+      Layer.mock(UseLedger, { changes: SubscriptionRef.changes(ledger) }),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* QueryService;
+      const changed = yield* Effect.forkChild(Stream.runHead(service.changed), {
+        startImmediately: true,
+      });
+      // The ledger at subscription is no change.
+      expect(changed.pollUnsafe()).toBeUndefined();
 
-  useLedger.record("AAAAAAAB", "opened");
-  await vi.waitFor(() => expect(changed).toHaveBeenCalledOnce());
+      yield* SubscriptionRef.set(ledger, {
+        AAAAAAAB: { instant: DateTime.makeUnsafe(0), kind: "opened" },
+      });
+      expect(yield* Fiber.join(changed)).toEqual(Option.some(undefined));
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it("answers query-id-in-use to one of two calls that claim one id at once", async () => {
+  using scenario = openScenarioDatabase({ storage: "temp-directory" });
+  const { service, leases } = await setup(scenario);
+  await using _owned = service;
+  const params = { from: "items", id: "same", limit: "1" };
+
+  const answers = (
+    await Promise.all([
+      service.query(params, signal()),
+      service.query(params, signal()),
+    ])
+  ).map((text) => JSON.parse(text) as { ok: boolean });
+
+  expect(answers.filter((answer) => answer.ok)).toHaveLength(1);
+  expect(answers.find((answer) => !answer.ok)).toMatchObject({
+    diagnostic: { code: "query-id-in-use" },
+  });
+  expect(leases()).toBe(0);
 });

@@ -12,7 +12,7 @@ import type {
 import * as m from "@/lib/i18n/generated/messages";
 import { CurrentAnswer } from "@/services/item-lookup/current-answer";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
-import type { QueryService } from "@/services/item-query/service";
+import type { QueryHandle } from "@/services/item-query/handle";
 import type { PluginSettings } from "@/services/settings/service";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import {
@@ -27,7 +27,7 @@ import type { AnnotationHit } from "./annotation-search";
 import { resolveAnnotationTrigger } from "./annotation-trigger";
 
 export interface AnnotationSuggestDeps extends AnnotationInsertDeps {
-  query: Pick<QueryService, "run">;
+  query: Pick<QueryHandle, "run">;
   settings: Pick<PluginSettings["Service"], "current">;
   /**
    * The comment renderer every annotation surface shares, which draws a

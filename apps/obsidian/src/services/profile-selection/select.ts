@@ -6,7 +6,7 @@ import type { Item } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
 import type { Diagnostic } from "@/services/item-query/contract";
-import type { QueryService } from "@/services/item-query/service";
+import type { QueryHandle } from "@/services/item-query/handle";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
 
 const logger = getLogger(["services", "profile-selection"]);
@@ -43,7 +43,7 @@ type BatchMatches =
 export async function selectProfilesByMatch(
   profiles: readonly LiteratureNoteProfile[],
   items: readonly MatchItem[],
-  { query, signal }: { query: Pick<QueryService, "run">; signal?: AbortSignal },
+  { query, signal }: { query: Pick<QueryHandle, "run">; signal?: AbortSignal },
 ): Promise<readonly MatchSelection[]> {
   const tested = profiles.flatMap((profile) =>
     profile.match.state === "evaluable"
@@ -106,7 +106,7 @@ export async function selectProfilesByMatch(
  * - `failed`: the query failed, with its Diagnostic where it gives one.
  */
 export async function testItemMatches(
-  query: Pick<QueryService, "run">,
+  query: Pick<QueryHandle, "run">,
   item: MatchItem,
   filters: readonly string[],
 ): Promise<
@@ -125,7 +125,7 @@ export async function testItemMatches(
  * Libraries they belong to.
  */
 async function testItemsMatches(
-  query: Pick<QueryService, "run">,
+  query: Pick<QueryHandle, "run">,
   items: readonly MatchItem[],
   {
     filters,

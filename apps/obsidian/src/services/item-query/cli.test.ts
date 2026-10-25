@@ -90,10 +90,12 @@ const scenarioOf = (options?: Parameters<typeof openScenarioDatabase>[0]) =>
 describe("zotlit:query-cancel", () => {
   function cancelOf(active: readonly string[]) {
     const requested: string[] = [];
-    const handler = createQueryCancelHandler((id) => {
-      requested.push(id);
-      return active.includes(id);
-    });
+    const handler = createQueryCancelHandler((id) =>
+      Effect.sync(() => {
+        requested.push(id);
+        return active.includes(id);
+      }),
+    );
     return {
       requested,
       run: (params: CliData) =>
@@ -315,16 +317,20 @@ describe("registerQueryCli", () => {
     () =>
       Effect.gen(function* () {
         const { host, commands, command } = fakeCliHost();
-        const started = yield* Deferred.make<AbortSignal>();
+        const started = yield* Deferred.make<void>();
+        const interrupted = yield* Deferred.make<void>();
 
         registerQueryCli(host, {
-          query: (_params, signal) => {
-            Deferred.doneUnsafe(started, Effect.succeed(signal));
-            return new Promise<string>(() => {});
-          },
-          cancel: (id) => id === "export-a",
-          schema: async () => "",
-          values: async () => "values",
+          query: () =>
+            Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Effect.never),
+              Effect.onInterrupt(() =>
+                Deferred.succeed(interrupted, undefined),
+              ),
+            ),
+          cancel: (id) => Effect.succeed(id === "export-a"),
+          schema: () => Effect.succeed(""),
+          values: () => Effect.succeed("values"),
         });
 
         expect(command(QUERY_COMMAND).flags).toEqual(
@@ -372,10 +378,10 @@ describe("registerQueryCli", () => {
           "zotlit:query-cancel",
         ]);
         const run = yield* Effect.forkChild(handlerFor(QUERY_COMMAND)({}));
-        const signal = yield* Deferred.await(started);
-        expect(signal.aborted).toBe(false);
+        yield* Deferred.await(started);
+        expect(yield* Deferred.isDone(interrupted)).toBe(false);
         yield* Fiber.interrupt(run);
-        expect(signal.aborted).toBe(true);
+        expect(yield* Deferred.isDone(interrupted)).toBe(true);
       }),
   );
 });

@@ -25,13 +25,13 @@ import { getLogger } from "@/lib/log";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { HistoryDirection } from "@/services/annotation-repository/service";
 import type { Diagnostic } from "@/services/item-query/contract";
+import type { QueryHandle } from "@/services/item-query/handle";
 import type {
   QueryViewOutcome,
   QueryViewRequest,
   QueryViewResult,
   QueryViewRow,
 } from "@/services/item-query/query-view";
-import type { QueryService } from "@/services/item-query/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import { selectorKey } from "@/services/library-scope/scope";
 import type { LibraryScope } from "@/services/library-scope/scope";
@@ -109,7 +109,7 @@ const logger = getLogger(["views", "query-view"]);
 /** The services a Query View reads through. */
 export interface QueryViewDeps extends AnnotationsLayoutDeps {
   runtime: SubscriptionRuntime;
-  query: Pick<QueryService, "run" | "on" | "customFieldNames">;
+  query: Pick<QueryHandle, "run" | "on" | "customFieldNames">;
   reads: AnnotationsLayoutDeps["reads"] &
     Pick<
       PlainZoteroReads,

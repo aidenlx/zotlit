@@ -2,7 +2,7 @@
 
 import { Effect } from "effect";
 import { TFolder } from "obsidian";
-import type { FileSystemAdapter, TFile, Vault } from "obsidian";
+import type { TFile } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stringify as stringifyYaml } from "yaml";
 
@@ -17,7 +17,6 @@ import type { ItemFields } from "@zotlit/zotero-types";
 import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
@@ -25,9 +24,8 @@ import {
 import * as m from "@/lib/i18n/generated/messages";
 import type { VaultSource } from "@/lib/obsidian-vault";
 import type { ProfileId } from "@/lib/profile-stamp";
-import { QueryService } from "@/services/item-query/service";
+import { buildQueryService } from "@/services/item-query/__fixtures__";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
-import { inertUseLedger } from "@/services/use-ledger/__fixtures__";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import { listCollectionChoices } from "@/services/zotero-reads/membership";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
@@ -273,26 +271,20 @@ async function harness(
     handlers: { sliceSize },
   });
   // ZotLit Query tests the Profile Matches over the same database.
-  const query = stack.use(
-    new QueryService({
-      runtime: testRuntime(),
-      useLedger: inertUseLedger,
-      pluginVersion: "2.2.0",
-      reads: zoteroReads,
-      zoteroPref: {
+  const { handle: query } = await buildQueryService(
+    {
+      reads: zoteroReads.reads,
+      source: {
         sourceId: "membership",
         databasePath: ":memory:",
         dataDir: "/zotero",
         baseAttachmentPath: "/zotero/linked",
       },
-      libraryScope: fixture.libraryScope,
-      vault: stubService<Vault>("Vault", {
-        getName: () => "Membership tests",
-        adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
-          getBasePath: () => "/vault",
-        }),
-      }),
-    }),
+      effective: () => fixture.libraryScope.effective,
+      vaultName: "Membership tests",
+      basePath: "/vault",
+    },
+    stack,
   );
   const deps: NoteFeatureDeps = {
     app,

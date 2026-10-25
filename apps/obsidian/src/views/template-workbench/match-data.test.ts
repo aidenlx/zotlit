@@ -1,14 +1,10 @@
 // Vault-wide suggestions and the Match test of a real Item read one database.
-import type { FileSystemAdapter, Vault } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { stubService } from "@/lib/__fixtures__/service-stub";
-import { QueryService } from "@/services/item-query/service";
-import { inertUseLedger } from "@/services/use-ledger/__fixtures__";
+import { buildQueryService } from "@/services/item-query/__fixtures__";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -46,27 +42,20 @@ it("includes Libraries outside the chosen paper and keeps automatic Tags and dir
       };
     },
   };
-  await using query = new QueryService({
-    runtime: testRuntime(),
-    useLedger: inertUseLedger,
-    pluginVersion: "2.2.0",
-    reads: service,
-    zoteroPref: {
-      sourceId: "match-data",
-      databasePath: ":memory:",
-      dataDir: "/zotero",
-      baseAttachmentPath: "/zotero/linked",
+  const { handle: query } = await buildQueryService(
+    {
+      reads: service.reads,
+      source: {
+        sourceId: "match-data",
+        databasePath: ":memory:",
+        dataDir: "/zotero",
+        baseAttachmentPath: "/zotero/linked",
+      },
+      vaultName: "Match tests",
+      basePath: "/vault",
     },
-    libraryScope: {
-      effective: { mode: "all" },
-    },
-    vault: stubService<Vault>("Vault", {
-      getName: () => "Match tests",
-      adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
-        getBasePath: () => "/vault",
-      }),
-    }),
-  });
+    stack,
+  );
   const data = createMatchData(db, query);
   await expect(data.tags()).resolves.toEqual([
     "Automatic",

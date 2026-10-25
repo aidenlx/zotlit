@@ -7,11 +7,11 @@
 // reads the live annotation repository (`annotation-insert.ts`), the Local API
 // while Zotero runs, so what lands holds the latest edits.
 import { getLogger } from "@/lib/log";
+import type { QueryHandle } from "@/services/item-query/handle";
 import type {
   QueryViewRow,
   QueryViewValue,
 } from "@/services/item-query/query-view";
-import type { QueryService } from "@/services/item-query/service";
 import { visibleText } from "@/services/item-query/visible-text";
 import { searchTokens } from "@/views/library/search";
 
@@ -123,7 +123,7 @@ function toHit(row: QueryViewRow): AnnotationHit {
  * @returns `null` when the signal aborts it or ZotLit Query cannot answer.
  */
 export async function searchAnnotations(
-  service: Pick<QueryService, "run">,
+  service: Pick<QueryHandle, "run">,
   query: string,
   { signal, limit }: { signal: AbortSignal; limit: number },
 ): Promise<AnnotationHit[] | null> {

@@ -36,7 +36,7 @@ import type {
   PreparedExcerpts,
 } from "@/services/excerpt-image/prepare";
 import type { prepareSingleExcerpt } from "@/services/excerpt-image/prepare-single";
-import type { QueryService } from "@/services/item-query/service";
+import type { QueryHandle } from "@/services/item-query/handle";
 import { childNoteLink } from "@/services/note-import/service";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { getProfileBinding } from "@/services/profile/bindings";
@@ -100,7 +100,7 @@ export interface NoteFeatureDeps {
    */
   zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "reads">;
   /** ZotLit Query, which tests the Profile Matches of an Item. */
-  query: Pick<QueryService, "run">;
+  query: Pick<QueryHandle, "run">;
   noteIndex: Pick<
     PlainNoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"

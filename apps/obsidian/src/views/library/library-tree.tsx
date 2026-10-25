@@ -28,7 +28,7 @@ import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { cn, tooltipAttrs } from "@/lib/utils";
-import type { QueryService } from "@/services/item-query/service";
+import type { QueryHandle } from "@/services/item-query/handle";
 import { libraryLabel } from "@/services/library-scope/label";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type {
@@ -72,7 +72,7 @@ export interface LibraryTreeDeps {
     | "refresh-requested"
     | "acquireRead"
   >;
-  query: Pick<QueryService, "run">;
+  query: Pick<QueryHandle, "run">;
   libraryScope: Pick<
     PlainLibraryScope,
     "changed" | "libraries-changed" | "current" | "libraries"
