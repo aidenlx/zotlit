@@ -381,7 +381,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     timer = yield* Effect.forkIn(
       Effect.sleep(SAVE_DEBOUNCE_MS).pipe(
         Effect.andThen(flush()),
-        Effect.catchCause(() => Effect.void),
+        Effect.ignoreCause,
       ),
       writes,
     );
