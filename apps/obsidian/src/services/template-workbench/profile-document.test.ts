@@ -89,33 +89,10 @@ function makeHandlers(options?: {
     loadData: () =>
       Effect.succeed({ kind: "data", data: { title: "Paper" } } as const),
     templates: {
-      getCitationTemplateStatus: Effect.succeed({
-        path: "Templates/zotlit-citation.md",
-        customized: false,
-        language: "liquid" as const,
-        inertPath: null,
-        compileError: null,
-      }),
-      renderCitationData: () => Effect.succeed(""),
       javascriptTemplatesEnabled: Effect.succeed(false),
       compileErrors: Effect.succeed(new Map()),
       getTemplateFileStatuses: Effect.succeed([]),
-      getPartialDocument: () => Effect.succeed(null),
-      render: () => Effect.succeed(""),
-      renderFilename: () => Effect.succeed(""),
-      analyzeRootVariables: () => Effect.succeed(null),
-      getTemplateSource: () => Effect.succeed(""),
       waitUntilSettled: () => Effect.succeed("settled" as const),
-    },
-    frontmatter: {
-      read: Effect.succeed({
-        fields: [],
-        inertKeys: [],
-        javascriptTemplatesEnabled: false,
-      }),
-      evaluate: () => Effect.succeed({ values: {}, errors: {}, inertKeys: [] }),
-      validateExpr: () => Effect.succeed(null),
-      write: () => Effect.void,
     },
     literatureNotes: {
       readProfiles: Effect.sync(() => readProfiles()),
