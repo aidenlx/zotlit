@@ -527,7 +527,7 @@ export function createTemplateWorkbenchHandlers(
 
     [TEMPLATE_GUIDE_COMMAND]: (params: CliData) =>
       parseGuideRequest(params).pipe(
-        Effect.map(renderGuide),
+        Effect.map((topic) => renderGuide(topic)),
         answerRejection(TEMPLATE_GUIDE_COMMAND),
       ),
   };

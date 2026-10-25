@@ -342,7 +342,9 @@ it.effect(
 );
 
 const settled = Effect.fnUntraced(function* <A>(operation: () => Promise<A>) {
-  const pending = yield* Effect.promise(operation).pipe(Effect.forkChild);
+  const pending = yield* Effect.promise(() => operation()).pipe(
+    Effect.forkChild,
+  );
   yield* TestClock.adjust(500);
   return yield* Fiber.join(pending);
 });

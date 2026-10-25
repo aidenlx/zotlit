@@ -356,9 +356,8 @@ describe("ZoteroReads worker adapter", () => {
         const result = yield* Effect.gen(function* () {
           const reads = yield* makeWorkerReads(workers.connect);
           yield* workerSeen(reads);
-          const seed = Effect.map(
-            Stream.runHead(reads.Changes()),
-            Option.getOrThrow,
+          const seed = Effect.map(Stream.runHead(reads.Changes()), (option) =>
+            Option.getOrThrow(option),
           );
           // The probe asks 10 s after the connect and waits 15 s for the
           // answer, then asks once more and waits 5 s.

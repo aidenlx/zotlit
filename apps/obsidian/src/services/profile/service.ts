@@ -1621,7 +1621,7 @@ export const layerProfile = Layer.effect(
           : Effect.forkIn(effect, operations, {
               startImmediately: true,
               uninterruptible: write,
-            }).pipe(Effect.flatMap(Fiber.join));
+            }).pipe(Effect.flatMap((fiber) => Fiber.join(fiber)));
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
         closed = true;

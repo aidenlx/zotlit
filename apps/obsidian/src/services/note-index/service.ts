@@ -224,9 +224,13 @@ const makeNoteIndex = Effect.gen(function* () {
     pendingBarriers.add(barrier);
     events.callback("barrier")(barrier);
     yield* Deferred.await(barrier);
-    yield* Effect.forEach([...pendingRenames], Deferred.await, {
-      discard: true,
-    });
+    yield* Effect.forEach(
+      [...pendingRenames],
+      (deferred) => Deferred.await(deferred),
+      {
+        discard: true,
+      },
+    );
   }).pipe(Effect.withSpan("NoteIndex.whenSettled"));
 
   // Acquire listeners after the functions below have been initialized.

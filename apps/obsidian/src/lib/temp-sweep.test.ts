@@ -207,7 +207,7 @@ describe("sweepTempDirectoryEffect", () => {
           Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause),
         ).toBe(true);
       }
-      expect(yield* Effect.promise(names)).toEqual(["drop", "other"]);
+      expect(yield* Effect.promise(() => names())).toEqual(["drop", "other"]);
     }),
   );
 
@@ -252,7 +252,7 @@ describe("sweepTempDirectoryEffect", () => {
           annotations: { directory, kind: "test entry" },
         }),
       ]);
-      expect(yield* Effect.promise(names)).toEqual(["drop"]);
+      expect(yield* Effect.promise(() => names())).toEqual(["drop"]);
     }),
   );
 
@@ -281,7 +281,7 @@ describe("sweepTempDirectoryEffect", () => {
           return name === "drop";
         },
       });
-      expect(yield* Effect.promise(names)).toEqual(["keep"]);
+      expect(yield* Effect.promise(() => names())).toEqual(["keep"]);
     }),
   );
 
@@ -318,7 +318,7 @@ describe("sweepTempDirectoryEffect", () => {
         expect(byPath[1]?.message).toEqual(
           expect.arrayContaining(["Failed to reap a stale ZotLit temp entry"]),
         );
-        expect(yield* Effect.promise(names)).toEqual(["b-locked"]);
+        expect(yield* Effect.promise(() => names())).toEqual(["b-locked"]);
       }),
   );
 });

@@ -174,7 +174,7 @@ function openVault({
                   }
                 : { kind: "absent" },
             ),
-            getEngine: Effect.promise(getEngine).pipe(
+            getEngine: Effect.promise(() => getEngine()).pipe(
               Effect.map(() => ({ [Symbol.dispose]: () => undefined })),
             ),
           },

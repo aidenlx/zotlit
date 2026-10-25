@@ -187,7 +187,7 @@ export const layerBibliographyRender = Layer.effect(
     });
     const events = yield* Effect.acquireRelease(
       PubSub.unbounded<BibliographyRenderEvent>(),
-      PubSub.shutdown,
+      (pubsub) => PubSub.shutdown(pubsub),
     );
     const recover = <A, E>(effect: Effect.Effect<A, E>) =>
       effect.pipe(

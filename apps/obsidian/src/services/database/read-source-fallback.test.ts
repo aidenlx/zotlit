@@ -23,7 +23,9 @@ function inspectPrepared<A>(
   preparation: ReturnType<typeof prepareRead>,
   inspect: (prepared: import("./read-source").PreparedRead) => A,
 ): Promise<A> {
-  return Effect.runPromise(Effect.scoped(Effect.map(preparation, inspect)));
+  return Effect.runPromise(
+    Effect.scoped(Effect.map(preparation, (prepared) => inspect(prepared))),
+  );
 }
 
 async function createFixture(): Promise<

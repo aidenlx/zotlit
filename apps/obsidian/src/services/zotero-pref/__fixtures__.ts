@@ -33,7 +33,7 @@ export const zoteroPrefFixture = Effect.fn("zoteroPrefFixture")(function* (
         layer.pipe(Layer.provideMerge(Layer.succeedContext(context))),
       ),
     ),
-    (resource) => Effect.promise(resource.close),
+    (resource) => Effect.promise(() => resource.close()),
   );
   const pref = Context.get(yield* runtime.contextEffect, ZoteroPref);
   return { pref, runtime, saved: () => saved };

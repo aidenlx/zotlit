@@ -335,7 +335,7 @@ export function handlersLayer(options?: HandlersOptions) {
             }));
             return entry;
           }),
-          releasePinned,
+          (entry) => releasePinned(entry),
         ).pipe(Effect.map((entry) => entry.client));
       };
 
@@ -359,7 +359,7 @@ export function handlersLayer(options?: HandlersOptions) {
       const withClientStream = <A>(
         snapshot: SnapshotId | undefined,
         f: (client: NodeDatabaseClient) => Stream.Stream<A, DbUnavailable>,
-      ) => Stream.unwrap(Effect.map(borrow(snapshot), f));
+      ) => Stream.unwrap(Effect.map(borrow(snapshot), (client) => f(client)));
 
       return ZoteroReads.of({
         CancelItemQuery: ({ id }) => FiberMap.remove(queryJobs, id),

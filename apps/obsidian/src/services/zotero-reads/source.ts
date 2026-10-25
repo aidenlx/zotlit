@@ -367,7 +367,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
               (client) => Effect.sync(() => client.$client.close()),
             ).pipe(Scope.provide(clientScope));
             const validated = yield* validateClient(client).pipe(
-              Effect.mapError(toDbUnavailable),
+              Effect.mapError((cause) => toDbUnavailable(cause)),
             );
             yield* databaseGenerations.record(validated, file);
             yield* logReadFallback(prepared);
@@ -765,7 +765,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
       });
 
       yield* Stream.fromQueue(watchSignals).pipe(
-        Stream.runForEach(scheduleWatchedRefresh),
+        Stream.runForEach((signal) => scheduleWatchedRefresh(signal)),
         Effect.forkIn(lifetime, { startImmediately: true }),
       );
 
@@ -807,7 +807,9 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
         changes,
         // Fails when the lane's last refresh failed, also when the previous
         // client keeps serving; `Changes` tells the two apart.
-        refresh: Effect.flatMap(enqueueRefresh(), Deferred.await),
+        refresh: Effect.flatMap(enqueueRefresh(), (deferred) =>
+          Deferred.await(deferred),
+        ),
         notifyExternalChange: Effect.gen(function* () {
           yield* logDebug("External change signalled, scheduling refresh");
           yield* scheduleWatchedRefresh({ trusted: true });

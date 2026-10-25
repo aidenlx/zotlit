@@ -134,7 +134,7 @@ it.effect(
       );
       expect(f.plain.libraries).toEqual([]);
       expect(f.plain.libraryRows).toBeNull();
-      yield* Effect.promise(f.close);
+      yield* Effect.promise(() => f.close());
       expect(database.log).toEqual(["open #1", "close #1"]);
     }),
 );
@@ -172,7 +172,7 @@ it.effect(
       const ended = yield* Stream.runDrain(f.service.changes).pipe(
         Effect.forkChild,
       );
-      yield* Effect.promise(f.close);
+      yield* Effect.promise(() => f.close());
       yield* Deferred.await(interrupted);
       yield* Fiber.join(ended);
       expect(f.plain.current).toBeNull();

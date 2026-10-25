@@ -91,7 +91,7 @@ it.effect(
         await expect.poll(() => view.current?.status).toBe("fresh");
       });
       const status = f.plain.status;
-      yield* Effect.promise(f.close);
+      yield* Effect.promise(() => f.close());
       expect(view.current).toBeNull();
       view.set({ citekeys: ["second"] });
       expect(view.current).toBeNull();
@@ -207,7 +207,7 @@ it.effect(
       const events = yield* Stream.runDrain(f.service.invalidated).pipe(
         Effect.forkChild,
       );
-      yield* Effect.promise(f.close);
+      yield* Effect.promise(() => f.close());
       yield* Deferred.await(interrupted);
       yield* Effect.promise(() => rejected);
       yield* Effect.promise(() => waiting);

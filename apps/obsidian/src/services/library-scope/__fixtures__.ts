@@ -25,7 +25,7 @@ export const libraryScopeFixture = Effect.fnUntraced(function* (
   const context = yield* Effect.context<never>();
   return yield* Effect.acquireRelease(
     Effect.promise(() => openLibraryScope(client, saved, context)),
-    (fixture) => Effect.promise(fixture.close),
+    (fixture) => Effect.promise(() => fixture.close()),
   );
 });
 

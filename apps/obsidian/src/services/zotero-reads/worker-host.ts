@@ -139,9 +139,13 @@ export const connectWorker = Effect.fnUntraced(function* (
   // A worker that never answers is terminated after a bounded wait.
   yield* Effect.addFinalizer(() =>
     Effect.gen(function* () {
-      const answered = yield* Effect.forEach(workers.values(), Deferred.await, {
-        concurrency: "unbounded",
-      }).pipe(Effect.timeoutOption(WORKER_CLOSE_TIMEOUT));
+      const answered = yield* Effect.forEach(
+        workers.values(),
+        (deferred) => Deferred.await(deferred),
+        {
+          concurrency: "unbounded",
+        },
+      ).pipe(Effect.timeoutOption(WORKER_CLOSE_TIMEOUT));
       if (Option.isNone(answered))
         yield* Effect.logWarning(
           "Database worker did not confirm its close in time; terminating it",
@@ -470,7 +474,9 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
       scope,
     );
     yield* Effect.forkIn(
-      Stream.runForEach(connection.client.Changes(), relay).pipe(
+      Stream.runForEach(connection.client.Changes(), (event) =>
+        relay(event),
+      ).pipe(
         Effect.matchCauseEffect({
           onFailure: (cause) =>
             Cause.hasInterruptsOnly(cause)

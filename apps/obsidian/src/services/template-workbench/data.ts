@@ -90,7 +90,7 @@ const attempt = <A>(evaluate: () => PromiseLike<A>) =>
 
 /** A database read. */
 const query = <A, E>(read: Effect.Effect<A, E>) =>
-  Effect.mapError(read, failed);
+  Effect.mapError(read, (cause) => failed(cause));
 
 /** Building data that can throw, as a Template a getter runs. */
 const build = <A>(evaluate: () => A) =>

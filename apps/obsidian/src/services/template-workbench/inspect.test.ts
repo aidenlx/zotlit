@@ -66,7 +66,7 @@ async function fixture(
   const inspect = (params: CliData = {}) =>
     command(TEMPLATE_INSPECT_COMMAND)
       .handler(params)
-      .pipe(Effect.map(assertRefusalsHint));
+      .pipe(Effect.map((output) => assertRefusalsHint(output)));
   const guide = () =>
     command("zotlit:template-guide").handler({ topic: "inspect" });
   const cleanup = stack.move();

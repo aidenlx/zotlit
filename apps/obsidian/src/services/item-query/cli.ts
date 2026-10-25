@@ -125,7 +125,7 @@ const answerRejection = (command: QueryCliCommand) =>
 /** The guide is plain text; an unknown topic answers the diagnostic envelope. */
 export const guideHandler: CliCommandHandler = (params) =>
   decodeGuideArguments(params).pipe(
-    Effect.map(renderGuide),
+    Effect.map((topic) => renderGuide(topic)),
     answerRejection(QUERY_GUIDE_COMMAND),
   );
 
