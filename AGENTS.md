@@ -122,7 +122,11 @@ Multi-context layout — `GLOSSARY-MAP.md` at the repo root points to per-worksp
 
 Build a new Obsidian service as an Effect service: a `Context.Service` tag and a scoped `Layer` that joins the plugin's Layer graph. Legacy `Service` classes keep their shape until converted, and hook into the graph through a bridge layer. Run `/obsidian-services` before creating, converting, or wiring a service.
 
-Effect's API evolves between versions and may differ from your training data. Resolve the `effect` package from the relevant workspace. Read `AGENTS.md` inside the installed package before writing Effect code; follow its linked examples for the area being changed. Search the installed source before adding helpers.
+### This is NOT the Effect you know
+
+This repo runs Effect v4. Its modules, names, and signatures differ from the Effect v2/v3 that most training data covers. Take every Effect API from the installed package, not from memory.
+
+Resolve the `effect` package from the workspace you change; for example, run `node -p "require.resolve('effect/package.json')"` from `apps/obsidian`. Read `AGENTS.md` inside that package first, then the topic folder of its `ai-docs/src/` for the area being changed, and confirm each signature in its `dist/**/*.d.ts`. Search the installed source before adding helpers. These docs match the installed version and are available without network access.
 
 <!-- BEGIN:turborepo-agent-rules -->
 
