@@ -290,7 +290,7 @@ export const layerHostLogPort = (
       );
       yield* Stream.fromQueue(records).pipe(
         Stream.runForEach((data) => {
-          const record = Schema.decodeUnknownOption(LogPortRecordSchema)(data);
+          const record = Schema.decodeOption(LogPortRecordSchema)(data);
           return Option.match(record, {
             onNone: () =>
               Effect.logWarning(malformedMessage).pipe(

@@ -124,7 +124,7 @@ export const verifySavedSources = Effect.fn(
                 : {}),
             });
           }
-          return Effect.succeed(undefined);
+          return Effect.void;
         }),
       );
     const readAll = Effect.forEach(paths, read, { concurrency: "unbounded" });

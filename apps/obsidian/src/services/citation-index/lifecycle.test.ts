@@ -403,7 +403,7 @@ it.effect(
         await put(record);
         if (record.path === "draft.md") written.resolve();
       };
-      const h = yield* Effect.acquireRelease(
+      const h = yield* Effect.acquireDisposable(
         Effect.promise(() =>
           createCitationIndexHarness(
             { ...documents, "draft.md": "@smith2021" },
@@ -418,7 +418,6 @@ it.effect(
             },
           ),
         ),
-        (h) => Effect.promise(() => h[Symbol.asyncDispose]()),
       );
       yield* TestClock.adjust("5 seconds");
       yield* Effect.promise(() => h.ready);

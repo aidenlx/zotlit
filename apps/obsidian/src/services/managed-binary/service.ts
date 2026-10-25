@@ -6,6 +6,7 @@ import {
   Exit,
   Fiber,
   Layer,
+  Predicate,
   PubSub,
   Scope,
   SubscriptionRef,
@@ -215,10 +216,9 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   });
   const startEngine = Effect.fn("ManagedBinary.startEngine")(function* () {
     const blob = yield* store.read(name).pipe(
-      Effect.flatMap((read) =>
-        read
-          ? Effect.succeed(read)
-          : Effect.fail(new Error(`The cached ${binary.label} binary is gone`)),
+      Effect.filterOrFail(
+        Predicate.isNotUndefined,
+        () => new Error(`The cached ${binary.label} binary is gone`),
       ),
       Effect.tapError(failInit),
     );

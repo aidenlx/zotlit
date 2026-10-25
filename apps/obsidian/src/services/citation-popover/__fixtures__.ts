@@ -143,7 +143,7 @@ export function citationPopoverFixture(
               ({
                 ItemsByIndexedKeys: () => Effect.succeed(new Map()),
               } as unknown as ZoteroReadsApi),
-            snapshot: Effect.acquireRelease(
+            snapshot: Effect.acquireDisposable(
               Effect.tryPromise({
                 try: () => deps.db.acquireRead(),
                 catch: (error) =>
@@ -152,7 +152,6 @@ export function citationPopoverFixture(
                       error instanceof Error ? error.message : String(error),
                   }),
               }),
-              (lease) => Effect.promise(() => lease[Symbol.asyncDispose]()),
             ).pipe(Effect.map((lease) => lease.reads)),
           }),
         ),

@@ -51,14 +51,14 @@ export const reapWorkerClones = Effect.fnUntraced(function* ({
   /** Every directory that worker may have placed a clone in. */
   parents: readonly string[];
 }) {
-  yield* Effect.all(
-    parents.map((directory) =>
+  yield* Effect.forEach(
+    parents,
+    (directory) =>
       sweepTempDirectoryEffect({
         directory,
         kind: "database read clone",
         isResidue: (name) => parseTempOwner(name) === owner,
       }),
-    ),
     { concurrency: "unbounded" },
   );
 });

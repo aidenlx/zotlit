@@ -17,9 +17,8 @@ it.effect(
     Effect.gen(function* () {
       const { open } = memoryOpener(seed);
       const { plain } = yield* readsFixture(inProcessClient(layerRcRef(open)));
-      const lease = yield* Effect.acquireRelease(
+      const lease = yield* Effect.acquireDisposable(
         Effect.promise(() => plain.acquireRead()),
-        (lease) => Effect.promise(() => lease[Symbol.asyncDispose]()),
       );
       const refreshing = plain.refresh();
       expect(refreshing).toBeInstanceOf(Promise);

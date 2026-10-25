@@ -169,14 +169,13 @@ it.effect(
     Effect.gen(function* () {
       const worker = yield* workerFixture();
       const f = yield* zoteroPrefFixture();
-      const opening = yield* workerClient()
-        .pipe(
-          Effect.provideService(PluginSettings, worker.settings),
-          Effect.provideService(ZoteroPref, f.pref),
-          Effect.provideService(ChineseSegmenter, worker.chineseSegmenter),
-          Effect.provideService(ObsidianEnv, testObsidianEnv()),
-        )
-        .pipe(Effect.forkChild);
+      const opening = yield* workerClient().pipe(
+        Effect.provideService(PluginSettings, worker.settings),
+        Effect.provideService(ZoteroPref, f.pref),
+        Effect.provideService(ChineseSegmenter, worker.chineseSegmenter),
+        Effect.provideService(ObsidianEnv, testObsidianEnv()),
+        Effect.forkChild,
+      );
       const spawned = yield* Queue.take(worker.spawned);
       yield* f.pref.setDataDir("/changed-during-connect");
       spawned.start();

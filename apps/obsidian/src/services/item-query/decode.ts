@@ -82,7 +82,7 @@ function textOf<T>(
 ) {
   return Schema.String.pipe(
     cliMapEffect((text: string, parseOptions) =>
-      Schema.decodeUnknownEffect(pick(text))(text, {
+      Schema.decodeEffect(pick(text))(text, {
         ...parseOptions,
         ...options,
       }).pipe(Effect.mapError(({ issue }) => issue)),

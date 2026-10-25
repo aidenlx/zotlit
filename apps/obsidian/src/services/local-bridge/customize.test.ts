@@ -143,7 +143,7 @@ function harness({
     webWorkbenchEnabled,
     app,
     settings: {
-      current: Effect.sync(() => settings),
+      current: Effect.succeed(settings),
       update: (patch: Parameters<CustomizeDeps["settings"]["update"]>[0]) =>
         Effect.sync(() => {
           update(

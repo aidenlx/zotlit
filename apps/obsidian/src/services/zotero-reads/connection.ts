@@ -1,5 +1,13 @@
 // The Connection the ZoteroReads handlers borrow, and its RcRef-backed provider.
-import { Context, Duration, Effect, Layer, RcRef, Ref } from "effect";
+import {
+  Context,
+  Duration,
+  Effect,
+  Layer,
+  Predicate,
+  RcRef,
+  Ref,
+} from "effect";
 import type { Stream } from "effect";
 import type { Scope } from "effect";
 
@@ -193,7 +201,7 @@ export const makeClientRef = Effect.fnUntraced(function* (
   const ref = yield* RcRef.make({
     acquire: Effect.acquireRelease(
       Ref.getAndSet(staged, null).pipe(
-        Effect.flatMap((next) => (next ? Effect.succeed(next) : fallback)),
+        Effect.filterOrElse(Predicate.isNotNull, () => fallback),
       ),
       (open) => open.close,
     ),

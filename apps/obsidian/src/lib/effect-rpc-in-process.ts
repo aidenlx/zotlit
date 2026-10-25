@@ -1,5 +1,5 @@
 // A scoped, cloned protocol pair shared by the in-process RPC adapters.
-import { Effect, Option, Queue, Schema } from "effect";
+import { Effect, Queue, Schema } from "effect";
 import { RpcClient, RpcServer } from "effect/rpc";
 import type { RpcMessage, RpcSerialization } from "effect/rpc";
 
@@ -32,7 +32,7 @@ export const makeInMemoryRpcProtocols = Effect.gen(function* () {
         Effect.suspend(() => toClient(structuredClone(response))),
       end: () => Effect.void,
       clientIds: Effect.succeed(new Set([CLIENT_ID])),
-      initialMessage: Effect.succeed(Option.none()),
+      initialMessage: Effect.succeedNone,
       supportsAck: true,
       supportsTransferables: false,
       supportsSpanPropagation: false,

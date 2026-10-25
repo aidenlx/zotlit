@@ -4973,7 +4973,7 @@ function makeSettings(
     },
   };
   return {
-    current: Effect.sync(() => current),
+    current: Effect.succeed(current),
     update: (patch) =>
       Effect.sync(() => {
         Object.assign(

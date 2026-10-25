@@ -226,12 +226,11 @@ export async function setup(
     },
   };
   const readsService = stubService<ZoteroReads["Service"]>("ZoteroReads", {
-    snapshot: Effect.acquireRelease(
+    snapshot: Effect.acquireDisposable(
       Effect.tryPromise({
         try: () => acquireRead(),
         catch: (error) => error,
       }),
-      (lease) => Effect.promise(() => lease[Symbol.asyncDispose]()),
     ).pipe(
       Effect.map((lease) => lease.reads),
     ) as ZoteroReads["Service"]["snapshot"],

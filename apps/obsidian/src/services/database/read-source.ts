@@ -575,9 +575,7 @@ const createSnapshotDir = Effect.fnUntraced(function* (
         ),
       ),
     ),
-    Effect.catch((cause) =>
-      Effect.fail(new SnapshotParentError(parent, cause)),
-    ),
+    Effect.mapError((cause) => new SnapshotParentError(parent, cause)),
   );
 });
 

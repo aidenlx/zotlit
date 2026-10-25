@@ -435,7 +435,7 @@ export function decodeCliParams<TSchema extends CliSchema>(
     const variant: CliParamsSchema = isVariants(schema)
       ? schema.variants[schema.kindOf(params)]!
       : (schema as CliParamsSchema);
-    const decoded = Schema.decodeUnknownEffect(variant)(params, {
+    const decoded = Schema.decodeEffect(variant)(params, {
       errors: "first",
       reportInput: true,
     }) as Effect.Effect<CliOutput<TSchema>, Schema.SchemaError>;
