@@ -3,9 +3,7 @@ import { Effect, Result } from "effect";
 import type { CliData } from "obsidian";
 
 import type { CitationVariant, ContractRoot } from "@zotlit/db";
-import type { FrontmatterLanguage } from "@zotlit/templates/constants";
 import { LiteratureNoteTemplateError } from "@zotlit/templates/facade";
-import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 import {
   ContractMetadataError,
   serializeTemplateData,
@@ -114,55 +112,8 @@ interface TemplateWorkbenchDeps {
     | "javascriptTemplatesEnabled"
     | "compileErrors"
     | "getTemplateFileStatuses"
-    | "getCitationTemplateStatus"
-    | "getPartialDocument"
-    | "render"
-    | "renderFilename"
-    | "renderCitationData"
     | "waitUntilSettled"
-    | "analyzeRootVariables"
-    | "getTemplateSource"
   >;
-  frontmatter: {
-    /**
-     * Configured Managed Frontmatter fields in configuration order, the keys
-     * left inert by the JavaScript Templates gate, and the gate's current
-     * state. Non-throwing counterpart to the plugin's compiled-fields
-     * accessor, which throws when any field is inert.
-     */
-    read: Effect.Effect<{
-      fields: readonly FrontmatterField[];
-      inertKeys: readonly string[];
-      javascriptTemplatesEnabled: boolean;
-    }>;
-    /**
-     * Evaluate `fields` over `zt`, gate-aware: a `"javascript"` field is
-     * skipped (never compiled) while the gate is off, its key reported in
-     * `inertKeys` rather than `values`/`errors`. Non-throwing counterpart to
-     * the plugin's frontmatter write path, for `frontmatter-eval`.
-     */
-    evaluate: (
-      fields: readonly FrontmatterField[],
-      zt: object,
-    ) => Effect.Effect<{
-      values: Readonly<Record<string, unknown>>;
-      errors: Readonly<Record<string, string>>;
-      inertKeys: readonly string[];
-    }>;
-    /** Compile-check a single ad-hoc expression; `null` when it compiles. */
-    validateExpr: (
-      expr: string,
-      language: FrontmatterLanguage,
-    ) => Effect.Effect<string | null>;
-    /**
-     * Upsert `fields` through the plugin's settings service, so the settings
-     * modal, compilation lifecycle, and sync all observe the change. Callers
-     * validate the candidate list (reserved keys, non-empty, compile-checked)
-     * before calling; this never receives — and so never stores — a field the
-     * settings modal would have refused.
-     */
-    write: (fields: readonly FrontmatterField[]) => Effect.Effect<void>;
-  };
   literatureNotes?: {
     readProfiles: Effect.Effect<{
       defaultProfile:
