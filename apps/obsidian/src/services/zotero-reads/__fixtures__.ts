@@ -1,6 +1,6 @@
 /** The real service and adapter over a test's scoped RPC transport. */
 import { Context, Effect, Layer, Stream } from "effect";
-import type { Scope } from "effect";
+import type { ManagedRuntime, Scope } from "effect";
 import { RpcSchema } from "effect/rpc";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -45,7 +45,7 @@ async function openReads(
 /** Legacy consumer fixtures can construct synchronously; only the test owner awaits ready. */
 export type TestReads = PlainZoteroReads &
   AsyncDisposable & {
-    runtime: import("@/lib/effect-stream").SubscriptionRuntime;
+    runtime: ManagedRuntime.ManagedRuntime<ZoteroReads, never>;
     ready: Promise<{ reads: ZoteroReadsApi; client: ZoteroReadsApi }>;
   };
 

@@ -10,6 +10,7 @@ import type { FileMenuSegment } from "@/services/file-menu";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { PluginSettings } from "@/services/settings/service";
+import type { TemplateDataLoader } from "@/services/template-workbench/data";
 import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
@@ -52,6 +53,7 @@ export interface ExplorerRegistrationDeps {
     PlainTemplate,
     "javascriptTemplatesEnabled" | "render" | "renderCitation"
   >;
+  templateData: TemplateDataLoader;
 }
 
 export function registerTemplateDataExplorer(

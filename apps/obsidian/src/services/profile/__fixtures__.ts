@@ -15,12 +15,15 @@ import { layerTemplate } from "@/services/template/service";
 import { plainProfile } from "./plain";
 import { layerProfile } from "./service";
 
-/** The real Profile dependency graph over the fake Obsidian host. */
+/**
+ * The real Profile dependency graph over the fake Obsidian host, with the
+ * capability tags it reads.
+ */
 export function profileOver(host: ReturnType<typeof createTemplateHost>) {
   return layerProfile.pipe(
     Layer.provideMerge(Layer.mergeAll(layerTemplate, layerNoteIndex)),
     Layer.provideMerge(layerPluginSettings(host.plugin)),
-    Layer.provide(layerHostApp(host.app)),
+    Layer.provideMerge(layerHostApp(host.app)),
   );
 }
 

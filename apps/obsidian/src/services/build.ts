@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { FileSystemAdapter } from "obsidian";
 
 import { cliRunner } from "@/lib/cli-command";
@@ -81,6 +82,8 @@ import { plainQueryClients } from "./query-client/plain";
 import { Release } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import { PluginSettings } from "./settings/service";
+import { bindTemplateData } from "./template-workbench/data-handle";
+import type { TemplateDataHandleServices } from "./template-workbench/data-handle";
 import { loadLiteratureNoteTemplateMigrationData } from "./template/migration";
 import type { TemplateMigrationOptions } from "./template/migration";
 import { plainTemplate, plainTemplateMigration } from "./template/plain";
@@ -381,27 +384,17 @@ export async function buildServices(
         }),
     })
     .useValue({
-      templateMigration: ({
-        zoteroReads,
-        noteIndex,
-        settings,
-        template,
-        zoteroPref,
-      }) => {
+      templateData: () =>
+        bindTemplateData(
+          bridge,
+          runtime.runSync(Effect.context<TemplateDataHandleServices>()),
+        ),
+    })
+    .useValue({
+      templateMigration: ({ settings, templateData }) => {
         bindMigration({
           loadVerificationData: (options) =>
-            loadLiteratureNoteTemplateMigrationData(
-              {
-                app: plugin.app,
-                zoteroReads,
-                libraryScope: libraryScopeService,
-                noteIndex,
-                settings,
-                templates: template,
-                zoteroPref,
-              },
-              options,
-            ),
+            loadLiteratureNoteTemplateMigrationData({ templateData }, options),
           openPrompt: () => openWelcomeView(plugin.app, settings, bridge),
         });
         return plainTemplateMigration(runtime);
@@ -456,21 +449,16 @@ export async function buildServices(
       createProfile: ({
         profile,
         template,
-        zoteroReads,
-        noteIndex,
+        templateData,
         zoteroPref,
-        settings,
         noteFeature,
       }) =>
         createProfileCreator({
           app: plugin.app,
           profile,
           template,
-          zoteroReads,
-          noteIndex,
+          templateData,
           zoteroPref,
-          settings,
-          libraryScope: libraryScopeService,
           noteFeature,
         }),
     })
@@ -478,21 +466,16 @@ export async function buildServices(
       importProfile: ({
         profile,
         template,
-        zoteroReads,
-        noteIndex,
+        templateData,
         zoteroPref,
-        settings,
         noteFeature,
       }) =>
         createProfileImporter({
           app: plugin.app,
           profile,
           template,
-          zoteroReads,
-          noteIndex,
+          templateData,
           zoteroPref,
-          settings,
-          libraryScope: libraryScopeService,
           noteFeature,
         }),
     })

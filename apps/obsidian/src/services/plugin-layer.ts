@@ -99,6 +99,7 @@ import type { Release } from "./release/service";
 import { layerPluginSettings } from "./settings/service";
 import type { PluginSettings } from "./settings/service";
 import { startingAs } from "./startup-failure";
+import { layerTemplateWorkbenchCli } from "./template-workbench/register";
 import { layerCitationTemplateActions } from "./template/actions";
 import { layerTemplateMigration } from "./template/migration";
 import type {
@@ -322,6 +323,7 @@ export function pluginLayer(
       ? layerQueryMeasureCli.pipe(startingAs("QueryMeasureCli"))
       : Layer.empty,
     layerReleaseActions.pipe(startingAs("ReleaseActions")),
+    layerTemplateWorkbenchCli.pipe(startingAs("TemplateWorkbenchCli")),
     layerWikilinkEditor.pipe(startingAs("WikilinkEditor")),
     layerWikilinkReading.pipe(startingAs("WikilinkReading")),
   ).pipe(Layer.provide(Layer.mergeAll(layerPluginHost(plugin), obsidian)));

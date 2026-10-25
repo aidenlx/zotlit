@@ -2,21 +2,123 @@ import { it } from "@effect/vitest";
 import { Cause, Effect, Exit } from "effect";
 import { describe, expect, vi } from "vitest";
 
+import type { CitationTemplateData, TemplateSlot } from "@zotlit/db";
 import { rowInstant } from "@zotlit/db/test-utils";
+import type { FrontmatterLanguage } from "@zotlit/templates/constants";
+import type { RootVariableUse } from "@zotlit/templates/facade";
+import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 import {
   ContractMetadataError,
   markInertPlaceholder,
 } from "@zotlit/workbench/explorer";
 
-import type { CompileError } from "@/services/template/service";
+import type {
+  CitationTemplateStatus,
+  CompileError,
+  SettleOutcome,
+  SharedPartialDocument,
+  TemplateFileStatus,
+} from "@/services/template/service";
 
 import {
-  createTemplateWorkbenchHandlers,
+  createTemplateWorkbenchHandlers as createHandlers,
   TEMPLATE_DATA_COMMAND,
   TEMPLATE_GUIDE_COMMAND,
   TEMPLATE_STATUS_COMMAND,
 } from "./cli";
 import { CONTRACT_VERSION, DIAGNOSTIC_HINTS } from "./envelope";
+import type { WorkbenchIdentity } from "./envelope";
+import type { InspectionNote } from "./inspect";
+
+type Deps = Parameters<typeof createHandlers>[0];
+
+/** The handlers' ports, each faked as the plain call it reads. */
+interface PlainDeps extends Omit<
+  Deps,
+  "getIdentity" | "selectNote" | "templates" | "frontmatter"
+> {
+  getIdentity: () => WorkbenchIdentity | Promise<WorkbenchIdentity>;
+  selectNote: (name: string) => Promise<InspectionNote>;
+  templates: {
+    readonly javascriptTemplatesEnabled: boolean;
+    readonly compileErrors: ReadonlyMap<string, CompileError>;
+    getTemplateFileStatuses: () => readonly TemplateFileStatus[];
+    getCitationTemplateStatus: () => CitationTemplateStatus;
+    getPartialDocument: (name: string) => SharedPartialDocument | null;
+    render: (name: string, data: object) => string;
+    renderFilename: (data: object) => string;
+    renderCitationData: (data: CitationTemplateData) => string;
+    waitUntilSettled: (timeoutMs: number) => Promise<SettleOutcome>;
+    analyzeRootVariables: (name: string) => RootVariableUse[] | null;
+    getTemplateSource: (name: TemplateSlot) => Promise<string>;
+  };
+  frontmatter: {
+    read: () => {
+      fields: readonly FrontmatterField[];
+      inertKeys: readonly string[];
+      javascriptTemplatesEnabled: boolean;
+    };
+    evaluate: (
+      fields: readonly FrontmatterField[],
+      zt: object,
+    ) => {
+      values: Readonly<Record<string, unknown>>;
+      errors: Readonly<Record<string, string>>;
+      inertKeys: readonly string[];
+    };
+    validateExpr: (
+      expr: string,
+      language: FrontmatterLanguage,
+    ) => string | null;
+    write: (fields: readonly FrontmatterField[]) => void;
+  };
+}
+
+/**
+ * The handlers over plain fakes, each lifted to the Effect port it fakes: a
+ * sync fake runs when the port runs, and an async one is awaited.
+ */
+function createTemplateWorkbenchHandlers(deps: PlainDeps) {
+  const { templates, frontmatter } = deps;
+  return createHandlers({
+    ...deps,
+    getIdentity: Effect.promise(async () => deps.getIdentity()),
+    selectNote: (name) => Effect.promise(() => deps.selectNote(name)),
+    templates: {
+      javascriptTemplatesEnabled: Effect.sync(
+        () => templates.javascriptTemplatesEnabled,
+      ),
+      compileErrors: Effect.sync(() => templates.compileErrors),
+      getTemplateFileStatuses: Effect.sync(() =>
+        templates.getTemplateFileStatuses(),
+      ),
+      getCitationTemplateStatus: Effect.sync(() =>
+        templates.getCitationTemplateStatus(),
+      ),
+      getPartialDocument: (name) =>
+        Effect.sync(() => templates.getPartialDocument(name)),
+      render: (name, data) => Effect.sync(() => templates.render(name, data)),
+      renderFilename: (data) =>
+        Effect.sync(() => templates.renderFilename(data)),
+      renderCitationData: (data) =>
+        Effect.sync(() => templates.renderCitationData(data)),
+      waitUntilSettled: (timeoutMs) =>
+        Effect.promise(() => templates.waitUntilSettled(timeoutMs)),
+      analyzeRootVariables: (name) =>
+        Effect.sync(() => templates.analyzeRootVariables(name)),
+      getTemplateSource: (name) =>
+        Effect.promise(() => templates.getTemplateSource(name)),
+    },
+    frontmatter: {
+      read: Effect.sync(() => frontmatter.read()),
+      evaluate: (fields, zt) =>
+        Effect.sync(() => frontmatter.evaluate(fields, zt)),
+      validateExpr: (expr, language) =>
+        Effect.sync(() => frontmatter.validateExpr(expr, language)),
+      write: (fields) => Effect.sync(() => frontmatter.write(fields)),
+    },
+  });
+}
 
 const PLUGIN_VERSION = "1.2.3";
 const IDENTITY = {

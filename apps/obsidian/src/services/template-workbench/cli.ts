@@ -2,15 +2,9 @@
 import { Effect, Result } from "effect";
 import type { CliData } from "obsidian";
 
-import type {
-  CitationTemplateData,
-  CitationVariant,
-  ContractRoot,
-  TemplateSlot,
-} from "@zotlit/db";
+import type { CitationVariant, ContractRoot } from "@zotlit/db";
 import type { FrontmatterLanguage } from "@zotlit/templates/constants";
 import { LiteratureNoteTemplateError } from "@zotlit/templates/facade";
-import type { RootVariableUse } from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 import {
   ContractMetadataError,
@@ -27,13 +21,10 @@ import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/b
 import type { ProfileDiagnostic } from "@/services/profile/service";
 import { InertTemplateError } from "@/services/template/errors";
 import type {
-  CitationTemplateStatus,
-  CompileError,
   LiteratureNoteTemplateStatus,
   ResolvedLiteratureNoteTemplate,
   SettleOutcome,
-  SharedPartialDocument,
-  TemplateFileStatus,
+  Template,
 } from "@/services/template/service";
 
 import type {
@@ -62,7 +53,7 @@ import type {
   WorkbenchIdentity,
 } from "./envelope";
 import { renderGuide } from "./guide";
-import type { selectInspectionNote } from "./inspect";
+import type { InspectionNote } from "./inspect";
 import { INSPECT_DIAGNOSTICS } from "./inspect-contract";
 import {
   parseDataRequest,
@@ -71,6 +62,7 @@ import {
   parseStatusRequest,
   targetMismatch,
 } from "./request";
+import { templateRead } from "./sync-template";
 
 export type { WorkbenchIdentity } from "./envelope";
 
@@ -104,10 +96,8 @@ const DEFAULT_SETTLE_TIMEOUT_MS = 5_000;
 interface TemplateWorkbenchDeps {
   /** The installed ZotLit version, reported by the status command. */
   pluginVersion: string;
-  getIdentity: () => WorkbenchIdentity | Promise<WorkbenchIdentity>;
-  selectNote: (
-    name: string,
-  ) => Promise<ReturnType<typeof selectInspectionNote>>;
+  getIdentity: Effect.Effect<WorkbenchIdentity>;
+  selectNote: (name: string) => Effect.Effect<InspectionNote>;
   loadData: (
     indexedKey: string,
     root: ContractRoot,
@@ -119,19 +109,20 @@ interface TemplateWorkbenchDeps {
     variant: CitationVariant,
   ) => Effect.Effect<CitationDataLoadResult, TemplateDataError>;
   settleTimeoutMs?: number;
-  templates: {
-    readonly javascriptTemplatesEnabled: boolean;
-    readonly compileErrors: ReadonlyMap<string, CompileError>;
-    getTemplateFileStatuses: () => readonly TemplateFileStatus[];
-    getCitationTemplateStatus: () => CitationTemplateStatus;
-    getPartialDocument: (name: string) => SharedPartialDocument | null;
-    render: (name: string, data: object) => string;
-    renderFilename: (data: object) => string;
-    renderCitationData: (data: CitationTemplateData) => string;
-    waitUntilSettled: (timeoutMs: number) => Promise<SettleOutcome>;
-    analyzeRootVariables: (name: string) => RootVariableUse[] | null;
-    getTemplateSource: (name: TemplateSlot) => Promise<string>;
-  };
+  templates: Pick<
+    Template["Service"],
+    | "javascriptTemplatesEnabled"
+    | "compileErrors"
+    | "getTemplateFileStatuses"
+    | "getCitationTemplateStatus"
+    | "getPartialDocument"
+    | "render"
+    | "renderFilename"
+    | "renderCitationData"
+    | "waitUntilSettled"
+    | "analyzeRootVariables"
+    | "getTemplateSource"
+  >;
   frontmatter: {
     /**
      * Configured Managed Frontmatter fields in configuration order, the keys
@@ -139,11 +130,11 @@ interface TemplateWorkbenchDeps {
      * state. Non-throwing counterpart to the plugin's compiled-fields
      * accessor, which throws when any field is inert.
      */
-    read: () => {
+    read: Effect.Effect<{
       fields: readonly FrontmatterField[];
       inertKeys: readonly string[];
       javascriptTemplatesEnabled: boolean;
-    };
+    }>;
     /**
      * Evaluate `fields` over `zt`, gate-aware: a `"javascript"` field is
      * skipped (never compiled) while the gate is off, its key reported in
@@ -153,16 +144,16 @@ interface TemplateWorkbenchDeps {
     evaluate: (
       fields: readonly FrontmatterField[],
       zt: object,
-    ) => {
+    ) => Effect.Effect<{
       values: Readonly<Record<string, unknown>>;
       errors: Readonly<Record<string, string>>;
       inertKeys: readonly string[];
-    };
+    }>;
     /** Compile-check a single ad-hoc expression; `null` when it compiles. */
     validateExpr: (
       expr: string,
       language: FrontmatterLanguage,
-    ) => string | null;
+    ) => Effect.Effect<string | null>;
     /**
      * Upsert `fields` through the plugin's settings service, so the settings
      * modal, compilation lifecycle, and sync all observe the change. Callers
@@ -170,10 +161,10 @@ interface TemplateWorkbenchDeps {
      * before calling; this never receives — and so never stores — a field the
      * settings modal would have refused.
      */
-    write: (fields: readonly FrontmatterField[]) => void;
+    write: (fields: readonly FrontmatterField[]) => Effect.Effect<void>;
   };
   literatureNotes?: {
-    readProfiles: () => {
+    readProfiles: Effect.Effect<{
       defaultProfile:
         | {
             readonly document?: string;
@@ -187,20 +178,24 @@ interface TemplateWorkbenchDeps {
         readonly document?: string;
         readonly bindings?: ResolvedLiteratureNoteProfileBindings;
       }[];
-    };
-    getDocumentStatuses: () => readonly LiteratureNoteTemplateStatus[];
+    }>;
+    getDocumentStatuses: Effect.Effect<readonly LiteratureNoteTemplateStatus[]>;
+    /** The installed document `reference` names; fails with what it threw. */
     getDocument: (
       reference: string,
-    ) =>
+    ) => Effect.Effect<
       | Pick<
           ResolvedLiteratureNoteTemplate,
           "renderForCreate" | "renderForUpdate"
         >
-      | undefined;
+      | undefined,
+      unknown
+    >;
+    /** The document `source` rendered over `data`; fails with what it threw. */
     renderSource: (
       source: string,
       data: object,
-    ) => { create: string; update: string | null };
+    ) => Effect.Effect<{ create: string; update: string | null }, unknown>;
   };
 }
 
@@ -224,9 +219,9 @@ export function createTemplateWorkbenchHandlers(
       ? notSettledDiagnostic(settleTimeoutMs)
       : initFailedDiagnostic();
 
-  const getIdentity = () => Effect.promise(async () => deps.getIdentity());
+  const getIdentity = () => deps.getIdentity;
   const waitUntilSettled = () =>
-    Effect.promise(() => deps.templates.waitUntilSettled(settleTimeoutMs));
+    templateRead(deps.templates.waitUntilSettled(settleTimeoutMs));
 
   /**
    * The preamble both item-backed commands share: parse the selector, resolve
@@ -286,10 +281,14 @@ export function createTemplateWorkbenchHandlers(
           ok: true,
           pluginVersion: deps.pluginVersion,
           identity: yield* getIdentity(),
-          javascriptTemplatesEnabled: deps.templates.javascriptTemplatesEnabled,
-          templates: deps.templates.getTemplateFileStatuses(),
+          javascriptTemplatesEnabled: yield* templateRead(
+            deps.templates.javascriptTemplatesEnabled,
+          ),
+          templates: yield* templateRead(
+            deps.templates.getTemplateFileStatuses,
+          ),
           ...(deps.literatureNotes
-            ? literatureNoteAuthoringState(deps.literatureNotes)
+            ? yield* literatureNoteAuthoringState(deps.literatureNotes)
             : {}),
         });
       },
@@ -305,7 +304,7 @@ export function createTemplateWorkbenchHandlers(
           let noteContext: { note: string; profile: string } | undefined;
           if ("note" in request) {
             const note = request.note;
-            const selected = yield* Effect.promise(() => deps.selectNote(note));
+            const selected = yield* deps.selectNote(note);
             if (selected.error) {
               const problem = INSPECT_DIAGNOSTICS[selected.error];
               return envelope(TEMPLATE_DATA_COMMAND, {
@@ -397,7 +396,9 @@ export function createTemplateWorkbenchHandlers(
               ...echoed,
               diagnostic: templateFaultDiagnostic(error, {
                 template: null,
-                compileErrors: deps.templates.compileErrors,
+                compileErrors: yield* templateRead(
+                  deps.templates.compileErrors,
+                ),
               }),
             });
           }
@@ -447,10 +448,13 @@ export function createTemplateWorkbenchHandlers(
             });
           }
 
-          let render: (data: object) => {
-            create: string;
-            update: string | null;
-          };
+          let render: (data: object) => Effect.Effect<
+            {
+              create: string;
+              update: string | null;
+            },
+            unknown
+          >;
           let document: { name: string; source?: string };
           if ("source" in request) {
             document = { name: "source", source: request.source };
@@ -460,7 +464,10 @@ export function createTemplateWorkbenchHandlers(
             const reference =
               "document" in request
                 ? request.document
-                : profileDocumentReference(literatureNotes, request.profile);
+                : yield* profileDocumentReference(
+                    literatureNotes,
+                    request.profile,
+                  );
             if (typeof reference !== "string") {
               return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
                 ok: false,
@@ -470,14 +477,14 @@ export function createTemplateWorkbenchHandlers(
             }
             document = { name: reference };
             const lookup = yield* Effect.result(
-              Effect.try(() => literatureNotes.getDocument(reference)),
+              literatureNotes.getDocument(reference),
             );
             if (Result.isFailure(lookup)) {
               return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
                 ok: false,
                 ...echoed,
                 diagnostic: literatureNoteDocumentDiagnostic(
-                  lookup.failure.cause,
+                  lookup.failure,
                   document,
                 ),
               });
@@ -490,10 +497,11 @@ export function createTemplateWorkbenchHandlers(
                 diagnostic: documentNotFoundDiagnostic(reference),
               });
             }
-            render = (data) => ({
-              create: resolved.renderForCreate(data),
-              update: resolved.renderForUpdate(data),
-            });
+            render = (data) =>
+              Effect.try(() => ({
+                create: resolved.renderForCreate(data),
+                update: resolved.renderForUpdate(data),
+              })).pipe(Effect.mapError(({ cause }) => cause));
           }
 
           const result = yield* loadFailure(deps.loadData(request.key, "note"));
@@ -504,15 +512,13 @@ export function createTemplateWorkbenchHandlers(
               diagnostic: dataLoadDiagnostic(result, request.key),
             });
           }
-          const rendered = yield* Effect.result(
-            Effect.try(() => render(result.data)),
-          );
+          const rendered = yield* Effect.result(render(result.data));
           if (Result.isFailure(rendered)) {
             return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
               ok: false,
               ...echoed,
               diagnostic: literatureNoteDocumentDiagnostic(
-                rendered.failure.cause,
+                rendered.failure,
                 document,
               ),
             });
@@ -546,14 +552,14 @@ const answerRejection = (command: WorkbenchCommand) =>
     envelope(command, { ok: false, diagnostic: rejectionDiagnostic(rejected) }),
   );
 
-function literatureNoteAuthoringState(
+const literatureNoteAuthoringState = Effect.fnUntraced(function* (
   literatureNotes: NonNullable<TemplateWorkbenchDeps["literatureNotes"]>,
-): {
+): Effect.fn.Return<{
   profiles: readonly LiteratureNoteProfileRow[];
   documents: readonly LiteratureNoteDocumentRow[];
   profileDiagnostics: readonly ProfileDiagnostic[];
-} {
-  const state = literatureNotes.readProfiles();
+}> {
+  const state = yield* literatureNotes.readProfiles;
   const profiles: LiteratureNoteProfileRow[] = [
     ...(state.defaultProfile
       ? [
@@ -573,7 +579,7 @@ function literatureNoteAuthoringState(
     })),
   ];
   const documents = new Map<string, LiteratureNoteDocumentRow>();
-  for (const status of literatureNotes.getDocumentStatuses()) {
+  for (const status of yield* literatureNotes.getDocumentStatuses) {
     documents.set(
       status.reference,
       status.validation.state === "valid"
@@ -614,15 +620,15 @@ function literatureNoteAuthoringState(
       a.reference.localeCompare(b.reference),
     ),
   };
-}
+});
 
 /** Parse a `--profile` argument's text, then resolve its document reference. */
-function profileDocumentReference(
+const profileDocumentReference = Effect.fnUntraced(function* (
   literatureNotes: NonNullable<TemplateWorkbenchDeps["literatureNotes"]>,
   text: string,
-): string | Diagnostic {
+): Effect.fn.Return<string | Diagnostic> {
   const selector = parseProfileSelector(text);
-  const state = literatureNotes.readProfiles();
+  const state = yield* literatureNotes.readProfiles;
   const found =
     selector === undefined
       ? undefined
@@ -642,7 +648,7 @@ function profileDocumentReference(
     );
   }
   return found.document;
-}
+});
 
 function documentNotFoundDiagnostic(reference: string): Diagnostic {
   return diagnostic(

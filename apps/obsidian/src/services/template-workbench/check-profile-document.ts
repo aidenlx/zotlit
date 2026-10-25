@@ -9,12 +9,15 @@ import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
 import { serializeTemplateData } from "@zotlit/workbench/explorer";
 import type { RenderCallerSource } from "@zotlit/workbench/render";
 
+import { Vault } from "@/lib/obsidian-vault";
 import {
   parseProfileSelector,
   PROFILE_ID_LENGTH,
   PROFILE_ID_RULE,
 } from "@/lib/profile-stamp";
-import { bindDraftProfile } from "@/services/profile/service";
+import { bindDraftProfile, Profile } from "@/services/profile/service";
+import { PluginSettings } from "@/services/settings/service";
+import { Template } from "@/services/template/service";
 import {
   checkDiagnostic,
   checkNativeProfile,
@@ -24,13 +27,19 @@ import type { ProfileCheck } from "@/views/note-preview/check-profile";
 
 import type {
   CheckOutcome,
+  CheckServices,
   InspectedSource,
   ProfileCheckBranch,
 } from "./check";
 import { attempt, CheckSourceThrew, thrown } from "./check-plain-document";
-import { readTemplateData, withSelectedNote } from "./data";
-import type { TemplateDataDeps } from "./data";
+import { readTemplateData, withSelectedNote, withSettings } from "./data";
 import { sourceRevision } from "./inspect";
+import {
+  profileCall,
+  syncTemplate,
+  templateCall,
+  templateRead,
+} from "./sync-template";
 
 /** The refusal a Template Draft identity that fails the Profile ID rule carries. */
 export const INVALID_PROFILE_ID = "INVALID_PROFILE_ID";
@@ -39,18 +48,16 @@ export const INVALID_PROFILE_ID = "INVALID_PROFILE_ID";
 export const PROFILE_ID_MISMATCH = "PROFILE_ID_MISMATCH";
 
 /** The data of one root, failing with what failed to read or build it. */
-const loadRoot = (
-  data: TemplateDataDeps,
-  key: string,
-  root: "note" | "filename" | "annotation",
-) =>
-  readTemplateData(data, key, root).pipe(Effect.mapError(({ cause }) => cause));
+const loadRoot = (key: string, root: "note" | "filename" | "annotation") =>
+  readTemplateData(key, root).pipe(Effect.mapError(({ cause }) => cause));
+
+/** A failure the check reports as what the source or a Template threw. */
+const threw = (cause: unknown) => new CheckSourceThrew({ cause });
 
 /** Checks a Profile document or Profile draft, and returns the answer. */
 export const checkProfileDocument = Effect.fn(
   "TemplateWorkbenchCli.checkProfileDocument",
 )(function* ({
-  deps,
   params,
   draft,
   inspect,
@@ -60,7 +67,7 @@ export const checkProfileDocument = Effect.fn(
   source,
   context,
   attachReport,
-}: ProfileCheckBranch): Effect.fn.Return<CheckOutcome> {
+}: ProfileCheckBranch): Effect.fn.Return<CheckOutcome, never, CheckServices> {
   let profileContext = context;
   const checks: Record<string, ProfileCheck> = Object.fromEntries(
     ["structure", ...PROFILE_OUTPUTS].map((name) => [
@@ -73,7 +80,8 @@ export const checkProfileDocument = Effect.fn(
   // Template it runs reported it.
   return yield* Effect.gen(function* (): Effect.fn.Return<
     CheckOutcome,
-    unknown
+    unknown,
+    CheckServices
   > {
     const parsed = yield* attempt(() => parseLiteratureNoteTemplate(source));
     if (
@@ -107,8 +115,9 @@ export const checkProfileDocument = Effect.fn(
       language: parsed.manifest.language ?? "liquid",
       profileId: parsed.manifest.id,
     };
+    const template = yield* Template;
     if (
-      !deps.templates.javascriptTemplatesEnabled &&
+      !(yield* templateRead(template.javascriptTemplatesEnabled)) &&
       (parsed.manifest.language === "eta" ||
         parsed.manifest.frontmatter?.some((entry) => "js" in entry))
     ) {
@@ -162,9 +171,9 @@ export const checkProfileDocument = Effect.fn(
         },
       };
     }
-    const document = yield* attempt(() =>
-      deps.templates.prepareLiteratureNoteTemplateSource(source),
-    );
+    const document = yield* templateCall(
+      template.prepareLiteratureNoteTemplateSource(source),
+    ).pipe(Effect.mapError((cause) => threw(cause)));
     const selector = parseProfileSelector(document.manifest.id ?? "default");
     if (draft && selector === undefined)
       return {
@@ -182,14 +191,19 @@ export const checkProfileDocument = Effect.fn(
           },
         },
       };
-    const settings = draft ? yield* deps.data.settings.current : undefined;
-    const profile = yield* attempt(() =>
+    const settings = draft
+      ? yield* PluginSettings.use((service) => service.current)
+      : undefined;
+    const profile =
       selector === undefined
         ? undefined
         : settings
-          ? bindDraftProfile(settings, selector, document.manifest)
-          : deps.profile.resolveProfile(selector),
-    );
+          ? yield* attempt(() =>
+              bindDraftProfile(settings, selector, document.manifest),
+            )
+          : yield* profileCall((yield* Profile).resolveProfile(selector)).pipe(
+              Effect.mapError((cause) => threw(cause)),
+            );
     if (!profile)
       return yield* new CheckSourceThrew({
         cause: new Error("The saved Profile does not resolve."),
@@ -232,21 +246,17 @@ export const checkProfileDocument = Effect.fn(
         label: profile.label ?? "Default",
       },
     };
-    const profileData = {
-      ...deps.data,
-      settings: { current: Effect.succeed(profile.settings) },
-    };
     const baseline = profileContext.baseline;
-    const data = baseline?.path
-      ? withSelectedNote(profileData, {
-          key: profileContext.itemKey,
-          path: baseline.path,
-        })
-      : profileData;
+    const selectedNote = baseline?.path
+      ? withSelectedNote({ key: profileContext.itemKey, path: baseline.path })
+      : <A, E, R>(effect: Effect.Effect<A, E, R>) => effect;
+    // Data reads the Profile's settings, and the baseline's note for its item.
+    const load = (key: string, root: "note" | "filename" | "annotation") =>
+      loadRoot(key, root).pipe(withSettings(profile.settings), selectedNote);
     const [note, filename] = yield* Effect.all(
       [
-        loadRoot(data, params.key as string, "note"),
-        loadRoot(data, params.key as string, "filename"),
+        load(params.key as string, "note"),
+        load(params.key as string, "filename"),
       ],
       { concurrency: "unbounded" },
     );
@@ -268,7 +278,7 @@ export const checkProfileDocument = Effect.fn(
       (annotation) => {
         const key = annotation.indexedKey;
         return Effect.gen(function* () {
-          const loaded = yield* loadRoot(data, key, "annotation");
+          const loaded = yield* load(key, "annotation");
           if (loaded.kind !== "data")
             return {
               key,
@@ -293,10 +303,11 @@ export const checkProfileDocument = Effect.fn(
       },
       { concurrency: "unbounded" },
     );
+    const templates = yield* syncTemplate;
     Object.assign(
       checks,
       yield* attempt(() =>
-        checkNativeProfile(deps.templates, {
+        checkNativeProfile(templates, {
           document,
           profile,
           source,
@@ -309,12 +320,12 @@ export const checkProfileDocument = Effect.fn(
     );
     const after = JSON.parse(yield* inspect(inspectRequest)) as InspectedSource;
     if (baseline?.kind === "real") {
-      const file = deps.app.vault.getFileByPath(baseline.path!);
+      const vault = yield* Vault;
+      const file = yield* vault.getFileByPath(baseline.path!);
       const current = file
-        ? yield* Effect.tryPromise({
-            try: () => deps.app.vault.read(file),
-            catch: (cause) => new CheckSourceThrew({ cause }),
-          })
+        ? yield* vault
+            .read(file)
+            .pipe(Effect.mapError(({ cause }) => threw(cause)))
         : undefined;
       if (current !== baseline.source)
         return {

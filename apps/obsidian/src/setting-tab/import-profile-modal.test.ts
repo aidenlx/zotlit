@@ -1,5 +1,4 @@
 import { ToggleComponent, controlsOf } from "@mock/obsidian";
-import { Effect } from "effect";
 // @vitest-environment happy-dom
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -17,10 +16,6 @@ import * as nativeDialog from "@/lib/require";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import type { PreparedProfileImport } from "@/services/profile/service";
-import {
-  inProcessReadsService,
-  memoryOpener,
-} from "@/services/zotero-reads/test-utils";
 
 import { ImportProfileModal, createProfileImporter } from "./profiles";
 import type { ImportProfileDeps, ProfileDialogServices } from "./profiles";
@@ -343,23 +338,10 @@ async function importerFixture(kind: "fresh" | "replace" = "fresh") {
       }),
     ),
   );
-  type ReadLease = Awaited<
-    ReturnType<ProfileDialogServices["zoteroReads"]["acquireRead"]>
-  >;
-  const reads = stack.use(inProcessReadsService(memoryOpener(() => "").open));
-  const releaseRead = vi.fn();
-  const acquireRead = vi.fn<
-    ProfileDialogServices["zoteroReads"]["acquireRead"]
-  >(async () => {
-    const lease = await reads.acquireRead();
-    return stubService<ReadLease>("ZoteroReadLease", {
-      reads: lease.reads,
-      [Symbol.asyncDispose]: async () => {
-        await lease[Symbol.asyncDispose]();
-        releaseRead();
-      },
-    });
-  });
+  // The preview reads one real item; the empty library has none.
+  const verificationData = vi.fn<
+    ProfileDialogServices["templateData"]["verificationData"]
+  >(async () => null);
   const opened = stack.use(
     vi.spyOn(Modal.prototype, "open").mockImplementation(function (
       this: Modal,
@@ -385,25 +367,13 @@ async function importerFixture(kind: "fresh" | "replace" = "fresh") {
           prepareProfileNote: f.deps.noteFeature.prepareProfileNote,
         },
       ),
-      zoteroReads: stubService<ProfileDialogServices["zoteroReads"]>(
-        "ZoteroReads",
-        { acquireRead },
-      ),
-      libraryScope: stubService<ProfileDialogServices["libraryScope"]>(
-        "LibraryScope",
-        {
-          resolveLibraries: () =>
-            Effect.succeed({
-              mode: "all",
-              invalid: false,
-              available: [],
-              unavailable: [],
-            }),
-        },
+      templateData: stubService<ProfileDialogServices["templateData"]>(
+        "TemplateData",
+        { verificationData },
       ),
       zoteroPref: stubService<ProfileDialogServices["zoteroPref"]>(
         "ZoteroPref",
-        { dataDir: undefined, baseAttachmentPath: undefined },
+        { dataDir: undefined },
       ),
     }),
   );
@@ -413,8 +383,7 @@ async function importerFixture(kind: "fresh" | "replace" = "fresh") {
     run,
     clipboard,
     showOpenDialog,
-    acquireRead,
-    releaseRead,
+    verificationData,
     opened,
     suggestions,
     [Symbol.asyncDispose]: () => cleanup.disposeAsync(),
@@ -427,7 +396,7 @@ it("offers two source suggestions and reads only after native close-before-choic
   await vi.waitFor(() => expect(f.suggestions).toHaveBeenCalledOnce());
   expect(f.clipboard).not.toHaveBeenCalled();
   expect(f.showOpenDialog).not.toHaveBeenCalled();
-  expect(f.acquireRead).not.toHaveBeenCalled();
+  expect(f.verificationData).not.toHaveBeenCalled();
   expect(f.opened).not.toHaveBeenCalled();
   const picker = f.suggestions.mock.instances[0] as SuggestModal<
     "clipboard" | "file"
@@ -445,8 +414,9 @@ it("offers two source suggestions and reads only after native close-before-choic
   await vi.waitFor(() => expect(f.opened).toHaveBeenCalledOnce());
   expect(f.clipboard).toHaveBeenCalledOnce();
   expect(f.prepareImport).toHaveBeenCalledWith("CLIPBOARD SOURCE", {});
-  expect(f.acquireRead).toHaveBeenCalledOnce();
-  expect(f.releaseRead).toHaveBeenCalledOnce();
+  expect(f.verificationData).toHaveBeenCalledExactlyOnceWith({
+    annotation: false,
+  });
   expect(f.opened.mock.instances[0]).toBeInstanceOf(ImportProfileModal);
   (f.opened.mock.instances[0] as ImportProfileModal).onClose();
   await expect(pending).resolves.toBeUndefined();
@@ -461,7 +431,7 @@ it("cancels the source suggester without reading or opening consent", async () =
   await expect(pending).resolves.toBeUndefined();
   expect(f.clipboard).not.toHaveBeenCalled();
   expect(f.showOpenDialog).not.toHaveBeenCalled();
-  expect(f.acquireRead).not.toHaveBeenCalled();
+  expect(f.verificationData).not.toHaveBeenCalled();
   expect(f.opened).not.toHaveBeenCalled();
 });
 
@@ -475,7 +445,7 @@ it.each([
     const pending = f.run({ source });
     await vi.waitFor(() => expect(f.opened).toHaveBeenCalledOnce());
     expect(f.suggestions).not.toHaveBeenCalled();
-    expect(f.acquireRead).not.toHaveBeenCalled();
+    expect(f.verificationData).not.toHaveBeenCalled();
     expect(f.prepareImport).toHaveBeenCalledWith(text, {});
     expect(f.showOpenDialog).toHaveBeenCalledTimes(dialogs);
     (f.opened.mock.instances[0] as ImportProfileModal).onClose();
@@ -496,7 +466,7 @@ it.each(["empty", "read-error", "file-cancel"] as const)(
       f.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] });
     await expect(f.run({ source })).resolves.toBeUndefined();
     expect(f.prepareImport).not.toHaveBeenCalled();
-    expect(f.acquireRead).not.toHaveBeenCalled();
+    expect(f.verificationData).not.toHaveBeenCalled();
     expect(f.opened).not.toHaveBeenCalled();
     expect(f.save).not.toHaveBeenCalled();
     const retry = f.run({ source });

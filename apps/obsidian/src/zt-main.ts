@@ -44,7 +44,6 @@ import { runBatchUpdateAll } from "./services/note-feature/update-batch";
 import { addProfileActions } from "./services/profile/actions";
 import { startProtocolHandlers } from "./services/protocol/register";
 import { ServiceStartupFailed } from "./services/startup-failure";
-import { registerTemplateWorkbench } from "./services/template-workbench/register";
 import { ZotLitSettingTab } from "./setting-tab";
 import { createCommentRenderer } from "./views/annot-view/comment-render";
 import { registerAnnotView } from "./views/annot-view/register";
@@ -550,6 +549,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       itemLookup: services.itemLookup,
       settings: services.settings,
       templates: services.template,
+      templateData: services.templateData,
       profile: services.profile,
       nativePreview: {
         runtime: services.runtime,
@@ -558,8 +558,8 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         app: this.app,
         zoteroReads: services.zoteroReads,
         noteIndex: services.noteIndex,
-        zoteroPref: services.zoteroPref,
         settings: services.settings,
+        templateData: services.templateData,
         templates: services.template,
         profile: services.profile,
         bibliographyRender: services.bibliographyRender,
@@ -578,6 +578,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       itemLookup: services.itemLookup,
       settings: services.settings,
       templates: services.template,
+      templateData: services.templateData,
     });
 
     registerNotePreview(this, {
@@ -589,9 +590,9 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       profile: services.profile,
       zoteroReads: services.zoteroReads,
       noteIndex: services.noteIndex,
-      zoteroPref: services.zoteroPref,
       settings: services.settings,
       templates: services.template,
+      templateData: services.templateData,
       bibliographyRender: services.bibliographyRender,
       citationLookup: services.citationLookup,
     });
@@ -618,18 +619,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     registerCitedByView(this, {
       app: this.app,
       citationIndex: services.citationIndex,
-    });
-
-    registerTemplateWorkbench(this, {
-      runtime: services.runtime,
-      profile: services.profile,
-      app: this.app,
-      zoteroReads: services.zoteroReads,
-      noteIndex: services.noteIndex,
-      settings: services.settings,
-      bridge: services.bridge,
-      templates: services.template,
-      zoteroPref: services.zoteroPref,
     });
 
     registerAnnotationImageCli(this, services);

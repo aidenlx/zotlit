@@ -152,7 +152,6 @@ function setup(
   const view = new TestTemplateWorkbenchView(
     leaf,
     stubService<TemplateWorkbenchDeps>("TemplateWorkbenchDeps", {
-      app,
       settings: stubService<TemplateWorkbenchDeps["settings"]>(
         "PluginSettings",
         {

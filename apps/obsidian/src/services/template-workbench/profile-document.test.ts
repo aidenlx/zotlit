@@ -20,6 +20,10 @@ const IDENTITY = {
 
 const BOOKS_ID = "Bk3Qn7XvT2Lp";
 
+/** `evaluate`'s answer, or a failure with what it threw. */
+const threw = <A>(evaluate: () => A) =>
+  Effect.try(evaluate).pipe(Effect.mapError(({ cause }) => cause));
+
 function makeHandlers(options?: {
   renderSource?: (
     source: string,
@@ -30,9 +34,11 @@ function makeHandlers(options?: {
   };
 }) {
   const readProfiles = vi.fn<
-    NonNullable<
-      Parameters<typeof createTemplateWorkbenchHandlers>[0]["literatureNotes"]
-    >["readProfiles"]
+    () => Effect.Success<
+      NonNullable<
+        Parameters<typeof createTemplateWorkbenchHandlers>[0]["literatureNotes"]
+      >["readProfiles"]
+    >
   >(() => ({
     defaultProfile: { document: "default.md" },
     profiles: [{ id: BOOKS_ID, label: "Books", document: "books.md" }],
@@ -72,49 +78,51 @@ function makeHandlers(options?: {
       : undefined,
   );
   const handlers = createTemplateWorkbenchHandlers({
-    selectNote: async () => ({
-      error: "TARGET_NOT_FOUND" as const,
-      matches: [],
-    }),
+    selectNote: () =>
+      Effect.succeed({
+        error: "TARGET_NOT_FOUND" as const,
+        matches: [],
+      }),
     pluginVersion: "1.2.3",
-    getIdentity: () => IDENTITY,
+    getIdentity: Effect.succeed(IDENTITY),
     loadCitation: () => Effect.succeed({ kind: "not-found" } as const),
     loadData: () =>
       Effect.succeed({ kind: "data", data: { title: "Paper" } } as const),
     templates: {
-      getCitationTemplateStatus: () => ({
+      getCitationTemplateStatus: Effect.succeed({
         path: "Templates/zotlit-citation.md",
         customized: false,
         language: "liquid" as const,
         inertPath: null,
         compileError: null,
       }),
-      renderCitationData: () => "",
-      javascriptTemplatesEnabled: false,
-      compileErrors: new Map(),
-      getTemplateFileStatuses: () => [],
-      getPartialDocument: () => null,
-      render: () => "",
-      renderFilename: () => "",
-      analyzeRootVariables: () => null,
-      getTemplateSource: async () => "",
-      waitUntilSettled: async () => "settled" as const,
+      renderCitationData: () => Effect.succeed(""),
+      javascriptTemplatesEnabled: Effect.succeed(false),
+      compileErrors: Effect.succeed(new Map()),
+      getTemplateFileStatuses: Effect.succeed([]),
+      getPartialDocument: () => Effect.succeed(null),
+      render: () => Effect.succeed(""),
+      renderFilename: () => Effect.succeed(""),
+      analyzeRootVariables: () => Effect.succeed(null),
+      getTemplateSource: () => Effect.succeed(""),
+      waitUntilSettled: () => Effect.succeed("settled" as const),
     },
     frontmatter: {
-      read: () => ({
+      read: Effect.succeed({
         fields: [],
         inertKeys: [],
         javascriptTemplatesEnabled: false,
       }),
-      evaluate: () => ({ values: {}, errors: {}, inertKeys: [] }),
-      validateExpr: () => null,
-      write: () => {},
+      evaluate: () => Effect.succeed({ values: {}, errors: {}, inertKeys: [] }),
+      validateExpr: () => Effect.succeed(null),
+      write: () => Effect.void,
     },
     literatureNotes: {
-      readProfiles,
-      getDocumentStatuses,
-      getDocument,
-      renderSource,
+      readProfiles: Effect.sync(() => readProfiles()),
+      getDocumentStatuses: Effect.sync(() => getDocumentStatuses()),
+      // A fake that throws fails the port with what it threw.
+      getDocument: (reference) => threw(() => getDocument(reference)),
+      renderSource: (source, data) => threw(() => renderSource(source, data)),
     },
   });
   return {

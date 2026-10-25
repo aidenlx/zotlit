@@ -166,13 +166,12 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
     editorLeaf,
     stubService<TemplateWorkbenchDeps>("TemplateWorkbenchDeps", {
       runtime: testRuntime(),
-      app,
       settings: fixture.settings,
       bridge: fixture.deps.bridge,
       zoteroReads: fixture.zoteroReads,
       zoteroPref: stubService<TemplateWorkbenchDeps["zoteroPref"]>(
         "ZoteroPref",
-        { dataDir: "/Zotero", baseAttachmentPath: null },
+        { dataDir: "/Zotero" },
       ),
       templates: fixture.templates,
       nativePreview: fixture.deps,

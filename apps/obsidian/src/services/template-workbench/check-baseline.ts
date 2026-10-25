@@ -2,22 +2,23 @@
 import { Effect, Result } from "effect";
 
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
-import { readLiveText } from "@/lib/live-text";
+import { Vault } from "@/lib/obsidian-vault";
+import { Workspace } from "@/lib/obsidian-workspace";
 import { parseProfileStamp } from "@/lib/profile-stamp";
+import { NoteIndex } from "@/services/note-index/service";
 import { previewBaseline } from "@/views/note-preview/baseline";
 
-import { TemplateDataError } from "./data";
-import type { TemplateDataDeps } from "./data";
 import { sourceRevision } from "./inspect";
 
 /**
  * The update baseline of one item, or the refusal that names why there is
- * none. Fails when the Literature Note index cannot be read.
+ * none.
  */
-export const selectCheckBaseline = Effect.fnUntraced(function* (
-  deps: TemplateDataDeps,
-  input: { key: string; note?: string; existing?: string },
-) {
+export const selectCheckBaseline = Effect.fnUntraced(function* (input: {
+  key: string;
+  note?: string;
+  existing?: string;
+}) {
   let source: string | null = input.existing ?? null;
   let path: string | null = null;
   let kind: "supplied" | "real" | "synthetic" =
@@ -40,13 +41,9 @@ export const selectCheckBaseline = Effect.fnUntraced(function* (
     },
   });
   if (input.existing === undefined) {
-    const candidates = yield* Effect.tryPromise({
-      try: async () => {
-        await deps.noteIndex.whenIndexed();
-        return deps.noteIndex.getNotesByItemKey(input.key);
-      },
-      catch: (cause) => new TemplateDataError({ cause }),
-    });
+    const noteIndex = yield* NoteIndex;
+    yield* noteIndex.whenIndexed;
+    const candidates = yield* noteIndex.getNotesByItemKey(input.key);
     if (input.note === undefined && candidates.length > 1)
       return {
         ok: false as const,
@@ -74,8 +71,12 @@ export const selectCheckBaseline = Effect.fnUntraced(function* (
     if (selected) {
       path = selected.path;
       kind = "real";
+      // The note's live text: its loaded view's, else the vault's.
+      const view = yield* (yield* Workspace).loadedTextView(selected);
       const read = yield* Effect.result(
-        Effect.tryPromise(() => readLiveText(deps.app, selected)),
+        view === null
+          ? (yield* Vault).cachedRead(selected)
+          : Effect.succeed(view.getViewData()),
       );
       if (Result.isFailure(read)) return failed(read.failure.cause);
       source = read.success;

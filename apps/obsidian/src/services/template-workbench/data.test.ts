@@ -1,8 +1,8 @@
 import { it } from "@effect/vitest";
 import Ajv2020 from "ajv/dist/2020";
-import { Effect } from "effect";
+import { Context, Effect, Exit, Layer, Scope } from "effect";
 import type { DatabaseSync } from "node:sqlite";
-import type { App, CliData } from "obsidian";
+import type { App, CliData, EventRef } from "obsidian";
 import { describe, expect } from "vitest";
 
 import { citekeysToCiteTemplateData } from "@zotlit/db";
@@ -18,84 +18,75 @@ import { CITATION_EXAMPLE_IDS } from "@zotlit/workbench/render";
 import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { layerFileManagerFrom } from "@/lib/obsidian-file-manager";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import { layerVaultFrom } from "@/lib/obsidian-vault";
+import { NoteIndex } from "@/services/note-index/service";
 import type { NoteProfile, ResolvedProfile } from "@/services/profile/bindings";
+import { Profile } from "@/services/profile/service";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 import { InertTemplateError } from "@/services/template/errors";
+import { Template } from "@/services/template/service";
+import type { CompileError } from "@/services/template/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
-import { workbenchRegistrationDeps } from "./__fixtures__";
+import { workbenchContext, workbenchIdentity } from "./__fixtures__";
 import { createTemplateWorkbenchHandlers, TEMPLATE_DATA_COMMAND } from "./cli";
 import { readCitationData, readTemplateData } from "./data";
-import type { TemplateDataDeps } from "./data";
+import type { TemplateDataServices } from "./data";
 import { registerTemplateWorkbench } from "./register";
-
-type RegistrationOptions = Parameters<typeof workbenchRegistrationDeps>[0];
 
 function registeredData(deps: FixtureDeps) {
   const { host, command } = fakeCliHost();
   Object.assign(deps.app.vault, {
-    getName: () => "Data fixture",
-    adapter: { getBasePath: () => "/fixture" },
     getMarkdownFiles: () => [{ path: "Notes/Paper.md", basename: "Paper" }],
   });
-  Object.assign(deps.app, {
-    metadataCache: {
-      getFileCache: () => ({ frontmatter: { "zotero-key": "MAIN2345" } }),
-    },
+  Object.assign(deps.template, {
+    waitUntilSettled: () => Effect.succeed("settled" as const),
   });
-  Object.assign(deps.zoteroPref, {
-    sourceId: "fixture-source",
-    databasePath: "/Zotero/zotero.sqlite",
-  });
-  Object.assign(deps.templates, { waitUntilSettled: async () => "settled" });
   registerTemplateWorkbench(
     { ...host, manifest: { version: "test" } },
-    workbenchRegistrationDeps({
-      runtime: testRuntime(),
-      app: deps.app,
-      zoteroReads: stubService<NonNullable<RegistrationOptions["zoteroReads"]>>(
-        "ZoteroReads",
-        deps.zoteroReads,
+    workbenchContext(
+      deps.context,
+      workbenchIdentity({
+        vaultName: "Data fixture",
+        basePath: "/fixture",
+        apiVersion: "1.0.0",
+        sourceId: "fixture-source",
+        databasePath: "/Zotero/zotero.sqlite",
+        dataDir: "/Zotero",
+        baseAttachmentPath: null,
+      }),
+      Context.make(
+        MetadataCache,
+        stubService<MetadataCache["Service"]>("MetadataCache", {
+          fileCache: () =>
+            Effect.succeed({ frontmatter: { "zotero-key": "MAIN2345" } }),
+        }),
       ),
-      noteIndex: stubService<NonNullable<RegistrationOptions["noteIndex"]>>(
-        "NoteIndex",
-        deps.noteIndex,
-      ),
-      settings: stubService<NonNullable<RegistrationOptions["settings"]>>(
-        "PluginSettings",
-        deps.settings,
-      ),
-      bridge: deps.bridge,
-      templates: stubService<NonNullable<RegistrationOptions["templates"]>>(
-        "Template",
-        deps.templates,
-      ),
-      zoteroPref: stubService<NonNullable<RegistrationOptions["zoteroPref"]>>(
-        "ZoteroPref",
-        {
-          ...deps.zoteroPref,
-          sourceId: "fixture-source",
-          databasePath: "/Zotero/zotero.sqlite",
-        },
-      ),
-      profile: stubService<NonNullable<RegistrationOptions["profile"]>>(
-        "Profile",
-        {
+      Context.make(
+        Profile,
+        stubService<Profile["Service"]>("Profile", {
           profileOf: () =>
-            stubService<NoteProfile>("NoteProfile", {
-              ok: true,
-              profile: stubService<ResolvedProfile>("ResolvedProfile", {
-                selector: "default",
+            Effect.succeed(
+              stubService<NoteProfile>("NoteProfile", {
+                ok: true,
+                profile: stubService<ResolvedProfile>("ResolvedProfile", {
+                  selector: "default",
+                }),
               }),
-            }),
-        },
+            ),
+        }),
       ),
-    }),
+    ),
   );
   const { handler } = command(TEMPLATE_DATA_COMMAND);
   return (params: CliData) =>
@@ -160,7 +151,8 @@ describe("registered field discovery", () => {
         { path: "Notes/Two.md", basename: "Two" },
       ];
       fixture.deps.app.vault.getMarkdownFiles = () => notes as never;
-      fixture.deps.noteIndex.getNotesByItemKey = () => notes as never;
+      fixture.deps.noteIndex.getNotesByItemKey = () =>
+        Effect.succeed(notes as never);
 
       const result = yield* run({
         note: "Notes/Two.md",
@@ -833,12 +825,13 @@ describe("zotlit:template-data with the real loader", () => {
   );
 });
 
-type FixtureDeps = TemplateDataDeps & {
-  bridge: { runSync: typeof Effect.runSync };
-  templates: TemplateDataDeps["templates"] & {
-    compileErrors: ReadonlyMap<string, { message: string }>;
-  };
-};
+interface FixtureDeps {
+  readonly app: App;
+  readonly noteIndex: NoteIndex["Service"];
+  readonly template: Template["Service"];
+  /** The services the data reads, over the fixture database and `app`. */
+  readonly context: Context.Context<TemplateDataServices>;
+}
 
 /** {@link createFixture}, closed when the test's scope closes. */
 const scopedFixture = (options?: Parameters<typeof createFixture>[0]) =>
@@ -846,15 +839,15 @@ const scopedFixture = (options?: Parameters<typeof createFixture>[0]) =>
     Effect.tryPromise(async () => createFixture(options)),
   );
 
-function createFixture(options?: {
+async function createFixture(options?: {
   renderError?: Error;
   compileError?: string | null;
   render?: (name: string, data: object) => string;
-}): {
+}): Promise<{
   deps: FixtureDeps;
   writeCalls: string[];
   [Symbol.asyncDispose](): Promise<void>;
-} {
+}> {
   const client = createClient(":memory:");
   const sqlite = client.$client as DatabaseSync;
   const writeCalls: string[] = [];
@@ -867,6 +860,7 @@ function createFixture(options?: {
     const zoteroReads = resources.use(
       inProcessReadsService(sharedClientOpener(client)),
     );
+    await zoteroReads.ready;
     const app = stubService<App>("App", {
       fileManager: stubService<App["fileManager"]>("FileManager", {
         generateMarkdownLink: () => "",
@@ -875,6 +869,9 @@ function createFixture(options?: {
         },
       }),
       vault: stubService<App["vault"]>("Vault", {
+        // The Vault tag listens for changes; nothing here emits one.
+        on: () => stubService<EventRef>("EventRef", {}),
+        offref: () => {},
         getFileByPath: () => null,
         create: async () => {
           writeCalls.push("vault.create");
@@ -889,25 +886,38 @@ function createFixture(options?: {
         },
       }),
     });
-    const deps: FixtureDeps = {
-      app,
-      zoteroReads: stubService<FixtureDeps["zoteroReads"]>("ZoteroReads", {
-        acquireRead: () => zoteroReads.acquireRead(),
-      }),
-      noteIndex: stubService<FixtureDeps["noteIndex"]>("NoteIndex", {
-        getNotesByItemKey: () => [],
-        getImportedNoteByNoteKey: () => [],
-        whenIndexed: async () => {},
-      }),
-      settings: stubService<FixtureDeps["settings"]>("PluginSettings", {
-        current: Effect.succeed(settingsDefaults),
-      }),
-      bridge: { runSync: Effect.runSync },
-      templates: stubService<FixtureDeps["templates"]>("Template", {
-        compileErrors: options?.compileError
-          ? new Map([["citation", { message: options.compileError }]])
+    const scope = Scope.makeUnsafe();
+    resources.defer(() => Effect.runPromise(Scope.close(scope, Exit.void)));
+    const vault = layerVaultFrom(app.vault);
+    const capabilities = Effect.runSync(
+      Layer.buildWithScope(
+        Layer.merge(
+          vault,
+          layerFileManagerFrom(app.fileManager).pipe(Layer.provide(vault)),
+        ),
+        scope,
+      ),
+    );
+    const noteIndex = stubService<NoteIndex["Service"]>("NoteIndex", {
+      getNotesByItemKey: () => Effect.succeed([]),
+      getImportedNoteByNoteKey: () => Effect.succeed([]),
+      whenIndexed: Effect.void,
+    });
+    // A Template call fails as the plain Template threw.
+    const thrown = <A>(evaluate: () => A) => Effect.sync(evaluate);
+    const template = stubService<Template["Service"]>("Template", {
+      compileErrors: Effect.succeed(
+        options?.compileError
+          ? new Map([
+              [
+                "citation",
+                { message: options.compileError } satisfies CompileError,
+              ],
+            ])
           : new Map(),
-        renderCitation: (refs, variant) => {
+      ),
+      renderCitation: (refs, variant) =>
+        thrown(() => {
           if (options?.renderError) throw options.renderError;
           if (options?.render) {
             return options.render(
@@ -916,20 +926,39 @@ function createFixture(options?: {
             );
           }
           return "Fixture citation";
-        },
-        render: (name, data) => {
+        }),
+      render: (name, data) =>
+        thrown(() => {
           if (options?.renderError) throw options.renderError;
           if (options?.render) return options.render(name, data);
           return "Fixture citation\n";
-        },
-      }),
-      zoteroPref: {
-        dataDir: "/Zotero",
-        baseAttachmentPath: null,
-      },
-    };
+        }),
+    });
+    const context = Context.mergeAll(
+      capabilities,
+      Context.make(ZoteroReads, zoteroReads.runtime.runSync(ZoteroReads)),
+      Context.make(NoteIndex, noteIndex),
+      Context.make(
+        PluginSettings,
+        stubService<PluginSettings["Service"]>("PluginSettings", {
+          current: Effect.succeed(settingsDefaults),
+        }),
+      ),
+      Context.make(Template, template),
+      Context.make(
+        ZoteroPref,
+        stubService<ZoteroPref["Service"]>("ZoteroPref", {
+          current: Effect.succeed(
+            stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
+              dataDir: "/Zotero",
+              baseAttachmentPath: null,
+            }),
+          ),
+        }),
+      ),
+    );
     return {
-      deps,
+      deps: { app, noteIndex, template, context },
       writeCalls,
       [Symbol.asyncDispose]: () => resources.disposeAsync(),
     };
@@ -945,46 +974,52 @@ function runTemplateData(
   root: ContractRoot = "note",
 ): Effect.Effect<Record<string, unknown>, unknown> {
   const handlers = createTemplateWorkbenchHandlers({
-    selectNote: async () => ({
-      error: "TARGET_NOT_FOUND" as const,
-      matches: [],
-    }),
+    selectNote: () =>
+      Effect.succeed({
+        error: "TARGET_NOT_FOUND" as const,
+        matches: [],
+      }),
     pluginVersion: "1.2.3",
-    getIdentity: () => ({
+    getIdentity: Effect.succeed({
       vault: { name: "Test Vault", path: "/vaults/test" },
       source: { id: "a1b2c3d4", databasePath: "/Zotero/zotero.sqlite" },
     }),
     loadCitation: (citation, variant) =>
-      readCitationData(deps, citation, variant),
-    loadData: (indexedKey, root) => readTemplateData(deps, indexedKey, root),
+      readCitationData(citation, variant).pipe(
+        Effect.provideContext(deps.context),
+      ),
+    loadData: (indexedKey, root) =>
+      readTemplateData(indexedKey, root).pipe(
+        Effect.provideContext(deps.context),
+      ),
     templates: {
-      getCitationTemplateStatus: () => ({
+      getCitationTemplateStatus: Effect.succeed({
         path: "Templates/zotlit-citation.md",
         customized: false,
         language: "liquid" as const,
         inertPath: null,
         compileError: null,
       }),
-      renderCitationData: () => "",
-      javascriptTemplatesEnabled: false,
-      compileErrors: deps.templates.compileErrors,
-      getTemplateFileStatuses: () => [],
-      getPartialDocument: () => null,
-      render: deps.templates.render,
-      renderFilename: (data) => deps.templates.render("filename", data),
-      analyzeRootVariables: () => null,
-      getTemplateSource: async () => "",
-      waitUntilSettled: async () => "settled" as const,
+      renderCitationData: () => Effect.succeed(""),
+      javascriptTemplatesEnabled: Effect.succeed(false),
+      compileErrors: deps.template.compileErrors,
+      getTemplateFileStatuses: Effect.succeed([]),
+      getPartialDocument: () => Effect.succeed(null),
+      render: (name, data) => deps.template.render(name, data),
+      renderFilename: (data) => deps.template.render("filename", data),
+      analyzeRootVariables: () => Effect.succeed(null),
+      getTemplateSource: () => Effect.succeed(""),
+      waitUntilSettled: () => Effect.succeed("settled" as const),
     },
     frontmatter: {
-      read: () => ({
+      read: Effect.succeed({
         fields: [],
         inertKeys: [],
         javascriptTemplatesEnabled: false,
       }),
-      evaluate: () => ({ values: {}, errors: {}, inertKeys: [] }),
-      validateExpr: () => null,
-      write: () => {},
+      evaluate: () => Effect.succeed({ values: {}, errors: {}, inertKeys: [] }),
+      validateExpr: () => Effect.succeed(null),
+      write: () => Effect.void,
     },
   });
   return handlers[TEMPLATE_DATA_COMMAND]({

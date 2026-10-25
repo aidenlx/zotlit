@@ -18,6 +18,9 @@ import { createObsidianHost, PluginStub } from "@/lib/__fixtures__/obsidian-host
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { inProcessReadsService, sharedClientOpener } from "@/services/zotero-reads/test-utils";
 import type { NativeRenderDeps } from "@/views/note-preview/render";
+import { templateDataHandle } from "@/services/template-workbench/__fixtures__";
+import { Template } from "@/services/template/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 
 type EventSource = Pick<Events, "on" | "offref">;
 
@@ -166,13 +169,22 @@ export async function createRenderFixture(options: { existing?: string; javascri
   // first `changed` lands before a view subscribes.
   await Effect.runPromise((await zoteroReads.ready).reads.Libraries({}));
   await vi.waitFor(() => expect(zoteroReads.state).toBe("ready"));
+  const notesOf = (key: string) => (file && key === "MAIN2345" ? [file] : []);
+  const handles = new AsyncDisposableStack();
+  const templateData = templateDataHandle(handles, {
+    app,
+    zoteroReads: zoteroReads.runtime.runSync(ZoteroReads),
+    template: templates.runtime.runSync(Template),
+    settings,
+    noteIndex: { getNotesByItemKey: (key) => Effect.succeed(notesOf(key)), getImportedNoteByNoteKey: () => Effect.succeed([]), whenIndexed: Effect.void },
+    zoteroPref: { dataDir: "/Zotero", baseAttachmentPath: null },
+  });
   const deps: NativeRenderDeps = { runtime: settings.runtime, bridge: settings.bridge,
     citationParse: plainTestParseClient(inProcessParseClient),
-    app, settings, templates,
+    app, settings, templates, templateData,
     profile: { resolveProfile: () => undefined },
     zoteroReads,
-    noteIndex: { getNotesByItemKey: (key) => file && key === "MAIN2345" ? [file] : [], getImportedNoteByNoteKey: () => [], whenIndexed: async () => {} },
-    zoteroPref: { dataDir: "/Zotero", baseAttachmentPath: null },
+    noteIndex: { getNotesByItemKey: notesOf },
     citationLookup: {
       read: async ({citekeys = [], indexedKeys = []}) => lookupAnswer(
         Object.fromEntries(citekeys.map((key) => [key, key === "figures2014" ? { kind: "unique", item: { itemID: 1, libraryID: 1, key: "MAIN2345", indexedKey: "MAIN2345" } } : {kind: "missing"}])),
@@ -183,5 +195,5 @@ export async function createRenderFixture(options: { existing?: string; javascri
   };
   const writes = { create: vi.spyOn(vault, "create"), process: vi.spyOn(vault, "process"), modify: vi.spyOn(vault, "modifyFile") };
   const snapshot = exportItemSnapshot(client, { key: "MAIN2345", library: { type: "personal" } }, { provenance: { kind: "connected", installationId: "fixture", vault: "preview" } });
-  return { deps, settings, templates, client, snapshot, host, vault, zoteroReads, renderCitations, writes, async [Symbol.asyncDispose]() { await templates[Symbol.asyncDispose](); await settings[Symbol.asyncDispose](); await zoteroReads[Symbol.asyncDispose](); sqlite.close(); } };
+  return { deps, settings, templates, client, snapshot, host, vault, zoteroReads, renderCitations, writes, async [Symbol.asyncDispose]() { await handles.disposeAsync(); await templates[Symbol.asyncDispose](); await settings[Symbol.asyncDispose](); await zoteroReads[Symbol.asyncDispose](); sqlite.close(); } };
 }

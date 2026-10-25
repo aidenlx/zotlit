@@ -1,7 +1,7 @@
 // Resolves an Indexed Key and builds side-effect-free Template data.
 
 import { Data, Effect, Stream } from "effect";
-import type { App } from "obsidian";
+import { dirname } from "node:path/posix";
 
 import {
   buildAnnotationsTemplateData,
@@ -20,26 +20,31 @@ import type {
   NoteSource,
 } from "@zotlit/db";
 import { TemplateError } from "@zotlit/templates/facade";
+import { resolveExcerptImageContext } from "@zotlit/workbench/explorer";
 import { citationExampleData } from "@zotlit/workbench/render";
 import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { annotationCitation } from "@/lib/annotation-render";
+import { normalizeFolderPath } from "@/lib/ensure-folder";
 import { creatorSummary } from "@/lib/item-summary";
+import { FileManager } from "@/lib/obsidian-file-manager";
+import { Vault } from "@/lib/obsidian-vault";
 import { itemFacets } from "@/services/note-feature/context";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
+import { NoteIndex } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
-import type { PluginSettings } from "@/services/settings/service";
+import { PluginSettings } from "@/services/settings/service";
 import { CITATION_TEMPLATE_NAME } from "@/services/template/defaults";
 import { InertTemplateError } from "@/services/template/errors";
 import {
   buildObsidianInertNoteResolvers,
   findExistingLitNote,
-  resolveObsidianExcerptImageContext,
 } from "@/services/template/inert-resolver-host";
-import type { PlainTemplate } from "@/services/template/plain";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import type { Template } from "@/services/template/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
+
+import { syncTemplate } from "./sync-template";
 
 /**
  * The object one Citation's data is built from: a built-in example set, or an
@@ -61,17 +66,39 @@ export type CitationDataLoadResult =
   | { kind: "data"; data: CitationTemplateData }
   | Exclude<TemplateDataLoadResult, { kind: "data" }>;
 
+/** The services Template data of a root reads. */
+export type TemplateDataServices =
+  | ZoteroReads
+  | NoteIndex
+  | PluginSettings
+  | Template
+  | ZoteroPref
+  | Vault
+  | FileManager;
+
+/**
+ * Template data for a caller outside Effect: an edge handle `build.ts` binds
+ * over the bridge (`bindTemplateData`). A load resolves with its result and
+ * rejects with what failed, as a read or a Template does.
+ */
+export interface TemplateDataLoader {
+  /** `settings`, when given, are the ones the data reads in place of the plugin's. */
+  load(
+    indexedKey: string,
+    root: ContractRoot,
+    options?: { settings?: Readonly<Settings> },
+  ): Promise<TemplateDataLoadResult>;
+  loadCitation(
+    selector: CitationSelector,
+    variant: CitationVariant,
+  ): Promise<CitationDataLoadResult>;
+}
+
+/** What a caller outside Effect passes to {@link loadTemplateData}. */
 export interface TemplateDataDeps {
-  app: App;
-  /** Each root reads its Item's bundle through a lease. */
-  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
-  noteIndex: Pick<
-    PlainNoteIndex,
-    "getNotesByItemKey" | "getImportedNoteByNoteKey" | "whenIndexed"
-  >;
-  settings: Pick<PluginSettings["Service"], "current">;
-  templates: Pick<PlainTemplate, "render" | "renderCitation">;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
+  readonly templateData: TemplateDataLoader;
+  /** The settings the data reads in place of the plugin's: a Profile's. */
+  readonly dataSettings?: Readonly<Settings>;
 }
 
 /**
@@ -84,10 +111,6 @@ export class TemplateDataError extends Data.TaggedError("TemplateDataError")<{
 
 const failed = (cause: unknown) => new TemplateDataError({ cause });
 
-/** A wait or read outside Effect that the data depends on. */
-const attempt = <A>(evaluate: () => PromiseLike<A>) =>
-  Effect.tryPromise({ try: evaluate, catch: failed });
-
 /** A database read. */
 const query = <A, E>(read: Effect.Effect<A, E>) =>
   Effect.mapError(read, (cause) => failed(cause));
@@ -97,60 +120,60 @@ const build = <A>(evaluate: () => A) =>
   Effect.try({ try: evaluate, catch: failed });
 
 /** Reads under one Snapshot, released when the caller's scope closes. */
-const readLease = (deps: Pick<TemplateDataDeps, "zoteroReads">) =>
-  Effect.acquireDisposable(
-    Effect.tryPromise(() => deps.zoteroReads.acquireRead()),
-  ).pipe(
-    Effect.map((lease) => lease.reads),
-    Effect.mapError((error) => failed(error.cause)),
-  );
+const readLease = ZoteroReads.use((reads) =>
+  Effect.mapError(reads.snapshot, (cause) => failed(cause)),
+);
 
 /**
  * Scope one item's Literature Note lookups to the note the caller selected, so
  * data built for an explicit note path reports that note rather than the first
  * indexed note of the same item.
  */
-export function withSelectedNote(
-  deps: TemplateDataDeps,
-  selection: { key: string; path: string },
-): TemplateDataDeps {
-  return {
-    ...deps,
-    noteIndex: {
-      whenIndexed: () => deps.noteIndex.whenIndexed(),
-      getImportedNoteByNoteKey: (key) =>
-        deps.noteIndex.getImportedNoteByNoteKey(key),
-      getNotesByItemKey: (key) => {
-        const notes = deps.noteIndex.getNotesByItemKey(key);
-        return key === selection.key
-          ? notes.filter((file) => file.path === selection.path)
-          : notes;
-      },
-    },
-  };
-}
+export const withSelectedNote = (selection: { key: string; path: string }) =>
+  Effect.updateService(NoteIndex, (index) => ({
+    ...index,
+    getNotesByItemKey: (key: string) =>
+      key === selection.key
+        ? Effect.map(index.getNotesByItemKey(key), (notes) =>
+            notes.filter((file) => file.path === selection.path),
+          )
+        : index.getNotesByItemKey(key),
+  }));
+
+/** Build data under `settings` in place of the saved settings. */
+export const withSettings = (settings: Readonly<Settings>) =>
+  Effect.updateService(PluginSettings, (service) => ({
+    ...service,
+    current: Effect.succeed(settings),
+  }));
 
 /** The Template data of one root for the object an Indexed Key names. */
 export const readTemplateData = Effect.fn("TemplateData.read")(function* (
-  deps: TemplateDataDeps,
   indexedKey: string,
   root: ContractRoot,
-): Effect.fn.Return<TemplateDataLoadResult, TemplateDataError> {
+): Effect.fn.Return<
+  TemplateDataLoadResult,
+  TemplateDataError,
+  TemplateDataServices
+> {
   if (root === "citation") {
-    return yield* readCitationData(deps, { key: indexedKey }, "main");
+    return yield* readCitationData({ key: indexedKey }, "main");
   }
   const [settings] = yield* Effect.all(
-    [deps.settings.current, attempt(() => deps.noteIndex.whenIndexed())],
+    [
+      PluginSettings.use((service) => service.current),
+      NoteIndex.use((index) => index.whenIndexed),
+    ],
     { concurrency: "unbounded" },
   );
   if (root === "annotation") {
     return yield* Effect.scoped(
       Effect.gen(function* () {
-        const reads = yield* readLease(deps);
+        const reads = yield* readLease;
         const selected = yield* readAnnotationSources(reads, indexedKey);
         if (selected.kind !== "sources") return selected;
         const { sources, item } = selected;
-        const resolvers = yield* createInertResolvers(deps, settings, item);
+        const resolvers = yield* createInertResolvers(settings, item);
         const data = yield* build(
           () =>
             buildAnnotationsTemplateData(sources, resolvers.annotation)
@@ -158,10 +181,15 @@ export const readTemplateData = Effect.fn("TemplateData.read")(function* (
               .next().value,
         );
         if (!data) return { kind: "not-found" } as const;
+        const templates = yield* syncTemplate;
         return {
           kind: "data",
           data: withAnnotationCitation(data, () =>
-            renderAnnotationCitation(data.parentItem, data.pageLabel, deps),
+            renderAnnotationCitation(
+              data.parentItem,
+              data.pageLabel,
+              templates,
+            ),
           ),
         } as const;
       }),
@@ -169,9 +197,7 @@ export const readTemplateData = Effect.fn("TemplateData.read")(function* (
   }
 
   const selected = yield* Effect.scoped(
-    Effect.flatMap(readLease(deps), (reads) =>
-      readNoteItemSource(reads, indexedKey),
-    ),
+    Effect.flatMap(readLease, (reads) => readNoteItemSource(reads, indexedKey)),
   );
   if (selected.kind !== "source") return selected;
   const { source } = selected;
@@ -190,7 +216,7 @@ export const readTemplateData = Effect.fn("TemplateData.read")(function* (
     };
   }
 
-  const resolvers = yield* createInertResolvers(deps, settings, source.item);
+  const resolvers = yield* createInertResolvers(settings, source.item);
 
   return {
     kind: "data",
@@ -207,10 +233,9 @@ export const readTemplateData = Effect.fn("TemplateData.read")(function* (
  */
 export const readCitationData = Effect.fn("TemplateData.readCitation")(
   function* (
-    deps: Pick<TemplateDataDeps, "zoteroReads" | "settings">,
     selector: CitationSelector,
     variant: CitationVariant,
-  ): Effect.fn.Return<CitationDataLoadResult, TemplateDataError> {
+  ): Effect.fn.Return<CitationDataLoadResult, TemplateDataError, ZoteroReads> {
     if ("example" in selector) {
       return {
         kind: "data",
@@ -220,9 +245,7 @@ export const readCitationData = Effect.fn("TemplateData.readCitation")(
       };
     }
     const selected = yield* Effect.scoped(
-      Effect.flatMap(readLease(deps), (reads) =>
-        readNoteItem(reads, selector.key),
-      ),
+      Effect.flatMap(readLease, (reads) => readNoteItem(reads, selector.key)),
     );
     if (selected.kind !== "item") return selected;
     const { item } = selected;
@@ -237,36 +260,24 @@ export const readCitationData = Effect.fn("TemplateData.readCitation")(
   },
 );
 
-/**
- * {@link readTemplateData} for a caller outside Effect. It rejects with what
- * failed, as a read or a Template does.
- */
+/** {@link readTemplateData} for a caller outside Effect, through its handle. */
 export function loadTemplateData(
   deps: TemplateDataDeps,
   indexedKey: string,
   root: ContractRoot,
 ): Promise<TemplateDataLoadResult> {
-  return Effect.runPromise(
-    readTemplateData(deps, indexedKey, root).pipe(
-      Effect.mapError(({ cause }) => cause),
-    ),
-  );
+  return deps.templateData.load(indexedKey, root, {
+    settings: deps.dataSettings,
+  });
 }
 
-/**
- * {@link readCitationData} for a caller outside Effect. It rejects with what
- * failed, as a read or a Template does.
- */
+/** {@link readCitationData} for a caller outside Effect, through its handle. */
 export function loadCitationData(
-  deps: Pick<TemplateDataDeps, "zoteroReads" | "settings">,
+  deps: TemplateDataDeps,
   selector: CitationSelector,
   variant: CitationVariant,
 ): Promise<CitationDataLoadResult> {
-  return Effect.runPromise(
-    readCitationData(deps, selector, variant).pipe(
-      Effect.mapError(({ cause }) => cause),
-    ),
-  );
+  return deps.templateData.loadCitation(selector, variant);
 }
 
 /**
@@ -277,10 +288,10 @@ export function loadCitationData(
 function renderAnnotationCitation(
   parentItem: Parameters<typeof annotationCitation>[0],
   pageLabel: string | null,
-  deps: TemplateDataDeps,
+  templates: Parameters<typeof annotationCitation>[2],
 ): string | null {
   try {
-    return annotationCitation(parentItem, pageLabel, deps.templates);
+    return annotationCitation(parentItem, pageLabel, templates);
   } catch (error) {
     if (error instanceof InertTemplateError) {
       if (error.templateName !== undefined) throw error;
@@ -297,32 +308,80 @@ function renderAnnotationCitation(
   }
 }
 
+/**
+ * The folder the user's attachment setting picks for the note at
+ * `sourcePath`: `folderPath`, or Obsidian's own attachment folder when the
+ * setting is empty. `"/"` names the vault root.
+ */
+const attachmentFolder = (
+  fileManager: FileManager["Service"],
+  folderPath: string | null,
+  sourcePath?: string,
+) =>
+  folderPath
+    ? Effect.succeed(normalizeFolderPath(folderPath))
+    : fileManager
+        .getAvailablePathForAttachment("zotlit-attachment", sourcePath)
+        .pipe(
+          Effect.map((path) => normalizeFolderPath(dirname(path))),
+          Effect.mapError(({ cause }) => cause),
+        );
+
 const createInertResolvers = Effect.fnUntraced(function* (
-  deps: TemplateDataDeps,
   settings: Readonly<Settings>,
   item: Item | null,
-): Effect.fn.Return<NoteResolvers, TemplateDataError> {
+): Effect.fn.Return<
+  NoteResolvers,
+  TemplateDataError,
+  NoteIndex | ZoteroPref | Vault | FileManager
+> {
+  const index = yield* NoteIndex;
+  const vault = yield* Vault;
+  const fileManager = yield* FileManager;
+  const { dataDir, baseAttachmentPath } = yield* (yield* ZoteroPref).current;
+  const context = yield* Effect.context<never>();
+  const runSync = Effect.runSyncWith(context);
+  const runPromise = Effect.runPromiseWith(context);
+  // The resolvers run synchronously while a Template renders.
+  const noteIndex = {
+    getNotesByItemKey: (key: string) => runSync(index.getNotesByItemKey(key)),
+    getImportedNoteByNoteKey: (key: string) =>
+      runSync(index.getImportedNoteByNoteKey(key)),
+  };
   const litNote = item
     ? yield* build(() =>
-        findExistingLitNote(deps.noteIndex, {
+        findExistingLitNote(noteIndex, {
           indexedKey: item.indexedKey,
         }),
       )
     : null;
-  const excerptImages = yield* attempt(() =>
-    resolveObsidianExcerptImageContext({
-      app: deps.app,
-      settings,
-      litNotePath: litNote?.path ?? null,
-    }),
-  );
+  const litNotePath = litNote?.path ?? null;
+  const excerptImages = yield* Effect.tryPromise({
+    try: () =>
+      resolveExcerptImageContext({
+        attachmentImport: settings["attachment.import"],
+        attachmentFolderPath: settings["attachment.folder-path"],
+        litNotePath,
+        resolveAttachmentFolderPath: (folderPath, sourcePath) =>
+          runPromise(attachmentFolder(fileManager, folderPath, sourcePath)),
+      }),
+    catch: failed,
+  });
   return yield* build(() =>
     buildObsidianInertNoteResolvers({
-      noteIndex: deps.noteIndex,
-      fileManager: deps.app.fileManager,
-      vault: deps.app.vault,
-      zoteroPref: deps.zoteroPref,
-      sourcePath: litNote?.path ?? "",
+      noteIndex,
+      fileManager: {
+        generateMarkdownLink: (...[file, sourcePath, subpath, alias]) =>
+          runSync(
+            fileManager.generateMarkdownLink(file, sourcePath, {
+              ...(subpath === undefined ? {} : { subpath }),
+              ...(alias === undefined ? {} : { alias }),
+            }),
+          ),
+      },
+      vault: { getFileByPath: (path) => runSync(vault.getFileByPath(path)) },
+      zoteroPref: { dataDir, baseAttachmentPath },
+      sourcePath: litNotePath ?? "",
       excerptImages,
     }),
   );

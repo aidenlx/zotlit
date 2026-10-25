@@ -1,6 +1,6 @@
 // Read-only rendering of a draft Profile against the installed template pipeline.
-import { Effect } from "effect";
 import { stringifyYaml } from "obsidian";
+import type { App } from "obsidian";
 
 import { DEFAULT_CITATION_VARIANT, withAnnotationCitation } from "@zotlit/db";
 import type {
@@ -52,6 +52,7 @@ import {
 import { bindProfile } from "@/services/profile/bindings";
 import type { PlainProfile } from "@/services/profile/plain";
 import { bindUnvalidatedDraftProfile } from "@/services/profile/service";
+import type { PluginSettings } from "@/services/settings/service";
 import {
   loadCitationData,
   loadTemplateData,
@@ -69,6 +70,9 @@ import type { NativeCitationDeps, PreviewCitation } from "./citations";
 
 export interface NativeRenderDeps extends TemplateDataDeps, NativeCitationDeps {
   runtime: SubscriptionRuntime;
+  app: App;
+  settings: Pick<PluginSettings["Service"], "current">;
+  noteIndex: Parameters<typeof findExistingLitNote>[0];
   bridge: Pick<EffectBridge, "runSync">;
   zoteroReads: Pick<
     PlainZoteroReads,
@@ -233,10 +237,7 @@ async function partialRootData(
       ? bindUnvalidatedDraftProfile(settings, draft)
       : bindProfile(settings, { selector: DEFAULT_PROFILE }));
   return partialContextData(
-    {
-      ...deps,
-      settings: { current: Effect.succeed(profile.settings) },
-    },
+    { ...deps, dataSettings: profile.settings },
     request,
     selection.context,
   );
@@ -405,10 +406,7 @@ export async function renderNativeProfile(
     const settings = deps.bridge.runSync(deps.settings.current);
     const manifest = document.manifest;
     const profile = bindUnvalidatedDraftProfile(settings, manifest);
-    const dataDeps = {
-      ...deps,
-      settings: { current: Effect.succeed(profile.settings) },
-    };
+    const dataDeps = { ...deps, dataSettings: profile.settings };
     const indexedKey = request.snapshot.item.indexedKey;
     const sample = request.snapshot.provenance.kind === "sample";
     const loadRoot = (root: "note" | "filename") =>

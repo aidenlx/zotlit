@@ -120,6 +120,7 @@ import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { PlainProfile } from "@/services/profile/plain";
 import { openCitationTemplate } from "@/services/template/actions";
 import type { PlainTemplate } from "@/services/template/plain";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
 import { NativeMarkdown } from "@/views/note-preview/markdown";
 import { openWorkbenchLayout } from "@/views/note-preview/register";
@@ -208,6 +209,7 @@ export function originatingNoteUpdateNotice(
 }
 
 export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   noteFeature?: Pick<NoteFeature, "updateNote">;
   /**
    * ZotLit Query, which tests the Match of a Profile on a real Item and names

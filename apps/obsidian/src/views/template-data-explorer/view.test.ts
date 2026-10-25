@@ -115,7 +115,6 @@ function viewDeps(
 ): ExplorerViewDeps {
   return stubService<ExplorerViewDeps>("ExplorerViewDeps", {
     runtime: testRuntime(),
-    app,
     itemLookup: stubService<ExplorerViewDeps["itemLookup"]>("ItemLookup", {
       search: async () => [],
       openSession: () => ({
@@ -129,15 +128,6 @@ function viewDeps(
     }),
     bridge: stubService<ExplorerViewDeps["bridge"]>("EffectBridge", {
       runSync: Effect.runSync,
-    }),
-    noteIndex: stubService<ExplorerViewDeps["noteIndex"]>("NoteIndex", {
-      getNotesByItemKey: () => [],
-      getImportedNoteByNoteKey: () => [],
-      whenIndexed: async () => {},
-    }),
-    zoteroPref: stubService<ExplorerViewDeps["zoteroPref"]>("ZoteroPref", {
-      dataDir: "/Zotero",
-      baseAttachmentPath: null,
     }),
     pluginVersion: "test",
     zoteroReads: stubService<ExplorerViewDeps["zoteroReads"]>(
