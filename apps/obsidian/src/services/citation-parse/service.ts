@@ -39,9 +39,10 @@ export const layerCitationParse = Layer.effect(
       .consume(() => client.start())
       .pipe(Effect.forkScoped({ startImmediately: true }));
     return CitationParse.of({
-      parse: Effect.fn("CitationParse.parse")((request) =>
-        client.parse(request),
-      ),
+      // Untraced: a citation scan sends one request per note.
+      parse: Effect.fnUntraced(function* (request) {
+        return yield* client.parse(request);
+      }),
     });
   }),
 );

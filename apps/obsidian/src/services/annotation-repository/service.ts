@@ -423,14 +423,14 @@ export function layerAnnotationRepository(options: {
         mutationFor: Effect.fn("AnnotationRepository.mutationFor")(
           (annotationKey) => Effect.sync(() => core.mutationFor(annotationKey)),
         ),
-        annotationState: Effect.fn("AnnotationRepository.annotationState")(
-          (annotationKey) =>
-            Effect.sync(() => core.annotationState(annotationKey)),
-        ),
-        textDraftFor: Effect.fn("AnnotationRepository.textDraftFor")(
-          (field, annotationKey) =>
-            Effect.sync(() => core.textDraftFor(field, annotationKey)),
-        ),
+        // Untraced: the annotation view reads it once per changed Annotation.
+        annotationState: Effect.fnUntraced(function* (annotationKey) {
+          return core.annotationState(annotationKey);
+        }),
+        // Untraced: the annotation view reads it per Annotation and field.
+        textDraftFor: Effect.fnUntraced(function* (field, annotationKey) {
+          return core.textDraftFor(field, annotationKey);
+        }),
         editTextField: Effect.fn("AnnotationRepository.editTextField")(
           (field, annotationKey, text) =>
             Effect.sync(() => core.editTextField(field, annotationKey, text)),
@@ -453,9 +453,10 @@ export function layerAnnotationRepository(options: {
               Effect.promise(() => core.retryTextDraft(field, annotationKey)),
             ),
         ),
-        tagDraftFor: Effect.fn("AnnotationRepository.tagDraftFor")(
-          (annotationKey) => Effect.sync(() => core.tagDraftFor(annotationKey)),
-        ),
+        // Untraced: the annotation view reads it per Annotation.
+        tagDraftFor: Effect.fnUntraced(function* (annotationKey) {
+          return core.tagDraftFor(annotationKey);
+        }),
         editTags: Effect.fn("AnnotationRepository.editTags")(
           (annotationKey, names) =>
             Effect.sync(() => core.editTags(annotationKey, names)),
