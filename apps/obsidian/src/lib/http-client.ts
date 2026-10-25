@@ -79,15 +79,13 @@ function requestBody(
 ): string | ArrayBuffer | undefined {
   const { body } = request;
   switch (body._tag) {
-    case "Empty":
-      return undefined;
     case "Raw":
       return typeof body.body === "string" ? body.body : undefined;
     case "Uint8Array":
       // A copy: a text body is a view into Node's shared Buffer pool.
       return new Uint8Array(body.body).buffer;
     default:
-      throw new TypeError(`requestUrl cannot send a ${body._tag} body`);
+      return undefined;
   }
 }
 
