@@ -358,7 +358,7 @@ export async function watchExcerptPixels(
 ): Promise<AsyncDisposable & { keys(): Promise<string[]> }> {
   await obEval(
     vaultId,
-    "(function(){window.__ztPixelsOff?.();window.__ztPixels=[];window.__ztPixelsOff=app.plugins.plugins.zotlit.services.annotationRepository.on('excerpt-pixels-changed',(record)=>window.__ztPixels.push(record.key));return true;})()",
+    "(function(){window.__ztPixelsOff?.();window.__ztPixels=[];window.__ztPixelsOff=app.plugins.plugins.zotlit.services.bridge.subscribe(app.plugins.plugins.zotlit.services.annotationRepository.excerptPixelsChanged,({record})=>window.__ztPixels.push(record.key));return true;})()",
   );
   return {
     async keys() {

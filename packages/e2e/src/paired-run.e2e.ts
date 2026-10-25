@@ -2788,7 +2788,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           announced: string[];
         }>(
           vaultId!,
-          `(async()=>{const s=app.plugins.plugins.zotlit.services;const binding=s.pdfAnnotationEditor.bindings.find(b=>b.filePath===${JSON.stringify(attachmentPath)});const announced=[];const off=s.annotationRepository.on('excerpt-pixels-changed',(record)=>announced.push(record.key));try{const position=${JSON.stringify(edited)};const sortIndex=await binding.sortIndex(position);const state=await s.annotationRepository.patchGeometry(${JSON.stringify(imageKey)},{position,sortIndex},'pointer');return JSON.stringify({sortIndex,state,announced});}finally{off();}})()`,
+          `(async()=>{const s=app.plugins.plugins.zotlit.services;const binding=s.pdfAnnotationEditor.bindings.find(b=>b.filePath===${JSON.stringify(attachmentPath)});const announced=[];const off=s.bridge.subscribe(s.annotationRepository.excerptPixelsChanged,({record})=>announced.push(record.key));try{const position=${JSON.stringify(edited)};const sortIndex=await binding.sortIndex(position);const state=await s.annotationRepository.patchGeometry(${JSON.stringify(imageKey)},{position,sortIndex},'pointer');return JSON.stringify({sortIndex,state,announced});}finally{off();}})()`,
         );
         expect(outcome.state.kind).toBe("idle");
         expect(outcome.announced).toEqual([imageKey]);
@@ -5215,11 +5215,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await obEval(
             vaultId!,
             `(async () => {
-              const db = app.plugins.plugins.zotlit.services.zoteroReads;
+              const services = app.plugins.plugins.zotlit.services;
+              const db = services.zoteroReads;
               const acquire = db.acquireRead;
               const pending = Promise.withResolvers();
               const state = { changed: false, restore: null };
-              const off = db.on('changed', () => { state.changed = true; });
+              const off = services.bridge.subscribe(db.changed, () => { state.changed = true; });
               state.restore = () => { db.acquireRead = acquire; off(); pending.resolve(); };
               window.__zlPendingDatabaseRead = state;
               db.acquireRead = async () => { await pending.promise; return acquire.call(db); };

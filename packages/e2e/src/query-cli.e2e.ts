@@ -1564,7 +1564,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
     await obEval(
       run.vaultId,
-      `window.zotlitE2EChanged=0;window.zotlitE2EOffChanged=${services}.zoteroReads.on('changed',function(){window.zotlitE2EChanged++;});true`,
+      `window.zotlitE2EChanged=0;window.zotlitE2EOffChanged=${services}.bridge.subscribe(${services}.zoteroReads.changed,function(){window.zotlitE2EChanged++;});true`,
     );
     cleanup.defer(async () => {
       await obEval(

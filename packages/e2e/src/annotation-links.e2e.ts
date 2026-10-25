@@ -504,7 +504,9 @@ async function follow({
         // The ledger records a read as the reader names its Attachment, so
         // the reader is asked which one it holds as each read lands.
         const reads=[];
-        cleanup.defer(s.useLedger.on('changed',()=>{
+        let replayed=false;
+        cleanup.defer(s.bridge.subscribe(s.useLedger.changes,()=>{
+          if(!replayed){replayed=true;return;}
           const [newest]=Object.entries(s.useLedger.uses).sort(([,a],[,b])=>b-a)[0]??[];
           if(s.useLedger.get(newest)?.kind==='read')reads.push(s.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(PDF_PATH)})?.attachment.attachmentKey??null);
         }));
@@ -694,7 +696,9 @@ async function sharedTabs(): Promise<SharedTabsOutcome> {
         // the tab's session does, so each is credited to the binding's.
         const reads=[];
         const ledger=services().useLedger;
-        cleanup.defer(ledger.on('changed',()=>{
+        let replayed=false;
+        cleanup.defer(services().bridge.subscribe(ledger.changes,()=>{
+          if(!replayed){replayed=true;return;}
           const [newest]=Object.entries(ledger.uses).sort(([,a],[,b])=>b-a)[0]??[];
           if(ledger.get(newest)?.kind==='read')reads.push(services().pdfAnnotationEditor.bindingFor(restored.view)?.attachment.attachmentKey??null);
         }));
