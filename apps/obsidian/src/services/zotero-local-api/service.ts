@@ -14,12 +14,12 @@ import type {
   LocalApiEvent,
   LocalApiSource,
   LocalApiState,
+  WriteAuthorizationState,
 } from "./session";
 import type {
   LocalApiAnnotation,
   LocalApiFailure,
   LocalApiResult,
-  WriteAuthorizationState,
   ZoteroReply,
 } from "./wire";
 import type { WriteAuthorizationStore } from "./write-authorization";
@@ -29,13 +29,13 @@ export type {
   LocalApiAnnotation,
   LocalApiFailure,
   LocalApiResult,
-  WriteAuthorizationState,
 } from "./wire";
 export type {
   AuthorizedSendOptions,
   LocalApiEvent,
   LocalApiSource,
   LocalApiState,
+  WriteAuthorizationState,
 } from "./session";
 export type {
   SecretStore,

@@ -15,7 +15,6 @@ import * as v from "valibot";
 
 import { parseIndexedKey } from "@zotlit/db";
 
-import { fromInstant, toInstant } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import {
   exchangeWithZotero,
@@ -44,7 +43,6 @@ import type {
   LocalApiAnnotation,
   LocalApiFailure,
   LocalApiResult,
-  WriteAuthorizationState,
   ZoteroReply,
 } from "./wire";
 import type { WriteAuthorizationStore } from "./write-authorization";
@@ -106,6 +104,22 @@ export type LocalApiState =
       authorized: boolean;
     }
   | { kind: "unavailable"; failure: LocalApiFailure };
+
+/**
+ * What the write path knows about one Attachment beside the Capability Probe.
+ * The repository folds it into that Attachment's Editing Capability; none of it
+ * outlives the session.
+ *
+ * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
+ */
+export interface WriteAuthorizationState {
+  /** A gesture is at Zotero's dialog now. */
+  authorizing: boolean;
+  /** Zotero refused a write to this Attachment's library this session. */
+  libraryReadOnly: boolean;
+  /** When Zotero's dialog rate limit lifts, or null while none is running. */
+  cooldownUntil: DateTime.Utc | null;
+}
 
 export type LocalApiEvent =
   /**
@@ -574,7 +588,7 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
       const now = yield* DateTime.now;
       yield* Ref.set(
         cooldownUntil,
-        fromInstant(toInstant(now).add(failure.retryAfter)),
+        DateTime.addDuration(now, failure.retryAfter),
       );
       yield* publish({ _tag: "capability-changed" });
     }
@@ -595,7 +609,7 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
     }
     const failure: LocalApiFailure = {
       kind: "cooldown",
-      retryAfter: toInstant(current).until(toInstant(until)),
+      retryAfter: DateTime.distance(current, until),
     };
     return failure;
   });
@@ -1034,12 +1048,10 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
       const libraryReadOnly =
         parsed !== null &&
         (yield* Ref.get(readOnlyLibraries)).has(libraryPath(parsed));
-      const until = yield* Ref.get(cooldownUntil);
       return {
         authorizing: authorizingNow,
         libraryReadOnly,
-        // The state goes to plain callers, which read it as Temporal.
-        cooldownUntil: until === null ? null : toInstant(until),
+        cooldownUntil: yield* Ref.get(cooldownUntil),
       };
     }, withLogCategory(LOG_CATEGORY)),
 

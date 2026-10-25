@@ -1,4 +1,4 @@
-import { Cause, Exit } from "effect";
+import { Cause, Duration, Exit } from "effect";
 import { TestClock } from "effect/testing";
 import { expect, it, vi } from "vitest";
 
@@ -7,7 +7,6 @@ import type { EffectBridge } from "@/lib/effect-bridge";
 import {
   annotationPage,
   ATTACHMENT_KEY,
-  cooldownOf,
   foreignServer,
   freshnessSignal,
   incompatibleZotero,
@@ -513,7 +512,7 @@ it("carries Zotero's own cooldown out of a rate-limited answer", async () => {
   expect(result).toEqual({
     failure: {
       kind: "cooldown",
-      retryAfter: cooldownOf(97),
+      retryAfter: Duration.seconds(97),
     },
   });
 });
@@ -532,7 +531,7 @@ it("falls back to Zotero's dialog window when a rate limit names no delay", asyn
   expect(result).toEqual({
     failure: {
       kind: "cooldown",
-      retryAfter: cooldownOf(60),
+      retryAfter: Duration.seconds(60),
     },
   });
 });

@@ -1,6 +1,10 @@
 // What a surface may do to one Attachment's Annotations, and the pure mapping
 // from what the Zotero Local API's probe knows onto it.
 
+import {
+  cooldownDeadline,
+  cooldownSpan,
+} from "@/services/zotero-local-api/plain";
 import type {
   LocalApiFailure,
   LocalApiState,
@@ -71,7 +75,7 @@ export function editingCapabilityOf(
   switch (state.kind) {
     case "available": {
       if (state.authorized) return { kind: "writable" };
-      const { cooldownUntil } = writes;
+      const cooldownUntil = cooldownDeadline(writes);
       return cooldownUntil !== null &&
         Temporal.Instant.compare(cooldownUntil, now()) > 0
         ? { kind: "cooldown", retryAfter: cooldownUntil }
@@ -115,7 +119,7 @@ export function capabilityOfFailure(
     case "not-saved":
       return { kind: "authorization-required" };
     case "cooldown":
-      return { kind: "cooldown", retryAfter: now().add(failure.retryAfter) };
+      return { kind: "cooldown", retryAfter: now().add(cooldownSpan(failure)) };
     case "invalid-response":
     // A read sends no version and no write token, and the list route answers an
     // empty list rather than a `404`, so all three answer a question this client

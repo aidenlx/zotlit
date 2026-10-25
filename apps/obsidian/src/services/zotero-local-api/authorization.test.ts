@@ -2,15 +2,14 @@
 // in-memory credential store: what each dialog outcome leaves the session in,
 // and what each refusal of a write does to the key in hand.
 
+import { DateTime, Duration } from "effect";
 import { TestClock } from "effect/testing";
 import { expect, it, vi } from "vitest";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
-import { toInstant } from "@/lib/effect-clock";
 
 import {
   authorized,
-  cooldownOf,
   denied,
   keyRejected,
   libraryReadOnly,
@@ -220,18 +219,18 @@ it("holds Zotero's cooldown, with the Retry-After it named", async () => {
   expect(limited).toEqual({
     failure: {
       kind: "cooldown",
-      retryAfter: cooldownOf(60),
+      retryAfter: Duration.seconds(60),
     },
   });
   expect(bridge.runSync(service.writeStateFor(null)).cooldownUntil).toEqual(
-    toInstant(NOW).add({ seconds: 60 }),
+    DateTime.addDuration(NOW, Duration.seconds(60)),
   );
   // A second gesture inside the cooldown asks Zotero nothing: the rate limit is
   // what a sixth dialog request in a minute costs.
   expect(again).toEqual({
     failure: {
       kind: "cooldown",
-      retryAfter: cooldownOf(60),
+      retryAfter: Duration.seconds(60),
     },
   });
   expect(

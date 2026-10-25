@@ -1,9 +1,26 @@
 import { describe, expect, it } from "vitest";
 
 import { stringifyInstant } from "./constants";
-import { fromInstant, toInstant } from "./effect-clock";
+import {
+  fromInstant,
+  fromTemporalDuration,
+  toInstant,
+  toTemporalDuration,
+} from "./effect-clock";
 
 describe("effect-clock edge", () => {
+  it.each([
+    { seconds: 97 },
+    { minutes: 1, milliseconds: 500 },
+    { milliseconds: 1 },
+  ])("keeps %o through a Duration", (parts) => {
+    const span = Temporal.Duration.from(parts);
+    const back = toTemporalDuration(fromTemporalDuration(span));
+    expect(back.total({ unit: "millisecond" })).toBe(
+      span.total({ unit: "millisecond" }),
+    );
+  });
+
   it.each([
     "2024-01-15T10:00:00Z",
     "2024-01-15T10:00:00.12Z",

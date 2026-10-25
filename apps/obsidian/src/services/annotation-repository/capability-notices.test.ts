@@ -4,6 +4,7 @@ import * as m from "@/lib/i18n/generated/messages";
 
 import type { EditingCapability } from "./capability";
 import { editingCapabilityCopy } from "./capability-copy";
+import { cooldownFailureOf } from "./capability-fixtures";
 import {
   allowEditingNotice,
   CapabilityNoticeLedger,
@@ -200,7 +201,7 @@ describe("a write Zotero refused", () => {
       // A write's `412` sends a probe looking; the probe settles the change and
       // is what speaks, so the refusal itself says nothing here.
       { kind: "server-changed" },
-      { kind: "cooldown", retryAfter: Temporal.Duration.from({ seconds: 60 }) },
+      cooldownFailureOf(60),
     ] as const;
 
     expect(
