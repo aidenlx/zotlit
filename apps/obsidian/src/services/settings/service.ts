@@ -746,7 +746,6 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
   const writeBestEffort = Effect.fn("PluginSettings.writeBestEffort")(
     function* (payload: Record<string, unknown>) {
       yield* data.save(payload).pipe(
-        Effect.mapError((error) => new Cause.UnknownError(error.cause)),
         Effect.uninterruptible,
         Effect.catchCause((cause) =>
           reportFailure("settings migration write failed", cause),

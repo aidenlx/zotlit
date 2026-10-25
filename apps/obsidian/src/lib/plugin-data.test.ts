@@ -27,7 +27,7 @@ describe("layerPluginData", () => {
     }),
   );
 
-  it.effect("fails with the operation and what Obsidian threw", () =>
+  it.effect("fails with what Obsidian threw as the cause", () =>
     Effect.gen(function* () {
       const disk = new Error("EACCES: permission denied");
       const data = yield* PluginData.pipe(
@@ -41,13 +41,8 @@ describe("layerPluginData", () => {
 
       const load = yield* Effect.flip(data.load);
       const save = yield* Effect.flip(data.save({}));
-      expect(load).toMatchObject({
-        _tag: "PluginDataError",
-        operation: "load",
-        message: "EACCES: permission denied",
-        cause: disk,
-      });
-      expect(save).toMatchObject({ operation: "save", cause: disk });
+      expect(load).toMatchObject({ _tag: "UnknownError", cause: disk });
+      expect(save).toMatchObject({ _tag: "UnknownError", cause: disk });
     }),
   );
 });
