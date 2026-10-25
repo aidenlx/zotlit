@@ -36,7 +36,7 @@ export function attachmentOpenFileMenu(
             );
             openAttachments(attachments, {
               reader: pdfPickerReader(deps.opener),
-              app: deps.app,
+              host: deps.app,
               event: evt,
               anchor,
             });

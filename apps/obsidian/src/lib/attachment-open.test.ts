@@ -85,7 +85,7 @@ describe("openAttachments", () => {
 
   it("defers to the reader's onEmpty when there are no Attachments", () => {
     const reader = fakeReader();
-    openAttachments([], { reader, app: APP, event: fakeReactMouseEvent() });
+    openAttachments([], { reader, host: APP, event: fakeReactMouseEvent() });
     expect(reader.calls).toStrictEqual([]);
     expect(reader.emptyCalls).toBe(1);
   });
@@ -95,7 +95,7 @@ describe("openAttachments", () => {
     const attachment = row("Doe 2024.pdf");
     openAttachments([attachment], {
       reader,
-      app: APP,
+      host: APP,
       event: fakeReactMouseEvent(),
     });
     expect(reader.calls).toStrictEqual([[attachment, false]]);
@@ -108,7 +108,7 @@ describe("openAttachments", () => {
     const attachment = row("Doe 2024.pdf");
     openAttachments([attachment], {
       reader,
-      app: APP,
+      host: APP,
       event: fakeReactMouseEvent(),
     });
     expect(reader.calls).toStrictEqual([[attachment, true]]);
@@ -128,7 +128,11 @@ describe("openAttachments", () => {
     const reader = fakeReader();
     const a = row("Alpha.pdf");
     const b = row("Beta.pdf");
-    openAttachments([a, b], { reader, app: APP, event: fakeReactMouseEvent() });
+    openAttachments([a, b], {
+      reader,
+      host: APP,
+      event: fakeReactMouseEvent(),
+    });
 
     expect(Menu.instances).toHaveLength(1);
     const menu = Menu.instances[0]!;
@@ -147,7 +151,7 @@ describe("openAttachments", () => {
     const b = row("Beta.pdf");
     openAttachments([a, b], {
       reader: fakeReader(),
-      app: APP,
+      host: APP,
       event: fakeReactMouseEvent(),
     });
 

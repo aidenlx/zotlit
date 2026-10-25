@@ -2,45 +2,31 @@
 import { Context, DateTime, Effect, Layer, Stream } from "effect";
 import type { Scope } from "effect";
 
+import { MemoryDeviceStorage } from "@/lib/__fixtures__/obsidian-device-storage";
 import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import type { HostSources } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { toInstant } from "@/lib/effect-clock";
 import { buildRuntime } from "@/lib/effect-layer";
-import type { DeviceStorageSource } from "@/lib/obsidian-device-storage";
 
 import { plainUseLedger } from "./plain";
 import type { PlainUseLedger } from "./plain";
 import { layerUseLedger, UseLedger } from "./service";
 
-/** The device storage `load` and `save` answer, as Obsidian's local storage. */
-class LedgerStorage implements DeviceStorageSource {
-  constructor(
-    readonly load: () => unknown,
-    readonly save: (key: string, value: unknown) => void,
-  ) {}
-
-  loadLocalStorage(_key: string): unknown {
-    return this.load();
-  }
-
-  saveLocalStorage(key: string, data: unknown): void {
-    this.save(key, data);
-  }
+/** The Obsidian objects a ledger reads, each in memory. */
+export interface LedgerHost extends HostSources {
+  readonly deviceStorage: MemoryDeviceStorage;
+  readonly workspace: MemoryWorkspace;
+  readonly metadataCache: MemoryMetadataCache;
 }
 
-/** A host whose local storage is `storage`, with an in-memory workspace and metadata cache. */
-export function ledgerHost(storage: {
-  load: () => unknown;
-  save?: (key: string, value: unknown) => void;
-  workspace?: MemoryWorkspace;
-  metadataCache?: MemoryMetadataCache;
-}): HostSources {
+/** A host with in-memory device storage, workspace and metadata cache; a test may pass its own. */
+export function ledgerHost(sources: Partial<LedgerHost> = {}): LedgerHost {
   return {
-    deviceStorage: new LedgerStorage(storage.load, storage.save ?? (() => {})),
-    workspace: storage.workspace ?? new MemoryWorkspace(),
-    metadataCache: storage.metadataCache ?? new MemoryMetadataCache(),
+    deviceStorage: sources.deviceStorage ?? new MemoryDeviceStorage(),
+    workspace: sources.workspace ?? new MemoryWorkspace(),
+    metadataCache: sources.metadataCache ?? new MemoryMetadataCache(),
   };
 }
 

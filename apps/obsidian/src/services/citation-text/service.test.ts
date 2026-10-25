@@ -109,6 +109,8 @@ interface Harness {
   readonly itemReads: number;
   /** Fails the next cited-item read, as a locked database would. */
   failNextItemRead: () => void;
+  /** The vault the document lives in, for a case that moves it. */
+  vault: MemoryVault;
   dispose: () => Promise<void>;
 }
 
@@ -353,6 +355,7 @@ async function makeHarness({
       fire("metadata:deleted", NOTE);
     },
     queryClient,
+    vault,
     get itemReads() {
       return itemReads;
     },
@@ -1565,6 +1568,29 @@ describe("CitationText staleness", () => {
 
           workspace.leaves.delete("markdown");
           workspace.open(null);
+          await vi.waitFor(() => expect(observers()).toBe(0));
+          await h.dispose();
+        }),
+    );
+
+    it.effect(
+      "releases the old path when the vault renames a document a workspace leaf shows",
+      () =>
+        Effect.promise(async () => {
+          const workspace = new MemoryWorkspace();
+          const h = await makeHarness({ body: "Blah [@alpha].", workspace });
+          const observers = () =>
+            h.queryClient.client
+              .getQueryCache()
+              .find({ queryKey: ["citation-text", NOTE.path], exact: true })
+              ?.getObserversCount() ?? 0;
+
+          const view = workspace.openMarkdownEditor(NOTE.path);
+          workspace.trigger("layout-change");
+          await vi.waitFor(() => expect(observers()).toBe(1));
+
+          // The rename alone tells the layer: Obsidian sends no layout change for it.
+          h.vault.rename(view.file!, "renamed.md");
           await vi.waitFor(() => expect(observers()).toBe(0));
           await h.dispose();
         }),

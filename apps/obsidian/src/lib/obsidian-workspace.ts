@@ -268,6 +268,15 @@ export const layerWorkspaceFrom = (
 ): Layer.Layer<Workspace> => Layer.effect(Workspace, makeWorkspace(source));
 
 /**
+ * What plain code that raises a workspace event reads of its host, such as a
+ * Profile switch or the Attachment menu: the app, or {@link workspaceTrigger}
+ * over the tag.
+ */
+export interface WorkspaceEventHost {
+  readonly workspace: Pick<ObsidianWorkspace, "trigger">;
+}
+
+/**
  * Obsidian's `trigger` over the tag, for plain code that raises a workspace
  * event, such as a hover handler: each call runs the tag's `trigger` with
  * `run`, the runner of the caller's layer.
