@@ -5,7 +5,6 @@
 import { TestClock } from "effect/testing";
 import { expect, it, vi } from "vitest";
 
-import { AbortError } from "@/lib/abort-error";
 import type { EffectBridge } from "@/lib/effect-bridge";
 
 import {
@@ -39,7 +38,7 @@ it("asks Zotero under the one Client Name, and only when a gesture asks", async 
 
   // Nothing has acted, so nothing has been sent — no dialog opens by itself.
   expect(requests).toHaveLength(0);
-  await bridge.runPromise(service.authorize());
+  await bridge.runPromise(service.authorize);
 
   const authorize = requests.at(-1)!;
   expect(authorize.method).toBe("POST");
@@ -65,7 +64,7 @@ it("refuses an Allow, and keeps no key to send", async () => {
     write: () => writeAccepted(),
   });
 
-  const grant = await bridge.runPromise(service.authorize());
+  const grant = await bridge.runPromise(service.authorize);
   const sent = requests.length;
   const write = await bridge.runPromise(
     service.authorizedSend(ITEM_PATH, {
@@ -92,7 +91,7 @@ it("refuses an Always Allow that the device cannot save", async () => {
   });
   credentials.remember.mockRejectedValueOnce(new Error("Keychain locked"));
 
-  const grant = await bridge.runPromise(service.authorize());
+  const grant = await bridge.runPromise(service.authorize);
   const sent = requests.length;
   const write = await bridge.runPromise(
     service.authorizedSend(ITEM_PATH, {
@@ -114,7 +113,7 @@ it("writes an Always Allow to the store and never holds it in memory", async () 
     authorize: () => authorized({ remember: true }),
   });
 
-  const grant = await bridge.runPromise(service.authorize());
+  const grant = await bridge.runPromise(service.authorize);
   await bridge.runPromise(
     service.authorizedSend(ITEM_PATH, {
       library: PERSONAL,
@@ -154,7 +153,7 @@ it("raises no second dialog once an authorization is remembered", async () => {
     { key: "5ixBzUhQfLu8i8RIhU6OEzENW4pAITLf" },
   );
 
-  const grant = await bridge.runPromise(service.authorize());
+  const grant = await bridge.runPromise(service.authorize);
 
   expect(grant).toEqual({ value: undefined });
   expect(requests.map(({ url }) => url.pathname)).toEqual(["/api/"]);
@@ -184,7 +183,7 @@ it.each<[string, () => Response]>([
   await using stack = new AsyncDisposableStack();
   const { service, bridge } = await setup(stack, { authorize: answer });
 
-  const grant = await bridge.runPromise(service.authorize());
+  const grant = await bridge.runPromise(service.authorize);
 
   expect(grant).toEqual({ value: undefined });
   expect(capabilityInput(service, bridge).authorized).toBe(true);
@@ -196,7 +195,7 @@ it("takes Deny as a refusal, and asks again only on the next gesture", async () 
     authorize: () => denied(),
   });
 
-  const refused = await bridge.runPromise(service.authorize());
+  const refused = await bridge.runPromise(service.authorize);
 
   expect(refused).toEqual({ failure: { kind: "denied" } });
   expect(capabilityInput(service, bridge).authorized).toBe(false);
@@ -213,8 +212,8 @@ it("holds Zotero's cooldown, with the Retry-After it named", async () => {
     authorize: () => rateLimited(),
   });
 
-  const limited = await bridge.runPromise(service.authorize());
-  const again = await bridge.runPromise(service.authorize());
+  const limited = await bridge.runPromise(service.authorize);
+  const again = await bridge.runPromise(service.authorize);
 
   expect(limited).toEqual({
     failure: {
@@ -248,9 +247,9 @@ it("asks again once the cooldown has run out", async () => {
   };
   const { runtime, service, bridge } = await setup(stack, answers);
 
-  await bridge.runPromise(service.authorize());
+  await bridge.runPromise(service.authorize);
   await runtime.runPromise(TestClock.adjust("61 seconds"));
-  const granted = await bridge.runPromise(service.authorize());
+  const granted = await bridge.runPromise(service.authorize);
 
   expect(granted).toEqual({ value: undefined });
   expect(bridge.runSync(service.writeStateFor(null)).cooldownUntil).toBeNull();
@@ -262,7 +261,7 @@ it("reads the local API being off from the probe the gesture runs", async () => 
     root: localApiDisabled,
   });
 
-  const refused = await bridge.runPromise(service.authorize());
+  const refused = await bridge.runPromise(service.authorize);
 
   expect(refused).toEqual({ failure: { kind: "local-api-disabled" } });
   // No dialog is raised at a Zotero that cannot answer one.
@@ -275,7 +274,7 @@ it("marks one library read-only for the session, and stops sending to it", async
     authorize: () => authorized({ remember: true }),
     write: () => libraryReadOnly(),
   });
-  await bridge.runPromise(service.authorize());
+  await bridge.runPromise(service.authorize);
 
   const refused = await bridge.runPromise(
     service.authorizedSend(ITEM_PATH, {
@@ -311,7 +310,7 @@ it("lets the next Capability Probe retire a read-only library, and says so", asy
   });
   const retired = vi.fn();
   stack.defer(bridge.subscribe(service.writeRefusalsRetired, retired));
-  await bridge.runPromise(service.authorize());
+  await bridge.runPromise(service.authorize);
   await bridge.runPromise(
     service.authorizedSend(ITEM_PATH, {
       library: PERSONAL,
@@ -359,7 +358,7 @@ it("announces a swapped Zotero database from the probe that adopts it", async ()
   // A write that meets another database sends the probe looking on its own;
   // the probe is what adopts the new one and what names it. The announcement
   // is the signal a check waits on, not a count of turns of the event loop.
-  await bridge.runPromise(service.authorize());
+  await bridge.runPromise(service.authorize);
   serverID = OTHER_SERVER_ID;
   const announced = new Promise<string>((resolve) => {
     const off = bridge.subscribe(service.serverChanges, (id) => {
@@ -411,8 +410,8 @@ it("serves two presses of Allow editing with one request", async () => {
     authorize: () => pending.promise,
   });
 
-  const view = bridge.runPromise(service.authorize());
-  const settings = bridge.runPromise(service.authorize());
+  const view = bridge.runPromise(service.authorize);
+  const settings = bridge.runPromise(service.authorize);
   // Both gestures wait at one dialog, and the surfaces say so meanwhile.
   await atTheDialog(requests);
   expect(bridge.runSync(service.writeStateFor(null)).authorizing).toBe(true);
@@ -424,42 +423,6 @@ it("serves two presses of Allow editing with one request", async () => {
     requests.filter(({ url }) => url.pathname === "/api/local/authorize"),
   ).toHaveLength(1);
   expect(bridge.runSync(service.writeStateFor(null)).authorizing).toBe(false);
-});
-
-it("runs until the gesture is abandoned, and then aborts the request", async () => {
-  await using stack = new AsyncDisposableStack();
-  // A Zotero whose dialog is never answered: the request is unbounded, so only
-  // the gesture ends it.
-  const { requests, service, bridge } = await setup(stack, {
-    authorize: () => new Promise<Response>(() => undefined),
-  });
-  const gesture = new AbortController();
-
-  const asking = bridge.runPromise(service.authorize(gesture.signal));
-  await atTheDialog(requests);
-  gesture.abort(new AbortError("The user left"));
-
-  expect(await asking).toEqual({ failure: { kind: "unknown-outcome" } });
-  expect(bridge.runSync(service.writeStateFor(null)).authorizing).toBe(false);
-});
-
-it("keeps the request alive while one of two gestures stands", async () => {
-  await using stack = new AsyncDisposableStack();
-  const pending = Promise.withResolvers<Response>();
-  const { requests, service, bridge } = await setup(stack, {
-    authorize: () => pending.promise,
-  });
-  const abandoned = new AbortController();
-  const standing = new AbortController();
-
-  const first = bridge.runPromise(service.authorize(abandoned.signal));
-  const second = bridge.runPromise(service.authorize(standing.signal));
-  await atTheDialog(requests);
-  abandoned.abort(new AbortError("The user left the reader"));
-  pending.resolve(authorized({ remember: true }));
-
-  expect(await first).toEqual({ value: undefined });
-  expect(await second).toEqual({ value: undefined });
 });
 
 it("answers a write with no session without reaching Zotero", async () => {

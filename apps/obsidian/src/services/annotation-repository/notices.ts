@@ -147,7 +147,7 @@ export class CapabilityNotices extends Service<void> {
    * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
    */
   async allowEditing(): Promise<void> {
-    const result = await this.#bridge.runPromise(this.#writes.authorize());
+    const result = await this.#bridge.runPromise(this.#writes.authorize);
     const notice = allowEditingNotice(result);
     if (!notice) return;
     this.#showNotice(notice, () => void this.allowEditing());

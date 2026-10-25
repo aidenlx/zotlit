@@ -1,4 +1,6 @@
-import { expect, it } from "vitest";
+import { Cause, Exit } from "effect";
+import { TestClock } from "effect/testing";
+import { expect, it, vi } from "vitest";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
 
@@ -476,13 +478,15 @@ it("reads a Zotero that speaks another API version off the root route's own head
 
 it("stands the source down when its own deadline ends the probe", async () => {
   await using stack = new AsyncDisposableStack();
-  const { requests, service, bridge } = await setup(
-    stack,
-    { root: () => rootOk() },
-    { probeDeadline: () => AbortSignal.abort() },
-  );
+  // A Zotero that never answers: only the deadline ends the probe.
+  const { requests, runtime, service, bridge } = await setup(stack, {
+    root: () => new Promise<Response>(() => undefined),
+  });
 
-  await bridge.runPromise(service.probe);
+  const probing = bridge.runPromise(service.probe);
+  await vi.waitFor(() => expect(requests).toHaveLength(1));
+  await runtime.runPromise(TestClock.adjust("5 seconds"));
+  await probing;
 
   // A Zotero that has not answered inside the deadline is not answering, which
   // is what a refused connection says too.
@@ -585,18 +589,25 @@ it("takes a Zotero database swapped under the port as a changed server", async (
   });
 });
 
-it("leaves the session standing when a read is cancelled", async () => {
+it("leaves the session standing when a read is interrupted", async () => {
   await using stack = new AsyncDisposableStack();
-  const { service, bridge } = await setup(stack, {
-    children: () => annotationPage(ROUGIER_ANNOTATIONS),
+  const { requests, service, bridge } = await setup(stack, {
+    children: () => new Promise<Response>(() => undefined),
   });
   await bridge.runPromise(service.probe);
 
-  const result = await bridge.runPromise(
-    service.listAnnotations(ATTACHMENT_KEY, AbortSignal.abort()),
+  const cancel = new AbortController();
+  const reading = bridge.runPromiseExit(
+    service.listAnnotations(ATTACHMENT_KEY),
+    { signal: cancel.signal },
   );
+  await vi.waitFor(() => expect(requests).toHaveLength(2));
+  cancel.abort();
+  const exit = await reading;
 
-  expect(result).toEqual({ failure: { kind: "unknown-outcome" } });
+  expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(
+    true,
+  );
   expect(bridge.runSync(service.demandSource)).not.toBeNull();
 });
 

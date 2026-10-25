@@ -702,8 +702,6 @@ export function unreachable(): never {
 export interface ClientOptions {
   /** A Remembered Write Authorization for the session's server, if any. */
   key?: string;
-  /** The deadline a Capability Probe runs under. @default one that never fires */
-  probeDeadline?: () => AbortSignal;
 }
 
 /** The instant a fixture's TestClock stands at until a test moves it. */
@@ -721,8 +719,8 @@ export const testClockAtNow = Layer.provideMerge(
 
 /**
  * The client over a fake transport, with the two event sources it subscribes to
- * in the caller's hands. The probe's own deadline never fires unless a test
- * hands one over, so no test waits on a real clock.
+ * in the caller's hands. The probe's own deadline runs on the fixture's
+ * TestClock, so it fires only when a test moves the clock past it.
  */
 export async function localApiClient(
   answers: ZoteroAnswers = {},
@@ -785,11 +783,7 @@ export async function localApiClient(
   const server = stubService<LocalServer["Service"]>("LocalServer", {
     dbUpdated: Stream.fromPubSub(dbUpdated),
   });
-  const localApiLayer = layerZoteroLocalApi({
-    credentials,
-    probeDeadline:
-      options.probeDeadline ?? (() => new AbortController().signal),
-  }).pipe(
+  const localApiLayer = layerZoteroLocalApi({ credentials }).pipe(
     Layer.provideMerge(testClockAtNow),
     Layer.provide(
       Layer.mergeAll(

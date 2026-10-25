@@ -32,7 +32,7 @@ function seam() {
     },
     bridge,
     writes: {
-      authorize: () => Effect.succeed({ value: undefined }),
+      authorize: Effect.succeed({ value: undefined }),
       writeRefusals: Stream.never,
       serverChanges: Stream.never,
       writeRefusalsRetired: Stream.never,
@@ -70,10 +70,8 @@ it("re-checks Zotero before it opens the editing settings row", async () => {
  */
 function answering(...answers: LocalApiResult<void>[]) {
   const shown: { notice: CapabilityNotice; runAction: () => void }[] = [];
-  const authorize = vi.fn(() =>
-    Effect.sync(
-      (): LocalApiResult<void> => answers.shift() ?? { value: undefined },
-    ),
+  const authorize = vi.fn(
+    (): LocalApiResult<void> => answers.shift() ?? { value: undefined },
   );
   const notices = new CapabilityNotices({
     capabilities: {
@@ -87,7 +85,7 @@ function answering(...answers: LocalApiResult<void>[]) {
     },
     bridge,
     writes: {
-      authorize,
+      authorize: Effect.sync(authorize),
       writeRefusals: Stream.never,
       serverChanges: Stream.never,
       writeRefusalsRetired: Stream.never,

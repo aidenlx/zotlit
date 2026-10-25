@@ -1,12 +1,24 @@
 // Reads Zotero's data live, from the local API a running Zotero serves on loopback.
+import {
+  Clock,
+  Deferred,
+  Duration,
+  Effect,
+  Fiber,
+  PubSub,
+  RcRef,
+  Ref,
+  Semaphore,
+} from "effect";
+import type { HttpClientError } from "effect/http";
 import * as v from "valibot";
 
 import { parseIndexedKey } from "@zotlit/db";
 
-import { AbortError } from "@/lib/abort-error";
-import { getLogger } from "@/lib/log";
-import { parseJson, sendToZotero, zoteroOrigin } from "@/lib/zotero-http";
-import type { ZoteroHttp, ZoteroMethod, ZoteroRunner } from "@/lib/zotero-http";
+import { instantClock } from "@/lib/effect-clock";
+import { withLogCategory } from "@/lib/effect-log";
+import { exchangeWithZotero, parseJson, zoteroOrigin } from "@/lib/zotero-http";
+import type { ZoteroHttp, ZoteroMethod } from "@/lib/zotero-http";
 
 import {
   API_VERSION,
@@ -42,7 +54,8 @@ export type {
   WriteAuthorizationStore,
 } from "./write-authorization";
 
-const logger = getLogger("zotero-local-api");
+/** The category every record of the session is filed under. */
+const LOG_CATEGORY = "zotero-local-api";
 
 /** How many Annotations one page of the list route asks for. */
 const PAGE_SIZE = 100;
@@ -52,7 +65,7 @@ const PAGE_SIZE = 100;
  * answered by then is not answering: the probe is time-bounded so a hung
  * server cannot hold the Annotation Source undecided.
  */
-const PROBE_TIMEOUT = Temporal.Duration.from({ seconds: 5 });
+const PROBE_TIMEOUT = Duration.seconds(5);
 
 /**
  * The Annotation Source the Zotero Local API is, carrying the server id that
@@ -151,33 +164,58 @@ export type LocalApiEvent =
    */
   | { readonly _tag: "write-refusals-retired" };
 
+/** What one request that spends a Write Authorization carries. */
+export interface AuthorizedSendOptions {
+  /**
+   * The library the write targets, as the route spells it, so a refusal marks
+   * that one read-only for the session.
+   */
+  library: string;
+  /** Hold the database identity across asynchronous credential reads. */
+  expectedServerID?: string;
+  /** Background read Uses update state without edit notices. */
+  silent?: boolean;
+  method: ZoteroMethod;
+  body?: string;
+  headers?: Readonly<Record<string, string>>;
+}
+
 export interface LocalApiSessionDeps {
   /** The `ZoteroHttp` loopback client. */
   http: ZoteroHttp["Service"];
-  /**
-   * Runs each exchange, from the context of the layer that holds the session
-   * but outside its Scope. A sent write must reach its answer, and a runner
-   * tied to the Scope (`scopedBridge`) would interrupt the exchange fiber when
-   * the scope closes. Reads are abandoned through their signals and the
-   * session's read lifetime instead.
-   */
-  run: ZoteroRunner;
   /** Zotero's HTTP port. */
-  httpPort: () => number | null;
-  publish: (event: LocalApiEvent) => void;
+  httpPort: Effect.Effect<number | null>;
+  /** Where the session announces what it learns. */
+  bus: PubSub.PubSub<LocalApiEvent>;
   credentials: WriteAuthorizationStore;
-  /**
-   * The deadline one Capability Probe runs under, as the signal that ends it.
-   *
-   * @default a signal that aborts after {@link PROBE_TIMEOUT}
-   */
-  probeDeadline?: () => AbortSignal;
-  /** The clock Zotero's dialog cooldown is measured against. */
-  now?: () => Temporal.Instant;
 }
 
 /** {@link LocalApiState}, plus the state before anything has asked. */
 type ProbeState = LocalApiState | { kind: "unprobed" };
+
+/**
+ * The Capability Probe in flight, and what the signals that joined it still
+ * owe. They share one Ref so that the last check for a move and the release of
+ * the probe are one step.
+ */
+interface ProbeSlot {
+  /** Settles when the probe in flight has, announcement included; null while none runs. */
+  readonly done: Deferred.Deferred<void> | null;
+  /** A Freshness Signal to announce once the probe settles. */
+  readonly moved: boolean;
+  /**
+   * A move of the resolved paths, so the answer of the probe in flight is
+   * about the port it asked before the move.
+   */
+  readonly stale: boolean;
+}
+
+/** The read write-backs of one `serverID/attachmentKey`, one at a time. */
+interface ReadQueue {
+  readonly permits: Semaphore.Semaphore;
+  /** Write-backs waiting or running; the queue is dropped at zero. */
+  users: number;
+}
 
 /**
  * Zotero's local API, as far as reading goes: a Capability Probe that decides
@@ -192,542 +230,236 @@ type ProbeState = LocalApiState | { kind: "unprobed" };
  * Authorization gates writes alone, and this client asks the credential store
  * only to tell a session that could write from one that must ask first.
  *
+ * The session lives on the Scope it is made in: a read write-back and the probe
+ * run on that Scope and are interrupted, and awaited, when it closes.
+ *
  * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
  * @see apps/obsidian/docs/adr/0036-local-api-enablement-is-a-guided-manual-step-in-zotero.md
  */
-export class LocalApiSession implements AsyncDisposable {
-  readonly #http;
-  readonly #run;
-  readonly #httpPort;
-  readonly #publish;
-  readonly #credentials;
-  readonly #deadline;
-  readonly #now;
-  readonly #stack = new AsyncDisposableStack();
-
-  #state: ProbeState = { kind: "unprobed" };
+export const makeLocalApiSession = Effect.fnUntraced(function* ({
+  http,
+  httpPort,
+  bus,
+  credentials,
+}: LocalApiSessionDeps) {
+  const scope = yield* Effect.scope;
+  const now = instantClock(yield* Clock.Clock);
+  const state = yield* Ref.make<ProbeState>({ kind: "unprobed" });
   /** What the last probe announced, so a probe that learned nothing new stays quiet. */
-  #announced: ProbeState = { kind: "unprobed" };
-  /** The probe in flight, so concurrent demands cost one request. */
-  #probing: Promise<void> | null = null;
-  /**
-   * What the signals that joined the probe in flight still owe: `moved`, a
-   * Freshness Signal to announce once it settles; `stale`, a move of the
-   * resolved paths, so its answer is about the port it asked before the move.
-   */
-  readonly #pending = { moved: false, stale: false };
-  /**
-   * The one authorization request in flight, and the gestures waiting on it, so
-   * two presses of Allow editing raise one dialog between them.
-   */
-  #authorizing: {
-    gestures: Gestures;
-    result: Promise<LocalApiResult<void>>;
-  } | null = null;
+  const announced = yield* Ref.make<ProbeState>({ kind: "unprobed" });
+  const probeSlot = yield* Ref.make<ProbeSlot>({
+    done: null,
+    moved: false,
+    stale: false,
+  });
+  /** A gesture is at Zotero's dialog now. */
+  const authorizing = yield* Ref.make(false);
   /**
    * The libraries Zotero refused a write to this session, as the route names
    * them. Cleared by the next Capability Probe.
    */
-  readonly #readOnlyLibraries = new Set<string>();
+  const readOnlyLibraries = yield* Ref.make<ReadonlySet<string>>(new Set());
   /** When Zotero's authorization-dialog rate limit lifts. */
-  #cooldownUntil: Temporal.Instant | null = null;
+  const cooldownUntil = yield* Ref.make<Temporal.Instant | null>(null);
   /** In-flight read writes only; completed and failed Uses are never replayed. */
-  readonly #readWrites = new Map<string, Promise<void>>();
-  readonly #readLifetime = new AbortController();
+  const readQueues = new Map<string, ReadQueue>();
 
-  constructor({
-    http,
-    run,
-    httpPort,
-    publish,
-    credentials,
-    probeDeadline = () =>
-      AbortSignal.timeout(PROBE_TIMEOUT.total("milliseconds")),
-    now = () => Temporal.Now.instant(),
-  }: LocalApiSessionDeps) {
-    this.#http = http;
-    this.#run = run;
-    this.#httpPort = httpPort;
-    this.#publish = publish;
-    this.#credentials = credentials;
-    this.#deadline = probeDeadline;
-    this.#now = now;
-    this.#stack.defer(async () => {
-      this.#readLifetime.abort();
-      await Promise.allSettled(this.#readWrites.values());
-    });
-  }
+  const publish = (event: LocalApiEvent) =>
+    PubSub.publish(bus, event).pipe(Effect.asVoid);
 
-  [Symbol.asyncDispose](): Promise<void> {
-    return this.#stack.disposeAsync();
-  }
+  // The credential store speaks Promise. Its callers never handled a rejection
+  // (only `remember` can refuse, and `granted` catches it), so one is a defect.
+  const storedKey = (serverID: string) =>
+    Effect.tryPromise(() => credentials.read(serverID)).pipe(Effect.orDie);
+  const forgetKey = Effect.tryPromise(() => credentials.forget()).pipe(
+    Effect.orDie,
+  );
+  /** Whether a Remembered Authorization is stored for `serverID`. */
+  const hasKey = (serverID: string) =>
+    Effect.map(storedKey(serverID), (key) => key !== null);
 
-  /** The Companion reported that its database updated. */
-  freshnessSignal(): void {
-    void this.#reprobe("freshness signal", { moved: true });
-  }
+  const heldServerID = Effect.map(Ref.get(state), serverIDOf);
 
-  /** The Zotero preference or data-directory override changed. */
-  resolvedPathsMoved(): void {
-    void this.#reprobe("resolved paths changed", { moved: true, stale: true });
-  }
+  const setAuthorized = Effect.fnUntraced(function* (authorized: boolean) {
+    const changed = yield* Ref.modify(
+      state,
+      (current): readonly [boolean, ProbeState] =>
+        current.kind !== "available" || current.authorized === authorized
+          ? [false, current]
+          : [true, { ...current, authorized }],
+    );
+    if (changed) yield* publish({ _tag: "capability-changed" });
+  });
 
   /**
-   * The source that stands now — and, where no probe has run yet, the demand
-   * that arms the first one. Answers `null` meanwhile, so the Annotation Source
-   * is decided by what is known at the moment of asking and a switch is
-   * announced through `changed` when the probe lands.
+   * One request, with the headers every Zotero Local API call carries.
    *
-   * @returns the source, or null while another source must answer instead.
+   * @param options.serverID the Zotero database this call is for, sent as the
+   *   precondition Zotero answers `412` to when another one holds the port.
+   *   The Capability Probe sends none: it is what learns the id.
+   * @param options.headers what this one call adds — the API key, a write
+   *   token, a version precondition, a content type.
    */
-  demandSource(): LocalApiSource | null {
-    if (this.#state.kind === "unprobed") void this.#reprobe("first demand");
-    return this.#state.kind === "available" ? this.#state.source : null;
-  }
-
-  /**
-   * What the last Capability Probe learned, for the repository that computes
-   * the Editing Capability from it. Asking does not arm a probe.
-   */
-  get state(): LocalApiState {
-    const state = this.#state;
-    return state.kind === "unprobed" ? { kind: "probing" } : state;
-  }
-
-  /**
-   * Run the Capability Probe now — an edit gesture, or the settings action.
-   * Concurrent calls join the probe already running.
-   */
-  async probe(): Promise<void> {
-    await this.#reprobe("asked");
-  }
-
-  /**
-   * What the write path knows, for the Editing Capability the repository
-   * computes.
-   *
-   * @param attachmentKey the Attachment being asked about, or null to ask about
-   *   the session itself — what the settings row shows, where no one library
-   *   can be read-only.
-   */
-  writeStateFor(attachmentKey: string | null): WriteAuthorizationState {
-    const parsed =
-      attachmentKey === null ? null : parseIndexedKey(attachmentKey);
-    return {
-      authorizing: this.#authorizing !== null,
-      libraryReadOnly:
-        parsed !== null && this.#readOnlyLibraries.has(libraryPath(parsed)),
-      cooldownUntil: this.#cooldownUntil,
-    };
-  }
-
-  /** Whether a Remembered Write Authorization is stored, for the settings row. */
-  async remembered(): Promise<boolean> {
-    return await this.#credentials.has();
-  }
-
-  /**
-   * Ask Zotero for a Write Authorization from Allow editing in the
-   * Annotation View or settings. Nothing else may call
-   * this — no dialog opens without a user action.
-   *
-   * A Capability Probe runs first, because the probe is the sole authority on
-   * whether the local API is on at all, and a session that already holds an
-   * authorization is answered without a dialog. Concurrent gestures join the
-   * one request in flight.
-   *
-   * Only Always Allow enables editing. An Allow answers `not-remembered`, and an
-   * Always Allow whose key SecretStorage cannot save answers `not-saved`; both
-   * keys are discarded unsent.
-   *
-   * The request itself is unbounded: Zotero's dialog waits for the user, so
-   * only the gesture ends it. `signal` is that gesture; the request is aborted
-   * once every gesture waiting on it has been abandoned.
-   *
-   * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
-   */
-  async authorize(signal?: AbortSignal): Promise<LocalApiResult<void>> {
-    const running = this.#authorizing;
-    if (running) {
-      running.gestures.join(signal);
-      return await running.result;
-    }
-    const gestures = new Gestures();
-    gestures.join(signal);
-    const result = this.#authorize(gestures.signal).finally(() => {
-      this.#authorizing = null;
-      this.#publish({ _tag: "capability-changed" });
-    });
-    this.#authorizing = { gestures, result };
-    this.#publish({ _tag: "capability-changed" });
-    return await result;
-  }
-
-  /**
-   * Drop the Remembered Write Authorization, from the settings row. The next
-   * gesture asks Zotero again; Zotero's own "Clear Write Authorizations" is the
-   * other half of the same revocation and needs no help from here.
-   */
-  async forgetAuthorization(): Promise<void> {
-    await this.#credentials.forget();
-    this.#setAuthorized(false);
-  }
-
-  /**
-   * One request that spends a Write Authorization — the seam every write goes
-   * through, with the method, body and preconditions its caller builds
-   * (aidenlx/zotlit#1145).
-   *
-   * The key is read here and never held: a Remembered Authorization comes fresh
-   * from the store at every call, so one the user deleted in Obsidian's Keychain
-   * is simply gone.
-   *
-   * No dialog opens from here. A call with no key in hand is refused as
-   * `unauthorized` without reaching Zotero; Allow editing authorizes first.
-   *
-   * @param options.library the library the write targets, as the route spells
-   *   it, so a refusal marks that one read-only for the session.
-   */
-  async authorizedSend(
+  const send = Effect.fnUntraced(function* (
     path: string,
     options: {
-      library: string;
-      /** Hold the database identity across asynchronous credential reads. */
-      expectedServerID?: string;
-      /** Background read Uses update state without edit notices. */
-      silent?: boolean;
-      method: ZoteroMethod;
+      serverID: string | null;
+      method?: ZoteroMethod;
       body?: string;
       headers?: Readonly<Record<string, string>>;
-      signal?: AbortSignal;
     },
-  ): Promise<LocalApiResult<ZoteroReply>> {
-    const state = this.#state;
-    if (state.kind !== "available") {
-      return { failure: noSessionFailure(state) };
+  ): Effect.fn.Return<LocalApiResult<ZoteroReply>> {
+    const port = yield* httpPort;
+    if (port === null) {
+      yield* Effect.logDebug(
+        "Zotero runs on a port its profile cannot disclose",
+      );
+      return { failure: { kind: "unreachable" } };
     }
-    const { library, method, body, headers, signal } = options;
-    if (this.#readOnlyLibraries.has(library)) {
-      return { failure: { kind: "library-read-only" } };
-    }
-    const { serverID } = state.source;
-    if (
-      options.expectedServerID !== undefined &&
-      options.expectedServerID !== serverID
-    ) {
-      return { failure: { kind: "server-changed" } };
-    }
-    const key = await this.#credentials.read(serverID);
-    if (options.expectedServerID !== undefined && this.#serverID !== serverID) {
-      return { failure: { kind: "server-changed" } };
-    }
-    if (key === null) {
-      this.#setAuthorized(false);
-      return { failure: { kind: "unauthorized" } };
-    }
-
-    const reply = await this.#send(path, {
-      serverID,
-      signal,
+    const { serverID, method, body } = options;
+    return yield* exchangeWithZotero(http, {
+      port,
+      path,
       method,
       body,
-      headers: { ...headers, "Zotero-API-Key": key },
-    });
-    if (
-      "failure" in reply &&
-      (options.expectedServerID === undefined || this.#serverID === serverID)
-    ) {
-      await this.#writeRefused(reply.failure, library, options.silent);
-    }
-    return reply;
-  }
-
-  /** A live, best-effort read Use. The caller supplies its database identity. */
-  async writeLastRead(
-    attachmentKey: string,
-    serverID: string,
-    instant: Temporal.Instant,
-  ): Promise<void> {
-    const state = this.#state;
-    if (
-      state.kind !== "available" ||
-      !state.authorized ||
-      state.source.serverID !== serverID
-    ) {
-      logger.trace("Read write-back skipped", {
-        attachmentKey,
-        reason:
-          state.kind !== "available"
-            ? "unavailable"
-            : !state.authorized
-              ? "unauthorized"
-              : "source changed",
-      });
-      return;
-    }
-    const target = `${serverID}/${attachmentKey}`;
-    const previous = this.#readWrites.get(target) ?? Promise.resolve();
-    const signal = AbortSignal.any([
-      this.#deadline(),
-      this.#readLifetime.signal,
-    ]);
-    const writing = previous
-      .catch(() => {})
-      .then(async () => {
-        if (!signal.aborted)
-          await this.#writeLastRead(attachmentKey, serverID, {
-            instant,
-            signal,
-          });
-        else
-          logger.trace("Read write-back skipped", {
-            attachmentKey,
-            reason: "cancelled",
-          });
-      });
-    this.#readWrites.set(target, writing);
-    try {
-      await writing;
-    } finally {
-      if (this.#readWrites.get(target) === writing)
-        this.#readWrites.delete(target);
-    }
-  }
-
-  async #writeLastRead(
-    attachmentKey: string,
-    serverID: string,
-    { instant, signal }: { instant: Temporal.Instant; signal: AbortSignal },
-  ): Promise<void> {
-    const parsed = parseIndexedKey(attachmentKey);
-    if (!parsed || parsed.groupID !== null) {
-      logger.trace("Read write-back skipped", {
-        attachmentKey,
-        reason: "not a personal attachment",
-      });
-      return;
-    }
-    const state = this.#state;
-    if (
-      state.kind !== "available" ||
-      !state.authorized ||
-      state.source.serverID !== serverID
-    ) {
-      logger.trace("Read write-back skipped", {
-        attachmentKey,
-        reason:
-          state.kind !== "available"
-            ? "unavailable"
-            : !state.authorized
-              ? "unauthorized"
-              : "source changed",
-      });
-      return;
-    }
-    if (this.#readOnlyLibraries.has("users/0")) {
-      logger.trace("Read write-back skipped", {
-        attachmentKey,
-        reason: "read-only library",
-      });
-      return;
-    }
-    if (!(await this.#hasKey(serverID))) {
-      if (this.#serverID === serverID) this.#setAuthorized(false);
-      logger.trace("Read write-back skipped", {
-        attachmentKey,
-        reason: "missing authorization",
-      });
-      return;
-    }
-    if (this.#serverID !== serverID) {
-      logger.trace("Read write-back skipped", {
-        attachmentKey,
-        reason: "source changed",
-      });
-      return;
-    }
-    const path = `/api/users/0/items/${parsed.key}`;
-    const reply = await this.#send(path, { serverID, signal });
-    if (this.#serverID !== serverID) {
-      logger.trace("Read write-back skipped", {
-        attachmentKey,
-        reason: "source changed",
-      });
-      return;
-    }
-    if ("failure" in reply) {
-      logger.trace("Read write-back refused", {
-        attachmentKey,
-        reason: reply.failure.kind,
-      });
-      if (reply.failure.kind === "server-changed") {
-        await this.#writeRefused(reply.failure, "users/0", true);
-      } else {
-        this.#report(reply);
-      }
-      return;
-    }
-    const item = v.safeParse(
-      v.object({
-        key: v.literal(parsed.key),
-        version: v.pipe(v.number(), v.integer(), v.minValue(0)),
-        library: v.object({ type: v.literal("user") }),
-        data: v.object({
-          itemType: v.literal("attachment"),
-          lastRead: v.optional(v.nullable(v.number())),
-        }),
+      headers: {
+        ...NO_CACHE_HEADERS,
+        ...(serverID !== null && { "Zotero-Server-ID": serverID }),
+        ...options.headers,
+      },
+    }).pipe(
+      Effect.map((reply): LocalApiResult<ZoteroReply> => {
+        const failure = classifyReply(reply, serverID);
+        return failure ? { failure } : { value: reply };
       }),
-      parseJson(reply.value.text),
+      Effect.catch((error): Effect.Effect<LocalApiResult<ZoteroReply>> =>
+        // The transport itself aborted, as `fetch` reports a connection that
+        // dropped under a request: the request left and no answer came.
+        isTransportAbort(error)
+          ? Effect.succeed({ failure: { kind: "unknown-outcome" } })
+          : Effect.logDebug("Zotero's HTTP server did not answer").pipe(
+              Effect.annotateLogs({
+                url: `${zoteroOrigin(port)}${path}`,
+                error,
+              }),
+              Effect.as({ failure: { kind: "unreachable" } }),
+            ),
+      ),
     );
-    if (!item.success) {
-      logger.trace("Read write-back skipped", {
-        attachmentKey,
-        reason: "malformed attachment",
-      });
-      return;
+  });
+
+  /** The session one `GET /api/` answered, or why there is none. */
+  const sessionFrom = Effect.fnUntraced(function* (
+    reply: ZoteroReply,
+  ): Effect.fn.Return<ProbeState> {
+    const version = reply.headers.get("zotero-api-version");
+    if (version !== API_VERSION) {
+      return { kind: "unavailable", failure: { kind: "incompatible-zotero" } };
     }
-    const lastRead = Math.floor(instant.epochMilliseconds / 1000);
-    if ((item.output.data.lastRead ?? 0) >= lastRead) {
-      logger.trace("Read write-back skipped", {
-        attachmentKey,
-        reason: "stored read is newer or equal",
-      });
-      return;
+    const serverID = reply.headers.get("zotero-server-id");
+    // Zotero 9 speaks API version 3 but serves reads only and sends no server
+    // id, which Zotero 10 added with writes — so an absent id is a Zotero too
+    // old to edit, not an answer ZotLit cannot read.
+    // @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/server/server_localAPI.js#L382-L391
+    if (serverID === null) {
+      return { kind: "unavailable", failure: { kind: "incompatible-zotero" } };
     }
-    const written = await this.authorizedSend(path, {
-      library: "users/0",
-      expectedServerID: serverID,
-      silent: true,
-      signal,
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ version: item.output.version, lastRead }),
-    });
-    logger.trace("Read write-back outcome", {
-      attachmentKey,
-      outcome: "failure" in written ? "refused" : "sent",
-      reason: "failure" in written ? written.failure.kind : "accepted",
-    });
-  }
+    if (!isServerID(serverID)) {
+      return { kind: "unavailable", failure: invalid(`server id ${serverID}`) };
+    }
+    yield* Effect.logDebug("Zotero answered its local API").pipe(
+      Effect.annotateLogs({
+        serverID,
+        schemaVersion: reply.headers.get("zotero-schema-version"),
+      }),
+    );
+    return {
+      kind: "available",
+      source: { kind: "zotero-local-api", serverID },
+      authorized: yield* hasKey(serverID),
+    };
+  });
 
   /**
-   * One Annotation as Zotero holds it now, which is what a write reads back
-   * after its `204`. That answer's `Last-Modified-Version` is the **library's**
-   * version, which a quiet library leaves equal to the object's and a busy one
-   * does not, so the object's own version is only ever knowable from here.
-   * Reading it back also puts the stored record through the same validation a
-   * listed one goes through before anything believes it.
-   *
-   * A failed re-read leaves the session standing. The write has already
-   * landed, so this says nothing about whether Zotero answers — its caller
-   * drops the Attachment's list instead, and the next read reconciles.
-   *
-   * @param annotationKey the Annotation's Indexed Key.
-   * @param attachmentKey the Attachment it must still hang from.
+   * Drops the libraries this session saw Zotero refuse writes to, and says so.
+   * Announced rather than silent, because a surface that stood a control down
+   * on the refusal has to know the mark behind it has gone.
    */
-  async readAnnotation(
-    annotationKey: string,
-    attachmentKey: string,
-    signal?: AbortSignal,
-  ): Promise<LocalApiResult<LocalApiAnnotation>> {
-    const state = this.#state;
-    if (state.kind !== "available") {
-      return { failure: noSessionFailure(state) };
-    }
-    const parsed = parseIndexedKey(annotationKey);
-    if (!parsed) return { failure: invalid(`annotation key ${annotationKey}`) };
-    const reply = await this.#send(
-      `/api/${libraryPath(parsed)}/items/${parsed.key}`,
-      { serverID: state.source.serverID, signal },
+  const retireWriteRefusals = Effect.gen(function* () {
+    const retired = yield* Ref.modify(
+      readOnlyLibraries,
+      (libraries): readonly [boolean, ReadonlySet<string>] =>
+        libraries.size === 0 ? [false, libraries] : [true, new Set()],
     );
-    if ("failure" in reply) return reply;
-    return readAnnotationItem(reply.value.text, attachmentKey);
-  }
+    if (retired) yield* publish({ _tag: "write-refusals-retired" });
+  });
 
-  /**
-   * Every Annotation of one Attachment, in the order its Sort Indexes give.
-   *
-   * The list route is read a page at a time and followed to its end, so an
-   * Attachment with more than {@link PAGE_SIZE} Annotations is whole. A key
-   * Zotero does not hold answers an empty list, not a failure — the same answer
-   * the Zotero DB source gives for it.
-   *
-   * @param attachmentKey the Attachment's Indexed Key.
-   * @param signal cancels the walk; an answer already committed is discarded.
-   */
-  async listAnnotations(
-    attachmentKey: string,
-    signal?: AbortSignal,
-  ): Promise<LocalApiResult<readonly LocalApiAnnotation[]>> {
-    const state = this.#state;
-    if (state.kind !== "available") {
-      return { failure: noSessionFailure(state) };
+  const probe = Effect.fnUntraced(function* (reason: string, silent: boolean) {
+    const previous = yield* Ref.get(state);
+    const heldServerIDBefore = serverIDOf(previous);
+    // A re-probe keeps what the last one answered until this one lands, so the
+    // Annotation Source does not swap twice for a signal that changed nothing.
+    if (previous.kind === "unprobed")
+      yield* Ref.set(state, { kind: "probing" });
+    // A library Zotero refused a write to is a session fact the probe is
+    // allowed to retire: the group's permissions may well have changed.
+    yield* retireWriteRefusals;
+    yield* Ref.update(probeSlot, (slot) => ({ ...slot, stale: false }));
+    // A probe its own deadline ended is an aborted one: `unknown-outcome`,
+    // which `probeFailure` reads as a Zotero that does not answer.
+    const reply = yield* send("/api/", { serverID: null }).pipe(
+      Effect.timeoutOrElse({
+        duration: PROBE_TIMEOUT,
+        orElse: () =>
+          Effect.succeed<LocalApiResult<ZoteroReply>>({
+            failure: { kind: "unknown-outcome" },
+          }),
+      }),
+    );
+    const next: ProbeState =
+      "failure" in reply
+        ? { kind: "unavailable", failure: probeFailure(reply.failure) }
+        : yield* sessionFrom(reply.value);
+    // The resolved paths moved while the request was out: the answer is about
+    // the port asked before the move, and the probe that follows replaces it.
+    if ((yield* Ref.get(probeSlot)).stale) {
+      yield* Effect.logDebug(
+        "Zotero Local API probe discarded: the resolved paths moved",
+      ).pipe(Effect.annotateLogs({ reason, answered: next }));
+      return;
     }
-    const parsed = parseIndexedKey(attachmentKey);
-    if (!parsed) return { failure: invalid(`attachment key ${attachmentKey}`) };
-    const library = libraryPath(parsed);
-
-    const annotations: LocalApiAnnotation[] = [];
-    const keys = new Set<string>();
-    let expectedTotal: number | null | undefined;
-    for (;;) {
-      const query = new URLSearchParams({
-        itemType: "annotation",
-        limit: String(PAGE_SIZE),
-        start: String(annotations.length),
-        // dateAdded never moves, so a page boundary holds still while the walk
-        // runs; Zotero's default sort is dateModified, which an edit reorders.
-        sort: "dateAdded",
-        direction: "asc",
-      });
-      const reply = await this.#send(
-        `/api/${library}/items/${parsed.key}/children?${query.toString()}`,
-        { serverID: state.source.serverID, signal },
+    yield* Ref.set(state, next);
+    yield* Effect.logDebug("Zotero Local API probed").pipe(
+      Effect.annotateLogs({
+        reason,
+        was: previous.kind,
+        state: next,
+        ...("failure" in reply ? { answered: reply.failure } : {}),
+      }),
+    );
+    // A focus inside the reader probes again, and every surface redraws on the
+    // announcement — so one that changed nothing would rebuild a control under
+    // the pointer and swallow the press.
+    if (!sameProbeState(yield* Ref.get(announced), next)) {
+      yield* Ref.set(announced, next);
+      yield* publish({ _tag: "capability-changed" });
+    }
+    // The one place a swapped database is both detected and settled. A read
+    // that quarantined the session and a write that answered `412` both send a
+    // probe looking, so every route to a change ends here.
+    const adopted = serverIDOf(next);
+    if (
+      adopted !== null &&
+      heldServerIDBefore !== null &&
+      adopted !== heldServerIDBefore
+    ) {
+      yield* Effect.logDebug("Another Zotero database answers this port").pipe(
+        Effect.annotateLogs({ was: heldServerIDBefore, serverID: adopted }),
       );
-      if ("failure" in reply) return this.#report(reply);
-
-      const page = readAnnotationPage(reply.value.text, attachmentKey);
-      if ("failure" in page) return this.#report(page);
-      const total = totalResults(reply.value.headers);
-      if (total === null) {
-        return this.#report({
-          failure: invalid("annotation page named no valid total"),
-        });
-      }
-      if (expectedTotal === undefined) expectedTotal = total;
-      if (expectedTotal !== total) {
-        return this.#report({
-          failure: invalid("annotation total changed during pagination"),
-        });
-      }
-      for (const { key } of page.value) {
-        if (keys.has(key)) {
-          return this.#report({
-            failure: invalid("annotation page repeated an annotation"),
-          });
-        }
-        keys.add(key);
-      }
-      annotations.push(...page.value);
-
-      if (
-        page.value.length < PAGE_SIZE ||
-        annotations.length >= expectedTotal
-      ) {
-        if (annotations.length !== expectedTotal) {
-          return this.#report({
-            failure: invalid("annotation pages did not match their total"),
-          });
-        }
-        logger.debug("Annotations read from the Zotero Local API", {
-          attachmentKey,
-          annotations: annotations.length,
-          serverID: state.source.serverID,
-        });
-        return { value: annotations.toSorted(byReadingOrder) };
-      }
+      if (!silent)
+        yield* publish({ _tag: "server-changed", serverID: adopted });
     }
-  }
+  });
 
   /**
    * One Capability Probe, and the announcement it earns.
@@ -747,181 +479,111 @@ export class LocalApiSession implements AsyncDisposable {
    * it. The last check for a move and the release of the probe happen in one
    * step, so no move can join a probe that has already finished.
    *
+   * The probe runs on the Scope of the session, not on the fiber that asked,
+   * so a caller that leaves does not strand the demands that joined it.
+   *
    * @param options.moved whether the trigger itself says this source's records
    *   changed, which is only ever true of the source that is standing.
    * @param options.silent whether a server change goes unannounced.
    * @param options.stale whether the trigger moved the port a running probe
    *   asked.
+   * @returns what settles when the probe does.
    */
-  async #reprobe(
+  const startProbe = Effect.fnUntraced(function* (
     reason: string,
     {
       moved = false,
       silent = false,
       stale = false,
     }: { moved?: boolean; silent?: boolean; stale?: boolean } = {},
-  ): Promise<void> {
-    this.#pending.moved ||= moved;
-    const running = this.#probing;
-    if (running) {
-      this.#pending.stale ||= stale;
-      return await running;
-    }
-    const before = this.#serverID;
-    const probing = (async () => {
-      try {
-        await this.#probe(reason, silent);
-        while (this.#pending.stale) {
-          await this.#probe("resolved paths moved during a probe", silent);
+  ) {
+    const before = yield* heldServerID;
+    const done = Deferred.makeUnsafe<void>();
+    const running = yield* Ref.modify(
+      probeSlot,
+      (slot): readonly [Deferred.Deferred<void> | null, ProbeSlot] =>
+        slot.done === null
+          ? [null, { ...slot, done, moved: slot.moved || moved }]
+          : [
+              slot.done,
+              {
+                ...slot,
+                moved: slot.moved || moved,
+                stale: slot.stale || stale,
+              },
+            ],
+    );
+    if (running !== null) return running;
+
+    const settle = Effect.gen(function* () {
+      yield* probe(reason, silent);
+      for (;;) {
+        const released = yield* Ref.modify(
+          probeSlot,
+          (slot): readonly [{ moved: boolean } | null, ProbeSlot] =>
+            slot.stale
+              ? [null, slot]
+              : [
+                  { moved: slot.moved },
+                  { done: null, moved: false, stale: false },
+                ],
+        );
+        if (released !== null) {
+          const serverID = yield* heldServerID;
+          if (serverID !== before || (released.moved && serverID !== null)) {
+            yield* publish({ _tag: "changed" });
+          }
+          return;
         }
-      } finally {
-        this.#probing = null;
+        yield* probe("resolved paths moved during a probe", silent);
       }
-    })();
-    this.#probing = probing;
-    await probing;
-    const announce = this.#pending.moved;
-    this.#pending.moved = false;
-    const serverID = this.#serverID;
-    if (serverID !== before || (announce && serverID !== null)) {
-      this.#publish({ _tag: "changed" });
-    }
-  }
+    }).pipe(
+      Effect.ensuring(
+        Ref.update(probeSlot, (slot) =>
+          slot.done === done
+            ? { done: null, moved: false, stale: false }
+            : slot,
+        ).pipe(Effect.andThen(Deferred.succeed(done, undefined))),
+      ),
+    );
+    yield* Effect.forkIn(settle, scope, { startImmediately: true });
+    return done;
+  });
 
-  get #serverID(): string | null {
-    return this.#state.kind === "available"
-      ? this.#state.source.serverID
-      : null;
-  }
+  const reprobe = Effect.fnUntraced(function* (
+    reason: string,
+    options?: { moved?: boolean; silent?: boolean; stale?: boolean },
+  ) {
+    yield* Deferred.await(yield* startProbe(reason, options));
+  });
 
-  async #probe(reason: string, silent = false): Promise<void> {
-    const previous = this.#state;
-    const heldServerID = this.#serverID;
-    // A re-probe keeps what the last one answered until this one lands, so the
-    // Annotation Source does not swap twice for a signal that changed nothing.
-    if (previous.kind === "unprobed") this.#state = { kind: "probing" };
-    // A library Zotero refused a write to is a session fact the probe is
-    // allowed to retire: the group's permissions may well have changed.
-    this.#retireWriteRefusals();
-    this.#pending.stale = false;
-    const reply = await this.#send("/api/", {
-      serverID: null,
-      signal: this.#deadline(),
-    });
-    const state: ProbeState =
-      "failure" in reply
-        ? { kind: "unavailable", failure: probeFailure(reply.failure) }
-        : await this.#sessionFrom(reply.value);
-    // The resolved paths moved while the request was out: the answer is about
-    // the port asked before the move, and the probe that follows replaces it.
-    if (this.#pending.stale) {
-      logger.debug(
-        "Zotero Local API probe discarded: the resolved paths moved",
-        {
-          reason,
-          answered: state,
-        },
-      );
-      return;
+  /** What a refused authorization leaves behind, beside the failure itself. */
+  const refused = Effect.fnUntraced(function* (failure: LocalApiFailure) {
+    if (failure.kind === "cooldown") {
+      yield* Ref.set(cooldownUntil, now().add(failure.retryAfter));
+      yield* publish({ _tag: "capability-changed" });
     }
-    this.#state = state;
-    logger.debug("Zotero Local API probed", {
-      reason,
-      was: previous.kind,
-      state: this.#state,
-      ...("failure" in reply ? { answered: reply.failure } : {}),
-    });
-    // A focus inside the reader probes again, and every surface redraws on the
-    // announcement — so one that changed nothing would rebuild a control under
-    // the pointer and swallow the press.
-    if (!sameProbeState(this.#announced, this.#state)) {
-      this.#announced = this.#state;
-      this.#publish({ _tag: "capability-changed" });
-    }
-    // The one place a swapped database is both detected and settled. A read
-    // that quarantined the session and a write that answered `412` both send a
-    // probe looking, so every route to a change ends here.
-    const adopted = this.#serverID;
-    if (adopted !== null && heldServerID !== null && adopted !== heldServerID) {
-      logger.debug("Another Zotero database answers this port", {
-        was: heldServerID,
-        serverID: adopted,
-      });
-      if (!silent) this.#publish({ _tag: "server-changed", serverID: adopted });
-    }
-  }
+    yield* Effect.logDebug("Zotero granted no write authorization").pipe(
+      Effect.annotateLogs({ failure: failure.kind }),
+    );
+    return failure;
+  });
 
-  /**
-   * Drops the libraries this session saw Zotero refuse writes to, and says so.
-   * Announced rather than silent, because a surface that stood a control down
-   * on the refusal has to know the mark behind it has gone.
-   */
-  #retireWriteRefusals(): void {
-    if (this.#readOnlyLibraries.size === 0) return;
-    this.#readOnlyLibraries.clear();
-    this.#publish({ _tag: "write-refusals-retired" });
-  }
-
-  /** The session one `GET /api/` answered, or why there is none. */
-  async #sessionFrom(reply: ZoteroReply): Promise<ProbeState> {
-    const version = reply.headers.get("zotero-api-version");
-    if (version !== API_VERSION) {
-      return { kind: "unavailable", failure: { kind: "incompatible-zotero" } };
+  /** Zotero's dialog cooldown, while one is running. */
+  const cooling = Effect.gen(function* () {
+    const until = yield* Ref.get(cooldownUntil);
+    if (until === null) return null;
+    const current = now();
+    if (Temporal.Instant.compare(until, current) <= 0) {
+      yield* Ref.set(cooldownUntil, null);
+      return null;
     }
-    const serverID = reply.headers.get("zotero-server-id");
-    // Zotero 9 speaks API version 3 but serves reads only and sends no server
-    // id, which Zotero 10 added with writes — so an absent id is a Zotero too
-    // old to edit, not an answer ZotLit cannot read.
-    // @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/server/server_localAPI.js#L382-L391
-    if (serverID === null) {
-      return { kind: "unavailable", failure: { kind: "incompatible-zotero" } };
-    }
-    if (!isServerID(serverID)) {
-      return { kind: "unavailable", failure: invalid(`server id ${serverID}`) };
-    }
-    logger.debug("Zotero answered its local API", {
-      serverID,
-      schemaVersion: reply.headers.get("zotero-schema-version"),
-    });
-    return {
-      kind: "available",
-      source: { kind: "zotero-local-api", serverID },
-      authorized: await this.#hasKey(serverID),
+    const failure: LocalApiFailure = {
+      kind: "cooldown",
+      retryAfter: current.until(until),
     };
-  }
-
-  /**
-   * One authorization gesture, from the probe it starts with to the grant or
-   * the refusal it ends on.
-   */
-  async #authorize(signal: AbortSignal): Promise<LocalApiResult<void>> {
-    await this.#reprobe("authorization gesture");
-    const state = this.#state;
-    if (state.kind !== "available") {
-      return { failure: noSessionFailure(state) };
-    }
-    // An authorization already in hand is the answer; raising Zotero's dialog
-    // for it would cost the user a click and spend a rate-limit slot.
-    if (state.authorized) return { value: undefined };
-
-    const cooling = this.#cooling();
-    if (cooling) return { failure: cooling };
-
-    const { serverID } = state.source;
-    logger.debug("Asking Zotero for a write authorization", { serverID });
-    const reply = await this.#send(AUTHORIZE_PATH, {
-      serverID,
-      signal,
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ appName: CLIENT_NAME }),
-    });
-    if ("failure" in reply) return { failure: this.#refused(reply.failure) };
-
-    const grant = readGrant(reply.value.text);
-    if ("failure" in grant) return grant;
-    return await this.#granted(serverID, grant.value);
-  }
+    return failure;
+  });
 
   /**
    * What Zotero granted, kept only when it outlives the write that spends it.
@@ -932,52 +594,89 @@ export class LocalApiSession implements AsyncDisposable {
    *
    * @see apps/obsidian/docs/adr/0062-editing-requires-a-remembered-authorization-and-allow-leaves-zotlit-read-only.md
    */
-  async #granted(
+  const granted = Effect.fnUntraced(function* (
     serverID: string,
     grant: AuthorizationGrant,
-  ): Promise<LocalApiResult<void>> {
+  ): Effect.fn.Return<LocalApiResult<void>> {
     if (!grant.remember) {
-      logger.debug("Zotero answered Allow, which ZotLit does not keep", {
-        serverID,
-      });
+      yield* Effect.logDebug(
+        "Zotero answered Allow, which ZotLit does not keep",
+      ).pipe(Effect.annotateLogs({ serverID }));
       return { failure: { kind: "not-remembered" } };
     }
-    try {
-      await this.#credentials.remember(serverID, grant.key);
-    } catch (error) {
-      logger.warn("The write authorization could not be saved", {
-        serverID,
-        error,
-      });
-      return { failure: { kind: "not-saved" } };
-    }
-    this.#setAuthorized(true);
+    const saved = yield* Effect.tryPromise(() =>
+      credentials.remember(serverID, grant.key),
+    ).pipe(
+      Effect.as(true),
+      Effect.catch((failure) =>
+        Effect.logWarning("The write authorization could not be saved").pipe(
+          Effect.annotateLogs({ serverID, error: failure.cause }),
+          Effect.as(false),
+        ),
+      ),
+    );
+    if (!saved) return { failure: { kind: "not-saved" } };
+    yield* setAuthorized(true);
     return { value: undefined };
-  }
+  });
 
-  /** What a refused authorization leaves behind, beside the failure itself. */
-  #refused(failure: LocalApiFailure): LocalApiFailure {
-    if (failure.kind === "cooldown") {
-      this.#cooldownUntil = this.#now().add(failure.retryAfter);
-      this.#publish({ _tag: "capability-changed" });
-    }
-    logger.debug("Zotero granted no write authorization", {
-      failure: failure.kind,
-    });
-    return failure;
-  }
+  /**
+   * One authorization gesture, from the probe it starts with to the grant or
+   * the refusal it ends on.
+   */
+  const authorizeBody: Effect.Effect<LocalApiResult<void>> = Effect.gen(
+    function* () {
+      const probing = yield* startProbe("authorization gesture");
+      yield* Ref.set(authorizing, true);
+      yield* publish({ _tag: "capability-changed" });
+      yield* Deferred.await(probing);
+      const current = yield* Ref.get(state);
+      if (current.kind !== "available") {
+        return { failure: noSessionFailure(current) };
+      }
+      // An authorization already in hand is the answer; raising Zotero's dialog
+      // for it would cost the user a click and spend a rate-limit slot.
+      if (current.authorized) return { value: undefined };
 
-  /** Zotero's dialog cooldown, while one is running. */
-  #cooling(): LocalApiFailure | null {
-    const until = this.#cooldownUntil;
-    if (until === null) return null;
-    const now = this.#now();
-    if (Temporal.Instant.compare(until, now) <= 0) {
-      this.#cooldownUntil = null;
-      return null;
-    }
-    return { kind: "cooldown", retryAfter: now.until(until) };
-  }
+      const cooldown = yield* cooling;
+      if (cooldown) return { failure: cooldown };
+
+      const { serverID } = current.source;
+      yield* Effect.logDebug("Asking Zotero for a write authorization").pipe(
+        Effect.annotateLogs({ serverID }),
+      );
+      const reply = yield* send(AUTHORIZE_PATH, {
+        serverID,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appName: CLIENT_NAME }),
+      });
+      if ("failure" in reply) return { failure: yield* refused(reply.failure) };
+
+      const grant = readGrant(reply.value.text);
+      if ("failure" in grant) return grant;
+      return yield* granted(serverID, grant.value);
+    },
+  );
+
+  /**
+   * The one authorization request in flight, shared by the gestures waiting on
+   * it, so two presses of Allow editing raise one dialog between them. The
+   * last gesture to leave interrupts it; a press after it settled starts a new
+   * one. Zotero's dialog waits for the user, so the request itself is unbounded.
+   *
+   * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
+   */
+  const request = yield* RcRef.make({
+    acquire: authorizeBody.pipe(
+      Effect.ensuring(
+        Ref.set(authorizing, false).pipe(
+          Effect.andThen(publish({ _tag: "capability-changed" })),
+        ),
+      ),
+      Effect.forkScoped({ startImmediately: true }),
+    ),
+  });
 
   /**
    * What a refused write says about the session: a key Zotero no longer honours
@@ -988,12 +687,12 @@ export class LocalApiSession implements AsyncDisposable {
    * An edit refusal is announced as `write-refused` whatever it left behind, so
    * one surface owns both the rollback and the notice.
    */
-  async #writeRefused(
+  const writeRefused = Effect.fnUntraced(function* (
     failure: LocalApiFailure,
     library: string,
     silent = false,
-  ): Promise<void> {
-    if (!silent) this.#publish({ _tag: "write-refused", failure, library });
+  ) {
+    if (!silent) yield* publish({ _tag: "write-refused", failure, library });
     // Both say the session's reading of this Zotero is out of date: a `501`
     // that it is the wrong version, a `412` that it is another database. The
     // probe re-reads it, adopts what it finds, and every surface settles on the
@@ -1002,35 +701,29 @@ export class LocalApiSession implements AsyncDisposable {
       failure.kind === "incompatible-zotero" ||
       failure.kind === "server-changed"
     ) {
-      const probing = this.#reprobe(`a write met ${failure.kind}`, {
+      const probing = yield* startProbe(`a write met ${failure.kind}`, {
         silent,
       });
-      if (silent) await probing;
+      if (silent) yield* Deferred.await(probing);
     }
     if (failure.kind === "unauthorized") {
-      logger.debug("Zotero no longer honours this write authorization");
-      await this.#credentials.forget();
-      this.#setAuthorized(false);
+      yield* Effect.logDebug(
+        "Zotero no longer honours this write authorization",
+      );
+      yield* forgetKey;
+      yield* setAuthorized(false);
       return;
     }
     if (failure.kind === "library-read-only") {
-      logger.debug("Zotero refuses writes to this library", { library });
-      this.#readOnlyLibraries.add(library);
-      this.#publish({ _tag: "capability-changed" });
+      yield* Effect.logDebug("Zotero refuses writes to this library").pipe(
+        Effect.annotateLogs({ library }),
+      );
+      yield* Ref.update(readOnlyLibraries, (libraries) =>
+        new Set(libraries).add(library),
+      );
+      yield* publish({ _tag: "capability-changed" });
     }
-  }
-
-  /** Whether a Remembered Authorization is stored for `serverID`. */
-  async #hasKey(serverID: string): Promise<boolean> {
-    return (await this.#credentials.read(serverID)) !== null;
-  }
-
-  #setAuthorized(authorized: boolean): void {
-    const state = this.#state;
-    if (state.kind !== "available" || state.authorized === authorized) return;
-    this.#state = { ...state, authorized };
-    this.#publish({ _tag: "capability-changed" });
-  }
+  });
 
   /**
    * A read that failed stands the session down, so the next ask lands on the
@@ -1045,99 +738,491 @@ export class LocalApiSession implements AsyncDisposable {
    *
    * A cancelled read says nothing about the session and leaves it standing.
    */
-  #report<T>(result: { failure: LocalApiFailure }): LocalApiResult<T> {
+  const report = Effect.fnUntraced(function* (result: {
+    failure: LocalApiFailure;
+  }) {
     const { failure } = result;
     if (failure.kind === "unknown-outcome") return result;
-    logger.debug("The Zotero Local API stopped answering", { failure });
-    this.#state = { kind: "unavailable", failure };
-    this.#publish({ _tag: "changed" });
+    yield* Effect.logDebug("The Zotero Local API stopped answering").pipe(
+      Effect.annotateLogs({ failure }),
+    );
+    yield* Ref.set(state, { kind: "unavailable", failure });
+    yield* publish({ _tag: "changed" });
     return result;
-  }
+  });
+
+  const writeBackSkipped = (attachmentKey: string, reason: string) =>
+    Effect.logTrace("Read write-back skipped").pipe(
+      Effect.annotateLogs({ attachmentKey, reason }),
+    );
+
+  /** One read write-back at a time per target; different targets run alongside. */
+  const queued = <A, E, R>(target: string, work: Effect.Effect<A, E, R>) =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const queue = readQueues.get(target) ?? {
+          permits: Semaphore.makeUnsafe(1),
+          users: 0,
+        };
+        queue.users += 1;
+        readQueues.set(target, queue);
+        return queue;
+      }),
+      (queue) => queue.permits.withPermit(work),
+      (queue) =>
+        Effect.sync(() => {
+          queue.users -= 1;
+          if (queue.users === 0) readQueues.delete(target);
+        }),
+    );
+
+  const writeLastReadNow = Effect.fnUntraced(function* (
+    attachmentKey: string,
+    serverID: string,
+    instant: Temporal.Instant,
+  ) {
+    const parsed = parseIndexedKey(attachmentKey);
+    if (!parsed || parsed.groupID !== null) {
+      yield* writeBackSkipped(attachmentKey, "not a personal attachment");
+      return;
+    }
+    const current = yield* Ref.get(state);
+    const unwritable = unwritableReason(current, serverID);
+    if (unwritable !== null) {
+      yield* writeBackSkipped(attachmentKey, unwritable);
+      return;
+    }
+    if ((yield* Ref.get(readOnlyLibraries)).has("users/0")) {
+      yield* writeBackSkipped(attachmentKey, "read-only library");
+      return;
+    }
+    if (!(yield* hasKey(serverID))) {
+      if ((yield* heldServerID) === serverID) yield* setAuthorized(false);
+      yield* writeBackSkipped(attachmentKey, "missing authorization");
+      return;
+    }
+    if ((yield* heldServerID) !== serverID) {
+      yield* writeBackSkipped(attachmentKey, "source changed");
+      return;
+    }
+    const path = `/api/users/0/items/${parsed.key}`;
+    const reply = yield* send(path, { serverID });
+    if ((yield* heldServerID) !== serverID) {
+      yield* writeBackSkipped(attachmentKey, "source changed");
+      return;
+    }
+    if ("failure" in reply) {
+      yield* Effect.logTrace("Read write-back refused").pipe(
+        Effect.annotateLogs({ attachmentKey, reason: reply.failure.kind }),
+      );
+      if (reply.failure.kind === "server-changed") {
+        yield* writeRefused(reply.failure, "users/0", true);
+      } else {
+        yield* report(reply);
+      }
+      return;
+    }
+    const item = v.safeParse(
+      v.object({
+        key: v.literal(parsed.key),
+        version: v.pipe(v.number(), v.integer(), v.minValue(0)),
+        library: v.object({ type: v.literal("user") }),
+        data: v.object({
+          itemType: v.literal("attachment"),
+          lastRead: v.optional(v.nullable(v.number())),
+        }),
+      }),
+      parseJson(reply.value.text),
+    );
+    if (!item.success) {
+      yield* writeBackSkipped(attachmentKey, "malformed attachment");
+      return;
+    }
+    const lastRead = Math.floor(instant.epochMilliseconds / 1000);
+    if ((item.output.data.lastRead ?? 0) >= lastRead) {
+      yield* writeBackSkipped(attachmentKey, "stored read is newer or equal");
+      return;
+    }
+    const written = yield* authorizedSend(path, {
+      library: "users/0",
+      expectedServerID: serverID,
+      silent: true,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version: item.output.version, lastRead }),
+    });
+    yield* Effect.logTrace("Read write-back outcome").pipe(
+      Effect.annotateLogs({
+        attachmentKey,
+        outcome: "failure" in written ? "refused" : "sent",
+        reason: "failure" in written ? written.failure.kind : "accepted",
+      }),
+    );
+  });
 
   /**
-   * One request, with the headers every Zotero Local API call carries.
+   * One request that spends a Write Authorization — the seam every write goes
+   * through, with the method, body and preconditions its caller builds
+   * (aidenlx/zotlit#1145).
    *
-   * @param options.serverID the Zotero database this call is for, sent as the
-   *   precondition Zotero answers `412` to when another one holds the port.
-   *   The Capability Probe sends none: it is what learns the id.
-   * @param options.headers what this one call adds — the API key, a write
-   *   token, a version precondition, a content type.
+   * The key is read here and never held: a Remembered Authorization comes fresh
+   * from the store at every call, so one the user deleted in Obsidian's Keychain
+   * is simply gone.
+   *
+   * No dialog opens from here. A call with no key in hand is refused as
+   * `unauthorized` without reaching Zotero; Allow editing authorizes first.
+   *
+   * The write runs on its caller's fiber to its answer: an interrupt would leave
+   * its outcome unknown.
+   *
+   * @param options.library the library the write targets, as the route spells
+   *   it, so a refusal marks that one read-only for the session.
    */
-  async #send(
+  const authorizedSend = Effect.fn("ZoteroLocalApi.authorizedSend")(function* (
     path: string,
-    options: {
-      serverID: string | null;
-      signal?: AbortSignal;
-      method?: ZoteroMethod;
-      body?: string;
-      headers?: Readonly<Record<string, string>>;
-    },
-  ): Promise<LocalApiResult<ZoteroReply>> {
-    const port = this.#httpPort();
-    if (port === null) {
-      logger.debug("Zotero runs on a port its profile cannot disclose");
-      return { failure: { kind: "unreachable" } };
+    options: AuthorizedSendOptions,
+  ): Effect.fn.Return<LocalApiResult<ZoteroReply>> {
+    const current = yield* Ref.get(state);
+    if (current.kind !== "available") {
+      return { failure: noSessionFailure(current) };
     }
-    const { serverID, signal, method, body } = options;
-    try {
-      const reply: ZoteroReply = await sendToZotero(this.#run, this.#http, {
-        port,
-        path,
-        method,
-        body,
-        headers: {
-          ...NO_CACHE_HEADERS,
-          ...(serverID !== null && { "Zotero-Server-ID": serverID }),
-          ...options.headers,
-        },
-        signal,
-      });
-      const failure = classifyReply(reply, serverID);
-      return failure ? { failure } : { value: reply };
-    } catch (error) {
-      if (AbortError.test(error))
-        return { failure: { kind: "unknown-outcome" } };
-      logger.debug("Zotero's HTTP server did not answer", {
-        url: `${zoteroOrigin(port)}${path}`,
-        error,
-      });
-      return { failure: { kind: "unreachable" } };
+    const { library, method, body, headers } = options;
+    if ((yield* Ref.get(readOnlyLibraries)).has(library)) {
+      return { failure: { kind: "library-read-only" } };
     }
-  }
+    const { serverID } = current.source;
+    if (
+      options.expectedServerID !== undefined &&
+      options.expectedServerID !== serverID
+    ) {
+      return { failure: { kind: "server-changed" } };
+    }
+    const key = yield* storedKey(serverID);
+    if (
+      options.expectedServerID !== undefined &&
+      (yield* heldServerID) !== serverID
+    ) {
+      return { failure: { kind: "server-changed" } };
+    }
+    if (key === null) {
+      yield* setAuthorized(false);
+      return { failure: { kind: "unauthorized" } };
+    }
+
+    const reply = yield* send(path, {
+      serverID,
+      method,
+      body,
+      headers: { ...headers, "Zotero-API-Key": key },
+    });
+    if (
+      "failure" in reply &&
+      (options.expectedServerID === undefined ||
+        (yield* heldServerID) === serverID)
+    ) {
+      yield* writeRefused(reply.failure, library, options.silent);
+    }
+    return reply;
+  }, withLogCategory(LOG_CATEGORY));
+
+  return {
+    /** The Companion reported that its database updated. */
+    freshnessSignal: Effect.asVoid(
+      startProbe("freshness signal", { moved: true }),
+    ),
+
+    /** The Zotero preference or data-directory override changed. */
+    resolvedPathsMoved: Effect.asVoid(
+      startProbe("resolved paths changed", { moved: true, stale: true }),
+    ),
+
+    /**
+     * The source that stands now — and, where no probe has run yet, the demand
+     * that arms the first one. Answers `null` meanwhile, so the Annotation Source
+     * is decided by what is known at the moment of asking and a switch is
+     * announced through `changed` when the probe lands.
+     *
+     * @returns the source, or null while another source must answer instead.
+     */
+    demandSource: Effect.gen(function* () {
+      const current = yield* Ref.get(state);
+      if (current.kind === "unprobed") yield* startProbe("first demand");
+      return current.kind === "available" ? current.source : null;
+    }).pipe(
+      Effect.withSpan("ZoteroLocalApi.demandSource"),
+      withLogCategory(LOG_CATEGORY),
+    ),
+
+    /**
+     * What the last Capability Probe learned, for the repository that computes
+     * the Editing Capability from it. Asking does not arm a probe.
+     */
+    state: Effect.map(Ref.get(state), (current): LocalApiState =>
+      current.kind === "unprobed" ? { kind: "probing" } : current,
+    ),
+
+    /**
+     * Run the Capability Probe now — an edit gesture, or the settings action.
+     * Concurrent calls join the probe already running.
+     */
+    probe: reprobe("asked").pipe(
+      Effect.withSpan("ZoteroLocalApi.probe"),
+      withLogCategory(LOG_CATEGORY),
+    ),
+
+    /**
+     * What the write path knows, for the Editing Capability the repository
+     * computes.
+     *
+     * @param attachmentKey the Attachment being asked about, or null to ask about
+     *   the session itself — what the settings row shows, where no one library
+     *   can be read-only.
+     */
+    writeStateFor: Effect.fn("ZoteroLocalApi.writeStateFor")(function* (
+      attachmentKey: string | null,
+    ): Effect.fn.Return<WriteAuthorizationState> {
+      const parsed =
+        attachmentKey === null ? null : parseIndexedKey(attachmentKey);
+      return {
+        authorizing: yield* Ref.get(authorizing),
+        libraryReadOnly:
+          parsed !== null &&
+          (yield* Ref.get(readOnlyLibraries)).has(libraryPath(parsed)),
+        cooldownUntil: yield* Ref.get(cooldownUntil),
+      };
+    }),
+
+    /** Whether a Remembered Write Authorization is stored, for the settings row. */
+    remembered: Effect.tryPromise(() => credentials.has()).pipe(
+      Effect.orDie,
+      Effect.withSpan("ZoteroLocalApi.remembered"),
+    ),
+
+    /**
+     * Ask Zotero for a Write Authorization from Allow editing in the
+     * Annotation View or settings. Nothing else may call
+     * this — no dialog opens without a user action.
+     *
+     * A Capability Probe runs first, because the probe is the sole authority on
+     * whether the local API is on at all, and a session that already holds an
+     * authorization is answered without a dialog. Concurrent gestures join the
+     * one request in flight.
+     *
+     * Only Always Allow enables editing. An Allow answers `not-remembered`, and an
+     * Always Allow whose key SecretStorage cannot save answers `not-saved`; both
+     * keys are discarded unsent.
+     *
+     * The request itself is unbounded: Zotero's dialog waits for the user, so
+     * only the gesture ends it. A gesture that is interrupted leaves the request;
+     * the last one to leave interrupts it.
+     *
+     * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
+     */
+    authorize: Effect.scoped(
+      RcRef.get(request).pipe(Effect.flatMap(Fiber.join)),
+    ).pipe(
+      Effect.withSpan("ZoteroLocalApi.authorize"),
+      withLogCategory(LOG_CATEGORY),
+    ),
+
+    /**
+     * Drop the Remembered Write Authorization, from the settings row. The next
+     * gesture asks Zotero again; Zotero's own "Clear Write Authorizations" is the
+     * other half of the same revocation and needs no help from here.
+     */
+    forgetAuthorization: Effect.andThen(forgetKey, setAuthorized(false)).pipe(
+      Effect.withSpan("ZoteroLocalApi.forgetAuthorization"),
+    ),
+
+    authorizedSend,
+
+    /** A live, best-effort read Use. The caller supplies its database identity. */
+    writeLastRead: Effect.fn("ZoteroLocalApi.writeLastRead")(function* (
+      attachmentKey: string,
+      serverID: string,
+      instant: Temporal.Instant,
+    ) {
+      const current = yield* Ref.get(state);
+      const unwritable = unwritableReason(current, serverID);
+      if (unwritable !== null) {
+        yield* writeBackSkipped(attachmentKey, unwritable);
+        return;
+      }
+      // The write-back runs on the Scope of the session, which interrupts it
+      // when it closes, and under the deadline of a probe. Its caller waits for
+      // it, and leaving does not cancel it.
+      const writing = yield* queued(
+        `${serverID}/${attachmentKey}`,
+        writeLastReadNow(attachmentKey, serverID, instant),
+      ).pipe(
+        Effect.onInterrupt(() => writeBackSkipped(attachmentKey, "cancelled")),
+        Effect.timeoutOrElse({
+          duration: PROBE_TIMEOUT,
+          orElse: () => Effect.void,
+        }),
+        Effect.forkIn(scope, { startImmediately: true }),
+      );
+      yield* Effect.asVoid(Fiber.await(writing));
+    }, withLogCategory(LOG_CATEGORY)),
+
+    /**
+     * One Annotation as Zotero holds it now, which is what a write reads back
+     * after its `204`. That answer's `Last-Modified-Version` is the **library's**
+     * version, which a quiet library leaves equal to the object's and a busy one
+     * does not, so the object's own version is only ever knowable from here.
+     * Reading it back also puts the stored record through the same validation a
+     * listed one goes through before anything believes it.
+     *
+     * A failed re-read leaves the session standing. The write has already
+     * landed, so this says nothing about whether Zotero answers — its caller
+     * drops the Attachment's list instead, and the next read reconciles.
+     *
+     * @param annotationKey the Annotation's Indexed Key.
+     * @param attachmentKey the Attachment it must still hang from.
+     */
+    readAnnotation: Effect.fn("ZoteroLocalApi.readAnnotation")(function* (
+      annotationKey: string,
+      attachmentKey: string,
+    ): Effect.fn.Return<LocalApiResult<LocalApiAnnotation>> {
+      const current = yield* Ref.get(state);
+      if (current.kind !== "available") {
+        return { failure: noSessionFailure(current) };
+      }
+      const parsed = parseIndexedKey(annotationKey);
+      if (!parsed) {
+        return { failure: invalid(`annotation key ${annotationKey}`) };
+      }
+      const reply = yield* send(
+        `/api/${libraryPath(parsed)}/items/${parsed.key}`,
+        { serverID: current.source.serverID },
+      );
+      if ("failure" in reply) return reply;
+      return readAnnotationItem(reply.value.text, attachmentKey);
+    }, withLogCategory(LOG_CATEGORY)),
+
+    /**
+     * Every Annotation of one Attachment, in the order its Sort Indexes give.
+     *
+     * The list route is read a page at a time and followed to its end, so an
+     * Attachment with more than {@link PAGE_SIZE} Annotations is whole. A key
+     * Zotero does not hold answers an empty list, not a failure — the same answer
+     * the Zotero DB source gives for it.
+     *
+     * Interrupting the walk discards an answer already committed.
+     *
+     * @param attachmentKey the Attachment's Indexed Key.
+     */
+    listAnnotations: Effect.fn("ZoteroLocalApi.listAnnotations")(function* (
+      attachmentKey: string,
+    ): Effect.fn.Return<LocalApiResult<readonly LocalApiAnnotation[]>> {
+      const current = yield* Ref.get(state);
+      if (current.kind !== "available") {
+        return { failure: noSessionFailure(current) };
+      }
+      const parsed = parseIndexedKey(attachmentKey);
+      if (!parsed) {
+        return { failure: invalid(`attachment key ${attachmentKey}`) };
+      }
+      const library = libraryPath(parsed);
+
+      const annotations: LocalApiAnnotation[] = [];
+      const keys = new Set<string>();
+      let expectedTotal: number | null | undefined;
+      for (;;) {
+        const query = new URLSearchParams({
+          itemType: "annotation",
+          limit: String(PAGE_SIZE),
+          start: String(annotations.length),
+          // dateAdded never moves, so a page boundary holds still while the walk
+          // runs; Zotero's default sort is dateModified, which an edit reorders.
+          sort: "dateAdded",
+          direction: "asc",
+        });
+        const reply = yield* send(
+          `/api/${library}/items/${parsed.key}/children?${query.toString()}`,
+          { serverID: current.source.serverID },
+        );
+        if ("failure" in reply) return yield* report(reply);
+
+        const page = readAnnotationPage(reply.value.text, attachmentKey);
+        if ("failure" in page) return yield* report(page);
+        const total = totalResults(reply.value.headers);
+        if (total === null) {
+          return yield* report({
+            failure: invalid("annotation page named no valid total"),
+          });
+        }
+        if (expectedTotal === undefined) expectedTotal = total;
+        if (expectedTotal !== total) {
+          return yield* report({
+            failure: invalid("annotation total changed during pagination"),
+          });
+        }
+        for (const { key } of page.value) {
+          if (keys.has(key)) {
+            return yield* report({
+              failure: invalid("annotation page repeated an annotation"),
+            });
+          }
+          keys.add(key);
+        }
+        annotations.push(...page.value);
+
+        if (
+          page.value.length < PAGE_SIZE ||
+          annotations.length >= expectedTotal
+        ) {
+          if (annotations.length !== expectedTotal) {
+            return yield* report({
+              failure: invalid("annotation pages did not match their total"),
+            });
+          }
+          yield* Effect.logDebug(
+            "Annotations read from the Zotero Local API",
+          ).pipe(
+            Effect.annotateLogs({
+              attachmentKey,
+              annotations: annotations.length,
+              serverID: current.source.serverID,
+            }),
+          );
+          return { value: annotations.toSorted(byReadingOrder) };
+        }
+      }
+    }, withLogCategory(LOG_CATEGORY)),
+  };
+});
+
+/**
+ * Whether a failed exchange is an abort that came from the transport rather
+ * than from this session's interrupt: the request left, and its outcome is
+ * unknown.
+ */
+function isTransportAbort(error: HttpClientError.HttpClientError): boolean {
+  const { reason } = error;
+  const cause =
+    typeof reason === "object" && reason !== null && "cause" in reason
+      ? reason.cause
+      : undefined;
+  return isAbort(reason) || isAbort(cause);
+}
+
+function isAbort(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+function serverIDOf(state: ProbeState): string | null {
+  return state.kind === "available" ? state.source.serverID : null;
 }
 
 /**
- * The gestures one authorization request serves, and the abandonment that ends
- * it. Zotero's dialog waits for the user, so nothing else may: the request runs
- * until every gesture waiting on it has been abandoned, and a gesture that
- * carries no signal keeps it alive for as long as it takes.
- *
- * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
+ * Why a read write-back cannot run against `serverID`, or null where it can.
  */
-class Gestures {
-  readonly #controller = new AbortController();
-  #waiting = 0;
-
-  get signal(): AbortSignal {
-    return this.#controller.signal;
-  }
-
-  join(signal: AbortSignal | undefined): void {
-    this.#waiting += 1;
-    if (signal === undefined) return;
-    if (signal.aborted) {
-      this.#leave();
-      return;
-    }
-    signal.addEventListener("abort", () => this.#leave(), { once: true });
-  }
-
-  #leave(): void {
-    this.#waiting -= 1;
-    if (this.#waiting > 0) return;
-    logger.debug("The authorization gesture was abandoned");
-    this.#controller.abort(new AbortError("Authorization gesture abandoned"));
-  }
+function unwritableReason(state: ProbeState, serverID: string): string | null {
+  if (state.kind !== "available") return "unavailable";
+  if (!state.authorized) return "unauthorized";
+  if (state.source.serverID !== serverID) return "source changed";
+  return null;
 }
 
 /**

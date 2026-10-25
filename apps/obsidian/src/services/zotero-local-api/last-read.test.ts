@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { TestClock } from "effect/testing";
 import { expect, it, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
@@ -320,4 +321,44 @@ it("does not send a read after the client is disposed", async () => {
     service.writeLastRead(ATTACHMENT_KEY, SERVER_ID, NOW),
   );
   expect(requests).toHaveLength(1);
+});
+
+it("interrupts a read write-back in flight when the client is disposed", async () => {
+  const read = Promise.withResolvers<Response>();
+  const { service, bridge, requests, disposable } = await localApiClient(
+    { item: () => read.promise },
+    { key: "remembered-key" },
+  );
+  await bridge.runPromise(service.probe);
+  const writing = bridge.runPromise(
+    service.writeLastRead(ATTACHMENT_KEY, SERVER_ID, NOW),
+  );
+  await vi.waitFor(() => expect(requests).toHaveLength(2));
+
+  await disposable[Symbol.asyncDispose]();
+  await writing;
+  read.resolve(attachment());
+
+  expect(requests.filter(({ method }) => method === "PATCH")).toEqual([]);
+});
+
+it("gives up a read write-back that outlasts the probe deadline", async () => {
+  const read = Promise.withResolvers<Response>();
+  const { service, bridge, requests, runtime, disposable } =
+    await localApiClient(
+      { item: () => read.promise },
+      { key: "remembered-key" },
+    );
+  await using _owned = disposable;
+  await bridge.runPromise(service.probe);
+  const writing = bridge.runPromise(
+    service.writeLastRead(ATTACHMENT_KEY, SERVER_ID, NOW),
+  );
+  await vi.waitFor(() => expect(requests).toHaveLength(2));
+
+  await runtime.runPromise(TestClock.adjust("5 seconds"));
+  await writing;
+  read.resolve(attachment());
+
+  expect(requests.filter(({ method }) => method === "PATCH")).toEqual([]);
 });

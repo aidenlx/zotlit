@@ -1,15 +1,15 @@
 // The Effect service over the Zotero Local API session.
-import { Clock, Context, Effect, Layer, PubSub, Stream } from "effect";
+import { Context, Effect, Layer, PubSub, Stream } from "effect";
 
-import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ZoteroHttp } from "@/lib/zotero-http";
 import { LocalServer } from "@/services/local-server/service";
 import { resolvedChanged, ZoteroPref } from "@/services/zotero-pref/service";
 
-import { LocalApiSession } from "./session";
+import { makeLocalApiSession } from "./session";
 import type {
+  AuthorizedSendOptions,
   LocalApiEvent,
   LocalApiSource,
   LocalApiState,
@@ -30,23 +30,18 @@ export type {
   LocalApiResult,
 } from "./wire";
 export type {
+  AuthorizedSendOptions,
   LocalApiEvent,
-  LocalApiSessionDeps,
   LocalApiSource,
   LocalApiState,
   WriteAuthorizationState,
 } from "./session";
-export { LocalApiSession } from "./session";
 export type {
   SecretStore,
   WriteAuthorizationStore,
 } from "./write-authorization";
 
-export type AuthorizedSendOptions = Parameters<
-  LocalApiSession["authorizedSend"]
->[1];
-
-/** The Zotero Local API client as an Effect service; see {@link LocalApiSession}. */
+/** The Zotero Local API client as an Effect service; see {@link makeLocalApiSession}. */
 export class ZoteroLocalApi extends Context.Service<
   ZoteroLocalApi,
   {
@@ -93,12 +88,12 @@ export class ZoteroLocalApi extends Context.Service<
      * keys are discarded unsent.
      *
      * The request itself is unbounded: Zotero's dialog waits for the user, so
-     * only the gesture ends it. `signal` is that gesture; the request is aborted
-     * once every gesture waiting on it has been abandoned.
+     * only the gesture ends it. A gesture that is interrupted leaves the request;
+     * the last one to leave interrupts it.
      *
      * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
      */
-    authorize(signal?: AbortSignal): Effect.Effect<LocalApiResult<void>>;
+    readonly authorize: Effect.Effect<LocalApiResult<void>>;
     /**
      * Drop the Remembered Write Authorization, from the settings row. The next
      * gesture asks Zotero again; Zotero's own "Clear Write Authorizations" is the
@@ -139,17 +134,16 @@ export class ZoteroLocalApi extends Context.Service<
     readAnnotation(
       annotationKey: string,
       attachmentKey: string,
-      signal?: AbortSignal,
     ): Effect.Effect<LocalApiResult<LocalApiAnnotation>>;
     /**
      * Every Annotation of one Attachment, in the order its Sort Indexes give.
      *
+     * Interrupting the walk discards an answer already committed.
+     *
      * @param attachmentKey the Attachment's Indexed Key.
-     * @param signal cancels the walk; an answer already committed is discarded.
      */
     listAnnotations(
       attachmentKey: string,
-      signal?: AbortSignal,
     ): Effect.Effect<LocalApiResult<readonly LocalApiAnnotation[]>>;
     /**
      * What this source answers may have moved: a probe that changed the
@@ -201,7 +195,6 @@ export class ZoteroLocalApi extends Context.Service<
 
 export function layerZoteroLocalApi(options: {
   readonly credentials: WriteAuthorizationStore;
-  readonly probeDeadline?: () => AbortSignal;
 }): Layer.Layer<ZoteroLocalApi, never, ZoteroPref | LocalServer | ZoteroHttp> {
   return Layer.effect(
     ZoteroLocalApi,
@@ -209,93 +202,23 @@ export function layerZoteroLocalApi(options: {
       const pref = yield* ZoteroPref;
       const server = yield* LocalServer;
       const http = yield* ZoteroHttp;
-      const now = instantClock(yield* Clock.Clock);
-      const context = yield* Effect.context<never>();
-      const run = Effect.runSyncWith(context);
       const bus = yield* PubSub.unbounded<LocalApiEvent>();
       yield* Effect.addFinalizer(() => PubSub.shutdown(bus));
-      const publish = (event: LocalApiEvent): void => {
-        void PubSub.publishUnsafe(bus, event);
-      };
-      const session = yield* Effect.acquireDisposable(
-        Effect.tryPromise(() =>
-          Promise.resolve(
-            new LocalApiSession({
-              http,
-              run: { runPromiseExit: Effect.runPromiseExitWith(context) },
-              credentials: options.credentials,
-              probeDeadline: options.probeDeadline,
-              now,
-              httpPort: () => run(pref.current).httpPort,
-              publish,
-            }),
-          ),
-        ),
-      );
-      yield* forkEach(server.dbUpdated, () =>
-        Effect.sync(() => session.freshnessSignal()),
-      );
-      yield* forkEach(resolvedChanged(pref), () =>
-        Effect.sync(() => session.resolvedPathsMoved()),
-      );
+      const { freshnessSignal, resolvedPathsMoved, ...api } =
+        yield* makeLocalApiSession({
+          http,
+          httpPort: Effect.map(pref.current, ({ httpPort }) => httpPort),
+          bus,
+          credentials: options.credentials,
+        });
+      yield* forkEach(server.dbUpdated, () => freshnessSignal);
+      yield* forkEach(resolvedChanged(pref), () => resolvedPathsMoved);
 
       const events = Stream.fromPubSub(bus);
       const byTag = <T extends LocalApiEvent["_tag"]>(tag: T) =>
         filterTag(events, tag);
       return ZoteroLocalApi.of({
-        demandSource: Effect.sync(() => session.demandSource()).pipe(
-          Effect.withSpan("ZoteroLocalApi.demandSource"),
-        ),
-        state: Effect.sync(() => session.state),
-        probe: Effect.promise(() => session.probe()).pipe(
-          Effect.withSpan("ZoteroLocalApi.probe"),
-        ),
-        writeStateFor: Effect.fn("ZoteroLocalApi.writeStateFor")(
-          (attachmentKey) =>
-            Effect.sync(() => session.writeStateFor(attachmentKey)),
-        ),
-        remembered: Effect.promise(() => session.remembered()).pipe(
-          Effect.withSpan("ZoteroLocalApi.remembered"),
-        ),
-        // A gesture with no signal keeps the shared request alive, so an
-        // interrupt does not abandon it.
-        authorize: Effect.fn("ZoteroLocalApi.authorize")((signal) =>
-          Effect.promise(() => session.authorize(signal)),
-        ),
-        forgetAuthorization: Effect.promise(() =>
-          session.forgetAuthorization(),
-        ).pipe(Effect.withSpan("ZoteroLocalApi.forgetAuthorization")),
-        // A write runs to its answer once sent: an abort would leave its
-        // outcome unknown. So it takes no abort signal.
-        authorizedSend: Effect.fn("ZoteroLocalApi.authorizedSend")(
-          (path, options) =>
-            Effect.promise(() => session.authorizedSend(path, options)),
-        ),
-        writeLastRead: Effect.fn("ZoteroLocalApi.writeLastRead")(
-          (attachmentKey, serverID, instant) =>
-            Effect.promise(() =>
-              session.writeLastRead(attachmentKey, serverID, instant),
-            ),
-        ),
-        readAnnotation: Effect.fn("ZoteroLocalApi.readAnnotation")(
-          (annotationKey, attachmentKey, signal) =>
-            Effect.promise((interrupt) =>
-              session.readAnnotation(
-                annotationKey,
-                attachmentKey,
-                signal ? AbortSignal.any([signal, interrupt]) : interrupt,
-              ),
-            ),
-        ),
-        listAnnotations: Effect.fn("ZoteroLocalApi.listAnnotations")(
-          (attachmentKey, signal) =>
-            Effect.promise((interrupt) =>
-              session.listAnnotations(
-                attachmentKey,
-                signal ? AbortSignal.any([signal, interrupt]) : interrupt,
-              ),
-            ),
-        ),
+        ...api,
         changes: byTag("changed").pipe(Stream.as(undefined)),
         capabilityChanges: byTag("capability-changed").pipe(
           Stream.as(undefined),
@@ -310,6 +233,6 @@ export function layerZoteroLocalApi(options: {
           Stream.as(undefined),
         ),
       });
-    }).pipe(Effect.orDie, withLogCategory("zotero-local-api")),
+    }).pipe(withLogCategory("zotero-local-api")),
   );
 }

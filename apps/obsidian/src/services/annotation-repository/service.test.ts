@@ -1544,7 +1544,7 @@ it("retains a paused draft until an explicit save after authorization returns", 
     expect(repository.textDraftFor("comment", "PUPR5FG5")?.text).toBe(
       "Keep these words",
     );
-    await localApiBridge.runPromise(localApiService.authorize());
+    await localApiBridge.runPromise(localApiService.authorize);
     const sent = requests.length;
     await vi.advanceTimersByTimeAsync(30_000);
     await repository.submitTextField("comment", "PUPR5FG5", {
@@ -1593,7 +1593,7 @@ it("saves text typed during a held draft's save once that save lands", async () 
       });
     repository.editTextField("comment", "PUPR5FG5", "Held words");
     await bridge.runPromise(localApiService.forgetAuthorization);
-    await localApiBridge.runPromise(localApiService.authorize());
+    await localApiBridge.runPromise(localApiService.authorize);
 
     const saving = repository.submitTextField("comment", "PUPR5FG5");
     await vi.waitFor(() => expect(submitted).toEqual(["Held words"]));
@@ -5916,7 +5916,7 @@ it("holds a tag draft when editing becomes unavailable, until Save tags after it
   expect(repository.editTags("FDRFQ7C2")).toBeNull();
 
   // Approval alone saves nothing, and neither does another close.
-  await localApiBridge.runPromise(localApiService.authorize());
+  await localApiBridge.runPromise(localApiService.authorize);
   await repository.submitTags("PUPR5FG5", { automatic: true });
   expect(zotero.patches).toEqual([]);
 
@@ -5951,7 +5951,7 @@ it("holds a refused tag save with its reason until Save tags", async () => {
   });
 
   refuse = false;
-  await localApiBridge.runPromise(localApiService.authorize());
+  await localApiBridge.runPromise(localApiService.authorize);
   await repository.submitTags("PUPR5FG5", { automatic: true });
   expect(zotero.patches).toEqual([]);
   expect(await repository.submitTags("PUPR5FG5")).toEqual({ kind: "idle" });
@@ -6021,7 +6021,7 @@ it("saves the next session on close again once Save tags has saved a held draft"
   repository.editTags("PUPR5FG5", ["review", "nlp", "todo", "figure"]);
   await repository.submitTags("PUPR5FG5", { automatic: true });
   refuse = false;
-  await localApiBridge.runPromise(localApiService.authorize());
+  await localApiBridge.runPromise(localApiService.authorize);
   expect(await repository.submitTags("PUPR5FG5")).toEqual({ kind: "idle" });
   expect(zotero.patches).toHaveLength(1);
 

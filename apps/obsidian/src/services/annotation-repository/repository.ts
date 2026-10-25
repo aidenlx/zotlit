@@ -64,7 +64,7 @@ import type {
 } from "./history";
 import { firstLockRefusal, lockOf } from "./lock";
 import type { AnnotationLock, LockedVerb, LockReason } from "./lock";
-import { readAll, readHeld, refreshDatabase } from "./reads";
+import { listLocalApi, readAll, readHeld, refreshDatabase } from "./reads";
 import {
   resolvesSilently,
   sameStoredGeometry,
@@ -3946,8 +3946,10 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
     signal: AbortSignal,
   ): Promise<AnnotationList> {
     const [result] = await Promise.all([
-      this.#bridge.runPromise(
-        this.#localApi.listAnnotations(attachmentKey, signal),
+      listLocalApi(
+        { bridge: this.#bridge, api: this.#localApi },
+        attachmentKey,
+        signal,
       ),
       this.#readLocks(attachmentKey),
     ]);

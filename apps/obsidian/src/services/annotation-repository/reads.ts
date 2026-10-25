@@ -5,6 +5,11 @@ import { Effect } from "effect";
 import { valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import type { QueryClients } from "@/services/query-client/service";
+import type {
+  LocalApiAnnotation,
+  LocalApiResult,
+  ZoteroLocalApi,
+} from "@/services/zotero-local-api/service";
 import type { ZoteroReads } from "@/services/zotero-reads/service";
 
 export async function refreshDatabase(
@@ -33,4 +38,26 @@ export function readAll<A, B, C, E>(
   ],
 ): Promise<readonly [A, B, C]> {
   return bridge.runPromise(Effect.all(effects, { concurrency: "unbounded" }));
+}
+
+/**
+ * The Zotero Local API list of one Attachment, interrupted when `signal`
+ * aborts. An interrupted read answers `unknown-outcome`, which says nothing
+ * about the session: it stays standing.
+ */
+export async function listLocalApi(
+  {
+    bridge,
+    api,
+  }: {
+    bridge: Pick<EffectBridge, "runPromiseExit">;
+    api: Pick<ZoteroLocalApi["Service"], "listAnnotations">;
+  },
+  attachmentKey: string,
+  signal: AbortSignal,
+): Promise<LocalApiResult<readonly LocalApiAnnotation[]>> {
+  return valueOr(
+    await bridge.runPromiseExit(api.listAnnotations(attachmentKey), { signal }),
+    { failure: { kind: "unknown-outcome" } },
+  );
 }
