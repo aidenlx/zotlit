@@ -309,14 +309,14 @@ const prepareImmutableRead = Effect.fnUntraced(function* (
     immutable: true,
     owner,
   }).pipe(
-    Effect.catch((error) =>
-      error instanceof ReflinkUnsupportedError
-        ? prepareTempRead("copy", sourcePath, {
-            includeWal: false,
-            immutable: true,
-            owner,
-          })
-        : Effect.fail(error),
+    Effect.catchIf(
+      (error) => error instanceof ReflinkUnsupportedError,
+      () =>
+        prepareTempRead("copy", sourcePath, {
+          includeWal: false,
+          immutable: true,
+          owner,
+        }),
     ),
   );
 });
@@ -351,14 +351,16 @@ const prepareTempRead = Effect.fnUntraced(function* (
           mode,
         }),
       ),
-      Effect.catch((error) =>
-        index < plan.parents.length - 1 && error instanceof SnapshotParentError
-          ? logDebug("Database read snapshot parent unusable, falling back", {
-              error,
-              parent,
-              reason: plan.reason,
-            }).pipe(Effect.andThen(tryParent(index + 1)))
-          : Effect.fail(error),
+      Effect.catchIf(
+        (error) =>
+          index < plan.parents.length - 1 &&
+          error instanceof SnapshotParentError,
+        (error) =>
+          logDebug("Database read snapshot parent unusable, falling back", {
+            error,
+            parent,
+            reason: plan.reason,
+          }).pipe(Effect.andThen(tryParent(index + 1))),
       ),
     );
   };
@@ -464,14 +466,12 @@ const cloneInto = Effect.fnUntraced(function* (
       times: CLONE_ATTEMPTS - 1,
       while: (error) => error instanceof UnstableSnapshotError,
     }),
-    Effect.catch((error) =>
-      error instanceof UnstableSnapshotError
-        ? Effect.fail(
-            new Error(
-              "Zotero database changed while preparing a read snapshot",
-            ),
-          )
-        : Effect.fail(error),
+    Effect.catchIf(
+      (error) => error instanceof UnstableSnapshotError,
+      () =>
+        Effect.fail(
+          new Error("Zotero database changed while preparing a read snapshot"),
+        ),
     ),
   );
 });
@@ -697,10 +697,9 @@ const mainIdentity = Effect.fnUntraced(function* (path: string) {
       };
     }),
   ).pipe(
-    Effect.catch((error) =>
-      isErrno(error, "ENOENT")
-        ? Effect.succeed({ exists: false as const })
-        : Effect.fail(error),
+    Effect.catchIf(
+      (error) => isErrno(error, "ENOENT"),
+      () => Effect.succeed({ exists: false as const }),
     ),
   );
 });

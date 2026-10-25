@@ -79,23 +79,23 @@ export function createCitationsCliHandlers(
           });
         return yield* read(request).pipe(
           Effect.map((result) => envelope(command, { ...echoed, ...result })),
-          Effect.catchCause((cause) =>
-            Cause.hasInterruptsOnly(cause)
-              ? Effect.failCause(cause)
-              : Effect.logWarning("Cannot read the Citation Index").pipe(
-                  Effect.annotateLogs({ command, cause }),
-                  withLogCategory("citation-index", "cli"),
-                  Effect.as(
-                    envelope(command, {
-                      ok: false,
-                      ...echoed,
-                      diagnostic: diagnostic(
-                        "INDEX_NOT_READY",
-                        "The Citation Index cannot read the latest citation lookup. Refresh the Zotero source and run the command again.",
-                      ),
-                    }),
-                  ),
+          Effect.catchCauseIf(
+            (cause) => !Cause.hasInterruptsOnly(cause),
+            (cause) =>
+              Effect.logWarning("Cannot read the Citation Index").pipe(
+                Effect.annotateLogs({ command, cause }),
+                withLogCategory("citation-index", "cli"),
+                Effect.as(
+                  envelope(command, {
+                    ok: false,
+                    ...echoed,
+                    diagnostic: diagnostic(
+                      "INDEX_NOT_READY",
+                      "The Citation Index cannot read the latest citation lookup. Refresh the Zotero source and run the command again.",
+                    ),
+                  }),
                 ),
+              ),
           ),
         );
       },
