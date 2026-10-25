@@ -1,5 +1,5 @@
 // A scoped, cloned protocol pair shared by the in-process RPC adapters.
-import { Effect, Queue, Schema } from "effect";
+import { Effect, FiberSet, Queue, Schema } from "effect";
 import { RpcClient, RpcServer } from "effect/rpc";
 import type { RpcMessage, RpcSerialization } from "effect/rpc";
 
@@ -23,6 +23,12 @@ export const makeInMemoryRpcProtocols = Effect.gen(function* () {
   let clientSideId = 0;
   const codecFor = Schema.toCodecJson as RpcSerialization.CodecFor;
   const disconnects = yield* Queue.make<number>();
+  // An Ack reaches the server on a later microtask, in its own fiber, as it
+  // does across the Worker transport. Effect 4.0.1+ acks a chunk that an
+  // interrupted stream dropped, and a same-fiber Ack lets the server run the
+  // whole stream before the Interrupt arrives (#1738). After the scope closes,
+  // the FiberSet runner interrupts the fiber at once, so a late Ack runs nothing.
+  const runForServer = yield* FiberSet.makeRuntime<never>();
 
   const server = yield* RpcServer.Protocol.make((writeRequest) => {
     toServer = (message) => writeRequest(CLIENT_ID, message);
@@ -47,7 +53,11 @@ export const makeInMemoryRpcProtocols = Effect.gen(function* () {
       send: (clientId: number, request: RpcMessage.FromClientEncoded) =>
         Effect.suspend(() => {
           clientSideId = clientId;
-          return toServer(structuredClone(request));
+          const message = structuredClone(request);
+          if (message._tag !== "Ack") return toServer(message);
+          return Effect.sync(() =>
+            queueMicrotask(() => void runForServer(toServer(message))),
+          );
         }),
       supportsAck: true,
       supportsTransferables: false,
