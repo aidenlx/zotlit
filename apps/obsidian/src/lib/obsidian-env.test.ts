@@ -58,6 +58,37 @@ describe("layerObsidianEnv", () => {
   );
 });
 
+describe("ObsidianEnv.corePluginEnabled", () => {
+  it.effect("reads the enabled core plugins on each run", () =>
+    Effect.gen(function* () {
+      setMockPlatform({ isMacOS: true, isWin: false, isDesktopApp: true });
+      const enabled = new Set(["graph"]);
+      const app = stubService<App>("App", {
+        appId: "0123456789abcdef",
+        vault: stubService<Vault>("Vault", {
+          getName: () => "Research",
+          adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
+            getBasePath: () => "/Users/me/vault",
+          }),
+        }),
+        internalPlugins: {
+          getEnabledPluginById: (id: string) => (enabled.has(id) ? {} : null),
+        },
+      });
+      const env = yield* ObsidianEnv.pipe(
+        Effect.provide(
+          layerObsidianEnv.pipe(Layer.provide(Layer.succeed(ObsidianApp, app))),
+        ),
+      );
+
+      expect(yield* env.corePluginEnabled("graph")).toBe(true);
+      expect(yield* env.corePluginEnabled("canvas")).toBe(false);
+      enabled.delete("graph");
+      expect(yield* env.corePluginEnabled("graph")).toBe(false);
+    }),
+  );
+});
+
 describe("layerTestObsidianEnv", () => {
   it.effect("is a desktop app unless the test sets mobile", () =>
     Effect.gen(function* () {

@@ -1,5 +1,5 @@
 // An Obsidian environment a test sets: desktop by default, or mobile.
-import { Layer } from "effect";
+import { Effect, Layer } from "effect";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import type { ObsidianPlatform } from "@/lib/obsidian-env";
 
@@ -12,6 +12,11 @@ export interface TestObsidianEnvOptions {
   readonly vaultName?: string;
   readonly basePath?: string;
   readonly appId?: string;
+  /**
+   * The ids of the enabled core plugins; none by default. A test that turns
+   * one on or off later passes a Set and changes it.
+   */
+  readonly corePlugins?: ReadonlySet<string>;
 }
 
 /** The environment of a desktop app (or a phone app with `mobile`) on a neutral OS. */
@@ -41,6 +46,8 @@ export function testObsidianEnv(
     vaultName: options.vaultName ?? "Vault",
     basePath: options.basePath ?? "/vault",
     appId: options.appId ?? "test-app-id",
+    corePluginEnabled: (id) =>
+      Effect.sync(() => options.corePlugins?.has(id) ?? false),
   });
 }
 

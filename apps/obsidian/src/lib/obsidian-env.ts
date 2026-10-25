@@ -1,4 +1,5 @@
-// The Obsidian environment the plugin runs in, read once when the graph builds.
+// The Obsidian environment the plugin runs in, read once when the graph builds,
+// and the enabled core plugins, read on each ask.
 import { Context, Effect, Layer } from "effect";
 import { apiVersion, getLanguage, Platform } from "obsidian";
 import type { FileSystemAdapter } from "obsidian";
@@ -26,10 +27,19 @@ export class ObsidianEnv extends Context.Service<
      * which Obsidian names its own IndexedDB databases with.
      */
     readonly appId: string;
+    /**
+     * Whether the core plugin `id`, such as `graph`, is enabled now. It reads
+     * Obsidian's undocumented `app.internalPlugins.getEnabledPluginById` on
+     * each run, because the user can turn a core plugin on or off at any time.
+     */
+    corePluginEnabled(id: string): Effect.Effect<boolean>;
   }
 >()("zotlit/obsidian/ObsidianEnv") {}
 
-/** The environment of the running Obsidian. None of it changes while the plugin runs. */
+/**
+ * The environment of the running Obsidian. Only the enabled core plugins
+ * change while the plugin runs; the other values are read once.
+ */
 export const layerObsidianEnv: Layer.Layer<ObsidianEnv, never, ObsidianApp> =
   Layer.effect(
     ObsidianEnv,
@@ -42,6 +52,11 @@ export const layerObsidianEnv: Layer.Layer<ObsidianEnv, never, ObsidianApp> =
         vaultName: app.vault.getName(),
         basePath: (app.vault.adapter as FileSystemAdapter).getBasePath(),
         appId: app.appId,
+        corePluginEnabled: Effect.fn("ObsidianEnv.corePluginEnabled")((id) =>
+          Effect.sync(() =>
+            Boolean(app.internalPlugins.getEnabledPluginById(id)),
+          ),
+        ),
       });
     }),
   );
