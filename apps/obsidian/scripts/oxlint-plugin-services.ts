@@ -618,6 +618,83 @@ export const scopeClosed: Rule = {
   },
 };
 
+const DEFAULT_RUNTIME_CALLS = new Set([
+  "runSync",
+  "runPromise",
+  "runFork",
+  "runPromiseExit",
+  "runSyncExit",
+  "runCallback",
+]);
+
+const EFFECT_SOURCES = new Set(["@/lib/effect", "effect"]);
+
+interface ImportNode extends AstNode {
+  readonly source?: AstNode;
+  readonly specifiers?: readonly (AstNode & {
+    readonly imported?: AstNode;
+    readonly local?: AstNode;
+  })[];
+}
+
+/**
+ * `Effect.runSync`, `runPromise`, `runFork`, `runPromiseExit`, `runSyncExit`
+ * and `runCallback` run an Effect with an empty context: its logs skip the
+ * plugin logger and log level, and it gets none of the plugin's services.
+ * Plugin code runs an Effect through the container bridge, a layer's own
+ * context runner (`Effect.runSyncWith(yield* Effect.context())`), or a
+ * runtime (`runtime.runSync`). Only the `Effect` imported from `effect` or
+ * `@/lib/effect` is checked, so those calls stay valid. Files that create a
+ * runtime, and the backlog, are listed in oxlint.config.ts.
+ */
+export const noDefaultRuntime: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Forbid running an Effect with an empty context.",
+    },
+    messages: {
+      empty:
+        "run the Effect through the plugin's bridge, a layer's context runner or a runtime; `Effect.{{name}}` runs it with an empty context, so its logs skip the plugin logger",
+    },
+    schema: [],
+  },
+  create(context) {
+    const effectNames = new Set<string>();
+    return {
+      ImportDeclaration(node) {
+        const { source, specifiers } = node as unknown as ImportNode;
+        if (
+          typeof source?.value !== "string" ||
+          !EFFECT_SOURCES.has(source.value)
+        )
+          return;
+        for (const specifier of specifiers ?? []) {
+          if (
+            specifier.type === "ImportSpecifier" &&
+            specifier.imported?.name === "Effect" &&
+            typeof specifier.local?.name === "string"
+          )
+            effectNames.add(specifier.local.name);
+        }
+      },
+      CallExpression(node) {
+        const callee = node.callee as AstNode;
+        if (
+          isMemberOf(callee, effectNames, (name) =>
+            DEFAULT_RUNTIME_CALLS.has(name),
+          )
+        )
+          context.report({
+            node: callee as never,
+            messageId: "empty",
+            data: { name: String(callee.property?.name) },
+          });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-services" },
   rules: {
@@ -625,6 +702,7 @@ export default {
     "effect-native-resources": effectNativeResources,
     "interrupt-predicate": interruptPredicate,
     "layer-stream-consumer": layerStreamConsumer,
+    "no-default-runtime": noDefaultRuntime,
     "no-legacy-service": noLegacyService,
     "no-nanoevents": noNanoevents,
     "obsidian-events-intake": obsidianEventsIntake,
