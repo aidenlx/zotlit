@@ -114,7 +114,7 @@ export default defineConfig({
     "zotlit-menu/no-literal-section": "error",
     "zotlit-services/service-tag-id": "error",
     "zotlit-services/cli-command-registration": "error",
-    "zotlit-effect-style/no-tacit": "warn",
+    "zotlit-effect-style/no-tacit": "error",
     // Repeats the base pattern: a rule set here replaces the base entry.
     "no-restricted-imports": ["error", runtimeImports],
   },
