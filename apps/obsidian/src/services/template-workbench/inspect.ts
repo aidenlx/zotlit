@@ -22,13 +22,13 @@ import {
 } from "@/lib/cli-params";
 import type { CliOutput, CliParamName } from "@/lib/cli-params";
 import { withLogCategory } from "@/lib/effect-log";
-import { isErrno } from "@/lib/errno";
 import type { ObsidianEnv } from "@/lib/obsidian-env";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { parseProfileSelector } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
+import type { FileNotFound, VaultError } from "@/lib/vault-errors";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { ResolvedProfile } from "@/services/profile/bindings";
 import { Profile } from "@/services/profile/service";
@@ -71,8 +71,8 @@ export interface SourceVersion {
 }
 
 export interface FreshnessDeps {
-  /** The text on disk at `path`, failing with what the read threw. */
-  read: (path: string) => Effect.Effect<string, unknown>;
+  /** The text on disk at `path`; `FileNotFound` when no file is there. */
+  read: (path: string) => Effect.Effect<string, FileNotFound | VaultError>;
   /** The text reconciliation loaded from `path`, when it holds one. */
   loaded: (path: string) => Effect.Effect<string | undefined>;
   /** Each completed reconciliation. */
@@ -117,18 +117,17 @@ export const verifySavedSources = Effect.fn(
       );
     const read = (path: string) =>
       deps.read(path).pipe(
-        Effect.catch((error) => {
-          if (!isErrno(error, "ENOENT")) {
-            errors.push({
-              path,
-              message: error instanceof Error ? error.message : String(error),
-              ...(error instanceof Error &&
-              "code" in error &&
-              typeof error.code === "string"
-                ? { code: error.code }
-                : {}),
-            });
-          }
+        Effect.catchTag("FileNotFound", () => Effect.void),
+        Effect.catchTag("VaultError", ({ message, cause }) => {
+          errors.push({
+            path,
+            message,
+            ...(cause instanceof Error &&
+            "code" in cause &&
+            typeof cause.code === "string"
+              ? { code: cause.code }
+              : {}),
+          });
           return Effect.void;
         }),
       );
@@ -577,8 +576,7 @@ export function createInspectHandler(
       ];
       const freshness = yield* verifySavedSources(
         {
-          read: (path) =>
-            Effect.mapError(vault.readPath(path), ({ cause }) => cause),
+          read: (path) => vault.readPath(path),
           loaded: (path) =>
             templateRead(template.getLoadedDocumentSource(path)),
           changes: template.compileEvents,

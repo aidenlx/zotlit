@@ -10,8 +10,9 @@ import { annotationHasCacheImage } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 import type { SnapshotVaultTargets } from "@zotlit/workbench/snapshot";
 
+import { attachmentFolderPath } from "@/lib/attachment-folder";
 import { joinFolderPath } from "@/lib/ensure-folder";
-import { FileManager } from "@/lib/obsidian-file-manager";
+import type { FileManager } from "@/lib/obsidian-file-manager";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -22,7 +23,6 @@ import {
 import { linkTargets } from "@/services/excerpt-image/references";
 import { NoteIndex } from "@/services/note-index/service";
 import { PluginSettings } from "@/services/settings/service";
-import { attachmentFolder } from "@/services/template-workbench/data";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
@@ -93,8 +93,7 @@ const annotationImageTargets = Effect.fnUntraced(function* (
   const settings = yield* (yield* PluginSettings).current;
   if (!settings["attachment.import"]) return images;
   const vault = yield* Vault;
-  const folder = yield* attachmentFolder(
-    yield* FileManager,
+  const folder = yield* attachmentFolderPath(
     settings["attachment.folder-path"],
     notePath,
   );

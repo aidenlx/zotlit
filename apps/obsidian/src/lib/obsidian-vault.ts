@@ -14,10 +14,11 @@ import type {
   Vault as ObsidianVault,
 } from "obsidian";
 
+import { isErrno } from "@/lib/errno";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { obsidianEventSource } from "@/lib/obsidian-event-source";
 import type { ObsidianEventEmitter } from "@/lib/obsidian-event-source";
-import { FileExists, vaultError } from "@/lib/vault-errors";
+import { FileExists, FileNotFound, vaultError } from "@/lib/vault-errors";
 import type { VaultError } from "@/lib/vault-errors";
 
 /** One vault event, tagged with its Obsidian event name. */
@@ -59,10 +60,10 @@ export interface VaultShape {
   cachedRead(file: TFile): Effect.Effect<string, VaultError>;
   /**
    * The text at the vault path `path`, read from disk through the vault's
-   * adapter, whether or not the vault cache holds a file there. `cause`
-   * holds what the adapter threw, such as an `ENOENT` error.
+   * adapter, whether or not the vault cache holds a file there. Fails with
+   * `FileNotFound` when the adapter rejects with `ENOENT`.
    */
-  readPath(path: string): Effect.Effect<string, VaultError>;
+  readPath(path: string): Effect.Effect<string, FileNotFound | VaultError>;
   /** Rewrite the file's content with `fn` in one step; the new content. */
   process(
     file: TFile,
@@ -138,7 +139,13 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
       call("cachedRead", file.path, () => source.cachedRead(file)),
     ),
     readPath: Effect.fn("Vault.readPath")((path) =>
-      call("readPath", path, () => source.adapter.read(path)),
+      Effect.tryPromise({
+        try: () => source.adapter.read(path),
+        catch: (cause) =>
+          isErrno(cause, "ENOENT")
+            ? new FileNotFound({ path, cause })
+            : vaultError("readPath", path)(cause),
+      }),
     ),
     process: Effect.fn("Vault.process")((file, fn, options) =>
       call("process", file.path, () => source.process(file, fn, options)),

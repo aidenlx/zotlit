@@ -11,7 +11,6 @@ import { ObsidianEnv } from "@/lib/obsidian-env";
 import { PluginHost } from "@/lib/plugin-host";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { Profile } from "@/services/profile/service";
-import { PluginSettings } from "@/services/settings/service";
 import { Template } from "@/services/template/service";
 
 import {
@@ -299,14 +298,14 @@ export function registerTemplateWorkbench(
   host: VersionedCliHost,
   context: Context.Context<WorkbenchServices>,
 ): void {
-  const run = <A, E>(effect: Effect.Effect<A, E, WorkbenchServices>) =>
+  const provide = <A, E>(effect: Effect.Effect<A, E, WorkbenchServices>) =>
     Effect.provideContext(effect, context);
   const handle =
     <E>(
       handler: (params: CliData) => Effect.Effect<string, E, WorkbenchServices>,
     ) =>
     (params: CliData) =>
-      run(handler(params));
+      provide(handler(params));
   const template = Context.get(context, Template);
   const profile = Context.get(context, Profile);
   host.registerCliCommand(TEMPLATE_INSPECT_COMMAND, {
@@ -328,11 +327,11 @@ export function registerTemplateWorkbench(
   });
   const handlers = createTemplateWorkbenchHandlers({
     pluginVersion: host.manifest.version,
-    getIdentity: run(readWorkbenchIdentity),
-    selectNote: (name) => run(selectInspectionNote(name)),
+    getIdentity: provide(readWorkbenchIdentity),
+    selectNote: (name) => provide(selectInspectionNote(name)),
     loadData: (indexedKey, root, options) => {
       const read = readTemplateData(indexedKey, root);
-      return run(
+      return provide(
         options?.note === undefined
           ? read
           : read.pipe(
@@ -341,7 +340,7 @@ export function registerTemplateWorkbench(
       );
     },
     loadCitation: (selector, variant) =>
-      run(readCitationData(selector, variant)),
+      provide(readCitationData(selector, variant)),
     templates: template,
     literatureNotes: {
       readProfiles: Effect.gen(function* () {
@@ -365,28 +364,6 @@ export function registerTemplateWorkbench(
         templateCall(template.getLiteratureNoteTemplate(reference)),
       renderSource: (source, data) =>
         templateCall(template.renderLiteratureNoteTemplateSource(source, data)),
-    },
-    frontmatter: {
-      read: Effect.gen(function* () {
-        const status = yield* templateRead(template.getFrontmatterFieldStatus);
-        return {
-          fields: status.fields,
-          inertKeys: status.inertKeys,
-          javascriptTemplatesEnabled: yield* templateRead(
-            template.javascriptTemplatesEnabled,
-          ),
-        };
-      }),
-      evaluate: (fields, zt) =>
-        templateRead(template.evaluateFrontmatterFields(fields, zt)),
-      validateExpr: (expr, language) =>
-        templateRead(template.validateFrontmatterExpr(expr, language)),
-      write: (fields) =>
-        run(
-          PluginSettings.use((settings) =>
-            settings.update({ "note.frontmatter-fields": [...fields] }),
-          ).pipe(Effect.orDie, Effect.asVoid),
-        ),
     },
   });
 

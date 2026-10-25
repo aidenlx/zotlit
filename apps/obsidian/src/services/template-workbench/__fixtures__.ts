@@ -1,3 +1,4 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { Context, Effect, Exit, Layer, Scope } from "effect";
 import type { ManagedRuntime } from "effect";
 import type { App } from "obsidian";
@@ -31,6 +32,11 @@ export type FixtureServices =
   | MetadataCache
   | Workspace
   | FileManager;
+
+/** Node's file system, which the check command reads a draft through. */
+const nodeFileSystem = Effect.runSync(
+  Effect.scoped(Layer.build(NodeFileSystem.layer)),
+);
 
 /**
  * The Workbench's services: a stub for each, which throws on a member the
@@ -69,6 +75,7 @@ export function workbenchContext(
       ObsidianEnv,
       stubService<ObsidianEnv["Service"]>("ObsidianEnv", {}),
     ),
+    nodeFileSystem,
     ...overrides,
   );
 }

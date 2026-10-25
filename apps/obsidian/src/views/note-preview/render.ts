@@ -53,10 +53,7 @@ import { bindProfile } from "@/services/profile/bindings";
 import type { PlainProfile } from "@/services/profile/plain";
 import { bindUnvalidatedDraftProfile } from "@/services/profile/service";
 import type { PluginSettings } from "@/services/settings/service";
-import {
-  loadCitationData,
-  loadTemplateData,
-} from "@/services/template-workbench/data";
+import { loadTemplateData } from "@/services/template-workbench/data";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import { findExistingLitNote } from "@/services/template/inert-resolver-host";
 import type { PlainTemplate } from "@/services/template/plain";
@@ -378,8 +375,7 @@ async function citationRootData(
       kind: "data",
       data: sampleItemCitation(request.snapshot, variant),
     };
-  const loaded = await loadCitationData(
-    deps,
+  const loaded = await deps.templateData.loadCitation(
     { key: request.snapshot.item.indexedKey },
     variant,
   );

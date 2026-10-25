@@ -2,21 +2,15 @@ import { it } from "@effect/vitest";
 import { Cause, Effect, Exit } from "effect";
 import { describe, expect, vi } from "vitest";
 
-import type { CitationTemplateData, TemplateSlot } from "@zotlit/db";
 import { rowInstant } from "@zotlit/db/test-utils";
-import type { FrontmatterLanguage } from "@zotlit/templates/constants";
-import type { RootVariableUse } from "@zotlit/templates/facade";
-import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 import {
   ContractMetadataError,
   markInertPlaceholder,
 } from "@zotlit/workbench/explorer";
 
 import type {
-  CitationTemplateStatus,
   CompileError,
   SettleOutcome,
-  SharedPartialDocument,
   TemplateFileStatus,
 } from "@/services/template/service";
 
@@ -35,7 +29,7 @@ type Deps = Parameters<typeof createHandlers>[0];
 /** The handlers' ports, each faked as the plain call it reads. */
 interface PlainDeps extends Omit<
   Deps,
-  "getIdentity" | "selectNote" | "templates" | "frontmatter"
+  "getIdentity" | "selectNote" | "templates"
 > {
   getIdentity: () => WorkbenchIdentity | Promise<WorkbenchIdentity>;
   selectNote: (name: string) => Promise<InspectionNote>;
@@ -43,34 +37,7 @@ interface PlainDeps extends Omit<
     readonly javascriptTemplatesEnabled: boolean;
     readonly compileErrors: ReadonlyMap<string, CompileError>;
     getTemplateFileStatuses: () => readonly TemplateFileStatus[];
-    getCitationTemplateStatus: () => CitationTemplateStatus;
-    getPartialDocument: (name: string) => SharedPartialDocument | null;
-    render: (name: string, data: object) => string;
-    renderFilename: (data: object) => string;
-    renderCitationData: (data: CitationTemplateData) => string;
     waitUntilSettled: (timeoutMs: number) => Promise<SettleOutcome>;
-    analyzeRootVariables: (name: string) => RootVariableUse[] | null;
-    getTemplateSource: (name: TemplateSlot) => Promise<string>;
-  };
-  frontmatter: {
-    read: () => {
-      fields: readonly FrontmatterField[];
-      inertKeys: readonly string[];
-      javascriptTemplatesEnabled: boolean;
-    };
-    evaluate: (
-      fields: readonly FrontmatterField[],
-      zt: object,
-    ) => {
-      values: Readonly<Record<string, unknown>>;
-      errors: Readonly<Record<string, string>>;
-      inertKeys: readonly string[];
-    };
-    validateExpr: (
-      expr: string,
-      language: FrontmatterLanguage,
-    ) => string | null;
-    write: (fields: readonly FrontmatterField[]) => void;
   };
 }
 
@@ -79,7 +46,7 @@ interface PlainDeps extends Omit<
  * sync fake runs when the port runs, and an async one is awaited.
  */
 function createTemplateWorkbenchHandlers(deps: PlainDeps) {
-  const { templates, frontmatter } = deps;
+  const { templates } = deps;
   return createHandlers({
     ...deps,
     getIdentity: Effect.promise(async () => deps.getIdentity()),
@@ -92,30 +59,8 @@ function createTemplateWorkbenchHandlers(deps: PlainDeps) {
       getTemplateFileStatuses: Effect.sync(() =>
         templates.getTemplateFileStatuses(),
       ),
-      getCitationTemplateStatus: Effect.sync(() =>
-        templates.getCitationTemplateStatus(),
-      ),
-      getPartialDocument: (name) =>
-        Effect.sync(() => templates.getPartialDocument(name)),
-      render: (name, data) => Effect.sync(() => templates.render(name, data)),
-      renderFilename: (data) =>
-        Effect.sync(() => templates.renderFilename(data)),
-      renderCitationData: (data) =>
-        Effect.sync(() => templates.renderCitationData(data)),
       waitUntilSettled: (timeoutMs) =>
         Effect.promise(() => templates.waitUntilSettled(timeoutMs)),
-      analyzeRootVariables: (name) =>
-        Effect.sync(() => templates.analyzeRootVariables(name)),
-      getTemplateSource: (name) =>
-        Effect.promise(() => templates.getTemplateSource(name)),
-    },
-    frontmatter: {
-      read: Effect.sync(() => frontmatter.read()),
-      evaluate: (fields, zt) =>
-        Effect.sync(() => frontmatter.evaluate(fields, zt)),
-      validateExpr: (expr, language) =>
-        Effect.sync(() => frontmatter.validateExpr(expr, language)),
-      write: (fields) => Effect.sync(() => frontmatter.write(fields)),
     },
   });
 }
@@ -126,29 +71,6 @@ const IDENTITY = {
   source: { id: "a1b2c3d4", databasePath: "/Zotero/zotero.sqlite" },
 } as const;
 const NO_COMPILE_ERRORS = new Map<string, CompileError>();
-const EMPTY_RENDER = () => "";
-const NO_ROOT_VARIABLES = () => null;
-const EMPTY_SOURCE = async () => "";
-const FRONTMATTER_READ_EMPTY = () => ({
-  fields: [],
-  inertKeys: [],
-  javascriptTemplatesEnabled: false,
-});
-const FRONTMATTER_EVALUATE_EMPTY = () => ({
-  values: {},
-  errors: {},
-  inertKeys: [],
-});
-const FRONTMATTER_VALIDATE_EMPTY = () => null;
-const FRONTMATTER_WRITE_NOOP = () => {};
-/** The Citation Template status while the vault holds no `zotlit-citation.md`. */
-const BUILT_IN_CITATION_STATUS = () => ({
-  path: "Templates/zotlit-citation.md",
-  customized: false,
-  language: "liquid" as const,
-  inertPath: null,
-  compileError: null,
-});
 const NO_CITATION = () => Effect.succeed({ kind: "not-found" } as const);
 
 const TEMPLATE_FILES = [
@@ -215,29 +137,16 @@ describe("Template Workbench CLI", () => {
           return IDENTITY;
         },
         templates: {
-          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => {
             callOrder.push("status");
             return TEMPLATE_FILES;
           },
-          getPartialDocument: () => null,
-          render: EMPTY_RENDER,
-          renderFilename: EMPTY_RENDER,
-          analyzeRootVariables: NO_ROOT_VARIABLES,
-          getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => {
             callOrder.push("settled");
             return "settled";
           },
-        },
-        frontmatter: {
-          read: FRONTMATTER_READ_EMPTY,
-          evaluate: FRONTMATTER_EVALUATE_EMPTY,
-          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -270,23 +179,10 @@ describe("Template Workbench CLI", () => {
         getIdentity,
         settleTimeoutMs: 25,
         templates: {
-          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses,
-          getPartialDocument: () => null,
-          render: EMPTY_RENDER,
-          renderFilename: EMPTY_RENDER,
-          analyzeRootVariables: NO_ROOT_VARIABLES,
-          getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "timeout" as const,
-        },
-        frontmatter: {
-          read: FRONTMATTER_READ_EMPTY,
-          evaluate: FRONTMATTER_EVALUATE_EMPTY,
-          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -323,23 +219,10 @@ describe("Template Workbench CLI", () => {
         loadData,
         settleTimeoutMs: 25,
         templates: {
-          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
-          getPartialDocument: () => null,
-          render: EMPTY_RENDER,
-          renderFilename: EMPTY_RENDER,
-          analyzeRootVariables: NO_ROOT_VARIABLES,
-          getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled,
-        },
-        frontmatter: {
-          read: FRONTMATTER_READ_EMPTY,
-          evaluate: FRONTMATTER_EVALUATE_EMPTY,
-          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -400,23 +283,10 @@ describe("Template Workbench CLI", () => {
           loadCitation: NO_CITATION,
           loadData,
           templates: {
-            getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-            renderCitationData: EMPTY_RENDER,
             javascriptTemplatesEnabled: false,
             compileErrors: NO_COMPILE_ERRORS,
             getTemplateFileStatuses: () => TEMPLATE_FILES,
-            getPartialDocument: () => null,
-            render: EMPTY_RENDER,
-            renderFilename: EMPTY_RENDER,
-            analyzeRootVariables: NO_ROOT_VARIABLES,
-            getTemplateSource: EMPTY_SOURCE,
             waitUntilSettled: async () => "settled" as const,
-          },
-          frontmatter: {
-            read: FRONTMATTER_READ_EMPTY,
-            evaluate: FRONTMATTER_EVALUATE_EMPTY,
-            validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-            write: FRONTMATTER_WRITE_NOOP,
           },
         });
 
@@ -477,23 +347,10 @@ describe("Template Workbench CLI", () => {
             },
           }),
         templates: {
-          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
-          getPartialDocument: () => null,
-          render: EMPTY_RENDER,
-          renderFilename: EMPTY_RENDER,
-          analyzeRootVariables: NO_ROOT_VARIABLES,
-          getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
-        },
-        frontmatter: {
-          read: FRONTMATTER_READ_EMPTY,
-          evaluate: FRONTMATTER_EVALUATE_EMPTY,
-          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -534,23 +391,10 @@ describe("Template Workbench CLI", () => {
             },
           }),
         templates: {
-          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
-          getPartialDocument: () => null,
-          render: EMPTY_RENDER,
-          renderFilename: EMPTY_RENDER,
-          analyzeRootVariables: NO_ROOT_VARIABLES,
-          getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
-        },
-        frontmatter: {
-          read: FRONTMATTER_READ_EMPTY,
-          evaluate: FRONTMATTER_EVALUATE_EMPTY,
-          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -588,23 +432,10 @@ describe("Template Workbench CLI", () => {
               data: { notAContractMember: () => "value" },
             }),
           templates: {
-            getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-            renderCitationData: EMPTY_RENDER,
             javascriptTemplatesEnabled: false,
             compileErrors: NO_COMPILE_ERRORS,
             getTemplateFileStatuses: () => TEMPLATE_FILES,
-            getPartialDocument: () => null,
-            render: EMPTY_RENDER,
-            renderFilename: EMPTY_RENDER,
-            analyzeRootVariables: NO_ROOT_VARIABLES,
-            getTemplateSource: EMPTY_SOURCE,
             waitUntilSettled: async () => "settled" as const,
-          },
-          frontmatter: {
-            read: FRONTMATTER_READ_EMPTY,
-            evaluate: FRONTMATTER_EVALUATE_EMPTY,
-            validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-            write: FRONTMATTER_WRITE_NOOP,
           },
         });
 
@@ -633,23 +464,10 @@ describe("Template Workbench CLI", () => {
           loadCitation: NO_CITATION,
           loadData: () => Effect.succeed({ kind: "not-found" }),
           templates: {
-            getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-            renderCitationData: EMPTY_RENDER,
             javascriptTemplatesEnabled: false,
             compileErrors: NO_COMPILE_ERRORS,
             getTemplateFileStatuses: () => TEMPLATE_FILES,
-            getPartialDocument: () => null,
-            render: EMPTY_RENDER,
-            renderFilename: EMPTY_RENDER,
-            analyzeRootVariables: NO_ROOT_VARIABLES,
-            getTemplateSource: EMPTY_SOURCE,
             waitUntilSettled: async () => "init-failed" as const,
-          },
-          frontmatter: {
-            read: FRONTMATTER_READ_EMPTY,
-            evaluate: FRONTMATTER_EVALUATE_EMPTY,
-            validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-            write: FRONTMATTER_WRITE_NOOP,
           },
         });
 
@@ -679,23 +497,10 @@ describe("Template Workbench CLI", () => {
         loadCitation: NO_CITATION,
         loadData: () => Effect.succeed({ kind: "not-found" }),
         templates: {
-          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
-          getPartialDocument: () => null,
-          render: EMPTY_RENDER,
-          renderFilename: EMPTY_RENDER,
-          analyzeRootVariables: NO_ROOT_VARIABLES,
-          getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
-        },
-        frontmatter: {
-          read: FRONTMATTER_READ_EMPTY,
-          evaluate: FRONTMATTER_EVALUATE_EMPTY,
-          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -762,23 +567,10 @@ describe("Template Workbench CLI", () => {
           loadCitation: NO_CITATION,
           loadData,
           templates: {
-            getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-            renderCitationData: EMPTY_RENDER,
             javascriptTemplatesEnabled: false,
             compileErrors: NO_COMPILE_ERRORS,
             getTemplateFileStatuses: () => TEMPLATE_FILES,
-            getPartialDocument: () => null,
-            render: EMPTY_RENDER,
-            renderFilename: EMPTY_RENDER,
-            analyzeRootVariables: NO_ROOT_VARIABLES,
-            getTemplateSource: EMPTY_SOURCE,
             waitUntilSettled: async () => "settled" as const,
-          },
-          frontmatter: {
-            read: FRONTMATTER_READ_EMPTY,
-            evaluate: FRONTMATTER_EVALUATE_EMPTY,
-            validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-            write: FRONTMATTER_WRITE_NOOP,
           },
         });
 
@@ -810,23 +602,10 @@ describe("Template Workbench CLI", () => {
         loadCitation: NO_CITATION,
         loadData,
         templates: {
-          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
-          getPartialDocument: () => null,
-          render: EMPTY_RENDER,
-          renderFilename: EMPTY_RENDER,
-          analyzeRootVariables: NO_ROOT_VARIABLES,
-          getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
-        },
-        frontmatter: {
-          read: FRONTMATTER_READ_EMPTY,
-          evaluate: FRONTMATTER_EVALUATE_EMPTY,
-          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -856,23 +635,10 @@ describe("Template Workbench CLI", () => {
           loadCitation: NO_CITATION,
           loadData,
           templates: {
-            getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-            renderCitationData: EMPTY_RENDER,
             javascriptTemplatesEnabled: false,
             compileErrors: NO_COMPILE_ERRORS,
             getTemplateFileStatuses: () => TEMPLATE_FILES,
-            getPartialDocument: () => null,
-            render: EMPTY_RENDER,
-            renderFilename: EMPTY_RENDER,
-            analyzeRootVariables: NO_ROOT_VARIABLES,
-            getTemplateSource: EMPTY_SOURCE,
             waitUntilSettled: async () => "settled" as const,
-          },
-          frontmatter: {
-            read: FRONTMATTER_READ_EMPTY,
-            evaluate: FRONTMATTER_EVALUATE_EMPTY,
-            validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-            write: FRONTMATTER_WRITE_NOOP,
           },
         });
 
@@ -908,23 +674,10 @@ describe("Template Workbench CLI", () => {
           loadCitation: NO_CITATION,
           loadData,
           templates: {
-            getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-            renderCitationData: EMPTY_RENDER,
             javascriptTemplatesEnabled: false,
             compileErrors: NO_COMPILE_ERRORS,
             getTemplateFileStatuses: () => TEMPLATE_FILES,
-            getPartialDocument: () => null,
-            render: EMPTY_RENDER,
-            renderFilename: EMPTY_RENDER,
-            analyzeRootVariables: NO_ROOT_VARIABLES,
-            getTemplateSource: EMPTY_SOURCE,
             waitUntilSettled: async () => "settled" as const,
-          },
-          frontmatter: {
-            read: FRONTMATTER_READ_EMPTY,
-            evaluate: FRONTMATTER_EVALUATE_EMPTY,
-            validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-            write: FRONTMATTER_WRITE_NOOP,
           },
         });
 
@@ -963,23 +716,10 @@ describe("Template Workbench CLI", () => {
           loadCitation: NO_CITATION,
           loadData,
           templates: {
-            getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-            renderCitationData: EMPTY_RENDER,
             javascriptTemplatesEnabled: false,
             compileErrors: NO_COMPILE_ERRORS,
             getTemplateFileStatuses: () => TEMPLATE_FILES,
-            getPartialDocument: () => null,
-            render: EMPTY_RENDER,
-            renderFilename: EMPTY_RENDER,
-            analyzeRootVariables: NO_ROOT_VARIABLES,
-            getTemplateSource: EMPTY_SOURCE,
             waitUntilSettled: async () => "settled" as const,
-          },
-          frontmatter: {
-            read: FRONTMATTER_READ_EMPTY,
-            evaluate: FRONTMATTER_EVALUATE_EMPTY,
-            validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-            write: FRONTMATTER_WRITE_NOOP,
           },
         });
 
@@ -1014,23 +754,10 @@ describe("Template Workbench CLI", () => {
         loadCitation: NO_CITATION,
         loadData: () => Effect.succeed({ kind: "not-found" }),
         templates: {
-          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
-          getPartialDocument: () => null,
-          render: EMPTY_RENDER,
-          renderFilename: EMPTY_RENDER,
-          analyzeRootVariables: NO_ROOT_VARIABLES,
-          getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
-        },
-        frontmatter: {
-          read: FRONTMATTER_READ_EMPTY,
-          evaluate: FRONTMATTER_EVALUATE_EMPTY,
-          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -1062,23 +789,10 @@ describe("Template Workbench CLI", () => {
         loadCitation: NO_CITATION,
         loadData: () => Effect.succeed({ kind }),
         templates: {
-          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
-          getPartialDocument: () => null,
-          render: EMPTY_RENDER,
-          renderFilename: EMPTY_RENDER,
-          analyzeRootVariables: NO_ROOT_VARIABLES,
-          getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
-        },
-        frontmatter: {
-          read: FRONTMATTER_READ_EMPTY,
-          evaluate: FRONTMATTER_EVALUATE_EMPTY,
-          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -1124,23 +838,10 @@ describe("Template Workbench CLI", () => {
           loadCitation: NO_CITATION,
           loadData,
           templates: {
-            getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-            renderCitationData: EMPTY_RENDER,
             javascriptTemplatesEnabled: false,
             compileErrors: NO_COMPILE_ERRORS,
             getTemplateFileStatuses: () => TEMPLATE_FILES,
-            getPartialDocument: () => null,
-            render: EMPTY_RENDER,
-            renderFilename: EMPTY_RENDER,
-            analyzeRootVariables: NO_ROOT_VARIABLES,
-            getTemplateSource: EMPTY_SOURCE,
             waitUntilSettled: async () => "settled" as const,
-          },
-          frontmatter: {
-            read: FRONTMATTER_READ_EMPTY,
-            evaluate: FRONTMATTER_EVALUATE_EMPTY,
-            validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-            write: FRONTMATTER_WRITE_NOOP,
           },
         });
 
@@ -1176,23 +877,10 @@ describe("Template Workbench CLI", () => {
           loadCitation: NO_CITATION,
           loadData: () => Effect.succeed({ kind: "not-found" }),
           templates: {
-            getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-            renderCitationData: EMPTY_RENDER,
             javascriptTemplatesEnabled: false,
             compileErrors: NO_COMPILE_ERRORS,
             getTemplateFileStatuses: () => TEMPLATE_FILES,
-            getPartialDocument: () => null,
-            render: EMPTY_RENDER,
-            renderFilename: EMPTY_RENDER,
-            analyzeRootVariables: NO_ROOT_VARIABLES,
-            getTemplateSource: EMPTY_SOURCE,
             waitUntilSettled: async () => "settled" as const,
-          },
-          frontmatter: {
-            read: FRONTMATTER_READ_EMPTY,
-            evaluate: FRONTMATTER_EVALUATE_EMPTY,
-            validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-            write: FRONTMATTER_WRITE_NOOP,
           },
         });
 
@@ -1222,23 +910,10 @@ describe("Template Workbench CLI", () => {
           loadCitation: NO_CITATION,
           loadData: () => Effect.succeed({ kind: "not-found" }),
           templates: {
-            getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-            renderCitationData: EMPTY_RENDER,
             javascriptTemplatesEnabled: false,
             compileErrors: NO_COMPILE_ERRORS,
             getTemplateFileStatuses: () => TEMPLATE_FILES,
-            getPartialDocument: () => null,
-            render: EMPTY_RENDER,
-            renderFilename: EMPTY_RENDER,
-            analyzeRootVariables: NO_ROOT_VARIABLES,
-            getTemplateSource: EMPTY_SOURCE,
             waitUntilSettled,
-          },
-          frontmatter: {
-            read: FRONTMATTER_READ_EMPTY,
-            evaluate: FRONTMATTER_EVALUATE_EMPTY,
-            validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-            write: FRONTMATTER_WRITE_NOOP,
           },
         });
 
@@ -1265,23 +940,10 @@ describe("Template Workbench CLI", () => {
           loadCitation: NO_CITATION,
           loadData: () => Effect.succeed({ kind: "not-found" }),
           templates: {
-            getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
-            renderCitationData: EMPTY_RENDER,
             javascriptTemplatesEnabled: false,
             compileErrors: NO_COMPILE_ERRORS,
             getTemplateFileStatuses: () => TEMPLATE_FILES,
-            getPartialDocument: () => null,
-            render: EMPTY_RENDER,
-            renderFilename: EMPTY_RENDER,
-            analyzeRootVariables: NO_ROOT_VARIABLES,
-            getTemplateSource: EMPTY_SOURCE,
             waitUntilSettled: async () => "settled" as const,
-          },
-          frontmatter: {
-            read: FRONTMATTER_READ_EMPTY,
-            evaluate: FRONTMATTER_EVALUATE_EMPTY,
-            validateExpr: FRONTMATTER_VALIDATE_EMPTY,
-            write: FRONTMATTER_WRITE_NOOP,
           },
         });
 

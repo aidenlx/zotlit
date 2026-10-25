@@ -28,10 +28,7 @@ import { annotationSamples } from "@zotlit/workbench/ui";
 
 import { getLogger } from "@/lib/log";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
-import {
-  loadCitationData,
-  loadTemplateData,
-} from "@/services/template-workbench/data";
+import { loadTemplateData } from "@/services/template-workbench/data";
 import type {
   TemplateDataDeps,
   TemplateDataLoadResult,
@@ -218,8 +215,7 @@ export class NativeExplorerSession implements Disposable {
       ): Promise<TemplateDataLoadResult> => {
         if (!item.id.startsWith("sample:"))
           return target === "citation"
-            ? loadCitationData(
-                this.#deps,
+            ? this.#deps.templateData.loadCitation(
                 { key },
                 citation?.variant ?? DEFAULT_CITATION_VARIANT,
               )

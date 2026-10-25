@@ -178,7 +178,7 @@ it.effect(
       );
       const runtime = buildRuntime(
         layerTemplateMigration({
-          loadVerificationData: async () => null,
+          loadVerificationData: () => Effect.succeed(null),
           openPrompt,
         }).pipe(
           Layer.provideMerge(templateOver(host)),
@@ -392,9 +392,7 @@ it.effect(
       const cause = new Error("verification data unavailable");
       const services = yield* Layer.build(
         layerTemplateMigration({
-          loadVerificationData: async () => {
-            throw cause;
-          },
+          loadVerificationData: () => Effect.fail(cause),
           openPrompt: () => {},
         }).pipe(
           Layer.provideMerge(templateOver(host)),

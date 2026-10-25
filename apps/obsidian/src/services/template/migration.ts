@@ -29,12 +29,6 @@ import type {
   TemplateFailure,
 } from "./service";
 
-export {
-  loadLiteratureNoteTemplateMigrationData,
-  type LiteratureNoteTemplateMigrationDataDeps,
-  type MigrationVerificationData,
-} from "./migration-data";
-
 interface MigrationSettings {
   current: Readonly<
     Pick<
@@ -472,8 +466,11 @@ function refusedByConversion(
   };
 }
 
-export interface TemplateMigrationOptions {
-  loadVerificationData: MigrationEngineOptions["loadVerificationData"];
+export interface TemplateMigrationOptions<R = never> {
+  /** The real Zotero item a conversion verifies against, run by the layer. */
+  loadVerificationData: (options: {
+    annotation: boolean;
+  }) => Effect.Effect<MigrationVerificationData | null, unknown, R>;
   openPrompt: MigrationEngineOptions["openPrompt"];
 }
 
@@ -492,7 +489,9 @@ export class TemplateMigration extends Context.Service<
   }
 >()("zotlit/template/TemplateMigration") {}
 
-export function layerTemplateMigration(options: TemplateMigrationOptions) {
+export function layerTemplateMigration<R = never>(
+  options: TemplateMigrationOptions<R>,
+) {
   return Layer.effect(
     TemplateMigration,
     Effect.gen(function* () {
@@ -500,7 +499,7 @@ export function layerTemplateMigration(options: TemplateMigrationOptions) {
       const workspace = yield* Workspace;
       const settings = yield* PluginSettings;
       const template = yield* Template;
-      const context = yield* Effect.context<never>();
+      const context = yield* Effect.context<R>();
       const scope = yield* Scope.fork(yield* Scope.Scope);
       const run = Effect.runSyncWith(context);
       const runPromise = Effect.runPromiseWith(context);
@@ -511,6 +510,8 @@ export function layerTemplateMigration(options: TemplateMigrationOptions) {
       }>();
       const engine = new MigrationEngine({
         ...options,
+        loadVerificationData: (verification) =>
+          runPromise(options.loadVerificationData(verification)),
         app,
         settings: {
           get current() {

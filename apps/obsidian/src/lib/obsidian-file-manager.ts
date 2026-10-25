@@ -49,7 +49,8 @@ export interface FileManagerShape {
   ): Effect.Effect<string>;
   /**
    * A free vault path for an attachment named `filename`, in the folder the
-   * user's attachment setting picks for the note at `sourcePath`.
+   * user's attachment setting picks for the note at `sourcePath`. A rejection
+   * fails with `VaultError` on `sourcePath`, or on the vault root `/` without it.
    */
   getAvailablePathForAttachment(
     filename: string,
@@ -109,7 +110,7 @@ export const makeFileManager = Effect.fnUntraced(function* (
     )((filename, sourcePath) =>
       Effect.tryPromise({
         try: () => source.getAvailablePathForAttachment(filename, sourcePath),
-        catch: vaultError("getAvailablePathForAttachment", filename),
+        catch: vaultError("getAvailablePathForAttachment", sourcePath ?? "/"),
       }),
     ),
   });

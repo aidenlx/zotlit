@@ -993,33 +993,10 @@ function runTemplateData(
         Effect.provideContext(deps.context),
       ),
     templates: {
-      getCitationTemplateStatus: Effect.succeed({
-        path: "Templates/zotlit-citation.md",
-        customized: false,
-        language: "liquid" as const,
-        inertPath: null,
-        compileError: null,
-      }),
-      renderCitationData: () => Effect.succeed(""),
       javascriptTemplatesEnabled: Effect.succeed(false),
       compileErrors: deps.template.compileErrors,
       getTemplateFileStatuses: Effect.succeed([]),
-      getPartialDocument: () => Effect.succeed(null),
-      render: (name, data) => deps.template.render(name, data),
-      renderFilename: (data) => deps.template.render("filename", data),
-      analyzeRootVariables: () => Effect.succeed(null),
-      getTemplateSource: () => Effect.succeed(""),
       waitUntilSettled: () => Effect.succeed("settled" as const),
-    },
-    frontmatter: {
-      read: Effect.succeed({
-        fields: [],
-        inertKeys: [],
-        javascriptTemplatesEnabled: false,
-      }),
-      evaluate: () => Effect.succeed({ values: {}, errors: {}, inertKeys: [] }),
-      validateExpr: () => Effect.succeed(null),
-      write: () => Effect.void,
     },
   });
   return handlers[TEMPLATE_DATA_COMMAND]({
