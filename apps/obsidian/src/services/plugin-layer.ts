@@ -9,6 +9,7 @@ import { layerObsidianEnv } from "@/lib/obsidian-env";
 import { layerFileManager } from "@/lib/obsidian-file-manager";
 import { layerMetadataCache } from "@/lib/obsidian-metadata-cache";
 import { layerVault } from "@/lib/obsidian-vault";
+import type { Vault } from "@/lib/obsidian-vault";
 import { layerWorkspace } from "@/lib/obsidian-workspace";
 import { layerPluginHost } from "@/lib/plugin-host";
 import type { ZoteroHttp } from "@/lib/zotero-http";
@@ -131,6 +132,7 @@ export function pluginLayer(
   | ZoteroHttp
   | Template
   | TemplateMigration
+  | Vault
 > {
   // What both halves read from Obsidian: the App, its environment, notices.
   const obsidian = Layer.mergeAll(
@@ -210,6 +212,8 @@ export function pluginLayer(
         layerZoteroHttpNode.pipe(startingAs("ZoteroHttp")),
       ),
     ),
+    // The legacy note writers create through the Vault tag (`build.ts`).
+    Layer.provideMerge(layerVault),
     Layer.provide(obsidian),
     Layer.provideMerge(
       layerLogging.pipe(

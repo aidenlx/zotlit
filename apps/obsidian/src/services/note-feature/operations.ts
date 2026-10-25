@@ -42,7 +42,6 @@ import type {
   ProfileSelector,
   UnknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
-import { isFileExistsError } from "@/lib/vault-errors";
 import type { AttachmentImport } from "@/services/attachment-import/service";
 import { classifyStream, runBatch } from "@/services/batch-run";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
@@ -281,13 +280,6 @@ const NO_BODY_UPDATE: UpdateResult = {
   bodyUpdated: false,
   duplicateRegionCount: 0,
 };
-
-/**
- * Concurrent/batch creation can land a sibling between resolve and write. Each
- * retry forces a fresh `suffix()`, so even one almost always frees the name;
- * the bound just stops an unbounded loop.
- */
-const MAX_CREATE_RETRIES = 5;
 
 /** Per-batch inputs threaded through a multi-item create run. */
 export interface CreateNoteOptions {
@@ -978,33 +970,25 @@ async function createNote(
     reportExcerpts: options.reportExcerpts,
     outcomes: options.outcomes,
     createFile: async (content) => {
-      for (let attempt = 0; ; attempt++) {
-        try {
-          await ensureParentFolder(ctx.app, path);
-          return await ctx.app.vault.create(path, content);
-        } catch (error) {
-          if (
-            !isFileExistsError(error) ||
-            !canSuffix ||
-            attempt >= MAX_CREATE_RETRIES
-          )
-            throw error;
-          logger.debug("Filename collided on create; retrying with suffix", {
-            path,
-            attempt,
-            itemKey: item.indexedKey,
-          });
-          ({ path, canSuffix } = resolveNotePath(ctx, source.item, {
-            itemTags,
-            itemCollections,
-            settings: profile.settings,
-            forceSuffix: true,
-            document,
-          }));
-          // Prepared relative links belong to the original parent folder.
-          path = join(parentFolder, basename(path));
-        }
+      await ensureParentFolder(ctx.app, path);
+      // Another note took the path since it was resolved: find a free one in
+      // the vault cache, then create one time.
+      if (canSuffix && ctx.app.vault.getAbstractFileByPath(path) !== null) {
+        logger.debug("Filename taken before create; using a new suffix", {
+          path,
+          itemKey: item.indexedKey,
+        });
+        ({ path } = resolveNotePath(ctx, source.item, {
+          itemTags,
+          itemCollections,
+          settings: profile.settings,
+          forceSuffix: true,
+          document,
+        }));
+        // Prepared relative links belong to the original parent folder.
+        path = join(parentFolder, basename(path));
       }
+      return await ctx.bridge.runPromise(ctx.vault.create(path, content));
     },
   });
 }

@@ -1,9 +1,11 @@
 // An in-memory vault for tests. The test drives it; the tag's own layer runs
 // over it (`layerVaultFrom`). It copies the shape of MemoryMetadataCache.
-import { TFile } from "obsidian";
+import { TFile, TFolder } from "obsidian";
 import type { DataWriteOptions, EventRef, TAbstractFile } from "obsidian";
 
-import type { VaultSource } from "@/lib/obsidian-vault";
+import { Effect } from "@/lib/effect";
+import { makeVault } from "@/lib/obsidian-vault";
+import type { Vault, VaultSource } from "@/lib/obsidian-vault";
 
 type Callback = (...args: unknown[]) => unknown;
 
@@ -11,6 +13,7 @@ type Callback = (...args: unknown[]) => unknown;
 export class MemoryVault implements VaultSource {
   readonly files = new Map<string, TFile>();
   readonly contents = new Map<string, string>();
+  readonly folders = new Map<string, TFolder>();
   /** The files moved to the trash, in order. */
   readonly trashed: TAbstractFile[] = [];
   readonly #listeners = new Map<string, Set<Callback>>();
@@ -25,6 +28,10 @@ export class MemoryVault implements VaultSource {
 
   getFileByPath(path: string): TFile | null {
     return this.files.get(path) ?? null;
+  }
+
+  getAbstractFileByPath(path: string): TAbstractFile | null {
+    return this.files.get(path) ?? this.folders.get(path) ?? null;
   }
 
   async read(file: TFile): Promise<string> {
@@ -89,6 +96,15 @@ export class MemoryVault implements VaultSource {
     return file;
   }
 
+  /** Hold a folder at `path`, then `create`. */
+  addFolder(path: string): TFolder {
+    const folder = new TFolder();
+    folder.path = path;
+    this.folders.set(path, folder);
+    this.trigger("create", folder);
+    return folder;
+  }
+
   /** Change the file's text, then `modify`. */
   modify(file: TFile, data: string): void {
     this.contents.set(file.path, data);
@@ -121,4 +137,13 @@ export class MemoryVault implements VaultSource {
     for (const callback of this.#listeners.get(name) ?? [])
       callback(...args);
   }
+}
+
+/**
+ * The tag's service over `source`, for Promise code under test that takes the
+ * service as a dep. Its event listeners are already removed: use the layer
+ * (`layerVaultFrom`) where the test reads `changes`.
+ */
+export function vaultOver(source: VaultSource): Vault["Service"] {
+  return Effect.runSync(Effect.scoped(makeVault(source)));
 }

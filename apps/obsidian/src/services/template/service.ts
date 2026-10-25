@@ -74,7 +74,6 @@ import { ObsidianApp } from "@/lib/obsidian-app";
 import { Vault } from "@/lib/obsidian-vault";
 import type { VaultEvent } from "@/lib/obsidian-vault";
 import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
-import { isFileExistsError } from "@/lib/vault-errors";
 import type { ResolvedProfile } from "@/services/profile/bindings";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -123,6 +122,10 @@ const EMBEDDED_DEFAULT_WINNER = {
 
 interface TemplateEngineOptions {
   app: App;
+  /** Creates each partial document; a taken path fails as `FileExists`. */
+  vault: Pick<Vault["Service"], "create">;
+  /** Runs an Effect on the layer's context. */
+  runPromise: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>;
   settings: { readonly current: Readonly<Settings> };
   changed: () => void;
   flushRequested: () => void;
@@ -475,6 +478,8 @@ const wrapManagedContent = managedRegionTransform(MANAGED_CONTENT_TEMPLATE);
 /** Rendering and vault-document operations; the Template layer owns its lifetime. */
 class TemplateEngine {
   readonly #app;
+  readonly #vault;
+  readonly #runPromise;
   readonly #settings;
   readonly #facade = new TemplateFacade({
     // The built-in `content` renders inline; only a vault `content` template
@@ -546,6 +551,8 @@ class TemplateEngine {
     this.#schedule = options.schedule;
     this.#log = options.log;
     this.#app = options.app;
+    this.#vault = options.vault;
+    this.#runPromise = options.runPromise;
     this.#settings = options.settings;
     this.#javascriptTemplatesEnabled =
       this.#app.loadLocalStorage(JS_TEMPLATES_STORAGE_KEY) === "1";
@@ -1345,19 +1352,17 @@ class TemplateEngine {
       }
     }
     await ensureFolder(this.#app, folder || "/");
-    try {
-      await this.#app.vault.create(
-        partialPath(folder, step.name),
-        step.document,
-      );
-    } catch (error) {
-      if (!isFileExistsError(error)) throw error;
+    const created = await this.#runPromise(
+      this.#vault.create(partialPath(folder, step.name), step.document).pipe(
+        Effect.as(true),
+        Effect.catchTag("FileExists", () => Effect.succeed(false)),
+      ),
+    );
+    if (!created)
       this.#log("debug", "A partial document appeared after the unpack plan", {
         name: step.name,
       });
-      return false;
-    }
-    return true;
+    return created;
   }
 
   /**
@@ -2896,6 +2901,8 @@ export const layerTemplate = Layer.effect(
     }>();
     const engine = new TemplateEngine({
       app,
+      vault,
+      runPromise: Effect.runPromiseWith(context),
       settings: {
         get current() {
           return runSync(settings.current);

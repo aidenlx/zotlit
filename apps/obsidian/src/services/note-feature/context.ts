@@ -25,6 +25,7 @@ import type { EffectBridge } from "@/lib/effect-bridge";
 import { creatorSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
+import type { Vault as VaultTag } from "@/lib/obsidian-vault";
 import type {
   AttachmentImport,
   AttachmentImportService,
@@ -55,7 +56,7 @@ const logger = getLogger("note-feature");
 interface NoteVaultApp {
   vault: Pick<
     Vault,
-    "getAbstractFileByPath" | "getRoot" | "createFolder" | "create" | "process"
+    "getAbstractFileByPath" | "getRoot" | "createFolder" | "process"
   >;
   fileManager: Pick<FileManager, "generateMarkdownLink" | "renameFile">;
   metadataCache: Pick<MetadataCache, "getFileCache" | "offref"> & {
@@ -105,7 +106,9 @@ export interface NoteFeatureDeps {
   >;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   settings: Pick<PluginSettings["Service"], "current" | "update">;
-  bridge: Pick<EffectBridge, "runSync">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
+  /** Creates each note; a taken path fails as `FileExists`. */
+  vault: Pick<VaultTag["Service"], "create">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
   excerptImages?: ExcerptPreparation;
   singleExcerpt?: (

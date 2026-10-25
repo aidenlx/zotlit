@@ -140,7 +140,7 @@ async function fixture(mode: string) {
       current: Effect.succeed(settings),
       update: () => Effect.succeed(settings),
     },
-    bridge: { runSync: Effect.runSync },
+    bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
     profile: profileReader(settings),
     template: {
       renderManagedContent: () => "",

@@ -1,4 +1,3 @@
-// Creation preparation and registry behavior over Profile documents and relational Item rows.
 import { Effect } from "effect";
 import type { TFile, Vault } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,12 +12,15 @@ import type { MatchTree } from "@zotlit/templates/facade";
 import type { ItemFields } from "@zotlit/zotero-types";
 
 import { testEvents } from "@/lib/__fixtures__/event-stream";
+// Creation preparation and registry behavior over Profile documents and relational Item rows.
+import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
+import type { VaultSource } from "@/lib/obsidian-vault";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { QueryService } from "@/services/item-query/service";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
@@ -278,7 +280,8 @@ async function harness(
   );
   const deps: NoteFeatureDeps = {
     app,
-    bridge: { runSync: Effect.runSync },
+    vault: vaultOver(app.vault as unknown as VaultSource),
+    bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
     zoteroReads,
     query,
     profile,

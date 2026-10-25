@@ -58,6 +58,7 @@ import type { ItemFields } from "@zotlit/zotero-types";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import type { ObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import {
   FIELD_CITATION_STYLE,
   FIELD_CITEKEY,
@@ -67,6 +68,7 @@ import {
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { parseFrontMatter } from "@/lib/live-text";
+import type { VaultSource } from "@/lib/obsidian-vault";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type {
   AttachmentSource,
@@ -104,15 +106,23 @@ import {
 
 import type { NoteFeatureDeps } from "./context";
 /** The note feature's deps, with the fixture database its reads serve. */
-type TestDeps = Omit<NoteFeatureDeps, "bridge" | "profile" | "query"> &
-  Partial<Pick<NoteFeatureDeps, "bridge" | "profile" | "query">> & {
+type TestDeps = Omit<
+  NoteFeatureDeps,
+  "bridge" | "profile" | "query" | "vault"
+> &
+  Partial<Pick<NoteFeatureDeps, "bridge" | "profile" | "query" | "vault">> & {
     db: { client: NodeDatabaseClient };
   };
 import { createNoteFeature as createFeature } from "./operations";
 function createNoteFeature(deps: TestDeps) {
   const feature = createFeature({
     ...deps,
-    bridge: deps.bridge ?? { runSync: Effect.runSync },
+    // The tag over the test host's vault, so a create sees its cache.
+    vault: deps.vault ?? vaultOver(deps.app.vault as unknown as VaultSource),
+    bridge: deps.bridge ?? {
+      runSync: Effect.runSync,
+      runPromise: Effect.runPromise,
+    },
     // These Profiles name no Match, so creation runs no query.
     query: deps.query ?? {
       run: () => Promise.reject(new Error("This test runs no query.")),
@@ -1431,7 +1441,7 @@ describe("createNote", () => {
     );
   });
 
-  it("preserves suffix retries for a Profile document filename", async () => {
+  it("creates a Profile document filename at a free suffixed path in one create", async () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeItem({
       itemID: 1,
@@ -1447,14 +1457,8 @@ describe("createNote", () => {
       relatedItems: [],
     } as unknown as NoteTemplateContext);
 
-    // A sibling already holds the base path on disk, but the path cache never
-    // reflects it — the cache-lag race the suffix retry recovers from. Detection
-    // rides on `create`'s rejection alone, not on a cache re-check.
+    // A sibling already holds the base path in the vault cache.
     const app = makeApp({ "Literature/Root.md": "" });
-    const lookup = app.vault.getAbstractFileByPath.bind(app.vault);
-    vi.spyOn(app.vault, "getAbstractFileByPath").mockImplementation((path) =>
-      path === "Literature/Root.md" ? null : lookup(path),
-    );
     const create = app.vault.create;
     const document = makeDocumentTemplate({
       filename: `Root${filenameSuffix()}`,
@@ -1492,7 +1496,7 @@ describe("createNote", () => {
 
     expect(file.path).toMatch(/^Literature\/Root_[\w-]{6}\.md$/);
     expect(update).not.toHaveBeenCalled();
-    expect(create).toHaveBeenCalledTimes(2);
+    expect(create).toHaveBeenCalledTimes(1);
     expect(document.renderForCreate).toHaveBeenCalledTimes(1);
   });
 
@@ -2387,7 +2391,7 @@ function makeUpdateHarness(options: {
         renameFile: vi.fn(),
       },
     },
-    bridge: { runSync: Effect.runSync },
+    bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
     template,
     ...makeDbDeps(),
     noteIndex: {
