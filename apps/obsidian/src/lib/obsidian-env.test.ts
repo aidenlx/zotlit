@@ -16,12 +16,13 @@ afterEach(() => {
 
 describe("layerObsidianEnv", () => {
   it.effect(
-    "reads the platform, version, language, vault name and folder once",
+    "reads the platform, version, language, vault name, folder and app id once",
     () =>
       Effect.gen(function* () {
         setMockPlatform({ isMacOS: true, isWin: false, isDesktopApp: true });
         let reads = 0;
         const app = stubService<App>("App", {
+          appId: "0123456789abcdef",
           vault: stubService<Vault>("Vault", {
             getName: () => "Research",
             adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
@@ -46,6 +47,7 @@ describe("layerObsidianEnv", () => {
           language: "en",
           vaultName: "Research",
           basePath: "/Users/me/vault",
+          appId: "0123456789abcdef",
         });
         // The mock flags are reset: a later read of the env must not reach them.
         resetMockPlatform();

@@ -335,7 +335,8 @@ export default defineConfig({
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
-      // No tag event yet: the workspace's `layout-change`.
+      // Listens to the workspace's `layout-change` on the App; the Workspace
+      // tag's `changes` now carries it.
       files: ["src/views/welcome/register.ts"],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },

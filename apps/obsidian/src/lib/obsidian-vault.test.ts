@@ -70,6 +70,16 @@ it.effect("reads the live layer's vault from ObsidianApp", () =>
   }),
 );
 
+it.effect("lists the vault's Markdown files", () =>
+  Effect.gen(function* () {
+    const source = new MemoryVault();
+    const note = Object.assign(source.add("a.md"), { extension: "md" });
+    Object.assign(source.add("b.pdf"), { extension: "pdf" });
+    const { vault } = yield* open(layerVaultFrom(source));
+    expect(yield* vault.getMarkdownFiles).toEqual([note]);
+  }),
+);
+
 it.effect("writes through process, create and trash", () =>
   Effect.gen(function* () {
     const source = new MemoryVault();

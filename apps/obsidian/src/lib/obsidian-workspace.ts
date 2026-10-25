@@ -37,13 +37,16 @@ export type WorkspaceSource = Pick<
   | "openLinkText"
   | "getLeaf"
   | "trigger"
+  | "requestActiveLeafEvents"
 > &
   ObsidianEventEmitter;
 
 /** One workspace event, tagged with its Obsidian event name. */
 export type WorkspaceEvent =
   /** The active file changed; `null` when no file is active. */
-  { readonly _tag: "file-open"; readonly file: TFile | null };
+  | { readonly _tag: "file-open"; readonly file: TFile | null }
+  /** A leaf opened, closed or moved. */
+  | { readonly _tag: "layout-change" };
 
 /** Where a file menu opened: Obsidian's `source` name, and the leaf of a view's own menu. */
 export interface FileMenuOrigin {
@@ -77,6 +80,12 @@ export interface WorkspaceShape {
    * extensions again, so a change to a registered extension array applies.
    */
   readonly updateOptions: Effect.Effect<void>;
+  /**
+   * Obsidian's undocumented `requestActiveLeafEvents.run()`: Obsidian defers
+   * the active leaf's events, such as `file-open`; this delivers a deferred
+   * one now.
+   */
+  readonly requestActiveLeafEvents: Effect.Effect<void>;
   /**
    * Obsidian's `openLinkText`: open `linktext`, resolved from `sourcePath`, in
    * the pane `newLeaf` names, with the view state `state`.
@@ -139,6 +148,9 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     _tag: "file-open",
     file,
   }));
+  yield* events.listen(source, "layout-change", () => ({
+    _tag: "layout-change",
+  }));
 
   /** Register `name` on the current Scope; each call runs `toEffect` synchronously with the caller's context. */
   const menuHook = <Args extends unknown[], R>(
@@ -174,6 +186,9 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     updateOptions: Effect.sync(() => source.updateOptions()).pipe(
       Effect.withSpan("Workspace.updateOptions"),
     ),
+    requestActiveLeafEvents: Effect.sync(() =>
+      source.requestActiveLeafEvents.run(),
+    ).pipe(Effect.withSpan("Workspace.requestActiveLeafEvents")),
     openLinkText: Effect.fn("Workspace.openLinkText")(
       (linktext, sourcePath, options = {}) =>
         Effect.promise(() =>
