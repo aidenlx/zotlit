@@ -95,12 +95,10 @@ function testPorts() {
   const watchers: FakeWatcher[] = [];
   const reads: PreparedRead[] = [];
   const releases: PreparedRead[] = [];
-  const releaseGate = Effect.runSync(
-    Ref.make<{
-      entered: Deferred.Deferred<void>;
-      release: Deferred.Deferred<void>;
-    } | null>(null),
-  );
+  const releaseGate = Ref.makeUnsafe<{
+    entered: Deferred.Deferred<void>;
+    release: Deferred.Deferred<void>;
+  } | null>(null);
   const ports = {
     prepareRead: vi.fn<SourcePorts["prepareRead"]>(
       (mode: ReadsConfig["readMode"], path: string) =>
@@ -248,7 +246,7 @@ function emitDirEvent(watchers: FakeWatcher[], filename: string): void {
 
 /** A held `prepareRead`: it waits for `release`, then reads for real. */
 function holdRead(ports: ReturnType<typeof testPorts>["ports"]) {
-  const held = Effect.runSync(Deferred.make<void>());
+  const held = Deferred.makeUnsafe<void>();
   ports.prepareRead.mockImplementationOnce((mode, path) =>
     Effect.andThen(Deferred.await(held), prepareRead(mode, path)),
   );
