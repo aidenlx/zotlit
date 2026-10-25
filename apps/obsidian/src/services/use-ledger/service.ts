@@ -19,6 +19,7 @@ import { acquireDisposable } from "@/lib/effect-scope";
 import { changesUntil, filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import { Workspace } from "@/lib/obsidian-workspace";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 
 const UseKind = Schema.Literals(["opened", "read", "cited"]);
@@ -69,6 +70,10 @@ export class UseLedger extends Context.Service<
 const makeUseLedger = Effect.gen(function* () {
   const app = yield* ObsidianApp;
   const metadata = yield* MetadataCache;
+  // The tag gives layout-ready. `file-open` and the active-leaf flush stay on
+  // `app.workspace`: the ledger counts each open event, and the tag's
+  // `activeFile` replays the current file on subscribe, a file nobody opened.
+  const layout = yield* Workspace;
   const ledger = yield* SubscriptionRef.make(newest(yield* readSaved(app)));
   const stopped = yield* Deferred.make<void>();
   const excludedOpens = new Map<TFile, number>();
@@ -110,10 +115,14 @@ const makeUseLedger = Effect.gen(function* () {
   const { workspace } = app;
   let enabled = false;
   let pending: { file: TFile; instant: Temporal.Instant } | null = null;
-  workspace.onLayoutReady(() => {
-    if (closed) return;
-    enabled = true;
-  });
+  yield* layout.layoutReady.pipe(
+    Effect.andThen(
+      Effect.sync(() => {
+        if (!closed) enabled = true;
+      }),
+    ),
+    Effect.forkScoped({ startImmediately: true }),
+  );
   yield* acquireDisposable(() =>
     registerEvent(
       workspace.on("file-open", (file) => {
@@ -184,7 +193,7 @@ const makeUseLedger = Effect.gen(function* () {
 export const layerUseLedger: Layer.Layer<
   UseLedger,
   never,
-  ObsidianApp | MetadataCache
+  ObsidianApp | MetadataCache | Workspace
 > = Layer.effect(UseLedger, makeUseLedger);
 
 /**

@@ -3,6 +3,7 @@ import { ButtonComponent } from "obsidian";
 import type { App } from "obsidian";
 import { expect, vi } from "vitest";
 
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { DOCS_COMPANION } from "@/lib/constants";
 import { Effect } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
@@ -22,12 +23,11 @@ it.effect("Release.openReleaseNote succeeds when the view cannot open", () =>
         .fn()
         .mockRejectedValue(new Error("Cannot open view"));
       const app = {
-        workspace: {
-          onLayoutReady: () => {},
+        workspace: Object.assign(new MemoryWorkspace(), {
           getLeavesOfType: () => [],
           getLeaf: () => ({ setViewState }),
           revealLeaf: vi.fn(),
-        },
+        }),
         internalPlugins: {
           getEnabledPluginById: () => true,
         },

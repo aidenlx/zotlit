@@ -8,6 +8,7 @@ import { layerNotifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerObsidianEnv } from "@/lib/obsidian-env";
 import { layerMetadataCache } from "@/lib/obsidian-metadata-cache";
+import { layerWorkspace } from "@/lib/obsidian-workspace";
 import { layerPluginHost } from "@/lib/plugin-host";
 import { openLibraryView } from "@/views/library/register";
 
@@ -132,6 +133,7 @@ export function pluginLayer(
     layerNotifier,
     layerObsidianEnv,
     layerMetadataCache,
+    layerWorkspace,
   ).pipe(Layer.provideMerge(Layer.succeed(ObsidianApp, plugin.app)));
   const services = Layer.mergeAll(
     layerCitationPopover.pipe(startingAs("CitationPopover")),

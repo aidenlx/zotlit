@@ -11,6 +11,7 @@ import type {
 import type { Library, LibraryCitekey } from "@zotlit/db";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
 import type { Context } from "@/lib/effect";
 import { Effect, Stream } from "@/lib/effect";
@@ -238,18 +239,6 @@ export class MockVault {
     this.metadataCache.files.set(path, file);
     if (cache) this.metadataCache.fileCache.set(path, cache);
     for (const callback of this.#listeners.rename) callback(file, oldPath);
-  }
-}
-
-export class MockWorkspace {
-  readonly #pending: (() => void)[] = [];
-
-  onLayoutReady(callback: () => void): void {
-    this.#pending.push(callback);
-  }
-
-  layoutReady(): void {
-    for (const callback of this.#pending.splice(0)) callback();
   }
 }
 
@@ -612,7 +601,7 @@ export interface CitationIndexHarness extends AsyncDisposable {
   settingsBridge: SettingsFixture["bridge"];
   store: MemoryStore;
   vault: MockVault;
-  workspace: MockWorkspace;
+  workspace: MemoryWorkspace;
   db: DatabaseStub;
   citekeys: CitekeysStub;
   libraryScope: LibraryScopeStub;
@@ -648,7 +637,7 @@ export async function createCitationIndexHarness(
   await using stack = new AsyncDisposableStack();
   const metadataCache = new MockMetadataCache();
   const vault = new MockVault(metadataCache);
-  const workspace = new MockWorkspace();
+  const workspace = new MemoryWorkspace();
   const store = options.store ?? new MemoryStore();
   const db = stack.use(
     options.db ?? new DatabaseStub({ seed: options.zoteroRows }),
@@ -696,7 +685,7 @@ export async function createCitationIndexHarness(
     {
       metadataCache,
       vault,
-      workspace: { onLayoutReady: (callback: () => void) => callback() },
+      workspace: new MemoryWorkspace({ layoutReady: true }),
     } as unknown as App,
     stack,
   );

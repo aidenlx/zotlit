@@ -1,5 +1,10 @@
 import { join } from "node:path/posix";
-import type { FileManager, TFile, Vault, Workspace } from "obsidian";
+import type {
+  FileManager,
+  TFile,
+  Vault,
+  Workspace as ObsidianWorkspace,
+} from "obsidian";
 
 import type { CiteRef, Library } from "@zotlit/db";
 import {
@@ -19,6 +24,7 @@ import {
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { Workspace } from "@/lib/obsidian-workspace";
 import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -70,7 +76,7 @@ interface MigrationTemplateService {
 interface MigrationApp {
   vault: Pick<Vault, "getFileByPath" | "create">;
   fileManager: Pick<FileManager, "trashFile">;
-  workspace: Pick<Workspace, "onLayoutReady">;
+  workspace: Pick<ObsidianWorkspace, "onLayoutReady">;
 }
 
 interface MigrationEngineOptions {
@@ -635,6 +641,7 @@ export function layerTemplateMigration(options: TemplateMigrationOptions) {
     TemplateMigration,
     Effect.gen(function* () {
       const app = yield* ObsidianApp;
+      const workspace = yield* Workspace;
       const settings = yield* PluginSettings;
       const template = yield* Template;
       const context = yield* Effect.context<never>();
@@ -669,7 +676,14 @@ export function layerTemplateMigration(options: TemplateMigrationOptions) {
           convertLegacyTemplateDocuments: (refs) =>
             runPromise(template.convertLegacyTemplateDocuments(refs)),
         },
-        defer: (action) => app.workspace.onLayoutReady(intake.callback(action)),
+        defer: (action) => {
+          run(
+            workspace.layoutReady.pipe(
+              Effect.andThen(Effect.sync(() => intake.callback(action)())),
+              Effect.forkIn(scope, { startImmediately: true }),
+            ),
+          );
+        },
         log: (level, message, fields) => {
           const log = {
             debug: Effect.logDebug,

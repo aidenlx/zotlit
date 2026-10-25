@@ -25,6 +25,7 @@ import { changesUntil, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
+import { Workspace } from "@/lib/obsidian-workspace";
 import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import { CitationParse } from "@/services/citation-parse/service";
 import { LibraryScope } from "@/services/library-scope/service";
@@ -204,6 +205,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
   return Effect.gen(function* () {
     const app = yield* ObsidianApp;
     const metadata = yield* MetadataCache;
+    const workspace = yield* Workspace;
     const db = yield* ZoteroReads;
     const libraryScope = yield* LibraryScope;
     const noteIndex = yield* NoteIndex;
@@ -1624,7 +1626,10 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         log("warn", "Citation index store is still opening", {}),
       ),
     ).pipe(Scope.provide(scope));
-    app.workspace.onLayoutReady(intake.callback("layoutReady"));
+    yield* workspace.layoutReady.pipe(
+      Effect.andThen(Effect.sync(() => intake.callback("layoutReady")())),
+      Effect.forkIn(scope, { startImmediately: true }),
+    );
     return {
       current,
       changes,

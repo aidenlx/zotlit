@@ -9,6 +9,7 @@ import { forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
+import { Workspace } from "@/lib/obsidian-workspace";
 import { DEFAULT_PROFILE, profileStampOf } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 
@@ -117,6 +118,7 @@ export class NoteIndex extends Context.Service<
 const makeNoteIndex = Effect.gen(function* () {
   const app = yield* ObsidianApp;
   const metadata = yield* MetadataCache;
+  const workspace = yield* Workspace;
   const changes = yield* PubSub.unbounded<NoteIndexChange>();
   yield* Effect.addFinalizer(() => PubSub.shutdown(changes));
   const indexed = yield* Deferred.make<void>();
@@ -236,14 +238,19 @@ const makeNoteIndex = Effect.gen(function* () {
     yield* forkEach(metadata.changes, events.callback("metadata"));
     yield* events.on("delete", vault, "delete");
     yield* events.on("rename", vault, "rename");
-    app.workspace.onLayoutReady(events.callback("layout"));
+    // Started immediately: a ready layout completes at once, so the event is
+    // queued here; else it is queued inside Obsidian's layout-ready callback.
+    yield* workspace.layoutReady.pipe(
+      Effect.andThen(Effect.sync(() => events.callback("layout")())),
+      Effect.forkScoped({ startImmediately: true }),
+    );
     // Start immediately so a ready layout and clean cache finish the Full Scan
     // before acquisition returns, as they did through the synchronous callbacks.
     yield* events
       .consume(consume)
       .pipe(Effect.forkScoped({ startImmediately: true }));
 
-    // `onLayoutReady` and `onCleanCache` are one-shots with no unregister, so
+    // Layout-ready and `onCleanCache` are one-shots with no unregister, so
     // the scan gates on disposal instead. Callers parked on `whenIndexed()`
     // are torn down alongside the service and would otherwise wait on
     // nothing, so disposal settles them.
@@ -480,7 +487,7 @@ const makeNoteIndex = Effect.gen(function* () {
 export const layerNoteIndex: Layer.Layer<
   NoteIndex,
   never,
-  ObsidianApp | MetadataCache
+  ObsidianApp | MetadataCache | Workspace
 > = Layer.effect(NoteIndex, makeNoteIndex);
 
 function serializeFrontmatter(cache: CachedMetadata | null): string {

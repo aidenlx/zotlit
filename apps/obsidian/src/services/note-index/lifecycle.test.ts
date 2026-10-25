@@ -160,7 +160,7 @@ it.effect(
         .whenIndexed()
         .pipe(Effect.forkChild({ startImmediately: true }));
       expect(pending.pollUnsafe()).toBeUndefined();
-      host.workspace.ready();
+      host.workspace.layoutReady();
       expect(pending.pollUnsafe()).toBeUndefined();
       host.metadataCache.resolve();
       yield* Fiber.join(pending);
@@ -290,7 +290,7 @@ it.effect.each(["layout", "clean-cache", "resolved"] as const)(
       );
       const index = Context.get(context, NoteIndex);
       const pending = yield* index.whenIndexed().pipe(Effect.forkChild);
-      if (phase !== "layout") host.workspace.ready();
+      if (phase !== "layout") host.workspace.layoutReady();
       yield* Scope.close(scope, Exit.void);
       yield* Fiber.join(pending);
       startup(host);
