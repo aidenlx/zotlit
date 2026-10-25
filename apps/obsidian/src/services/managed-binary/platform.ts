@@ -1,7 +1,7 @@
+import { Context, Effect, Layer } from "effect";
 import { HttpClient, HttpClientError } from "effect/http";
 import type { App } from "obsidian";
 
-import { Context, Effect, Layer } from "@/lib/effect";
 import { layerRequestUrlHttpClient } from "@/lib/http-client";
 import { ObsidianApp } from "@/lib/obsidian-app";
 

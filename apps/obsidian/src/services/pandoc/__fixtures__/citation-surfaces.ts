@@ -1,4 +1,4 @@
-import { Effect, Stream } from "@/lib/effect";
+import { Effect, Stream } from "effect";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { subscribe } from "@/lib/effect-stream";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";

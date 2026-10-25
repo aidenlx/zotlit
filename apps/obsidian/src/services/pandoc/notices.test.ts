@@ -1,9 +1,9 @@
+import { it } from "@effect/vitest";
+import { Effect, Exit, Scope, Stream } from "effect";
 import { describe, expect, it as plainIt, vi } from "vitest";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
-import { Effect, Exit, Scope, Stream } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import {
   citationStyleMissingNotice,

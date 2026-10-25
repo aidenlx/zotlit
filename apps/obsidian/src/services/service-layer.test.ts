@@ -1,7 +1,6 @@
+import { it } from "@effect/vitest";
+import { Context, Effect, Layer, Logger, Queue } from "effect";
 import { expect, vi } from "vitest";
-
-import { Context, Effect, Layer, Logger, Queue } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { Service, ServiceInitError } from "./service-base";
 import { serviceLayer } from "./service-layer";

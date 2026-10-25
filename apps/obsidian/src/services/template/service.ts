@@ -1,3 +1,14 @@
+import {
+  Context,
+  Effect,
+  Fiber,
+  Layer,
+  PubSub,
+  Scope,
+  Stream,
+  SubscriptionRef,
+} from "effect";
+import type { Cause } from "effect";
 import { dirname, join } from "node:path/posix";
 import { TFile } from "obsidian";
 import type { App, TAbstractFile } from "obsidian";
@@ -52,17 +63,6 @@ import {
 } from "@zotlit/templates/obsidian";
 
 import { RESERVED_KEYS } from "@/lib/constants";
-import {
-  Context,
-  Effect,
-  Fiber,
-  Layer,
-  PubSub,
-  Scope,
-  Stream,
-  SubscriptionRef,
-} from "@/lib/effect";
-import type { Cause } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { forkEach } from "@/lib/effect-stream";

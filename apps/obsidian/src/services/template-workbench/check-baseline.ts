@@ -1,6 +1,7 @@
-import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 // Select one read-only update input before resolving the Profile to check.
-import { Effect, Result } from "@/lib/effect";
+import { Effect, Result } from "effect";
+
+import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 import { readLiveText } from "@/lib/live-text";
 import { parseProfileStamp } from "@/lib/profile-stamp";
 import { previewBaseline } from "@/views/note-preview/baseline";

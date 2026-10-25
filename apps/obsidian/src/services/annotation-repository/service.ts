@@ -1,5 +1,6 @@
 // The Effect service over the Annotation Repository core.
-import { Clock, Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
+import { Clock, Context, Effect, Layer, PubSub, Stream } from "effect";
+
 import { scopedBridge } from "@/lib/effect-bridge";
 import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";

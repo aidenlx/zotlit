@@ -1,5 +1,6 @@
 // The Zotero Reader as a Reader Session, translated from the companion's pushes.
-import { Effect, Stream } from "@/lib/effect";
+import { Effect, Stream } from "effect";
+
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import type {

@@ -1,3 +1,4 @@
+import { Effect, Stream } from "effect";
 import {
   lstat,
   mkdir,
@@ -19,7 +20,6 @@ import type { App } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Effect, Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import { reflink } from "@/lib/reflink";
 import { defaults } from "@/services/settings/schema";

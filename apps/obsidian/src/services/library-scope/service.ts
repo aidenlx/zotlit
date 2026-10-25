@@ -1,6 +1,4 @@
 /** The live Library Scope, resolved against the Libraries held by QueryClients. */
-import type { Library } from "@zotlit/db";
-
 import {
   Cause,
   Context,
@@ -10,7 +8,10 @@ import {
   Scope,
   Stream,
   SubscriptionRef,
-} from "@/lib/effect";
+} from "effect";
+
+import type { Library } from "@zotlit/db";
+
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
 import { QueryClients } from "@/services/query-client/service";

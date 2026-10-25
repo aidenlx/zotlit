@@ -1,6 +1,7 @@
 // State Streams and callback subscriptions shared by Effect services and adapters.
-import type { ManagedRuntime, Scope } from "@/lib/effect";
-import { Effect, Stream } from "@/lib/effect";
+import type { ManagedRuntime, Scope } from "effect";
+import { Effect, Stream } from "effect";
+
 import { logAndContinue } from "@/lib/effect-log";
 import { isScopeClosed } from "@/lib/effect-scope";
 

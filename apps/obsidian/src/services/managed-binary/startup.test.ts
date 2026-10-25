@@ -1,15 +1,7 @@
+import { expect, it } from "@effect/vitest";
+import { Context, Deferred, Effect, Fiber, Layer, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
-import {
-  Context,
-  Deferred,
-  Effect,
-  Fiber,
-  Layer,
-  Queue,
-  Stream,
-} from "@/lib/effect";
-import { expect, it } from "@/lib/effect-vitest";
 import {
   CHINESE_SEGMENTER,
   ChineseSegmenter,

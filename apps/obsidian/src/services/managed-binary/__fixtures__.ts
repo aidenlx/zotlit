@@ -1,5 +1,6 @@
 // A Managed Binary layer over fake device ports, with the same handle as the plugin.
-import { Context, Layer } from "@/lib/effect";
+import { Context, Layer } from "effect";
+
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 

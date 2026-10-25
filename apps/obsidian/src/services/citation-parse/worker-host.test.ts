@@ -1,9 +1,8 @@
+import { it } from "@effect/vitest";
+import { Cause, Effect, Exit, Fiber, Queue } from "effect";
 import type { RpcMessage } from "effect/rpc";
 import { TestClock } from "effect/testing";
 import { expect, vi } from "vitest";
-
-import { Cause, Effect, Exit, Fiber, Queue } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { makeParseHarness } from "./__fixtures__";
 import { ParseWorkerDied } from "./client";

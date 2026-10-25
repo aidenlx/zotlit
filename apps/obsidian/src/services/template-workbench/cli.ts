@@ -1,4 +1,5 @@
 // The Template Workbench commands and their response boundaries.
+import { Effect } from "effect";
 import type { CliData } from "obsidian";
 
 import type {
@@ -19,7 +20,6 @@ import {
 import type { CliCommandHandler } from "@/lib/cli-command";
 import { catchRejection } from "@/lib/cli-params";
 import type { CliRejection } from "@/lib/cli-params";
-import { Effect } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { DEFAULT_PROFILE, parseProfileSelector } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";

@@ -4,14 +4,6 @@
  * no file watcher. Reads run on the layer Scope; failures publish degraded
  * state with empty preferences. Unset overrides restore automatic detection.
  */
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
-
-import { sourceIdFromUris } from "@zotlit/protocol";
-
-import { COMPANION_ADDON_ID, ZOTERO_DB_FILENAME } from "@/lib/constants";
 import {
   Cause,
   Context,
@@ -20,7 +12,15 @@ import {
   PubSub,
   Stream,
   SubscriptionRef,
-} from "@/lib/effect";
+} from "effect";
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+
+import { sourceIdFromUris } from "@zotlit/protocol";
+
+import { COMPANION_ADDON_ID, ZOTERO_DB_FILENAME } from "@/lib/constants";
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
 import { ObsidianApp } from "@/lib/obsidian-app";

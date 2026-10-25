@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Cause, Effect, Exit } from "effect";
 import { describe, expect, vi } from "vitest";
 
 import {
@@ -5,8 +7,6 @@ import {
   markInertPlaceholder,
 } from "@zotlit/workbench/explorer";
 
-import { Cause, Effect, Exit } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import type { CompileError } from "@/services/template/service";
 
 import {

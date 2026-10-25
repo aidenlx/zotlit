@@ -1,9 +1,9 @@
 // Once-per-launch release check: onboarding branch, the update the banner announces, Release Note.
 
+import { Cause, Context, Deferred, Effect, Layer } from "effect";
 import { TFile } from "obsidian";
 
 import { DOCS_COMPANION } from "@/lib/constants";
-import { Cause, Context, Deferred, Effect, Layer } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import * as m from "@/lib/i18n/generated/messages";

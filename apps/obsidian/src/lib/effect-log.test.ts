@@ -1,11 +1,10 @@
+import { it } from "@effect/vitest";
 import { configureSync, resetSync } from "@logtape/logtape";
 import type { LogRecord } from "@logtape/logtape";
+import { Effect, Layer, Logger, Queue } from "effect";
 import { describe, expect } from "vitest";
 
 import { logLibrary } from "@zotlit/shared/logging";
-
-import { Effect, Layer, Logger, Queue } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { logTapeLogger, withLogCategory } from "./effect-log";
 import { layerHostLogPort } from "./effect-log-port";

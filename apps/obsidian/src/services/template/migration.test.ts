@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Context, Effect, Layer } from "effect";
 import { TestClock } from "effect/testing";
 import type { App } from "obsidian";
 import { afterEach, beforeEach, describe, expect, vi } from "vitest";
@@ -8,9 +10,7 @@ import { LegacyTemplateConversionError } from "@zotlit/templates/facade";
 import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { it } from "@/lib/effect-vitest";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import { buildSettings } from "@/services/settings/__fixtures__";

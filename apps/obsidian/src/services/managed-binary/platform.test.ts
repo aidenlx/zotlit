@@ -1,8 +1,8 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import type { RequestUrlResponse } from "obsidian";
 import { describe, expect } from "vitest";
 
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { requestUrlHttpClient } from "@/lib/http-client";
 
 import { downloadBytes } from "./platform";

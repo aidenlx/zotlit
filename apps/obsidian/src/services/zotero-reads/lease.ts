@@ -1,5 +1,6 @@
 // A Zotero read snapshot lease owned by code outside Effect.
-import { Cause, Exit, Scope } from "@/lib/effect";
+import { Cause, Exit, Scope } from "effect";
+
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { openScope } from "@/lib/effect-scope";
 

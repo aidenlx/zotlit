@@ -1,19 +1,11 @@
+import { it } from "@effect/vitest";
+import { Context, Effect, Fiber, Layer, Option, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { expect, expectTypeOf, vi } from "vitest";
 
 import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
-import {
-  Context,
-  Effect,
-  Fiber,
-  Layer,
-  Option,
-  Queue,
-  Stream,
-} from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import { PluginSettings } from "@/services/settings/service";
 
 import { createTemplateHost, templateOf, templateOver } from "./__fixtures__";

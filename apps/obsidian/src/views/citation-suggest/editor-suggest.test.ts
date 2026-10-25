@@ -1,9 +1,9 @@
 import { Text } from "@codemirror/state";
+import { Effect, Stream } from "effect";
 import type { App, Editor, EditorSuggestContext, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Effect, Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";

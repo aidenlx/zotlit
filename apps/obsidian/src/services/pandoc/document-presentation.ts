@@ -1,5 +1,6 @@
 // The Citation Presentation one Markdown document renders under, read from its note kind, Profile, and properties.
 
+import { Cause, Effect, Exit } from "effect";
 import type { MetadataCache, TFile } from "obsidian";
 
 import type { CslItemData } from "@zotlit/db";
@@ -9,7 +10,6 @@ import {
   FIELD_DOCUMENT_LANGUAGE,
   FIELD_ZOTERO_NOTE_KEY,
 } from "@/lib/constants";
-import { Cause, Effect, Exit } from "@/lib/effect";
 import { isLanguageTag } from "@/lib/language-tag";
 import { getLogger } from "@/lib/log";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";

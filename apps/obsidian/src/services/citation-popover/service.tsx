@@ -1,8 +1,8 @@
 // The Citation Popover: document citation entries and source-less works under the vault presentation.
+import { Cause, Context, Effect, Layer } from "effect";
 import type { App, HoverParent, TFile } from "obsidian";
 import type { ReactNode } from "react";
 
-import { Cause, Context, Effect, Layer } from "@/lib/effect";
 import { scopedBridge, valueOr } from "@/lib/effect-bridge";
 import { bridgeLog, withLogCategory } from "@/lib/effect-log";
 import { filterTag } from "@/lib/effect-stream";

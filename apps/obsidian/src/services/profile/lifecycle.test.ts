@@ -1,17 +1,9 @@
+import { it } from "@effect/vitest";
+import { Context, Effect, Fiber, Layer, Option, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { expect, vi } from "vitest";
 
-import {
-  Context,
-  Effect,
-  Fiber,
-  Layer,
-  Option,
-  Queue,
-  Stream,
-} from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { createTemplateHost } from "@/services/template/__fixtures__";
 

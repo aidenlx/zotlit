@@ -1,7 +1,6 @@
 // One parse contract for the worker and its in-process twin.
+import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
-
-import { Schema } from "@/lib/effect";
 
 export class ParseError extends Schema.TaggedError<ParseError>()("ParseError", {
   message: Schema.String,

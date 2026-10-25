@@ -1,8 +1,8 @@
 // The Obsidian environment the plugin runs in, read once when the graph builds.
+import { Context, Effect, Layer } from "effect";
 import { apiVersion, getLanguage, Platform } from "obsidian";
 import type { FileSystemAdapter } from "obsidian";
 
-import { Context, Effect, Layer } from "@/lib/effect";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 /** Obsidian's platform flags, as `Platform` holds them. */

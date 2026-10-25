@@ -1,12 +1,12 @@
 // Headerless resources strip and migration reminder for the declarative (>=1.13) setting tab.
 
+import { Effect } from "effect";
 import type {
   Setting,
   SettingDefinition,
   SettingDefinitionGroup,
 } from "obsidian";
 
-import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { languagePackSettingCopy } from "@/lib/i18n/settings-copy";
 import {

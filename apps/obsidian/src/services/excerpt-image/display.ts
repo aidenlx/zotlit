@@ -3,8 +3,8 @@
 
 import { hashKey } from "@tanstack/query-core";
 import type { QueryFunctionContext, QueryKey } from "@tanstack/query-core";
+import { Context, Effect } from "effect";
 
-import { Context, Effect } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { scopedBridge, valueOr } from "@/lib/effect-bridge";
 import { bridgeLog } from "@/lib/effect-log";

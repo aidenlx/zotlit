@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import { Effect } from "effect";
 import {
   FileSystemAdapter,
   Scope,
@@ -10,7 +11,6 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
-import { Effect } from "@/lib/effect";
 import { themeHook } from "@/lib/theme-hooks";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 import { openNoteVault } from "@/services/note-index/__fixtures__";

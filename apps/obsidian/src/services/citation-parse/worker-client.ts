@@ -1,10 +1,9 @@
 // A scoped RPC client on a browser Worker or MessagePort.
 import * as BrowserWorker from "@effect/platform-browser/BrowserWorker";
+import { Cause, Context, Effect, Layer, Schema } from "effect";
 import { RpcClient, RpcClientError } from "effect/rpc";
 import type { RpcMessage, RpcSerialization } from "effect/rpc";
 import { Worker } from "effect/workers";
-
-import { Cause, Context, Effect, Layer, Schema } from "@/lib/effect";
 
 import { CitationParseRpc } from "./rpc";
 

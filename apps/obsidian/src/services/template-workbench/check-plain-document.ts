@@ -2,13 +2,14 @@
 // plain draft, rendered against one caller root. The entry module keeps request
 // parsing, the flag guards, Check Attempt retention, and answer assembly, and
 // hands this branch every input it reads.
+import { Effect } from "effect";
+
 import type { CitationTemplateData, CitationVariant } from "@zotlit/db";
 import { parsePlainTemplateDocument } from "@zotlit/templates/facade";
 import { serializeTemplateData } from "@zotlit/workbench/explorer";
 import { isCitationExampleId } from "@zotlit/workbench/render";
 import type { RenderCallerSource } from "@zotlit/workbench/render";
 
-import { Effect } from "@/lib/effect";
 import { parseProfileSelector } from "@/lib/profile-stamp";
 import { checkDiagnostic } from "@/views/note-preview/check-profile";
 import type { ProfileCheck } from "@/views/note-preview/check-profile";

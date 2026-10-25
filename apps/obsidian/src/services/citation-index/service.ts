@@ -1,9 +1,6 @@
 // The renderer owns persisted note scans and citation membership; the parse client owns Markdown.
 
 import { abortable } from "@std/async/abortable";
-import { TFile } from "obsidian";
-import type { App, TAbstractFile } from "obsidian";
-
 import {
   Cause,
   Clock,
@@ -16,7 +13,10 @@ import {
   Scope,
   Stream,
   SubscriptionRef,
-} from "@/lib/effect";
+} from "effect";
+import { TFile } from "obsidian";
+import type { App, TAbstractFile } from "obsidian";
+
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { isScopeClosed } from "@/lib/effect-scope";

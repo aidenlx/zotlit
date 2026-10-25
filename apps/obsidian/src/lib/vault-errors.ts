@@ -1,7 +1,7 @@
 // The typed failures of the Vault and FileManager capability tags. An expected
 // outcome is its own tagged error, which the tag decides from the vault cache
 // before it calls Obsidian; `VaultError` is every other rejection.
-import { Schema } from "@/lib/effect";
+import { Schema } from "effect";
 
 /**
  * The vault cache holds a file or folder at `path`, so the tag did not call

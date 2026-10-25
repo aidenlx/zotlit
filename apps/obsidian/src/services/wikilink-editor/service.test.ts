@@ -1,4 +1,5 @@
 import type { Extension } from "@codemirror/state";
+import { Effect, Layer, PubSub, Stream } from "effect";
 import { MarkdownView } from "obsidian";
 import {
   beforeEach as beforeStreamTest,
@@ -6,7 +7,6 @@ import {
 } from "vitest";
 import { describe, expect, it } from "vitest";
 
-import { Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
 import { openNoteVault } from "@/services/note-index/__fixtures__";

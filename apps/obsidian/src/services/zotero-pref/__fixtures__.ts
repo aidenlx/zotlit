@@ -1,6 +1,6 @@
+import { Context, Effect, Layer } from "effect";
 import type { App } from "obsidian";
 
-import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { ObsidianApp } from "@/lib/obsidian-app";
 

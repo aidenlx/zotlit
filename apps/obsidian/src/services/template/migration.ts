@@ -1,3 +1,4 @@
+import { Context, Deferred, Effect, Fiber, Layer, Scope, Stream } from "effect";
 import { join } from "node:path/posix";
 import type {
   FileManager,
@@ -12,15 +13,6 @@ import {
   LegacyTemplateConversionError,
 } from "@zotlit/templates/facade";
 
-import {
-  Context,
-  Deferred,
-  Effect,
-  Fiber,
-  Layer,
-  Scope,
-  Stream,
-} from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { ObsidianApp } from "@/lib/obsidian-app";

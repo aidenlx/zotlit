@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Deferred, Effect, Fiber, Layer } from "effect";
 import { TestClock } from "effect/testing";
 import type { Command } from "obsidian";
 import { describe, expect, vi } from "vitest";
@@ -5,8 +7,6 @@ import { describe, expect, vi } from "vitest";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { testPluginHost } from "@/lib/__fixtures__/plugin-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Deferred, Effect, Fiber, Layer } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 

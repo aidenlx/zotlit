@@ -1,11 +1,11 @@
+import { it } from "@effect/vitest";
+import { Stream } from "effect";
+import { Effect } from "effect";
 import { zipSync } from "fflate";
 import { createHash } from "node:crypto";
 import { describe, expect, vi } from "vitest";
 
-import { Stream } from "@/lib/effect";
-import { Effect } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import { openManagedBinary } from "@/services/managed-binary/__fixtures__";
 import type {
   BinaryPin,

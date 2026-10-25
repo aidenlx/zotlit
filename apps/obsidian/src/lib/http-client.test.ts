@@ -1,9 +1,9 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { HttpClientRequest } from "effect/http";
 import type { RequestUrlParam, RequestUrlResponse } from "obsidian";
 import { describe, expect, vi } from "vitest";
 
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { requestUrlHttpClient } from "@/lib/http-client";
 
 /** A `requestUrl` that answers `status` with `body`, and records each call. */

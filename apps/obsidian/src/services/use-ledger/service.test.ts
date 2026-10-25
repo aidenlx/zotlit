@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Effect, Exit, Fiber, Logger, Queue, Scope, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
 import { expect, vi } from "vitest";
@@ -5,17 +7,7 @@ import { expect, vi } from "vitest";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
-import {
-  Effect,
-  Exit,
-  Fiber,
-  Logger,
-  Queue,
-  Scope,
-  Stream,
-} from "@/lib/effect";
 import { LogCategory } from "@/lib/effect-log";
-import { it } from "@/lib/effect-vitest";
 
 import { fakeApp, useLedgerOf } from "./__fixtures__";
 

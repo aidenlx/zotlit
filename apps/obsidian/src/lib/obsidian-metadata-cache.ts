@@ -1,14 +1,14 @@
 // The metadata cache as a capability tag: the reads ZotLit makes and the
 // events it follows, without the Obsidian `App`. Later tags copy its shape;
 // policies/events.md (Capability tags) describes it.
+import { Context, Effect, Layer } from "effect";
+import type { Stream } from "effect";
 import type {
   CachedMetadata,
   MetadataCache as ObsidianMetadataCache,
   TFile,
 } from "obsidian";
 
-import { Context, Effect, Layer } from "@/lib/effect";
-import type { Stream } from "@/lib/effect";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { obsidianEventSource } from "@/lib/obsidian-event-source";
 import type { ObsidianEventEmitter } from "@/lib/obsidian-event-source";

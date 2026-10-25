@@ -1,8 +1,8 @@
 import type { QueryFunction, QueryKey } from "@tanstack/query-core";
+import { Clock, Context, Effect, Exit, Layer, Scope } from "effect";
 // A real QueryClients layer for consumer tests outside Effect.
 import { TestClock } from "effect/testing";
 
-import { Clock, Context, Effect, Exit, Layer, Scope } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 
 import { plainQueryClients } from "./plain";

@@ -1,3 +1,5 @@
+// One native render owner loads its own Item Snapshot and annotation examples.
+import { Effect } from "effect";
 import { createStore } from "zustand/vanilla";
 import type { StoreApi } from "zustand/vanilla";
 
@@ -28,8 +30,6 @@ import type {
   PreviewMode,
 } from "@zotlit/workbench/ui";
 
-// One native render owner loads its own Item Snapshot and annotation examples.
-import { Effect } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";

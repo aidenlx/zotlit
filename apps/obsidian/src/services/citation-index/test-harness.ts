@@ -1,3 +1,5 @@
+import type { Context } from "effect";
+import { Effect, Stream } from "effect";
 import { basename } from "node:path/posix";
 import { TFile } from "obsidian";
 import type {
@@ -13,8 +15,6 @@ import type { Library, LibraryCitekey } from "@zotlit/db";
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
-import type { Context } from "@/lib/effect";
-import { Effect, Stream } from "@/lib/effect";
 import type { ParseClient } from "@/services/citation-parse/client";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { resolveLibraryScope } from "@/services/library-scope/scope";

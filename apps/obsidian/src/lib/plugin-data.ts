@@ -1,8 +1,7 @@
 // The plugin's `data.json`, as a service the Effect layers load and save through.
+import { Context, Effect, Layer } from "effect";
+import type { Cause } from "effect";
 import type { Plugin } from "obsidian";
-
-import { Context, Effect, Layer } from "@/lib/effect";
-import type { Cause } from "@/lib/effect";
 
 /** The plugin's saved data: `Plugin.loadData` and `Plugin.saveData`. */
 export class PluginData extends Context.Service<

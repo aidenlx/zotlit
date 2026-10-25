@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { makeCreator, makeItem } from "@zotlit/item-lookup/fixtures";
@@ -8,7 +9,6 @@ import type {
 } from "@zotlit/item-lookup/fixtures";
 import type { ItemFields } from "@zotlit/zotero-types";
 
-import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
 import { defaults } from "@/services/settings/schema";

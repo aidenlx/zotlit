@@ -1,9 +1,9 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { describe, expect, vi } from "vitest";
 
 import { LiteratureNoteTemplateError } from "@zotlit/templates/facade";
 
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { InertTemplateError } from "@/services/template/errors";
 
 import {

@@ -1,6 +1,7 @@
 // UI seam for Library Scope: the warn-once notice for a broken saved value.
-import { Effect, Layer } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
+import { Effect, Layer } from "effect";
+import type { Scope } from "effect";
+
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";

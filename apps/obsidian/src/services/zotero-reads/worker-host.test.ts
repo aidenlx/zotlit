@@ -1,12 +1,4 @@
-import { TestClock } from "effect/testing";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, vi } from "vitest";
-
-import { createClient } from "@zotlit/db/client/node";
-import { createFixtureSchema } from "@zotlit/db/test-utils";
-
-import { ZOTERO_DB_READ_PARENT_DIRNAME } from "@/lib/constants";
+import { it } from "@effect/vitest";
 // The worker adapter's lifetime: degraded on a worker death, a new worker on Refresh, termination on scope end.
 import {
   Deferred,
@@ -20,11 +12,19 @@ import {
   References,
   Scope,
   Stream,
-} from "@/lib/effect";
-import type { Duration } from "@/lib/effect";
+} from "effect";
+import type { Duration } from "effect";
+import { TestClock } from "effect/testing";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, vi } from "vitest";
+
+import { createClient } from "@zotlit/db/client/node";
+import { createFixtureSchema } from "@zotlit/db/test-utils";
+
+import { ZOTERO_DB_READ_PARENT_DIRNAME } from "@/lib/constants";
 import { LogCategory } from "@/lib/effect-log";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import type { EffectiveReadMode } from "@/services/database/read-source";
 
 import { readsFixture } from "./__fixtures__";

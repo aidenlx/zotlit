@@ -1,12 +1,12 @@
 // A Use Ledger built from its layer over a fake App.
+import { Context, Effect, Layer, Stream } from "effect";
+import type { Scope } from "effect";
 import type { App } from "obsidian";
 
 import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
-import { Context, Effect, Layer, Stream } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 
 import { plainUseLedger } from "./plain";

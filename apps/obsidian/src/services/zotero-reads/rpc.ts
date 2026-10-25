@@ -1,3 +1,6 @@
+// The ZoteroReads contract: one RpcGroup and the Schema codecs both sides share.
+import { Effect, Predicate, Schema, SchemaGetter } from "effect";
+import type { SchemaIssue } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 import { Transferable } from "effect/workers";
 
@@ -28,9 +31,6 @@ import type {
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemFields } from "@zotlit/zotero-types";
 
-// The ZoteroReads contract: one RpcGroup and the Schema codecs both sides share.
-import { Effect, Predicate, Schema, SchemaGetter } from "@/lib/effect";
-import type { SchemaIssue } from "@/lib/effect";
 import type { CitationLookupWireAnswer } from "@/services/citation-index/lookup";
 import type {
   CitekeyResolution,

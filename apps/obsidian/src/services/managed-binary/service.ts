@@ -9,8 +9,9 @@ import {
   PubSub,
   Scope,
   SubscriptionRef,
-} from "@/lib/effect";
-import type { Context, Stream } from "@/lib/effect";
+} from "effect";
+import type { Context, Stream } from "effect";
+
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
 

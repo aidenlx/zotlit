@@ -1,5 +1,5 @@
 // An in-memory Notifier: records each notice in place of drawing it.
-import { Effect, Layer } from "@/lib/effect";
+import { Effect, Layer } from "effect";
 import { Notifier } from "@/lib/notifier";
 import type { NoticeMessage } from "@/lib/notifier";
 

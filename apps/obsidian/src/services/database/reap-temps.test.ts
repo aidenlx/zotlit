@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,8 +9,6 @@ import {
   ZOTERO_DB_READ_PARENT_DIRNAME,
   ZOTERO_DB_READ_TEMP_PREFIX,
 } from "@/lib/constants";
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { reapReadClonesEffect, reapWorkerClones } from "./reap-temps";
 

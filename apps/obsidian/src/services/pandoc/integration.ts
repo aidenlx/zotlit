@@ -1,10 +1,10 @@
 // Installed Native Pandoc Workflow files and its focused CLI reference.
 
+import { Effect } from "effect";
 import type { CliData } from "obsidian";
 
 import type { CliCommandHandler } from "@/lib/cli-command";
 import { decodeCliParams, noCliParams, rejectionText } from "@/lib/cli-params";
-import { Effect } from "@/lib/effect";
 
 import { CONTRACT_VERSION } from "./contract";
 import {

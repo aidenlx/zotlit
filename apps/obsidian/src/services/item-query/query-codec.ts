@@ -2,11 +2,12 @@
 // codecs they cross the worker seam through (`zotero-reads/rpc.ts`). The
 // renderer decodes them from the CLI in `decode.ts`.
 
+import { Predicate, Schema, SchemaGetter } from "effect";
+
 import { nameDictionary } from "@zotlit/item-query";
 import type { NameDictionary } from "@zotlit/item-query";
 import { DELIMITED_FORMATS } from "@zotlit/shared/delimited";
 
-import { Predicate, Schema, SchemaGetter } from "@/lib/effect";
 import { libraryScopeWire } from "@/services/library-scope/scope";
 
 export const QUERY_DATASETS = ["items", "attachments", "annotations"] as const;

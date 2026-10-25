@@ -1,6 +1,6 @@
+import { Effect } from "effect";
 import { DatabaseSync } from "node:sqlite";
 
-import { Effect } from "@/lib/effect";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 
 // A separate SQLite handle checks the owned clone before it can serve reads.

@@ -1,7 +1,6 @@
+import { it } from "@effect/vitest";
+import { Effect, Exit, Scope } from "effect";
 import { describe, expect } from "vitest";
-
-import { Effect, Exit, Scope } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { testNotifier } from "./__fixtures__/notifier";
 import { Notifier } from "./notifier";

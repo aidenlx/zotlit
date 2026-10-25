@@ -1,4 +1,5 @@
 // The real Note Index layer over a test's Obsidian host.
+import { Context, Effect, Layer } from "effect";
 import { basename } from "node:path/posix";
 import { TFile } from "obsidian";
 import type { App, CachedMetadata, EventRef } from "obsidian";
@@ -7,7 +8,6 @@ import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
-import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 
 import type { PlainNoteIndex } from "./plain";

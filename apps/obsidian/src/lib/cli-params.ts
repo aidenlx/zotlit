@@ -1,10 +1,6 @@
 // Decodes the CliData of a zotlit:* command through its Effect Schema; its
 // hardcoded English text follows apps/obsidian/policies/cli-text.md.
 
-import type { CliData } from "obsidian";
-
-import { parseIndexedKey } from "@zotlit/db";
-
 import {
   Data,
   Effect,
@@ -12,7 +8,10 @@ import {
   SchemaAST,
   SchemaGetter,
   SchemaIssue,
-} from "@/lib/effect";
+} from "effect";
+import type { CliData } from "obsidian";
+
+import { parseIndexedKey } from "@zotlit/db";
 
 declare module "effect/Schema" {
   namespace Annotations {

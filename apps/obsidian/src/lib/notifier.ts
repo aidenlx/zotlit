@@ -1,7 +1,8 @@
 // Obsidian notices as a service the Effect layers show their toasts through.
+import { Cause, Context, Effect, Exit, Layer, Option } from "effect";
+import type { Scope } from "effect";
+
 import { AbortError } from "@/lib/abort-error";
-import { Cause, Context, Effect, Exit, Layer, Option } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
 

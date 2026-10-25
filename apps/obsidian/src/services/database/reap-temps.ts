@@ -1,9 +1,9 @@
 // What counts as a stale database read clone, next to the code that makes one.
 
+import { Effect } from "effect";
 import { tmpdir } from "node:os";
 
 import { ZOTERO_DB_READ_TEMP_PREFIX } from "@/lib/constants";
-import { Effect } from "@/lib/effect";
 import { isErrno } from "@/lib/errno";
 import { sweepTempDirectoryEffect } from "@/lib/temp-sweep";
 import type { ReapTempsOptions } from "@/lib/temp-sweep";

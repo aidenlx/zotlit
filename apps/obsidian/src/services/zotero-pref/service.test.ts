@@ -1,10 +1,9 @@
+import { it } from "@effect/vitest";
+import { Deferred, Effect, Exit, Fiber, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { expect } from "vitest";
-
-import { Deferred, Effect, Exit, Fiber, Queue, Stream } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { zoteroPrefFixture } from "./__fixtures__";
 

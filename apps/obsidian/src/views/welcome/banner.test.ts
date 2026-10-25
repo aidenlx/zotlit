@@ -3,6 +3,7 @@
 // is incomplete, until the researcher dismisses it, and an upgrade from v1
 // keeps its Migration Prompt on screen until a dismissal acknowledges it.
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import { Effect } from "effect";
 import type { App } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, expect, it, vi } from "vitest";
@@ -13,7 +14,6 @@ import {
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { buildRelease } from "@/services/release/__fixtures__";

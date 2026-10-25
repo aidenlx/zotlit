@@ -1,7 +1,7 @@
 // Owns the parse worker from layout-ready until the layer's Scope closes.
+import { Context, Effect, Layer } from "effect";
 import workerSource from "virtual:citation-parse-worker";
 
-import { Context, Effect, Layer } from "@/lib/effect";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { Workspace } from "@/lib/obsidian-workspace";
 

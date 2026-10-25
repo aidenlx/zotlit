@@ -1,5 +1,14 @@
 import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
+import {
+  Cause,
+  Context,
+  Effect,
+  Layer,
+  PubSub,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 import type { Env } from "hono";
 import { Hono } from "hono/tiny";
 
@@ -10,15 +19,6 @@ import type {
   UpdateScope,
 } from "@zotlit/protocol";
 
-import {
-  Cause,
-  Context,
-  Effect,
-  Layer,
-  PubSub,
-  Stream,
-  SubscriptionRef,
-} from "@/lib/effect";
 import { valueOr } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";

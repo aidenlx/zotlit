@@ -1,7 +1,6 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { describe, expect } from "vitest";
-
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import {
   pandocCliFilter,

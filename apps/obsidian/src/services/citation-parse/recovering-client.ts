@@ -1,13 +1,6 @@
 // Owns scoped worker recovery and bounded requests across connection lifetimes.
-import {
-  Deferred,
-  Effect,
-  Exit,
-  Fiber,
-  Ref,
-  Schedule,
-  Scope,
-} from "@/lib/effect";
+import { Deferred, Effect, Exit, Fiber, Ref, Schedule, Scope } from "effect";
+
 import { withLogCategory } from "@/lib/effect-log";
 import { isScopeClosed } from "@/lib/effect-scope";
 

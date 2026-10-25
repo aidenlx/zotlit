@@ -3,7 +3,7 @@
 // adds its layer here, over the matching member of `app`.
 import type { App } from "obsidian";
 
-import { Layer } from "@/lib/effect";
+import { Layer } from "effect";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerFileManagerFrom } from "@/lib/obsidian-file-manager";
 import type { FileManager } from "@/lib/obsidian-file-manager";

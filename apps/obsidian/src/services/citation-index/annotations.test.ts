@@ -1,6 +1,6 @@
+import { Effect } from "effect";
 import { expect, it } from "vitest";
 
-import { Effect } from "@/lib/effect";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { buildReferenceEntries } from "@/views/references/entries";
 

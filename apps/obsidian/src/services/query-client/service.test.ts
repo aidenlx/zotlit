@@ -1,8 +1,7 @@
+import { it } from "@effect/vitest";
 import type { QueryKey } from "@tanstack/query-core";
+import { Effect } from "effect";
 import { describe, expect, vi } from "vitest";
-
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { queryClientsOf } from "./__fixtures__";
 import type { Held } from "./service";

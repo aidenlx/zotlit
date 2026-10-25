@@ -1,8 +1,8 @@
+import { expect, it } from "@effect/vitest";
+import { Effect, Stream } from "effect";
 import { createHash } from "node:crypto";
 
-import { Effect, Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { expect, it } from "@/lib/effect-vitest";
 
 import { openManagedBinary } from "./__fixtures__";
 import { memoryDevice } from "./test-utils";

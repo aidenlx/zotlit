@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Stream } from "@/lib/effect";
+import { Context, Effect, Layer, Stream } from "effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import { buildLibraryScope } from "@/services/library-scope/__fixtures__";

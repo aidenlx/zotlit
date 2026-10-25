@@ -4,11 +4,11 @@
 // End-to-end Run cannot time or observe: a popover held open across a change
 // in the repository, two reads that land out of order, the Excerpt Image read
 // a hidden popover lets go, and image bytes that fail to decode.
+import { Effect, Layer, Stream } from "effect";
 import type { App, HoverParent } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Effect, Layer, Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";

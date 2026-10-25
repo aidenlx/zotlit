@@ -1,4 +1,4 @@
-import { Effect } from "@/lib/effect";
+import { Effect } from "effect";
 
 import { check } from "./__fixtures__/check";
 import { answerAnnotationImage } from "./cli-image";

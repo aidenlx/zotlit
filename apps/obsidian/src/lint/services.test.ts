@@ -152,7 +152,7 @@ tester.run("worker-rpc", workerRpc, {
 
 tester.run("no-nanoevents", noNanoevents, {
   valid: [
-    'import { PubSub, SubscriptionRef } from "@/lib/effect";',
+    'import { PubSub, SubscriptionRef } from "effect";',
     'import { subscribe } from "@/lib/effect-stream";',
   ],
   invalid: [
@@ -266,7 +266,7 @@ tester.run("scope-closed", scopeClosed, {
   ],
 });
 
-const effect = 'import { Effect } from "@/lib/effect";\n';
+const effect = 'import { Effect } from "effect";\n';
 
 tester.run("obsidian-capabilities", obsidianCapabilities, {
   valid: [
@@ -328,23 +328,23 @@ tester.run("obsidian-capabilities", obsidianCapabilities, {
 
 tester.run("no-default-runtime", noDefaultRuntime, {
   valid: [
-    'import { Effect } from "@/lib/effect";\nruntime.runSync(x);',
-    'import { Effect } from "@/lib/effect";\nbridge.runPromise(x);',
-    'import { Effect } from "@/lib/effect";\nEffect.runSyncWith(ctx)(x);',
+    'import { Effect } from "effect";\nruntime.runSync(x);',
+    'import { Effect } from "effect";\nbridge.runPromise(x);',
+    'import { Effect } from "effect";\nEffect.runSyncWith(ctx)(x);',
     'import { Effect } from "effect";\nEffect.runPromiseWith(ctx)(x);',
     // A local name that is not the Effect module.
     "const Effect = { runSync: () => 0 };\nEffect.runSync(x);",
     'import { Effect } from "./not-effect";\nEffect.runSync(x);',
     // Not the Effect namespace of this module.
-    'import { Effect } from "@/lib/effect";\nStream.runSync(x);',
+    'import { Effect } from "effect";\nStream.runSync(x);',
   ],
   invalid: [
     {
-      code: 'import { Effect } from "@/lib/effect";\nEffect.runSync(x);',
+      code: 'import { Effect } from "effect";\nEffect.runSync(x);',
       errors: [{ messageId: "empty" }],
     },
     {
-      code: 'import { Effect } from "@/lib/effect";\nEffect.runPromise(x);',
+      code: 'import { Effect } from "effect";\nEffect.runPromise(x);',
       errors: [{ messageId: "empty" }],
     },
     {
@@ -352,7 +352,7 @@ tester.run("no-default-runtime", noDefaultRuntime, {
       errors: [{ messageId: "empty" }],
     },
     {
-      code: 'import { Effect as E } from "@/lib/effect";\nawait E.runPromiseExit(x);',
+      code: 'import { Effect as E } from "effect";\nawait E.runPromiseExit(x);',
       errors: [{ messageId: "empty" }],
     },
   ],
@@ -360,7 +360,7 @@ tester.run("no-default-runtime", noDefaultRuntime, {
 
 const services = "/repo/apps/obsidian/src/services/example/layer.ts";
 const library = "/repo/apps/obsidian/src/lib/example.ts";
-const effectImport = 'import { Effect } from "@/lib/effect";\n';
+const effectImport = 'import { Effect } from "effect";\n';
 const instantOption = { messageId: "option" };
 
 tester.run("clock-time", clockTime, {

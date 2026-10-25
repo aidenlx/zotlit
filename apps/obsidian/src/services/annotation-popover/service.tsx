@@ -1,5 +1,6 @@
 // The Annotation Popover as an Effect service.
-import { Context, Effect, Layer } from "@/lib/effect";
+import { Context, Effect, Layer } from "effect";
+
 import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { ObsidianApp } from "@/lib/obsidian-app";

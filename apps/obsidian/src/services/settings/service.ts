@@ -73,9 +73,6 @@
  *   `saveData()`.
  */
 
-import type { Plugin } from "obsidian";
-import * as v from "valibot";
-
 import {
   Cause,
   Context,
@@ -88,7 +85,10 @@ import {
   Scope,
   Stream,
   SubscriptionRef,
-} from "@/lib/effect";
+} from "effect";
+import type { Plugin } from "obsidian";
+import * as v from "valibot";
+
 import { withLogCategory } from "@/lib/effect-log";
 import { layerPluginData, PluginData } from "@/lib/plugin-data";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";

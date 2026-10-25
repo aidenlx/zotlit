@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit } from "@/lib/effect";
+import { Cause, Effect, Exit } from "effect";
 import type {
   ParseClient,
   ParseFailed,

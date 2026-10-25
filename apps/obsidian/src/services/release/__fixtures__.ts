@@ -1,4 +1,6 @@
 // A Release service built from its layer over fake settings and App.
+import { Context, Effect, Layer } from "effect";
+import type { Scope } from "effect";
 import { TFile, TFolder } from "obsidian";
 import type { App } from "obsidian";
 import { vi } from "vitest";
@@ -7,8 +9,6 @@ import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Context, Effect, Layer } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";

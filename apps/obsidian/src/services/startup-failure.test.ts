@@ -1,8 +1,8 @@
+import { it } from "@effect/vitest";
+import { Context, Effect, Layer } from "effect";
 import { expect } from "vitest";
 
-import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { it } from "@/lib/effect-vitest";
 
 import { ServiceStartupFailed, startingAs } from "./startup-failure";
 

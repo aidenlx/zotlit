@@ -1,19 +1,11 @@
+import { it } from "@effect/vitest";
+import { Cause, Effect, Exit, Fiber, Logger, References, Stream } from "effect";
 import { describe, expect, vi } from "vitest";
 
 import type { Library } from "@zotlit/db";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import {
-  Cause,
-  Effect,
-  Exit,
-  Fiber,
-  Logger,
-  References,
-  Stream,
-} from "@/lib/effect";
 import { LogCategory } from "@/lib/effect-log";
-import { it } from "@/lib/effect-vitest";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { BatchUpdateRefusedError } from "@/services/note-feature/update-batch";
 import { NoteImportProfileError } from "@/services/note-import/service";

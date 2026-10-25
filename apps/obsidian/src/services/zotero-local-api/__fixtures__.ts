@@ -1,10 +1,3 @@
-import { TestClock } from "effect/testing";
-import { vi } from "vitest";
-
-import type { DbUpdated } from "@zotlit/protocol";
-
-import { layerFakeFetch } from "@/lib/__fixtures__/fake-fetch";
-import { stubService } from "@/lib/__fixtures__/service-stub";
 // Zotero Local API answers, and the transport that replays them.
 //
 // PROVENANCE, in two halves.
@@ -29,7 +22,14 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 //
 // @see docs/fixture.md — "Trial the Zotero Local API"
 // @see https://github.com/aidenlx/zotlit/issues/1143
-import { Effect, Layer, PubSub, Stream } from "@/lib/effect";
+import { Effect, Layer, PubSub, Stream } from "effect";
+import { TestClock } from "effect/testing";
+import { vi } from "vitest";
+
+import type { DbUpdated } from "@zotlit/protocol";
+
+import { layerFakeFetch } from "@/lib/__fixtures__/fake-fetch";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import { layerZoteroHttp } from "@/lib/zotero-http";

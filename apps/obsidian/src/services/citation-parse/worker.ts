@@ -1,8 +1,7 @@
 // The stateless scanner serves the same RPC group as its in-process twin.
 import * as BrowserWorkerRunner from "@effect/platform-browser/BrowserWorkerRunner";
+import { Effect, Layer } from "effect";
 import { RpcServer } from "effect/rpc";
-
-import { Effect, Layer } from "@/lib/effect";
 
 import { layerParseHandlers } from "./handlers";
 import { CitationParseRpc } from "./rpc";

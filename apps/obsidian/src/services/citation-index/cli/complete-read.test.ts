@@ -1,11 +1,11 @@
 // Complete CLI reads over the real index, worker boundary and in-memory Zotero database.
+import { it } from "@effect/vitest";
+import { Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { effectTestParse } from "@/lib/__fixtures__/parse-client";
-import { Effect, Fiber } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import {
   annotationRows,
   annotationUri,

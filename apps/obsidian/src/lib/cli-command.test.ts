@@ -1,7 +1,6 @@
+import { it } from "@effect/vitest";
+import { Deferred, Effect, Layer } from "effect";
 import { describe, expect } from "vitest";
-
-import { Deferred, Effect, Layer } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { cliRunner } from "./cli-command";
 import { buildRuntime } from "./effect-layer";

@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Deferred, Effect, Fiber } from "effect";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { CliData } from "obsidian";
@@ -11,8 +13,6 @@ import {
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 import { ItemQuerySliceObserver } from "@zotlit/item-query";
 
-import { Deferred, Effect, Fiber } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 
 import { workerQuery } from "./__fixtures__/worker-query";

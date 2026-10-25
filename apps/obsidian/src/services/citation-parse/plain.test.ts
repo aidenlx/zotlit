@@ -1,7 +1,6 @@
+import { it } from "@effect/vitest";
+import { Effect, Queue } from "effect";
 import { expect, vi } from "vitest";
-
-import { Effect, Queue } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { makeParseHarness } from "./__fixtures__";
 import { ParseFailed } from "./client";

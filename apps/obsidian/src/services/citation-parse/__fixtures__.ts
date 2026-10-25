@@ -1,6 +1,7 @@
 // The real parse layer over a controllable Obsidian layout boundary.
+import { Effect, Layer } from "effect";
+
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
-import { Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 

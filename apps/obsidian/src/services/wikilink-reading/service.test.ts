@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { Effect, Layer, PubSub, Stream } from "effect";
 import { Keymap, MarkdownView } from "obsidian";
 import type { MarkdownPostProcessor, MarkdownRenderChild } from "obsidian";
 import {
@@ -8,7 +9,6 @@ import {
 import { describe, expect, it, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
-import { Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";

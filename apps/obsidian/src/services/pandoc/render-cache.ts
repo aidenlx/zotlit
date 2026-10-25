@@ -1,9 +1,6 @@
 // The plugin-wide cache of whole-bibliography renders every consumer of rendered citation text reads.
 import { hashKey } from "@tanstack/query-core";
 import type { QueryFunction } from "@tanstack/query-core";
-
-import type { CslItemData } from "@zotlit/db";
-
 import {
   Cause,
   Context,
@@ -15,7 +12,10 @@ import {
   Scope,
   Stream,
   SubscriptionRef,
-} from "@/lib/effect";
+} from "effect";
+
+import type { CslItemData } from "@zotlit/db";
+
 import { withLogCategory } from "@/lib/effect-log";
 import { Profile } from "@/services/profile/service";
 import { QueryClients } from "@/services/query-client/service";

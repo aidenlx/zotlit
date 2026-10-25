@@ -1,5 +1,6 @@
 // The `Changes` feed both adapters publish: lifecycle events, replayed from the current state to each subscriber.
-import { Effect, PubSub, Stream } from "@/lib/effect";
+import { Effect, PubSub, Stream } from "effect";
+
 import type { EffectiveReadMode } from "@/services/database/read-source";
 
 import type { ChangeEvent, DbUnavailable } from "./rpc";

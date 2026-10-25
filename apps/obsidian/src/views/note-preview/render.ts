@@ -1,4 +1,5 @@
 // Read-only rendering of a draft Profile against the installed template pipeline.
+import { Effect } from "effect";
 import { stringifyYaml } from "obsidian";
 
 import { DEFAULT_CITATION_VARIANT, withAnnotationCitation } from "@zotlit/db";
@@ -36,7 +37,6 @@ import type {
 
 import { annotationCitation as renderAnnotationCitation } from "@/lib/annotation-render";
 import { FIELD_DOCUMENT_LANGUAGE } from "@/lib/constants";
-import { Effect } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";

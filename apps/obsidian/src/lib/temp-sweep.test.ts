@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Effect, Logger, References } from "effect";
 import {
   chmod,
   mkdir,
@@ -9,9 +11,6 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect } from "vitest";
-
-import { Effect, Logger, References } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { LogCategory } from "./effect-log-category";
 import { sweepTempDirectory, sweepTempDirectoryEffect } from "./temp-sweep";

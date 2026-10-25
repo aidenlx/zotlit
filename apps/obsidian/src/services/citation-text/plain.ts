@@ -1,6 +1,7 @@
 /** Document citation text for the editor and reading surfaces. */
-import { Stream } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
+import { Stream } from "effect";
+import type { ManagedRuntime } from "effect";
+
 import { effectBridge, valueOr } from "@/lib/effect-bridge";
 
 import { CitationText } from "./service";

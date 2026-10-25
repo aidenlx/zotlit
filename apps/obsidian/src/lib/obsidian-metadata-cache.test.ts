@@ -1,11 +1,4 @@
-import { TFile } from "obsidian";
-import type {
-  CachedMetadata,
-  MetadataCache as MetadataCacheApi,
-} from "obsidian";
-import { expect } from "vitest";
-
-import { stubService } from "@/lib/__fixtures__/service-stub";
+import { it } from "@effect/vitest";
 import {
   Context,
   Deferred,
@@ -17,9 +10,16 @@ import {
   Queue,
   Scope,
   Stream,
-} from "@/lib/effect";
+} from "effect";
+import { TFile } from "obsidian";
+import type {
+  CachedMetadata,
+  MetadataCache as MetadataCacheApi,
+} from "obsidian";
+import { expect } from "vitest";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { filterTag, forkEach } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import {
   layerMetadataCache,

@@ -1,4 +1,5 @@
 // Saved-source checking and attempt retention. Output flags only disclose completed work.
+import { Clock, Effect, Result, Schema } from "effect";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
@@ -35,7 +36,6 @@ import {
   amendRejection,
 } from "@/lib/cli-params";
 import type { CliOutput, CliParamName, CliRejection } from "@/lib/cli-params";
-import { Clock, Effect, Result, Schema } from "@/lib/effect";
 import { instantClock } from "@/lib/effect-clock";
 import { PROFILE_OUTPUTS } from "@/views/note-preview/check-profile";
 import type { ProfileCheck } from "@/views/note-preview/check-profile";

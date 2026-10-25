@@ -1,6 +1,7 @@
 /** Citation services for views and legacy services, on the plugin runtime. */
-import { Cause, Effect, Exit, Stream } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
+import { Cause, Effect, Exit, Stream } from "effect";
+import type { ManagedRuntime } from "effect";
+
 import { effectBridge } from "@/lib/effect-bridge";
 
 import type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";

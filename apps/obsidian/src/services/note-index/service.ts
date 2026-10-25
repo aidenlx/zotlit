@@ -1,8 +1,8 @@
+import { Context, Deferred, Effect, Layer, PubSub, Stream } from "effect";
 import { TFile } from "obsidian";
 import type { App, CachedMetadata, TAbstractFile } from "obsidian";
 
 import { NON_VAULT_PROPERTY_KEYS } from "@/lib/constants";
-import { Context, Deferred, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { filterTag, forkEach } from "@/lib/effect-stream";

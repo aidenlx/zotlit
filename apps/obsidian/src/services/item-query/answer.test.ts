@@ -1,3 +1,6 @@
+import { it } from "@effect/vitest";
+import { Cause, Effect, Exit, Fiber, Scheduler } from "effect";
+import type { Scope } from "effect";
 import { StatementSync } from "node:sqlite";
 import type { CliData } from "obsidian";
 import { afterEach, describe, expect, vi } from "vitest";
@@ -12,9 +15,6 @@ import {
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 import { ItemQueryScheduler } from "@zotlit/item-query";
 
-import { Cause, Effect, Exit, Fiber, Scheduler } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import {
   DEFAULT_LIBRARY_SCOPE,
   MY_LIBRARY_SCOPE,

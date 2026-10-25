@@ -1,7 +1,7 @@
+import { Effect, Stream } from "effect";
 import { afterAll, expect, it, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
-import { Effect, Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { LocalApiResult } from "@/services/zotero-local-api/service";
 

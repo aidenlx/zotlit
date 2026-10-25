@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { Effect, Layer, Stream } from "effect";
 import { TFile } from "obsidian";
 import type { App, EventRef, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
@@ -11,7 +12,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { FIELD_CITATION_STYLE } from "@/lib/constants";
-import { Effect, Layer, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";

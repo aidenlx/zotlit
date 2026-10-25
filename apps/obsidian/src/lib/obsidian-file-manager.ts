@@ -1,10 +1,10 @@
 // The file manager as a capability tag: the link, rename and Properties calls
 // ZotLit makes, without the Obsidian `App`. It copies the MetadataCache tag's
 // shape (policies/events.md, Capability tags); the file manager has no events.
+import { Context, Effect, Layer } from "effect";
 import { normalizePath } from "obsidian";
 import type { FileManager as ObsidianFileManager, TFile } from "obsidian";
 
-import { Context, Effect, Layer } from "@/lib/effect";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { Vault } from "@/lib/obsidian-vault";
 import { FileExists, vaultError } from "@/lib/vault-errors";

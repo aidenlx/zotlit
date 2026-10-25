@@ -1,6 +1,7 @@
 // The stateless parse boundary shared by the worker and its in-process twin.
-import { Schema } from "@/lib/effect";
-import type { Effect } from "@/lib/effect";
+import { Schema } from "effect";
+import type { Effect } from "effect";
+
 import type { NoteScanRecord } from "@/services/citation-index/scan-note";
 
 export class ParseWorkerDied extends Schema.TaggedError<ParseWorkerDied>()(

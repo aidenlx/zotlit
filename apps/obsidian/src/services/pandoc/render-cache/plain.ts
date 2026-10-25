@@ -1,8 +1,9 @@
 /** Bibliography renders for views and legacy services, on the plugin runtime. */
+import { Cause, Effect, Exit, Stream } from "effect";
+import type { ManagedRuntime } from "effect";
+
 import type { CslItemData } from "@zotlit/db";
 
-import { Cause, Effect, Exit, Stream } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
 import { isScopeClosed } from "@/lib/effect-scope";
 import type { EffectivePresentation } from "@/services/pandoc/document-presentation";
 import type { RenderedCitation } from "@/services/pandoc/engine";

@@ -1,7 +1,3 @@
-import type { App, TFile } from "obsidian";
-
-import { isIndexedKey } from "@zotlit/db";
-
 import {
   Clock,
   Context,
@@ -11,8 +7,12 @@ import {
   PubSub,
   Schema,
   SubscriptionRef,
-} from "@/lib/effect";
-import type { Stream } from "@/lib/effect";
+} from "effect";
+import type { Stream } from "effect";
+import type { App, TFile } from "obsidian";
+
+import { isIndexedKey } from "@zotlit/db";
+
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";

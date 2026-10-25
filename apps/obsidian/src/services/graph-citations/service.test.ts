@@ -3,6 +3,7 @@ import type { ToggleComponent } from "@mock/obsidian";
 // @vitest-environment happy-dom
 import { Keymap, Menu } from "@mock/obsidian";
 import { Effect } from "effect";
+import { Stream } from "effect";
 import { around } from "monkey-around";
 import { PopoverState } from "obsidian";
 import type {
@@ -26,7 +27,6 @@ import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeProperty } from "@/lib/theme-hooks";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";

@@ -1,9 +1,9 @@
 // Decodes citation questions and presents complete index answers as contract 4 JSON.
+import { Cause, Effect } from "effect";
 import type { CliData } from "obsidian";
 
 import type { CliCommandHandler } from "@/lib/cli-command";
 import { catchRejection } from "@/lib/cli-params";
-import { Cause, Effect } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import type {
   CitationIndex,

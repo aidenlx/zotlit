@@ -8,8 +8,8 @@ import {
   QueryClient,
 } from "@tanstack/query-core";
 import type { Query, QueryFunction, QueryKey } from "@tanstack/query-core";
+import { Clock, Context, Effect, Layer, PubSub, Stream } from "effect";
 
-import { Clock, Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 

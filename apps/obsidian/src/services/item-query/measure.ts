@@ -10,6 +10,7 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
+import { Effect, Result, Schema } from "effect";
 import type { CliData, CliFlags } from "obsidian";
 
 import type { ItemQueryReader } from "@zotlit/db/item-query";
@@ -23,7 +24,6 @@ import {
   rejectionText,
 } from "@/lib/cli-params";
 import type { CliOutput, CliRejection } from "@/lib/cli-params";
-import { Effect, Result, Schema } from "@/lib/effect";
 
 import { queryFlags } from "./contract";
 import { decodeQuery } from "./decode";

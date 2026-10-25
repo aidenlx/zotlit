@@ -1,11 +1,11 @@
+import { it } from "@effect/vitest";
+import { Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
 import { planItemFilter, queryItemFrom } from "@zotlit/item-query";
 import type { LanguagePack } from "@zotlit/obsidian-i18n";
 
-import { Effect, Fiber } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
 import chinesePack from "@/lib/i18n/generated/zh-CN.json";

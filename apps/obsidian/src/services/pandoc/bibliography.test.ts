@@ -1,10 +1,10 @@
 import { regex } from "arkregex";
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
 import { fakeFetchClient } from "@/lib/__fixtures__/fake-fetch";
-import { Effect } from "@/lib/effect";
 import { withZoteroHeaders } from "@/lib/zotero-http";
 
 import { fetchBibliography, LOCAL_API_PREF } from "./bibliography";

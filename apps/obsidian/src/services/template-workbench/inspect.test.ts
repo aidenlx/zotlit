@@ -1,12 +1,12 @@
+import { it } from "@effect/vitest";
+import { Stream } from "effect";
+import { Effect, Exit, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 import type { CliData } from "obsidian";
 import { afterEach, beforeEach, describe, expect, vi } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Stream } from "@/lib/effect";
-import { Effect, Exit, Fiber } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 
 import { TEMPLATE_INSPECT_COMMAND } from "./inspect";

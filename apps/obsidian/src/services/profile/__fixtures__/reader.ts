@@ -1,4 +1,4 @@
-import { Stream } from "@/lib/effect";
+import { Stream } from "effect";
 // ProfileReader test double for consumers; registry behavior is tested with a vault.
 import type { MetadataCache } from "obsidian";
 

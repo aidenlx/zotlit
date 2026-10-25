@@ -1,5 +1,6 @@
 // Selector parsing: the request each citation command accepts, and the identity it asserts.
 
+import type { Effect } from "effect";
 import type { CliData } from "obsidian";
 
 import {
@@ -14,7 +15,6 @@ import {
   noCliParams,
 } from "@/lib/cli-params";
 import type { CliOutput, CliParamName, CliRejection } from "@/lib/cli-params";
-import type { Effect } from "@/lib/effect";
 
 import { diagnostic } from "./envelope";
 import type { CitationsIdentity, Diagnostic } from "./envelope";

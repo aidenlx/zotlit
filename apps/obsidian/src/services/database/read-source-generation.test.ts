@@ -1,5 +1,6 @@
 // Content-based source identity against genuine SQLite database files.
 
+import { Effect } from "effect";
 import {
   copyFile,
   mkdir,
@@ -14,8 +15,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { expect, it, vi } from "vitest";
-
-import { Effect } from "@/lib/effect";
 
 const walReadFault = vi.hoisted(() => ({
   path: "",

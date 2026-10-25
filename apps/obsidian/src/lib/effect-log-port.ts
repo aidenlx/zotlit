@@ -1,6 +1,3 @@
-import { setLibraryLogSink } from "@zotlit/shared/logging";
-import type { LibraryLogLevel, LibraryLogRecord } from "@zotlit/shared/logging";
-
 import {
   Cause,
   Clock,
@@ -15,7 +12,11 @@ import {
   References,
   Schema,
   Stream,
-} from "@/lib/effect";
+} from "effect";
+
+import { setLibraryLogSink } from "@zotlit/shared/logging";
+import type { LibraryLogLevel, LibraryLogRecord } from "@zotlit/shared/logging";
+
 import {
   LogCategory,
   LogTimestamp,

@@ -1,9 +1,8 @@
 // Resolves one document's Literature Note links to the citation keys Pandoc cites.
 
+import { Effect } from "effect";
 import { parseLinktext } from "obsidian";
 import type { LinkCache } from "obsidian";
-
-import { Effect } from "@/lib/effect";
 
 /** Fragment prefix that declares citation intent on a link. */
 const CITE_FRAGMENT_PREFIX = "#cite:";

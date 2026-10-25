@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Deferred, Effect, Exit, Fiber } from "effect";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
@@ -14,8 +16,6 @@ import { TemplateError } from "@zotlit/templates/facade";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Deferred, Effect, Exit, Fiber } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import { getProfileBinding } from "@/services/profile/bindings";
 import {

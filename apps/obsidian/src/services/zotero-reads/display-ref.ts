@@ -1,9 +1,8 @@
+// One item's display ref, read through the `DisplayRefs` stream.
+import { Effect, Stream } from "effect";
 import type { RpcClientError } from "effect/rpc";
 
 import type { getItemDisplayRefByID } from "@zotlit/db";
-
-// One item's display ref, read through the `DisplayRefs` stream.
-import { Effect, Stream } from "@/lib/effect";
 
 import type { DbUnavailable, SnapshotExpired } from "./rpc";
 import type { ZoteroReadsApi } from "./service";

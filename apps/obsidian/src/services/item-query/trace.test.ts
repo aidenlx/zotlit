@@ -1,10 +1,9 @@
+import { it } from "@effect/vitest";
+import { Effect, Exit, Fiber, Scheduler } from "effect";
 import { createHook } from "node:async_hooks";
 import { describe, expect, vi } from "vitest";
 
 import { ItemQueryScheduler } from "@zotlit/item-query";
-
-import { Effect, Exit, Fiber, Scheduler } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { createTrace, finishTrace } from "./trace";
 

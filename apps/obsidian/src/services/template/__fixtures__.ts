@@ -1,3 +1,4 @@
+import { Context, Effect, Layer } from "effect";
 import type { App } from "obsidian";
 
 import {
@@ -5,7 +6,6 @@ import {
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
 import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
-import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerVaultFrom } from "@/lib/obsidian-vault";

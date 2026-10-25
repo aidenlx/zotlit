@@ -1,6 +1,6 @@
 /** Literature Note Profiles for views and legacy services. */
-import { Cause, Effect, Exit, Stream } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
+import { Cause, Effect, Exit, Stream } from "effect";
+import type { ManagedRuntime } from "effect";
 
 import { Profile, ProfileOperationError } from "./service";
 import type { ProfileOperations, ProfileState } from "./service";

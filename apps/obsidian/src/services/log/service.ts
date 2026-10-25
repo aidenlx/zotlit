@@ -6,10 +6,6 @@ import {
   reset,
 } from "@logtape/logtape";
 import type { Config, LogLevel, Sink } from "@logtape/logtape";
-import type { Plugin } from "obsidian";
-
-import { devToolsFormatter } from "@zotlit/shared/log-formatter";
-
 import {
   Cause,
   Console,
@@ -19,7 +15,11 @@ import {
   Layer,
   Scope,
   Stream,
-} from "@/lib/effect";
+} from "effect";
+import type { Plugin } from "obsidian";
+
+import { devToolsFormatter } from "@zotlit/shared/log-formatter";
+
 import { PluginSettings } from "@/services/settings/service";
 import type { Settings } from "@/services/settings/service";
 

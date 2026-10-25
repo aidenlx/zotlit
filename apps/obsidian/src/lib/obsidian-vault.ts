@@ -3,6 +3,8 @@
 // with `VaultError` (`@/lib/vault-errors`); an expected outcome is a tagged
 // error the tag decides from the vault cache first. It copies the shape of
 // `MetadataCache`; policies/events.md (Capability tags) describes it.
+import { Context, Effect, Layer } from "effect";
+import type { Stream } from "effect";
 import type {
   DataWriteOptions,
   TAbstractFile,
@@ -11,8 +13,6 @@ import type {
   Vault as ObsidianVault,
 } from "obsidian";
 
-import { Context, Effect, Layer } from "@/lib/effect";
-import type { Stream } from "@/lib/effect";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { obsidianEventSource } from "@/lib/obsidian-event-source";
 import type { ObsidianEventEmitter } from "@/lib/obsidian-event-source";

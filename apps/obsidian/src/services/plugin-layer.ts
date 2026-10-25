@@ -1,8 +1,8 @@
 // The plugin's services that live in the Effect Layer graph, converted or bridged.
+import { Layer } from "effect";
 import type { Plugin } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
-import { Layer } from "@/lib/effect";
 import { layerNotifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerObsidianEnv } from "@/lib/obsidian-env";

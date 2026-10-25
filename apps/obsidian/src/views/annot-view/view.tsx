@@ -1,3 +1,4 @@
+import { Effect, Stream } from "effect";
 import { ItemView, Scope } from "obsidian";
 import type {
   Menu as ObsidianMenu,
@@ -13,7 +14,6 @@ import {
 import type { AnnotViewAttachment } from "@zotlit/db";
 
 import { registerMigratingWindowEvent } from "@/lib/disposables";
-import { Effect, Stream } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";

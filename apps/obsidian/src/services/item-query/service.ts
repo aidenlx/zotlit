@@ -1,19 +1,11 @@
+import { Stream } from "effect";
+import { Cause, Effect, Exit, Fiber, FiberMap, Result, Scope } from "effect";
 import { randomUUID } from "node:crypto";
 import { link, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { CliData, FileSystemAdapter, Vault } from "obsidian";
 
 import type { CliRejection } from "@/lib/cli-params";
-import { Stream } from "@/lib/effect";
-import {
-  Cause,
-  Effect,
-  Exit,
-  Fiber,
-  FiberMap,
-  Result,
-  Scope,
-} from "@/lib/effect";
 import { openScope } from "@/lib/effect-scope";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";

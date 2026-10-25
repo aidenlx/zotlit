@@ -1,10 +1,10 @@
+import { it } from "@effect/vitest";
 import type { Config } from "@logtape/logtape";
+import { Effect, Exit, Fiber, Layer, Queue, Scope } from "effect";
 import { TestClock, TestConsole } from "effect/testing";
 import type { Plugin } from "obsidian";
 import { expect } from "vitest";
 
-import { Effect, Exit, Fiber, Layer, Queue, Scope } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { settingsOf } from "@/services/settings/__fixtures__";
 import { settingsMigrations } from "@/services/settings/migrate";
 import { PluginSettings } from "@/services/settings/service";

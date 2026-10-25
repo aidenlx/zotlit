@@ -3,6 +3,7 @@
 // Command, flag, and response text is all hardcoded English: an agent-facing
 // contract surface, not localized UI. See apps/obsidian/policies/cli-text.md.
 
+import { Effect, Layer } from "effect";
 import { isAbsolute, relative } from "node:path";
 import { normalizePath } from "obsidian";
 import type { App, CliData, CliFlag, CliFlags, TFile } from "obsidian";
@@ -19,7 +20,6 @@ import {
   rejectionText,
 } from "@/lib/cli-params";
 import type { CliParamName } from "@/lib/cli-params";
-import { Effect, Layer } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { PluginHost } from "@/lib/plugin-host";

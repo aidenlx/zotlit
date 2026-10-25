@@ -1,8 +1,8 @@
 // The Note Index for callers outside Effect.
+import { Effect, Stream } from "effect";
+import type { ManagedRuntime } from "effect";
 import type { TFile } from "obsidian";
 
-import { Effect, Stream } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
 import { effectBridge, valueOr } from "@/lib/effect-bridge";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 

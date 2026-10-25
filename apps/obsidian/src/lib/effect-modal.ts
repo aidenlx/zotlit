@@ -1,6 +1,6 @@
 // Where a modal, which stays a plain Obsidian class, meets Effect: the user's
 // answer is an Effect, and an interrupt takes the modal away.
-import { Effect } from "@/lib/effect";
+import { Effect } from "effect";
 
 /** What `awaitModal` needs of a modal: a way to take it away. */
 export interface ClosableModal {

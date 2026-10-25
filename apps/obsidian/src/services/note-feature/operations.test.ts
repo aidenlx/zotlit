@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import {
   mkdir,
   mkdtemp,
@@ -66,7 +67,6 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
-import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { parseFrontMatter } from "@/lib/live-text";
 import type { FileManagerSource } from "@/lib/obsidian-file-manager";

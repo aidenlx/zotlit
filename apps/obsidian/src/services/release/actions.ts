@@ -1,4 +1,5 @@
-import { Effect, Layer } from "@/lib/effect";
+import { Effect, Layer } from "effect";
+
 import * as m from "@/lib/i18n/generated/messages";
 import { PluginHost } from "@/lib/plugin-host";
 

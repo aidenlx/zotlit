@@ -1,15 +1,5 @@
 import { abortable } from "@std/async/abortable";
 import { QueryObserver } from "@tanstack/query-core";
-import type { TFile } from "obsidian";
-
-// The formatted text of one document's Citations, held for every surface that shows them.
-import type { CslItemData } from "@zotlit/db";
-import {
-  formatPandocCitation,
-  scanPandocCitations,
-} from "@zotlit/templates/pandoc-citation";
-import type { ScannedPandocCitation } from "@zotlit/templates/pandoc-citation";
-
 import {
   Cause,
   Context,
@@ -20,7 +10,17 @@ import {
   Scope,
   Stream,
   SubscriptionRef,
-} from "@/lib/effect";
+} from "effect";
+import type { TFile } from "obsidian";
+
+// The formatted text of one document's Citations, held for every surface that shows them.
+import type { CslItemData } from "@zotlit/db";
+import {
+  formatPandocCitation,
+  scanPandocCitations,
+} from "@zotlit/templates/pandoc-citation";
+import type { ScannedPandocCitation } from "@zotlit/templates/pandoc-citation";
+
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { forkEach } from "@/lib/effect-stream";

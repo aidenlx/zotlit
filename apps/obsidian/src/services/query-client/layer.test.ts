@@ -1,6 +1,4 @@
-import { TestClock } from "effect/testing";
-import { expect } from "vitest";
-
+import { it } from "@effect/vitest";
 import {
   Context,
   Effect,
@@ -10,8 +8,9 @@ import {
   Queue,
   Scope,
   Stream,
-} from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
+} from "effect";
+import { TestClock } from "effect/testing";
+import { expect } from "vitest";
 
 import type { HeldReadChange } from "./service";
 import { layerQueryClients, QueryClients } from "./service";

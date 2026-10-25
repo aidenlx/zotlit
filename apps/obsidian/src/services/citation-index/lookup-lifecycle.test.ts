@@ -1,9 +1,9 @@
+import { it } from "@effect/vitest";
+import { Context, Deferred, Effect, Fiber, Layer, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
-import { Context, Deferred, Effect, Fiber, Layer, Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import { layerLibraryScope } from "@/services/library-scope/service";
 import { layerQueryClients } from "@/services/query-client/service";
 import { layerPluginSettings } from "@/services/settings/service";

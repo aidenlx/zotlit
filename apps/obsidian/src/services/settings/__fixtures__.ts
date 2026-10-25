@@ -1,6 +1,6 @@
+import { Context, Effect, Layer } from "effect";
 import type { Plugin } from "obsidian";
 
-import { Context, Effect, Layer } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";

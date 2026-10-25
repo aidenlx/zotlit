@@ -1,7 +1,8 @@
 // The Excerpt Image capability as a tag in the plugin's Layer graph. It lives
 // apart from the legacy Service class, which keeps its LogTape logger until it
 // converts: a file that imports Effect logs through Effect (policies/logging.md).
-import { Context, Effect } from "@/lib/effect";
+import { Context, Effect } from "effect";
+
 import { serviceLayer } from "@/services/service-layer";
 
 import type { ExcerptReaderDocuments } from "./reader-borrow";

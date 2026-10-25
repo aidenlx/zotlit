@@ -1,10 +1,10 @@
+import { it } from "@effect/vitest";
+import { Context, Effect, Fiber, Layer, Queue, Stream } from "effect";
 import { RpcGroup, RpcServer, RpcWorker } from "effect/rpc";
 import { TestClock } from "effect/testing";
 import { expect, vi } from "vitest";
 
 import { testObsidianEnv } from "@/lib/__fixtures__/obsidian-env";
-import { Context, Effect, Fiber, Layer, Queue, Stream } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import {
   ChineseSegmenter,

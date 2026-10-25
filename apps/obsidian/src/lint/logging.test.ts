@@ -20,7 +20,7 @@ tester.run("no-logtape-in-effect-file", noLogTapeInEffectFile, {
       filename,
     },
     {
-      code: 'import { Effect } from "@/lib/effect";',
+      code: 'import { Effect } from "effect";',
       filename,
     },
     {
@@ -30,7 +30,7 @@ tester.run("no-logtape-in-effect-file", noLogTapeInEffectFile, {
   ],
   invalid: [
     {
-      code: 'import { Effect } from "@/lib/effect";\nimport { getLogger } from "@/lib/log";',
+      code: 'import { Effect } from "effect";\nimport { getLogger } from "@/lib/log";',
       filename,
       errors: logtape,
     },
@@ -45,7 +45,7 @@ tester.run("no-logtape-in-effect-file", noLogTapeInEffectFile, {
       errors: logtape,
     },
     {
-      code: 'import type { Effect } from "@/lib/effect";\nimport { getLogger } from "@/lib/log";',
+      code: 'import type { Effect } from "effect";\nimport { getLogger } from "@/lib/log";',
       filename,
       errors: logtape,
     },

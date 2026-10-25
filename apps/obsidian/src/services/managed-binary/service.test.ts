@@ -1,8 +1,7 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { createHash } from "node:crypto";
 import { describe, expect, vi } from "vitest";
-
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { openManagedBinary } from "./__fixtures__";
 import type { ManagedBinary } from "./service";

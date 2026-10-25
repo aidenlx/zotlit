@@ -1,8 +1,7 @@
 // A scoped, cloned protocol pair shared by the in-process RPC adapters.
+import { Effect, Option, Queue, Schema } from "effect";
 import { RpcClient, RpcServer } from "effect/rpc";
 import type { RpcMessage, RpcSerialization } from "effect/rpc";
-
-import { Effect, Option, Queue, Schema } from "@/lib/effect";
 
 /** The server-side id of the one client the in-process pair serves. */
 const CLIENT_ID = 0;

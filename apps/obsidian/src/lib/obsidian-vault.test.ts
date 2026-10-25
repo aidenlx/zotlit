@@ -1,8 +1,4 @@
-import { TFile } from "obsidian";
-import type { Vault as VaultApi } from "obsidian";
-import { assert, expect, vi } from "vitest";
-
-import { stubService } from "@/lib/__fixtures__/service-stub";
+import { it } from "@effect/vitest";
 import {
   Context,
   Effect,
@@ -12,9 +8,13 @@ import {
   Queue,
   Scope,
   Stream,
-} from "@/lib/effect";
+} from "effect";
+import { TFile } from "obsidian";
+import type { Vault as VaultApi } from "obsidian";
+import { assert, expect, vi } from "vitest";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { filterTag, forkEach } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerVault, layerVaultFrom, Vault } from "@/lib/obsidian-vault";
 import type { VaultEvent } from "@/lib/obsidian-vault";

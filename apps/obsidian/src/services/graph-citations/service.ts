@@ -1,4 +1,5 @@
 // The Graph Citations service: installs the render facade and the click, right-click and hover wraps on every graph leaf, re-renders on index changes, and restores every swapped member on feature-off and unload.
+import { Effect, Exit, Fiber } from "effect";
 import { around } from "monkey-around";
 import type {
   App,
@@ -11,7 +12,6 @@ import type {
 } from "obsidian";
 
 import { disposable, registerEvent } from "@/lib/disposables";
-import { Effect, Exit, Fiber } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";

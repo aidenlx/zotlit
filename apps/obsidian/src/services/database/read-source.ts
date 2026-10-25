@@ -27,6 +27,8 @@
  * @see https://github.com/zotero/zotero/blob/10.0.0/chrome/content/zotero/xpcom/db.js#L1551
  */
 
+import { Cause, Deferred, Duration, Effect, Ref, Schedule } from "effect";
+import type { Scope } from "effect";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, open, rm, stat } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
@@ -35,8 +37,6 @@ import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { ZOTERO_DB_READ_TEMP_PREFIX } from "@/lib/constants";
-import { Cause, Deferred, Duration, Effect, Ref, Schedule } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log-category";
 import { isErrno } from "@/lib/errno";
 import { reflink, ReflinkUnsupportedError } from "@/lib/reflink";

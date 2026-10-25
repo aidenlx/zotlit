@@ -1,4 +1,5 @@
 import { TFile } from "@mock/obsidian";
+import { Effect } from "effect";
 import type { Command } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -6,7 +7,6 @@ import {
   createObsidianAttachmentReader,
   openAttachments,
 } from "@/lib/attachment-open";
-import { Effect } from "@/lib/effect";
 import { defaults } from "@/services/settings/schema";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import {

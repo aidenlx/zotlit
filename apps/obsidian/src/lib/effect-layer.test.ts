@@ -1,9 +1,9 @@
+import { it } from "@effect/vitest";
+import { Context, Deferred, Effect, Fiber, Layer } from "effect";
 import { Scheduler } from "effect/Scheduler";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
-import { Context, Deferred, Effect, Fiber, Layer } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { ServiceContainer } from "@/services/service-base";
 
 import { browserScheduler } from "./browser-scheduler";

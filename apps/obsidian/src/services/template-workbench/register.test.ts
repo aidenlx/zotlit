@@ -1,10 +1,10 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import type { CliFlags } from "obsidian";
 import { describe, expect, vi } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { TEMPLATE_DATA_COMMAND } from "./cli";
 import { registerTemplateWorkbench } from "./register";

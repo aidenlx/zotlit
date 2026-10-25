@@ -1,6 +1,7 @@
 /** The real bibliography layer over the dependency ports used by consumer fixtures. */
+import { Context, Effect, Layer, PubSub, Stream } from "effect";
+
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
 import type { CitationEngine } from "@/services/pandoc/engine";

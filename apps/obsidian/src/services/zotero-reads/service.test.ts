@@ -1,8 +1,8 @@
+import { it } from "@effect/vitest";
+import { Effect, Exit, Fiber, Queue, Stream } from "effect";
 import { expect } from "vitest";
 
-import { Effect, Exit, Fiber, Queue, Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 
 import { readsFixture } from "./__fixtures__";
 import { layerRcRef } from "./connection";

@@ -1,3 +1,14 @@
+import { it } from "@effect/vitest";
+import {
+  Effect,
+  Exit,
+  Fiber,
+  Latch,
+  Layer,
+  PubSub,
+  Scope,
+  Stream,
+} from "effect";
 import { TestClock } from "effect/testing";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -13,18 +24,6 @@ import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
-
-import {
-  Effect,
-  Exit,
-  Fiber,
-  Latch,
-  Layer,
-  PubSub,
-  Scope,
-  Stream,
-} from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { layerRcRef } from "./connection";
 import { Connection } from "./connection";

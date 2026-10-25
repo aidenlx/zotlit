@@ -1,5 +1,7 @@
 // Selector parsing: the request each command accepts, and the identity it asserts.
 
+import { Schema } from "effect";
+import type { Effect } from "effect";
 import type { CliData } from "obsidian";
 
 import { DEFAULT_CITATION_VARIANT, isIndexedKey } from "@zotlit/db";
@@ -22,8 +24,6 @@ import {
   noCliParams,
 } from "@/lib/cli-params";
 import type { CliOutput, CliParamName, CliRejection } from "@/lib/cli-params";
-import { Schema } from "@/lib/effect";
-import type { Effect } from "@/lib/effect";
 import { isPartialNameShape } from "@/services/template/defaults";
 
 import { diagnostic } from "./envelope";

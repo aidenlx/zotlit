@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Context, Effect } from "effect";
 import { TestClock } from "effect/testing";
 import type { App } from "obsidian";
 import { afterEach, beforeEach, describe, expect, vi } from "vitest";
@@ -10,8 +12,6 @@ import {
 import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
 
 import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
-import { Context, Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { resolveProfile } from "@/services/profile/__fixtures__/reader";

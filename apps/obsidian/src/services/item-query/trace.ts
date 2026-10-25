@@ -1,11 +1,10 @@
+// Measurement lives in the worker; these observers never transfer Query Rows.
+import { Effect } from "effect";
 import { createHook } from "node:async_hooks";
 
 import { ItemQueryStatementObserver } from "@zotlit/db/item-query";
 import type { ItemQueryReader } from "@zotlit/db/item-query";
 import { ItemQuerySliceObserver } from "@zotlit/item-query";
-
-// Measurement lives in the worker; these observers never transfer Query Rows.
-import { Effect } from "@/lib/effect";
 
 import type { QueryInstrument } from "./answer";
 const now = (): number => performance.timeOrigin + performance.now();

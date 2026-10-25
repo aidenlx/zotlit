@@ -1,3 +1,10 @@
+// One Query Job inside the ZoteroReads worker, on its borrowed connection: one
+// Effect on the fiber of the job, with the time-budget scheduler and the
+// database of the job. Interruption of that fiber is the cancel of the job.
+import { Effect } from "effect";
+// oxlint-disable-next-line no-restricted-imports -- ItemQueryScheduler uses MessageChannel and adds a per-query time budget.
+import { Scheduler } from "effect";
+import type { Scope } from "effect";
 import { open } from "node:fs/promises";
 
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
@@ -5,13 +12,6 @@ import { ItemQueryDatabase } from "@zotlit/db/item-query";
 import { ItemQueryScheduler } from "@zotlit/item-query";
 import type { ResolveAttachmentFile } from "@zotlit/item-query";
 
-// One Query Job inside the ZoteroReads worker, on its borrowed connection: one
-// Effect on the fiber of the job, with the time-budget scheduler and the
-// database of the job. Interruption of that fiber is the cancel of the job.
-import { Effect } from "@/lib/effect";
-// oxlint-disable-next-line no-restricted-imports -- ItemQueryScheduler uses MessageChannel and adds a per-query time budget.
-import { Scheduler } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
 import {

@@ -1,4 +1,6 @@
 // Resolve saved authoring inputs and prove which exact bytes reconciliation observed.
+import { Clock, Duration, Effect, Schema } from "effect";
+import type { Scope } from "effect";
 import { createHash } from "node:crypto";
 import { basename, join } from "node:path/posix";
 import { MarkdownView } from "obsidian";
@@ -21,8 +23,6 @@ import {
   amendRejection,
 } from "@/lib/cli-params";
 import type { CliOutput, CliParamName } from "@/lib/cli-params";
-import { Clock, Duration, Effect, Schema } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";

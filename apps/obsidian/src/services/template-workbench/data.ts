@@ -1,5 +1,6 @@
 // Resolves an Indexed Key and builds side-effect-free Template data.
 
+import { Data, Effect, Stream } from "effect";
 import type { App } from "obsidian";
 
 import {
@@ -23,7 +24,6 @@ import { citationExampleData } from "@zotlit/workbench/render";
 import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { annotationCitation } from "@/lib/annotation-render";
-import { Data, Effect, Stream } from "@/lib/effect";
 import { creatorSummary } from "@/lib/item-summary";
 import { itemFacets } from "@/services/note-feature/context";
 import type { PlainNoteIndex } from "@/services/note-index/plain";

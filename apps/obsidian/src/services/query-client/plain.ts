@@ -4,9 +4,9 @@ import type {
   QueryFunction,
   QueryKey,
 } from "@tanstack/query-core";
+import { Cause, Effect, Exit } from "effect";
+import type { ManagedRuntime, Stream } from "effect";
 
-import { Cause, Effect, Exit } from "@/lib/effect";
-import type { ManagedRuntime, Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 
 import { QueryClients } from "./service";

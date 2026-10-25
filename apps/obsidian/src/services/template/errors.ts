@@ -4,14 +4,13 @@
 // a Template failed, as offsets into the source it read.
 
 import { regex } from "arkregex";
+import { Schema } from "effect";
 
 import { MissingTemplateError } from "@zotlit/templates/facade";
 import {
   renderFailureCause,
   renderFailureSpan,
 } from "@zotlit/workbench/render";
-
-import { Schema } from "@/lib/effect";
 
 import type { PartialNameRefusal } from "./defaults";
 

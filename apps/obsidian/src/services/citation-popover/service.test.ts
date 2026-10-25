@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { Logger, References, Stream } from "effect";
+import type { Layer } from "effect";
 import type { TFile } from "obsidian";
 import { act } from "preact/test-utils";
 import type { ReactElement } from "react";
@@ -11,8 +13,6 @@ import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
-import { Logger, References, Stream } from "@/lib/effect";
-import type { Layer } from "@/lib/effect";
 import { LogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import { annotationRows } from "@/services/citation-index/__fixtures__/annotations";

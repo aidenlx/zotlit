@@ -1,3 +1,4 @@
+import { Context, Effect, Exit, Layer, PubSub, Scope, Stream } from "effect";
 import { vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
@@ -9,15 +10,6 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import {
-  Context,
-  Effect,
-  Exit,
-  Layer,
-  PubSub,
-  Scope,
-  Stream,
-} from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";

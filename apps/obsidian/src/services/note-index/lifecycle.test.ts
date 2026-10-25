@@ -1,5 +1,4 @@
-import { expect } from "vitest";
-
+import { it } from "@effect/vitest";
 import {
   Context,
   Effect,
@@ -9,9 +8,10 @@ import {
   Queue,
   Scope,
   Stream,
-} from "@/lib/effect";
+} from "effect";
+import { expect } from "vitest";
+
 import { buildRuntime } from "@/lib/effect-layer";
-import { it } from "@/lib/effect-vitest";
 
 import {
   cache,

@@ -1,10 +1,11 @@
+// Names the Zotero Attachment behind the absolute path of an open PDF.
+import { Effect, Stream } from "effect";
+
 import type { AttachmentWithParentKey } from "@zotlit/db";
 import { attachmentAbsPath, attachmentPathKey } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-// Names the Zotero Attachment behind the absolute path of an open PDF.
-import { Effect, Stream } from "@/lib/effect";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";

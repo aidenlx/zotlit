@@ -2,12 +2,13 @@
 // checked against real item data and the baseline the entry module selected. The
 // entry module keeps request parsing, the flag guards, Check Attempt retention,
 // and answer assembly, and hands this branch every input it reads.
+import { Effect } from "effect";
+
 import type { NoteTemplateContext } from "@zotlit/db";
 import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
 import { serializeTemplateData } from "@zotlit/workbench/explorer";
 import type { RenderCallerSource } from "@zotlit/workbench/render";
 
-import { Effect } from "@/lib/effect";
 import {
   parseProfileSelector,
   PROFILE_ID_LENGTH,

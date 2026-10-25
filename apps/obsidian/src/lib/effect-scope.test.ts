@@ -1,9 +1,9 @@
+import { it } from "@effect/vitest";
+import { Context, Effect, Exit, Scope } from "effect";
 import { Component } from "obsidian";
 import { expect } from "vitest";
 
-import { Context, Effect, Exit, Scope } from "@/lib/effect";
 import { componentScope } from "@/lib/effect-scope";
-import { it } from "@/lib/effect-vitest";
 
 class Probe extends Context.Service<Probe, string>()(
   "zotlit/effect-scope/Probe",

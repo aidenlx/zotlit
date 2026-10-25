@@ -1,6 +1,6 @@
 // Owns one RPC connection; recovering-client owns replacement after a death.
-import { Deferred, Effect } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
+import { Deferred, Effect } from "effect";
+import type { Scope } from "effect";
 
 import { decodeParseReply, ParseFailed, ParseWorkerDied } from "./client";
 import type { ParseRequest, ParseReply } from "./client";

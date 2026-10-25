@@ -27,7 +27,7 @@ export interface BenchmarkParseClient<Reply> extends AsyncDisposable {
 const CLIENT_ENTRY_ID = resolve(import.meta.dirname, "scan-benchmark-entry.js");
 const CLIENT_ENTRY = `
 export { default } from "virtual:scan-worker";
-import { Effect, Scope } from "@/lib/effect";
+import { Effect, Scope } from "effect";
 import { openScope } from "@/lib/effect-scope";
 import { decodeParseReply } from "@/services/citation-parse/client";
 import { makeParseWorkerClient } from "@/services/citation-parse/worker-client";

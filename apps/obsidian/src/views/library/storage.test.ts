@@ -3,6 +3,7 @@
 // Query View reaches the document there, and the toolbar says when the write
 // failed.
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import { Stream } from "effect";
 import { Scope } from "obsidian";
 import type { App } from "obsidian";
 import { act } from "preact/test-utils";
@@ -13,7 +14,6 @@ import {
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";

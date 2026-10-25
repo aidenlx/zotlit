@@ -1,5 +1,6 @@
 /** Database reads for views and legacy services, on the plugin runtime. */
-import type { ManagedRuntime, Stream } from "@/lib/effect";
+import type { ManagedRuntime, Stream } from "effect";
+
 import { effectBridge, valueOr } from "@/lib/effect-bridge";
 
 import {

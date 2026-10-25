@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { ButtonComponent, Setting } from "@mock/obsidian";
+import { Effect, Stream } from "effect";
 import type {
   Setting as ObsidianSetting,
   SettingDefinitionItem,
@@ -9,7 +10,6 @@ import { expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Effect, Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { WorkbenchConnection } from "@/services/local-bridge/service";

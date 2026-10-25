@@ -1,13 +1,3 @@
-import { existsSync, watch } from "node:fs";
-import type { WatchListener, WatchOptionsWithStringEncoding } from "node:fs";
-import { dirname, join } from "node:path";
-
-import { getSchemaVersions, SUPPORTED_SCHEMA_VERSIONS } from "@zotlit/db";
-import type { ZoteroSchemaVersions } from "@zotlit/db";
-import { createClient } from "@zotlit/db/client/node";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-
-import { ZOTERO_DB_FILENAME, ZOTERO_WAL_FILENAME } from "@/lib/constants";
 // The production Connection: owns the Zotero database source — Read Mode, fingerprints, watchers, and the refresh lane.
 import {
   Cause,
@@ -21,7 +11,17 @@ import {
   Ref,
   Scope,
   Stream,
-} from "@/lib/effect";
+} from "effect";
+import { existsSync, watch } from "node:fs";
+import type { WatchListener, WatchOptionsWithStringEncoding } from "node:fs";
+import { dirname, join } from "node:path";
+
+import { getSchemaVersions, SUPPORTED_SCHEMA_VERSIONS } from "@zotlit/db";
+import type { ZoteroSchemaVersions } from "@zotlit/db";
+import { createClient } from "@zotlit/db/client/node";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+
+import { ZOTERO_DB_FILENAME, ZOTERO_WAL_FILENAME } from "@/lib/constants";
 import { withLogCategory } from "@/lib/effect-log-category";
 import { readParentBeside } from "@/services/database/read-parent";
 import {

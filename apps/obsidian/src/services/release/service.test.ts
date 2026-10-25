@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { ButtonComponent } from "obsidian";
 import type { App } from "obsidian";
 import { expect, vi } from "vitest";
@@ -6,8 +8,6 @@ import { expect, vi } from "vitest";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { DOCS_COMPANION } from "@/lib/constants";
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import type { HydrationOrigin } from "@/services/settings/classify";
 import type { Settings } from "@/services/settings/schema";
 

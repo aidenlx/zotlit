@@ -1,9 +1,9 @@
 // Worker configuration follows the native dependency streams on the layer Scope.
+import { Effect, Ref, Stream } from "effect";
 import workerSource from "virtual:zotero-reads-worker";
 
 import { sameSegmenterBinary } from "@zotlit/item-lookup";
 
-import { Effect, Ref, Stream } from "@/lib/effect";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 import { PluginSettings } from "@/services/settings/service";

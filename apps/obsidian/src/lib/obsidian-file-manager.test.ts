@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Effect, Layer } from "effect";
 import { TFile } from "obsidian";
 import type {
   App,
@@ -8,8 +10,6 @@ import { expect, vi } from "vitest";
 
 import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Effect, Layer } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import {
   FileManager,

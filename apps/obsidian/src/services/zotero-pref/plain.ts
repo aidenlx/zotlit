@@ -1,6 +1,7 @@
 /** Zotero preferences for settings, views, and legacy services. */
-import { Effect, Stream } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
+import { Effect, Stream } from "effect";
+import type { ManagedRuntime } from "effect";
+
 import { effectBridge } from "@/lib/effect-bridge";
 
 import type { PrefValue } from "./prefs-file";

@@ -3,6 +3,8 @@
 // the shape of ./obsidian-metadata-cache; policies/events.md (Capability tags)
 // describes it. Views, leaves, `Component`s and React handlers stay edges and
 // keep `app.workspace`.
+import { Context, Effect, Layer } from "effect";
+import type { Scope, Stream } from "effect";
 import { MarkdownView } from "obsidian";
 import type {
   Editor,
@@ -14,8 +16,6 @@ import type {
   WorkspaceLeaf,
 } from "obsidian";
 
-import { Context, Effect, Layer } from "@/lib/effect";
-import type { Scope, Stream } from "@/lib/effect";
 import { logAndContinue } from "@/lib/effect-log";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import {

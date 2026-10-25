@@ -1,4 +1,6 @@
 // A Citation Popover built from its real layer over test-owned service reads.
+import { Effect, Layer, Stream } from "effect";
+import type { ManagedRuntime } from "effect";
 import type { App, TFile } from "obsidian";
 
 import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
@@ -6,8 +8,6 @@ import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache"
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Effect, Layer, Stream } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import type {
   CitationLookupAnswer,

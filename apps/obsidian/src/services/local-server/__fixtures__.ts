@@ -1,6 +1,7 @@
 // A Local Server built from its layer over empty settings and dependency stubs.
+import { Effect, Layer } from "effect";
+
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { NoteIndex } from "@/services/note-index/service";
 import { applySettings } from "@/services/settings/__fixtures__";

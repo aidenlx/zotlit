@@ -1,5 +1,5 @@
-import { Cause, Effect, Exit } from "@/lib/effect";
-import type { ManagedRuntime, Stream } from "@/lib/effect";
+import { Cause, Effect, Exit } from "effect";
+import type { ManagedRuntime, Stream } from "effect";
 
 import { plainTemplateError } from "./errors";
 import { TemplateMigration } from "./migration";

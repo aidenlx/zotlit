@@ -1,5 +1,6 @@
 // The Effect service over the Zotero Local API session.
-import { Clock, Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
+import { Clock, Context, Effect, Layer, PubSub, Stream } from "effect";
+
 import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag, forkEach } from "@/lib/effect-stream";

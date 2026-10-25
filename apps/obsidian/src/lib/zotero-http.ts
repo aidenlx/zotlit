@@ -2,6 +2,7 @@
 // its browser-traffic guard, the loopback origin it binds, the client that
 // carries both, and a body reader.
 
+import { Cause, Context, Effect, Exit, Layer, Option } from "effect";
 import {
   HttpBody,
   HttpClient,
@@ -11,7 +12,6 @@ import {
 import type { HttpMethod } from "effect/http";
 
 import { AbortError } from "@/lib/abort-error";
-import { Cause, Context, Effect, Exit, Layer, Option } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 
 /**

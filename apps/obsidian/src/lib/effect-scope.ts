@@ -1,8 +1,7 @@
 // Where Effect Scopes meet code that lives outside Effect: a service's load,
 // a lease, a `Disposable` from Obsidian.
+import { Cause, Effect, Exit, Scope } from "effect";
 import type { Component } from "obsidian";
-
-import { Cause, Effect, Exit, Scope } from "@/lib/effect";
 
 import { logAndContinue, withLogCategory } from "./effect-log";
 

@@ -1,6 +1,4 @@
-import { TestClock } from "effect/testing";
-import { createHash } from "node:crypto";
-
+import { expect, it } from "@effect/vitest";
 import {
   Context,
   Deferred,
@@ -11,8 +9,9 @@ import {
   Queue,
   Scope,
   Stream,
-} from "@/lib/effect";
-import { expect, it } from "@/lib/effect-vitest";
+} from "effect";
+import { TestClock } from "effect/testing";
+import { createHash } from "node:crypto";
 
 import { managedBinaryPorts } from "./platform";
 import { layerManagedBinary, ManagedBinaryPlatform } from "./service";

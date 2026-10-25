@@ -8,11 +8,11 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
+import { Effect } from "effect";
 import type { CliData } from "obsidian";
 
 import type { CliCommandHandler, CliHost } from "@/lib/cli-command";
 import { catchRejection } from "@/lib/cli-params";
-import { Effect } from "@/lib/effect";
 
 import {
   envelope,

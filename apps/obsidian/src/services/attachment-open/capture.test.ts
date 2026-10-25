@@ -1,6 +1,6 @@
+import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
-import { Effect } from "@/lib/effect";
 import type { Settings } from "@/services/settings/schema";
 
 import { FILES, openerHarness } from "./__fixtures__";

@@ -1,8 +1,6 @@
 // Citation Lookup: fresh command reads and view-owned Held Reads of requested keys.
 import { QueryObserver } from "@tanstack/query-core";
 import type { QueryObserverOptions } from "@tanstack/query-core";
-import type { RpcClientError } from "effect/rpc";
-
 import {
   Cause,
   Context,
@@ -15,7 +13,9 @@ import {
   Scope,
   Stream,
   SubscriptionRef,
-} from "@/lib/effect";
+} from "effect";
+import type { RpcClientError } from "effect/rpc";
+
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import { LibraryScope } from "@/services/library-scope/service";

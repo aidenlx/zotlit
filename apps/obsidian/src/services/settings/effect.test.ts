@@ -1,7 +1,4 @@
-import { TestClock } from "effect/testing";
-import { expect } from "vitest";
-
-import { testPluginData } from "@/lib/__fixtures__/plugin-data";
+import { it } from "@effect/vitest";
 import {
   Cause,
   Context,
@@ -14,8 +11,11 @@ import {
   References,
   Scope,
   Stream,
-} from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
+} from "effect";
+import { TestClock } from "effect/testing";
+import { expect } from "vitest";
+
+import { testPluginData } from "@/lib/__fixtures__/plugin-data";
 
 import { settingsOf, settingsRuntimeOf } from "./__fixtures__";
 import {

@@ -1,5 +1,5 @@
 // An in-memory `data.json`.
-import { Effect, Layer } from "@/lib/effect";
+import { Effect, Layer } from "effect";
 import { PluginData } from "@/lib/plugin-data";
 
 /** Plugin data held in memory, with every value saved to it. */

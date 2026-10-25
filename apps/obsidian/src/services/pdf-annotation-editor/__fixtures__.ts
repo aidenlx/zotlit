@@ -1,6 +1,7 @@
 // The fake Obsidian PDF reader — viewer host, viewer child, toolbar slot and
 // page view — that both pdf-annotation-editor suites drive the seam through.
 // Needs a DOM, so every consumer runs under `// @vitest-environment happy-dom`.
+import { Effect, PubSub, Stream } from "effect";
 import type { HoverParent, PDFPageViewport, Scope } from "obsidian";
 import { vi } from "vitest";
 import type { Mock } from "vitest";
@@ -12,7 +13,6 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { dispatchKey } from "@/lib/__fixtures__/keymap";
 import { withRecentColor } from "@/lib/annotation-colors";
-import { Effect, PubSub, Stream } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import {
   markExternal,
