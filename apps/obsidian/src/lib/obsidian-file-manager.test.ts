@@ -53,11 +53,14 @@ it.effect("moves a file to the new path through renameFile", () =>
   }),
 );
 
-it.effect("returns Obsidian's link through generateMarkdownLink", () =>
+it.effect("forwards subpath and alias to Obsidian's generateMarkdownLink", () =>
   Effect.gen(function* () {
     const files = yield* over(new MemoryFileManager());
     expect(
-      yield* files.generateMarkdownLink(file("a.md"), "b.md", "#h", "A"),
+      yield* files.generateMarkdownLink(file("a.md"), "b.md", {
+        subpath: "#h",
+        alias: "A",
+      }),
     ).toBe("[[a.md#h|A]]");
   }),
 );

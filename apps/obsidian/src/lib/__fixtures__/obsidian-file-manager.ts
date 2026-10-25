@@ -49,7 +49,7 @@ export class MemoryFileManager implements FileManagerSource {
   }
 
   /** A wikilink to the full path, with `subpath` and `alias` when given. */
-  // oxlint-disable-next-line max-params
+  // oxlint-disable-next-line max-params -- Obsidian's own generateMarkdownLink shape.
   generateMarkdownLink(
     file: TFile,
     _sourcePath: string,

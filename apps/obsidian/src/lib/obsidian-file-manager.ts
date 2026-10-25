@@ -18,6 +18,9 @@ export interface FileManagerShape {
   /**
    * Change the Properties of `file`: `fn` mutates the parsed frontmatter and
    * Obsidian writes it back. Fails when Obsidian rejects, `fn` throwing too.
+   * Obsidian writes from the file on disk, so for a note the user may be
+   * editing use `processLiveFrontMatter` (`lib/live-text.ts`), which goes
+   * through the note's Live Text.
    */
   processFrontMatter(
     file: TFile,
@@ -29,8 +32,7 @@ export interface FileManagerShape {
   generateMarkdownLink(
     file: TFile,
     sourcePath: string,
-    subpath?: string,
-    alias?: string,
+    options?: { readonly subpath?: string; readonly alias?: string },
   ): Effect.Effect<string>;
 }
 
@@ -57,10 +59,14 @@ export const makeFileManager = (source: FileManagerSource) =>
         try: () => source.renameFile(file, newPath),
         catch: vaultError("renameFile", file.path),
       }),
-    // oxlint-disable-next-line max-params
-    generateMarkdownLink: (file, sourcePath, subpath, alias) =>
+    generateMarkdownLink: (file, sourcePath, options = {}) =>
       Effect.sync(() =>
-        source.generateMarkdownLink(file, sourcePath, subpath, alias),
+        source.generateMarkdownLink(
+          file,
+          sourcePath,
+          options.subpath,
+          options.alias,
+        ),
       ),
   });
 
