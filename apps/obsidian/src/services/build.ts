@@ -539,7 +539,7 @@ export async function buildServices(
     .useValue({
       citationParse: () => plainCitationParse(runtime),
     })
-    .useValue({ citationParser: () => runtime.runSync(CitationParse) })
+    .useValue({ citationParseService: () => runtime.runSync(CitationParse) })
     .useValue({ citationIndex: () => plainCitationIndex(runtime) })
     .useValue({
       pandocEngine: () =>

@@ -15,7 +15,7 @@ import type {
   ParseFailed,
   ParseWorkerDied,
 } from "@/services/citation-parse/client";
-import type { CitationParse } from "@/services/citation-parse/service";
+import { CitationParse } from "@/services/citation-parse/service";
 
 import type {
   BibliographyFailure,
@@ -47,7 +47,6 @@ export interface ExportRequest {
 }
 
 export interface ExportPorts {
-  citationParse: Pick<CitationParse["Service"], "parse">;
   /**
    * Indexed Key of the Literature Note `linkpath` names, resolved from
    * `sourcePath`; `null` for a missing target or an ordinary note.
@@ -124,8 +123,13 @@ export type ExportResult = { output: Uint8Array } | { error: ExportFailure };
 export const exportCitedDocument = Effect.fn("exportCitedDocument")(function* (
   request: ExportRequest,
   ports: ExportPorts,
-): Effect.fn.Return<ExportResult, ParseWorkerDied | ParseFailed> {
-  const { record } = yield* ports.citationParse.parse({
+): Effect.fn.Return<
+  ExportResult,
+  ParseWorkerDied | ParseFailed,
+  CitationParse
+> {
+  const parser = yield* CitationParse;
+  const { record } = yield* parser.parse({
     path: request.document.sourcePath,
     generation: 0,
     text: request.markdown,
@@ -268,7 +272,7 @@ function injectedId(indexedKey: string): string {
  * is Pandoc's own undefined-citation output — a bold key and a missing entry —
  * inside a document the user is about to send somewhere.
  */
-const readCitations = Effect.fnUntraced(function* (
+const readCitations = Effect.fn("readCitations")(function* (
   citedIds: readonly string[],
   wikilinked: ReadonlyMap<string, string>,
   ports: ExportPorts,
@@ -366,7 +370,7 @@ const readCitations = Effect.fnUntraced(function* (
  * Indexed Key in its Zotero library, which is the address Better BibTeX reads;
  * Zotero itself supplies the data.
  */
-const citeItems = Effect.fnUntraced(function* (
+const citeItems = Effect.fn("citeItems")(function* (
   indexedKeys: readonly string[],
   describe: (indexedKey: string) => string,
   ports: ExportPorts,

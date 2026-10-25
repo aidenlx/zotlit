@@ -6,7 +6,7 @@ import {
   settingsOf,
 } from "@mock/obsidian";
 import { Effect } from "effect";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TFile } from "obsidian";
@@ -431,9 +431,14 @@ describe("the Export note with citations command", () => {
     expect(await readFile(join(basePath, "draft.docx"))).toHaveLength(0);
   });
 
-  it("ends without a notice where the plugin unloads during the export", async () => {
+  it("ends without a notice or a file where the export run is interrupted", async () => {
     exportRun.unload = true;
-    const vault = openVault({ note: {} });
+    await using stack = new AsyncDisposableStack();
+    const basePath = stack.adopt(
+      await mkdtemp(join(tmpdir(), "zotlit-export-")),
+      (dir) => rm(dir, { recursive: true, force: true }),
+    );
+    const vault = openVault({ note: {}, basePath });
 
     const dialog = await vault.openDialog();
     dialog.confirm();
@@ -443,6 +448,7 @@ describe("the Export note with citations command", () => {
 
     expect(notices.showExportFailure).not.toHaveBeenCalled();
     expect(notices.shown).toEqual([]);
+    expect(await readdir(basePath)).toEqual([]);
   });
 
   it("stops rather than exporting in another style where Zotero lacks the vault style", async () => {
