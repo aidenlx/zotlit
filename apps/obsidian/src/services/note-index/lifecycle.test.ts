@@ -33,7 +33,7 @@ it.effect(
         { "paper.md": cache({}) },
         { enabledAtRuntime: true },
       );
-      const index = yield* noteIndexOf(host.app);
+      const index = yield* noteIndexOf(host);
       const file = host.vault.files.get("paper.md")!;
       const recursive: Record<string, unknown> = {};
       recursive["self"] = recursive;
@@ -55,7 +55,7 @@ it.effect(
         { "paper.txt": cache({}) },
         { enabledAtRuntime: true },
       );
-      const index = yield* noteIndexOf(host.app);
+      const index = yield* noteIndexOf(host);
       const recursive: Record<string, unknown> = {};
       recursive["self"] = recursive;
       host.metadataCache.setCache(
@@ -80,7 +80,7 @@ it.effect(
       const host = createNoteHost({
         "paper.md": cache({ itemKey: "ABCD2345", properties: { recursive } }),
       });
-      const index = yield* noteIndexOf(host.app);
+      const index = yield* noteIndexOf(host);
       startup(host);
       yield* index.whenIndexed;
       host.metadataCache.change(
@@ -101,7 +101,7 @@ it.effect(
         { "paper.md": cache({}) },
         { enabledAtRuntime: true },
       );
-      const index = yield* noteIndexOf(host.app);
+      const index = yield* noteIndexOf(host);
       yield* index.whenIndexed;
       const changes = yield* Queue.unbounded<NoteIndexChange>();
       yield* Stream.runForEach(index.changes, (change) =>
@@ -137,7 +137,7 @@ it.effect(
       const stack = yield* Effect.acquireDisposable(
         Effect.tryPromise(async () => new AsyncDisposableStack()),
       );
-      const runtime = buildRuntime(noteIndexOver(host.app), stack);
+      const runtime = buildRuntime(noteIndexOver(host), stack);
       yield* Effect.promise(() => runtime.context());
       const index = plainNoteIndex(runtime);
       expect(index.getNotesByItemKey("ABCD2345")).toEqual([
@@ -154,7 +154,7 @@ it.effect(
       const host = createNoteHost({
         "paper.md": cache({ itemKey: "ABCD2345" }),
       });
-      const index = yield* noteIndexOf(host.app);
+      const index = yield* noteIndexOf(host);
       const pending = yield* index.whenIndexed.pipe(
         Effect.forkChild({ startImmediately: true }),
       );
@@ -179,7 +179,7 @@ it.effect("whenSettled waits for queued renames to restore their keys", () =>
       },
       { enabledAtRuntime: true },
     );
-    const index = yield* noteIndexOf(host.app);
+    const index = yield* noteIndexOf(host);
     yield* index.whenSettled;
     host.vault.renameFile("first.md", "first.txt");
     host.vault.renameFile("second.md", "second.txt");
@@ -202,10 +202,7 @@ it.effect(
       const scope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
         Scope.close(scope, Exit.void),
       );
-      const context = yield* Layer.buildWithScope(
-        noteIndexOver(host.app),
-        scope,
-      );
+      const context = yield* Layer.buildWithScope(noteIndexOver(host), scope);
       const index = Context.get(context, NoteIndex);
       host.vault.renameFile("paper.txt", "paper.md");
       const pending = yield* index.whenSettled.pipe(
@@ -230,7 +227,7 @@ it.effect("scope close stops metadata and vault updates", () =>
     const scope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
       Scope.close(scope, Exit.void),
     );
-    const context = yield* Layer.buildWithScope(noteIndexOver(host.app), scope);
+    const context = yield* Layer.buildWithScope(noteIndexOver(host), scope);
     const index = Context.get(context, NoteIndex);
     yield* index.whenIndexed;
     const file = host.vault.files.get("paper.md")!;
@@ -251,7 +248,7 @@ it.effect(
         { "paper.md": cache({}) },
         { enabledAtRuntime: true },
       );
-      const index = yield* noteIndexOf(host.app);
+      const index = yield* noteIndexOf(host);
       yield* index.whenIndexed;
       const changes = yield* Queue.unbounded<NoteIndexChange>();
       yield* Stream.runForEach(index.changes, (change) =>
@@ -280,10 +277,7 @@ it.effect.each(["layout", "clean-cache"] as const)(
       const scope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
         Scope.close(scope, Exit.void),
       );
-      const context = yield* Layer.buildWithScope(
-        noteIndexOver(host.app),
-        scope,
-      );
+      const context = yield* Layer.buildWithScope(noteIndexOver(host), scope);
       const index = Context.get(context, NoteIndex);
       const pending = yield* index.whenIndexed.pipe(Effect.forkChild);
       if (phase !== "layout") host.workspace.layoutReady();

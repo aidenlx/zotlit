@@ -1,12 +1,11 @@
 import { Context, Deferred, Effect, Layer, PubSub, Stream } from "effect";
 import { TFile } from "obsidian";
-import type { App, CachedMetadata, TAbstractFile } from "obsidian";
+import type { CachedMetadata, TAbstractFile } from "obsidian";
 
 import { NON_VAULT_PROPERTY_KEYS } from "@/lib/constants";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { filterTag, forkEach } from "@/lib/effect-stream";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type {
   MetadataCacheShape,
@@ -21,6 +20,7 @@ import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
 import { heldCitekeyOf } from "@/services/citation-index/lookup";
 import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
 
+import { literatureNoteOf } from "./literature-note";
 import {
   diffContributions,
   EMPTY_CONTRIBUTIONS,
@@ -31,6 +31,12 @@ import {
 import type { ContribDiff, FileContributions } from "./parse";
 
 export { itemKeyFromFrontmatter, noteKeyFromFrontmatter };
+export {
+  isLiteratureNote,
+  resolveIndexedKey,
+  resolveLiteratureNote,
+  type ResolvedLiteratureNote,
+} from "./literature-note";
 
 /** The metadata cache holds no entry for the file's path yet. */
 const UNREAD = Symbol("unread");
@@ -49,40 +55,6 @@ type Reading = Read | typeof UNREAD;
 export type NoteIndexChange =
   | { readonly type: "indexed" }
   | { readonly type: "changed" | "frontmatter-changed"; readonly file: TFile };
-
-/** Frontmatter-only check; does not consult the index. */
-export function isLiteratureNote(file: string | TFile, app: App): boolean {
-  const cache =
-    typeof file === "string"
-      ? app.metadataCache.getCache(file)
-      : app.metadataCache.getFileCache(file);
-  return itemKeyFromFrontmatter(cache) !== null;
-}
-
-/** The Literature Note a wikilink target points at. */
-export interface ResolvedLiteratureNote {
-  /** The note's vault path. */
-  path: string;
-  /** Its Indexed Key — the frontmatter marker that makes it a Literature Note. */
-  indexedKey: string;
-}
-
-/**
- * The Literature Note a wikilink target points at, seen from `sourcePath`, or
- * `null` when the target is missing or is an ordinary note. Frontmatter-only
- * like {@link isLiteratureNote}, so it answers before the first scan; every
- * consumer that turns a linkpath into a Citation shares it.
- */
-export function resolveLiteratureNote(
-  linkpath: string,
-  sourcePath: string,
-  options: { app: App },
-): ResolvedLiteratureNote | null {
-  const { app } = options;
-  const dest = app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
-  if (!dest) return null;
-  return literatureNoteOf(dest, app.metadataCache.getFileCache(dest));
-}
 
 /**
  * {@link resolveLiteratureNote} over the MetadataCache tag, for an Effect
@@ -122,29 +94,6 @@ export const literatureNoteTargetIn = Effect.fnUntraced(function* (
   return target;
 });
 
-/** The Literature Note `dest` is by its frontmatter, or `null` for an ordinary note. */
-function literatureNoteOf(
-  dest: TFile,
-  cache: CachedMetadata | null,
-): ResolvedLiteratureNote | null {
-  const indexedKey = itemKeyFromFrontmatter(cache);
-  if (indexedKey === null) return null;
-  return {
-    path: dest.path,
-    indexedKey,
-  };
-}
-
-/** {@link resolveLiteratureNote}, for a consumer that needs the key alone. */
-export function resolveIndexedKey(
-  linkpath: string,
-  sourcePath: string,
-  app: App,
-): string | null {
-  const note = resolveLiteratureNote(linkpath, sourcePath, { app });
-  return note?.indexedKey ?? null;
-}
-
 export class NoteIndex extends Context.Service<
   NoteIndex,
   {
@@ -169,7 +118,6 @@ export class NoteIndex extends Context.Service<
 >()("zotlit/note-index/NoteIndex") {}
 
 const makeNoteIndex = Effect.gen(function* () {
-  const app = yield* ObsidianApp;
   const metadata = yield* MetadataCache;
   const workspace = yield* Workspace;
   const vault = yield* Vault;
@@ -490,7 +438,7 @@ const makeNoteIndex = Effect.gen(function* () {
       if (disposed) return;
       clear();
 
-      for (const file of app.vault.getMarkdownFiles()) {
+      for (const file of yield* vault.getMarkdownFiles) {
         settle(file, yield* read(file));
       }
 
@@ -542,7 +490,7 @@ const makeNoteIndex = Effect.gen(function* () {
 export const layerNoteIndex: Layer.Layer<
   NoteIndex,
   never,
-  ObsidianApp | MetadataCache | Vault | Workspace
+  MetadataCache | Vault | Workspace
 > = Layer.effect(NoteIndex, makeNoteIndex);
 
 function serializeFrontmatter(cache: CachedMetadata | null): string {

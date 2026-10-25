@@ -284,12 +284,11 @@ export default defineConfig({
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
-      // No tag member yet: `vault.getMarkdownFiles`. citation-index/service.ts
-      // also calls `vault.getFileByPath` and `vault.cachedRead`, which the
-      // Vault tag has.
+      // Calls `vault.getMarkdownFiles` on the App, which the Vault tag now
+      // has. citation-index/service.ts also calls `vault.getFileByPath` and
+      // `vault.cachedRead`, which the Vault tag has.
       files: [
         "src/services/citation-index/service.ts",
-        "src/services/note-index/service.ts",
         "src/services/template-workbench/inspect.ts",
       ],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
