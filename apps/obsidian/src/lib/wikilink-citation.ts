@@ -233,7 +233,7 @@ const JOINS_RUN = /^[ \t]*;[ \t]*$/u;
 
 /**
  * The settings both wikilink display surfaces read, kept current for as long as
- * the surface watches them.
+ * the surface consumes its {@link WikilinkDisplaySettings.redraws}.
  *
  * One tracker per surface, so Live Preview and reading mode answer to the same
  * settings without either restating which ones they are.
