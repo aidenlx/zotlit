@@ -7,7 +7,6 @@ import "./style.css";
 import { revealSetting } from "@/lib/open-settings";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type {} from "@/services/citation-index/service";
-import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
 import type { PlainBibliographyRender } from "@/services/pandoc/render-cache/plain";
@@ -42,7 +41,7 @@ export interface ReferencesRegistrationDeps {
   citationLookup: ReferencesViewDeps["citationLookup"];
   libraryScope: Pick<PlainLibraryScope, "current">;
   citationText: ReferencesViewDeps["citationText"];
-  citekeyEditor: CitekeyEditor;
+  citekeyEditor: ReferencesViewDeps["citekeyEditor"];
   pandocEngine: Pick<ManagedBinaryHandle, "binary" | "runSync">;
   bibliographyRender: Pick<
     PlainBibliographyRender,

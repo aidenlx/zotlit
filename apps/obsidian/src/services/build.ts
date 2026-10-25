@@ -43,6 +43,7 @@ import { CitationParse } from "./citation-parse/service";
 import { CitationPopover } from "./citation-popover/service";
 import { plainCitationText } from "./citation-text/plain";
 import { CitekeyEditor } from "./citekey-editor/service";
+import type { CitekeyNoteCreation } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
 import { ExcerptDisplays } from "./excerpt-image/display";
 import { ExcerptImages } from "./excerpt-image/layer";
@@ -59,7 +60,7 @@ import { plainLibraryScope } from "./library-scope/plain";
 import { LocalBridgeService } from "./local-bridge/service";
 import { LocalServer } from "./local-server/service";
 import { bindManagedBinary } from "./managed-binary/handle";
-import { createNoteFeature } from "./note-feature";
+import { createNoteFeature, createNoteInteractively } from "./note-feature";
 import type { NoteFeature } from "./note-feature";
 import { createBatchImport } from "./note-import/batch-import";
 import type { BatchImport } from "./note-import/batch-import";
@@ -80,7 +81,6 @@ import { loadLiteratureNoteTemplateMigrationData } from "./template/migration";
 import type { TemplateMigrationOptions } from "./template/migration";
 import { plainTemplate, plainTemplateMigration } from "./template/plain";
 import { plainUseLedger } from "./use-ledger/plain";
-import { WikilinkEditor } from "./wikilink-editor/service";
 import { WikilinkReading } from "./wikilink-reading/service";
 import { writeReadUse } from "./zotero-local-api/last-read";
 import { ZoteroLocalApi } from "./zotero-local-api/service";
@@ -115,6 +115,12 @@ export async function buildServices(
   const migrationActions = new Promise<TemplateMigrationOptions>((resolve) => {
     bindMigration = resolve;
   });
+  // The citekey editor opens a note it has to create through the legacy
+  // creation flow, which the container builds after the graph.
+  let bindNoteCreation!: (creation: CitekeyNoteCreation) => void;
+  const noteCreation = new Promise<CitekeyNoteCreation>((resolve) => {
+    bindNoteCreation = resolve;
+  });
   // The excerpt service is registered before the PDF reader, so the reader
   // hands its documents over through this one holder. A crop asks for a reader
   // document per resolution, and answers detached while the holder is empty.
@@ -136,6 +142,9 @@ export async function buildServices(
           readers,
         },
         languagePack,
+        noteCreation: {
+          createNote: async (item) => (await noteCreation).createNote(item),
+        },
       },
     ),
     stack,
@@ -542,63 +551,29 @@ export async function buildServices(
     .useValue({ citationText: () => plainCitationText(runtime) })
     .useValue({ citationPopover: () => runtime.runSync(CitationPopover) })
     .useValue({ annotationPopover: () => runtime.runSync(AnnotationPopover) })
-    .use({
+    .useValue({
       citekeyEditor: ({
-        noteIndex,
         noteFeature,
         createProfile,
         importProfile,
         zoteroPref,
-        zoteroReads,
-        citationText,
-        citationPopover,
-        annotationPopover,
-        settings,
-        citationLookup,
-        libraryScope,
-        bridge,
-      }) =>
-        new CitekeyEditor({
-          runtime,
-          app: plugin.app,
-          plugin,
-          noteIndex,
-          noteFeature,
-          createProfile,
-          importProfile,
-          zoteroPref,
-          db: zoteroReads,
-          citationText,
-          citationPopover,
-          annotationPopover,
-          settings,
-          citationLookup,
-          libraryScope,
-          bridge,
-        }),
-    })
-    .use({
-      wikilinkEditor: ({
-        noteIndex,
-        citationText,
-        citekeyEditor,
-        citationPopover,
-        settings,
-        citationLookup,
-        bridge,
-      }) =>
-        new WikilinkEditor({
-          runtime,
-          app: plugin.app,
-          plugin,
-          noteIndex,
-          citationText,
-          citekeyEditor,
-          citationPopover,
-          settings,
-          citationLookup,
-          bridge,
-        }),
+      }) => {
+        bindNoteCreation({
+          createNote: (item) =>
+            createNoteInteractively(
+              {
+                app: plugin.app,
+                noteFeature,
+                createProfile,
+                importProfile,
+                zoteroPref,
+              },
+              item,
+              { direct: true },
+            ),
+        });
+        return runtime.runSync(CitekeyEditor);
+      },
     })
     .use({
       wikilinkReading: ({

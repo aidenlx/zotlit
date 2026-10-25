@@ -114,7 +114,10 @@ export interface GraphCitationsDeps {
     | "indexed"
     | "frontmatter-changed"
   >;
-  citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "openIndexedKey">;
+  citekeyEditor: Pick<
+    CitekeyEditor["Service"],
+    "openCitekey" | "openIndexedKey"
+  >;
   /** The entries a hovered Literature Note or Cited Work Node shows. */
   citationPopover: Pick<CitationPopover["Service"], "showWork" | "hide">;
   bridge: Pick<EffectBridge, "runPromise" | "runSync">;
@@ -202,7 +205,9 @@ export class GraphCitations extends Service<void> {
   readonly #settings;
   /** The Citekey Navigation open action, which every node surface runs. */
   readonly #open = (citekey: string, pane: NavigationPane): void => {
-    void this.#citekeyEditor.openCitekey(citekey, pane);
+    void this.#bridge.runPromise(
+      this.#citekeyEditor.openCitekey(citekey, pane),
+    );
   };
   /**
    * Keyed by renderer, which its view owns for life and destroys on close,
@@ -768,7 +773,9 @@ export class GraphCitations extends Service<void> {
       citationPopover: this.#citationPopover,
       bridge: this.#bridge,
       open: (indexedKey, pane) => {
-        void this.#citekeyEditor.openIndexedKey(indexedKey, pane);
+        void this.#bridge.runPromise(
+          this.#citekeyEditor.openIndexedKey(indexedKey, pane),
+        );
       },
     };
   }

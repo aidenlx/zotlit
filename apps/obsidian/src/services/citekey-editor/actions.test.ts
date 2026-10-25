@@ -1,8 +1,10 @@
 import { EditorState } from "@codemirror/state";
 import { createMockPlugin } from "@mock/obsidian";
+import { Effect } from "effect";
 import type { Editor } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { NavigationPane } from "@/services/citekey-navigation";
 
@@ -25,6 +27,12 @@ function editorAt(doc: string, head: number): Editor {
   });
 }
 
+/** The bridge each case opened, closed after it. */
+const bridges: AsyncDisposable[] = [];
+afterEach(async () => {
+  for (const bridge of bridges.splice(0)) await bridge[Symbol.asyncDispose]();
+});
+
 function setup(enabled: boolean): {
   plugin: ReturnType<typeof createMockPlugin>;
   opened: [citekey: string, pane: NavigationPane][];
@@ -33,14 +41,18 @@ function setup(enabled: boolean): {
 } {
   const opened: [string, NavigationPane][] = [];
   const plugin = createMockPlugin();
+  const bridge = openTestBridge();
+  bridges.push(bridge);
   addCitekeyEditorActions(plugin, {
     citekeyEditor: {
-      navigationEnabled: enabled,
-      openCitekey: vi.fn((citekey: string, pane: NavigationPane) => {
-        opened.push([citekey, pane]);
-        return Promise.resolve();
-      }),
+      navigationEnabled: Effect.succeed(enabled),
+      openCitekey: vi.fn((citekey: string, pane: NavigationPane) =>
+        Effect.sync(() => {
+          opened.push([citekey, pane]);
+        }),
+      ),
     },
+    bridge,
   });
   return {
     plugin,

@@ -24,7 +24,7 @@ import type {
   ReferenceSource,
 } from "@/services/citation-index/service";
 import type { PlainCitationText } from "@/services/citation-text/plain";
-import type { CitekeyEditor } from "@/services/citekey-editor/service";
+import type { NavigationPane } from "@/services/citekey-navigation";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
 import {
@@ -96,7 +96,9 @@ export interface ReferencesViewDeps {
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<PlainLibraryScope, "current">;
   /** Opens the Literature Note an Indexed Key names, creating it first when it has none. */
-  citekeyEditor: Pick<CitekeyEditor, "openIndexedKey">;
+  citekeyEditor: {
+    openIndexedKey(indexedKey: string, pane: NavigationPane): Promise<void>;
+  };
   /**
    * The active document's formatted citations, which say whether that document
    * shows Entry Serials — the gutter follows what the citations show.

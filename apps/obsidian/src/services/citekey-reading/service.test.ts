@@ -355,10 +355,10 @@ async function makeHarness({
         citekeyEditor: capability<CitekeyReadingDeps["citekeyEditor"]>(
           "CitekeyEditor",
           {
-            openCitekey: (citekey: string, pane: unknown) => {
-              opened.push([citekey, pane]);
-              return Promise.resolve();
-            },
+            openCitekey: (citekey: string, pane: unknown) =>
+              Effect.sync(() => {
+                opened.push([citekey, pane]);
+              }),
           },
         ),
         citationPopover: {
@@ -446,7 +446,7 @@ describe("CitekeyReading", () => {
           current: Effect.succeed(defaults),
           changes: settingsChanged.stream.pipe(Stream.prepend([defaults])),
         },
-        bridge: { runSync: Effect.runSync },
+        bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
       }),
     );
     await service.ready;

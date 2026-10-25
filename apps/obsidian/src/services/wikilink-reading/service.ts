@@ -67,10 +67,10 @@ export interface WikilinkReadingDeps {
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<PlainCitationText, "peek" | "changed" | "invalidated">;
   /** The open-or-create flow every citation surface shares. */
-  citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
+  citekeyEditor: Pick<CitekeyEditor["Service"], "openCitekey">;
   /** What a hovered citation shows. */
   citationPopover: Pick<CitationPopover["Service"], "show">;
-  bridge: Pick<EffectBridge, "runSync">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
   settings: Pick<PluginSettings["Service"], "current" | "changes">;
 }
 
@@ -350,7 +350,9 @@ export class WikilinkReading extends Service<void> {
       shown,
       where: { surface: "reading" },
       open: (citekey, pane) => {
-        void this.#citekeyEditor.openCitekey(citekey, pane);
+        void this.#bridge.runPromise(
+          this.#citekeyEditor.openCitekey(citekey, pane),
+        );
       },
       showPopover: (request) =>
         this.#bridge.runSync(this.#citationPopover.show(request)),

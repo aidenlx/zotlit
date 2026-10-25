@@ -40,6 +40,14 @@ import { layerCitationPopover } from "./citation-popover/service";
 import type { CitationPopover } from "./citation-popover/service";
 import { layerCitationText } from "./citation-text/service";
 import type { CitationText } from "./citation-text/service";
+import { layerCitekeyCandidatePicker } from "./citekey-editor/candidates";
+import { layerCitekeyEditorNotices } from "./citekey-editor/notices";
+import { layerCitekeyEditorExtension } from "./citekey-editor/register";
+import { layerCitekeyEditor } from "./citekey-editor/service";
+import type {
+  CitekeyEditor,
+  CitekeyNoteCreation,
+} from "./citekey-editor/service";
 import { layerDatabaseActions } from "./database/actions";
 import { layerExcerptDisplays } from "./excerpt-image/display";
 import type { ExcerptDisplays } from "./excerpt-image/display";
@@ -89,6 +97,7 @@ import { layerTemplate } from "./template/service";
 import type { Template } from "./template/service";
 import { layerUseLedger } from "./use-ledger/service";
 import type { UseLedger } from "./use-ledger/service";
+import { layerWikilinkEditor } from "./wikilink-editor/service";
 import { layerZoteroLocalApi } from "./zotero-local-api/service";
 import type { ZoteroLocalApi } from "./zotero-local-api/service";
 import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
@@ -119,18 +128,21 @@ export function pluginLayer(
   {
     excerpt,
     languagePack,
+    noteCreation,
   }: {
     readonly excerpt: {
       readonly openStore: () => Promise<ExcerptStore>;
       readonly readers: ExcerptReaderDocuments;
     };
     readonly languagePack: LanguagePackStartup;
+    readonly noteCreation: CitekeyNoteCreation;
   },
 ): Layer.Layer<
   | LanguagePack
   | Notifier
   | AnnotationRepository
   | AnnotationPopover
+  | CitekeyEditor
   | ExcerptDisplays
   | ExcerptImages
   | CitationText
@@ -173,6 +185,7 @@ export function pluginLayer(
   const services = Layer.mergeAll(
     layerCitationPopover.pipe(startingAs("CitationPopover")),
     layerAnnotationPopover.pipe(startingAs("AnnotationPopover")),
+    layerCitekeyEditor(noteCreation).pipe(startingAs("CitekeyEditor")),
   ).pipe(
     Layer.provideMerge(layerCitationText().pipe(startingAs("CitationText"))),
     Layer.provideMerge(layerCitationIndex().pipe(startingAs("CitationIndex"))),
@@ -264,12 +277,16 @@ export function pluginLayer(
     layerCitationsCli.pipe(startingAs("CitationsCli")),
     layerCitationStyleNotice.pipe(startingAs("CitationStyleNotice")),
     layerCitationTemplateActions.pipe(startingAs("CitationTemplateActions")),
+    layerCitekeyCandidatePicker.pipe(startingAs("CitekeyCandidatePicker")),
+    layerCitekeyEditorExtension.pipe(startingAs("CitekeyEditorExtension")),
+    layerCitekeyEditorNotices.pipe(startingAs("CitekeyEditorNotices")),
     layerDatabaseActions.pipe(startingAs("DatabaseActions")),
     layerLanguagePackNotices.pipe(startingAs("LanguagePackNotices")),
     layerLibraryScopeCli.pipe(startingAs("LibraryScopeCli")),
     layerLibraryScopeNotices.pipe(startingAs("LibraryScopeNotices")),
     layerPandocResolve.pipe(startingAs("PandocResolve")),
     layerReleaseActions.pipe(startingAs("ReleaseActions")),
+    layerWikilinkEditor.pipe(startingAs("WikilinkEditor")),
   ).pipe(Layer.provide(Layer.mergeAll(layerPluginHost(plugin), obsidian)));
   // The Node file system, once for the whole graph: the temp sweeps read it.
   // The Notifier is the one the layers share: the setting tab's Language Pack

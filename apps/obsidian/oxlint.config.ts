@@ -161,7 +161,6 @@ export default defineConfig({
         "src/services/attachment-open/actions.ts",
         "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
-        "src/services/citekey-editor/service.ts",
         "src/services/citekey-reading/service.ts",
         "src/services/excerpt-image/prepare.ts",
         "src/services/graph-citations/service.ts",
@@ -175,7 +174,6 @@ export default defineConfig({
         "src/services/pandoc/document-presentation.ts",
         "src/services/protocol/register.ts",
         "src/services/template/actions.ts",
-        "src/services/wikilink-editor/service.ts",
         "src/services/wikilink-reading/service.ts",
         "src/views/annot-view/view.tsx",
         "src/views/library/item-actions.ts",
@@ -333,16 +331,13 @@ export default defineConfig({
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
-      // No tag member yet: `workspace.updateOptions` (citekey-editor,
-      // wikilink-editor), `workspace.requestActiveLeafEvents` (use-ledger),
+      // No tag member yet: `workspace.requestActiveLeafEvents` (use-ledger),
       // `workspace.openLinkText` (companion-view), the side splits
       // (library/view.ts), and the raw workspace that the editor lookup
       // takes (library/view.ts, library/item-actions.ts).
       files: [
-        "src/services/citekey-editor/service.ts",
         "src/services/note-feature/companion-view.ts",
         "src/services/use-ledger/service.ts",
-        "src/services/wikilink-editor/service.ts",
         "src/views/library/item-actions.ts",
         "src/views/library/view.ts",
       ],
@@ -416,7 +411,6 @@ export default defineConfig({
         "src/services/batch-run.ts",
         "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
-        "src/services/citekey-editor/service.ts",
         "src/services/database/reap-temps.ts",
         "src/services/excerpt-image/prepare.ts",
         "src/services/excerpt-image/request.ts",
@@ -518,7 +512,6 @@ export default defineConfig({
       // list when its service converts to Effect.
       files: [
         "src/services/attachment-import/service.ts",
-        "src/services/citekey-editor/service.ts",
         "src/services/local-bridge/service.ts",
         "src/services/note-feature/operations.ts",
         "src/services/pdf-annotation-editor/service.ts",
@@ -686,7 +679,6 @@ export default defineConfig({
       files: [
         "src/services/annotation-repository/notices.ts",
         "src/services/attachment-import/service.ts",
-        "src/services/citekey-editor/service.ts",
         "src/services/citekey-reading/service.ts",
         "src/services/excerpt-image/display.ts",
         "src/services/excerpt-image/service.ts",
@@ -695,7 +687,6 @@ export default defineConfig({
         "src/services/item-query/service.ts",
         "src/services/local-bridge/service.ts",
         "src/services/pdf-annotation-editor/service.ts",
-        "src/services/wikilink-editor/service.ts",
         "src/services/wikilink-reading/service.ts",
       ],
       rules: { "zotlit-services/no-legacy-service": "off" },

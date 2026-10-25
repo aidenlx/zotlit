@@ -36,6 +36,7 @@ import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type { CitationOccurrence } from "@/services/citation-index/scan";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
+import type { NavigationPane } from "@/services/citekey-navigation";
 import { openNoteVault } from "@/services/note-index/__fixtures__";
 import { buildSeededSettings } from "@/services/settings/__fixtures__";
 import type { Settings } from "@/services/settings/schema";
@@ -643,8 +644,14 @@ async function makeFixture(options: FixtureOptions = {}) {
       ...options.settings,
     }),
   );
-  const openCitekey = vi.fn(() => Promise.resolve());
-  const openIndexedKey = vi.fn(() => Promise.resolve());
+  const openCitekey = vi.fn(
+    (_citekey: string, _pane: NavigationPane): Effect.Effect<void> =>
+      Effect.void,
+  );
+  const openIndexedKey = vi.fn(
+    (_indexedKey: string, _pane: NavigationPane): Effect.Effect<void> =>
+      Effect.void,
+  );
   const citationPopover = stubService<
     import("@/services/citation-popover/service").CitationPopover["Service"] & {
       showWork: ReturnType<typeof vi.fn>;

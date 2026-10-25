@@ -114,10 +114,13 @@ export interface CitekeyReadingDeps {
     observe(changed: () => void): CitationLookupObservation;
   };
   /** The open-or-create flow every citekey surface shares, and what hover previews. */
-  citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "hoverNotePath">;
+  citekeyEditor: Pick<
+    CitekeyEditor["Service"],
+    "openCitekey" | "hoverNotePath"
+  >;
   /** What a hovered citation shows. */
   citationPopover: Pick<CitationPopover["Service"], "show">;
-  bridge: Pick<EffectBridge, "runSync">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
   settings: Pick<PluginSettings["Service"], "current" | "changes">;
 }
 
@@ -347,7 +350,9 @@ export class CitekeyReading extends Service<void> {
           works,
           shown: at,
           hoverNotePath: (citekey: string) =>
-            this.#citekeyEditor.hoverNotePath(citekey, answer),
+            this.#bridge.runSync(
+              this.#citekeyEditor.hoverNotePath(citekey, answer),
+            ),
         });
         return previous.element;
       }
@@ -422,13 +427,17 @@ export class CitekeyReading extends Service<void> {
       shown: at,
       where: { surface: "reading" },
       open: (citekey, pane) => {
-        void this.#citekeyEditor.openCitekey(citekey, pane);
+        void this.#bridge.runPromise(
+          this.#citekeyEditor.openCitekey(citekey, pane),
+        );
       },
       showPopover: (request) =>
         this.#bridge.runSync(this.#citationPopover.show(request)),
       hoverPreferences: () => this.#hover,
       hoverNotePath: (citekey) =>
-        this.#citekeyEditor.hoverNotePath(citekey, lookup),
+        this.#bridge.runSync(
+          this.#citekeyEditor.hoverNotePath(citekey, lookup),
+        ),
       workspace: this.#app.workspace,
       hoverTarget: () => {
         const hoverParent = this.#viewOf(element);

@@ -203,9 +203,10 @@ async function harness({
       citekeyEditor: stubService<WikilinkReadingDeps["citekeyEditor"]>(
         "CitekeyEditor",
         {
-          openCitekey: async (citekey: string, pane: NavigationPane) => {
-            opened.push([citekey, pane]);
-          },
+          openCitekey: (citekey: string, pane: NavigationPane) =>
+            Effect.sync(() => {
+              opened.push([citekey, pane]);
+            }),
         },
       ),
       citationPopover: stubService<WikilinkReadingDeps["citationPopover"]>(
