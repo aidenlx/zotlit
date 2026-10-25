@@ -80,7 +80,16 @@ it("disposes services newest first, so an older service keeps its vault and meta
   const { services } = new ServiceContainer(stack, () => undefined)
     .useValue({ noteIndex: () => buildNoteIndex(app, stack) })
     .use({ newer: ({ noteIndex }) => new ReadsOnTeardown(noteIndex) });
-  expect(vault.listened().sort()).toEqual(["delete", "rename"]);
+  expect(vault.listened().sort()).toEqual([
+    "create",
+    "delete",
+    "modify",
+    "rename",
+  ]);
+  // The Vault tag's one listener per name; the Note Index adds none of its own.
+  expect([...vault.listeners.values()].map((set) => set.size)).toEqual([
+    1, 1, 1, 1,
+  ]);
   expect(metadataCache.listened().sort()).toEqual([
     "changed",
     "deleted",
@@ -91,7 +100,12 @@ it("disposes services newest first, so an older service keeps its vault and meta
   const disposed = stack.disposeAsync();
   await services.newer.started.promise;
   await delay(20);
-  expect(vault.listened().sort()).toEqual(["delete", "rename"]);
+  expect(vault.listened().sort()).toEqual([
+    "create",
+    "delete",
+    "modify",
+    "rename",
+  ]);
   expect(metadataCache.listened().sort()).toEqual([
     "changed",
     "deleted",

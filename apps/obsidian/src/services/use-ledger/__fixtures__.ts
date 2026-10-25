@@ -3,6 +3,7 @@ import type { App } from "obsidian";
 
 import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { Context, Effect, Layer, Stream } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
@@ -12,7 +13,7 @@ import { plainUseLedger } from "./plain";
 import type { PlainUseLedger } from "./plain";
 import { layerUseLedger, UseLedger } from "./service";
 
-/** An App whose local storage is `storage`, with an in-memory workspace and metadata cache. */
+/** An App whose local storage is `storage`, with an in-memory workspace, metadata cache and an empty vault. */
 export function fakeApp(storage: {
   load: () => unknown;
   save?: (key: string, value: unknown) => void;
@@ -24,6 +25,7 @@ export function fakeApp(storage: {
     saveLocalStorage: storage.save ?? (() => {}),
     workspace: storage.workspace ?? new MemoryWorkspace(),
     metadataCache: storage.metadataCache ?? new MemoryMetadataCache(),
+    vault: new MemoryVault(),
   } as unknown as App;
 }
 

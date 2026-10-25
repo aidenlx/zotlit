@@ -5,10 +5,12 @@ import { NON_VAULT_PROPERTY_KEYS } from "@/lib/constants";
 import { Context, Deferred, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
-import { forkEach } from "@/lib/effect-stream";
+import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
+import { Vault } from "@/lib/obsidian-vault";
+import type { VaultEvent } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { DEFAULT_PROFILE, profileStampOf } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
@@ -119,6 +121,7 @@ const makeNoteIndex = Effect.gen(function* () {
   const app = yield* ObsidianApp;
   const metadata = yield* MetadataCache;
   const workspace = yield* Workspace;
+  const vault = yield* Vault;
   const changes = yield* PubSub.unbounded<NoteIndexChange>();
   yield* Effect.addFinalizer(() => PubSub.shutdown(changes));
   const indexed = yield* Deferred.make<void>();
@@ -126,8 +129,7 @@ const makeNoteIndex = Effect.gen(function* () {
   const pendingBarriers = new Set<Deferred.Deferred<void>>();
   const events = yield* obsidianEvents<{
     metadata: [MetadataEvent];
-    delete: [TAbstractFile];
-    rename: [TAbstractFile, string];
+    vault: [Extract<VaultEvent, { _tag: "delete" | "rename" }>];
     "rename-settled": [TFile, Deferred.Deferred<void>];
     layout: [];
     clean: [];
@@ -231,13 +233,13 @@ const makeNoteIndex = Effect.gen(function* () {
 
   // Acquire listeners after the functions below have been initialized.
   const listen = Effect.fn("NoteIndex.listen")(function* () {
-    const { vault } = app;
-
     // The metadata cache's events join the vault's in one ordered intake:
     // forkEach hands each over inside Obsidian's callback.
     yield* forkEach(metadata.changes, events.callback("metadata"));
-    yield* events.on("delete", vault, "delete");
-    yield* events.on("rename", vault, "rename");
+    yield* forkEach(
+      filterTag(vault.changes, "delete", "rename"),
+      events.callback("vault"),
+    );
     // Started immediately: a ready layout completes at once, so the event is
     // queued here; else it is queued inside Obsidian's layout-ready callback.
     yield* workspace.layoutReady.pipe(
@@ -304,13 +306,13 @@ const makeNoteIndex = Effect.gen(function* () {
         } else if (change._tag === "deleted") yield* apply(change.file, NONE);
         break;
       }
-      case "delete": {
-        const [file] = event.args;
-        if (isMarkdownFile(file)) yield* apply(file, NONE);
-        break;
-      }
-      case "rename": {
-        const [file] = event.args;
+      case "vault": {
+        const [change] = event.args;
+        const { file } = change;
+        if (change._tag === "delete") {
+          if (isMarkdownFile(file)) yield* apply(file, NONE);
+          break;
+        }
         if (!(file instanceof TFile)) break;
         if (!isMarkdownFile(file)) {
           yield* apply(file, NONE);
@@ -487,7 +489,7 @@ const makeNoteIndex = Effect.gen(function* () {
 export const layerNoteIndex: Layer.Layer<
   NoteIndex,
   never,
-  ObsidianApp | MetadataCache | Workspace
+  ObsidianApp | MetadataCache | Vault | Workspace
 > = Layer.effect(NoteIndex, makeNoteIndex);
 
 function serializeFrontmatter(cache: CachedMetadata | null): string {

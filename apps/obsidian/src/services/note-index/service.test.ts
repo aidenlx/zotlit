@@ -94,6 +94,33 @@ describe("NoteIndex", () => {
   );
 
   it.effect(
+    "keeps Obsidian's order of a vault rename and a metadata change in one tick",
+    () =>
+      Effect.gen(function* () {
+        const { service, vault, metadataCache } = yield* makeHarness(
+          { "draft.md": {} },
+          { enabledAtRuntime: true },
+        );
+        const changes: string[] = [];
+        subscribe(service.runtime, service["changed"], (file) =>
+          changes.push(`changed ${file.path}`),
+        );
+        subscribe(service.runtime, service["frontmatter-changed"], (file) =>
+          changes.push(`frontmatter ${file.path}`),
+        );
+
+        const file = vault.renameFile("draft.md", "paper.md");
+        metadataCache.change(file, cache({ itemKey: ITEM_A }));
+        yield* Effect.promise(() => service.whenSettled());
+
+        // The rename lands first and moves a note with no keys, so it says
+        // nothing; the change then makes it a Literature Note at its new path.
+        expect(changes).toEqual(["changed paper.md", "frontmatter paper.md"]);
+        expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
+      }),
+  );
+
+  it.effect(
     "drops a note once for a vault delete and the cache's deleted in one tick",
     () =>
       Effect.gen(function* () {

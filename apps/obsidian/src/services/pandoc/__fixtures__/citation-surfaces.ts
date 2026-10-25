@@ -1,4 +1,5 @@
 import { Effect, Stream } from "@/lib/effect";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { subscribe } from "@/lib/effect-stream";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { plainTestParseClient } from "@/lib/__fixtures__/parse-client";
@@ -423,10 +424,10 @@ export async function openCitationVault({
     profile: profileReader(profileSettings, harness.metadataCache),
     app: {
       metadataCache: harness.metadataCache,
-      vault: {
+      vault: MemoryVault.with({
         getFileByPath: (path: string) =>
           harness.metadataCache.files.get(path) ?? null,
-      },
+      }),
     } as unknown as App,
     db: harness.db,
     citationIndex: harness.index,

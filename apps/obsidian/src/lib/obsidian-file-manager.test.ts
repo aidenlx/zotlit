@@ -132,6 +132,7 @@ it.effect("builds over a test host's app that has no file manager", () =>
     const app = {
       metadataCache: { on() {}, offref() {} },
       workspace: new MemoryWorkspace(),
+      vault: { on() {}, offref() {} },
     } as unknown as App;
     yield* Effect.service(FileManager).pipe(Effect.provide(layerHostApp(app)));
   }),

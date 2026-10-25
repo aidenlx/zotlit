@@ -21,10 +21,12 @@ import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { acquireDisposable, isScopeClosed } from "@/lib/effect-scope";
 import { startupBarrier } from "@/lib/effect-startup";
-import { changesUntil, forkEach } from "@/lib/effect-stream";
+import { changesUntil, filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
+import { Vault } from "@/lib/obsidian-vault";
+import type { VaultEvent } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
 import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import { CitationParse } from "@/services/citation-parse/service";
@@ -206,6 +208,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
     const app = yield* ObsidianApp;
     const metadata = yield* MetadataCache;
     const workspace = yield* Workspace;
+    const vault = yield* Vault;
     const db = yield* ZoteroReads;
     const libraryScope = yield* LibraryScope;
     const noteIndex = yield* NoteIndex;
@@ -1551,7 +1554,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
     );
     const intake = yield* obsidianEvents<{
       metadata: [MetadataEvent];
-      rename: [TAbstractFile, string];
+      rename: [Extract<VaultEvent, { _tag: "rename" }>];
       layoutReady: [];
     }>().pipe(Scope.provide(scope));
     yield* intake
@@ -1569,10 +1572,12 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
               emit("cited-by-invalidated");
               break;
             }
-            case "rename":
-              move(event.args[1], event.args[0].path);
+            case "rename": {
+              const [{ file, oldPath }] = event.args;
+              move(oldPath, file.path);
               emit("cited-by-invalidated");
               break;
+            }
             case "layoutReady":
               startBackfill();
               break;
@@ -1585,7 +1590,10 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
     yield* forkEach(metadata.changes, intake.callback("metadata")).pipe(
       Scope.provide(scope),
     );
-    yield* intake.on("rename", app.vault, "rename").pipe(Scope.provide(scope));
+    yield* forkEach(
+      filterTag(vault.changes, "rename"),
+      intake.callback("rename"),
+    ).pipe(Scope.provide(scope));
     yield* forkEach(settings.changes, applySettings).pipe(Scope.provide(scope));
     // IndexedDB can stall; startup waits the shared bound and the open goes on.
     // Scans and drops made before a late open never reached the store, so the

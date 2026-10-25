@@ -15,8 +15,37 @@ import {
   SubscriptionRef,
 } from "@/lib/effect";
 import { LogCategory } from "@/lib/effect-log";
-import { changesUntil, forkEach, subscribe } from "@/lib/effect-stream";
+import {
+  changesUntil,
+  filterTag,
+  forkEach,
+  subscribe,
+} from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
+
+type Tagged =
+  | { readonly _tag: "a"; readonly n: number }
+  | { readonly _tag: "b"; readonly n: number }
+  | { readonly _tag: "c"; readonly n: number };
+
+it.effect("filterTag keeps the events of several tags in their order", () =>
+  Effect.gen(function* () {
+    const events: Tagged[] = [
+      { _tag: "a", n: 1 },
+      { _tag: "c", n: 2 },
+      { _tag: "b", n: 3 },
+      { _tag: "a", n: 4 },
+    ];
+    const kept = yield* Stream.runCollect(
+      filterTag(Stream.fromIterable(events), "a", "b"),
+    );
+    expect([...kept].map(({ _tag, n }) => `${_tag}${n}`)).toEqual([
+      "a1",
+      "b3",
+      "a4",
+    ]);
+  }),
+);
 
 it.effect(
   "#1705: scoped state consumers retain immediate updates and end when the service stops",
