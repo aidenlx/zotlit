@@ -53,7 +53,7 @@ New services are Effect services: a `Context.Service` tag and a scoped `Layer`, 
 
 - Import Effect from `@/lib/effect`. Its run entry points carry the browser scheduler and the logger, and no graph service.
 - The tag shape is Effect-native: each method is an `Effect.fn("<Tag>.<method>")` generator returning an `Effect`. Events are Streams and state:
-  - What others watch is a `SubscriptionRef`, exposed as a `changes` Stream through `changesUntil` (`@/lib/effect-stream`).
+  - What others watch is a `SubscriptionRef`, exposed as `SubscriptionRef.changes(ref)`: it replays the current value and ends when the layer's finalizer runs `PubSub.shutdown(ref.pubsub)`. A stream that ends on a terminal state adds `Stream.takeUntil`.
   - A discrete occurrence is a `PubSub` exposed as a Stream.
   - A condition a late subscriber must still see (stopped, failed, finished) is state.
 - Export the layer beside the tag as `layer<Name>` (a function when it takes plain inputs).
