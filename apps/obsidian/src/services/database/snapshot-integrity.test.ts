@@ -1,8 +1,7 @@
+import { it } from "@effect/vitest";
+import { Deferred, Effect, Exit, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 import { afterEach, describe, expect, vi } from "vitest";
-
-import { Deferred, Effect, Exit, Fiber } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { verifySnapshot } from "./snapshot-integrity";
 

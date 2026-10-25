@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import { DateTime, Effect } from "effect";
 import {
   FileSystemAdapter,
   Scope,
@@ -10,7 +11,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
-import { Effect } from "@/lib/effect";
+import { toInstant } from "@/lib/effect-clock";
 import { themeHook } from "@/lib/theme-hooks";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 import { openNoteVault } from "@/services/note-index/__fixtures__";
@@ -159,8 +160,8 @@ async function standingDeps() {
 }
 
 /** The instant the affordance reads a cooldown at, and a deadline 45s past it. */
-const NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
-const RETRY_AFTER = NOW.add({ seconds: 45 });
+const NOW = DateTime.makeUnsafe("2026-09-17T10:00:00Z");
+const RETRY_AFTER = DateTime.add(NOW, { seconds: 45 });
 
 /** The Indexed Key of every mark drawn as selected, in document order. */
 function selectedKeys(page: { div: HTMLElement }): (string | undefined)[] {
@@ -1044,7 +1045,7 @@ it("keeps the toolbar's nodes across capability announcements, and stands them d
     annotations,
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
-    now: () => NOW,
+    now: () => toInstant(NOW),
   });
   await service.ready;
   const drawn = controls();
@@ -1071,7 +1072,7 @@ it("keeps the toolbar's nodes across capability announcements, and stands them d
 
   const blocked = { kind: "read-only", reason: "zotero-unavailable" } as const;
   annotations.setCapability(blocked);
-  const copy = editingCapabilityCopy(blocked, NOW);
+  const copy = editingCapabilityCopy(blocked, toInstant(NOW));
   const highlight = controls()[0]!;
   expect(highlight).toBe(drawn[0]);
   expect(highlight.getAttribute("aria-disabled")).toBe("true");
@@ -1086,7 +1087,10 @@ it("counts a cooldown down on the toolbar's window, under the binding's disposer
   const started = vi.spyOn(reader.toolbarRightEl.win, "setInterval");
   const stopped = vi.spyOn(reader.toolbarRightEl.win, "clearInterval");
   const cooling = (): void =>
-    annotations.setCapability({ kind: "cooldown", retryAfter: RETRY_AFTER });
+    annotations.setCapability({
+      kind: "cooldown",
+      retryAfter: toInstant(RETRY_AFTER),
+    });
 
   const service = new PdfAnnotationEditor({
     app,
@@ -1094,7 +1098,7 @@ it("counts a cooldown down on the toolbar's window, under the binding's disposer
     annotations,
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
-    now: () => NOW,
+    now: () => toInstant(NOW),
   });
   {
     await using _service = service;
@@ -1170,25 +1174,25 @@ it("probes before a blocked keystroke is answered, and stays out of the way othe
   };
 
   await press("h");
-  expect(annotations.probe).toHaveBeenCalledOnce();
+  expect(annotations.probeRuns).toHaveBeenCalledOnce();
   expect(gestures.reportBlockedGesture).toHaveBeenCalledExactlyOnceWith(
     "ABCD2345",
   );
 
   // A keystroke that is not an edit gesture never reaches the seam.
   await press("Escape");
-  expect(annotations.probe).toHaveBeenCalledOnce();
+  expect(annotations.probeRuns).toHaveBeenCalledOnce();
 
   // Editing works again, so the keystroke belongs to the reader alone.
   annotations.setCapability({ kind: "writable" });
   await press("u");
-  expect(annotations.probe).toHaveBeenCalledOnce();
+  expect(annotations.probeRuns).toHaveBeenCalledOnce();
   expect(gestures.reportBlockedGesture).toHaveBeenCalledOnce();
 
   // Unauthorized editing remains blocked until explicit approval.
   annotations.setCapability({ kind: "authorization-required" });
   await press("h");
-  expect(annotations.probe).toHaveBeenCalledTimes(2);
+  expect(annotations.probeRuns).toHaveBeenCalledTimes(2);
   expect(gestures.reportBlockedGesture).toHaveBeenCalledTimes(2);
 });
 
@@ -1314,7 +1318,7 @@ it("records a read of the other Attachment an open names in a restored tab", asy
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
     recordRead,
-    now: () => NOW,
+    now: () => toInstant(NOW),
     ...(await standingDeps()),
   });
   await service.ready;

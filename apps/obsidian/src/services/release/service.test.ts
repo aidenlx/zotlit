@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { ButtonComponent } from "obsidian";
 import type { App } from "obsidian";
 import { expect, vi } from "vitest";
 
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { DOCS_COMPANION } from "@/lib/constants";
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import type { HydrationOrigin } from "@/services/settings/classify";
 import type { Settings } from "@/services/settings/schema";
 
@@ -22,12 +24,12 @@ it.effect("Release.openReleaseNote succeeds when the view cannot open", () =>
         .fn()
         .mockRejectedValue(new Error("Cannot open view"));
       const app = {
-        workspace: {
-          onLayoutReady: () => {},
+        vault: new MemoryVault(),
+        workspace: Object.assign(new MemoryWorkspace(), {
           getLeavesOfType: () => [],
           getLeaf: () => ({ setViewState }),
           revealLeaf: vi.fn(),
-        },
+        }),
         internalPlugins: {
           getEnabledPluginById: () => true,
         },
@@ -38,7 +40,7 @@ it.effect("Release.openReleaseNote succeeds when the view cannot open", () =>
         current: () => ({}) as Settings,
       });
 
-      yield* fixture.release.openReleaseNote();
+      yield* fixture.release.openReleaseNote;
 
       expect(setViewState).toHaveBeenCalledOnce();
     }),
@@ -57,7 +59,7 @@ it.effect("Release.acknowledgeMigration clears the pending flag when set", () =>
         current: () => state as Settings,
         update: (patch) => Object.assign(state, patch),
       });
-      yield* fixture.release.acknowledgeMigration();
+      yield* fixture.release.acknowledgeMigration;
       expect(fixture.update).toHaveBeenCalledWith({
         "release.migration-pending": false,
       });
@@ -79,7 +81,7 @@ it.effect(
           current: () => state as Settings,
           update: (patch) => Object.assign(state, patch),
         });
-        yield* fixture.release.acknowledgeMigration();
+        yield* fixture.release.acknowledgeMigration;
         expect(fixture.update).not.toHaveBeenCalled();
       }),
     ),
@@ -263,7 +265,7 @@ it.effect("Release.acknowledgeUpdate clears the update once", () =>
         update: (patch) => Object.assign(state, patch),
         version: "2.1.1",
       });
-      yield* fixture.release.acknowledgeUpdate();
+      yield* fixture.release.acknowledgeUpdate;
       expect(fixture.update).toHaveBeenCalledWith({
         "release.update-pending": false,
       });

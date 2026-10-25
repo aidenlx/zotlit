@@ -1,11 +1,11 @@
+import { it } from "@effect/vitest";
+import { Deferred, Effect, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, vi } from "vitest";
 
 import type { Library } from "@zotlit/db";
 
-import { Deferred, Effect, Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import { layerRcRef } from "@/services/zotero-reads/connection";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {

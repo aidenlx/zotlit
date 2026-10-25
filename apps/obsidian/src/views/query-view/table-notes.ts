@@ -6,12 +6,12 @@
 // that note for its own Item, whichever note the Note Index ranks first.
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
+import { Effect } from "effect";
 import { Keymap, parseLinktext } from "obsidian";
 import type { App, TFile } from "obsidian";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import { Effect } from "@/lib/effect";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import { processLiveFrontMatter } from "@/lib/live-text";

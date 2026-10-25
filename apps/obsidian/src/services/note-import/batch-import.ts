@@ -1,4 +1,5 @@
 import { distinct } from "@std/collections";
+import { Effect, Stream } from "effect";
 // Batch import runner for Zotero notes into standalone Markdown mirrors.
 import type { MetadataCache, TFile } from "obsidian";
 
@@ -6,7 +7,6 @@ import { parseIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
 import type { ChildNote, Note } from "@zotlit/db";
 import type { ImportMode } from "@zotlit/protocol";
 
-import { Effect, Stream } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -63,7 +63,7 @@ import type { NoteImportView } from "./view";
 const logger = getLogger("batch-import");
 
 /** Bounds concurrent per-note loads + writes during a modal run, so Cancel can
- * abort the queued remainder between items. */
+ * stop the queued remainder between items. */
 const IMPORT_CONCURRENCY = 16;
 
 export interface NoteImportDeps {
@@ -766,7 +766,7 @@ async function importOne(
  * Execute classified import actions, reporting per-item settle events for the
  * modal's progress bar. Each task loads its own full note (deferred from
  * classification) then writes; a note deleted between classify and its write
- * settles as skipped. Cancel aborts the queued remainder while in-flight writes
+ * settles as skipped. Cancel stops the queued remainder while in-flight writes
  * finish.
  */
 async function executeImportRun(

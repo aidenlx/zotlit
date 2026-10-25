@@ -1,7 +1,10 @@
 /** Citation services for views and legacy services, on the plugin runtime. */
-import { Cause, Effect, Exit, Stream } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
+import { Cause, Effect, Exit, Stream } from "effect";
+import type { ManagedRuntime } from "effect";
+import type { TFile } from "obsidian";
+
 import { effectBridge } from "@/lib/effect-bridge";
+import { settleAtEdge } from "@/lib/signal-edge";
 
 import type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 import {
@@ -70,7 +73,7 @@ export function plainCitationLookup(
         ? inertObservation()
         : bridge.runSync(service.observe(changed)),
     async whenResolved() {
-      if (!bridge.closed()) await bridge.runPromiseExit(service.whenResolved());
+      if (!bridge.closed()) await bridge.runPromiseExit(service.whenResolved);
     },
     changed: lookupChanged(service),
     "status-changed": lookupStatusChanged(service),
@@ -89,12 +92,23 @@ export function plainCitationIndex(
 ) {
   const bridge = effectBridge(runtime);
   const service = runtime.runSync(CitationIndex);
-  async function invoke<A, E>(effect: Effect.Effect<A, E>): Promise<A> {
+  /** Runs one call; the caller's signal interrupts it and rejects with its reason. */
+  async function invoke<A, E>(
+    effect: Effect.Effect<A, E>,
+    signal?: AbortSignal,
+  ): Promise<A> {
     let exit = bridge.closed()
       ? await bridge.runPromise(Effect.exit(effect))
-      : await bridge.runPromiseExit(effect);
+      : await bridge.runPromiseExit(
+          effect,
+          signal === undefined ? undefined : { signal },
+        );
     // A call interrupted by unload reads the released service's terminal state.
-    if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) {
+    if (
+      !signal?.aborted &&
+      Exit.isFailure(exit) &&
+      Cause.hasInterruptsOnly(exit.cause)
+    ) {
       await bridge.runPromise(
         Stream.runHead(
           service.changes.pipe(Stream.filter((state) => state.stopped)),
@@ -102,9 +116,12 @@ export function plainCitationIndex(
       );
       exit = await bridge.runPromise(Effect.exit(effect));
     }
-    if (Exit.isSuccess(exit)) return exit.value;
-    const error = Cause.squash(exit.cause);
-    throw Cause.isUnknownError(error) ? error.cause : error;
+    return settleAtEdge(
+      Exit.mapError(exit, (error) =>
+        Cause.isUnknownError(error) ? error.cause : error,
+      ),
+      signal,
+    );
   }
   return {
     get coverage() {
@@ -121,7 +138,7 @@ export function plainCitationIndex(
     backfilled: service.changes.pipe(
       Stream.map((state) => state.backfilled),
       Stream.changes,
-      Stream.filter(Boolean),
+      Stream.filter((backfilled) => backfilled),
       Stream.map(() => undefined),
     ),
     "membership-changed": service.events.pipe(
@@ -151,13 +168,18 @@ export function plainCitationIndex(
     getFileScan: (...args: Parameters<typeof service.getFileScan>) =>
       invoke(service.getFileScan(...args)),
     getDocumentCitationSet: (
-      ...args: Parameters<typeof service.getDocumentCitationSet>
-    ) => invoke(service.getDocumentCitationSet(...args)),
-    getParsedNote: (...args: Parameters<typeof service.getParsedNote>) =>
-      invoke(service.getParsedNote(...args)),
-    getParsedDocument: (
-      ...args: Parameters<typeof service.getParsedDocument>
-    ) => invoke(service.getParsedDocument(...args)),
+      file: TFile,
+      {
+        signal,
+        ...options
+      }: NonNullable<Parameters<typeof service.getDocumentCitationSet>[1]> & {
+        signal?: AbortSignal;
+      } = {},
+    ) => invoke(service.getDocumentCitationSet(file, options), signal),
+    getParsedNote: (file: TFile, signal?: AbortSignal) =>
+      invoke(service.getParsedNote(file), signal),
+    getParsedDocument: (file: TFile, signal?: AbortSignal) =>
+      invoke(service.getParsedDocument(file), signal),
     whenIndexed: (...args: Parameters<typeof service.whenIndexed>) =>
       invoke(service.whenIndexed(...args)),
     getCitedBy: (...args: Parameters<typeof service.getCitedBy>) =>

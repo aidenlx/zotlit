@@ -1,6 +1,6 @@
 import { onTestFinished } from "vitest";
 
-import { Layer } from "@/lib/effect";
+import { Layer } from "effect";
 import { buildRuntime } from "@/lib/effect-layer";
 
 /** A test-owned runtime for a legacy consumer of fixture Streams. */

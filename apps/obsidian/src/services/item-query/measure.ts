@@ -10,6 +10,7 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
+import { Clock, Effect, Exit, Result, Schema, Scope } from "effect";
 import type { CliData, CliFlags } from "obsidian";
 
 import type { ItemQueryReader } from "@zotlit/db/item-query";
@@ -23,7 +24,6 @@ import {
   rejectionText,
 } from "@/lib/cli-params";
 import type { CliOutput, CliRejection } from "@/lib/cli-params";
-import { Effect, Result, Schema } from "@/lib/effect";
 
 import { queryFlags } from "./contract";
 import { decodeQuery } from "./decode";
@@ -157,8 +157,10 @@ export function registerQueryMeasureCli(
       new TypeError(rejectionText(rejection));
     const measured = yield* decodeCliParams(runParams, measureParams, {
       command: QUERY_MEASURE_COMMAND,
-    }).pipe(Effect.mapError(rejected));
-    yield* decodeQuery(query).pipe(Effect.mapError(rejected));
+    }).pipe(Effect.mapError((rejection) => rejected(rejection)));
+    yield* decodeQuery(query).pipe(
+      Effect.mapError((rejection) => rejected(rejection)),
+    );
     return yield* measureRun({ queryService, query, measured });
   });
 
@@ -200,7 +202,7 @@ const measureRun = Effect.fn("QueryCli.measureRun")(function* ({
   };
 
   const startedAt = now();
-  const startedAtEpochMs = Temporal.Now.instant().epochMilliseconds;
+  const startedAtEpochMs = yield* Clock.currentTimeMillis;
   // The service reports the request from any source: the timer, an unload,
   // or `zotlit:query-cancel` for a run with `id`.
   let firedAt: number | undefined;
@@ -224,28 +226,29 @@ const measureRun = Effect.fn("QueryCli.measureRun")(function* ({
           document.removeEventListener("visibilitychange", onVisibility),
         ),
     );
-    const timer = new AbortController();
+    // The timer cancels the run by closing this scope, which aborts its
+    // signal; the run still settles, so the report holds the cancel times.
+    const timerScope = yield* Scope.fork(yield* Scope.Scope);
+    const timer = yield* Effect.abortSignal.pipe(Scope.provide(timerScope));
     if (measured.cancelAfterMs !== undefined)
       yield* Effect.forkScoped(
         Effect.sleep(measured.cancelAfterMs).pipe(
-          Effect.andThen(Effect.sync(() => timer.abort())),
+          Effect.andThen(Scope.close(timerScope, Exit.void)),
         ),
       );
     return yield* Effect.result(
-      Effect.tryPromise({
-        try: (signal) =>
-          queryService.measure(query, AbortSignal.any([signal, timer.signal]), {
-            completed: (report) => {
-              measurement = report;
-            },
-            cancelled: (event) => {
-              if (event.phase === "requested") firedAt ??= now();
-              cancellationEvents.push(event);
-            },
-            heap: measured.heap === true,
-          }),
-        catch: (caught) => caught,
-      }),
+      Effect.tryPromise((signal) =>
+        queryService.measure(query, AbortSignal.any([signal, timer]), {
+          completed: (report) => {
+            measurement = report;
+          },
+          cancelled: (event) => {
+            if (event.phase === "requested") firedAt ??= now();
+            cancellationEvents.push(event);
+          },
+          heap: measured.heap === true,
+        }),
+      ),
     );
   }).pipe(Effect.scoped);
   const settledAt = now();
@@ -258,9 +261,9 @@ const measureRun = Effect.fn("QueryCli.measureRun")(function* ({
       ? "failed"
       : "cancelled";
   const error = Result.isFailure(settled)
-    ? settled.failure instanceof Error
-      ? settled.failure.message
-      : String(settled.failure)
+    ? settled.failure.cause instanceof Error
+      ? settled.failure.cause.message
+      : String(settled.failure.cause)
     : undefined;
 
   const envelope =

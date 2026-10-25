@@ -1,28 +1,32 @@
-import { randomUUID } from "node:crypto";
-import { link, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import type { CliData, FileSystemAdapter, Vault } from "obsidian";
-
-import type { CliRejection } from "@/lib/cli-params";
-import { Stream } from "@/lib/effect";
+import { Stream } from "effect";
 import {
   Cause,
+  Clock,
   Effect,
   Exit,
   Fiber,
   FiberMap,
   Result,
   Scope,
-} from "@/lib/effect";
+} from "effect";
+import type { RpcClientError } from "effect/rpc";
+import { randomUUID } from "node:crypto";
+import { link, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import type { CliData, FileSystemAdapter, Vault } from "obsidian";
+
+import type { CliRejection } from "@/lib/cli-params";
 import { openScope } from "@/lib/effect-scope";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
+import { systemCallError } from "@/lib/errno";
 import { getLogger } from "@/lib/log";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import { Service } from "@/services/service-base";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import type { SnapshotExpired } from "@/services/zotero-reads/rpc";
 
 import {
   QUERY_COMMAND,
@@ -58,12 +62,19 @@ interface QueryServiceDeps {
   vault: Vault;
 }
 
+/**
+ * How one ItemQuery call to the worker fails once `#send` answers its
+ * `DbUnavailable` with a diagnostic: the read snapshot expired, or the RPC
+ * transport failed.
+ */
+type ItemQueryError = SnapshotExpired | RpcClientError.RpcClientError;
+
 /** Forks a job into the map of jobs under its key. */
-type JobRunner = (
+type JobRunner = <A>(
   key: string,
-  job: Effect.Effect<unknown, unknown>,
+  job: Effect.Effect<A, ItemQueryError>,
   options: Effect.RunOptions,
-) => Fiber.Fiber<unknown, unknown>;
+) => Fiber.Fiber<A, ItemQueryError>;
 
 /**
  * The key of a job that the caller does not name. A query id has no `:`, so
@@ -81,7 +92,7 @@ const unnamedKey = (): string => `:${randomUUID()}`;
 export class QueryService extends Service {
   readonly #runtime;
   readonly #deps;
-  #jobs!: FiberMap.FiberMap<string, unknown>;
+  #jobs!: FiberMap.FiberMap<string, unknown, ItemQueryError>;
   #run!: JobRunner;
   ready: Promise<void>;
   #viewRuns = 0;
@@ -111,7 +122,7 @@ export class QueryService extends Service {
     const { scope, close } = openScope();
     stack.defer(close);
     this.#jobs = Effect.runSync(
-      Scope.provide(FiberMap.make<string, unknown>(), scope),
+      Scope.provide(FiberMap.make<string, unknown, ItemQueryError>(), scope),
     );
     this.#run = Effect.runSync(FiberMap.runtime(this.#jobs)());
     this.commit(stack.move());
@@ -266,7 +277,7 @@ export class QueryService extends Service {
    * id of a named job is free once the returned promise settles.
    */
   #start(
-    job: Effect.Effect<string, unknown>,
+    job: Effect.Effect<string, ItemQueryError>,
     signal: AbortSignal,
     id?: string,
   ): Promise<string> {
@@ -288,7 +299,7 @@ export class QueryService extends Service {
    * @returns `done: false` when the job was interrupted.
    */
   #settle<A>(
-    job: Effect.Effect<A, unknown>,
+    job: Effect.Effect<A, ItemQueryError>,
     signal: AbortSignal,
     id?: string,
   ): Promise<{ done: true; value: A } | { done: false }> {
@@ -297,7 +308,7 @@ export class QueryService extends Service {
       uninterruptible: true,
     });
     return Effect.runPromise(Fiber.await(fiber)).then((exit) => {
-      if (Exit.isSuccess(exit)) return { done: true, value: exit.value as A };
+      if (Exit.isSuccess(exit)) return { done: true, value: exit.value };
       if (!Cause.hasInterruptsOnly(exit.cause)) throw Cause.squash(exit.cause);
       return { done: false };
     });
@@ -310,7 +321,7 @@ export class QueryService extends Service {
   #job(
     command: QueryCommand,
     measure?: QueryObserver & { heap: boolean },
-  ): Effect.Effect<string, unknown> {
+  ): Effect.Effect<string, ItemQueryError> {
     const send = this.#send.bind(this);
     return Effect.gen(function* () {
       const id = randomUUID();
@@ -353,7 +364,7 @@ export class QueryService extends Service {
       stagePath?: string | undefined;
       measure?: (QueryObserver & { heap: boolean }) | undefined;
     } = {},
-  ): Effect.Effect<QueryAnswer, unknown> {
+  ): Effect.Effect<QueryAnswer, ItemQueryError> {
     const deps = this.#deps;
     const ready = this.ready;
     const report = (phase: CancellationEvent["phase"]) =>
@@ -456,12 +467,11 @@ function reportCancel(
   measure: QueryObserver | undefined,
   phase: CancellationEvent["phase"],
 ): Effect.Effect<void> {
-  return Effect.sync(() =>
-    measure?.cancelled?.({
-      phase,
-      atEpochMs: Temporal.Now.instant().epochMilliseconds,
-    }),
-  );
+  return Effect.gen(function* () {
+    if (measure?.cancelled === undefined) return;
+    const atEpochMs = yield* Clock.currentTimeMillis;
+    measure.cancelled({ phase, atEpochMs });
+  });
 }
 
 /** The staging path of an export, beside its output; removed with the job. */
@@ -500,15 +510,15 @@ function publishExport({
 }): Effect.Effect<string> {
   return Effect.tryPromise({
     try: () => link(stagePath, output),
-    catch: (error) => error,
+    catch: systemCallError,
   }).pipe(
     Effect.as(answer),
     Effect.catch((error) =>
-      error instanceof Error && "code" in error
+      error.code !== undefined
         ? Effect.succeed(
             failure(command, diagnostic("output-error", error.message)),
           )
-        : Effect.die(error),
+        : Effect.die(error.cause),
     ),
   );
 }

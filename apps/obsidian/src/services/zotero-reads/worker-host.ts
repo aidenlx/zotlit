@@ -1,8 +1,5 @@
 // Web Worker adapter, renderer side: spawns the ZoteroReads worker and keeps one client across worker deaths.
 import * as BrowserWorker from "@effect/platform-browser/BrowserWorker";
-import { RpcClient, RpcClientError, RpcSchema, RpcWorker } from "effect/rpc";
-import { tmpdir } from "node:os";
-
 import {
   Cause,
   Deferred,
@@ -16,7 +13,10 @@ import {
   Scope,
   Semaphore,
   Stream,
-} from "@/lib/effect";
+} from "effect";
+import { RpcClient, RpcClientError, RpcSchema, RpcWorker } from "effect/rpc";
+import { tmpdir } from "node:os";
+
 import { withLogCategory } from "@/lib/effect-log";
 import { layerHostLogPort } from "@/lib/effect-log-port";
 import { isScopeClosed } from "@/lib/effect-scope";
@@ -139,9 +139,13 @@ export const connectWorker = Effect.fnUntraced(function* (
   // A worker that never answers is terminated after a bounded wait.
   yield* Effect.addFinalizer(() =>
     Effect.gen(function* () {
-      const answered = yield* Effect.forEach(workers.values(), Deferred.await, {
-        concurrency: "unbounded",
-      }).pipe(Effect.timeoutOption(WORKER_CLOSE_TIMEOUT));
+      const answered = yield* Effect.forEach(
+        workers.values(),
+        (deferred) => Deferred.await(deferred),
+        {
+          concurrency: "unbounded",
+        },
+      ).pipe(Effect.timeoutOption(WORKER_CLOSE_TIMEOUT));
       if (Option.isNone(answered))
         yield* Effect.logWarning(
           "Database worker did not confirm its close in time; terminating it",
@@ -470,7 +474,9 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
       scope,
     );
     yield* Effect.forkIn(
-      Stream.runForEach(connection.client.Changes(), relay).pipe(
+      Stream.runForEach(connection.client.Changes(), (event) =>
+        relay(event),
+      ).pipe(
         Effect.matchCauseEffect({
           onFailure: (cause) =>
             Cause.hasInterruptsOnly(cause)
@@ -492,9 +498,9 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
     .withPermits(1)(
       Effect.gen(function* () {
         if (isScopeClosed(hostScope))
-          return yield* Effect.fail(
-            new DbUnavailable({ message: "The database worker stopped" }),
-          );
+          return yield* new DbUnavailable({
+            message: "The database worker stopped",
+          });
         const current = yield* Ref.get(runtime);
         return current.current ? current.current.client : yield* connectNew;
       }),

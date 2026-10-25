@@ -34,7 +34,7 @@ Project-specific: settings live in `SettingsService` under flat dot-notation key
 
 ## Logging
 
-Log through Effect, filed under a category with `withLogCategory` from `src/lib/effect-log.ts`. Every renderer `@/lib/effect` run entry point writes Effect's records to LogTape, where `layerLogging` (`src/services/log/service.ts`) owns the sinks and levels. `getLogger` from `src/lib/log.ts` is the legacy LogTape logger.
+Log through Effect, filed under a category with `withLogCategory` from `src/lib/effect-log.ts`. Every renderer Effect run entry point writes Effect's records to LogTape, where `layerLogging` (`src/services/log/service.ts`) owns the sinks and levels. `getLogger` from `src/lib/log.ts` is the legacy LogTape logger.
 
 ## UI text (JSON Language Packs)
 
@@ -58,7 +58,7 @@ When adding or changing a CLI schema or downloadable resource, inspect `src/serv
 
 ## Effect
 
-Use `@/lib/effect` for Effect in Obsidian: its runtime entry points default to Chromium scheduling in the renderer and workers. Worker bundles resolve `@/lib/effect` to `src/lib/effect-worker.ts` through the Vite alias and carry no LogTape; renderer entry points log through LogTape. `no-restricted-imports` enforces the boundary; `pnpm e2e:worker` checks real worker responsiveness.
+Import Effect from `effect`. The `effectEntry` Vite plugin (`scripts/effect-entry.ts`) resolves `effect` and `effect/Effect`, imported from plugin code, to the wrappers in `src/lib`, so the runtime entry points default to Chromium scheduling in the renderer and workers. Worker bundles resolve them to `src/lib/effect-worker.ts` and carry no LogTape; renderer entry points log through LogTape. `effectEntryCheck` fails a build whose entry chunk misses its wrapper, `no-restricted-imports` bans the wrapper paths, and `pnpm e2e:worker` checks real worker responsiveness.
 
 ## Workers
 
@@ -77,7 +77,9 @@ Vitest runs in Node with `"obsidian"` resolved to a local mock via `resolve.alia
 - `pnpm exec vitest run path/to/file.test.ts` — single file.
 - `pnpm exec vitest` — watch mode.
 
-Write an Effect case with `it.effect` from `@/lib/effect-vitest`: it adds the plugin's runtime services (browser scheduler, LogTape logger) to `@effect/vitest`'s TestClock and TestConsole. Provide a `Logger.layer` to capture logs (`src/services/service-layer.test.ts`).
+App-local `tsc` and `vitest` read workspace packages (`@zotlit/db`, `@zotlit/templates`, …) from their built `dist`, and only turbo builds them first. After a change in `packages/*`, or a merge that brings one in, run `pnpm exec turbo run build --filter=<package>` before them. A missing export from a workspace package (`TS2305`) usually means a stale `dist`.
+
+Write an Effect case with `it.effect` from `@effect/vitest`; vitest.config.ts resolves it through `effectEntry` to `src/lib/effect-vitest.ts`, which adds the plugin's runtime services (browser scheduler, LogTape logger) to `@effect/vitest`'s TestClock and TestConsole. Provide a `Logger.layer` to capture logs (`src/services/service-layer.test.ts`).
 
 `sleep` is an Obsidian global that doesn't exist in Node. Use `delay` from `@std/async` instead.
 

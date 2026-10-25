@@ -23,11 +23,10 @@
  * {@link MY_LIBRARY_SCOPE} with `invalid: true`.
  */
 import { regex } from "arkregex";
+import { Effect, Schema, SchemaGetter, SchemaIssue } from "effect";
 import * as v from "valibot";
 
 import type { Library } from "@zotlit/db";
-
-import { Effect, Schema, SchemaGetter, SchemaIssue } from "@/lib/effect";
 
 const groupID = v.pipe(v.number(), v.safeInteger(), v.minValue(1));
 
@@ -149,7 +148,7 @@ export function selectorKeySchema(message: (text: string) => string) {
               ),
             );
       }),
-      encode: SchemaGetter.transform(selectorKey),
+      encode: SchemaGetter.transform((selector) => selectorKey(selector)),
     }),
   );
 }

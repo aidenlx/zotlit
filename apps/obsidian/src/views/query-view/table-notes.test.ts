@@ -1,6 +1,8 @@
 // The vault properties of the Query View as the vault answers them: the
 // frontmatter of an Item's Literature Note, by the Note Index, or of the note
 // that holds the view.
+import { Stream } from "effect";
+import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -10,8 +12,6 @@ import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
-import { Stream } from "@/lib/effect";
-import { Effect } from "@/lib/effect";
 import type {
   CreationPlan,
   CreationProfileSelection,

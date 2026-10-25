@@ -5,11 +5,11 @@
 // reads Zotero's database only, so Zotero does not need to run.
 //
 // @see apps/obsidian/docs/adr/0071-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
+import { Effect } from "effect";
 import { debounce, ItemView, Keymap, Scope } from "obsidian";
 import type { Component, Modifier, WorkspaceLeaf } from "obsidian";
 import { createStore } from "zustand/vanilla";
 
-import { Effect } from "@/lib/effect";
 import { holdScopeWhileFocused } from "@/lib/focus-scope";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";

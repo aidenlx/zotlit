@@ -1,9 +1,9 @@
+import { Effect } from "effect";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Effect } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import {

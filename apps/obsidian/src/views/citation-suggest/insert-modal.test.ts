@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
+import { Effect } from "effect";
 import type { App, Editor, Modifier, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { Effect } from "@/lib/effect";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { SearchHit } from "@/services/item-lookup/service";

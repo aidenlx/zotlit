@@ -1,9 +1,12 @@
 // Lifecycle notices for citation formatting prerequisites.
-import { Effect, Layer } from "@/lib/effect";
-import type { Scope, Stream } from "@/lib/effect";
+import { Effect, Layer } from "effect";
+import type { Scope, Stream } from "effect";
+
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
+import { Notifier } from "@/lib/notifier";
+import type { NoticeHandle } from "@/lib/notifier";
 import { revealSetting } from "@/lib/open-settings";
 import { PluginHost } from "@/lib/plugin-host";
 
@@ -16,16 +19,13 @@ interface CitationStyleNoticeCopy {
   openSettings: () => void;
 }
 
-interface CitationStyleNoticeHandle {
-  hide(): void;
-}
-
 /** Show one recovery notice when the render cache first finds its selected style unavailable. */
 export const layerCitationStyleNotice = Layer.effectDiscard(
   Effect.gen(function* () {
     const host = yield* PluginHost;
     const renders = yield* BibliographyRender;
-    yield* watchCitationStyleMissing(renders, () =>
+    yield* watchCitationStyleMissing(
+      renders,
       showCitationStyleMissing(
         citationStyleMissingNotice(() => {
           revealSetting(
@@ -43,20 +43,20 @@ export const layerCitationStyleNotice = Layer.effectDiscard(
  * Watch the notice lifecycle without coupling its trigger to rendering. The
  * open notice hides when the Scope closes.
  */
-export function watchCitationStyleMissing(
+export function watchCitationStyleMissing<R>(
   renders: { readonly changes: Stream.Stream<BibliographyRenderState> },
-  showNotice: () => CitationStyleNoticeHandle,
-): Effect.Effect<void, never, Scope.Scope> {
+  showNotice: Effect.Effect<NoticeHandle, never, R>,
+): Effect.Effect<void, never, Scope.Scope | R> {
   return Effect.gen(function* () {
-    let notice: CitationStyleNoticeHandle | null = null;
+    let notice: NoticeHandle | null = null;
     yield* Effect.addFinalizer(() =>
-      Effect.sync(() => {
-        notice?.hide();
+      Effect.suspend(() => notice?.hide ?? Effect.void),
+    );
+    yield* forkEach(missingStyleChanges(renders.changes), () =>
+      Effect.map(showNotice, (shown) => {
+        notice = shown;
       }),
     );
-    yield* forkEach(missingStyleChanges(renders.changes), () => {
-      notice = showNotice();
-    });
   });
 }
 
@@ -70,10 +70,13 @@ export function citationStyleMissingNotice(
   };
 }
 
-export function showCitationStyleMissing(
-  copy: CitationStyleNoticeCopy,
-): BaseNotice {
-  const notice = new BaseNotice(
+export const showCitationStyleMissing = Effect.fn(
+  "CitationStyleNotice.showCitationStyleMissing",
+)(function* (copy: CitationStyleNoticeCopy) {
+  const notifier = yield* Notifier;
+  const run = Effect.runSyncWith(yield* Effect.context<never>());
+  let notice: NoticeHandle | null = null;
+  notice = yield* notifier.show(
     BaseNotice.render((renderer) => {
       renderer.setTitle(copy.title);
       renderer.addAction((button) => {
@@ -81,12 +84,12 @@ export function showCitationStyleMissing(
           .setButtonText(copy.action)
           .setCta()
           .onClick(() => {
-            notice.hide();
+            if (notice) run(notice.hide);
             copy.openSettings();
           });
       });
     }),
-    0,
+    { duration: 0 },
   );
   return notice;
-}
+});

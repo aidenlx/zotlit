@@ -1,8 +1,8 @@
+import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
 
 import type { Item, ItemRef } from "@zotlit/db";
 
-import { Effect } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";

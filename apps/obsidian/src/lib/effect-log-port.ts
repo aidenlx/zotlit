@@ -1,6 +1,3 @@
-import { setLibraryLogSink } from "@zotlit/shared/logging";
-import type { LibraryLogLevel, LibraryLogRecord } from "@zotlit/shared/logging";
-
 import {
   Cause,
   Clock,
@@ -15,7 +12,11 @@ import {
   References,
   Schema,
   Stream,
-} from "@/lib/effect";
+} from "effect";
+
+import { setLibraryLogSink } from "@zotlit/shared/logging";
+import type { LibraryLogLevel, LibraryLogRecord } from "@zotlit/shared/logging";
+
 import {
   LogCategory,
   LogTimestamp,
@@ -45,7 +46,7 @@ export const LogPortRecordSchema = Schema.Struct({
       stack: Schema.NullOr(Schema.String),
     }),
   ),
-  timestamp: Schema.Number,
+  timestamp: Schema.Finite,
 });
 
 export type LogPortRecord = typeof LogPortRecordSchema.Type;
@@ -289,7 +290,7 @@ export const layerHostLogPort = (
       );
       yield* Stream.fromQueue(records).pipe(
         Stream.runForEach((data) => {
-          const record = Schema.decodeUnknownOption(LogPortRecordSchema)(data);
+          const record = Schema.decodeOption(LogPortRecordSchema)(data);
           return Option.match(record, {
             onNone: () =>
               Effect.logWarning(malformedMessage).pipe(

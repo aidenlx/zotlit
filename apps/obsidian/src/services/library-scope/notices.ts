@@ -1,9 +1,12 @@
 // UI seam for Library Scope: the warn-once notice for a broken saved value.
-import { Effect, Layer } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
+import { Effect, Layer } from "effect";
+import type { Scope } from "effect";
+
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
+import { Notifier } from "@/lib/notifier";
+import type { NoticeHandle } from "@/lib/notifier";
 import { revealSetting } from "@/lib/open-settings";
 import { PluginHost } from "@/lib/plugin-host";
 
@@ -16,10 +19,6 @@ interface LibraryScopeNoticeCopy {
   openSettings: () => void;
 }
 
-interface LibraryScopeNoticeHandle {
-  hide(): void;
-}
-
 /**
  * Show one notice while the saved Library Scope is broken, and arm it again
  * once the value is repaired. The Settings warning is the persistent half of
@@ -30,7 +29,8 @@ export const layerLibraryScopeNotices = Layer.effectDiscard(
   Effect.gen(function* () {
     const host = yield* PluginHost;
     const scope = yield* LibraryScope;
-    yield* watchLibraryScopeInvalid(scope, () =>
+    yield* watchLibraryScopeInvalid(
+      scope,
       showLibraryScopeInvalid(
         libraryScopeInvalidNotice(() => {
           revealSetting(host.app, host.manifest.id, "settings_library_scope");
@@ -46,24 +46,22 @@ export const layerLibraryScopeNotices = Layer.effectDiscard(
  * user who breaks the value again is told again. The open notice hides when
  * the Scope closes.
  */
-export function watchLibraryScopeInvalid(
+export function watchLibraryScopeInvalid<R>(
   scope: Pick<LibraryScope["Service"], "invalid" | "changes">,
-  showNotice: () => LibraryScopeNoticeHandle,
-): Effect.Effect<void, never, Scope.Scope> {
+  showNotice: Effect.Effect<NoticeHandle, never, R>,
+): Effect.Effect<void, never, Scope.Scope | R> {
   return Effect.gen(function* () {
-    let notice: LibraryScopeNoticeHandle | null = null;
+    let notice: NoticeHandle | null = null;
     const apply = Effect.gen(function* () {
       if (!(yield* scope.invalid)) {
-        notice?.hide();
+        if (notice) yield* notice.hide;
         notice = null;
         return;
       }
-      notice ??= showNotice();
+      notice ??= yield* showNotice;
     });
     yield* Effect.addFinalizer(() =>
-      Effect.sync(() => {
-        notice?.hide();
-      }),
+      Effect.suspend(() => notice?.hide ?? Effect.void),
     );
     yield* apply;
     yield* forkEach(scopeChanges(scope.changes), () => apply);
@@ -81,10 +79,13 @@ export function libraryScopeInvalidNotice(
   };
 }
 
-export function showLibraryScopeInvalid(
-  copy: LibraryScopeNoticeCopy,
-): BaseNotice {
-  const notice = new BaseNotice(
+export const showLibraryScopeInvalid = Effect.fn(
+  "LibraryScopeNotices.showLibraryScopeInvalid",
+)(function* (copy: LibraryScopeNoticeCopy) {
+  const notifier = yield* Notifier;
+  const run = Effect.runSyncWith(yield* Effect.context<never>());
+  let notice: NoticeHandle | null = null;
+  notice = yield* notifier.show(
     BaseNotice.render((renderer) => {
       renderer.setTitle(copy.title);
       renderer.addText(copy.explanation);
@@ -93,12 +94,12 @@ export function showLibraryScopeInvalid(
           .setButtonText(copy.action)
           .setCta()
           .onClick(() => {
-            notice.hide();
+            if (notice) run(notice.hide);
             copy.openSettings();
           });
       });
     }),
-    0,
+    { duration: 0 },
   );
   return notice;
-}
+});

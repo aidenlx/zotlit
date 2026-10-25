@@ -1,10 +1,11 @@
 // The tag names in use in one Annotation's Library, as the Zotero database
 // answers them.
 
+import { Cause, Effect } from "effect";
+import type { ManagedRuntime } from "effect";
+
 import { resolveIndexedKeyLibraryIn } from "@zotlit/db";
 
-import { Cause, Effect } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { Menu } from "@mock/obsidian";
+import { Effect } from "effect";
 import { Keymap, MarkdownView, TFile } from "obsidian";
 import type {
   App,
@@ -17,7 +18,6 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { yieldToMain } from "@/lib/yield-to-main";
 import {

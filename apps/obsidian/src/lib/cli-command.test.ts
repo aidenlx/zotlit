@@ -1,10 +1,14 @@
+import { it } from "@effect/vitest";
+import { Deferred, Effect, Layer } from "effect";
 import { describe, expect } from "vitest";
-
-import { Deferred, Effect, Layer } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { cliRunner } from "./cli-command";
 import { buildRuntime } from "./effect-layer";
+
+/** The plugin's unload, which a CLI runner hears through its signal. */
+function pluginUnload(): AbortController {
+  return new AbortController();
+}
 
 /** A runner over an empty runtime, and the controller standing in for unload. */
 const runnerFixture = Effect.gen(function* () {
@@ -12,7 +16,7 @@ const runnerFixture = Effect.gen(function* () {
     Effect.tryPromise(async () => new AsyncDisposableStack()),
   );
   const runtime = buildRuntime(Layer.empty, stack);
-  const unload = new AbortController();
+  const unload = pluginUnload();
   return { run: cliRunner(runtime, unload.signal), unload };
 });
 
@@ -33,13 +37,10 @@ describe("cliRunner", () => {
       const error = new TypeError("bad parameter");
 
       const rejected = yield* Effect.flip(
-        Effect.tryPromise({
-          try: () => run(Effect.fail(error)),
-          catch: (cause) => cause,
-        }),
+        Effect.tryPromise(() => run(Effect.fail(error))),
       );
 
-      expect(rejected).toBe(error);
+      expect(rejected.cause).toBe(error);
     }),
   );
 
@@ -56,10 +57,8 @@ describe("cliRunner", () => {
       yield* Deferred.await(started);
       unload.abort(new Error("Plugin unloaded"));
 
-      const rejected = yield* Effect.flip(
-        Effect.tryPromise({ try: () => pending, catch: (cause) => cause }),
-      );
-      expect(rejected).toBe(unload.signal.reason);
+      const rejected = yield* Effect.flip(Effect.tryPromise(() => pending));
+      expect(rejected.cause).toBe(unload.signal.reason);
     }),
   );
 });

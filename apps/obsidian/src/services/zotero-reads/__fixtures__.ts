@@ -1,8 +1,8 @@
 /** The real service and adapter over a test's scoped RPC transport. */
+import { Context, Effect, Layer, Stream } from "effect";
+import type { Scope } from "effect";
 import { RpcSchema } from "effect/rpc";
 
-import { Context, Effect, Layer, Stream } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 
 import type { ZoteroReadsClient } from "./in-process";
@@ -18,7 +18,7 @@ export const readsFixture = Effect.fn("readsFixture")(function* (
   const context = yield* Effect.context<never>();
   const handle = yield* Effect.acquireRelease(
     Effect.promise(() => openReads(client, context)),
-    (handle) => Effect.promise(handle.close),
+    (handle) => Effect.promise(() => handle.close()),
   );
   return handle;
 });

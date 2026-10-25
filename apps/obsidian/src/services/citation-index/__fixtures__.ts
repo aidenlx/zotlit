@@ -1,11 +1,11 @@
 /** The real Citation Lookup layer over already-owned consumer fixture dependencies. */
+import type { Scope } from "effect";
+import { Context, Effect, Layer, Stream } from "effect";
 import type { App } from "obsidian";
 
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import type { Scope } from "@/lib/effect";
-import { Context, Effect, Layer, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import type { ParseClient } from "@/services/citation-parse/client";
 import { CitationParse } from "@/services/citation-parse/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
@@ -163,7 +163,7 @@ export const lookupFixture = Effect.fnUntraced(function* (
   const context = yield* Effect.context<never>();
   return yield* Effect.acquireRelease(
     Effect.promise(() => openLookup(client, context)),
-    (fixture) => Effect.promise(fixture.close),
+    (fixture) => Effect.promise(() => fixture.close()),
   );
 });
 
@@ -222,7 +222,7 @@ export function citationIndexFixture(
     layerCitationIndex(deps.openStore).pipe(
       Layer.provide(
         Layer.mergeAll(
-          Layer.succeed(ObsidianApp, deps.app),
+          layerHostApp(deps.app),
           Layer.succeed(
             ZoteroReads,
             stubService<ZoteroReads["Service"]>("ZoteroReads", {

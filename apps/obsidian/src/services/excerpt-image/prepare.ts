@@ -1,3 +1,5 @@
+// Prepares excerpt helpers once, then counts only helpers used by the final render.
+import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
 
 import {
@@ -9,8 +11,6 @@ import type { Annotation, AnnotationResolvers, TemplateLink } from "@zotlit/db";
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 
-// Prepares excerpt helpers once, then counts only helpers used by the final render.
-import { Effect } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 import type { Settings } from "@/services/settings/schema";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";

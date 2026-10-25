@@ -1,3 +1,4 @@
+import { Stream } from "effect";
 import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
@@ -10,7 +11,6 @@ import {
 } from "@zotlit/workbench/bridge";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
-import { Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { subscribe } from "@/lib/effect-stream";

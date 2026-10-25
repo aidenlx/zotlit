@@ -1,27 +1,32 @@
 // A Use Ledger built from its layer over a fake App.
+import { Context, DateTime, Effect, Layer, Stream } from "effect";
+import type { Scope } from "effect";
 import type { App } from "obsidian";
 
-import { Context, Effect, Layer, Stream } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import { toInstant } from "@/lib/effect-clock";
 import { buildRuntime } from "@/lib/effect-layer";
-import { ObsidianApp } from "@/lib/obsidian-app";
 
 import { plainUseLedger } from "./plain";
 import type { PlainUseLedger } from "./plain";
 import { layerUseLedger, UseLedger } from "./service";
 
-/** An App whose local storage is `storage`, with inert workspace events. */
+/** An App whose local storage is `storage`, with an in-memory workspace, metadata cache and an empty vault. */
 export function fakeApp(storage: {
   load: () => unknown;
   save?: (key: string, value: unknown) => void;
-  offref?: () => void;
+  workspace?: MemoryWorkspace;
+  metadataCache?: MemoryMetadataCache;
 }): App {
-  const ref = () => ({ e: { offref: storage.offref ?? (() => {}) } });
   return {
     loadLocalStorage: storage.load,
     saveLocalStorage: storage.save ?? (() => {}),
-    workspace: { onLayoutReady: () => {}, on: ref },
-    metadataCache: { on: ref },
+    workspace: storage.workspace ?? new MemoryWorkspace(),
+    metadataCache: storage.metadataCache ?? new MemoryMetadataCache(),
+    vault: new MemoryVault(),
   } as unknown as App;
 }
 
@@ -43,7 +48,7 @@ export const inertUseLedger: PlainUseLedger = {
   current: {},
   get: () => undefined,
   uses: {},
-  record: (_itemKey, kind, instant = Temporal.Now.instant()) => ({
+  record: (_itemKey, kind, instant = toInstant(DateTime.nowUnsafe())) => ({
     instant,
     kind,
   }),
@@ -52,5 +57,5 @@ export const inertUseLedger: PlainUseLedger = {
 };
 
 function ledgerOver(app: App): Layer.Layer<UseLedger> {
-  return layerUseLedger.pipe(Layer.provide(Layer.succeed(ObsidianApp, app)));
+  return layerUseLedger.pipe(Layer.provide(layerHostApp(app)));
 }

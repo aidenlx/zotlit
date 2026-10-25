@@ -6,6 +6,7 @@
 // creator and `loadFile`, the block through its code block processor.
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { delay } from "@std/async";
+import { Stream } from "effect";
 import type {
   App,
   EmbedContext,
@@ -18,7 +19,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import type {
   QueryViewOutcome,

@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { Stream } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
@@ -6,7 +7,6 @@ import type { Library } from "@zotlit/db";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Stream } from "@/lib/effect";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type {
   AvailableLibrary,

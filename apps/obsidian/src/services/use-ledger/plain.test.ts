@@ -1,12 +1,12 @@
+import { it } from "@effect/vitest";
+import { Stream } from "effect";
+import { Effect } from "effect";
 import { expect } from "vitest";
 
-import { Stream } from "@/lib/effect";
-import { Effect } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 
 import { buildUseLedger, fakeApp } from "./__fixtures__";
-import type { Ledger } from "./service";
+import type { PlainLedger as Ledger } from "./plain";
 
 // #1705: a throwing subscriber stays registered and sees both immediate Uses.
 it.effect("keeps a throwing listener subscribed for later Uses", () =>

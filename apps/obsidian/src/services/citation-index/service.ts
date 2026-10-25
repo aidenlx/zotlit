@@ -1,9 +1,6 @@
 // The renderer owns persisted note scans and citation membership; the parse client owns Markdown.
 
 import { abortable } from "@std/async/abortable";
-import { TFile } from "obsidian";
-import type { App, TAbstractFile } from "obsidian";
-
 import {
   Cause,
   Clock,
@@ -16,13 +13,21 @@ import {
   Scope,
   Stream,
   SubscriptionRef,
-} from "@/lib/effect";
+} from "effect";
+import { TFile } from "obsidian";
+import type { App, TAbstractFile } from "obsidian";
+
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { isScopeClosed } from "@/lib/effect-scope";
 import { startupBarrier } from "@/lib/effect-startup";
-import { forkEach } from "@/lib/effect-stream";
+import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
+import { Vault } from "@/lib/obsidian-vault";
+import type { VaultEvent } from "@/lib/obsidian-vault";
+import { Workspace } from "@/lib/obsidian-workspace";
 import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import { CitationParse } from "@/services/citation-parse/service";
 import { LibraryScope } from "@/services/library-scope/service";
@@ -201,6 +206,9 @@ export const layerCitationIndex = (openStore = openCitekeyStore) =>
 function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
   return Effect.gen(function* () {
     const app = yield* ObsidianApp;
+    const metadata = yield* MetadataCache;
+    const workspace = yield* Workspace;
+    const vault = yield* Vault;
     const db = yield* ZoteroReads;
     const libraryScope = yield* LibraryScope;
     const noteIndex = yield* NoteIndex;
@@ -265,7 +273,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
           ? inertObservation()
           : run(lookup.observe(changed)),
       whenResolved: () =>
-        runPromiseExit(lookup.whenResolved()).then(() => undefined),
+        runPromiseExit(lookup.whenResolved).then(() => undefined),
     };
     const joinSources = (
       citations: Parameters<typeof readReferenceSources>[1],
@@ -320,7 +328,11 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
     let backfillBuild = -1;
     let backfillFailed = false;
     let stopped = false;
-    const lifetimeStop = new AbortController();
+    // Aborted as the layer stops, before the child scope closes.
+    const lifetimeScope = yield* Scope.fork(yield* Scope.Scope);
+    const lifetimeSignal = yield* Effect.abortSignal.pipe(
+      Scope.provide(lifetimeScope),
+    );
     const state = yield* SubscriptionRef.make<CitationIndexState>({
       backfilled,
       backfillFailed,
@@ -388,8 +400,8 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       } = {},
     ): Promise<DocumentCitationSet> {
       const lifetime = signal
-        ? AbortSignal.any([signal, lifetimeStop.signal])
-        : lifetimeStop.signal;
+        ? AbortSignal.any([signal, lifetimeSignal])
+        : lifetimeSignal;
       lifetime.throwIfAborted();
       const scan =
         parsed?.record ?? (await abortable(coverFile(file), lifetime));
@@ -530,7 +542,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
 
     function getParsedNote(
       file: TFile,
-      signal = lifetimeStop.signal,
+      signal = lifetimeSignal,
     ): Promise<ParsedNote> {
       return readParsedNote(file, {
         vault: app.vault,
@@ -539,10 +551,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       });
     }
 
-    async function getParsedDocument(
-      file: TFile,
-      signal = lifetimeStop.signal,
-    ) {
+    async function getParsedDocument(file: TFile, signal = lifetimeSignal) {
       for (;;) {
         const generation = generations.get(file.path);
         const { mtime, size } = file.stat;
@@ -798,7 +807,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
           ? yield* Effect.tryPromise(() =>
               composeDocument(file, scan, {
                 ...captured,
-                lifetime: lifetimeStop.signal,
+                lifetime: lifetimeSignal,
               }),
             )
           : null;
@@ -1094,7 +1103,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       pendingScans.get(path)?.stop.abort();
       generations.set(path, generation);
       const stop = new AbortController();
-      const signal = AbortSignal.any([stop.signal, lifetimeStop.signal]);
+      const signal = AbortSignal.any([stop.signal, lifetimeSignal]);
       const pending = {
         path,
         generation,
@@ -1209,7 +1218,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         const { mtime, size } = file.stat;
         const body = await abortable(
           app.vault.cachedRead(file),
-          lifetimeStop.signal,
+          lifetimeSignal,
         );
         if (stale(build)) return null;
         if (
@@ -1544,53 +1553,53 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         stopped = true;
-        lifetimeStop.abort();
-        publishState();
-      }),
+      }).pipe(
+        Effect.andThen(Scope.close(lifetimeScope, Exit.void)),
+        Effect.andThen(Effect.sync(publishState)),
+      ),
     );
     const intake = yield* obsidianEvents<{
-      changed: [TFile, string];
-      deleted: [TFile];
-      resolve: [];
-      resolved: [];
-      rename: [TAbstractFile, string];
+      metadata: [MetadataEvent];
+      rename: [Extract<VaultEvent, { _tag: "rename" }>];
       layoutReady: [];
     }>().pipe(Scope.provide(scope));
     yield* intake
       .consume((event) =>
         Effect.sync(() => {
           switch (event.type) {
-            case "changed": {
-              const [file, data] = event.args;
-              if (!isMarkdownFile(file)) return;
-              // Start synchronously so a following rename/delete supersedes this generation.
-              const parsed = scan(file, data);
-              runner.runFork(recover(Effect.tryPromise(() => parsed)));
+            case "metadata": {
+              const [change] = event.args;
+              if (change._tag === "changed") {
+                if (!isMarkdownFile(change.file)) return;
+                // Start synchronously so a following rename/delete supersedes this generation.
+                const parsed = scan(change.file, change.data);
+                runner.runFork(recover(Effect.tryPromise(() => parsed)));
+              } else if (change._tag === "deleted") drop(change.file.path);
               emit("cited-by-invalidated");
               break;
             }
-            case "deleted":
-              drop(event.args[0].path);
+            case "rename": {
+              const [{ file, oldPath }] = event.args;
+              move(oldPath, file.path);
               emit("cited-by-invalidated");
               break;
-            case "rename":
-              move(event.args[1], event.args[0].path);
-              emit("cited-by-invalidated");
-              break;
+            }
             case "layoutReady":
               startBackfill();
               break;
-            default:
-              emit("cited-by-invalidated");
           }
         }),
       )
       .pipe(Effect.forkIn(scope, { startImmediately: true }));
-    for (const event of ["changed", "deleted", "resolve", "resolved"] as const)
-      yield* intake
-        .on(event, app.metadataCache, event)
-        .pipe(Scope.provide(scope));
-    yield* intake.on("rename", app.vault, "rename").pipe(Scope.provide(scope));
+    // The metadata cache's events join the vault's in one ordered intake:
+    // forkEach hands each over inside Obsidian's callback.
+    yield* forkEach(metadata.changes, intake.callback("metadata")).pipe(
+      Scope.provide(scope),
+    );
+    yield* forkEach(
+      filterTag(vault.changes, "rename"),
+      intake.callback("rename"),
+    ).pipe(Scope.provide(scope));
     yield* forkEach(settings.changes, applySettings).pipe(Scope.provide(scope));
     // IndexedDB can stall; startup waits the shared bound and the open goes on.
     // Scans and drops made before a late open never reached the store, so the
@@ -1631,7 +1640,10 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         log("warn", "Citation index store is still opening", {}),
       ),
     ).pipe(Scope.provide(scope));
-    app.workspace.onLayoutReady(intake.callback("layoutReady"));
+    yield* workspace.layoutReady.pipe(
+      Effect.andThen(Effect.sync(() => intake.callback("layoutReady")())),
+      Effect.forkIn(scope, { startImmediately: true }),
+    );
     return {
       current,
       changes,
@@ -1671,21 +1683,32 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       ) {
         return yield* Effect.tryPromise(() => getFileScan(...args));
       }),
+      // Interruption cancels these reads; the index's lifetime still bounds them.
       getDocumentCitationSet: Effect.fn("CitationIndex.getDocumentCitationSet")(
-        function* (...args: Parameters<typeof getDocumentCitationSet>) {
-          return yield* Effect.tryPromise(() =>
-            getDocumentCitationSet(...args),
+        function* (
+          file: TFile,
+          options: Omit<
+            NonNullable<Parameters<typeof getDocumentCitationSet>[1]>,
+            "signal"
+          > = {},
+        ) {
+          return yield* Effect.tryPromise((signal) =>
+            getDocumentCitationSet(file, { ...options, signal }),
           );
         },
       ),
       getParsedNote: Effect.fn("CitationIndex.getParsedNote")(function* (
-        ...args: Parameters<typeof getParsedNote>
+        file: TFile,
       ) {
-        return yield* Effect.tryPromise(() => getParsedNote(...args));
+        return yield* Effect.tryPromise((signal) =>
+          getParsedNote(file, AbortSignal.any([signal, lifetimeSignal])),
+        );
       }),
       getParsedDocument: Effect.fn("CitationIndex.getParsedDocument")(
-        function* (...args: Parameters<typeof getParsedDocument>) {
-          return yield* Effect.tryPromise(() => getParsedDocument(...args));
+        function* (file: TFile) {
+          return yield* Effect.tryPromise((signal) =>
+            getParsedDocument(file, AbortSignal.any([signal, lifetimeSignal])),
+          );
         },
       ),
       whenIndexed: Effect.fn("CitationIndex.whenIndexed")(function* (

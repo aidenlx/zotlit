@@ -1,3 +1,15 @@
+import { it } from "@effect/vitest";
+import {
+  Effect,
+  Exit,
+  Fiber,
+  Latch,
+  Layer,
+  PubSub,
+  Schema,
+  Scope,
+  Stream,
+} from "effect";
 import { TestClock } from "effect/testing";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -14,24 +26,13 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 
-import {
-  Effect,
-  Exit,
-  Fiber,
-  Latch,
-  Layer,
-  PubSub,
-  Scope,
-  Stream,
-} from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
-
 import { layerRcRef } from "./connection";
 import { Connection } from "./connection";
 import type { ConnectionOpener } from "./connection";
 import type { HandlersOptions } from "./handlers";
 import { makeInProcessClient } from "./in-process";
 import type { ZoteroReadsClient } from "./in-process";
+import { Instant } from "./instant-codec";
 import { DbUnavailable, SnapshotExpired, SnapshotId } from "./rpc";
 import type { ChangeEvent, ReadsConfig, SegmenterBinary } from "./rpc";
 import { inProcessReadsService, sharedClientOpener } from "./test-utils";
@@ -334,9 +335,7 @@ describe("ZoteroReads operations", () => {
       expect(family.childNotes).toMatchObject([
         { key: "NTE22345", title: "Methods", parentItemID: 1 },
       ]);
-      expect(family.childNotes[0]!.dateModified).toBeInstanceOf(
-        Temporal.Instant,
-      );
+      expect(Schema.is(Instant)(family.childNotes[0]!.dateModified)).toBe(true);
       expect(unknown).toEqual({ relatedItems: [], childNotes: [] });
     }),
   );
@@ -355,8 +354,10 @@ describe("ZoteroReads operations", () => {
         expect(missing).toBeNull();
         expect(source!.username).toBe("reader");
         expect(
-          source!.annotationsByAttachment.get(10)![0]!.dateAdded,
-        ).toBeInstanceOf(Temporal.Instant);
+          Schema.is(Instant)(
+            source!.annotationsByAttachment.get(10)![0]!.dateAdded,
+          ),
+        ).toBe(true);
 
         const ctx = buildNoteContextFromSource(source!, noteResolvers);
         expect(ctx.title).toBe("Main Study");
@@ -499,7 +500,7 @@ describe("ZoteroReads operations", () => {
           linkMode: 0,
         },
       ]);
-      expect(attachments[0]!.dateModified).toBeInstanceOf(Temporal.Instant);
+      expect(Schema.is(Instant)(attachments[0]!.dateModified)).toBe(true);
     }),
   );
 
@@ -555,7 +556,7 @@ describe("ZoteroReads operations", () => {
         expect(notes).toMatchObject([
           { key: "NTE22345", note: "<p>body</p>", title: "Methods" },
         ]);
-        expect(notes[0]!.dateAdded).toBeInstanceOf(Temporal.Instant);
+        expect(Schema.is(Instant)(notes[0]!.dateAdded)).toBe(true);
       }),
   );
 
@@ -647,7 +648,7 @@ describe("ZoteroReads operations", () => {
           ["IMGE2345", 200, "image/png"],
           ["ATCH2345", 1, "application/pdf"],
         ]);
-        expect(found[0]!.dateAdded).toBeInstanceOf(Temporal.Instant);
+        expect(Schema.is(Instant)(found[0]!.dateAdded)).toBe(true);
         expect(otherLibrary).toEqual([]);
       }),
   );
@@ -886,8 +887,8 @@ describe("ZoteroReads operations", () => {
           ],
           [{ itemID: 1, note: null, trashed: false }],
         ]);
-        expect(slices[0]![0]!.note!.dateModified).toBeInstanceOf(
-          Temporal.Instant,
+        expect(Schema.is(Instant)(slices[0]![0]!.note!.dateModified)).toBe(
+          true,
         );
       }),
   );
@@ -1755,8 +1756,8 @@ describe("ZoteroReads annotation-family operations", () => {
         expect(sources.attachments.map((a) => a.indexedKey)).toEqual([
           "ATCH2345",
         ]);
-        expect(sources.attachments[0]!.dateAdded).toBeInstanceOf(
-          Temporal.Instant,
+        expect(Schema.is(Instant)(sources.attachments[0]!.dateAdded)).toBe(
+          true,
         );
         expect(sources.parentItems.map((i) => i.key)).toEqual(["MAIN2345"]);
         expect(sources.tagsByItemID.get(1)!.map((tag) => tag.tag.name)).toEqual(
@@ -1958,8 +1959,8 @@ describe("ZoteroReads SearchItems", () => {
           "RELA2345",
           "RELB2345",
         ]);
-        expect(result.first.value[0]!.item.dateAdded).toBeInstanceOf(
-          Temporal.Instant,
+        expect(Schema.is(Instant)(result.first.value[0]!.item.dateAdded)).toBe(
+          true,
         );
         expect(result.second.value).toEqual(result.first.value);
         // The build reads ids and rows; a later search only hydrates.

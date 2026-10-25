@@ -1,8 +1,8 @@
+import { it } from "@effect/vitest";
+import { Deferred, Effect, Exit, Scope } from "effect";
 import { expect } from "vitest";
 
-import { Deferred, Effect, Exit, Scope } from "@/lib/effect";
 import { makeInMemoryRpcProtocols } from "@/lib/effect-rpc-in-process";
-import { it } from "@/lib/effect-vitest";
 
 // #1739: an Ack reaches the server on a later microtask (#1738). Once the
 // pair's scope has closed, that microtask must deliver nothing. The server

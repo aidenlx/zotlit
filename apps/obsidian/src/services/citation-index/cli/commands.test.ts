@@ -1,9 +1,9 @@
 // Contract 4 selectors, diagnostics and output over the real Citation Index.
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { expect } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import {
   annotationRows,
   annotationUri,
@@ -28,13 +28,11 @@ const setup = Effect.fn("CitationsCliTest.setup")(function* (
   );
   h.workspace.layoutReady();
   yield* Effect.promise(() => h.index.whenIndexed());
-  Object.assign(h.app.vault, {
-    getName: () => "Test Vault",
-    adapter: { getBasePath: () => "/test" },
-  });
+  Object.assign(h.app.vault, { getName: () => "Test Vault" });
   const cli = fakeCliHost();
   registerCitationsCli(cli.host, {
     app: h.app,
+    basePath: "/test",
     citationIndex: h.index,
     zoteroPref: {
       current: Effect.succeed({

@@ -2,6 +2,8 @@ import { delay } from "@std/async";
 import type { App, EventRef } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+
 import { buildNoteIndex } from "./note-index/__fixtures__";
 import type { PlainNoteIndex } from "./note-index/plain";
 import { Service, ServiceContainer } from "./service-base";
@@ -71,21 +73,45 @@ it("disposes services newest first, so an older service keeps its vault and meta
   const app = {
     vault,
     metadataCache,
-    workspace: { onLayoutReady: () => undefined },
+    workspace: new MemoryWorkspace(),
   } as unknown as App;
 
   const stack = new AsyncDisposableStack();
   const { services } = new ServiceContainer(stack, () => undefined)
     .useValue({ noteIndex: () => buildNoteIndex(app, stack) })
     .use({ newer: ({ noteIndex }) => new ReadsOnTeardown(noteIndex) });
-  expect(vault.listened().sort()).toEqual(["delete", "rename"]);
-  expect(metadataCache.listened().sort()).toEqual(["changed", "deleted"]);
+  expect(vault.listened().sort()).toEqual([
+    "create",
+    "delete",
+    "modify",
+    "rename",
+  ]);
+  // The Vault tag's one listener per name; the Note Index adds none of its own.
+  expect([...vault.listeners.values()].map((set) => set.size)).toEqual([
+    1, 1, 1, 1,
+  ]);
+  expect(metadataCache.listened().sort()).toEqual([
+    "changed",
+    "deleted",
+    "resolve",
+    "resolved",
+  ]);
 
   const disposed = stack.disposeAsync();
   await services.newer.started.promise;
   await delay(20);
-  expect(vault.listened().sort()).toEqual(["delete", "rename"]);
-  expect(metadataCache.listened().sort()).toEqual(["changed", "deleted"]);
+  expect(vault.listened().sort()).toEqual([
+    "create",
+    "delete",
+    "modify",
+    "rename",
+  ]);
+  expect(metadataCache.listened().sort()).toEqual([
+    "changed",
+    "deleted",
+    "resolve",
+    "resolved",
+  ]);
 
   services.newer.finish();
   await disposed;

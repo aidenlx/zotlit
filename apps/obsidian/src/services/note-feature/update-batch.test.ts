@@ -1,4 +1,4 @@
-import { Effect, Exit, Stream } from "effect";
+import { DateTime, Deferred, Effect, Exit, Stream } from "effect";
 import type { TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -190,10 +190,13 @@ function seedDatabase(): NodeDatabaseClient {
  */
 function itemsIn(byLibrary: ReadonlyMap<number, number>): void {
   for (const [itemID, libraryID] of byLibrary) {
-    const modified = Temporal.PlainDateTime.from("2024-01-01T00:00")
-      .add({ minutes: 1000 - itemID })
-      .toString({ smallestUnit: "second" })
-      .replace("T", " ");
+    const modified = DateTime.formatIso(
+      DateTime.add(DateTime.makeUnsafe("2024-01-01T00:00:00Z"), {
+        minutes: 1000 - itemID,
+      }),
+    )
+      .replace("T", " ")
+      .slice(0, 19);
     db.$client.exec(`
       insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
         values (${itemID}, 1, '${modified}', '${modified}', ${libraryID}, 'ITEM${itemID}');
@@ -333,7 +336,7 @@ describe("classify through the DisplayRefs stream", () => {
     });
     const result = await modal.onRun({
       onItemSettled: vi.fn(),
-      signal: new AbortController().signal,
+      stop: Deferred.makeUnsafe<void>(),
     });
 
     expect(result).toMatchObject({ created: 2, failed: 0 });
@@ -476,7 +479,7 @@ it.each([false, true])(
       onItemSettled: () => {
         expect(report).not.toHaveBeenCalled();
       },
-      signal: new AbortController().signal,
+      stop: Deferred.makeUnsafe<void>(),
     });
     expect(result).toMatchObject({ created: 2, failed: 0 });
     expect(report).toHaveBeenCalledExactlyOnceWith({
@@ -525,7 +528,7 @@ it("runs every row of one update batch under one outcome scope, released after t
   });
   const result = await modal.onRun({
     onItemSettled: vi.fn(),
-    signal: new AbortController().signal,
+    stop: Deferred.makeUnsafe<void>(),
   });
 
   expect(result).toMatchObject({ created: 1, updated: 1, failed: 0 });
@@ -661,7 +664,7 @@ it("classifies conflicting Companion Profiles as kept rows before any write or p
   expect(settingsUpdate).not.toHaveBeenCalled();
   const result = await modal.onRun({
     onItemSettled: vi.fn(),
-    signal: new AbortController().signal,
+    stop: Deferred.makeUnsafe<void>(),
   });
   expect(result).toMatchObject({
     created: 1,
@@ -730,7 +733,7 @@ it.each([true, false])(
     expect(
       await options.onRun({
         onItemSettled,
-        signal: new AbortController().signal,
+        stop: Deferred.makeUnsafe<void>(),
       }),
     ).toMatchObject({ created: 0, updated: 0, failed: 1 });
     expect(onItemSettled).toHaveBeenCalledExactlyOnceWith({
@@ -865,7 +868,7 @@ async function classifyMixedBatch(deps: BatchUpdateDeps) {
   const choice = (scope: BatchProfileChoice["scope"]) =>
     choices.find((entry) => entry.scope === scope)!;
   const run = () =>
-    modal.onRun({ onItemSettled, signal: new AbortController().signal });
+    modal.onRun({ onItemSettled, stop: Deferred.makeUnsafe<void>() });
   const onItemSettled = vi.fn();
   return {
     modal,

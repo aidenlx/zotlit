@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
+import { Effect } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
-import { Effect } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
@@ -39,7 +39,7 @@ describe("hover settings", () => {
         binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
           "PandocEngine",
           {
-            getStatus: () => Effect.succeed({ kind: "absent" }),
+            getStatus: Effect.succeed({ kind: "absent" }),
           },
         ),
         runSync: Effect.runSync,
@@ -84,7 +84,7 @@ describe("citation source settings", () => {
         binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
           "PandocEngine",
           {
-            getStatus: () => Effect.succeed({ kind: "absent" }),
+            getStatus: Effect.succeed({ kind: "absent" }),
           },
         ),
         runSync: Effect.runSync,

@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 // Insert citation from a Library View row goes to the note the researcher was
 // in last, which Obsidian no longer names once the Library View tab is active.
+import { Effect } from "effect";
 import { MarkdownView } from "obsidian";
 import type { App, Editor, TFile, WorkspaceLeaf } from "obsidian";
 import { expect, it, vi } from "vitest";
 
-import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { stateEditor } from "@/views/annot-view/__fixtures__/editor";
 

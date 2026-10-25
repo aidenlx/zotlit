@@ -1,10 +1,10 @@
+// Test support: ZoteroReads over `:memory:` fixture databases, for the service and its consumers.
+import { Effect, Layer, Stream } from "effect";
+import type { Scope } from "effect";
+
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
-
-// Test support: ZoteroReads over `:memory:` fixture databases, for the service and its consumers.
-import { Effect, Layer, Stream } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
 
 import { testReads } from "./__fixtures__";
 import type { TestReads } from "./__fixtures__";
@@ -85,7 +85,9 @@ export function inProcessReadsService(
   return testReads(
     Effect.andThen(
       Effect.promise(() => opening),
-      Effect.map(inProcessClient(layerRcRef(opener), handlers), wrap),
+      Effect.map(inProcessClient(layerRcRef(opener), handlers), (client) =>
+        wrap(client),
+      ),
     ),
   );
 }

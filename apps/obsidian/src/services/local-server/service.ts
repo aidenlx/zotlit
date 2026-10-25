@@ -1,5 +1,14 @@
 import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
+import {
+  Cause,
+  Context,
+  Effect,
+  Layer,
+  PubSub,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 import type { Env } from "hono";
 import { Hono } from "hono/tiny";
 
@@ -10,15 +19,6 @@ import type {
   UpdateScope,
 } from "@zotlit/protocol";
 
-import {
-  Cause,
-  Context,
-  Effect,
-  Layer,
-  PubSub,
-  Stream,
-  SubscriptionRef,
-} from "@/lib/effect";
 import { valueOr } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
@@ -371,10 +371,10 @@ export const layerLocalServer: Layer.Layer<
     );
 
     const noteStatus: NoteStatusSource = {
-      getIndexedItemKeys: () => run(noteIndex.getIndexedItemKeys()),
+      getIndexedItemKeys: () => run(noteIndex.getIndexedItemKeys),
       whenIndexed: async () => {
         if (stoppedFlag) return;
-        valueOr(await runPromiseExit(noteIndex.whenIndexed()), undefined);
+        valueOr(await runPromiseExit(noteIndex.whenIndexed), undefined);
       },
     };
 
@@ -449,10 +449,11 @@ export const layerLocalServer: Layer.Layer<
       dbUpdated: Stream.fromPubSub(dbUpdated),
       updateManyRequests: Stream.fromPubSub(updateMany),
       importNotesRequests: Stream.fromPubSub(importNotes),
-      mount: (basePath, routes) =>
+      mount: Effect.fn("LocalServer.mount")((basePath, routes) =>
         Effect.sync(() => {
           app.route(basePath, routes);
         }),
+      ),
     });
   }).pipe(withLogCategory("local-server")),
 );

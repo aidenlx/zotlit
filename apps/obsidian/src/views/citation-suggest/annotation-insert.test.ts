@@ -8,6 +8,9 @@ import type { EditorView } from "@codemirror/view";
 import type { App, Editor, MarkdownFileInfo, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { setup as repositorySetup } from "@/services/annotation-repository/__fixtures__";
 import type { NoteFeature } from "@/services/note-feature";
 import { buildUseLedger } from "@/services/use-ledger/__fixtures__";
@@ -38,12 +41,9 @@ function host(): App {
     saveLocalStorage: (_key: string, value: unknown) => {
       stored = structuredClone(value);
     },
-    workspace: {
-      on: () => ({ e: { offref: () => {} } }),
-      offref: () => {},
-      onLayoutReady: () => {},
-    },
-    metadataCache: { on: () => ({ e: { offref: () => {} } }) },
+    workspace: new MemoryWorkspace(),
+    metadataCache: new MemoryMetadataCache(),
+    vault: new MemoryVault(),
   } as unknown as App;
 }
 

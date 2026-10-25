@@ -1,13 +1,13 @@
 import "@mock/dom-parser";
+import { it } from "@effect/vitest";
 import { TFile } from "@mock/obsidian";
+import { Effect } from "effect";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, vi } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ProfileReader } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
@@ -80,11 +80,11 @@ async function cslVault({
   registerPandocResolve({ ...host, manifest: { version: "2.0.1-test" } }, {
     app: {
       vault: {
-        adapter: { getBasePath: () => "/vault" },
         getFileByPath: (path: string) => (path === file.path ? file : null),
       },
       metadataCache,
     },
+    basePath: "/vault",
     zoteroPref: { current: Effect.succeed({ dataDir }) },
     settings: { current: Effect.succeed(settings) },
     profile: effectProfile(profileReader(settings, metadataCache)),

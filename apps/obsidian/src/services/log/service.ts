@@ -6,10 +6,6 @@ import {
   reset,
 } from "@logtape/logtape";
 import type { Config, LogLevel, Sink } from "@logtape/logtape";
-import type { Plugin } from "obsidian";
-
-import { devToolsFormatter } from "@zotlit/shared/log-formatter";
-
 import {
   Cause,
   Console,
@@ -19,7 +15,11 @@ import {
   Layer,
   Scope,
   Stream,
-} from "@/lib/effect";
+} from "effect";
+import type { Plugin } from "obsidian";
+
+import { devToolsFormatter } from "@zotlit/shared/log-formatter";
+
 import { PluginSettings } from "@/services/settings/service";
 import type { Settings } from "@/services/settings/service";
 
@@ -51,8 +51,12 @@ export function layerLogOutput(
   return Layer.succeed(
     LogOutput,
     LogOutput.of({
-      configureSync: (config) => Effect.try(() => configureSync(config)),
-      configure: (config) => Effect.tryPromise(() => configure(config)),
+      configureSync: Effect.fn("LogOutput.configureSync")((config) =>
+        Effect.try(() => configureSync(config)),
+      ),
+      configure: Effect.fn("LogOutput.configure")((config) =>
+        Effect.tryPromise(() => configure(config)),
+      ),
       reset: Effect.tryPromise(() => reset()),
       openFile: Effect.acquireDisposable(
         Effect.tryPromise(() => createVaultFileSink(adapter, path)),
@@ -122,7 +126,7 @@ export const layerLogging: Layer.Layer<
       );
 
     yield* logSettingsChanges(settings).pipe(
-      Stream.runForEach(apply),
+      Stream.runForEach((next) => apply(next)),
       Effect.forkScoped,
     );
   }),
@@ -145,7 +149,7 @@ function logSettingsChanges(
 ): Stream.Stream<LogSettings> {
   return settings.changes.pipe(
     Stream.filter((value): value is Readonly<Settings> => value !== null),
-    Stream.map(logSettingsOf),
+    Stream.map((value) => logSettingsOf(value)),
     Stream.buffer({ capacity: 1, strategy: "sliding" }),
   );
 }

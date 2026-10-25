@@ -1,4 +1,5 @@
-import { Effect, Stream } from "@/lib/effect";
+import { DateTime, Effect, Stream } from "effect";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { subscribe } from "@/lib/effect-stream";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { plainTestParseClient } from "@/lib/__fixtures__/parse-client";
@@ -55,6 +56,7 @@ type ProfileFixture = Pick<Settings, "profiles" | "defaultDocument">;
 import { seedWorksSql } from "@/services/zotero-reads/test-utils";
 import { applyCitationPresentation } from "@/views/citation-presentation/presentation";
 import type { CitationPresentationChoice } from "@/views/citation-presentation/presentation";
+import { fakeFetchClient } from "@/lib/__fixtures__/fake-fetch";
 import { runPandocExport } from "@/views/pandoc-export/register";
 import type { PandocExportDeps } from "@/views/pandoc-export/register";
 import { ReferencesView } from "@/views/references/view";
@@ -180,15 +182,14 @@ const WASM_PATH = join(
 function pandocEngineHandle(engine: CitationEngine) {
   return {
     binary: stubService<ManagedBinaryApi<CitationEngine>>("PandocEngine", {
-      getStatus: () =>
-        Effect.succeed({
+      getStatus: Effect.succeed({
           kind: "installed",
           version: "test",
           binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
         }),
       changes: Stream.empty,
-      getEngine: () => Effect.succeed(engine),
-      decline: () => Effect.void,
+      getEngine: Effect.succeed(engine),
+      decline: Effect.void,
     }),
     runSync: Effect.runSync,
     runPromise: Effect.runPromise,
@@ -422,10 +423,10 @@ export async function openCitationVault({
     profile: profileReader(profileSettings, harness.metadataCache),
     app: {
       metadataCache: harness.metadataCache,
-      vault: {
+      vault: MemoryVault.with({
         getFileByPath: (path: string) =>
           harness.metadataCache.files.get(path) ?? null,
-      },
+      }),
     } as unknown as App,
     db: harness.db,
     citationIndex: harness.index,
@@ -600,11 +601,11 @@ function sidebarApp({ app, draft }: CitationIndexHarness): App {
  * polls, until `settled` holds.
  */
 async function settle(settled: () => boolean): Promise<void> {
-  const deadline = Temporal.Now.instant().add({
+  const deadline = DateTime.add(DateTime.nowUnsafe(), {
     milliseconds: TIMEOUT / 2,
   });
   while (!settled()) {
-    if (Temporal.Instant.compare(Temporal.Now.instant(), deadline) > 0) {
+    if (DateTime.isGreaterThan(DateTime.nowUnsafe(), deadline)) {
       throw new Error("a surface never settled");
     }
     await act(async () => {
@@ -650,6 +651,10 @@ function exportAdapter({
       dataDir,
       get: () => true,
     } as unknown as PandocExportDeps["zoteroPref"],
+    // The bibliography fetch is mocked, so nothing reaches Zotero.
+    zoteroHttp: fakeFetchClient(() => {
+      throw new Error("No Zotero in this fixture");
+    }),
     settings,
     bridge: settings.bridge,
     openSettings: () => undefined,

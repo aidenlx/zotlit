@@ -1,20 +1,19 @@
+import { it } from "@effect/vitest";
 import { configureSync, resetSync } from "@logtape/logtape";
 import type { LogRecord } from "@logtape/logtape";
+import { DateTime, Effect, Layer, Logger, Queue } from "effect";
 import { describe, expect } from "vitest";
 
 import { logLibrary } from "@zotlit/shared/logging";
-
-import { Effect, Layer, Logger, Queue } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { logTapeLogger, withLogCategory } from "./effect-log";
 import { layerHostLogPort } from "./effect-log-port";
 import type { LogMessagePort, LogPortRecord } from "./effect-log-port";
 
 /** A time no wall clock reads, so only the worker's stamp can produce it. */
-const WORKER_LOG_TIME = Temporal.Instant.from(
-  "2001-02-03T04:05:06Z",
-).epochMilliseconds;
+const WORKER_LOG_TIME = DateTime.toEpochMillis(
+  DateTime.makeUnsafe("2001-02-03T04:05:06Z"),
+);
 
 const captureLogTape = Effect.acquireRelease(
   Effect.gen(function* () {

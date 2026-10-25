@@ -1,8 +1,8 @@
 // The Note Index for callers outside Effect.
+import { Effect, Stream } from "effect";
+import type { ManagedRuntime } from "effect";
 import type { TFile } from "obsidian";
 
-import { Effect, Stream } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
 import { effectBridge, valueOr } from "@/lib/effect-bridge";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 
@@ -50,10 +50,10 @@ export function plainNoteIndex(
     getImportedNoteByNoteKey: (key) =>
       read(index.getImportedNoteByNoteKey(key)),
     getNotesByProfile: (selector) => read(index.getNotesByProfile(selector)),
-    getPropertyNames: () => read(index.getPropertyNames()),
-    getIndexedItemKeys: () => read(index.getIndexedItemKeys()),
-    whenSettled: () => wait(index.whenSettled()),
-    whenIndexed: () => wait(index.whenIndexed()),
+    getPropertyNames: () => read(index.getPropertyNames),
+    getIndexedItemKeys: () => read(index.getIndexedItemKeys),
+    whenSettled: () => wait(index.whenSettled),
+    whenIndexed: () => wait(index.whenIndexed),
     changes: index.changes,
     changed: index.changes.pipe(
       Stream.filter(

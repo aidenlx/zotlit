@@ -8,6 +8,7 @@ import {
   resetMockPlatform,
   setMockPlatform,
 } from "@mock/obsidian";
+import { Effect } from "effect";
 import { Scope } from "obsidian";
 import type { App } from "obsidian";
 import { act } from "preact/test-utils";
@@ -23,7 +24,6 @@ import type { ShimmedPopover } from "@/components/__fixtures__/popover";
 import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { pressTop } from "@/lib/__fixtures__/keymap";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Effect } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { HistorySurface } from "@/services/annotation-repository/actions";

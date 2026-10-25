@@ -1,6 +1,4 @@
-import { TestClock } from "effect/testing";
-import { expect } from "vitest";
-
+import { it } from "@effect/vitest";
 import {
   Context,
   Deferred,
@@ -9,8 +7,10 @@ import {
   Layer,
   PubSub,
   Stream,
-} from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
+} from "effect";
+import { TestClock } from "effect/testing";
+import { expect } from "vitest";
+
 import { layerQueryClients } from "@/services/query-client/service";
 import { layerPluginSettings } from "@/services/settings/service";
 import { layerRcRef } from "@/services/zotero-reads/connection";
@@ -134,7 +134,7 @@ it.effect(
       );
       expect(f.plain.libraries).toEqual([]);
       expect(f.plain.libraryRows).toBeNull();
-      yield* Effect.promise(f.close);
+      yield* Effect.promise(() => f.close());
       expect(database.log).toEqual(["open #1", "close #1"]);
     }),
 );
@@ -172,7 +172,7 @@ it.effect(
       const ended = yield* Stream.runDrain(f.service.changes).pipe(
         Effect.forkChild,
       );
-      yield* Effect.promise(f.close);
+      yield* Effect.promise(() => f.close());
       yield* Deferred.await(interrupted);
       yield* Fiber.join(ended);
       expect(f.plain.current).toBeNull();

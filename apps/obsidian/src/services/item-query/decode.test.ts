@@ -1,9 +1,9 @@
+import { it } from "@effect/vitest";
+import { Effect, Schema } from "effect";
 import type { CliData } from "obsidian";
 import { describe, expect } from "vitest";
 
 import type { CliRejection } from "@/lib/cli-params";
-import { Effect, Schema } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import * as decode from "./decode";
 import { DecodedQuery } from "./query-codec";

@@ -1,10 +1,6 @@
 // Decodes the CliData of a zotlit:* command through its Effect Schema; its
 // hardcoded English text follows apps/obsidian/policies/cli-text.md.
 
-import type { CliData } from "obsidian";
-
-import { parseIndexedKey } from "@zotlit/db";
-
 import {
   Data,
   Effect,
@@ -12,7 +8,10 @@ import {
   SchemaAST,
   SchemaGetter,
   SchemaIssue,
-} from "@/lib/effect";
+} from "effect";
+import type { CliData } from "obsidian";
+
+import { parseIndexedKey } from "@zotlit/db";
 
 declare module "effect/Schema" {
   namespace Annotations {
@@ -180,7 +179,9 @@ export function cliMapEffect<TFrom extends Schema.Top, TTo>(
           (_value: unknown): _value is TTo => true,
         ),
         {
-          decode: SchemaGetter.transformEffect(f),
+          decode: SchemaGetter.transformEffect((value, options) =>
+            f(value, options),
+          ),
           encode: SchemaGetter.forbidden(() => "CLI parameters only decode"),
         },
       ),
@@ -436,7 +437,7 @@ export function decodeCliParams<TSchema extends CliSchema>(
     const variant: CliParamsSchema = isVariants(schema)
       ? schema.variants[schema.kindOf(params)]!
       : (schema as CliParamsSchema);
-    const decoded = Schema.decodeUnknownEffect(variant)(params, {
+    const decoded = Schema.decodeEffect(variant)(params, {
       errors: "first",
       reportInput: true,
     }) as Effect.Effect<CliOutput<TSchema>, Schema.SchemaError>;

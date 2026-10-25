@@ -1,6 +1,6 @@
+import { Effect } from "effect";
 import { homedir } from "node:os";
 
-import { Effect } from "@/lib/effect";
 // Zotero connection readout for Welcome View step 1; the view re-runs it on database lifecycle events for a live status.
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";

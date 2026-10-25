@@ -40,20 +40,14 @@ const MAX_SUFFIX_ATTEMPTS = 5;
  *
  * @param exists the caller folds in the folder prefix + `.md` extension the
  *   vault check expects.
- * @param forceSuffix always fill the marker, even when the base name is free —
- *   a marker-free `rendered` still returns the base name.
  * @throws {@link EmptyFilenameError} when the rendered filename is empty.
  * @throws when no free name is found within {@link MAX_SUFFIX_ATTEMPTS}.
  */
 export function resolveFreeNotePath(
   rendered: string,
   exists: (rel: string) => boolean,
-  forceSuffix = false,
 ): string {
-  return resolveAvailable(rendered, exists, {
-    resolve: resolveNoteRelPath,
-    forceSuffix,
-  });
+  return resolveAvailable(rendered, exists, { resolve: resolveNoteRelPath });
 }
 
 /**
@@ -82,19 +76,15 @@ export function resolveFreeFlatName(
 function resolveAvailable(
   rendered: string,
   exists: (rel: string) => boolean,
-  opts: {
-    resolve: (rendered: string) => string | null;
-    forceSuffix?: boolean;
-  },
+  opts: { resolve: (rendered: string) => string | null },
 ): string {
-  const { forceSuffix = false } = opts;
   const resolve = (filled: string) => {
     const rel = opts.resolve(filled);
     if (rel === null) throw new EmptyFilenameError();
     return rel;
   };
   const baseRel = resolve(replaceSuffixMarkers(rendered, () => ""));
-  if (!hasSuffixMarker(rendered) || (!forceSuffix && !exists(baseRel))) {
+  if (!hasSuffixMarker(rendered) || !exists(baseRel)) {
     return baseRel;
   }
 

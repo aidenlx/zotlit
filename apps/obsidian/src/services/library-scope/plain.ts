@@ -1,8 +1,8 @@
 /** Library Scope for views and legacy services, on the plugin runtime. */
-import type { Library } from "@zotlit/db";
+import { Effect, Stream } from "effect";
+import type { ManagedRuntime } from "effect";
 
-import { Effect, Stream } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
+import type { Library } from "@zotlit/db";
 
 import type {
   AvailableLibrary,

@@ -1,12 +1,13 @@
+import { it } from "@effect/vitest";
+import { Cause, Effect, Exit } from "effect";
 import { describe, expect, vi } from "vitest";
 
+import { rowInstant } from "@zotlit/db/test-utils";
 import {
   ContractMetadataError,
   markInertPlaceholder,
 } from "@zotlit/workbench/explorer";
 
-import { Cause, Effect, Exit } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import type { CompileError } from "@/services/template/service";
 
 import {
@@ -276,7 +277,7 @@ describe("Template Workbench CLI", () => {
         const wouldWrite = vi.fn();
         const root: Record<string, unknown> = {
           indexedKey: "ITEM2345",
-          dateAdded: Temporal.Instant.from("2024-01-15T10:00:00Z"),
+          dateAdded: rowInstant("2024-01-15T10:00:00Z"),
           get title() {
             return "Paper";
           },

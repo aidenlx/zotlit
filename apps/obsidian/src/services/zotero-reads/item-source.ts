@@ -1,3 +1,6 @@
+// The Item Index's ItemSource port over the worker's Connection.
+import { Effect, Layer, Stream } from "effect";
+
 import {
   getIndexedItemIDsByLibrary,
   getIndexedItemsByID,
@@ -7,9 +10,6 @@ import type { GroupIDMemo } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { ItemSource, SourceUnavailable } from "@zotlit/item-lookup";
 import type { PinnedItemSource } from "@zotlit/item-lookup";
-
-// The Item Index's ItemSource port over the worker's Connection.
-import { Effect, Layer, Stream } from "@/lib/effect";
 
 import { Connection, toDbUnavailable } from "./connection";
 import { itemsByIndexedKeys } from "./items-by-indexed-keys";

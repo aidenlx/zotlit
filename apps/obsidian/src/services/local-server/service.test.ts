@@ -1,3 +1,4 @@
+import { Stream } from "effect";
 import { Hono } from "hono/tiny";
 import { createServer } from "node:net";
 import type { AddressInfo } from "node:net";
@@ -9,7 +10,6 @@ import {
   SOURCE_ID_HEADER,
 } from "@zotlit/protocol";
 
-import { Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import { subscribe } from "@/lib/effect-stream";
 

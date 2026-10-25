@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import {
   mkdir,
   mkdtemp,
@@ -12,13 +13,13 @@ import { FileSystemAdapter, TFile, TFolder } from "obsidian";
 import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import type { Annotation } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
-import { Effect } from "@/lib/effect";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import { redPng } from "@/services/excerpt-image/__fixtures__/png";
@@ -140,7 +141,7 @@ async function fixture(mode: string) {
       current: Effect.succeed(settings),
       update: () => Effect.succeed(settings),
     },
-    bridge: { runSync: Effect.runSync },
+    bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
     profile: profileReader(settings),
     template: {
       renderManagedContent: () => "",
@@ -363,7 +364,7 @@ it.each([false, true])(
 it("reads truthful metadata and reports a missing required fact only on access", async () => {
   await using f = await fixture("disabled");
   f.render.mockImplementation((data) =>
-    String((data as { dateModified: Temporal.Instant }).dateModified),
+    String((data as { dateModified: Annotation["dateModified"] }).dateModified),
   );
   await expect(prepareAnnotationInsert(f.ctx, f.options)).rejects.toThrow(
     "Annotation source did not supply dateModified",

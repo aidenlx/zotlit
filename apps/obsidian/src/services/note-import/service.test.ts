@@ -1,16 +1,19 @@
+import { Effect, Stream } from "effect";
 import { stringifyYaml } from "obsidian";
 import type { App, TFile } from "obsidian";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
+import { rowInstant } from "@zotlit/db/test-utils";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { renderAnnotationSources } from "@/lib/annotation-render";
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
-import { Effect, Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
+import type { VaultSource } from "@/lib/obsidian-vault";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { AttachmentImportService } from "@/services/attachment-import/service";
 import type {
@@ -138,8 +141,8 @@ function baseNote(overrides?: { key?: string; groupID?: number | null }) {
     indexedKey: formatIndexedKey(key, groupID),
     title: "Methods",
     note: NOTE_BODY,
-    dateAdded: Temporal.Instant.from("2024-01-01T10:00:00Z"),
-    dateModified: Temporal.Instant.from("2024-02-03T08:30:00Z"),
+    dateAdded: rowInstant("2024-01-01T10:00:00Z"),
+    dateModified: rowInstant("2024-02-03T08:30:00Z"),
   };
 }
 
@@ -250,6 +253,8 @@ function makeService(
   const importer = createNoteImporter({
     profile: profileReader(() => current, app.metadataCache),
     app,
+    vault: vaultOver(app.vault as unknown as VaultSource),
+    bridge: { runPromise: Effect.runPromise },
     noteIndex: {
       getImportedNoteByNoteKey: () => options.existing ?? [],
       getNotesByItemKey: () => options.literatureNotes ?? [],
@@ -373,7 +378,7 @@ describe("createNoteImporter", () => {
   });
 
   it("skips a collision at the previewed path without overwriting or copying attachments", async () => {
-    const { app, create, process } = makeApp();
+    const { app, host, create, process } = makeApp();
     const attachmentImport = makeAttachmentImport();
     const prepared = await makeService(app, {
       attachmentImport,
@@ -381,7 +386,7 @@ describe("createNoteImporter", () => {
       reads,
       orphanProfile: PROFILE_A,
     });
-    create.mockRejectedValueOnce(new Error("File already exists."));
+    host.vault.createFile(prepared.path, "Arrived after preview");
 
     await expect(
       prepared.import(makeNote(), {
@@ -389,6 +394,10 @@ describe("createNoteImporter", () => {
         settings: profileSettings(),
       }),
     ).resolves.toBe("skipped");
+    expect(create).not.toHaveBeenCalled();
+    expect(host.vault.contents.get(prepared.path)).toBe(
+      "Arrived after preview",
+    );
     expect(process).not.toHaveBeenCalled();
     expect(attachmentImport.flush).not.toHaveBeenCalled();
   });
@@ -532,21 +541,6 @@ describe("createNoteImporter", () => {
     });
 
     expect(create.mock.calls[0]![1]).toContain("zotero-note-key: NOTE1234g42");
-  });
-
-  it("skips on a file-exists collision at write time without flushing copies", async () => {
-    const { app, create } = makeApp();
-    create.mockRejectedValueOnce(new Error("File already exists."));
-    const attachmentImport = makeAttachmentImport();
-
-    await expect(
-      makeService(app, { attachmentImport }).importNote(makeNote(), {
-        reads,
-        settings: importSettings(),
-      }),
-    ).resolves.toBe("skipped");
-    // The note wasn't written, so its queued image copies stay inert.
-    expect(attachmentImport.flush).not.toHaveBeenCalled();
   });
 
   it("throws NoteImportMintError when the minted path is already occupied", async () => {

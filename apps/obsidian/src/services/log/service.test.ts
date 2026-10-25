@@ -1,15 +1,21 @@
+import { it } from "@effect/vitest";
 import type { Config } from "@logtape/logtape";
+import { Effect, Exit, Fiber, Layer, Queue, Schema, Scope } from "effect";
 import { TestClock, TestConsole } from "effect/testing";
 import type { Plugin } from "obsidian";
 import { expect } from "vitest";
 
-import { Effect, Exit, Fiber, Layer, Queue, Scope } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { settingsOf } from "@/services/settings/__fixtures__";
 import { settingsMigrations } from "@/services/settings/migrate";
 import { PluginSettings } from "@/services/settings/service";
 
 import { layerLogging, LogOutput, STARTUP_LOG_SETTINGS } from "./service";
+
+/** The failure the fake LogTape answers a configure with. */
+class ConfigureFailed extends Schema.TaggedError<
+  ConfigureFailed,
+  { readonly brand: unique symbol }
+>()("ConfigureFailed", { message: Schema.String }) {}
 
 type LogConfig = Config<string, string>;
 
@@ -44,7 +50,7 @@ const logging = Effect.fnUntraced(function* (
         yield* Effect.sleep(CONFIGURE_TIME);
         if (failNext) {
           failNext = false;
-          return yield* Effect.fail(new Error("boom"));
+          return yield* new ConfigureFailed({ message: "boom" });
         }
         events.push("configured");
         configs.push(config);
@@ -196,7 +202,7 @@ it.effect("reports a change it cannot apply and applies it again later", () =>
 
     expect(yield* TestConsole.errorLines).toEqual([
       "Could not apply the log settings",
-      new Error("boom"),
+      new ConfigureFailed({ message: "boom" }),
     ]);
 
     yield* settings.update({ "citation.editor-suggester": false });

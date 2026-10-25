@@ -1,19 +1,11 @@
+import { it } from "@effect/vitest";
+import { Context, Effect, Fiber, Layer, Option, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { expect, expectTypeOf, vi } from "vitest";
 
-import {
-  Context,
-  Effect,
-  Fiber,
-  Layer,
-  Option,
-  Queue,
-  Stream,
-} from "@/lib/effect";
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { buildRuntime } from "@/lib/effect-layer";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import { PluginSettings } from "@/services/settings/service";
 
 import { createTemplateHost, templateOf, templateOver } from "./__fixtures__";
@@ -113,7 +105,8 @@ it.effect("#1705: published vault edits reconcile on the Effect Clock", () =>
 it.effect("#1705: startup failure settles into the init-failed state", () =>
   Effect.gen(function* () {
     const host = createTemplateHost();
-    vi.spyOn(host.vault, "on").mockImplementationOnce(() => {
+    // The first folder read of startup's template scan throws.
+    vi.spyOn(host.vault, "getFolderByPath").mockImplementationOnce(() => {
       throw new Error("vault unavailable");
     });
     const template = yield* templateOf(host);
@@ -189,7 +182,7 @@ it.effect(
           openPrompt,
         }).pipe(
           Layer.provideMerge(templateOver(host)),
-          Layer.provide(Layer.succeed(ObsidianApp, host.app)),
+          Layer.provide(layerHostApp(host.app)),
           Layer.provideMerge(Layer.succeedContext(context)),
         ),
         stack,
@@ -405,14 +398,14 @@ it.effect(
           openPrompt: () => {},
         }).pipe(
           Layer.provideMerge(templateOver(host)),
-          Layer.provide(Layer.succeed(ObsidianApp, host.app)),
+          Layer.provide(layerHostApp(host.app)),
         ),
       );
       const migration = Context.get(services, TemplateMigration);
-      expectTypeOf<
-        Effect.Error<ReturnType<typeof migration.convert>>
-      >().toExtend<{ readonly _tag: string }>();
-      expect(yield* Effect.flip(migration.convert())).toMatchObject({
+      expectTypeOf<Effect.Error<typeof migration.convert>>().toExtend<{
+        readonly _tag: string;
+      }>();
+      expect(yield* Effect.flip(migration.convert)).toMatchObject({
         _tag: "TemplateOperationError",
         cause,
       });

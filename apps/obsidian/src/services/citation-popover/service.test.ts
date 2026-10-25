@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { Logger, References, Stream } from "effect";
+import type { Layer } from "effect";
 import type { TFile } from "obsidian";
 import { act } from "preact/test-utils";
 import type { ReactElement } from "react";
@@ -9,8 +11,8 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { testEvents } from "@/lib/__fixtures__/event-stream";
-import { Logger, References, Stream } from "@/lib/effect";
-import type { Layer } from "@/lib/effect";
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { LogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import { annotationRows } from "@/services/citation-index/__fixtures__/annotations";
@@ -119,7 +121,7 @@ const emptyText = (): DocumentCitations => ({
 
 function harness(read: () => Promise<DocumentCitations | null>) {
   let file: TFile | null = NOTE;
-  const deleted = new Set<(file: TFile) => void>();
+  const metadataCache = new MemoryMetadataCache();
   const citationText = { read: vi.fn(read) };
   const readLookup = vi.fn(
     async ({ citekeys }: { citekeys: readonly string[] }) =>
@@ -131,16 +133,10 @@ function harness(read: () => Promise<DocumentCitations | null>) {
   );
   const popover = citationPopoverFixture({
     app: {
-      vault: {
+      vault: MemoryVault.with({
         getFileByPath: () => file,
-      },
-      metadataCache: {
-        getFileCache: () => null,
-        on: (event: string, cb: (file: TFile) => void) => {
-          if (event === "deleted") deleted.add(cb);
-          return { e: { offref: () => deleted.delete(cb) } };
-        },
-      },
+      }),
+      metadataCache,
     },
     db: reads(),
     citationLookup: {
@@ -208,7 +204,7 @@ function harness(read: () => Promise<DocumentCitations | null>) {
     readLookup,
     removeSource() {
       file = null;
-      for (const cb of deleted) cb(NOTE);
+      metadataCache.delete(NOTE);
     },
     show,
     [Symbol.asyncDispose]: () => popover[Symbol.asyncDispose](),

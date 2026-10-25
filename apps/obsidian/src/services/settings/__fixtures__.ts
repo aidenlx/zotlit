@@ -1,6 +1,6 @@
+import { Context, Effect, Layer } from "effect";
 import type { Plugin } from "obsidian";
 
-import { Context, Effect, Layer } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
@@ -34,7 +34,7 @@ export const settingsRuntimeOf = Effect.fnUntraced(function* (
   const context = yield* Effect.context<never>();
   const handle = yield* Effect.acquireRelease(
     Effect.promise(() => openSettings(options, context)),
-    (handle) => Effect.promise(handle.close),
+    (handle) => Effect.promise(() => handle.close()),
   );
   return handle;
 });

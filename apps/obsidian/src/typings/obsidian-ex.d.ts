@@ -211,10 +211,10 @@ declare module "obsidian" {
     /**
      * Runs `callback` once the cache is clean (no parse in progress, resolver
      * queue idle): at once if it already is, else after the next drain.
-     * Internal; shape verified against Obsidian 1.13.7. Optional so a build
-     * that drops it is a runtime branch, not a crash.
+     * Internal; shape verified against Obsidian 1.13.7, which uses it itself
+     * before it rewrites links on rename.
      */
-    onCleanCache?(callback: () => void): void;
+    onCleanCache(callback: () => void): void;
     /**
      * Every path the cache holds — the file list one graph render walks to
      * build its nodes. Internal; shape verified against Obsidian 1.13.7 and

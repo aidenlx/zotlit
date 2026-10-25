@@ -1,6 +1,4 @@
-import type { EventRef, Events } from "obsidian";
-import { expect } from "vitest";
-
+import { it } from "@effect/vitest";
 import {
   Cause,
   Effect,
@@ -10,10 +8,12 @@ import {
   Queue,
   Scope,
   Stream,
-} from "@/lib/effect";
+} from "effect";
+import type { EventRef, Events } from "obsidian";
+import { expect } from "vitest";
+
 import { LogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
-import { it } from "@/lib/effect-vitest";
 
 // #1705: each host event owns its failure; the next event still reaches the handler.
 it.effect.each(["failure", "defect", "throw"] as const)(

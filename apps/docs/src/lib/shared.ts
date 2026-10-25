@@ -64,7 +64,7 @@ export function ogImageUrl(type: OgType, slugs: string[] = []) {
  * unquoted one as the UTC-midnight `Date` the YAML parser built; both normalize
  * to the ISO day here. The value crosses into the collection index as that
  * string because the index is JSON — see the date note in AGENTS.md. `Date`
- * stands in for `Temporal` (policies/temporal-dates.md) because workerd carries
+ * stands in for `Temporal` (the date rule in packages/config/oxlint.base.ts) because workerd carries
  * no Temporal API.
  *
  * `content.config.ts` reads frontmatter through this schema, and the build-time
@@ -79,7 +79,7 @@ export const publishedOn = v.pipe(
 
 /**
  * The closing year of the footer's copyright range, read at render time.
- * `Date` stands in for `Temporal` (policies/temporal-dates.md) because workerd
+ * `Date` stands in for `Temporal` (the date rule in packages/config/oxlint.base.ts) because workerd
  * carries no Temporal API.
  */
 export function currentYear() {
@@ -90,7 +90,7 @@ export function currentYear() {
  * Publication day in the reader's long form. Collections normalize the day to
  * its ISO form (see `content.config.ts`), so the value parses as a UTC instant
  * and formats in UTC. `Date` stands in for `Temporal`
- * (policies/temporal-dates.md) because workerd carries no Temporal API.
+ * (the date rule in packages/config/oxlint.base.ts) because workerd carries no Temporal API.
  */
 export function formatReleaseDate(isoDay: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -104,7 +104,7 @@ export function formatReleaseDate(isoDay: string) {
 /**
  * Publication day in the reader's short form, from the ISO instant GitHub
  * stamps a release with; the day is read in UTC, as the long form is. `Date`
- * stands in for `Temporal` (policies/temporal-dates.md) because workerd carries
+ * stands in for `Temporal` (the date rule in packages/config/oxlint.base.ts) because workerd carries
  * no Temporal API.
  */
 export function formatReleaseInstant(iso: string) {

@@ -1,4 +1,4 @@
-import { basename, dirname, join } from "node:path/posix";
+import { DateTime, Effect } from "effect";
 import { getFrontMatterInfo } from "obsidian";
 import type { CachedMetadata, TFile } from "obsidian";
 
@@ -21,7 +21,7 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
-import { Effect } from "@/lib/effect";
+import { toInstant } from "@/lib/effect-clock";
 import { ensureParentFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import {
@@ -42,7 +42,6 @@ import type {
   ProfileSelector,
   UnknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
-import { isFileExistsError } from "@/lib/vault-errors";
 import type { AttachmentImport } from "@/services/attachment-import/service";
 import { classifyStream, runBatch } from "@/services/batch-run";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
@@ -282,13 +281,6 @@ const NO_BODY_UPDATE: UpdateResult = {
   duplicateRegionCount: 0,
 };
 
-/**
- * Concurrent/batch creation can land a sibling between resolve and write. Each
- * retry forces a fresh `suffix()`, so even one almost always frees the name;
- * the bound just stops an unbounded loop.
- */
-const MAX_CREATE_RETRIES = 5;
-
 /** Per-batch inputs threaded through a multi-item create run. */
 export interface CreateNoteOptions {
   /** A batch collects used outcomes here and reports once when the run settles. */
@@ -318,7 +310,7 @@ export interface CreateNoteOptions {
 
 interface CreateNoteInternalOptions extends CreateNoteOptions {
   onFileCreated?: (file: TFile) => void;
-  preparedPath?: { path: string; canSuffix: boolean };
+  preparedPath?: { path: string };
 }
 
 /**
@@ -702,7 +694,7 @@ async function prepareCreationPreviews(
     { profile, document, reserved }: (typeof profiles)[number],
   ): PreparedCreationProfile => {
     const { selector } = profile;
-    let preparedPath: { path: string; canSuffix: boolean } | undefined;
+    let preparedPath: { path: string } | undefined;
     let unavailable: string | undefined;
     try {
       if (document === null)
@@ -745,7 +737,7 @@ async function prepareCreationPreviews(
             })),
           }),
       },
-      { signal: options.signal, onProgress: () => {} },
+      { onProgress: () => {} },
       (slice) => {
         for (const { itemID, facets } of slice) {
           const item = itemsByID.get(itemID)!;
@@ -957,7 +949,7 @@ async function createNote(
   if (!source) throw new Error(`Zotero item not found: ${item.indexedKey}`);
   // The filename renders from the Snapshot's Item, as the body does.
   const { itemTags, itemCollections } = itemFacets(source);
-  let { path, canSuffix } =
+  const { path } =
     options.preparedPath ??
     resolveNotePath(ctx, source.item, {
       itemTags,
@@ -965,8 +957,6 @@ async function createNote(
       settings: profile.settings,
       document,
     });
-
-  const parentFolder = dirname(path);
   return await writeNewNote(ctx, item, {
     reads,
     source,
@@ -977,43 +967,21 @@ async function createNote(
     onFileCreated: options.onFileCreated,
     reportExcerpts: options.reportExcerpts,
     outcomes: options.outcomes,
+    // The path was found free in the vault cache when it was resolved; a
+    // note that took it since fails the create with `FileExists`.
     createFile: async (content) => {
-      for (let attempt = 0; ; attempt++) {
-        try {
-          await ensureParentFolder(ctx.app, path);
-          return await ctx.app.vault.create(path, content);
-        } catch (error) {
-          if (
-            !isFileExistsError(error) ||
-            !canSuffix ||
-            attempt >= MAX_CREATE_RETRIES
-          )
-            throw error;
-          logger.debug("Filename collided on create; retrying with suffix", {
-            path,
-            attempt,
-            itemKey: item.indexedKey,
-          });
-          ({ path, canSuffix } = resolveNotePath(ctx, source.item, {
-            itemTags,
-            itemCollections,
-            settings: profile.settings,
-            forceSuffix: true,
-            document,
-          }));
-          // Prepared relative links belong to the original parent folder.
-          path = join(parentFolder, basename(path));
-        }
-      }
+      await ensureParentFolder(ctx.app, path);
+      return await ctx.bridge.runPromise(ctx.vault.create(path, content));
     },
   });
 }
 
 /**
- * Prepare and render once; the supplied create boundary retries filename
- * collisions with these same composed bytes.
+ * Prepare and render once; the supplied create boundary writes these composed
+ * bytes in one create.
  *
- * @throws an Obsidian vault error (e.g. a file already exists at `path`).
+ * @throws `FileExists` when a note took the path since it was resolved, or
+ *   `VaultError` when Obsidian refuses the create.
  */
 async function writeNewNote(
   ctx: OpsContext,
@@ -1181,7 +1149,7 @@ function prepareProfileNote(
   const prepared = prepareManagedFrontmatter(
     document.frontmatter,
     note,
-    Temporal.Now.instant(),
+    toInstant(ctx.bridge.runSync(DateTime.now)),
   );
   if ("failures" in prepared)
     throw new Error(m.managed_frontmatter_refused_recovery());
@@ -1273,7 +1241,7 @@ async function replacedKeys(
       const evaluation = evalManagedFrontmatterEntries(
         spreads,
         context,
-        Temporal.Now.instant(),
+        toInstant(ctx.bridge.runSync(DateTime.now)),
       );
       for (const { key } of evaluation.values) keys.add(key);
     } finally {
@@ -1386,7 +1354,7 @@ async function switchNoteProfile(
   const move = options.move && targetPath !== previousPath;
   if (move) {
     await ensureParentFolder(ctx.app, targetPath);
-    await ctx.app.fileManager.renameFile(file, targetPath);
+    await ctx.bridge.runPromise(ctx.fileManager.renameFile(file, targetPath));
   }
   try {
     await stampNoteFamily(
@@ -1397,7 +1365,9 @@ async function switchNoteProfile(
   } catch (error) {
     if (move) {
       try {
-        await ctx.app.fileManager.renameFile(file, previousPath);
+        await ctx.bridge.runPromise(
+          ctx.fileManager.renameFile(file, previousPath),
+        );
       } catch (rollbackError) {
         throw new AggregateError(
           [error, rollbackError],
@@ -1584,6 +1554,7 @@ async function applyManagedUpdate(
 ): Promise<UpdateResult> {
   const { context, itemKey, scope, profile, document, beforeWrite } = input;
   const prepared = prepareFrontmatter({
+    ctx,
     context,
     itemKey,
     document,
@@ -1693,6 +1664,7 @@ async function overwriteNote(
     },
   );
   const prepared = prepareFrontmatter({
+    ctx,
     context,
     itemKey: indexedKey,
     document,
@@ -1912,6 +1884,7 @@ function stampedSelector(
 }
 
 function prepareFrontmatter(input: {
+  ctx: Pick<NoteFeatureDeps, "bridge">;
   context: NoteTemplateContext;
   itemKey: string;
   document: ResolvedLiteratureNoteTemplate | undefined;
@@ -1923,7 +1896,7 @@ function prepareFrontmatter(input: {
   const result = prepareManagedFrontmatter(
     frontmatter,
     input.context,
-    Temporal.Now.instant(),
+    toInstant(input.ctx.bridge.runSync(DateTime.now)),
   );
   if ("prepared" in result) return result.prepared;
   return { diagnostic: frontmatterRefusal(result.failures, input) };

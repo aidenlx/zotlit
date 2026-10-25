@@ -1,4 +1,5 @@
 // The renderer-side answer of the local Annotation image command.
+import { Data, Effect, Result, Schema } from "effect";
 import type { CliData } from "obsidian";
 
 import { renderDiagnostic } from "@zotlit/item-query";
@@ -9,7 +10,6 @@ import {
   cliParams,
   decodeCliParams,
 } from "@/lib/cli-params";
-import { Data, Effect, Result, Schema } from "@/lib/effect";
 import { diagnostic } from "@/services/item-query/contract";
 import { rejectionDiagnostic } from "@/services/item-query/contract";
 

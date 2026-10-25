@@ -1,10 +1,9 @@
+import { it } from "@effect/vitest";
+import { Effect, Schema } from "effect";
 import * as v from "valibot";
 import { describe, expect } from "vitest";
 
 import type { Library } from "@zotlit/db";
-
-import { Effect, Schema } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import {
   DEFAULT_LIBRARY_SCOPE,

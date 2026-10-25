@@ -1,7 +1,8 @@
-import type { Events } from "obsidian";
+import { Effect, PubSub, Stream } from "effect";
 
-import { Effect, PubSub, Stream } from "@/lib/effect";
 import { logAndContinue } from "@/lib/effect-log";
+import { obsidianListener } from "@/lib/obsidian-event-source";
+import type { ObsidianEventEmitter } from "@/lib/obsidian-event-source";
 
 type Payload<E> = {
   [K in keyof E]: { readonly type: K; readonly args: E[K] };
@@ -33,15 +34,14 @@ export const obsidianEvents = Effect.fnUntraced(function* <
 
   const on = Effect.fnUntraced(function* (
     type: keyof E,
-    source: Pick<Events, "on" | "offref">,
+    source: ObsidianEventEmitter,
     name: string,
   ) {
-    return yield* Effect.acquireRelease(
-      // Obsidian's base Events API erases event-specific argument types.
-      Effect.sync(() =>
-        source.on(name, callback(type) as (...args: unknown[]) => void),
-      ),
-      (ref) => Effect.sync(() => source.offref(ref)),
+    // Obsidian's base Events API erases event-specific argument types.
+    return yield* obsidianListener(
+      source,
+      name,
+      callback(type) as (...args: unknown[]) => void,
     );
   });
 
@@ -61,7 +61,7 @@ export const obsidianEvents = Effect.fnUntraced(function* <
           }),
         ),
     );
-    yield* Stream.runForEach(stream, dispatch);
+    yield* Stream.runForEach(stream, (event) => dispatch(event));
   });
 
   return {

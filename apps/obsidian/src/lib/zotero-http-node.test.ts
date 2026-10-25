@@ -1,10 +1,38 @@
+import { Layer, ManagedRuntime } from "effect";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { AbortError } from "@/lib/abort-error";
-import { nodeFetch } from "@/lib/node-fetch";
+import { runtimeServices } from "@/lib/effect-services";
+import { sendToZotero, ZoteroHttp } from "@/lib/zotero-http";
+import type { ZoteroAnswer, ZoteroRequest } from "@/lib/zotero-http";
+import { layerZoteroHttpNode } from "@/lib/zotero-http-node";
+
+// With the services every plugin runtime has, as `buildRuntime` adds them.
+const runtime = ManagedRuntime.make(
+  layerZoteroHttpNode.pipe(
+    Layer.provideMerge(Layer.succeedContext(runtimeServices)),
+  ),
+);
+afterAll(() => runtime.dispose());
+
+/** One round trip through the production `ZoteroHttp` client. */
+async function send(
+  origin: string,
+  init: Omit<ZoteroRequest, "port" | "path"> & {
+    path?: string;
+    signal?: AbortSignal;
+  } = {},
+): Promise<ZoteroAnswer> {
+  const http = await runtime.runPromise(ZoteroHttp);
+  return sendToZotero(runtime, http, {
+    port: Number(new URL(origin).port),
+    path: "/",
+    ...init,
+  });
+}
 
 type Handler = (
   request: IncomingMessage,
@@ -63,17 +91,17 @@ function record(): {
   };
 }
 
-describe("nodeFetch", () => {
+describe("ZoteroHttp over node:http", () => {
   it("resolves the status, headers, and body the server answered", async () => {
     await using server = await serve((_, response) => {
       response.writeHead(201, { "X-Answer": "42" }).end("hello");
     });
 
-    const response = await nodeFetch(`${server.origin}/items`);
+    const response = await send(server.origin, { path: "/items" });
 
     expect(response.status).toBe(201);
     expect(response.headers.get("x-answer")).toBe("42");
-    expect(await response.text()).toBe("hello");
+    expect(response.text).toBe("hello");
   });
 
   it("resolves a refusal as a status, rather than rejecting", async () => {
@@ -81,25 +109,29 @@ describe("nodeFetch", () => {
       response.writeHead(403).end("Local API is not enabled");
     });
 
-    const response = await nodeFetch(server.origin);
+    const response = await send(server.origin);
 
     expect(response.status).toBe(403);
-    expect(await response.text()).toBe("Local API is not enabled");
+    expect(response.text).toBe("Local API is not enabled");
   });
 
   it("sends the method, the headers, and the body it was given", async () => {
     const seen = record();
     await using server = await serve(seen.handler);
 
-    await nodeFetch(server.origin, {
+    await send(server.origin, {
       method: "POST",
-      headers: { "Zotero-Allowed-Request": "1" },
+      headers: {
+        "Zotero-Allowed-Request": "1",
+        "Content-Type": "application/json",
+      },
       body: '{"jsonrpc":"2.0"}',
     });
 
     const { method, headers } = await seen.arrived;
     expect(method).toBe("POST");
     expect(headers["zotero-allowed-request"]).toBe("1");
+    expect(headers["content-type"]).toBe("application/json");
     expect(await seen.body).toBe('{"jsonrpc":"2.0"}');
   });
 
@@ -109,7 +141,7 @@ describe("nodeFetch", () => {
     const seen = record();
     await using server = await serve(seen.handler);
 
-    await nodeFetch(server.origin, { method: "POST", body: "héllo" });
+    await send(server.origin, { method: "POST", body: "héllo" });
 
     const { headers } = await seen.arrived;
     expect(headers["content-length"]).toBe("6");
@@ -120,11 +152,25 @@ describe("nodeFetch", () => {
     const seen = record();
     await using server = await serve(seen.handler);
 
-    await nodeFetch(server.origin);
+    await send(server.origin);
 
     const { headers } = await seen.arrived;
     expect(headers.origin).toBeUndefined();
     expect(headers["user-agent"]).toBeUndefined();
+  });
+
+  it("sends Zotero's header and no trace context, over a kept-alive connection", async () => {
+    // The headers the `fetch` over Node's global agent sent before.
+    const seen = record();
+    await using server = await serve(seen.handler);
+
+    await send(server.origin);
+
+    const { headers } = await seen.arrived;
+    expect(headers["zotero-allowed-request"]).toBe("1");
+    expect(headers.traceparent).toBeUndefined();
+    expect(headers.b3).toBeUndefined();
+    expect(headers.connection).toBe("keep-alive");
   });
 
   it("reaches loopback with a proxy in the environment, rather than through it", async () => {
@@ -144,7 +190,7 @@ describe("nodeFetch", () => {
     }
     vi.stubEnv("NO_PROXY", "");
 
-    const response = await nodeFetch(server.origin);
+    const response = await send(server.origin);
 
     expect(response.status).toBe(200);
     expect((await seen.arrived).headers.host).toBe(
@@ -152,27 +198,26 @@ describe("nodeFetch", () => {
     );
   });
 
-  it("keeps a 204 answer body-free, which the Response constructor requires", async () => {
+  it("answers a 204 with an empty body", async () => {
     await using server = await serve((_, response) => {
       response.writeHead(204).end();
     });
 
-    const response = await nodeFetch(server.origin, { method: "PATCH" });
+    const response = await send(server.origin, { method: "PATCH" });
 
     expect(response.status).toBe(204);
-    expect(response.body).toBeNull();
+    expect(response.text).toBe("");
   });
 
-  it("keeps every value of a header the answer repeats", async () => {
+  it("keeps every value of a header the answer repeats, joined", async () => {
     await using server = await serve((_, response) => {
-      response
-        .writeHead(200, { "Set-Cookie": ["first=1", "second=2"] })
-        .end("ok");
+      response.writeHead(200, { Link: ["<a>; rel=next", "<b>; rel=last"] });
+      response.end("ok");
     });
 
-    const response = await nodeFetch(server.origin);
+    const response = await send(server.origin);
 
-    expect(response.headers.getSetCookie()).toEqual(["first=1", "second=2"]);
+    expect(response.headers.get("link")).toBe("<a>; rel=next, <b>; rel=last");
   });
 
   it("rejects with a TypeError when nothing holds the port", async () => {
@@ -182,7 +227,7 @@ describe("nodeFetch", () => {
     const { origin } = closed;
     await closed[Symbol.asyncDispose]();
 
-    await expect(nodeFetch(origin)).rejects.toThrow(TypeError);
+    await expect(send(origin)).rejects.toThrow(TypeError);
   });
 
   it("rejects with an AbortError when the signal aborts before the answer", async () => {
@@ -190,7 +235,7 @@ describe("nodeFetch", () => {
     await using server = await serve(() => arrived.resolve());
     const controller = new AbortController();
 
-    const pending = nodeFetch(server.origin, { signal: controller.signal });
+    const pending = send(server.origin, { signal: controller.signal });
     await arrived.promise;
     controller.abort();
 
@@ -207,7 +252,7 @@ describe("nodeFetch", () => {
     });
     const controller = new AbortController();
 
-    const pending = nodeFetch(server.origin, { signal: controller.signal });
+    const pending = send(server.origin, { signal: controller.signal });
     await started.promise;
     controller.abort();
 
@@ -226,7 +271,7 @@ describe("nodeFetch", () => {
     void arrived.promise.then(() => (reached = true));
 
     await expect(
-      nodeFetch(server.origin, { signal: AbortSignal.abort() }),
+      send(server.origin, { signal: AbortSignal.abort() }),
     ).rejects.toSatisfy((error: unknown) => AbortError.test(error));
     expect(reached).toBe(false);
   });

@@ -1,5 +1,11 @@
+import { Context, Deferred, Effect, Fiber, Layer, Scope, Stream } from "effect";
 import { join } from "node:path/posix";
-import type { FileManager, TFile, Vault, Workspace } from "obsidian";
+import type {
+  FileManager,
+  TFile,
+  Vault,
+  Workspace as ObsidianWorkspace,
+} from "obsidian";
 
 import type { CiteRef, Library } from "@zotlit/db";
 import {
@@ -7,18 +13,10 @@ import {
   LegacyTemplateConversionError,
 } from "@zotlit/templates/facade";
 
-import {
-  Context,
-  Deferred,
-  Effect,
-  Fiber,
-  Layer,
-  Scope,
-  Stream,
-} from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { Workspace } from "@/lib/obsidian-workspace";
 import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -70,7 +68,7 @@ interface MigrationTemplateService {
 interface MigrationApp {
   vault: Pick<Vault, "getFileByPath" | "create">;
   fileManager: Pick<FileManager, "trashFile">;
-  workspace: Pick<Workspace, "onLayoutReady">;
+  workspace: Pick<ObsidianWorkspace, "onLayoutReady">;
 }
 
 interface MigrationEngineOptions {
@@ -618,12 +616,12 @@ export interface TemplateMigrationOptions {
 export class TemplateMigration extends Context.Service<
   TemplateMigration,
   {
-    whenSettled(): Effect.Effect<void>;
-    convert(): Effect.Effect<
+    readonly whenSettled: Effect.Effect<void>;
+    readonly convert: Effect.Effect<
       LiteratureNoteTemplateMigrationResult,
       TemplateFailure
     >;
-    retryCleanup(): Effect.Effect<
+    readonly retryCleanup: Effect.Effect<
       Extract<LiteratureNoteTemplateMigrationResult, { outcome: "converted" }>,
       TemplateFailure
     >;
@@ -635,6 +633,7 @@ export function layerTemplateMigration(options: TemplateMigrationOptions) {
     TemplateMigration,
     Effect.gen(function* () {
       const app = yield* ObsidianApp;
+      const workspace = yield* Workspace;
       const settings = yield* PluginSettings;
       const template = yield* Template;
       const context = yield* Effect.context<never>();
@@ -656,20 +655,27 @@ export function layerTemplateMigration(options: TemplateMigrationOptions) {
           update: (patch) => {
             run(settings.update(patch));
           },
-          flush: () => runPromise(settings.flush()),
+          flush: () => runPromise(settings.flush),
         },
         template: {
-          refresh: () => runPromise(template.refresh()),
+          refresh: () => runPromise(template.refresh),
           getLegacyLiteratureNoteTemplateFiles: () =>
-            run(template.getLegacyLiteratureNoteTemplateFiles()),
+            run(template.getLegacyLiteratureNoteTemplateFiles),
           getLegacyTemplateDocuments: () =>
-            run(template.getLegacyTemplateDocuments()),
+            run(template.getLegacyTemplateDocuments),
           convertLegacyLiteratureNoteTemplates: (data) =>
             runPromise(template.convertLegacyLiteratureNoteTemplates(data)),
           convertLegacyTemplateDocuments: (refs) =>
             runPromise(template.convertLegacyTemplateDocuments(refs)),
         },
-        defer: (action) => app.workspace.onLayoutReady(intake.callback(action)),
+        defer: (action) => {
+          run(
+            workspace.layoutReady.pipe(
+              Effect.andThen(Effect.sync(() => intake.callback(action)())),
+              Effect.forkIn(scope, { startImmediately: true }),
+            ),
+          );
+        },
         log: (level, message, fields) => {
           const log = {
             debug: Effect.logDebug,
@@ -711,7 +717,7 @@ export function layerTemplateMigration(options: TemplateMigrationOptions) {
         })
         .pipe(Effect.forkScoped);
       yield* attemptPromise(() => engine.detectTemplates(false)).pipe(
-        Effect.catchCause(report),
+        Effect.catchCause((cause) => report(cause)),
       );
       const owned = <A, E>(effect: Effect.Effect<A, E>) =>
         closed
@@ -719,7 +725,7 @@ export function layerTemplateMigration(options: TemplateMigrationOptions) {
           : Effect.forkIn(effect, scope, {
               startImmediately: true,
               uninterruptible: true,
-            }).pipe(Effect.flatMap(Fiber.join));
+            }).pipe(Effect.flatMap((fiber) => Fiber.join(fiber)));
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           closed = true;
@@ -727,25 +733,25 @@ export function layerTemplateMigration(options: TemplateMigrationOptions) {
         }),
       );
       return TemplateMigration.of({
-        whenSettled: Effect.fn("TemplateMigration.whenSettled")(function* () {
+        whenSettled: Effect.gen(function* () {
           if (closed) return;
           const waiter = yield* Deferred.make<void>();
           waiters.add(waiter);
           intake.callback("settled")(waiter);
           yield* Deferred.await(waiter);
-        }),
-        convert: Effect.fn("TemplateMigration.convert")(function* () {
-          return yield* owned(
+        }).pipe(Effect.withSpan("TemplateMigration.whenSettled")),
+        convert: Effect.suspend(() =>
+          owned(
             attemptPromise(() => engine.convert()).pipe(Effect.uninterruptible),
-          );
-        }),
-        retryCleanup: Effect.fn("TemplateMigration.retryCleanup")(function* () {
-          return yield* owned(
+          ),
+        ).pipe(Effect.withSpan("TemplateMigration.convert")),
+        retryCleanup: Effect.suspend(() =>
+          owned(
             attemptPromise(() => engine.retryCleanup()).pipe(
               Effect.uninterruptible,
             ),
-          );
-        }),
+          ),
+        ).pipe(Effect.withSpan("TemplateMigration.retryCleanup")),
       });
     }),
   );

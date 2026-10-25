@@ -14,7 +14,7 @@ import type {
   ResolvedAnnotationTypeName,
 } from "@zotlit/db";
 
-import { parseJson, ZOTERO_ALLOWED_REQUEST } from "@/lib/zotero-http";
+import { parseJson } from "@/lib/zotero-http";
 
 /**
  * The one API version this client speaks. A data route answers `501` to any
@@ -27,11 +27,11 @@ export const API_VERSION = "3";
 
 /**
  * Added to every version-sensitive read, so a repeated `GET` reaches Zotero
- * rather than a cache that cannot know the library moved — beside the header
- * that gets the call past Zotero's browser-traffic guard, and the version gate.
+ * rather than a cache that cannot know the library moved — beside the version
+ * gate. The header that gets the call past Zotero's browser-traffic guard comes
+ * from the `ZoteroHttp` client itself.
  */
 export const NO_CACHE_HEADERS: Readonly<Record<string, string>> = {
-  ...ZOTERO_ALLOWED_REQUEST,
   "Zotero-API-Version": API_VERSION,
   "Cache-Control": "no-cache",
 };

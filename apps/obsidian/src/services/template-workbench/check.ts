@@ -1,4 +1,5 @@
 // Saved-source checking and attempt retention. Output flags only disclose completed work.
+import { Clock, Effect, Result, Schema } from "effect";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
@@ -34,8 +35,7 @@ import {
   expectSourceParam,
   amendRejection,
 } from "@/lib/cli-params";
-import type { CliOutput, CliParamName } from "@/lib/cli-params";
-import { Clock, Effect, Result, Schema } from "@/lib/effect";
+import type { CliOutput, CliParamName, CliRejection } from "@/lib/cli-params";
 import { instantClock } from "@/lib/effect-clock";
 import { PROFILE_OUTPUTS } from "@/views/note-preview/check-profile";
 import type { ProfileCheck } from "@/views/note-preview/check-profile";
@@ -351,6 +351,22 @@ const disclosure = {
 
 const notInLookup = cliNotApplicable(ATTEMPT_LOOKUP_MESSAGE);
 
+/** The parameters an attempt lookup takes; {@link notInLookup} rejects the rest. */
+const LOOKUP_PARAMETERS = new Set(["attempt", ...Object.keys(disclosure)]);
+
+/**
+ * Whether `rejection` is {@link notInLookup}'s: a lookup whose decode refused a
+ * parameter it does not take. A token no check takes, or an empty value, is
+ * refused before the decode and carries no `issue`.
+ */
+function isNotInLookup(cliData: CliData, rejection: CliRejection): boolean {
+  return (
+    cliData.attempt !== undefined &&
+    rejection.issue !== undefined &&
+    !LOOKUP_PARAMETERS.has(rejection.parameter)
+  );
+}
+
 /** The Template a check renders and the data it reads, in either mode. */
 const renderSelection = {
   root: Schema.optionalKey(
@@ -478,7 +494,15 @@ export function createCheckHandler(deps: CheckDeps): CliCommandHandler {
     function* (cliData: CliData) {
       const params = yield* decodeCliParams(cliData, checkParams, {
         command: "template-check",
-      });
+      }).pipe(
+        Effect.mapError((rejection) =>
+          isNotInLookup(cliData, rejection)
+            ? amendRejection(rejection, {
+                hint: rejection.hint ?? ATTEMPT_LOOKUP_HELP,
+              })
+            : rejection,
+        ),
+      );
       const output = params.output ?? [];
       const answer = (result: object) => {
         // Construct a separate disclosure tree so retained attempts keep all outputs.
@@ -712,17 +736,14 @@ export function createCheckHandler(deps: CheckDeps): CliCommandHandler {
         sourceContext = { ...sourceContext, documentPath: params.draft };
         const path = params.draft;
         const read = yield* Effect.result(
-          Effect.tryPromise({
-            try: (signal) => {
-              if (!isAbsolute(path))
-                throw new Error("Use an absolute scratch-file path for draft.");
-              return readFile(path, { encoding: "utf8", signal });
-            },
-            catch: (error) => error,
+          Effect.tryPromise((signal) => {
+            if (!isAbsolute(path))
+              throw new Error("Use an absolute scratch-file path for draft.");
+            return readFile(path, { encoding: "utf8", signal });
           }),
         );
         if (Result.isFailure(read)) {
-          const error = read.failure;
+          const error = read.failure.cause;
           return finish(sourceContext, {
             ok: false,
             input,
@@ -954,11 +975,7 @@ export function createCheckHandler(deps: CheckDeps): CliCommandHandler {
         ok: false,
         diagnostic: rejectionDiagnostic(
           amendRejection(rejection, {
-            hint:
-              rejection.hint ??
-              (rejection.message === ATTEMPT_LOOKUP_MESSAGE
-                ? ATTEMPT_LOOKUP_HELP
-                : INVALID_CHECK_HINT),
+            hint: rejection.hint ?? INVALID_CHECK_HINT,
           }),
         ),
       }),

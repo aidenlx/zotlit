@@ -2,6 +2,7 @@ import { defineConfig } from "oxlint";
 
 import { testBaselineOverrides } from "@zotlit/config/oxlint";
 import baseConfig, {
+  datePattern,
   itemQuerySchemaPaths,
   parentImportPattern,
   uniqueIdPaths,
@@ -24,18 +25,25 @@ const obsidianImportPaths = [
   ...uniqueIdPaths,
 ];
 
-// Effect tests run with the services the plugin's entry points add.
-const effectTestPaths = [
+// The wrappers are applied by the effectEntry Vite plugin
+// (scripts/effect-entry.ts); code imports the package names.
+const effectWrapperPaths = [
   {
-    name: "@effect/vitest",
+    name: "@/lib/effect",
     message:
-      "Use @/lib/effect-vitest: its Effect tests run with the plugin's browser scheduler and loggers.",
+      'Import from "effect": the effectEntry Vite plugin (scripts/effect-entry.ts) resolves "effect" to this wrapper.',
+  },
+  {
+    name: "@/lib/effect-vitest",
+    message:
+      'Import from "@effect/vitest": the effectEntry Vite plugin (scripts/effect-entry.ts) resolves "@effect/vitest" to this wrapper in tests.',
   },
 ];
 
 const commonImports = {
   patterns: [
     parentImportPattern,
+    datePattern,
     {
       group: ["**/citation-index/scan", "./scan"],
       importNames: [
@@ -55,28 +63,22 @@ const runtimeImports = {
   ...commonImports,
   paths: [
     {
-      name: "@/lib/effect",
+      name: "effect",
       importNames: ["ManagedRuntime", "Scheduler"],
       allowTypeImports: true,
       message:
-        "Start Effects through Effect in @/lib/effect; its entry points supply the browser scheduler.",
-    },
-    {
-      name: "effect",
-      allowTypeImports: true,
-      message:
-        "Use @/lib/effect: Obsidian's renderer and workers default to Chromium MessageChannel scheduling. Node setImmediate can starve browser tasks.",
+        "Run Effects with the run functions of Effect from effect instead; they supply the browser scheduler.",
     },
     {
       name: "effect/Effect",
       allowTypeImports: true,
-      message: "Use Effect from @/lib/effect for Chromium scheduling.",
+      message: "Import Effect from effect.",
     },
     {
       name: "effect/ManagedRuntime",
       allowTypeImports: true,
       message:
-        "Use the Effect entry points in @/lib/effect for Chromium scheduling.",
+        "Use the Effect entry points from effect for Chromium scheduling.",
     },
     {
       name: "effect/Scheduler",
@@ -84,7 +86,7 @@ const runtimeImports = {
       message:
         "Obsidian scheduling is owned by @/lib/effect-runtime and @/lib/browser-scheduler.",
     },
-    ...effectTestPaths,
+    ...effectWrapperPaths,
     ...commonImports.paths,
   ],
 };
@@ -101,6 +103,8 @@ export default defineConfig({
     "./scripts/oxlint-plugin-services.ts",
     "./scripts/oxlint-plugin-effect-tests.ts",
     "./scripts/oxlint-plugin-logging.ts",
+    "./scripts/oxlint-plugin-errors.ts",
+    "./scripts/oxlint-plugin-effect-style.ts",
     new URL("../../packages/config/oxlint-plugin-keyboard.ts", import.meta.url)
       .pathname,
   ],
@@ -112,6 +116,7 @@ export default defineConfig({
     "zotlit-menu/no-literal-section": "error",
     "zotlit-services/service-tag-id": "error",
     "zotlit-services/cli-command-registration": "error",
+    "zotlit-effect-style/no-tacit": "error",
     // Repeats the base pattern: a rule set here replaces the base entry.
     "no-restricted-imports": ["error", runtimeImports],
   },
@@ -121,7 +126,7 @@ export default defineConfig({
       rules: {
         "no-restricted-imports": [
           "error",
-          { ...runtimeImports, patterns: [parentImportPattern] },
+          { ...runtimeImports, patterns: [parentImportPattern, datePattern] },
         ],
       },
     },
@@ -132,6 +137,11 @@ export default defineConfig({
     {
       files: ["src/**"],
       rules: { "zotlit-logging/no-logtape-in-effect-file": "error" },
+    },
+    {
+      files: ["src/**"],
+      excludeFiles: ["src/**/*.test.{ts,tsx}"],
+      rules: { "zotlit-errors/no-message-match": "error" },
     },
     {
       // Tests and the LogTape bridge and sink owners may use LogTape directly.
@@ -211,7 +221,7 @@ export default defineConfig({
     },
     {
       // These tests exercise the run entry points themselves.
-      files: ["src/lib/effect-runtime.test.ts"],
+      files: ["src/lib/effect-runtime.test.ts", "src/lib/effect-entry.test.ts"],
       rules: { "zotlit-effect-tests/no-effect-run-in-test": "off" },
     },
     {
@@ -222,9 +232,148 @@ export default defineConfig({
         "zotlit-services/interrupt-predicate": "error",
         "zotlit-services/layer-stream-consumer": "error",
         "zotlit-services/no-legacy-service": "error",
-        "zotlit-services/obsidian-events-intake": "error",
         "zotlit-services/scope-closed": "error",
       },
+    },
+    {
+      files: ["src/**"],
+      excludeFiles: [
+        "**/*.test.{ts,tsx}",
+        "**/__fixtures__/**",
+        "**/__fixtures__.ts",
+        // The capability tags themselves read the App.
+        "src/lib/obsidian-*.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "error" },
+    },
+    // A test double needs no span: service methods are Effect.fn in the plugin
+    // code only.
+    {
+      files: [
+        "**/*.test.*",
+        "**/*.bench.ts",
+        "**/*.browser-test.ts",
+        "**/__fixtures__/**",
+        "**/__fixtures__.ts",
+      ],
+      rules: { "effecttsgo/effect-fn-opportunity": "off" },
+    },
+    // Capability backlog: files that import Effect and still reach the App,
+    // grouped by what blocks the change. A file moves off its list when it
+    // takes Obsidian from the capability tags.
+    {
+      // Legacy classes that hold the App (`app`, `#app`, `#deps.app`). A file
+      // moves off the list when its service converts to Effect.
+      files: [
+        "src/services/citekey-reading/service.ts",
+        "src/services/graph-citations/service.ts",
+        "src/services/profile/service.ts",
+        "src/services/template/migration.ts",
+        "src/services/template/service.ts",
+        "src/services/wikilink-reading/service.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // Obsidian views and components, which register on their own lifecycle.
+      // A file moves off the list when its view reads the tags.
+      files: [
+        "src/views/annot-view/view.tsx",
+        "src/views/references/view.tsx",
+        "src/views/template-data-explorer/view.tsx",
+        "src/views/template-workbench/view.tsx",
+        "src/views/welcome/banner.tsx",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // No tag member yet: `vault.getMarkdownFiles`. citation-index/service.ts
+      // also calls `vault.getFileByPath` and `vault.cachedRead`, which the
+      // Vault tag has.
+      files: [
+        "src/services/citation-index/service.ts",
+        "src/services/note-index/service.ts",
+        "src/services/template-workbench/inspect.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // No tag member yet: `vault.getName`.
+      files: [
+        "src/services/citation-index/cli/register.ts",
+        "src/services/local-bridge/customize.ts",
+        "src/services/template-workbench/register.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // No tag member yet: `vault.adapter`.
+      files: [
+        "src/services/attachment-open/actions.ts",
+        "src/services/log/service.ts",
+        "src/views/pandoc-export/register.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // No tag member yet: `metadataCache.getFirstLinkpathDest` and
+      // `metadataCache.getCache`. citation-text/service.ts also calls
+      // `vault.getFileByPath`, which the Vault tag has.
+      files: [
+        "src/services/citation-text/service.ts",
+        "src/views/query-view/table-notes.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // No tag member yet: `workspace.updateOptions` (citekey-editor,
+      // wikilink-editor), `workspace.requestActiveLeafEvents` (use-ledger),
+      // `workspace.openLinkText` (companion-view), the side splits
+      // (library/view.ts), and the raw workspace that the editor lookup
+      // takes (library/view.ts, library/item-actions.ts).
+      files: [
+        "src/services/citekey-editor/service.ts",
+        "src/services/note-feature/companion-view.ts",
+        "src/services/use-ledger/service.ts",
+        "src/services/wikilink-editor/service.ts",
+        "src/views/library/item-actions.ts",
+        "src/views/library/view.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // No tag event yet: the workspace's `layout-change`.
+      files: ["src/views/welcome/register.ts"],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // Helpers and constructors that take a raw App object
+      // (`documentPresentation(app.metadataCache, …)`,
+      // `readProfileStamp(app.metadataCache, …)`, `vault: app.vault`).
+      // note-feature/operations.ts also listens to `metadataCache.on("changed")`
+      // in `parsedCache` through a local alias, which the rule does not see.
+      files: [
+        "src/services/build.ts",
+        "src/services/citation-popover/service.tsx",
+        "src/services/note-feature/operations.ts",
+        "src/services/pandoc/register.ts",
+        "src/services/template-workbench/data.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
+    },
+    {
+      // Plain async code, or an Effect.fn, that reaches the App through
+      // `deps.app`: the deps must carry the tag first.
+      files: [
+        "src/services/local-bridge/vault-targets.ts",
+        "src/services/note-feature/update-single.ts",
+        "src/services/note-import/service.ts",
+        "src/services/protocol/register.ts",
+        "src/services/template-workbench/check-profile-document.ts",
+        "src/views/note-preview/render.ts",
+        "src/views/note-preview/session.ts",
+      ],
+      rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
       // The helper the rule points at.
@@ -319,12 +468,55 @@ export default defineConfig({
         "src/services/item-query/answer.ts",
         "src/services/item-query/job.ts",
         "src/services/item-query/measure.ts",
-        "src/services/item-query/service.ts",
         "src/services/item-query/trace.ts",
-        "src/services/note-feature/operations.ts",
-        "src/views/annot-view/view.tsx",
       ],
       rules: { "zotlit-services/clock-time": "off" },
+    },
+    {
+      // Date adapter: Obsidian's YAML frontmatter can hand in a Date.
+      files: [
+        "src/lib/frontmatter-date.ts",
+        "src/lib/frontmatter-date.test.ts",
+      ],
+      rules: {
+        "effecttsgo/global-date": "off",
+        "no-restricted-globals": "off",
+      },
+    },
+    {
+      files: ["src/**/*.{ts,tsx}"],
+      excludeFiles: [
+        // Converts between Effect's DateTime and Clock and the Temporal of plain code.
+        "src/lib/effect-clock.ts",
+      ],
+      rules: { "zotlit-services/temporal-in-effect": "error" },
+    },
+    {
+      // The edge between Effect and plain code: a plain adapter hands Effect
+      // values to plain callers as Temporal; @zotlit/db rows carry
+      // Temporal.Instant, the date type of the template contract, and
+      // instant-codec.ts codes it for the ZoteroReads wire.
+      files: [
+        "src/services/**/plain.ts",
+        "src/services/zotero-reads/instant-codec.ts",
+      ],
+      rules: { "zotlit-services/temporal-in-effect": "off" },
+    },
+    {
+      // Rewritten by effect/drop-port; the date rule follows after it merges.
+      files: [
+        "src/services/zotero-local-api/**",
+        "src/services/annotation-repository/repository.ts",
+        "src/services/annotation-repository/notices.ts",
+        "src/services/annotation-repository/service.ts",
+        "src/services/annotation-repository/__fixtures__.ts",
+        "src/services/build.ts",
+      ],
+      rules: {
+        "zotlit-services/temporal-in-effect": "off",
+        "no-restricted-globals": "off",
+        "typescript/no-restricted-types": "off",
+      },
     },
     {
       files: ["src/services/**/plain.ts"],
@@ -347,12 +539,6 @@ export default defineConfig({
         "src/views/query-view/table-notes.ts",
       ],
       rules: { "zotlit-services/no-nanoevents": "off" },
-    },
-    {
-      // Registered its events before obsidianEvents existed. It moves off this
-      // list when it adopts the helper.
-      files: ["src/services/use-ledger/service.ts"],
-      rules: { "zotlit-services/obsidian-events-intake": "off" },
     },
     {
       files: ["src/views/annot-view/*.{ts,tsx}"],
@@ -398,22 +584,25 @@ export default defineConfig({
         "no-restricted-imports": [
           "error",
           {
-            patterns: [parentImportPattern],
-            paths: [...effectTestPaths, ...obsidianImportPaths],
+            patterns: [parentImportPattern, datePattern],
+            paths: [...effectWrapperPaths, ...obsidianImportPaths],
           },
         ],
       },
     },
     {
+      // The wrappers, which reach the real package (NATIVE in scripts/effect-entry.ts).
       files: [
+        "src/lib/browser-scheduler.ts",
         "src/lib/effect.ts",
-        "src/lib/effect-worker.ts",
-        "src/lib/effect-runtime.ts",
         "src/lib/effect-layer.ts",
         "src/lib/effect-log.ts",
+        "src/lib/effect-runtime.ts",
+        "src/lib/effect-runtime-factory.ts",
         "src/lib/effect-services.ts",
         "src/lib/effect-vitest.ts",
-        "src/lib/browser-scheduler.ts",
+        "src/lib/effect-worker.ts",
+        "src/lib/effect-worker-runtime.ts",
       ],
       rules: { "no-restricted-imports": ["error", commonImports] },
     },
@@ -438,6 +627,7 @@ export default defineConfig({
         "no-restricted-imports": [
           "error",
           {
+            patterns: [datePattern],
             paths: itemQuerySchemaPaths,
           },
         ],
@@ -454,7 +644,7 @@ export default defineConfig({
       // The rule tests reach the package-local Oxlint modules in scripts/.
       files: ["src/lint/*.test.ts"],
       rules: {
-        "no-restricted-imports": "off",
+        "no-restricted-imports": ["error", { patterns: [datePattern] }],
       },
     },
     {
@@ -550,6 +740,7 @@ export default defineConfig({
           "error",
           {
             patterns: [
+              datePattern,
               {
                 group: ["../src/**", "!../src/services/managed-binary/pin.ts"],
                 allowTypeImports: true,

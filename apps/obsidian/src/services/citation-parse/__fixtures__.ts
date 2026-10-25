@@ -1,34 +1,26 @@
 // The real parse layer over a controllable Obsidian layout boundary.
-import type { App } from "obsidian";
+import { Effect, Layer } from "effect";
 
-import { Effect, Layer } from "@/lib/effect";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { buildRuntime } from "@/lib/effect-layer";
-import { ObsidianApp } from "@/lib/obsidian-app";
+import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 
+import type { ParseReply } from "./client";
 import { plainCitationParse } from "./plain";
+import type { PlainCitationParse } from "./plain";
 import { layerCitationParse } from "./service";
 
 function openParseHarness(ready: boolean) {
   const stack = new AsyncDisposableStack();
-  const deferred = {
-    callback: () => {},
-  };
-  const app = {
-    workspace: {
-      onLayoutReady: (callback: () => void) => {
-        if (ready) callback();
-        else deferred.callback = callback;
-      },
-    },
-  } as unknown as App;
+  const workspace = new MemoryWorkspace({ layoutReady: ready });
   const runtime = buildRuntime(
-    layerCitationParse.pipe(Layer.provide(Layer.succeed(ObsidianApp, app))),
+    layerCitationParse.pipe(Layer.provide(layerWorkspaceFrom(workspace))),
     stack,
   );
   return {
     runtime,
     parser: plainCitationParse(runtime),
-    layoutReady: () => deferred.callback(),
+    layoutReady: () => workspace.layoutReady(),
     context: () => runtime.context(),
     resources: stack.move(),
   };
@@ -48,3 +40,18 @@ export const makeParseHarness = Effect.fnUntraced(function* (ready = false) {
     () => Effect.promise(() => harness.resources.disposeAsync()),
   );
 });
+
+/**
+ * A caller of the plain facade, as the Citation Index is: it holds the parse's
+ * signal and cancels by aborting it.
+ */
+export function cancellableParse(
+  parser: PlainCitationParse,
+  request: Parameters<PlainCitationParse["parse"]>[0],
+): { pending: Promise<ParseReply>; cancel: () => void } {
+  const caller = new AbortController();
+  return {
+    pending: parser.parse(request, caller.signal),
+    cancel: () => caller.abort(),
+  };
+}

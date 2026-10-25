@@ -1,13 +1,3 @@
-import { existsSync, watch } from "node:fs";
-import type { WatchListener, WatchOptionsWithStringEncoding } from "node:fs";
-import { dirname, join } from "node:path";
-
-import { getSchemaVersions, SUPPORTED_SCHEMA_VERSIONS } from "@zotlit/db";
-import type { ZoteroSchemaVersions } from "@zotlit/db";
-import { createClient } from "@zotlit/db/client/node";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-
-import { ZOTERO_DB_FILENAME, ZOTERO_WAL_FILENAME } from "@/lib/constants";
 // The production Connection: owns the Zotero database source — Read Mode, fingerprints, watchers, and the refresh lane.
 import {
   Cause,
@@ -21,7 +11,17 @@ import {
   Ref,
   Scope,
   Stream,
-} from "@/lib/effect";
+} from "effect";
+import { existsSync, watch } from "node:fs";
+import type { WatchListener, WatchOptionsWithStringEncoding } from "node:fs";
+import { dirname, join } from "node:path";
+
+import { getSchemaVersions, SUPPORTED_SCHEMA_VERSIONS } from "@zotlit/db";
+import type { ZoteroSchemaVersions } from "@zotlit/db";
+import { createClient } from "@zotlit/db/client/node";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+
+import { ZOTERO_DB_FILENAME, ZOTERO_WAL_FILENAME } from "@/lib/constants";
 import { withLogCategory } from "@/lib/effect-log-category";
 import { readParentBeside } from "@/services/database/read-parent";
 import {
@@ -287,15 +287,14 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
       const reportSchemaVersions = Effect.fnUntraced(function* (
         client: NodeDatabaseClient,
       ) {
-        const versions = yield* Effect.try({
+        const versions = yield* Effect.try(
           // boundary: @zotlit/db reads node:sqlite synchronously.
-          try: () => getSchemaVersions(client),
-          catch: (error) => error,
-        }).pipe(
+          () => getSchemaVersions(client),
+        ).pipe(
           Effect.catch((error) =>
-            logDebug("Zotero schema version unreadable", { error }).pipe(
-              Effect.as(null),
-            ),
+            logDebug("Zotero schema version unreadable", {
+              error: error.cause,
+            }).pipe(Effect.as(null)),
           ),
         );
         if (versions === null) return;
@@ -368,7 +367,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
               (client) => Effect.sync(() => client.$client.close()),
             ).pipe(Scope.provide(clientScope));
             const validated = yield* validateClient(client).pipe(
-              Effect.mapError(toDbUnavailable),
+              Effect.mapError((cause) => toDbUnavailable(cause)),
             );
             yield* databaseGenerations.record(validated, file);
             yield* logReadFallback(prepared);
@@ -680,21 +679,21 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
         const result = yield* Effect.result(
           Effect.acquireRelease(
             // boundary: fs.watch is an external callback API.
-            Effect.try({
-              try: () =>
-                ports.watch(walPath, WATCH_OPTIONS, () =>
-                  enqueueWatchSignal({ trusted: false }),
-                ),
-              catch: (error) => error,
-            }),
+            Effect.try(() =>
+              ports.watch(walPath, WATCH_OPTIONS, () =>
+                enqueueWatchSignal({ trusted: false }),
+              ),
+            ),
             (watcher) => Effect.sync(() => watcher.close()),
           ).pipe(Scope.provide(scope)),
         );
         if (result._tag === "Failure") {
           yield* Scope.close(scope, Exit.void);
-          yield* logWarningCause("Failed to watch Zotero WAL", result.failure, {
-            walPath,
-          });
+          yield* logWarningCause(
+            "Failed to watch Zotero WAL",
+            result.failure.cause,
+            { walPath },
+          );
           return;
         }
         yield* Ref.set(walWatcherScope, scope);
@@ -715,29 +714,25 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
           Effect.gen(function* () {
             yield* Effect.acquireRelease(
               // boundary: fs.watch is an external callback API.
-              Effect.try({
-                try: () =>
-                  ports.watch(parent, WATCH_OPTIONS, (_event, filename) => {
-                    const name = filename?.toString();
-                    if (!watchedFilename(name)) return;
-                    enqueueWatchSignal({
-                      trusted: false,
-                      ...(name === ZOTERO_WAL_FILENAME && { filename: name }),
-                    });
-                  }),
-                catch: (error) => error,
-              }),
+              Effect.try(() =>
+                ports.watch(parent, WATCH_OPTIONS, (_event, filename) => {
+                  const name = filename?.toString();
+                  if (!watchedFilename(name)) return;
+                  enqueueWatchSignal({
+                    trusted: false,
+                    ...(name === ZOTERO_WAL_FILENAME && { filename: name }),
+                  });
+                }),
+              ),
               (watcher) => Effect.sync(() => watcher.close()),
             );
             yield* Effect.acquireRelease(
               // boundary: fs.watch is an external callback API.
-              Effect.try({
-                try: () =>
-                  ports.watch(current.sourcePath, WATCH_OPTIONS, () =>
-                    enqueueWatchSignal({ trusted: false }),
-                  ),
-                catch: (error) => error,
-              }),
+              Effect.try(() =>
+                ports.watch(current.sourcePath, WATCH_OPTIONS, () =>
+                  enqueueWatchSignal({ trusted: false }),
+                ),
+              ),
               (watcher) => Effect.sync(() => watcher.close()),
             );
           }).pipe(Scope.provide(scope)),
@@ -746,7 +741,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
           yield* Scope.close(scope, Exit.void);
           yield* logWarningCause(
             "Failed to watch the Zotero database",
-            result.failure,
+            result.failure.cause,
           );
           return null;
         }
@@ -770,7 +765,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
       });
 
       yield* Stream.fromQueue(watchSignals).pipe(
-        Stream.runForEach(scheduleWatchedRefresh),
+        Stream.runForEach((signal) => scheduleWatchedRefresh(signal)),
         Effect.forkIn(lifetime, { startImmediately: true }),
       );
 
@@ -812,7 +807,9 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
         changes,
         // Fails when the lane's last refresh failed, also when the previous
         // client keeps serving; `Changes` tells the two apart.
-        refresh: Effect.flatMap(enqueueRefresh(), Deferred.await),
+        refresh: Effect.flatMap(enqueueRefresh(), (deferred) =>
+          Deferred.await(deferred),
+        ),
         notifyExternalChange: Effect.gen(function* () {
           yield* logDebug("External change signalled, scheduling refresh");
           yield* scheduleWatchedRefresh({ trusted: true });

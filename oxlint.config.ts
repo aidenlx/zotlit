@@ -1,6 +1,9 @@
 import { defineConfig } from "oxlint";
 
-import baseConfig, { testBaselineOverrides } from "@zotlit/config/oxlint";
+import baseConfig, {
+  datePattern,
+  testBaselineOverrides,
+} from "@zotlit/config/oxlint";
 
 export default defineConfig({
   extends: [baseConfig],
@@ -47,7 +50,7 @@ export default defineConfig({
       // Root release script reaches across apps to reuse their manifest helpers.
       files: ["scripts/**"],
       rules: {
-        "no-restricted-imports": "off",
+        "no-restricted-imports": ["error", { patterns: [datePattern] }],
       },
     },
   ],

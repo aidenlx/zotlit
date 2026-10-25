@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { Menu, TFile } from "@mock/obsidian";
+import { Effect } from "effect";
 import type { Command, Plugin, TFile as ObsidianFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { fileMenuHandler } from "@/services/__fixtures__/file-menu";
 import { defaults } from "@/services/settings/schema";

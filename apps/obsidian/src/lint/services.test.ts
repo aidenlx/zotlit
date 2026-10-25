@@ -10,10 +10,11 @@ import {
   noLegacyService,
   noNanoevents,
   layerStreamConsumer,
-  obsidianEventsIntake,
+  obsidianCapabilities,
   plainAdapterStreams,
   scopeClosed,
   serviceTagId,
+  temporalInEffect,
   workerRpc,
 } from "../../scripts/oxlint-plugin-services";
 
@@ -152,7 +153,7 @@ tester.run("worker-rpc", workerRpc, {
 
 tester.run("no-nanoevents", noNanoevents, {
   valid: [
-    'import { PubSub, SubscriptionRef } from "@/lib/effect";',
+    'import { PubSub, SubscriptionRef } from "effect";',
     'import { subscribe } from "@/lib/effect-stream";',
   ],
   invalid: [
@@ -266,49 +267,93 @@ tester.run("scope-closed", scopeClosed, {
   ],
 });
 
-tester.run("obsidian-events-intake", obsidianEventsIntake, {
+const effect = 'import { Effect } from "effect";\n';
+
+tester.run("obsidian-capabilities", obsidianCapabilities, {
   valid: [
-    // Legacy services keep registerEvent on their stack until they convert.
-    `async function load() { stack.use(registerEvent(vault.on("rename", move))); }`,
-    `Effect.gen(function* () {
-      const events = yield* obsidianEvents<VaultEvents>();
-      yield* events.on("rename", vault, "rename");
+    // A legacy file, with no Effect import, keeps the App.
+    "const file = app.vault.getFileByPath(path);",
+    'stack.use(this.registerEvent(this.app.workspace.on("file-open", open)));',
+    // A type-only import of the bridge names the seam a legacy file holds.
+    'import type { EffectBridge } from "@/lib/effect-bridge";\nconst cache = app.metadataCache.getFileCache(file);',
+    // Not the App: a tag, or another object's members.
+    `${effect}Effect.gen(function* () {
+      const vault = yield* Vault;
+      const file = yield* vault.getFileByPath(path);
     })`,
+    `${effect}settings.vault.getName(); emitter.on("change", run);`,
+    `${effect}app["vault"];`,
   ],
   invalid: [
     {
-      code: `Effect.gen(function* () { registerEvent(vault.on("rename", move)); })`,
-      errors: [{ messageId: "intake" }],
+      code: `${effect}const file = app.vault.getFileByPath(path);`,
+      errors: [{ messageId: "capability" }],
     },
     {
-      // The acquire callback is nested, but it still runs inside the layer.
-      code: `Effect.fnUntraced(function* () {
-        yield* Effect.acquireDisposable(Effect.sync(() => registerEvent(workspace.on("file-open", open))));
-      })`,
-      errors: [{ messageId: "intake" }],
+      code: `${effect}const file = this.app.workspace.getActiveFile();`,
+      errors: [{ messageId: "capability" }],
+    },
+    {
+      code: `${effect}const renamed = app.fileManager.renameFile(file, to);`,
+      errors: [{ messageId: "capability" }],
+    },
+    {
+      code: 'import { Context } from "effect";\nclass X { #app; read(file) { return this.#app.metadataCache.getFileCache(file); } }',
+      errors: [{ messageId: "capability" }],
+    },
+    {
+      code: 'import * as Stream from "effect/Stream";\nconst { adapter } = plugin.app.vault;',
+      errors: [{ messageId: "capability" }],
+    },
+    {
+      // A type-only import of another Effect module counts.
+      code: 'import type { ClosableModal } from "@/lib/effect-modal";\nctx.app.vault.create(path, data);',
+      errors: [{ messageId: "capability" }],
+    },
+    {
+      // The bridge is an Effect module when its values are imported.
+      code: 'import { bridgeOf } from "@/lib/effect-bridge";\napp.metadataCache.getFirstLinkpathDest(link, path);',
+      errors: [{ messageId: "capability" }],
+    },
+    {
+      code: `${effect}const ref = app.workspace.on("layout-change", update);`,
+      errors: [{ messageId: "event" }],
+    },
+    {
+      code: `${effect}this.app.metadataCache.on("changed", update);`,
+      errors: [{ messageId: "event" }],
+    },
+    {
+      // One report for the registration, one for the raw event; none for app.vault.
+      code: `${effect}this.registerEvent(this.app.vault.on("rename", move));`,
+      errors: [{ messageId: "registerEvent" }, { messageId: "event" }],
+    },
+    {
+      code: `${effect}Effect.gen(function* () { registerEvent(vault.on("rename", move)); })`,
+      errors: [{ messageId: "registerEvent" }],
     },
   ],
 });
 
 tester.run("no-default-runtime", noDefaultRuntime, {
   valid: [
-    'import { Effect } from "@/lib/effect";\nruntime.runSync(x);',
-    'import { Effect } from "@/lib/effect";\nbridge.runPromise(x);',
-    'import { Effect } from "@/lib/effect";\nEffect.runSyncWith(ctx)(x);',
+    'import { Effect } from "effect";\nruntime.runSync(x);',
+    'import { Effect } from "effect";\nbridge.runPromise(x);',
+    'import { Effect } from "effect";\nEffect.runSyncWith(ctx)(x);',
     'import { Effect } from "effect";\nEffect.runPromiseWith(ctx)(x);',
     // A local name that is not the Effect module.
     "const Effect = { runSync: () => 0 };\nEffect.runSync(x);",
     'import { Effect } from "./not-effect";\nEffect.runSync(x);',
     // Not the Effect namespace of this module.
-    'import { Effect } from "@/lib/effect";\nStream.runSync(x);',
+    'import { Effect } from "effect";\nStream.runSync(x);',
   ],
   invalid: [
     {
-      code: 'import { Effect } from "@/lib/effect";\nEffect.runSync(x);',
+      code: 'import { Effect } from "effect";\nEffect.runSync(x);',
       errors: [{ messageId: "empty" }],
     },
     {
-      code: 'import { Effect } from "@/lib/effect";\nEffect.runPromise(x);',
+      code: 'import { Effect } from "effect";\nEffect.runPromise(x);',
       errors: [{ messageId: "empty" }],
     },
     {
@@ -316,7 +361,7 @@ tester.run("no-default-runtime", noDefaultRuntime, {
       errors: [{ messageId: "empty" }],
     },
     {
-      code: 'import { Effect as E } from "@/lib/effect";\nawait E.runPromiseExit(x);',
+      code: 'import { Effect as E } from "effect";\nawait E.runPromiseExit(x);',
       errors: [{ messageId: "empty" }],
     },
   ],
@@ -324,7 +369,7 @@ tester.run("no-default-runtime", noDefaultRuntime, {
 
 const services = "/repo/apps/obsidian/src/services/example/layer.ts";
 const library = "/repo/apps/obsidian/src/lib/example.ts";
-const effectImport = 'import { Effect } from "@/lib/effect";\n';
+const effectImport = 'import { Effect } from "effect";\n';
 const instantOption = { messageId: "option" };
 
 tester.run("clock-time", clockTime, {
@@ -349,10 +394,6 @@ tester.run("clock-time", clockTime, {
     },
     // Another object's `now`.
     { code: `${effectImport}const at = clock.now();`, filename: library },
-    {
-      code: `${effectImport}const at = Temporal.Instant.from(text);`,
-      filename: library,
-    },
     // A layer that reads Clock takes no `now`.
     {
       code: `${effectImport}export const layer = (options: { readonly root: string }) => Layer.empty;`,
@@ -376,16 +417,6 @@ tester.run("clock-time", clockTime, {
   invalid: [
     {
       code: `${effectImport}const at = Date.now();`,
-      filename: library,
-      errors: [{ messageId: "clock" }],
-    },
-    {
-      code: `${effectImport}const at = Temporal.Now.instant();`,
-      filename: library,
-      errors: [{ messageId: "clock" }],
-    },
-    {
-      code: `${effectImport}const zone = Temporal.Now.timeZoneId();`,
       filename: library,
       errors: [{ messageId: "clock" }],
     },
@@ -425,6 +456,62 @@ tester.run("clock-time", clockTime, {
       code: `${effectImport}export const layerSessions = (now: () => Temporal.Instant = () => Temporal.Instant.from(zero)) => Layer.empty;`,
       filename: services,
       errors: [instantOption],
+    },
+  ],
+});
+
+const temporal = { messageId: "temporal" };
+
+tester.run("temporal-in-effect", temporalInEffect, {
+  valid: [
+    // Outside Effect, Temporal is the date API.
+    { code: "const at = Temporal.Instant.from(text);", filename: library },
+    {
+      code: "let at: Temporal.Instant | undefined;\nconst zone = Temporal.Now.timeZoneId();",
+      filename: library,
+    },
+    // A type-only import of the bridge is not Effect code.
+    {
+      code: 'import type { EffectBridge } from "@/lib/effect-bridge";\nconst at = Temporal.Instant.from(text);',
+      filename: library,
+    },
+    // Effect's DateTime, and a property that only shares the name.
+    {
+      code: `${effectImport}const at = DateTime.makeUnsafe(text);\nconst api = options.Temporal;\nconst names = { Temporal: 1 };`,
+      filename: library,
+    },
+  ],
+  invalid: [
+    {
+      code: `${effectImport}const at = Temporal.Instant.from(text);`,
+      filename: library,
+      errors: [temporal],
+    },
+    {
+      code: `${effectImport}const at = Temporal.Now.instant();`,
+      filename: library,
+      errors: [temporal],
+    },
+    {
+      code: `${effectImport}const wait = Temporal.Duration.from({ seconds: 5 });`,
+      filename: library,
+      errors: [temporal],
+    },
+    {
+      code: `${effectImport}interface Use { readonly instant: Temporal.Instant }`,
+      filename: library,
+      errors: [temporal],
+    },
+    {
+      code: `${effectImport}const is = (u: unknown) => u instanceof Temporal.Instant;`,
+      filename: library,
+      errors: [temporal],
+    },
+    {
+      // An `@/lib/effect-*` module is Effect code too.
+      code: 'import { instantClock } from "@/lib/effect-clock";\nconst spy = vi.spyOn(Temporal.Now, "instant");',
+      filename: library,
+      errors: [temporal],
     },
   ],
 });

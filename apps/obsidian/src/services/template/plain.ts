@@ -1,5 +1,5 @@
-import { Cause, Effect, Exit } from "@/lib/effect";
-import type { ManagedRuntime, Stream } from "@/lib/effect";
+import { Cause, Effect, Exit } from "effect";
+import type { ManagedRuntime, Stream } from "effect";
 
 import { plainTemplateError } from "./errors";
 import { TemplateMigration } from "./migration";
@@ -56,12 +56,11 @@ export function plainTemplate(
     get loaded() {
       return read(service.loaded);
     },
-    getUnrecognizedFiles: () => read(service.getUnrecognizedFiles()),
-    getTemplateFileStatuses: () => read(service.getTemplateFileStatuses()),
-    getCitationTemplateStatus: () => read(service.getCitationTemplateStatus()),
-    materializeCitationTemplate: () =>
-      run(service.materializeCitationTemplate()),
-    restoreCitationTemplate: () => run(service.restoreCitationTemplate()),
+    getUnrecognizedFiles: () => read(service.getUnrecognizedFiles),
+    getTemplateFileStatuses: () => read(service.getTemplateFileStatuses),
+    getCitationTemplateStatus: () => read(service.getCitationTemplateStatus),
+    materializeCitationTemplate: () => run(service.materializeCitationTemplate),
+    restoreCitationTemplate: () => run(service.restoreCitationTemplate),
     getLiteratureNoteTemplate: (reference) =>
       read(service.getLiteratureNoteTemplate(reference)),
     prepareLiteratureNoteTemplateSource: (source) =>
@@ -69,19 +68,19 @@ export function plainTemplate(
     renderProfileAnnotation: (data, options) =>
       read(service.renderProfileAnnotation(data, options)),
     getLiteratureNoteTemplateStatuses: () =>
-      read(service.getLiteratureNoteTemplateStatuses()),
+      read(service.getLiteratureNoteTemplateStatuses),
     renderLiteratureNoteTemplateSource: (source, data) =>
       read(service.renderLiteratureNoteTemplateSource(source, data)),
     exportLiteratureNotePack: (reference, options) =>
       run(service.exportLiteratureNotePack(reference, options)),
     exportLiteratureNotePackSource: (source, options) =>
       run(service.exportLiteratureNotePackSource(source, options)),
-    refresh: () => run(service.refresh()),
+    refresh: () => run(service.refresh),
     waitUntilSettled: (timeoutMs) => run(service.waitUntilSettled(timeoutMs)),
     get frontmatterFields() {
       return read(service.frontmatterFields);
     },
-    getFrontmatterFieldStatus: () => read(service.getFrontmatterFieldStatus()),
+    getFrontmatterFieldStatus: () => read(service.getFrontmatterFieldStatus),
     evaluateFrontmatterFields: (fields, zt) =>
       read(service.evaluateFrontmatterFields(fields, zt)),
     render: (name, data) => read(service.render(name, data)),
@@ -90,13 +89,13 @@ export function plainTemplate(
       read(service.renderCitation(refs, variant)),
     renderCitationData: (data) => read(service.renderCitationData(data)),
     getPartialDocument: (name) => read(service.getPartialDocument(name)),
-    getPartialNames: () => read(service.getPartialNames()),
-    getPartialDocuments: () => read(service.getPartialDocuments()),
-    getPartialEntries: () => read(service.getPartialEntries()),
+    getPartialNames: () => read(service.getPartialNames),
+    getPartialDocuments: () => read(service.getPartialDocuments),
+    getPartialEntries: () => read(service.getPartialEntries),
     planPartialUnpack: (bundled) => read(service.planPartialUnpack(bundled)),
     unpackPartials: (plan, options) =>
       run(service.unpackPartials(plan, options)),
-    getReservedPartialFiles: () => read(service.getReservedPartialFiles()),
+    getReservedPartialFiles: () => read(service.getReservedPartialFiles),
     createPartial: (name, options) => run(service.createPartial(name, options)),
     deletePartial: (name) => run(service.deletePartial(name)),
     renderPartialSource: (source, data, options) =>
@@ -107,9 +106,8 @@ export function plainTemplate(
     analyzeRootVariables: (name) => read(service.analyzeRootVariables(name)),
     getTemplateSource: (name) => run(service.getTemplateSource(name)),
     getLegacyLiteratureNoteTemplateFiles: () =>
-      read(service.getLegacyLiteratureNoteTemplateFiles()),
-    getLegacyTemplateDocuments: () =>
-      read(service.getLegacyTemplateDocuments()),
+      read(service.getLegacyLiteratureNoteTemplateFiles),
+    getLegacyTemplateDocuments: () => read(service.getLegacyTemplateDocuments),
     convertLegacyTemplateDocuments: (refs) =>
       run(service.convertLegacyTemplateDocuments(refs)),
     convertLegacyLiteratureNoteTemplates: (data) =>
@@ -145,8 +143,8 @@ export function plainTemplateMigration(
     return exit.value;
   };
   return {
-    whenSettled: () => execute(service.whenSettled()),
-    convert: () => execute(service.convert()),
-    retryCleanup: () => execute(service.retryCleanup()),
+    whenSettled: () => execute(service.whenSettled),
+    convert: () => execute(service.convert),
+    retryCleanup: () => execute(service.retryCleanup),
   };
 }

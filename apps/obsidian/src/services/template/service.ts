@@ -1,3 +1,14 @@
+import {
+  Context,
+  Effect,
+  Fiber,
+  Layer,
+  PubSub,
+  Scope,
+  Stream,
+  SubscriptionRef,
+} from "effect";
+import type { Cause } from "effect";
 import { dirname, join } from "node:path/posix";
 import { TFile } from "obsidian";
 import type { App, TAbstractFile } from "obsidian";
@@ -52,25 +63,16 @@ import {
 } from "@zotlit/templates/obsidian";
 
 import { RESERVED_KEYS } from "@/lib/constants";
-import {
-  Context,
-  Effect,
-  Fiber,
-  Layer,
-  PubSub,
-  Scope,
-  Stream,
-  SubscriptionRef,
-} from "@/lib/effect";
-import type { Cause } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
+import { forkEach } from "@/lib/effect-stream";
 import { ensureFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { processLiveText, readLiveText } from "@/lib/live-text";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { Vault } from "@/lib/obsidian-vault";
+import type { VaultEvent } from "@/lib/obsidian-vault";
 import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
-import { isFileExistsError } from "@/lib/vault-errors";
 import type { ResolvedProfile } from "@/services/profile/bindings";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -119,6 +121,10 @@ const EMBEDDED_DEFAULT_WINNER = {
 
 interface TemplateEngineOptions {
   app: App;
+  /** Creates each partial document; a taken path fails as `FileExists`. */
+  vault: Pick<Vault["Service"], "create">;
+  /** Runs an Effect on the layer's context. */
+  runPromise: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>;
   settings: { readonly current: Readonly<Settings> };
   changed: () => void;
   flushRequested: () => void;
@@ -471,6 +477,8 @@ const wrapManagedContent = managedRegionTransform(MANAGED_CONTENT_TEMPLATE);
 /** Rendering and vault-document operations; the Template layer owns its lifetime. */
 class TemplateEngine {
   readonly #app;
+  readonly #vault;
+  readonly #runPromise;
   readonly #settings;
   readonly #facade = new TemplateFacade({
     // The built-in `content` renders inline; only a vault `content` template
@@ -542,6 +550,8 @@ class TemplateEngine {
     this.#schedule = options.schedule;
     this.#log = options.log;
     this.#app = options.app;
+    this.#vault = options.vault;
+    this.#runPromise = options.runPromise;
     this.#settings = options.settings;
     this.#javascriptTemplatesEnabled =
       this.#app.loadLocalStorage(JS_TEMPLATES_STORAGE_KEY) === "1";
@@ -1341,19 +1351,17 @@ class TemplateEngine {
       }
     }
     await ensureFolder(this.#app, folder || "/");
-    try {
-      await this.#app.vault.create(
-        partialPath(folder, step.name),
-        step.document,
-      );
-    } catch (error) {
-      if (!isFileExistsError(error)) throw error;
+    const created = await this.#runPromise(
+      this.#vault.create(partialPath(folder, step.name), step.document).pipe(
+        Effect.as(true),
+        Effect.catchTag("FileExists", () => Effect.succeed(false)),
+      ),
+    );
+    if (!created)
       this.#log("debug", "A partial document appeared after the unpack plan", {
         name: step.name,
       });
-      return false;
-    }
-    return true;
+    return created;
   }
 
   /**
@@ -2661,17 +2669,20 @@ export class Template extends Context.Service<
       TemplateFailure
     >;
     readonly loaded: Effect.Effect<boolean, TemplateFailure>;
-    getUnrecognizedFiles(): Effect.Effect<readonly string[], TemplateFailure>;
-    getTemplateFileStatuses(): Effect.Effect<
+    readonly getUnrecognizedFiles: Effect.Effect<
+      readonly string[],
+      TemplateFailure
+    >;
+    readonly getTemplateFileStatuses: Effect.Effect<
       readonly TemplateFileStatus[],
       TemplateFailure
     >;
-    getCitationTemplateStatus(): Effect.Effect<
+    readonly getCitationTemplateStatus: Effect.Effect<
       CitationTemplateStatus,
       TemplateFailure
     >;
-    materializeCitationTemplate(): Effect.Effect<TFile, TemplateFailure>;
-    restoreCitationTemplate(): Effect.Effect<void, TemplateFailure>;
+    readonly materializeCitationTemplate: Effect.Effect<TFile, TemplateFailure>;
+    readonly restoreCitationTemplate: Effect.Effect<void, TemplateFailure>;
     getLiteratureNoteTemplate(
       reference: string,
     ): Effect.Effect<
@@ -2685,7 +2696,7 @@ export class Template extends Context.Service<
       data: T,
       options: { profile: ResolvedProfile },
     ): Effect.Effect<string, TemplateFailure>;
-    getLiteratureNoteTemplateStatuses(): Effect.Effect<
+    readonly getLiteratureNoteTemplateStatuses: Effect.Effect<
       readonly LiteratureNoteTemplateStatus[],
       TemplateFailure
     >;
@@ -2710,7 +2721,7 @@ export class Template extends Context.Service<
         onMissingPartial?: (name: string) => void;
       },
     ): Effect.Effect<string, TemplateFailure>;
-    refresh(): Effect.Effect<void, TemplateFailure>;
+    readonly refresh: Effect.Effect<void, TemplateFailure>;
     waitUntilSettled(
       timeoutMs: number,
     ): Effect.Effect<SettleOutcome, TemplateFailure>;
@@ -2718,7 +2729,7 @@ export class Template extends Context.Service<
       readonly CompiledFrontmatterField[],
       TemplateFailure
     >;
-    getFrontmatterFieldStatus(): Effect.Effect<
+    readonly getFrontmatterFieldStatus: Effect.Effect<
       FrontmatterFieldStatus,
       TemplateFailure
     >;
@@ -2750,12 +2761,12 @@ export class Template extends Context.Service<
     getPartialDocument(
       name: string,
     ): Effect.Effect<SharedPartialDocument | null, TemplateFailure>;
-    getPartialNames(): Effect.Effect<readonly string[], TemplateFailure>;
-    getPartialDocuments(): Effect.Effect<
+    readonly getPartialNames: Effect.Effect<readonly string[], TemplateFailure>;
+    readonly getPartialDocuments: Effect.Effect<
       readonly SharedPartialDocument[],
       TemplateFailure
     >;
-    getPartialEntries(): Effect.Effect<
+    readonly getPartialEntries: Effect.Effect<
       readonly LiteratureNoteTemplatePartial[],
       TemplateFailure
     >;
@@ -2766,7 +2777,7 @@ export class Template extends Context.Service<
       plan: readonly LiteratureNotePartialUnpack[],
       options?: { replace?: readonly string[] },
     ): Effect.Effect<PartialUnpackOutcome, TemplateFailure>;
-    getReservedPartialFiles(): Effect.Effect<
+    readonly getReservedPartialFiles: Effect.Effect<
       readonly { name: string; path: string }[],
       TemplateFailure
     >;
@@ -2793,11 +2804,11 @@ export class Template extends Context.Service<
     getTemplateSource(
       name: TemplateName,
     ): Effect.Effect<string, TemplateFailure>;
-    getLegacyLiteratureNoteTemplateFiles(): Effect.Effect<
+    readonly getLegacyLiteratureNoteTemplateFiles: Effect.Effect<
       readonly string[],
       TemplateFailure
     >;
-    getLegacyTemplateDocuments(): Effect.Effect<
+    readonly getLegacyTemplateDocuments: Effect.Effect<
       LegacyTemplateDocuments,
       TemplateFailure
     >;
@@ -2874,6 +2885,7 @@ export const layerTemplate = Layer.effect(
   Template,
   Effect.gen(function* () {
     const app = yield* ObsidianApp;
+    const vault = yield* Vault;
     const settings = yield* PluginSettings;
     const scope = yield* Scope.fork(yield* Scope.Scope);
     const context = yield* Effect.context<never>();
@@ -2885,14 +2897,13 @@ export const layerTemplate = Layer.effect(
     const compileEvents = yield* PubSub.unbounded<void>();
     yield* Effect.addFinalizer(() => PubSub.shutdown(compileEvents));
     const intake = yield* obsidianEvents<{
-      create: [TAbstractFile];
-      modify: [TAbstractFile];
-      rename: [TAbstractFile, string];
-      delete: [TAbstractFile];
+      vault: [VaultEvent];
       flush: [];
     }>();
     const engine = new TemplateEngine({
       app,
+      vault,
+      runPromise: Effect.runPromiseWith(context),
       settings: {
         get current() {
           return runSync(settings.current);
@@ -2951,16 +2962,22 @@ export const layerTemplate = Layer.effect(
       .consume((event) =>
         Effect.gen(function* () {
           switch (event.type) {
-            case "create":
-            case "modify":
-              engine.onCreateOrModify(event.args[0]);
+            case "vault": {
+              const [change] = event.args;
+              switch (change._tag) {
+                case "create":
+                case "modify":
+                  engine.onCreateOrModify(change.file);
+                  break;
+                case "rename":
+                  engine.onRename(change.file, change.oldPath);
+                  break;
+                case "delete":
+                  engine.onDelete(change.file);
+                  break;
+              }
               break;
-            case "rename":
-              engine.onRename(...event.args);
-              break;
-            case "delete":
-              engine.onDelete(event.args[0]);
-              break;
+            }
             case "flush":
               yield* attemptPromise(() => engine.flushPending());
               break;
@@ -2969,8 +2986,9 @@ export const layerTemplate = Layer.effect(
       )
       .pipe(Effect.forkScoped({ startImmediately: true }));
     yield* Effect.gen(function* () {
-      for (const event of ["create", "modify", "rename", "delete"] as const)
-        yield* intake.on(event, app.vault, event);
+      // The vault's events join the flush requests in one ordered intake:
+      // forkEach hands each over inside Obsidian's callback.
+      yield* forkEach(vault.changes, intake.callback("vault"));
       yield* attemptPromise(() => engine.load());
       publishStatus();
     }).pipe(
@@ -3005,7 +3023,7 @@ export const layerTemplate = Layer.effect(
         : Effect.forkIn(effect, scope, {
             startImmediately: true,
             uninterruptible,
-          }).pipe(Effect.flatMap(Fiber.join));
+          }).pipe(Effect.flatMap((fiber) => Fiber.join(fiber)));
     const write = <A, E>(effect: Effect.Effect<A, E>) => owned(effect, true);
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
@@ -3029,39 +3047,29 @@ export const layerTemplate = Layer.effect(
         () => engine.javascriptTemplatesEnabled,
       ),
       loaded: attempt(() => engine.loaded),
-      getUnrecognizedFiles: Effect.fn("Template.getUnrecognizedFiles")(
-        function* () {
-          return yield* attempt(() => engine.getUnrecognizedFiles());
-        },
+      getUnrecognizedFiles: attempt(() => engine.getUnrecognizedFiles()).pipe(
+        Effect.withSpan("Template.getUnrecognizedFiles"),
       ),
-      getTemplateFileStatuses: Effect.fn("Template.getTemplateFileStatuses")(
-        function* () {
-          return yield* attempt(() => engine.getTemplateFileStatuses());
-        },
-      ),
-      getCitationTemplateStatus: Effect.fn(
-        "Template.getCitationTemplateStatus",
-      )(function* () {
-        return yield* attempt(() => engine.getCitationTemplateStatus());
-      }),
-      materializeCitationTemplate: Effect.fn(
-        "Template.materializeCitationTemplate",
-      )(function* () {
-        return yield* write(
+      getTemplateFileStatuses: attempt(() =>
+        engine.getTemplateFileStatuses(),
+      ).pipe(Effect.withSpan("Template.getTemplateFileStatuses")),
+      getCitationTemplateStatus: attempt(() =>
+        engine.getCitationTemplateStatus(),
+      ).pipe(Effect.withSpan("Template.getCitationTemplateStatus")),
+      materializeCitationTemplate: Effect.suspend(() =>
+        write(
           attemptPromise(() => engine.materializeCitationTemplate()).pipe(
             Effect.uninterruptible,
           ),
-        );
-      }),
-      restoreCitationTemplate: Effect.fn("Template.restoreCitationTemplate")(
-        function* () {
-          return yield* write(
-            attemptPromise(() => engine.restoreCitationTemplate()).pipe(
-              Effect.uninterruptible,
-            ),
-          );
-        },
-      ),
+        ),
+      ).pipe(Effect.withSpan("Template.materializeCitationTemplate")),
+      restoreCitationTemplate: Effect.suspend(() =>
+        write(
+          attemptPromise(() => engine.restoreCitationTemplate()).pipe(
+            Effect.uninterruptible,
+          ),
+        ),
+      ).pipe(Effect.withSpan("Template.restoreCitationTemplate")),
       getLiteratureNoteTemplate: Effect.fn(
         "Template.getLiteratureNoteTemplate",
       )(function* (reference: string) {
@@ -3086,11 +3094,9 @@ export const layerTemplate = Layer.effect(
           );
         },
       ),
-      getLiteratureNoteTemplateStatuses: Effect.fn(
-        "Template.getLiteratureNoteTemplateStatuses",
-      )(function* () {
-        return yield* attempt(() => engine.getLiteratureNoteTemplateStatuses());
-      }),
+      getLiteratureNoteTemplateStatuses: attempt(() =>
+        engine.getLiteratureNoteTemplateStatuses(),
+      ).pipe(Effect.withSpan("Template.getLiteratureNoteTemplateStatuses")),
       renderLiteratureNoteTemplateSource: Effect.fn(
         "Template.renderLiteratureNoteTemplateSource",
       )(function* <T extends object>(source: string, data: T) {
@@ -3128,9 +3134,9 @@ export const layerTemplate = Layer.effect(
           ),
         );
       }),
-      refresh: Effect.fn("Template.refresh")(function* () {
-        return yield* owned(attemptPromise(() => engine.refresh()));
-      }),
+      refresh: Effect.suspend(() =>
+        owned(attemptPromise(() => engine.refresh())),
+      ).pipe(Effect.withSpan("Template.refresh")),
       waitUntilSettled: Effect.fn("Template.waitUntilSettled")(function* (
         timeoutMs: number,
       ) {
@@ -3139,11 +3145,9 @@ export const layerTemplate = Layer.effect(
         );
       }),
       frontmatterFields: attempt(() => engine.frontmatterFields),
-      getFrontmatterFieldStatus: Effect.fn(
-        "Template.getFrontmatterFieldStatus",
-      )(function* () {
-        return yield* attempt(() => engine.getFrontmatterFieldStatus());
-      }),
+      getFrontmatterFieldStatus: attempt(() =>
+        engine.getFrontmatterFieldStatus(),
+      ).pipe(Effect.withSpan("Template.getFrontmatterFieldStatus")),
       evaluateFrontmatterFields: Effect.fn(
         "Template.evaluateFrontmatterFields",
       )(function* (fields: readonly FrontmatterField[], zt: object) {
@@ -3178,17 +3182,15 @@ export const layerTemplate = Layer.effect(
       ) {
         return yield* attempt(() => engine.getPartialDocument(name));
       }),
-      getPartialNames: Effect.fn("Template.getPartialNames")(function* () {
-        return yield* attempt(() => engine.getPartialNames());
-      }),
-      getPartialDocuments: Effect.fn("Template.getPartialDocuments")(
-        function* () {
-          return yield* attempt(() => engine.getPartialDocuments());
-        },
+      getPartialNames: attempt(() => engine.getPartialNames()).pipe(
+        Effect.withSpan("Template.getPartialNames"),
       ),
-      getPartialEntries: Effect.fn("Template.getPartialEntries")(function* () {
-        return yield* attempt(() => engine.getPartialEntries());
-      }),
+      getPartialDocuments: attempt(() => engine.getPartialDocuments()).pipe(
+        Effect.withSpan("Template.getPartialDocuments"),
+      ),
+      getPartialEntries: attempt(() => engine.getPartialEntries()).pipe(
+        Effect.withSpan("Template.getPartialEntries"),
+      ),
       planPartialUnpack: Effect.fn("Template.planPartialUnpack")(function* (
         bundled: readonly LiteratureNoteTemplatePartial[],
       ) {
@@ -3204,11 +3206,9 @@ export const layerTemplate = Layer.effect(
           ),
         );
       }),
-      getReservedPartialFiles: Effect.fn("Template.getReservedPartialFiles")(
-        function* () {
-          return yield* attempt(() => engine.getReservedPartialFiles());
-        },
-      ),
+      getReservedPartialFiles: attempt(() =>
+        engine.getReservedPartialFiles(),
+      ).pipe(Effect.withSpan("Template.getReservedPartialFiles")),
       createPartial: Effect.fn("Template.createPartial")(function* (
         name: string,
         options: { source?: string; language?: TemplateLanguage } = {},
@@ -3259,18 +3259,12 @@ export const layerTemplate = Layer.effect(
           attemptPromise(() => engine.getTemplateSource(name)),
         );
       }),
-      getLegacyLiteratureNoteTemplateFiles: Effect.fn(
-        "Template.getLegacyLiteratureNoteTemplateFiles",
-      )(function* () {
-        return yield* attempt(() =>
-          engine.getLegacyLiteratureNoteTemplateFiles(),
-        );
-      }),
-      getLegacyTemplateDocuments: Effect.fn(
-        "Template.getLegacyTemplateDocuments",
-      )(function* () {
-        return yield* attempt(() => engine.getLegacyTemplateDocuments());
-      }),
+      getLegacyLiteratureNoteTemplateFiles: attempt(() =>
+        engine.getLegacyLiteratureNoteTemplateFiles(),
+      ).pipe(Effect.withSpan("Template.getLegacyLiteratureNoteTemplateFiles")),
+      getLegacyTemplateDocuments: attempt(() =>
+        engine.getLegacyTemplateDocuments(),
+      ).pipe(Effect.withSpan("Template.getLegacyTemplateDocuments")),
       convertLegacyTemplateDocuments: Effect.fn(
         "Template.convertLegacyTemplateDocuments",
       )(function* (refs: readonly CiteRef[]) {

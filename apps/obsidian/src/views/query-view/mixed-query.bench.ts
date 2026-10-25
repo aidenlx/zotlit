@@ -27,6 +27,9 @@
 //
 // The Note Index here is a Map: production reads go through the Note Index
 // and the metadata cache, so the plan times are a lower bound.
+import { DateTime, Effect } from "effect";
+// oxlint-disable-next-line no-restricted-imports -- the production scheduler of a Query Job, as job.ts provides it.
+import { Scheduler } from "effect";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
@@ -53,9 +56,7 @@ import {
   planItemFilter,
 } from "@zotlit/item-query";
 
-import { Effect } from "@/lib/effect";
-// oxlint-disable-next-line no-restricted-imports -- the production scheduler of a Query Job, as job.ts provides it.
-import { Scheduler } from "@/lib/effect";
+import { toInstant } from "@/lib/effect-clock";
 import { answerView } from "@/services/item-query/answer";
 import { QUERY_COMMAND } from "@/services/item-query/contract";
 import type {
@@ -694,7 +695,11 @@ describe("mixed Query View queries", () => {
     writeFileSync(
       OUT,
       JSON.stringify(
-        { at: Temporal.Now.instant().toString(), node: process.version, cells },
+        {
+          at: toInstant(DateTime.nowUnsafe()).toString(),
+          node: process.version,
+          cells,
+        },
         null,
         2,
       ),

@@ -10,6 +10,7 @@ import {
   seedBulkLibrary,
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
+import { rowInstant } from "@zotlit/db/test-utils";
 
 import { workerQuery } from "@/services/item-query/__fixtures__/worker-query";
 import { makeAttachmentFileResolver } from "@/services/item-query/attachment-files";
@@ -46,8 +47,8 @@ function attachment(
     indexedKey: overrides.key,
     parentItemID: 1,
     contentType: "application/pdf",
-    dateAdded: Temporal.Instant.from("2024-01-01T00:00:00Z"),
-    dateModified: Temporal.Instant.from("2024-01-01T00:00:00Z"),
+    dateAdded: rowInstant("2024-01-01T00:00:00Z"),
+    dateModified: rowInstant("2024-01-01T00:00:00Z"),
     ...overrides,
   };
 }
@@ -153,10 +154,9 @@ describe("ZoteroReads ItemQuery", () => {
         Effect.gen(function* () {
           const reads = yield* client;
           const running = yield* Effect.forkChild(
-            Effect.all(
-              [first, bulkExport(scenario, "second")].map((job) =>
-                reads.ItemQuery({ job }),
-              ),
+            Effect.forEach(
+              [first, bulkExport(scenario, "second")],
+              (job) => reads.ItemQuery({ job }),
               { concurrency: "unbounded" },
             ),
           );

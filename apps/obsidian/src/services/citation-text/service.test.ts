@@ -1,19 +1,20 @@
+import { it } from "@effect/vitest";
 import { abortable } from "@std/async/abortable";
+import { Context } from "effect";
+import { Effect, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import type { LinkCache, TFile } from "obsidian";
 import { describe, expect, vi } from "vitest";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_NOTE_KEY,
 } from "@/lib/constants";
-import { Context } from "@/lib/effect";
-import { Effect, Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import { annotationRows } from "@/services/citation-index/__fixtures__/annotations";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 // @vitest-environment happy-dom
@@ -229,11 +230,11 @@ async function makeHarness({
         changed: stream("lookup:changed"),
       },
       app: {
-        vault: {
+        vault: MemoryVault.with({
           cachedRead: () => Promise.resolve(body),
           getFileByPath: (path: string) =>
             present && path === NOTE.path ? NOTE : null,
-        },
+        }),
         metadataCache: {
           offref: () => {},
           on: (name: string, cb: () => void) => {
@@ -584,21 +585,19 @@ describe("CitationText", () => {
                   binary: stubService<ManagedBinaryApi<CitationEngine>>(
                     "PandocEngine",
                     {
-                      getStatus: () =>
-                        Effect.succeed({
-                          kind: "installed",
-                          version: "3.10",
-                          binary: {
-                            directory: "pandoc-engine",
-                            name: "pandoc.wasm",
-                          },
-                        }),
+                      getStatus: Effect.succeed({
+                        kind: "installed",
+                        version: "3.10",
+                        binary: {
+                          directory: "pandoc-engine",
+                          name: "pandoc.wasm",
+                        },
+                      }),
                       changes: Stream.empty,
-                      getEngine: () =>
-                        Effect.succeed({
-                          renderCitations,
-                          renderBibliography,
-                        } as never),
+                      getEngine: Effect.succeed({
+                        renderCitations,
+                        renderBibliography,
+                      } as never),
                     },
                   ),
                 },

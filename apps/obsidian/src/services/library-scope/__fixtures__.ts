@@ -1,7 +1,8 @@
 /** Library Scope's real dependency graph over a test's RPC client and saved settings. */
+import { Context, Effect, Layer, Stream } from "effect";
+import type { Scope } from "effect";
+
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Context, Effect, Layer, Stream } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import { layerQueryClients } from "@/services/query-client/service";
@@ -24,7 +25,7 @@ export const libraryScopeFixture = Effect.fnUntraced(function* (
   const context = yield* Effect.context<never>();
   return yield* Effect.acquireRelease(
     Effect.promise(() => openLibraryScope(client, saved, context)),
-    (fixture) => Effect.promise(fixture.close),
+    (fixture) => Effect.promise(() => fixture.close()),
   );
 });
 

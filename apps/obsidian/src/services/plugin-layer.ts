@@ -1,11 +1,20 @@
 // The plugin's services that live in the Effect Layer graph, converted or bridged.
+import { Layer } from "effect";
 import type { Plugin } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
-import { Layer } from "@/lib/effect";
-import { nodeFetch } from "@/lib/node-fetch";
+import { layerNotifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
-import { PluginHost } from "@/lib/plugin-host";
+import { layerObsidianEnv } from "@/lib/obsidian-env";
+import { layerFileManager } from "@/lib/obsidian-file-manager";
+import type { FileManager } from "@/lib/obsidian-file-manager";
+import { layerMetadataCache } from "@/lib/obsidian-metadata-cache";
+import { layerVault } from "@/lib/obsidian-vault";
+import type { Vault } from "@/lib/obsidian-vault";
+import { layerWorkspace } from "@/lib/obsidian-workspace";
+import { layerPluginHost } from "@/lib/plugin-host";
+import type { ZoteroHttp } from "@/lib/zotero-http";
+import { layerZoteroHttpNode } from "@/lib/zotero-http-node";
 import { openLibraryView } from "@/views/library/register";
 
 import { layerAnnotationLinkReading } from "./annotation-popover/reading";
@@ -121,9 +130,23 @@ export function pluginLayer(
   | NoteIndex
   | LocalServer
   | ZoteroLocalApi
+  | ZoteroHttp
   | Template
   | TemplateMigration
+  | Vault
+  | FileManager
 > {
+  // The file manager decides its outcomes from the vault's cache.
+  const fileManager = layerFileManager.pipe(Layer.provide(layerVault));
+  // What both halves read from Obsidian: the App, its environment, notices.
+  const obsidian = Layer.mergeAll(
+    layerNotifier,
+    layerObsidianEnv,
+    layerMetadataCache,
+    fileManager,
+    layerWorkspace,
+    layerVault,
+  ).pipe(Layer.provideMerge(Layer.succeed(ObsidianApp, plugin.app)));
   const services = Layer.mergeAll(
     layerCitationPopover.pipe(startingAs("CitationPopover")),
     layerAnnotationPopover.pipe(startingAs("AnnotationPopover")),
@@ -158,7 +181,6 @@ export function pluginLayer(
       // The Remembered Write Authorization lives in Obsidian's Keychain,
       // where the user can see and delete it — never in synced settings.
       layerZoteroLocalApi({
-        fetch: nodeFetch,
         credentials: new SecretWriteAuthorizationStore({
           secrets: plugin.app.secretStorage,
         }),
@@ -191,9 +213,12 @@ export function pluginLayer(
         layerNoteIndex.pipe(startingAs("NoteIndex")),
         layerCitationParse.pipe(startingAs("CitationParse")),
         layerQueryClients.pipe(startingAs("QueryClients")),
+        layerZoteroHttpNode.pipe(startingAs("ZoteroHttp")),
       ),
     ),
-    Layer.provide(Layer.succeed(ObsidianApp, plugin.app)),
+    // The legacy note writers create and move through the tags (`build.ts`).
+    Layer.provideMerge(Layer.mergeAll(layerVault, fileManager)),
+    Layer.provide(obsidian),
     Layer.provideMerge(
       layerLogging.pipe(
         Layer.provide(layerLogOutput(plugin)),
@@ -214,6 +239,6 @@ export function pluginLayer(
     layerLibraryScopeNotices.pipe(startingAs("LibraryScopeNotices")),
     layerPandocResolve.pipe(startingAs("PandocResolve")),
     layerReleaseActions.pipe(startingAs("ReleaseActions")),
-  ).pipe(Layer.provide(Layer.succeed(PluginHost, plugin)));
+  ).pipe(Layer.provide(Layer.mergeAll(layerPluginHost(plugin), obsidian)));
   return registrations.pipe(Layer.provideMerge(services));
 }

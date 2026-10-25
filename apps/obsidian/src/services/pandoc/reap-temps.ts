@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { isErrno } from "@/lib/errno";
 import { getLogger } from "@/lib/log";
 import { sweepTempDirectory } from "@/lib/temp-sweep";
-import type { ReapTempsOptions } from "@/lib/temp-sweep";
+import type { PlainReapTempsOptions } from "@/lib/temp-sweep";
 
 import { CSL_STAGING_EXT, cslStoreDirectory } from "./csl";
 
@@ -40,17 +40,19 @@ const STAGING_MAX_AGE = Temporal.Duration.from({ hours: 1 });
 export async function reapCslStore({
   signal,
   parent = tmpdir(),
-}: ReapTempsOptions = {}): Promise<void> {
-  await sweepTempDirectory({
-    directory: cslStoreDirectory(parent),
-    kind: "materialized CSL style",
+}: PlainReapTempsOptions = {}): Promise<void> {
+  await sweepTempDirectory(
+    {
+      directory: cslStoreDirectory(parent),
+      kind: "materialized CSL style",
+      isResidue: (name, path) =>
+        isOlderThan(
+          path,
+          name.endsWith(CSL_STAGING_EXT) ? STAGING_MAX_AGE : CSL_MAX_AGE,
+        ),
+    },
     signal,
-    isResidue: (name, path) =>
-      isOlderThan(
-        path,
-        name.endsWith(CSL_STAGING_EXT) ? STAGING_MAX_AGE : CSL_MAX_AGE,
-      ),
-  });
+  );
 }
 
 /**

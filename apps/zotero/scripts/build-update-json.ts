@@ -202,7 +202,9 @@ async function renderHostNotes(rewritten: string[]): Promise<string> {
     addonId: zotero.id,
     compat,
     version,
-    refreshedAt: new Date().toISOString(),
+    refreshedAt: Temporal.Now.instant().toString({
+      smallestUnit: "millisecond",
+    }),
     refreshed,
   });
 }

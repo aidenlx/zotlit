@@ -159,7 +159,7 @@ export class CapabilityNotices extends Service<void> {
    *   know the gesture is done. The reader ignores it.
    */
   async showEditingCapability(): Promise<void> {
-    await this.#bridge.runPromise(this.#capabilities.probe());
+    await this.#bridge.runPromise(this.#capabilities.probe);
     this.#openEditingSettings();
   }
 

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { TFile } from "@mock/obsidian";
+import { Effect } from "effect";
 import type { Command, TFile as ObsidianFile } from "obsidian";
 import { expect, it, vi } from "vitest";
 
@@ -32,7 +33,11 @@ function harness(
     getContainer: () => ({ focus: () => {} }),
   };
   const plugin = {
-    addCommand: (command: Command) => commands.push(command),
+    addCommand: (command: Command) =>
+      Effect.sync(() => {
+        commands.push(command);
+        return command;
+      }),
     app: {
       workspace: {
         getLeavesOfType: () => [],
@@ -42,9 +47,13 @@ function harness(
     },
   };
 
-  addCitationTemplateActions(
-    plugin as never,
-    { template: { materializeCitationTemplate: materialize } } as never,
+  Effect.runSync(
+    Effect.scoped(
+      addCitationTemplateActions(
+        plugin as never,
+        { template: { materializeCitationTemplate: materialize } } as never,
+      ),
+    ),
   );
   return { command: commands[0]!, opened, materialize };
 }

@@ -1,8 +1,8 @@
+import { it } from "@effect/vitest";
+import { Deferred, Effect, Queue, Stream } from "effect";
 import { expect } from "vitest";
 
-import { Deferred, Effect, Queue, Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 
 import { readsFixture } from "./__fixtures__";
 import { layerRcRef } from "./connection";
@@ -17,9 +17,8 @@ it.effect(
     Effect.gen(function* () {
       const { open } = memoryOpener(seed);
       const { plain } = yield* readsFixture(inProcessClient(layerRcRef(open)));
-      const lease = yield* Effect.acquireRelease(
+      const lease = yield* Effect.acquireDisposable(
         Effect.promise(() => plain.acquireRead()),
-        (lease) => Effect.promise(() => lease[Symbol.asyncDispose]()),
       );
       const refreshing = plain.refresh();
       expect(refreshing).toBeInstanceOf(Promise);

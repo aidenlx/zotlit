@@ -1,6 +1,6 @@
+import { Effect } from "effect";
 import { DatabaseSync } from "node:sqlite";
 
-import { Effect } from "@/lib/effect";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 
 // A separate SQLite handle checks the owned clone before it can serve reads.
@@ -29,11 +29,9 @@ export const verifySnapshot = Effect.fnUntraced(function* (
       ? yield* verifyInProcess(path)
       : yield* verifyInWorker(path);
   if (result !== "ok")
-    return yield* Effect.fail(
-      new DbUnavailable({
-        message: "SQLite rejected the database read snapshot",
-      }),
-    );
+    return yield* new DbUnavailable({
+      message: "SQLite rejected the database read snapshot",
+    });
 });
 
 function verifyInProcess(path: string) {

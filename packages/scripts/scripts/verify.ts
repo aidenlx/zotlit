@@ -7,6 +7,7 @@
 //               plus the Obsidian guideline review (ADR 0020).
 //               `release.ts` runs it before the version commit and
 //               `release.yml` before it publishes (desktop checks skip there).
+// A branch that changes only agent docs (lib/agent-docs.ts) runs Format only.
 // Format, lint and the generated-artifact checks always cover the whole tree.
 import { $ } from "zx";
 
@@ -17,6 +18,7 @@ import {
 } from "@zotlit/config/memory-gate";
 
 import { affectedBase } from "#affected-base";
+import { isAgentDocsOnly } from "#agent-docs";
 import {
   acquireDesktopSlotOrExit,
   automatedLease,
@@ -37,6 +39,21 @@ const env = base ? { ...process.env, TURBO_SCM_BASE: base } : process.env;
 const sh = $({ cwd: root, stdio: "inherit", env });
 
 await step("Format", () => sh`pnpm exec oxfmt --check`);
+
+// A branch that changes only agent docs stops here. Turbo `--affected` counts
+// a root file as a change to every package, so a one-line doc fix would run
+// the whole gate, and a slow gate teaches its bypass (ADR 0076).
+if (base) {
+  const changed = (
+    await $({ cwd: root, quiet: true })`git diff --name-only ${base} HEAD`
+  ).stdout
+    .split("\n")
+    .filter(Boolean);
+  if (isAgentDocsOnly(changed)) {
+    console.log("\nOnly agent docs changed, so the other checks skip.");
+    process.exit(0);
+  }
+}
 
 // The `zt` template contract and the template data page generate from TS
 // sources (ADR 0015), and the Functions and methods page from the Query

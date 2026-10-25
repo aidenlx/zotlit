@@ -1,4 +1,5 @@
 // The Template Workbench commands and their response boundaries.
+import { Effect, Result } from "effect";
 import type { CliData } from "obsidian";
 
 import type {
@@ -19,7 +20,6 @@ import {
 import type { CliCommandHandler } from "@/lib/cli-command";
 import { catchRejection } from "@/lib/cli-params";
 import type { CliRejection } from "@/lib/cli-params";
-import { Effect } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { DEFAULT_PROFILE, parseProfileSelector } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -356,30 +356,25 @@ export function createTemplateWorkbenchHandlers(
             });
           }
 
-          let data: unknown;
-          try {
-            if (!request.full) {
-              const discovery = discoverTemplateData(
-                result.data,
-                request.root,
-                request,
-              );
-              if ("error" in discovery)
-                return envelope(TEMPLATE_DATA_COMMAND, {
-                  ok: false,
-                  ...echoed,
-                  diagnostic: diagnostic("INVALID_SELECTOR", discovery.error!, {
-                    parameter: "path",
-                  }),
-                });
-              return envelope(TEMPLATE_DATA_COMMAND, {
-                ok: true,
-                ...echoed,
-                discovery,
-              });
-            }
-            data = serializeTemplateData(result.data, request.root);
-          } catch (error) {
+          const read = yield* Effect.result(
+            Effect.try(() =>
+              request.full
+                ? {
+                    full: true as const,
+                    data: serializeTemplateData(result.data, request.root),
+                  }
+                : {
+                    full: false as const,
+                    discovery: discoverTemplateData(
+                      result.data,
+                      request.root,
+                      request,
+                    ),
+                  },
+            ),
+          );
+          if (Result.isFailure(read)) {
+            const error = read.failure.cause;
             // A missing contract entry means the committed IR no longer matches
             // the data shapes this build shipped — a plugin defect, not a fault
             // the caller can correct from a diagnostic.
@@ -406,11 +401,27 @@ export function createTemplateWorkbenchHandlers(
               }),
             });
           }
+          if (!read.success.full) {
+            const discovery = read.success.discovery;
+            if ("error" in discovery)
+              return envelope(TEMPLATE_DATA_COMMAND, {
+                ok: false,
+                ...echoed,
+                diagnostic: diagnostic("INVALID_SELECTOR", discovery.error!, {
+                  parameter: "path",
+                }),
+              });
+            return envelope(TEMPLATE_DATA_COMMAND, {
+              ok: true,
+              ...echoed,
+              discovery,
+            });
+          }
 
           return envelope(TEMPLATE_DATA_COMMAND, {
             ok: true,
             ...echoed,
-            zt: data,
+            zt: read.success.data,
           });
         }),
     ),
@@ -458,16 +469,20 @@ export function createTemplateWorkbenchHandlers(
               });
             }
             document = { name: reference };
-            let resolved;
-            try {
-              resolved = literatureNotes.getDocument(reference);
-            } catch (error) {
+            const lookup = yield* Effect.result(
+              Effect.try(() => literatureNotes.getDocument(reference)),
+            );
+            if (Result.isFailure(lookup)) {
               return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
                 ok: false,
                 ...echoed,
-                diagnostic: literatureNoteDocumentDiagnostic(error, document),
+                diagnostic: literatureNoteDocumentDiagnostic(
+                  lookup.failure.cause,
+                  document,
+                ),
               });
             }
+            const resolved = lookup.success;
             if (!resolved) {
               return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
                 ok: false,
@@ -489,25 +504,30 @@ export function createTemplateWorkbenchHandlers(
               diagnostic: dataLoadDiagnostic(result, request.key),
             });
           }
-          try {
-            return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
-              ok: true,
-              ...echoed,
-              render: render(result.data),
-            });
-          } catch (error) {
+          const rendered = yield* Effect.result(
+            Effect.try(() => render(result.data)),
+          );
+          if (Result.isFailure(rendered)) {
             return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
               ok: false,
               ...echoed,
-              diagnostic: literatureNoteDocumentDiagnostic(error, document),
+              diagnostic: literatureNoteDocumentDiagnostic(
+                rendered.failure.cause,
+                document,
+              ),
             });
           }
+          return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
+            ok: true,
+            ...echoed,
+            render: rendered.success,
+          });
         }),
     ),
 
     [TEMPLATE_GUIDE_COMMAND]: (params: CliData) =>
       parseGuideRequest(params).pipe(
-        Effect.map(renderGuide),
+        Effect.map((topic) => renderGuide(topic)),
         answerRejection(TEMPLATE_GUIDE_COMMAND),
       ),
   };

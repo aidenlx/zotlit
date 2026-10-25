@@ -1,6 +1,5 @@
 import * as Context from "effect/Context";
 import * as References from "effect/References";
-// oxlint-disable-next-line no-restricted-imports -- The worker uses the shared Chromium scheduler below.
 import { Scheduler } from "effect/Scheduler";
 
 import { browserScheduler } from "./browser-scheduler";
@@ -16,7 +15,6 @@ const runtimeServices = Context.add(
   browserScheduler,
 ).pipe(Context.add(References.MinimumLogLevel, "All"));
 
-// oxlint-disable-next-line no-restricted-imports -- Re-export the worker-native Effect module.
 export * from "effect/Effect";
 
 export const {

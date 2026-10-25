@@ -1,4 +1,6 @@
 // Runs in the happy-dom-native-response vitest project (vitest.config.ts).
+import { it } from "@effect/vitest";
+import { Effect, Stream } from "effect";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -7,9 +9,7 @@ import { describe, expect } from "vitest";
 
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
-import { Effect, Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import { themeHook } from "@/lib/theme-hooks";
 import {
   annotationRows,

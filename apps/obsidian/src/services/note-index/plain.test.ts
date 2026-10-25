@@ -1,8 +1,8 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { expect } from "vitest";
 
-import { Effect } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 
 import { cache, makeHarness } from "./__fixtures__";
 import type { NoteIndexChange } from "./service";
@@ -58,7 +58,7 @@ it.effect("every adapter method remains usable after runtime disposal", () =>
       service.changes,
       (change) => received.push(change),
     );
-    yield* Effect.promise(close);
+    yield* Effect.promise(() => close());
     expect(service.getNotesByItemKey("ABCD2345")).toEqual([paper]);
     expect(service.getImportedNoteByNoteKey("ZZZ99999")).toEqual([imported]);
     expect(service.getNotesByProfile("default")).toEqual({

@@ -1,29 +1,32 @@
 // Walks one temp directory and removes the entries a caller calls residue.
 //
-// Owns the mechanics every sweep repeats — the walk, the abort checks, the
-// removal, and the logging — and nothing about what counts as residue. Each
+// Owns the mechanics every sweep repeats — the walk, the removal, and the
+// logging — and nothing about what counts as residue. Each
 // producer of temp entries keeps that rule in its own `reap-temps.ts`, next to
 // the code that writes the entries the rule recognizes.
 //
 // The sweep is an Effect so the database reads worker, which carries no
 // LogTape, runs the same walk the renderer does.
 //
-// A sweep never throws: a directory that refuses to be listed or emptied is a
-// logged warning, never a failed launch.
+// A sweep never fails on the filesystem: a directory that refuses to be
+// listed or emptied is a logged warning, never a failed launch. Interrupting
+// the sweep stops the walk and logs nothing; the Promise calls take a signal
+// that interrupts it and reject with its reason.
 
+// The worker build resolves the specifier `effect` to the worker entry, so a
+// relative import of a wrapper here would pull the renderer's LogTape bridge
+// into the worker.
+import { Cause, Effect } from "effect";
 import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
-// The worker build aliases the exact specifier `@/lib/effect`, so a relative
-// import here would pull the renderer's LogTape bridge into the worker.
-import { Cause, Effect } from "@/lib/effect";
-
 import { withLogCategory } from "./effect-log-category";
-import { isErrno } from "./errno";
+import { isErrno, systemCallError } from "./errno";
+import type { SystemCallError } from "./errno";
+import { settleAtEdge } from "./signal-edge";
 
 /** What every reap step accepts, so one startup passes the same thing to each. */
 export interface ReapTempsOptions {
-  signal?: AbortSignal;
   /**
    * The directory the producer writes into.
    *
@@ -39,6 +42,10 @@ export interface TempSweepOptions {
   kind: string;
   /** Whether this entry is residue no run still needs. */
   isResidue: (name: string, path: string) => Promise<boolean> | boolean;
+}
+
+/** The options of a reap step that is a Promise; the signal interrupts it. */
+export interface PlainReapTempsOptions extends ReapTempsOptions {
   signal?: AbortSignal;
 }
 
@@ -46,14 +53,11 @@ export const sweepTempDirectoryEffect = Effect.fnUntraced(function* ({
   directory,
   kind,
   isResidue,
-  signal,
 }: TempSweepOptions) {
-  if (signal?.aborted) return;
   const walked = yield* Effect.result(
     Effect.gen(function* () {
       const names = yield* fsCall(() => readdir(directory));
       for (const name of names) {
-        if (signal?.aborted) return;
         const path = join(directory, name);
         if (yield* fsCall(async () => isResidue(name, path))) {
           yield* remove(path, kind);
@@ -62,7 +66,7 @@ export const sweepTempDirectoryEffect = Effect.fnUntraced(function* ({
     }),
   );
   if (walked._tag === "Success") return;
-  if (signal?.aborted || isErrno(walked.failure, "ENOENT")) return;
+  if (isErrno(walked.failure, "ENOENT")) return;
   yield* Effect.logWarning(
     "Failed to sweep a ZotLit temp directory",
     Cause.fail(walked.failure),
@@ -72,9 +76,20 @@ export const sweepTempDirectoryEffect = Effect.fnUntraced(function* ({
   );
 });
 
-/** The Promise-shaped call for lifecycle code that is not an Effect. */
-export function sweepTempDirectory(options: TempSweepOptions): Promise<void> {
-  return Effect.runPromise(sweepTempDirectoryEffect(options));
+/**
+ * The Promise-shaped call for lifecycle code that is not an Effect. An abort of
+ * `signal` interrupts the sweep, which then rejects with the signal's reason
+ * and logs nothing.
+ */
+export async function sweepTempDirectory(
+  options: TempSweepOptions,
+  signal?: AbortSignal,
+): Promise<void> {
+  const exit = await Effect.runPromiseExit(
+    sweepTempDirectoryEffect(options),
+    signal === undefined ? undefined : { signal },
+  );
+  settleAtEdge(exit, signal);
 }
 
 function remove(path: string, kind: string) {
@@ -97,7 +112,7 @@ function remove(path: string, kind: string) {
   );
 }
 
-function fsCall<A>(run: () => Promise<A>): Effect.Effect<A, unknown> {
+function fsCall<A>(run: () => Promise<A>): Effect.Effect<A, SystemCallError> {
   // boundary: node:fs/promises and the residue rule are Promise-based.
-  return Effect.tryPromise({ try: run, catch: (error) => error });
+  return Effect.tryPromise({ try: run, catch: systemCallError });
 }

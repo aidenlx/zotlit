@@ -1,9 +1,9 @@
 import { Menu, TFile } from "@mock/obsidian";
+import { Effect } from "effect";
 import type { WorkspaceLeaf } from "obsidian";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
-import { Effect } from "@/lib/effect";
 import { fileMenuHandler } from "@/services/__fixtures__/file-menu";
 
 import type { HistorySurface } from "./actions";

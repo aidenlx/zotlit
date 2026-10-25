@@ -1,15 +1,9 @@
+import { it } from "@effect/vitest";
+import { Effect, Layer, Logger, ManagedRuntime, References } from "effect";
 import { describe, expect } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import {
-  Effect,
-  Layer,
-  Logger,
-  ManagedRuntime,
-  References,
-} from "@/lib/effect";
 import { LogCategory } from "@/lib/effect-log";
-import { it } from "@/lib/effect-vitest";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type {

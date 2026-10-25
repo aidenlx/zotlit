@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Context, DateTime, Effect } from "effect";
 import { TestClock } from "effect/testing";
 import type { App } from "obsidian";
 import { afterEach, beforeEach, describe, expect, vi } from "vitest";
@@ -10,8 +12,7 @@ import {
 import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
 
 import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
-import { Context, Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
+import { toInstant } from "@/lib/effect-clock";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { resolveProfile } from "@/services/profile/__fixtures__/reader";
@@ -150,7 +151,7 @@ frontmatter:
           evalManagedFrontmatterEntries(
             inert?.compiled ?? [],
             { title: "Paper" },
-            Temporal.Now.instant(),
+            toInstant(yield* DateTime.now),
           ).values,
         ).toEqual([
           { key: "title", value: "Paper", merge: "replace", position: 1 },
@@ -168,7 +169,7 @@ frontmatter:
           evalManagedFrontmatterEntries(
             active?.compiled ?? [],
             { title: "Paper" },
-            Temporal.Now.instant(),
+            toInstant(yield* DateTime.now),
           ).values,
         ).toEqual([
           { key: "title", value: "Paper", merge: "replace", position: 1 },
@@ -804,18 +805,17 @@ partials:
           ),
         );
 
-        let failure: unknown;
-        try {
-          service.render("note", {
-            title: "Paper",
-            backlink: "zotero://select/items/1",
-            attachments: [],
-            annotations: [],
-            notes: [],
-          });
-        } catch (error) {
-          failure = error;
-        }
+        const failure = (yield* Effect.flip(
+          Effect.try(() =>
+            service.render("note", {
+              title: "Paper",
+              backlink: "zotero://select/items/1",
+              attachments: [],
+              annotations: [],
+              notes: [],
+            }),
+          ),
+        )).cause;
         expect(failure).toBeInstanceOf(TemplateError);
         expect((failure as TemplateError).templateName).toBe("content");
         expect(service.compileErrors.get("content")).toBeDefined();
@@ -848,12 +848,9 @@ partials:
           },
         };
 
-        let failure: unknown;
-        try {
-          service.render("note", data);
-        } catch (error) {
-          failure = error;
-        }
+        const failure = (yield* Effect.flip(
+          Effect.try(() => service.render("note", data)),
+        )).cause;
 
         expect(failure).toBeInstanceOf(TemplateError);
         expect((failure as TemplateError).templateName).toBe("citation");
@@ -881,12 +878,9 @@ partials:
         },
       };
 
-      let failure: unknown;
-      try {
-        service.render("note", data);
-      } catch (error) {
-        failure = error;
-      }
+      const failure = (yield* Effect.flip(
+        Effect.try(() => service.render("note", data)),
+      )).cause;
 
       expect(failure).toBeInstanceOf(InertTemplateError);
       expect((failure as InertTemplateError).templateName).toBe("citation");
@@ -916,12 +910,9 @@ partials:
           },
         };
 
-        let failure: unknown;
-        try {
-          service.render("note", data);
-        } catch (error) {
-          failure = error;
-        }
+        const failure = (yield* Effect.flip(
+          Effect.try(() => service.render("note", data)),
+        )).cause;
 
         // liquidjs wraps a throwing data getter in its own error type, so the
         // guard is the class the batch runners read: an application error whose
@@ -957,12 +948,9 @@ partials:
           },
         };
 
-        let failure: unknown;
-        try {
-          service.render("note", data);
-        } catch (error) {
-          failure = error;
-        }
+        const failure = (yield* Effect.flip(
+          Effect.try(() => service.render("note", data)),
+        )).cause;
 
         expect(failure).toBeInstanceOf(InertTemplateError);
         expect((failure as InertTemplateError).message).toBe(
@@ -989,12 +977,9 @@ partials:
         makeHarness({ vault }, context),
       );
 
-      let failure: unknown;
-      try {
-        service.render("note", { title: "Paper" });
-      } catch (error) {
-        failure = error;
-      }
+      const failure = (yield* Effect.flip(
+        Effect.try(() => service.render("note", { title: "Paper" })),
+      )).cause;
 
       expect(failure).toBeInstanceOf(InertTemplateError);
       expect((failure as InertTemplateError).templateName).toBe("citation");
@@ -1022,12 +1007,9 @@ partials:
         },
       };
 
-      let failure: unknown;
-      try {
-        service.render("note", data);
-      } catch (error) {
-        failure = error;
-      }
+      const failure = (yield* Effect.flip(
+        Effect.try(() => service.render("note", data)),
+      )).cause;
 
       expect(failure).toBeInstanceOf(InertTemplateError);
       expect((failure as InertTemplateError).templateName).toBe("citation");
@@ -1041,16 +1023,22 @@ partials:
         const context = yield* Effect.context<never>();
         const original = DEFAULT_TEMPLATES.note;
         DEFAULT_TEMPLATES.note = "{% if zt.title %}";
-        try {
+        yield* Effect.gen(function* () {
           const { service } = yield* Effect.promise(() =>
             makeHarness(undefined, context),
           );
 
           expect(() => service.render("note", { title: "Paper" })).toThrow();
           expect(service.compileErrors.get("note")).toBeDefined();
-        } finally {
-          DEFAULT_TEMPLATES.note = original;
-        }
+        }).pipe(
+          // A JS `finally` around `yield*` does not run when the yielded
+          // Effect fails; `ensuring` restores the default on every exit.
+          Effect.ensuring(
+            Effect.sync(() => {
+              DEFAULT_TEMPLATES.note = original;
+            }),
+          ),
+        );
       }),
   );
 
@@ -1439,6 +1427,31 @@ partials:
 
         expect(service.render("note", { title: "Paper" })).toBe("custom Paper");
       }),
+  );
+
+  // Obsidian fires a rename and the edit that follows it in one tick; the
+  // vault tag hands both to the template intake in that order.
+  it.effect("keeps a rename before the edit that follows it in one tick", () =>
+    Effect.gen(function* () {
+      const context = yield* Effect.context<never>();
+      const vault = new MockVault();
+      vault.addFile("templates/zotlit-note.eta.md", "custom {{ zt.title }}");
+      const { service } = yield* Effect.promise(() =>
+        makeHarness({ vault, javascriptTemplates: true }, context),
+      );
+
+      vault.renameFile(
+        "templates/zotlit-note.eta.md",
+        "templates/zotlit-note.liquid.md",
+      );
+      vault.modifyFile(
+        "templates/zotlit-note.liquid.md",
+        "edited {{ zt.title }}",
+      );
+      yield* TestClock.adjust(500);
+
+      expect(service.render("note", { title: "Paper" })).toBe("edited Paper");
+    }),
   );
 
   it.effect(

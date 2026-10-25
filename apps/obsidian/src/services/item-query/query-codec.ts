@@ -2,11 +2,12 @@
 // codecs they cross the worker seam through (`zotero-reads/rpc.ts`). The
 // renderer decodes them from the CLI in `decode.ts`.
 
+import { Predicate, Schema, SchemaGetter } from "effect";
+
 import { nameDictionary } from "@zotlit/item-query";
 import type { NameDictionary } from "@zotlit/item-query";
 import { DELIMITED_FORMATS } from "@zotlit/shared/delimited";
 
-import { Predicate, Schema, SchemaGetter } from "@/lib/effect";
 import { libraryScopeWire } from "@/services/library-scope/scope";
 
 export const QUERY_DATASETS = ["items", "attachments", "annotations"] as const;
@@ -51,7 +52,7 @@ const Formulas = Schema.declare(
 export const DecodedQuery = Schema.Struct({
   from: Schema.Literals(QUERY_DATASETS),
   libraries: Schema.NullOr(NamedLibraries),
-  limit: Schema.NullOr(Schema.Number),
+  limit: Schema.NullOr(Schema.Int),
   group: Schema.optionalKey(Schema.String),
   filter: Schema.optionalKey(Schema.String),
   fields: Schema.optionalKey(Schema.Array(Schema.String)),
@@ -83,7 +84,7 @@ export type DecodedQuery = typeof DecodedQuery.Type;
 export const DecodedValues = Schema.Struct({
   kind: Schema.Literals(["collections", "tags"]),
   match: Schema.optionalKey(Schema.String),
-  limit: Schema.NullOr(Schema.Number),
+  limit: Schema.NullOr(Schema.Int),
   libraries: Schema.NullOr(NamedLibraries),
 });
 export type DecodedValues = typeof DecodedValues.Type;

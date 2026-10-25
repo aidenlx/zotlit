@@ -1,12 +1,4 @@
-import { TestClock } from "effect/testing";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, vi } from "vitest";
-
-import { createClient } from "@zotlit/db/client/node";
-import { createFixtureSchema } from "@zotlit/db/test-utils";
-
-import { ZOTERO_DB_READ_PARENT_DIRNAME } from "@/lib/constants";
+import { it } from "@effect/vitest";
 // The worker adapter's lifetime: degraded on a worker death, a new worker on Refresh, termination on scope end.
 import {
   Deferred,
@@ -20,11 +12,19 @@ import {
   References,
   Scope,
   Stream,
-} from "@/lib/effect";
-import type { Duration } from "@/lib/effect";
+} from "effect";
+import type { Duration } from "effect";
+import { TestClock } from "effect/testing";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, vi } from "vitest";
+
+import { createClient } from "@zotlit/db/client/node";
+import { createFixtureSchema } from "@zotlit/db/test-utils";
+
+import { ZOTERO_DB_READ_PARENT_DIRNAME } from "@/lib/constants";
 import { LogCategory } from "@/lib/effect-log";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import type { EffectiveReadMode } from "@/services/database/read-source";
 
 import { readsFixture } from "./__fixtures__";
@@ -356,9 +356,8 @@ describe("ZoteroReads worker adapter", () => {
         const result = yield* Effect.gen(function* () {
           const reads = yield* makeWorkerReads(workers.connect);
           yield* workerSeen(reads);
-          const seed = Effect.map(
-            Stream.runHead(reads.Changes()),
-            Option.getOrThrow,
+          const seed = Effect.map(Stream.runHead(reads.Changes()), (option) =>
+            Option.getOrThrow(option),
           );
           // The probe asks 10 s after the connect and waits 15 s for the
           // answer, then asks once more and waits 5 s.

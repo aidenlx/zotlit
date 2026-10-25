@@ -1,5 +1,4 @@
-import { expect } from "vitest";
-
+import { it } from "@effect/vitest";
 import {
   Cause,
   Context,
@@ -12,10 +11,35 @@ import {
   Queue,
   Stream,
   SubscriptionRef,
-} from "@/lib/effect";
+} from "effect";
+import { expect } from "vitest";
+
 import { LogCategory } from "@/lib/effect-log";
-import { forkEach, subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
+import { filterTag, forkEach, subscribe } from "@/lib/effect-stream";
+
+type Tagged =
+  | { readonly _tag: "a"; readonly n: number }
+  | { readonly _tag: "b"; readonly n: number }
+  | { readonly _tag: "c"; readonly n: number };
+
+it.effect("filterTag keeps the events of several tags in their order", () =>
+  Effect.gen(function* () {
+    const events: Tagged[] = [
+      { _tag: "a", n: 1 },
+      { _tag: "c", n: 2 },
+      { _tag: "b", n: 3 },
+      { _tag: "a", n: 4 },
+    ];
+    const kept = yield* Stream.runCollect(
+      filterTag(Stream.fromIterable(events), "a", "b"),
+    );
+    expect([...kept].map(({ _tag, n }) => `${_tag}${n}`)).toEqual([
+      "a1",
+      "b3",
+      "a4",
+    ]);
+  }),
+);
 
 // #1705: a callback defect belongs to one delivery, not the subscription.
 it.effect(

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { Setting } from "@mock/obsidian";
 import type { DropdownComponent, TextComponent } from "@mock/obsidian";
+import { Effect } from "effect";
 import type {
   Setting as ObsidianSetting,
   SettingDefinitionItem,
@@ -9,7 +10,6 @@ import type {
 import { describe, expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Effect } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import { highlightEmoji } from "@/lib/highlight-mapping";
 import * as m from "@/lib/i18n/generated/messages";

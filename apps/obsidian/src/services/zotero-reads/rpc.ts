@@ -1,3 +1,6 @@
+// The ZoteroReads contract: one RpcGroup and the Schema codecs both sides share.
+import { Effect, Predicate, Schema, SchemaGetter } from "effect";
+import type { SchemaIssue } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 import { Transferable } from "effect/workers";
 
@@ -28,9 +31,6 @@ import type {
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemFields } from "@zotlit/zotero-types";
 
-// The ZoteroReads contract: one RpcGroup and the Schema codecs both sides share.
-import { Effect, Predicate, Schema, SchemaGetter } from "@/lib/effect";
-import type { SchemaIssue } from "@/lib/effect";
 import type { CitationLookupWireAnswer } from "@/services/citation-index/lookup";
 import type {
   CitekeyResolution,
@@ -46,21 +46,12 @@ import { libraryScopeWire } from "@/services/library-scope/scope";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import type { Settings, ZoteroReadMode } from "@/services/settings/schema";
 
+import { Instant } from "./instant-codec";
+
 /** Compile-time assert: `T` must be `true`. */
 type Expect<T extends true> = T;
 /** Mutual assignability: the decoded type is the `@zotlit/db` type. */
 type Equals<A, B> = [A, B] extends [B, A] ? true : false;
-
-/**
- * `Temporal.Instant` is not structured-cloneable; it crosses the wire as its
- * ISO string and arrives as an `Instant`.
- */
-export const Instant = Schema.String.pipe(
-  Schema.decodeTo(Schema.instanceOf(Temporal.Instant), {
-    decode: SchemaGetter.transform((s: string) => Temporal.Instant.from(s)),
-    encode: SchemaGetter.transform((i: Temporal.Instant) => i.toString()),
-  }),
-);
 
 /**
  * A raw Zotero integer column typed as its known values. Decoding accepts any
@@ -116,16 +107,16 @@ function codeRequest(
 // --- Errors ---------------------------------------------------------------
 
 /** The database cannot answer: no connection opens, or the source is not a Zotero database. */
-export class DbUnavailable extends Schema.TaggedError<DbUnavailable>()(
-  "DbUnavailable",
-  { message: Schema.String },
-) {}
+export class DbUnavailable extends Schema.TaggedError<
+  DbUnavailable,
+  { readonly brand: unique symbol }
+>()("DbUnavailable", { message: Schema.String }) {}
 
 /** The Snapshot id names no open Snapshot: it ended or never existed. */
-export class SnapshotExpired extends Schema.TaggedError<SnapshotExpired>()(
-  "SnapshotExpired",
-  { snapshot: Schema.String },
-) {}
+export class SnapshotExpired extends Schema.TaggedError<
+  SnapshotExpired,
+  { readonly brand: unique symbol }
+>()("SnapshotExpired", { snapshot: Schema.String }) {}
 
 /** The errors a read can fail with. */
 export const ReadError = Schema.Union([DbUnavailable, SnapshotExpired]);
@@ -133,11 +124,11 @@ export const ReadError = Schema.Union([DbUnavailable, SnapshotExpired]);
 // --- Rows -----------------------------------------------------------------
 
 export const LibrarySchema = Schema.Struct({
-  libraryID: Schema.Number,
+  libraryID: Schema.Int,
   type: Schema.Literals(["user", "group"]),
-  version: Schema.Number,
-  clientVersion: Schema.NullOr(Schema.Number),
-  groupID: Schema.NullOr(Schema.Number),
+  version: Schema.Int,
+  clientVersion: Schema.NullOr(Schema.Int),
+  groupID: Schema.NullOr(Schema.Int),
   name: Schema.NullOr(Schema.String),
 });
 type _Library = Expect<Equals<typeof LibrarySchema.Type, Library>>;
@@ -151,8 +142,8 @@ const CreatorSchema = Schema.Struct({
 type _Creator = Expect<Equals<typeof CreatorSchema.Type, Creator>>;
 
 export const ItemSchema = Schema.Struct({
-  itemID: Schema.Number,
-  libraryID: Schema.Number,
+  itemID: Schema.Int,
+  libraryID: Schema.Int,
   key: Schema.String,
   indexedKey: Schema.String,
   dateAdded: Instant,
@@ -163,17 +154,17 @@ export const ItemSchema = Schema.Struct({
   fields: jsonObject<ItemFields>(),
   baseFields: jsonObject<ItemBaseFields>(),
   venue: Schema.NullOr(Schema.String),
-  groupID: Schema.NullOr(Schema.Number),
+  groupID: Schema.NullOr(Schema.Int),
 });
 type _Item = Expect<Equals<typeof ItemSchema.Type, Item>>;
 
 export const AttachmentSchema = Schema.Struct({
-  itemID: Schema.Number,
-  libraryID: Schema.Number,
-  groupID: Schema.NullOr(Schema.Number),
+  itemID: Schema.Int,
+  libraryID: Schema.Int,
+  groupID: Schema.NullOr(Schema.Int),
   key: Schema.String,
   indexedKey: Schema.String,
-  parentItemID: Schema.Number,
+  parentItemID: Schema.Int,
   path: Schema.NullOr(Schema.String),
   contentType: Schema.NullOr(Schema.String),
   linkMode: Schema.NullOr(rawInt<NonNullable<Attachment["linkMode"]>>()),
@@ -193,14 +184,14 @@ type _AttachmentWithParentKey = Expect<
 type TagType = ItemTag["type"];
 
 export const AnnotationSchema = Schema.Struct({
-  groupID: Schema.NullOr(Schema.Number),
-  itemID: Schema.Number,
+  groupID: Schema.NullOr(Schema.Int),
+  itemID: Schema.Int,
   key: Schema.String,
   indexedKey: Schema.String,
-  libraryID: Schema.Number,
+  libraryID: Schema.Int,
   dateAdded: Instant,
   dateModified: Instant,
-  version: Schema.Number,
+  version: Schema.Int,
   type: rawInt<Annotation["type"]>(),
   text: Schema.NullOr(Schema.String),
   comment: Schema.NullOr(Schema.String),
@@ -218,19 +209,19 @@ export const AnnotationSchema = Schema.Struct({
   position: jsonObject<AnnotationPositionRaw>(),
   authorName: Schema.NullOr(Schema.String),
   isExternal: Schema.Boolean,
-  createdByUserID: Schema.NullOr(Schema.Number),
-  parentItemID: Schema.Number,
+  createdByUserID: Schema.NullOr(Schema.Int),
+  parentItemID: Schema.Int,
   parentKey: Schema.String,
 });
 type _Annotation = Expect<Equals<typeof AnnotationSchema.Type, Annotation>>;
 
 export const ChildNoteSchema = Schema.Struct({
-  groupID: Schema.NullOr(Schema.Number),
-  itemID: Schema.Number,
-  libraryID: Schema.Number,
+  groupID: Schema.NullOr(Schema.Int),
+  itemID: Schema.Int,
+  libraryID: Schema.Int,
   key: Schema.String,
   indexedKey: Schema.String,
-  parentItemID: Schema.NullOr(Schema.Number),
+  parentItemID: Schema.NullOr(Schema.Int),
   title: Schema.NullOr(Schema.String),
   dateModified: Instant,
 });
@@ -244,8 +235,8 @@ export const NoteSchema = Schema.Struct({
 type _Note = Expect<Equals<typeof NoteSchema.Type, Note>>;
 
 const ItemTagSchema = Schema.Struct({
-  itemID: Schema.Number,
-  tag: Schema.Struct({ tagID: Schema.Number, name: Schema.String }),
+  itemID: Schema.Int,
+  tag: Schema.Struct({ tagID: Schema.Int, name: Schema.String }),
   type: rawInt<TagType>(),
 });
 type _ItemTag = Expect<Equals<typeof ItemTagSchema.Type, ItemTag>>;
@@ -260,7 +251,7 @@ type _TemplateCollection = Expect<
 >;
 
 const TagsByItemID = Schema.ReadonlyMap(
-  Schema.Number,
+  Schema.Int,
   Schema.Array(ItemTagSchema),
 );
 
@@ -269,12 +260,12 @@ export const NoteSourceSchema = Schema.Struct({
   username: Schema.NullOr(Schema.String),
   attachments: Schema.Array(AttachmentSchema),
   annotationsByAttachment: Schema.ReadonlyMap(
-    Schema.Number,
+    Schema.Int,
     Schema.Array(AnnotationSchema),
   ),
   tagsByItemID: TagsByItemID,
   collectionsByItemID: Schema.ReadonlyMap(
-    Schema.Number,
+    Schema.Int,
     Schema.Array(TemplateCollectionSchema),
   ),
   relatedItems: Schema.Array(ItemSchema),
@@ -300,10 +291,10 @@ type _AnnotationSources = Expect<
 >;
 
 export const ItemDisplayRefSchema = Schema.Struct({
-  itemID: Schema.Number,
-  libraryID: Schema.Number,
+  itemID: Schema.Int,
+  libraryID: Schema.Int,
   key: Schema.String,
-  groupID: Schema.NullOr(Schema.Number),
+  groupID: Schema.NullOr(Schema.Int),
   indexedKey: Schema.String,
   title: Schema.NullOr(Schema.String),
 });
@@ -316,7 +307,7 @@ type _ItemDisplayRef = Expect<
 
 /** The inputs of one graph Work Label; the renderer formats the label. */
 export const WorkLabelSourceSchema = Schema.Struct({
-  libraryID: Schema.Number,
+  libraryID: Schema.Int,
   creators: Schema.mutable(Schema.Array(CreatorSchema)),
   primaryCreatorType: Schema.NullOr(Schema.String),
   title: Schema.NullOr(Schema.String),
@@ -327,10 +318,10 @@ export type WorkLabelSource = typeof WorkLabelSourceSchema.Type;
 
 /** One attachment the annotation sidebar lists, with its annotation count. */
 export const AnnotViewAttachmentSchema = Schema.Struct({
-  itemID: Schema.Number,
+  itemID: Schema.Int,
   indexedKey: Schema.String,
   path: Schema.NullOr(Schema.String),
-  annotCount: Schema.Number,
+  annotCount: Schema.Int,
 });
 type _AnnotViewAttachment = Expect<
   Equals<typeof AnnotViewAttachmentSchema.Type, AnnotViewAttachment>
@@ -352,7 +343,7 @@ export const ReaderTargetKeysSchema = Schema.Struct({
 export const SearchHitSchema = Schema.Struct({
   item: ItemSchema,
   matches: Schema.mutable(
-    Schema.Array(Schema.mutable(Schema.Tuple([Schema.Number, Schema.Number]))),
+    Schema.Array(Schema.mutable(Schema.Tuple([Schema.Int, Schema.Int]))),
   ),
 });
 export type SearchHit = typeof SearchHitSchema.Type;
@@ -360,7 +351,7 @@ type _SearchHit = Expect<Equals<SearchHit, ItemIndexHit>>;
 
 /** The account and Local API database a Zotero database belongs to. */
 export const DatabaseIdentitySchema = Schema.Struct({
-  userID: Schema.NullOr(Schema.Number),
+  userID: Schema.NullOr(Schema.Int),
   localUserKey: Schema.NullOr(Schema.String),
   serverID: Schema.NullOr(Schema.String),
 });
@@ -373,7 +364,7 @@ export const ItemSnapshotRequestSchema = Schema.Struct({
   selection: Schema.Struct({
     library: Schema.Union([
       Schema.Struct({ type: Schema.Literal("personal") }),
-      Schema.Struct({ type: Schema.Literal("group"), groupID: Schema.Number }),
+      Schema.Struct({ type: Schema.Literal("group"), groupID: Schema.Int }),
     ]),
     key: Schema.String,
   }),
@@ -500,8 +491,8 @@ export type SnapshotId = typeof SnapshotId.Type;
 const snapshot = { snapshot: Schema.optionalKey(SnapshotId) };
 
 const CitationItemSchema = Schema.Struct({
-  itemID: Schema.Number,
-  libraryID: Schema.Number,
+  itemID: Schema.Int,
+  libraryID: Schema.Int,
   key: Schema.String,
   indexedKey: Schema.String,
 });
@@ -569,7 +560,7 @@ export class ZoteroReads extends RpcGroup.make(
   /** Items across every library, independent of Library Scope. */
   Rpc.make("ConnectionReadout", {
     payload: snapshot,
-    success: Schema.Struct({ itemCount: Schema.Number }),
+    success: Schema.Struct({ itemCount: Schema.Int }),
     error: ReadError,
   }),
   /** Items keyed by the Indexed Key each was asked by; a key with no live item is absent. */
@@ -580,7 +571,7 @@ export class ZoteroReads extends RpcGroup.make(
   }),
   /** An item's related items and child notes; empty for an unknown item. */
   Rpc.make("ItemFamily", {
-    payload: { itemID: Schema.Number, ...snapshot },
+    payload: { itemID: Schema.Int, ...snapshot },
     success: Schema.Struct({
       relatedItems: Schema.Array(ItemSchema),
       childNotes: Schema.Array(ChildNoteSchema),
@@ -590,7 +581,7 @@ export class ZoteroReads extends RpcGroup.make(
   /** The Literature Note bundle for an item; `null` for an unknown item. */
   Rpc.make("NoteSource", {
     payload: {
-      itemID: Schema.Number,
+      itemID: Schema.Int,
       username: Schema.optionalKey(Schema.NullOr(Schema.String)),
       ...snapshot,
     },
@@ -604,12 +595,12 @@ export class ZoteroReads extends RpcGroup.make(
   Rpc.make("ItemFacets", {
     payload: {
       items: Schema.Array(
-        Schema.Struct({ itemID: Schema.Number, libraryID: Schema.Number }),
+        Schema.Struct({ itemID: Schema.Int, libraryID: Schema.Int }),
       ),
       ...snapshot,
     },
     success: Schema.Array(
-      Schema.Struct({ itemID: Schema.Number, facets: ItemFacetsSchema }),
+      Schema.Struct({ itemID: Schema.Int, facets: ItemFacetsSchema }),
     ),
     error: ReadError,
     stream: true,
@@ -617,7 +608,7 @@ export class ZoteroReads extends RpcGroup.make(
   /** The annotation template bundle for annotations named by key. */
   Rpc.make("AnnotationSources", {
     payload: {
-      libraryID: Schema.Number,
+      libraryID: Schema.Int,
       keys: Schema.Array(Schema.String),
       username: Schema.optionalKey(Schema.NullOr(Schema.String)),
       ...snapshot,
@@ -631,7 +622,7 @@ export class ZoteroReads extends RpcGroup.make(
     success: Schema.Struct({
       attachment: Schema.NullOr(AttachmentSchema),
       annotations: Schema.Array(AnnotationSchema),
-      accountUserID: Schema.NullOr(Schema.Number),
+      accountUserID: Schema.NullOr(Schema.Int),
     }),
     error: ReadError,
   }),
@@ -647,26 +638,26 @@ export class ZoteroReads extends RpcGroup.make(
         attachmentKey: Schema.String,
         attachment: Schema.NullOr(AttachmentSchema),
         annotations: Schema.Array(AnnotationSchema),
-        accountUserID: Schema.NullOr(Schema.Number),
+        accountUserID: Schema.NullOr(Schema.Int),
       }),
     ),
     error: ReadError,
   }),
   /** The attachments of the given parent items, in display order. */
   Rpc.make("AttachmentsOf", {
-    payload: { itemIDs: Schema.Array(Schema.Number), ...snapshot },
+    payload: { itemIDs: Schema.Array(Schema.Int), ...snapshot },
     success: Schema.Array(AttachmentSchema),
     error: ReadError,
   }),
   /** One entry per requested id; `ref` is `null` for an id with no live item. */
   Rpc.make("DisplayRefs", {
     payload: {
-      itemIDs: Schema.Array(Schema.Number),
+      itemIDs: Schema.Array(Schema.Int),
       ...snapshot,
     },
     success: Schema.Array(
       Schema.Struct({
-        itemID: Schema.Number,
+        itemID: Schema.Int,
         ref: Schema.NullOr(ItemDisplayRefSchema),
       }),
     ),
@@ -676,7 +667,7 @@ export class ZoteroReads extends RpcGroup.make(
   /** Notes with their bodies; a key with no live note is absent. */
   Rpc.make("NoteBodies", {
     payload: {
-      libraryID: Schema.Number,
+      libraryID: Schema.Int,
       keys: Schema.Array(Schema.String),
       ...snapshot,
     },
@@ -716,7 +707,7 @@ export class ZoteroReads extends RpcGroup.make(
   /** Attachments of one library by key; a key with no live attachment is absent. */
   Rpc.make("AttachmentsByKeys", {
     payload: {
-      libraryID: Schema.Number,
+      libraryID: Schema.Int,
       keys: Schema.Array(Schema.String),
       ...snapshot,
     },
@@ -732,10 +723,10 @@ export class ZoteroReads extends RpcGroup.make(
    */
   Rpc.make("SearchItems", {
     payload: {
-      libraryIDs: Schema.Array(Schema.Number),
+      libraryIDs: Schema.Array(Schema.Int),
       query: Schema.String,
-      limit: Schema.Number,
-      uses: Schema.optionalKey(Schema.Record(Schema.String, Schema.Number)),
+      limit: Schema.Int,
+      uses: Schema.optionalKey(Schema.Record(Schema.String, Schema.Int)),
       cited: Schema.optionalKey(Schema.Array(Schema.String)),
     },
     success: Schema.Array(SearchHitSchema),
@@ -761,7 +752,7 @@ export class ZoteroReads extends RpcGroup.make(
     payload: { indexedKey: Schema.String, ...snapshot },
     success: Schema.NullOr(
       Schema.Struct({
-        libraryID: Schema.Number,
+        libraryID: Schema.Int,
         key: Schema.String,
         itemType: Schema.String,
       }),
@@ -774,7 +765,7 @@ export class ZoteroReads extends RpcGroup.make(
    */
   Rpc.make("AnnotViewAttachments", {
     payload: {
-      libraryID: Schema.Number,
+      libraryID: Schema.Int,
       key: Schema.String,
       standalone: Schema.Boolean,
       ...snapshot,
@@ -785,8 +776,8 @@ export class ZoteroReads extends RpcGroup.make(
   /** A Zotero reader push's numeric ids as Indexed Keys; `null` for an unknown attachment. */
   Rpc.make("ReaderTargetKeys", {
     payload: {
-      attachmentID: Schema.Number,
-      selected: Schema.Array(Schema.Number),
+      attachmentID: Schema.Int,
+      selected: Schema.Array(Schema.Int),
       ...snapshot,
     },
     success: Schema.NullOr(ReaderTargetKeysSchema),
@@ -797,7 +788,7 @@ export class ZoteroReads extends RpcGroup.make(
    * names; empty for an unknown item.
    */
   Rpc.make("AttachmentsAt", {
-    payload: { itemID: Schema.Number, ...snapshot },
+    payload: { itemID: Schema.Int, ...snapshot },
     success: Schema.Array(AttachmentSchema),
     error: ReadError,
   }),
@@ -823,11 +814,11 @@ export class ZoteroReads extends RpcGroup.make(
   Rpc.make("ScopeItemIDs", {
     payload: {
       kind: Schema.Literals(["literature-items", "notes"]),
-      libraryID: Schema.Number,
+      libraryID: Schema.Int,
       collectionKey: Schema.optionalKey(Schema.String),
       ...snapshot,
     },
-    success: Schema.NullOr(Schema.Array(Schema.Number)),
+    success: Schema.NullOr(Schema.Array(Schema.Int)),
     error: ReadError,
   }),
   /**
@@ -836,12 +827,12 @@ export class ZoteroReads extends RpcGroup.make(
    */
   Rpc.make("NoteRefs", {
     payload: {
-      itemIDs: Schema.Array(Schema.Number),
+      itemIDs: Schema.Array(Schema.Int),
       ...snapshot,
     },
     success: Schema.Array(
       Schema.Struct({
-        itemID: Schema.Number,
+        itemID: Schema.Int,
         note: Schema.NullOr(ChildNoteSchema),
         trashed: Schema.Boolean,
       }),
@@ -852,12 +843,12 @@ export class ZoteroReads extends RpcGroup.make(
   /** One entry per requested parent id: its display ref and its child notes. */
   Rpc.make("ChildNoteRefs", {
     payload: {
-      itemIDs: Schema.Array(Schema.Number),
+      itemIDs: Schema.Array(Schema.Int),
       ...snapshot,
     },
     success: Schema.Array(
       Schema.Struct({
-        itemID: Schema.Number,
+        itemID: Schema.Int,
         ref: Schema.NullOr(ItemDisplayRefSchema),
         notes: Schema.Array(ChildNoteSchema),
       }),
@@ -867,13 +858,13 @@ export class ZoteroReads extends RpcGroup.make(
   }),
   /** The tag names in use in one library, or in every library; sorted, distinct. */
   Rpc.make("TagNames", {
-    payload: { libraryID: Schema.optionalKey(Schema.Number), ...snapshot },
+    payload: { libraryID: Schema.optionalKey(Schema.Int), ...snapshot },
     success: Schema.Array(Schema.String),
     error: ReadError,
   }),
   /** Every live collection of the libraries as its root-first names, sorted. */
   Rpc.make("CollectionPaths", {
-    payload: { libraryIDs: Schema.Array(Schema.Number), ...snapshot },
+    payload: { libraryIDs: Schema.Array(Schema.Int), ...snapshot },
     success: Schema.Array(Schema.Array(Schema.String)),
     error: ReadError,
   }),

@@ -1,5 +1,6 @@
 // The Effect service over the Annotation Repository core.
-import { Clock, Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
+import { Clock, Context, Effect, Layer, PubSub, Stream } from "effect";
+
 import { scopedBridge } from "@/lib/effect-bridge";
 import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
@@ -83,7 +84,7 @@ export type AnnotationRepositoryShape = {
    * affordance's click, and a keystroke that met a block. A probe that changes
    * anything announces itself through `capability-changed`.
    */
-  probe(): Effect.Effect<void>;
+  readonly probe: Effect.Effect<void>;
   /**
    * What a write left on one Annotation, for the card that draws its verbs:
    * `pending` from the moment a write is asked for until the last write queued
@@ -399,69 +400,132 @@ export function layerAnnotationRepository(options: {
       const byTag = <T extends AnnotationRepositoryEvent["_tag"]>(tag: T) =>
         filterTag(events, tag);
       return AnnotationRepository.of({
-        read: (attachmentKey) => Effect.promise(() => core.read(attachmentKey)),
-        hold: (attachmentKeys) => Effect.sync(() => core.hold(attachmentKeys)),
-        refresh: (attachmentKey) =>
+        read: Effect.fn("AnnotationRepository.read")((attachmentKey) =>
+          Effect.promise(() => core.read(attachmentKey)),
+        ),
+        hold: Effect.fn("AnnotationRepository.hold")((attachmentKeys) =>
+          Effect.sync(() => core.hold(attachmentKeys)),
+        ),
+        refresh: Effect.fn("AnnotationRepository.refresh")((attachmentKey) =>
           Effect.promise(() => core.refresh(attachmentKey)),
-        peek: (attachmentKey) => Effect.sync(() => core.peek(attachmentKey)),
-        capabilityFor: (attachmentKey) =>
-          Effect.sync(() => core.capabilityFor(attachmentKey)),
+        ),
+        peek: Effect.fn("AnnotationRepository.peek")((attachmentKey) =>
+          Effect.sync(() => core.peek(attachmentKey)),
+        ),
+        capabilityFor: Effect.fn("AnnotationRepository.capabilityFor")(
+          (attachmentKey) =>
+            Effect.sync(() => core.capabilityFor(attachmentKey)),
+        ),
         capability: Effect.sync(() => core.capability),
-        probe: () => Effect.promise(() => core.probe()),
-        mutationFor: (annotationKey) =>
-          Effect.sync(() => core.mutationFor(annotationKey)),
-        annotationState: (annotationKey) =>
-          Effect.sync(() => core.annotationState(annotationKey)),
-        textDraftFor: (field, annotationKey) =>
-          Effect.sync(() => core.textDraftFor(field, annotationKey)),
-        editTextField: (field, annotationKey, text) =>
-          Effect.sync(() => core.editTextField(field, annotationKey, text)),
-        submitTextField: (field, annotationKey, writeOptions) =>
-          Effect.promise(() =>
-            core.submitTextField(field, annotationKey, writeOptions),
-          ),
-        discardTextDraft: (field, annotationKey) =>
-          Effect.sync(() => core.discardTextDraft(field, annotationKey)),
-        retryTextDraft: (field, annotationKey) =>
-          Effect.promise(() => core.retryTextDraft(field, annotationKey)),
-        tagDraftFor: (annotationKey) =>
-          Effect.sync(() => core.tagDraftFor(annotationKey)),
-        editTags: (annotationKey, names) =>
-          Effect.sync(() => core.editTags(annotationKey, names)),
-        submitTags: (annotationKey, writeOptions) =>
-          Effect.promise(() => core.submitTags(annotationKey, writeOptions)),
-        discardTagDraft: (annotationKey) =>
-          Effect.sync(() => core.discardTagDraft(annotationKey)),
-        createAnnotation: (attachmentKey, draft, createOptions) =>
-          Effect.promise(() =>
-            core.createAnnotation(attachmentKey, draft, createOptions),
-          ),
-        patchColor: (annotationKey, color) =>
-          Effect.promise(() => core.patchColor(annotationKey, color)),
-        patchColors: (annotationKeys, color) =>
-          Effect.promise(() => core.patchColors(annotationKeys, color)),
-        patchComment: (annotationKey, comment) =>
-          Effect.promise(() => core.patchComment(annotationKey, comment)),
-        patchGeometry: (annotationKey, edit, input) =>
-          Effect.promise(() => core.patchGeometry(annotationKey, edit, input)),
-        deleteAnnotation: (annotationKey) =>
-          Effect.promise(() => core.deleteAnnotation(annotationKey)),
-        deleteAnnotations: (annotationKeys) =>
-          Effect.promise(() => core.deleteAnnotations(annotationKeys)),
-        retryWrite: (annotationKey) =>
-          Effect.promise(() => core.retryWrite(annotationKey)),
-        discardConflict: (annotationKey) =>
-          Effect.sync(() => core.discardConflict(annotationKey)),
-        openHistory: (attachmentKey) =>
-          Effect.sync(() => core.openHistory(attachmentKey)),
-        closeHistory: (attachmentKey) =>
-          Effect.sync(() => core.closeHistory(attachmentKey)),
-        canUndo: (attachmentKey) =>
+        probe: Effect.promise(() => core.probe()).pipe(
+          Effect.withSpan("AnnotationRepository.probe"),
+        ),
+        mutationFor: Effect.fn("AnnotationRepository.mutationFor")(
+          (annotationKey) => Effect.sync(() => core.mutationFor(annotationKey)),
+        ),
+        // Untraced: the annotation view reads it once per changed Annotation.
+        annotationState: Effect.fnUntraced(function* (annotationKey) {
+          return yield* Effect.sync(() => core.annotationState(annotationKey));
+        }),
+        // Untraced: the annotation view reads it per Annotation and field.
+        textDraftFor: Effect.fnUntraced(function* (field, annotationKey) {
+          return yield* Effect.sync(() =>
+            core.textDraftFor(field, annotationKey),
+          );
+        }),
+        editTextField: Effect.fn("AnnotationRepository.editTextField")(
+          (field, annotationKey, text) =>
+            Effect.sync(() => core.editTextField(field, annotationKey, text)),
+        ),
+        submitTextField: Effect.fn("AnnotationRepository.submitTextField")(
+          (field, annotationKey, writeOptions) =>
+            Effect.promise(() =>
+              core.submitTextField(field, annotationKey, writeOptions),
+            ),
+        ),
+        discardTextDraft: Effect.fn("AnnotationRepository.discardTextDraft")(
+          (field, annotationKey) =>
+            Effect.sync(() => core.discardTextDraft(field, annotationKey)),
+        ),
+        retryTextDraft: Effect.fn("AnnotationRepository.retryTextDraft")(
+          (field, annotationKey) =>
+            Effect.promise(() => core.retryTextDraft(field, annotationKey)),
+        ),
+        // Untraced: the annotation view reads it per Annotation.
+        tagDraftFor: Effect.fnUntraced(function* (annotationKey) {
+          return yield* Effect.sync(() => core.tagDraftFor(annotationKey));
+        }),
+        editTags: Effect.fn("AnnotationRepository.editTags")(
+          (annotationKey, names) =>
+            Effect.sync(() => core.editTags(annotationKey, names)),
+        ),
+        submitTags: Effect.fn("AnnotationRepository.submitTags")(
+          (annotationKey, writeOptions) =>
+            Effect.promise(() => core.submitTags(annotationKey, writeOptions)),
+        ),
+        discardTagDraft: Effect.fn("AnnotationRepository.discardTagDraft")(
+          (annotationKey) =>
+            Effect.sync(() => core.discardTagDraft(annotationKey)),
+        ),
+        createAnnotation: Effect.fn("AnnotationRepository.createAnnotation")(
+          (attachmentKey, draft, createOptions) =>
+            Effect.promise(() =>
+              core.createAnnotation(attachmentKey, draft, createOptions),
+            ),
+        ),
+        patchColor: Effect.fn("AnnotationRepository.patchColor")(
+          (annotationKey, color) =>
+            Effect.promise(() => core.patchColor(annotationKey, color)),
+        ),
+        patchColors: Effect.fn("AnnotationRepository.patchColors")(
+          (annotationKeys, color) =>
+            Effect.promise(() => core.patchColors(annotationKeys, color)),
+        ),
+        patchComment: Effect.fn("AnnotationRepository.patchComment")(
+          (annotationKey, comment) =>
+            Effect.promise(() => core.patchComment(annotationKey, comment)),
+        ),
+        patchGeometry: Effect.fn("AnnotationRepository.patchGeometry")(
+          (annotationKey, edit, input) =>
+            Effect.promise(() =>
+              core.patchGeometry(annotationKey, edit, input),
+            ),
+        ),
+        deleteAnnotation: Effect.fn("AnnotationRepository.deleteAnnotation")(
+          (annotationKey) =>
+            Effect.promise(() => core.deleteAnnotation(annotationKey)),
+        ),
+        deleteAnnotations: Effect.fn("AnnotationRepository.deleteAnnotations")(
+          (annotationKeys) =>
+            Effect.promise(() => core.deleteAnnotations(annotationKeys)),
+        ),
+        retryWrite: Effect.fn("AnnotationRepository.retryWrite")(
+          (annotationKey) =>
+            Effect.promise(() => core.retryWrite(annotationKey)),
+        ),
+        discardConflict: Effect.fn("AnnotationRepository.discardConflict")(
+          (annotationKey) =>
+            Effect.sync(() => core.discardConflict(annotationKey)),
+        ),
+        openHistory: Effect.fn("AnnotationRepository.openHistory")(
+          (attachmentKey) => Effect.sync(() => core.openHistory(attachmentKey)),
+        ),
+        closeHistory: Effect.fn("AnnotationRepository.closeHistory")(
+          (attachmentKey) =>
+            Effect.sync(() => core.closeHistory(attachmentKey)),
+        ),
+        canUndo: Effect.fn("AnnotationRepository.canUndo")((attachmentKey) =>
           Effect.sync(() => core.canUndo(attachmentKey)),
-        canRedo: (attachmentKey) =>
+        ),
+        canRedo: Effect.fn("AnnotationRepository.canRedo")((attachmentKey) =>
           Effect.sync(() => core.canRedo(attachmentKey)),
-        undo: (attachmentKey) => Effect.promise(() => core.undo(attachmentKey)),
-        redo: (attachmentKey) => Effect.promise(() => core.redo(attachmentKey)),
+        ),
+        undo: Effect.fn("AnnotationRepository.undo")((attachmentKey) =>
+          Effect.promise(() => core.undo(attachmentKey)),
+        ),
+        redo: Effect.fn("AnnotationRepository.redo")((attachmentKey) =>
+          Effect.promise(() => core.redo(attachmentKey)),
+        ),
         annotationsChanged: byTag("annotations-changed").pipe(
           Stream.map(({ attachmentKey }) => attachmentKey),
         ),

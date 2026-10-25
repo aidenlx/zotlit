@@ -5,6 +5,7 @@
 //
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
 // @see apps/obsidian/docs/adr/0069-the-annotation-view-is-the-annotations-layout-of-the-query-view.md
+import { Effect } from "effect";
 import { Component } from "obsidian";
 import type { Scope } from "obsidian";
 import { useLayoutEffect, useMemo } from "react";
@@ -17,7 +18,6 @@ import type { NameDictionary, QueryContext } from "@zotlit/item-query";
 import { useUniqueId } from "@zotlit/ui";
 
 import { PaneState } from "@/components/pane-state";
-import { Effect } from "@/lib/effect";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";

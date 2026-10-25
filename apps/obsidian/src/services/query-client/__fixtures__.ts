@@ -1,8 +1,8 @@
 import type { QueryFunction, QueryKey } from "@tanstack/query-core";
+import { Clock, Context, Effect, Exit, Layer, Scope } from "effect";
 // A real QueryClients layer for consumer tests outside Effect.
 import { TestClock } from "effect/testing";
 
-import { Clock, Context, Effect, Exit, Layer, Scope } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 
 import { plainQueryClients } from "./plain";
@@ -10,6 +10,7 @@ import type { PlainQueryClients } from "./plain";
 import type { QueryClients } from "./service";
 import type { HeldReadEvents } from "./service";
 import { layerQueryClients } from "./service";
+import type { TestClock as QueryTestClock } from "./test-clock";
 
 /** A plain test client with the Effect surface `ExcerptDisplayService` reads. */
 export function taggedQueryClients(
@@ -22,11 +23,9 @@ export function taggedQueryClients(
     client: queries.client,
     invalidate: (key) => Effect.sync(() => queries.invalidate(key)),
     peek: <T>(key: QueryKey) => Effect.sync(() => queries.peek<T>(key)),
-    read: <T>(key: QueryKey, queryFn: QueryFunction<T>, signal?: AbortSignal) =>
-      Effect.tryPromise({
-        try: () => queries.read(key, queryFn, signal),
-        catch: (error) => error,
-      }),
+    read: <T>(key: QueryKey, queryFn: QueryFunction<T>) =>
+      // The real read settles a failure as what the key holds: it never fails.
+      Effect.promise((signal) => queries.read(key, queryFn, signal)),
     watch: <T>(prefix: QueryKey, on: HeldReadEvents<T>) =>
       Effect.sync(() => queries.watch(prefix, on)),
   };
@@ -34,7 +33,7 @@ export function taggedQueryClients(
 
 export function buildQueryClients(
   stack: AsyncDisposableStack,
-  now?: () => Temporal.Instant,
+  now?: QueryTestClock["now"],
 ): PlainQueryClients & {
   runtime: import("@/lib/effect-stream").SubscriptionRuntime;
 } {
@@ -61,7 +60,7 @@ export function buildQueryClients(
 
 /** A consumer fixture whose owner disposes its runtime. */
 export function queryClientsFixture(
-  now?: () => Temporal.Instant,
+  now?: QueryTestClock["now"],
 ): PlainQueryClients &
   AsyncDisposable & {
     runtime: import("@/lib/effect-stream").SubscriptionRuntime;

@@ -16,7 +16,8 @@
  * It answers empty while the scope is unresolved and when the database is
  * unavailable.
  */
-import { Effect, Exit, FiberHandle, FiberSet, Scope } from "@/lib/effect";
+import { Effect, Exit, FiberHandle, FiberSet, Scope } from "effect";
+
 import { openScope } from "@/lib/effect-scope";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";

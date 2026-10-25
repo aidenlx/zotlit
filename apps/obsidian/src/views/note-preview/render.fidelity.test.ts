@@ -1,13 +1,15 @@
 // @vitest-environment happy-dom
 // What the Note Preview shows against what the real create path writes: one
 // fixture Item, one Profile source, the write captured through an in-memory vault.
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
 import { getItemsByKey } from "@zotlit/db";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
-import { Effect } from "@/lib/effect";
+import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
+import type { VaultSource } from "@/lib/obsidian-vault";
 import type { NoteFeatureDeps } from "@/services/note-feature/context";
 import { createNoteFeature } from "@/services/note-feature/operations";
 import type { CreateNoteResult } from "@/services/note-feature/operations";
@@ -101,7 +103,9 @@ async function realCreate(
       current: Effect.succeed(current),
       update: () => Effect.succeed(current),
     },
-    bridge: { runSync: Effect.runSync },
+    bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
+    vault: vaultOver(host.vault as unknown as VaultSource),
+    fileManager: { renameFile: () => Effect.void },
     attachmentImport: {
       prepare: async () => ({
         decide: (path: string, origin: string) => ({

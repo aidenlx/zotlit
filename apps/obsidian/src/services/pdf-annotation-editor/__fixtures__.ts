@@ -1,6 +1,7 @@
 // The fake Obsidian PDF reader — viewer host, viewer child, toolbar slot and
 // page view — that both pdf-annotation-editor suites drive the seam through.
 // Needs a DOM, so every consumer runs under `// @vitest-environment happy-dom`.
+import { DateTime, Effect, PubSub, Stream } from "effect";
 import type { HoverParent, PDFPageViewport, Scope } from "obsidian";
 import { vi } from "vitest";
 import type { Mock } from "vitest";
@@ -12,8 +13,8 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { dispatchKey } from "@/lib/__fixtures__/keymap";
 import { withRecentColor } from "@/lib/annotation-colors";
-import { Effect, PubSub, Stream } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
+import { toInstant } from "@/lib/effect-clock";
 import {
   markExternal,
   nextChange,
@@ -343,6 +344,8 @@ export function annotationReads(
   /** How many PDF views hold each Attachment's Annotation History open. */
   const histories = new Map<string, number>();
   const eventStream = Stream.fromPubSub(events);
+  /** Called once per run of the `probe` Effect, so a test counts the probes. */
+  const probeRuns = vi.fn(() => Effect.void);
   return {
     read: vi.fn(() => Effect.succeed(list)),
     peek: vi.fn(() =>
@@ -384,7 +387,8 @@ export function annotationReads(
       Effect.succeed({ kind: "created" as const, annotationKey: "MADE2345" }),
     ),
     capability: Effect.sync(() => current),
-    probe: vi.fn(() => Effect.void),
+    probe: Effect.suspend(probeRuns),
+    probeRuns,
     hold: vi.fn(() =>
       Effect.succeed<Disposable>({ [Symbol.dispose]: () => {} }),
     ),
@@ -531,7 +535,9 @@ export function failedIn(
 export { dispatchKey };
 
 /** The instant the reader surfaces read their clock at. */
-export const READER_NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
+export const READER_NOW = toInstant(
+  DateTime.makeUnsafe("2026-09-17T10:00:00Z"),
+);
 
 export interface ReaderSurfacesOptions {
   /** The PDF view's container, where the gestures are heard. */

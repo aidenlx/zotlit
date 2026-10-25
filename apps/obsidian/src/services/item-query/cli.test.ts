@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Deferred, Effect, Fiber, Scheduler } from "effect";
 import { isDeepStrictEqual } from "node:util";
 import type { CliData } from "obsidian";
 import { describe, expect } from "vitest";
@@ -8,8 +10,6 @@ import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 import { ItemQueryScheduler } from "@zotlit/item-query";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
-import { Deferred, Effect, Fiber, Scheduler } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 import type { LibraryScope } from "@/services/library-scope/scope";
 

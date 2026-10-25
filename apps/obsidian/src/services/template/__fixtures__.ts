@@ -1,12 +1,14 @@
+import { Context, Effect, Layer } from "effect";
 import type { App } from "obsidian";
 
 import {
   createObsidianHost,
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
-import { Context, Effect, Layer } from "@/lib/effect";
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { buildRuntime } from "@/lib/effect-layer";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { layerVaultFrom } from "@/lib/obsidian-vault";
 import {
   layerPluginSettings,
   PluginSettings,
@@ -36,7 +38,7 @@ export function createTemplateHost(files: Record<string, string> = {}) {
 
 export function templateOver(host: ReturnType<typeof createTemplateHost>) {
   return layerTemplate.pipe(
-    Layer.provide(Layer.succeed(ObsidianApp, host.app)),
+    Layer.provide(layerHostApp(host.app)),
     Layer.provideMerge(layerPluginSettings(host.plugin)),
   );
 }
@@ -59,7 +61,13 @@ export async function buildTemplate(
   await using stack = new AsyncDisposableStack();
   const runtime = buildRuntime(
     layerTemplate.pipe(
-      Layer.provide(Layer.succeed(ObsidianApp, options.app)),
+      // A host that stubs only the vault: the tags the layer reads, no others.
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.succeed(ObsidianApp, options.app),
+          layerVaultFrom(options.app.vault),
+        ),
+      ),
       Layer.provide(templateSettings(options.settings)),
       Layer.provideMerge(Layer.succeedContext(context)),
     ),

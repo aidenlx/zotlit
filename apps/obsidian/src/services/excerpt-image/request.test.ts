@@ -1,4 +1,6 @@
 // One Annotation reached through the Local API and the database must reuse pixels.
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { join } from "node:path";
 import { describe, expect, vi } from "vitest";
 
@@ -8,8 +10,6 @@ import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import type {
   AnnotationRecord,
   AnnotationSource,

@@ -3,16 +3,10 @@
 // Command, flag, and response text is all hardcoded English: an agent-facing
 // contract surface, not localized UI. See apps/obsidian/policies/cli-text.md.
 
+import { Effect, Layer } from "effect";
 import { isAbsolute, relative } from "node:path";
 import { normalizePath } from "obsidian";
-import type {
-  App,
-  CliData,
-  CliFlag,
-  CliFlags,
-  FileSystemAdapter,
-  TFile,
-} from "obsidian";
+import type { App, CliData, CliFlag, CliFlags, TFile } from "obsidian";
 
 import type { VersionedCliHost } from "@/lib/cli-command";
 import {
@@ -26,8 +20,8 @@ import {
   rejectionText,
 } from "@/lib/cli-params";
 import type { CliParamName } from "@/lib/cli-params";
-import { Effect, Layer } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
+import { ObsidianEnv } from "@/lib/obsidian-env";
 import { PluginHost } from "@/lib/plugin-host";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import { Profile } from "@/services/profile/service";
@@ -66,6 +60,8 @@ export { CSL_COMMAND };
 
 export interface PandocResolveDeps {
   app: App;
+  /** The vault's folder on disk, which the CLI's absolute paths start with. */
+  basePath: string;
   reads: Pick<ZoteroReads["Service"], "current" | "reads">;
   zoteroPref: Pick<ZoteroPref["Service"], "current">;
   settings: Pick<PluginSettings["Service"], "current">;
@@ -76,12 +72,13 @@ export interface PandocResolveDeps {
 export const layerPandocResolve: Layer.Layer<
   never,
   never,
-  PluginHost | ZoteroReads | ZoteroPref | PluginSettings | Profile
+  PluginHost | ObsidianEnv | ZoteroReads | ZoteroPref | PluginSettings | Profile
 > = Layer.effectDiscard(
   Effect.gen(function* () {
     const host = yield* PluginHost;
     registerPandocResolve(host, {
       app: host.app,
+      basePath: (yield* ObsidianEnv).basePath,
       reads: yield* ZoteroReads,
       zoteroPref: yield* ZoteroPref,
       settings: yield* PluginSettings,
@@ -154,7 +151,7 @@ export function registerPandocResolve(
           command: RESOLVE_COMMAND,
         });
         const response = yield* resolveCitations(file, {
-          readDocument: (absolutePath) => readDocument(deps.app, absolutePath),
+          readDocument: (absolutePath) => readDocument(deps, absolutePath),
           resolveIndexedKey: (linkpath, sourcePath) =>
             resolveIndexedKey(linkpath, sourcePath, deps.app),
           database: {
@@ -175,8 +172,8 @@ export function registerPandocResolve(
                   Effect.as(null),
                 );
               return readItems(deps.reads, indexedKeys).pipe(
-                Effect.catch(unreadable),
-                Effect.catchDefect(unreadable),
+                Effect.catch((error) => unreadable(error)),
+                Effect.catchDefect((defect) => unreadable(defect)),
               );
             },
           },
@@ -222,7 +219,12 @@ export function registerPandocResolve(
                 ...ports,
                 readStyle: (absolutePath) =>
                   readDocumentStyle(
-                    { app: deps.app, settings, profile },
+                    {
+                      app: deps.app,
+                      basePath: deps.basePath,
+                      settings,
+                      profile,
+                    },
                     absolutePath,
                   ),
               }),
@@ -243,16 +245,18 @@ export function registerPandocResolve(
 function readDocumentStyle(
   {
     app,
+    basePath,
     settings,
     profile,
   }: {
     app: App;
+    basePath: string;
     settings: Readonly<Settings>;
     profile: Pick<ProfileOperations, "loaded" | "profileOf">;
   },
   absolutePath: string,
 ): DocumentStyleRead {
-  const file = vaultFile(app, absolutePath);
+  const file = vaultFile(app, basePath, absolutePath);
   if (!file) return { kind: "file-not-found" };
   const declared = documentPresentation(app.metadataCache, file, profile);
   if (declared.kind === "unusable") return declared;
@@ -264,8 +268,11 @@ function readDocumentStyle(
 }
 
 /** The note at an absolute path, with the links Obsidian's cache holds for it. */
-function readDocument(app: App, absolutePath: string): ResolveDocument | null {
-  const file = vaultFile(app, absolutePath);
+function readDocument(
+  { app, basePath }: Pick<PandocResolveDeps, "app" | "basePath">,
+  absolutePath: string,
+): ResolveDocument | null {
+  const file = vaultFile(app, basePath, absolutePath);
   if (!file) return null;
   return {
     sourcePath: file.path,
@@ -273,10 +280,13 @@ function readDocument(app: App, absolutePath: string): ResolveDocument | null {
   };
 }
 
-/** Desktop-only plugin: the adapter is always a `FileSystemAdapter`. */
-function vaultFile(app: App, absolutePath: string): TFile | null {
+/** The vault file at an absolute path under `basePath`. */
+function vaultFile(
+  app: App,
+  basePath: string,
+  absolutePath: string,
+): TFile | null {
   if (!isAbsolute(absolutePath)) return null;
-  const basePath = (app.vault.adapter as FileSystemAdapter).getBasePath();
   return app.vault.getFileByPath(
     normalizePath(relative(basePath, absolutePath)),
   );

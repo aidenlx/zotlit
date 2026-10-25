@@ -1,8 +1,8 @@
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { ItemRef } from "@zotlit/db";
 
-import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { InertTemplateError } from "@/services/template/errors";

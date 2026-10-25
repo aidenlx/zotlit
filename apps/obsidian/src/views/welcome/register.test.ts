@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
+import { it } from "@effect/vitest";
+import { Effect, Stream } from "effect";
 import type { App } from "obsidian";
 import { afterEach, expect, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Effect, Stream } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import { queryClientsOf } from "@/services/query-client/__fixtures__";
 import { settingsRuntimeOf } from "@/services/settings/__fixtures__";

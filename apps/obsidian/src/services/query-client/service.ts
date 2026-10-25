@@ -1,6 +1,5 @@
 // The one query client every Held Read is realized on, and the Held Read projection of a query's state.
 
-import { abortable } from "@std/async/abortable";
 import {
   CancelledError,
   focusManager,
@@ -8,8 +7,16 @@ import {
   QueryClient,
 } from "@tanstack/query-core";
 import type { Query, QueryFunction, QueryKey } from "@tanstack/query-core";
+import {
+  Clock,
+  Context,
+  Duration,
+  Effect,
+  Layer,
+  PubSub,
+  Stream,
+} from "effect";
 
-import { Clock, Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 
@@ -35,7 +42,7 @@ export interface Held<T> {
  * pause a persistent fault — a broken style, a locked database — would re-run
  * its read on every redraw.
  */
-export const FAILURE_COOLDOWN = Temporal.Duration.from({ seconds: 5 });
+export const FAILURE_COOLDOWN_MILLIS = Duration.toMillis(Duration.seconds(5));
 
 /** The attempt's outcome, retained before a display caller chooses a held value. */
 type ReadResult<T> =
@@ -83,19 +90,11 @@ export class QueryClients extends Context.Service<
     update<T>(key: QueryKey, next: (held: T) => T): Effect.Effect<void>;
     keysUnder(prefix: QueryKey): Effect.Effect<QueryKey[]>;
     peek<T>(key: QueryKey): Effect.Effect<Held<T> | null>;
-    ask<T>(
-      key: QueryKey,
-      queryFn: QueryFunction<T>,
-    ): Effect.Effect<T | null, unknown>;
-    read<T>(
-      key: QueryKey,
-      queryFn: QueryFunction<T>,
-      signal?: AbortSignal,
-    ): Effect.Effect<T | null, unknown>;
+    ask<T>(key: QueryKey, queryFn: QueryFunction<T>): Effect.Effect<T | null>;
+    read<T>(key: QueryKey, queryFn: QueryFunction<T>): Effect.Effect<T | null>;
     readFresh<T>(
       key: QueryKey,
       queryFn: QueryFunction<T>,
-      signal?: AbortSignal,
     ): Effect.Effect<T, unknown>;
     watch<T>(
       prefix: QueryKey,
@@ -231,7 +230,7 @@ const makeQueryClients = Effect.gen(function* () {
    * one read answer every surface that asks for the same key at once.
    *
    * A key whose last read errored is served from what it holds for
-   * {@link FAILURE_COOLDOWN} without reading again. A read an invalidation
+   * {@link FAILURE_COOLDOWN_MILLIS} without reading again. A read an invalidation
    * cancelled is asked once more, so a cancellation is never an answer.
    *
    * @returns the value the read committed, or null where it failed.
@@ -239,8 +238,8 @@ const makeQueryClients = Effect.gen(function* () {
   const ask = Effect.fn("QueryClients.ask")(function* <T>(
     key: QueryKey,
     queryFn: QueryFunction<T>,
-  ): Effect.fn.Return<T | null, unknown> {
-    const result = yield* settle(key, queryFn, undefined);
+  ): Effect.fn.Return<T | null> {
+    const result = yield* settle(key, queryFn);
     if (result.kind === "value") return result.value;
     return result.kind === "failed" && result.cooldown ? result.held : null;
   });
@@ -251,17 +250,17 @@ const makeQueryClients = Effect.gen(function* () {
    * with what the key still holds — a surface keeps its last answer on screen
    * rather than dropping to nothing.
    *
-   * @param signal aborts the wait, not the shared read: the read runs on for
-   *   every other caller that joined it.
+   * Interrupting the read ends this wait, not the shared read: the read runs
+   * on for every other caller that joined it.
+   *
    * @returns the settled value, what the key still holds where the read failed,
    *   or null where it holds nothing.
    */
   const read = Effect.fn("QueryClients.read")(function* <T>(
     key: QueryKey,
     queryFn: QueryFunction<T>,
-    signal?: AbortSignal,
-  ): Effect.fn.Return<T | null, unknown> {
-    const result = yield* settle(key, queryFn, signal);
+  ): Effect.fn.Return<T | null> {
+    const result = yield* settle(key, queryFn);
     if (result.kind === "value") return result.value;
     return result.kind === "released" ? null : result.held;
   });
@@ -272,14 +271,13 @@ const makeQueryClients = Effect.gen(function* () {
    *
    * Shares joining, cooldown and cancellation with {@link read}; the original
    * error rejects even during cooldown. Removal or disposal rejects with
-   * AbortError. The caller's signal ends its wait alone.
+   * AbortError. Interrupting the caller ends its wait alone.
    */
   const readFresh = Effect.fn("QueryClients.readFresh")(function* <T>(
     key: QueryKey,
     queryFn: QueryFunction<T>,
-    signal?: AbortSignal,
   ): Effect.fn.Return<T, unknown> {
-    const result = yield* settle(key, queryFn, signal);
+    const result = yield* settle(key, queryFn);
     if (result.kind === "value") return result.value;
     if (result.kind === "failed") return yield* Effect.fail(result.error);
     return yield* Effect.fail(
@@ -350,39 +348,24 @@ const makeQueryClients = Effect.gen(function* () {
   const settle = Effect.fn("QueryClients.settle")(function* <T>(
     key: QueryKey,
     queryFn: QueryFunction<T>,
-    signal: AbortSignal | undefined,
-  ): Effect.fn.Return<ReadResult<T>, unknown> {
+  ): Effect.fn.Return<ReadResult<T>> {
     if (closed) return { kind: "released" };
-    const reading = attempt(key, queryFn, signal);
+    const reading = fetch(key, queryFn);
     const cache = client.getQueryCache();
     const query = cache.find({ queryKey: key, exact: true });
     const released = () =>
       closed || cache.find({ queryKey: key, exact: true }) !== query;
-    const joined = yield* Effect.tryPromise({
-      try: () => reading,
-      catch: (error) => error,
-    });
+    // `fetch` settles a failed or cancelled read as a value and never
+    // rejects, so a rejection here is a defect.
+    const joined = yield* Effect.promise(() => reading);
     if (released()) return { kind: "released" };
     if (joined.kind !== "cancelled") return joined;
     yield* Effect.logDebug("Held read cancelled, asking again").pipe(
       Effect.annotateLogs({ queryKey: key }),
     );
-    const retried = yield* Effect.tryPromise({
-      try: () => attempt(key, queryFn, signal),
-      catch: (error) => error,
-    });
+    const retried = yield* Effect.promise(() => fetch(key, queryFn));
     return released() ? { kind: "released" } : retried;
   }, withLogCategory("query-client"));
-
-  /** One ask, raced against the caller's signal where it brought one. */
-  function attempt<T>(
-    key: QueryKey,
-    queryFn: QueryFunction<T>,
-    signal: AbortSignal | undefined,
-  ): Promise<ReadResult<T>> {
-    const reading = fetch(key, queryFn);
-    return signal === undefined ? reading : abortable(reading, signal);
-  }
 
   /**
    * One ask, with the failure cooldown in front of it.
@@ -406,8 +389,7 @@ const makeQueryClients = Effect.gen(function* () {
     if (
       state?.status === "error" &&
       failedAt !== undefined &&
-      now().epochMilliseconds - failedAt <
-        FAILURE_COOLDOWN.total("milliseconds")
+      now().epochMilliseconds - failedAt < FAILURE_COOLDOWN_MILLIS
     ) {
       run(
         Effect.logTrace("Failed held read served without a fresh one").pipe(

@@ -95,6 +95,9 @@ overrides:
   "@codemirror/view": 6.43.13
   "zotero-types>epubjs": 0.3.93
   "zotero-types>pdfjs-dist": workspace:*
+  # platform-node 4.0.5 takes platform-node-shared ^4.0.5, whose newer releases
+  # want a newer effect than the pinned 4.0.5.
+  "@effect/platform-node>@effect/platform-node-shared": 4.0.5
   # ajv pins fast-uri to ^3.0.1; force the patched version (GHSA-7p8r-x3mc-p8w7).
   "ajv>fast-uri": "^3.1.5"
   # postcss (via docs' Tailwind/vite toolchain) pins nanoid to 3.3.16; force the

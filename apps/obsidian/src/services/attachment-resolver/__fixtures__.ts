@@ -1,11 +1,12 @@
-import { expect } from "vitest";
+import { DateTime, Effect, Stream } from "effect";
 // The Attachment resolver for real, over an in-process Zotero database seeded
 // with the rows a suite names. The resolver's own suite and the opener suites
 // build on it, so a lookup answers as the real index answers it. The database
 // read is the only seam: it can be held, failed, or left unopened.
+import { expect } from "vitest";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
-import { Effect, Stream } from "@/lib/effect";
+import { toInstant } from "@/lib/effect-clock";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {
@@ -81,7 +82,7 @@ export async function resolverHarness(
   // These index scenarios start after the first database load has settled.
   await reads.ready;
   await expect.poll(() => reads.state).not.toBe("loading");
-  let now = Temporal.Now.instant();
+  let now = toInstant(DateTime.nowUnsafe());
   const queries = stack.use(queryClientsFixture(() => now));
 
   const resolvedChanged = testEvent<void>();

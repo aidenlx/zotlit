@@ -1,9 +1,6 @@
 // The plugin-wide cache of whole-bibliography renders every consumer of rendered citation text reads.
 import { hashKey } from "@tanstack/query-core";
 import type { QueryFunction } from "@tanstack/query-core";
-
-import type { CslItemData } from "@zotlit/db";
-
 import {
   Cause,
   Context,
@@ -12,10 +9,14 @@ import {
   Layer,
   Option,
   PubSub,
+  Schema,
   Scope,
   Stream,
   SubscriptionRef,
-} from "@/lib/effect";
+} from "effect";
+
+import type { CslItemData } from "@zotlit/db";
+
 import { withLogCategory } from "@/lib/effect-log";
 import { Profile } from "@/services/profile/service";
 import { QueryClients } from "@/services/query-client/service";
@@ -35,6 +36,24 @@ import { InstalledStyleCache, styleHasEntryMarkers } from "./styles";
 import type { CslStyleRequest, ResolvedCslStyle } from "./styles";
 
 const BIBLIOGRAPHY_RENDER = "bibliography-render";
+
+/**
+ * The style cache or the citation engine rejected. `message` is the
+ * original's, which the held read and its notice show; `cause` holds it.
+ */
+export class BibliographyRenderError extends Schema.TaggedError<
+  BibliographyRenderError,
+  { readonly brand: unique symbol }
+>()("BibliographyRenderError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
+const renderError = (cause: unknown) =>
+  new BibliographyRenderError({
+    message: Error.isError(cause) ? cause.message : String(cause),
+    cause,
+  });
 const CITATION_RENDER = "citation-render";
 
 export interface BibliographyRenderEvents {
@@ -126,7 +145,6 @@ export class BibliographyRender extends Context.Service<
 
 export interface ReadOptions {
   presentation?: RenderPresentation;
-  signal?: AbortSignal;
 }
 
 /** Each bibliography render invalidation. */
@@ -169,7 +187,7 @@ export const layerBibliographyRender = Layer.effect(
     });
     const events = yield* Effect.acquireRelease(
       PubSub.unbounded<BibliographyRenderEvent>(),
-      PubSub.shutdown,
+      (pubsub) => PubSub.shutdown(pubsub),
     );
     const recover = <A, E>(effect: Effect.Effect<A, E>) =>
       effect.pipe(
@@ -202,7 +220,7 @@ export const layerBibliographyRender = Layer.effect(
     yield* listen(reads.events, (event) =>
       event._tag === "changed" ? invalidate() : Effect.void,
     );
-    const initialEngine = yield* engine.getStatus();
+    const initialEngine = yield* engine.getStatus;
     yield* listen(
       Stream.dropWhile(engine.changes, (next) => next === initialEngine),
       () => invalidate(),
@@ -270,14 +288,14 @@ export const layerBibliographyRender = Layer.effect(
 
     const prepare = Effect.fn("BibliographyRender.prepare")(
       function* (presentation: RenderPresentation | undefined) {
-        if ((yield* engine.getStatus()).kind !== "installed")
+        if ((yield* engine.getStatus).kind !== "installed")
           return { reason: "engine-absent" } as const;
         const selected = (yield* SubscriptionRef.get(state)).vaultPresentation;
         const request = effectivePresentation(presentation ?? {}, selected);
         const dataDir = (yield* pref.current).dataDir;
         const style = yield* Effect.tryPromise({
           try: () => styles.resolve(dataDir, request),
-          catch: (error) => error,
+          catch: renderError,
         });
         if (style.kind !== "failed") return { request, style };
         yield* Effect.logDebug(
@@ -304,11 +322,11 @@ export const layerBibliographyRender = Layer.effect(
       function* (items: readonly CslItemData[], style: RenderStyle) {
         if (items.length === 0) return { entries: [], hasEntryMarkers: false };
         const presentation = enginePresentation(style);
-        const active = yield* engine.getEngine();
+        const active = yield* engine.getEngine;
         if (!active) return { entries: [], hasEntryMarkers: false };
         const entries = yield* Effect.tryPromise({
           try: () => active.renderBibliography({ items, ...presentation }),
-          catch: (error) => error,
+          catch: renderError,
         });
         const hasEntryMarkers =
           styleHasEntryMarkers(presentation.styleXml) ||
@@ -331,7 +349,7 @@ export const layerBibliographyRender = Layer.effect(
         style: RenderStyle,
       ) {
         if (citations.length === 0) return [];
-        const active = yield* engine.getEngine();
+        const active = yield* engine.getEngine;
         if (!active) return [];
         const rendered = yield* Effect.tryPromise({
           try: () =>
@@ -340,7 +358,7 @@ export const layerBibliographyRender = Layer.effect(
               items,
               ...enginePresentation(style),
             }),
-          catch: (error) => error,
+          catch: renderError,
         });
         yield* Effect.logDebug("Citations rendered").pipe(
           Effect.annotateLogs({ count: rendered.length }),
@@ -406,33 +424,29 @@ export const layerBibliographyRender = Layer.effect(
         },
       ),
       readBibliography: Effect.fn("BibliographyRender.readBibliography")(
-        function* (items, { presentation, signal } = {}) {
+        function* (items, { presentation } = {}) {
           const prepared = yield* prepare(presentation);
           if (prepared.reason !== undefined) return null;
           return yield* queries.readFresh(
             [BIBLIOGRAPHY_RENDER, renderKey({ ...prepared, items })],
-            ({ signal: querySignal }) =>
-              runPromise(runBibliography(items, prepared.style), {
-                signal: querySignal,
-              }),
-            signal,
+            ({ signal }) =>
+              runPromise(runBibliography(items, prepared.style), { signal }),
           );
         },
       ),
       readCitations: Effect.fn("BibliographyRender.readCitations")(function* (
         citations,
         items,
-        { presentation, signal } = {},
+        { presentation } = {},
       ) {
         const prepared = yield* prepare(presentation);
         if (prepared.reason !== undefined) return null;
         return yield* queries.readFresh(
           [CITATION_RENDER, renderKey({ ...prepared, items, citations })],
-          ({ signal: querySignal }) =>
+          ({ signal }) =>
             runPromise(runCitations(citations, items, prepared.style), {
-              signal: querySignal,
+              signal,
             }),
-          signal,
         );
       }),
     });

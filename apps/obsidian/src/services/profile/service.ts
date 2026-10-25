@@ -1,4 +1,18 @@
 // Registry and file operations for Literature Note Profiles.
+import {
+  Cause,
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  PubSub,
+  Schema,
+  Scope,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 import { customAlphabet } from "nanoid";
 import { join } from "node:path/posix";
 import type { App, TFile } from "obsidian";
@@ -22,20 +36,6 @@ import {
 import type { LiteratureNotePartialUnpack } from "@zotlit/templates/literature-note-pack";
 
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
-import {
-  Cause,
-  Context,
-  Deferred,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  PubSub,
-  Schema,
-  Scope,
-  Stream,
-  SubscriptionRef,
-} from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { ensureParentFolder, normalizeFolderPath } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
@@ -45,6 +45,8 @@ import {
   readLiveText,
 } from "@/lib/live-text";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { FileManager } from "@/lib/obsidian-file-manager";
+import { Vault } from "@/lib/obsidian-vault";
 import { profileRevision } from "@/lib/profile-revision";
 import {
   DEFAULT_PROFILE,
@@ -54,7 +56,6 @@ import {
   readProfileStamp,
 } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
-import { isFileExistsError } from "@/lib/vault-errors";
 import { NoteIndex } from "@/services/note-index/service";
 import { compileProfileMatch } from "@/services/profile-selection";
 import type { ProfileMatch } from "@/services/profile-selection";
@@ -246,6 +247,12 @@ export interface ProfileDeletionResult {
 
 interface ProfileEngineDeps {
   readText(file: TFile): Promise<string>;
+  /** Creates each Profile document; a taken path fails as `FileExists`. */
+  vault: Pick<Vault["Service"], "create">;
+  /** Moves a note on Profile delete; a taken path fails as `FileExists`. */
+  fileManager: Pick<FileManager["Service"], "renameFile">;
+  /** Runs an Effect on the layer's context; a failure rejects with its error. */
+  runPromise<A, E>(effect: Effect.Effect<A, E>): Promise<A>;
   changed(): void;
   log(message: string, fields: Record<string, unknown>): void;
   app: App;
@@ -520,12 +527,8 @@ class ProfileEngine {
       if (expected.state === "revision")
         return { state: "refused", reason: "revision-conflict" };
       await ensureParentFolder(this.#deps.app, path);
-      try {
-        await this.#deps.app.vault.create(path, source);
-      } catch (error) {
-        if (!isFileExistsError(error)) throw error;
-        return await this.#documentExists(path);
-      }
+      const created = await this.#create(path, source);
+      if (!created) return await this.#documentExists(path);
       return { state: "saved", revision: profileRevision(source) };
     }
     if (expected.state === "absent") return await this.#documentExists(path);
@@ -544,6 +547,16 @@ class ProfileEngine {
       };
     }
     return { state: "saved", revision: profileRevision(source) };
+  }
+
+  /** Create `path` with `data`; false when the vault already holds the path. */
+  async #create(path: string, data: string): Promise<boolean> {
+    return await this.#deps.runPromise(
+      this.#deps.vault.create(path, data).pipe(
+        Effect.as(true),
+        Effect.catchTag("FileExists", () => Effect.succeed(false)),
+      ),
+    );
   }
 
   /** The refusal a document standing where the caller expected none earns. */
@@ -750,12 +763,9 @@ class ProfileEngine {
     const folder = this.#deps.settings.current!["template.folder"];
     let path = join(folder, `zotlit-profile.${profileSlug(label)}.md`);
     await ensureParentFolder(this.#deps.app, path);
-    try {
-      await this.#deps.app.vault.create(path, content);
-    } catch (error) {
-      if (!isFileExistsError(error)) throw error;
+    if (!(await this.#create(path, content))) {
       path = join(folder, `zotlit-profile.${profileSlug(label)}-${id}.md`);
-      await this.#deps.app.vault.create(path, content);
+      await this.#deps.runPromise(this.#deps.vault.create(path, content));
     }
     await this.#settle();
     const entry = this.#profiles.find((profile) => profile.id === id);
@@ -910,13 +920,18 @@ class ProfileEngine {
             });
           } else {
             await ensureParentFolder(this.#deps.app, path);
-            try {
-              await this.#deps.app.vault.create(path, importedContent);
-            } catch (error) {
-              if (isFileExistsError(error))
-                throw new Error(m.profile_import_changed(), { cause: error });
-              throw error;
-            }
+            await this.#deps.runPromise(
+              this.#deps.vault.create(path, importedContent).pipe(
+                Effect.catchTag("FileExists", (error) =>
+                  Effect.fail(
+                    new ProfileImportChanged({
+                      message: m.profile_import_changed(),
+                      cause: error,
+                    }),
+                  ),
+                ),
+              ),
+            );
           }
           await this.#settle();
           const imported = this.#profiles.find((profile) => profile.id === id);
@@ -953,17 +968,18 @@ class ProfileEngine {
   async materializeDefault(): Promise<{ file: TFile; created: boolean }> {
     const path = this.defaultDocumentPath;
     await ensureParentFolder(this.#deps.app, path);
-    let file: TFile;
-    let created = true;
-    try {
-      file = await this.#deps.app.vault.create(path, this.getBuiltInSource());
-    } catch (error) {
-      if (!isFileExistsError(error)) throw error;
-      const existing = this.#deps.app.vault.getFileByPath(path);
-      if (!existing) throw error;
-      file = existing;
-      created = false;
-    }
+    const { file, created } = await this.#deps.runPromise(
+      this.#deps.vault.create(path, this.getBuiltInSource()).pipe(
+        Effect.map((file) => ({ file, created: true })),
+        Effect.catchTag("FileExists", (error) => {
+          // A folder at the path is no document to open.
+          const existing = this.#deps.app.vault.getFileByPath(path);
+          return existing
+            ? Effect.succeed({ file: existing, created: false })
+            : Effect.fail(error);
+        }),
+      ),
+    );
     await this.#settle();
     return { file, created };
   }
@@ -1039,7 +1055,9 @@ class ProfileEngine {
     for (const { file, path } of destination?.files ?? []) {
       if (options.move && path !== file.path) {
         await ensureParentFolder(app, path);
-        await app.fileManager.renameFile(file, path);
+        await this.#deps.runPromise(
+          this.#deps.fileManager.renameFile(file, path),
+        );
         movedFiles++;
       }
       await processLiveFrontMatter(app, file, (frontmatter) => {
@@ -1361,10 +1379,25 @@ export type ProfileOperations = Pick<
   | "delete"
 >;
 
-export class ProfileOperationError extends Schema.TaggedError<ProfileOperationError>()(
-  "ProfileOperationError",
-  { message: Schema.String, cause: Schema.Defect() },
-) {}
+/**
+ * The import target changed after the plan was made: another file took its
+ * path. `message` is the notice text; `cause` holds the vault's refusal.
+ */
+export class ProfileImportChanged extends Schema.TaggedError<
+  ProfileImportChanged,
+  { readonly brand: unique symbol }
+>()("ProfileImportChanged", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
+export class ProfileOperationError extends Schema.TaggedError<
+  ProfileOperationError,
+  { readonly brand: unique symbol }
+>()("ProfileOperationError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
 export interface ProfileState {
   readonly loaded: boolean;
@@ -1439,6 +1472,8 @@ export const layerProfile = Layer.effect(
   Profile,
   Effect.gen(function* () {
     const app = yield* ObsidianApp;
+    const vault = yield* Vault;
+    const fileManager = yield* FileManager;
     const settings = yield* PluginSettings;
     const template = yield* Template;
     const noteIndex = yield* NoteIndex;
@@ -1483,6 +1518,9 @@ export const layerProfile = Layer.effect(
       );
     const engine = new ProfileEngine({
       app,
+      vault,
+      fileManager,
+      runPromise: Effect.runPromiseWith(context),
       readText: (file) =>
         preflight(attemptPromise(() => readLiveText(app, file))),
       changed: () =>
@@ -1498,18 +1536,18 @@ export const layerProfile = Layer.effect(
         },
         exportLiteratureNotePackSource: (...args) =>
           runPromise(template.exportLiteratureNotePackSource(...args)),
-        getPartialEntries: () => read(template.getPartialEntries()),
+        getPartialEntries: () => read(template.getPartialEntries),
         planPartialUnpack: (...args) =>
           read(template.planPartialUnpack(...args)),
         unpackPartials: (...args) =>
           runPromise(template.unpackPartials(...args)),
         getLiteratureNoteTemplateStatuses: () =>
-          read(template.getLiteratureNoteTemplateStatuses()),
+          read(template.getLiteratureNoteTemplateStatuses),
         waitUntilSettled: (...args) =>
           runPromise(template.waitUntilSettled(...args)),
       },
       noteIndex: {
-        whenIndexed: () => preflight(noteIndex.whenIndexed()),
+        whenIndexed: () => preflight(noteIndex.whenIndexed),
         getNotesByProfile: (selector) =>
           runSync(noteIndex.getNotesByProfile(selector)),
       },
@@ -1583,7 +1621,7 @@ export const layerProfile = Layer.effect(
           : Effect.forkIn(effect, operations, {
               startImmediately: true,
               uninterruptible: write,
-            }).pipe(Effect.flatMap(Fiber.join));
+            }).pipe(Effect.flatMap((fiber) => Fiber.join(fiber)));
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
         closed = true;

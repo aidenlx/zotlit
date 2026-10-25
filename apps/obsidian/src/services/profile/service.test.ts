@@ -1,11 +1,11 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { TestClock } from "effect/testing";
 import { stringifyYaml } from "obsidian";
 import { describe, expect, vi } from "vitest";
 
 import { TemplateFacade } from "@zotlit/templates/facade";
 
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import { PROFILE_ID_LENGTH } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -647,6 +647,54 @@ describe("PlainProfile", () => {
           { concurrency: "unbounded" },
         );
         expect(f.vault.contents.get(plan.path)).toBe(newer);
+      }),
+  );
+
+  it.effect(
+    "refuses a fresh import when another file took its path while consent was open",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => harness(undefined, undefined, context)),
+        );
+        const plan = yield* Effect.promise(() =>
+          f.profile.prepareImport(document()),
+        );
+        f.vault.createFile(plan.path, "User file");
+        const rejected = expect(plan.import()).rejects.toThrow(
+          m.profile_import_changed(),
+        );
+        yield* Effect.all(
+          [TestClock.adjust(500), Effect.promise(() => rejected)],
+          { concurrency: "unbounded" },
+        );
+        expect(f.vault.contents.get(plan.path)).toBe("User file");
+      }),
+  );
+
+  it.effect(
+    "refuses to save the Default where a folder holds its document path",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const f = yield* Effect.acquireDisposable(
+          Effect.tryPromise(() => harness(undefined, undefined, context)),
+        );
+        yield* Effect.promise(() =>
+          f.vault.createFolder("templates/zotlit-profile.default.md"),
+        );
+        const source = yield* Effect.promise(() =>
+          f.profile.getSource("default"),
+        );
+        const saving = f.profile.saveSource("default", source, {
+          state: "absent",
+        });
+        yield* TestClock.adjust(500);
+        expect(yield* Effect.promise(() => saving)).toEqual({
+          state: "refused",
+          reason: "document-exists",
+        });
       }),
   );
 

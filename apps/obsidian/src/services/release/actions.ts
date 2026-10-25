@@ -1,4 +1,5 @@
-import { Effect, Layer } from "@/lib/effect";
+import { Effect, Layer } from "effect";
+
 import * as m from "@/lib/i18n/generated/messages";
 import { PluginHost } from "@/lib/plugin-host";
 
@@ -14,10 +15,10 @@ export const layerReleaseActions: Layer.Layer<
     const host = yield* PluginHost;
     const release = yield* Release;
     const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
-    host.addCommand({
+    yield* host.addCommand({
       id: "open-release-note",
       name: m.command_open_release_note_name(),
-      callback: () => void runPromise(release.openReleaseNote()),
+      callback: () => void runPromise(release.openReleaseNote),
     });
   }),
 );

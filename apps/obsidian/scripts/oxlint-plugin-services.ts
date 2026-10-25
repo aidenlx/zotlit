@@ -425,39 +425,109 @@ export const plainAdapterStreams: Rule = {
   },
 };
 
+const CAPABILITY_TAGS: Readonly<Record<string, string>> = {
+  vault: "Vault tag (@/lib/obsidian-vault)",
+  metadataCache: "MetadataCache tag (@/lib/obsidian-metadata-cache)",
+  workspace: "Workspace tag (@/lib/obsidian-workspace)",
+  fileManager: "FileManager tag (@/lib/obsidian-file-manager)",
+};
+
+/** `app`, or a member named `app`: `this.app`, `plugin.app`, `this.#app`. */
+function isApp(node: AstNode | undefined): boolean {
+  if (node?.type === "Identifier") return node.name === "app";
+  return (
+    node?.type === "MemberExpression" &&
+    !node.computed &&
+    (node.property?.type === "Identifier" ||
+      node.property?.type === "PrivateIdentifier") &&
+    node.property.name === "app"
+  );
+}
+
+/** `<app>.<name>`, a non-computed member of the Obsidian `App`. */
+function appMember(node: AstNode | undefined): string | undefined {
+  return node?.type === "MemberExpression" &&
+    !node.computed &&
+    isApp(node.object) &&
+    typeof node.property?.name === "string"
+    ? node.property.name
+    : undefined;
+}
+
 /**
- * Inside a layer, Obsidian events enter through `obsidianEvents` from
- * `@/lib/effect-obsidian-events` (policies/events.md → Obsidian events), which gives one ordered intake and a failure
- * boundary per event. A bare `registerEvent` gives neither. A function nested
- * in an Effect generator counts too, such as the acquire callback of
- * `Effect.acquireDisposable`.
+ * A file that imports Effect reaches Obsidian through the capability tags
+ * (policies/events.md → Obsidian events): `Vault`, `MetadataCache`,
+ * `Workspace`, `FileManager` and `PluginHost`, each from `@/lib/obsidian-*` or
+ * `@/lib/plugin-host`. A tag's events are its `changes` Stream; an event with
+ * no tag yet enters through `obsidianEvents` from
+ * `@/lib/effect-obsidian-events`. Both register on the layer's Scope.
+ * Reported: `app.vault`, `app.metadataCache`, `app.workspace` and
+ * `app.fileManager`, a call to `registerEvent`,
+ * and `.on(` on a member of `app` (`app.workspace.on(…)`). `app` is an `app`
+ * identifier or any member named `app` (`this.app`, `plugin.app`,
+ * `this.#app`).
+ *
+ * "Imports Effect" is `importsEffect` (`./oxlint-ast.ts`), as for
+ * `clock-time`. The tags themselves, and the backlog, are listed in
+ * oxlint.config.ts.
  */
-export const obsidianEventsIntake: Rule = {
+export const obsidianCapabilities: Rule = {
   meta: {
     type: "problem",
     docs: {
-      description: "Require obsidianEvents for Obsidian events in a layer.",
+      description:
+        "Require the Obsidian capability tags in a file that imports Effect.",
     },
     messages: {
-      intake:
-        "Register Obsidian events through obsidianEvents from @/lib/effect-obsidian-events: one ordered intake with a failure boundary per event (policies/events.md).",
+      capability:
+        "Read `app.{{name}}` through the {{tag}}; a file that imports Effect takes Obsidian from the capability tags (policies/events.md → Obsidian events).",
+      event:
+        "Take `app.{{name}}` events from its capability tag's `changes` Stream (Vault, MetadataCache, Workspace); an event the tag does not expose enters through obsidianEvents from @/lib/effect-obsidian-events (policies/events.md → Obsidian events).",
+      registerEvent:
+        "Take Obsidian events from a capability tag's `changes` Stream, or, for a source or event with no tag yet, from obsidianEvents in @/lib/effect-obsidian-events: one ordered intake with a failure boundary per event (policies/events.md → Obsidian events).",
     },
     schema: [],
   },
   create(context) {
-    const insideEffect = (node: AstNode) => {
-      for (let at = node.parent; at; at = at.parent)
-        if (isEffectGenerator(at)) return true;
-      return false;
-    };
+    let effectNative = false;
+    /** `<app>.<name>.on`, the callee of an event registration. */
+    const isAppOn = (node: AstNode | undefined) =>
+      node?.type === "MemberExpression" &&
+      !node.computed &&
+      node.property?.name === "on" &&
+      appMember(node.object) !== undefined;
     return {
+      Program(program) {
+        effectNative = importsEffect((program as ModuleProgram).body ?? []);
+      },
+      MemberExpression(node) {
+        if (!effectNative) return;
+        const name = appMember(node as AstNode);
+        const tag = name === undefined ? undefined : CAPABILITY_TAGS[name];
+        // `app.vault.on(…)` is reported once, as an event.
+        if (!tag || isAppOn(node.parent as AstNode)) return;
+        context.report({
+          node: node as never,
+          messageId: "capability",
+          data: { name: name!, tag },
+        });
+      },
       CallExpression(node) {
+        if (!effectNative) return;
+        const callee = node.callee as AstNode;
         if (
-          node.callee.type === "Identifier" &&
-          node.callee.name === "registerEvent" &&
-          insideEffect(node as AstNode)
+          (callee.type === "Identifier" && callee.name === "registerEvent") ||
+          (callee.type === "MemberExpression" &&
+            !callee.computed &&
+            callee.property?.name === "registerEvent")
         )
-          context.report({ node, messageId: "intake" });
+          context.report({ node, messageId: "registerEvent" });
+        else if (isAppOn(callee))
+          context.report({
+            node: callee as never,
+            messageId: "event",
+            data: { name: String(appMember(callee.object)) },
+          });
       },
     };
   },
@@ -594,7 +664,7 @@ const DEFAULT_RUNTIME_CALLS = new Set([
   "runCallback",
 ]);
 
-const EFFECT_SOURCES = new Set(["@/lib/effect", "effect"]);
+const EFFECT_SOURCES = new Set(["effect"]);
 
 interface ImportNode extends AstNode {
   readonly source?: AstNode;
@@ -610,8 +680,8 @@ interface ImportNode extends AstNode {
  * plugin logger and log level, and it gets none of the plugin's services.
  * Plugin code runs an Effect through the container bridge, a layer's own
  * context runner (`Effect.runSyncWith(yield* Effect.context())`), or a
- * runtime (`runtime.runSync`). Only the `Effect` imported from `effect` or
- * `@/lib/effect` is checked, so those calls stay valid. Files that create a
+ * runtime (`runtime.runSync`). Only the `Effect` imported from `effect` is
+ * checked, so those calls stay valid. Files that create a
  * runtime, and the backlog, are listed in oxlint.config.ts.
  */
 export const noDefaultRuntime: Rule = {
@@ -725,7 +795,8 @@ function isNowMember(member: TypeNode): boolean {
 /**
  * In an Effect-native file time comes from `Clock`, so `TestClock` drives it
  * (CODING_STANDARDS.md → Effect → Time). A direct read of the system clock
- * skips the Clock service. Under `src/services/**`, a layer constructor that
+ * (`Date.now()`, `new Date()`, `performance.now()`) skips the Clock service;
+ * `temporal-in-effect` reports `Temporal.Now`. Under `src/services/**`, a layer constructor that
  * takes a `now` function in its options asks its caller for a second clock;
  * the layer reads `Clock.Clock` instead. The file that converts the Clock for
  * a non-Effect core, and the backlog, are listed in oxlint.config.ts.
@@ -840,13 +911,7 @@ export const clockTime: Rule = {
         const callee = node.callee as TypeNode;
         const system =
           isMemberOf(callee, DATE, (name) => name === "now") ||
-          isMemberOf(callee, PERFORMANCE, (name) => name === "now") ||
-          (callee.type === "MemberExpression" &&
-            callee.object?.type === "MemberExpression" &&
-            !callee.object.computed &&
-            callee.object.object?.type === "Identifier" &&
-            callee.object.object.name === "Temporal" &&
-            callee.object.property?.name === "Now");
+          isMemberOf(callee, PERFORMANCE, (name) => name === "now");
         if (system) context.report({ node, messageId: "clock" });
       },
       NewExpression(node) {
@@ -863,6 +928,55 @@ export const clockTime: Rule = {
   },
 };
 
+/** `Temporal` as the object of a member access or the left of a type name. */
+function isTemporalRoot(node: TypeNode): boolean {
+  const parent = node.parent as TypeNode | null | undefined;
+  return (
+    (parent?.type === "MemberExpression" && parent.object === node) ||
+    (parent?.type === "TSQualifiedName" && parent.left === node)
+  );
+}
+
+/**
+ * Effect code holds dates as Effect's `DateTime` and durations as `Duration`,
+ * and reads the current time through `Clock`, so `TestClock` drives every
+ * date the code makes and one date type crosses each service interface
+ * (CODING_STANDARDS.md → Effect → Time).
+ * `Temporal` belongs to code outside Effect; the edge between the two
+ * converts, and the files that hold that edge are listed in oxlint.config.ts.
+ */
+export const temporalInEffect: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Use Effect's DateTime, not Temporal, in a file that imports Effect.",
+    },
+    messages: {
+      temporal:
+        "use Effect's `DateTime` in Effect code (`DateTime.Utc` for an instant, `DateTime.Zoned` where the zone matters, `DateTime.now` or `Clock` for the current time) and `Duration` for a span; plain code that keeps `Temporal` converts at the edge with `@/lib/effect-clock`",
+    },
+    schema: [],
+  },
+  create(context) {
+    let effectNative = false;
+    return {
+      Program(program) {
+        effectNative = importsEffect((program as ModuleProgram).body ?? []);
+      },
+      Identifier(node) {
+        const identifier = node as unknown as TypeNode;
+        if (
+          effectNative &&
+          identifier.name === "Temporal" &&
+          isTemporalRoot(identifier)
+        )
+          context.report({ node, messageId: "temporal" });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-services" },
   rules: {
@@ -874,10 +988,11 @@ export default {
     "no-default-runtime": noDefaultRuntime,
     "no-legacy-service": noLegacyService,
     "no-nanoevents": noNanoevents,
-    "obsidian-events-intake": obsidianEventsIntake,
+    "obsidian-capabilities": obsidianCapabilities,
     "plain-adapter-streams": plainAdapterStreams,
     "scope-closed": scopeClosed,
     "service-tag-id": serviceTagId,
+    "temporal-in-effect": temporalInEffect,
     "worker-rpc": workerRpc,
   },
 };

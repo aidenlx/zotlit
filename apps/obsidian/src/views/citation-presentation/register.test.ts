@@ -1,9 +1,9 @@
 import { Menu, stringifyYaml, TFile, TFolder } from "@mock/obsidian";
+import { Effect } from "effect";
 import type { App, Command, Plugin, TAbstractFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
-import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { registerFileMenu } from "@/services/file-menu";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";

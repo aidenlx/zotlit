@@ -1,9 +1,8 @@
+import { it } from "@effect/vitest";
+import { Duration, Effect, Stream } from "effect";
 import { afterEach, describe, expect, vi } from "vitest";
 
-import { Stream } from "@/lib/effect";
-import { Effect } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { testReads } from "@/services/zotero-reads/__fixtures__";
 import { layerRcRef } from "@/services/zotero-reads/connection";
@@ -757,13 +756,13 @@ it.live(
       vi.useFakeTimers();
       try {
         await vi.advanceTimersByTimeAsync(
-          Temporal.Duration.from({ minutes: 6 }).total("milliseconds"),
+          Duration.toMillis(Duration.minutes(6)),
         );
         expect(view.current?.status).toBe("fresh");
         expect(requested).toBe(1);
         view[Symbol.dispose]();
         await vi.advanceTimersByTimeAsync(
-          Temporal.Duration.from({ minutes: 6 }).total("milliseconds"),
+          Duration.toMillis(Duration.minutes(6)),
         );
         const delivered = Promise.withResolvers<void>();
         using reopened = lookup.observe(() => {

@@ -27,7 +27,7 @@ or a direct edit. State the expected behavior and what the reviewer must check.
 - [Root fixes](policies/root-fixes.md)
 - [Simplicity](policies/simplicity.md)
 - [Tautological tests](policies/tautological-tests.md)
-- [Temporal dates](policies/temporal-dates.md)
+- Dates: lint holds the date rule (`dateGlobals` in `packages/config/oxlint.base.ts`, `zotlit-services/temporal-in-effect` in `apps/obsidian`).
 - [Test isolation](policies/test-isolation.md)
 - [Test timing](policies/test-timing.md)
 - [Testing strategy](policies/testing-strategy.md)

@@ -14,7 +14,7 @@ const tester = new RuleTester({
   languageOptions: { parserOptions: { lang: "ts" } },
 });
 
-const effect = 'import { Effect } from "@/lib/effect";\n';
+const effect = 'import { Effect } from "effect";\n';
 const run = [{ messageId: "run" }];
 
 tester.run("no-effect-run-in-test", noEffectRunInTest, {

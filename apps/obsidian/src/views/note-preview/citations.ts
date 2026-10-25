@@ -1,3 +1,5 @@
+// Draft citations use their own source and presentation, without entering the saved-note cache.
+import { Effect } from "effect";
 import type { App } from "obsidian";
 
 import { isChildItemFields, itemToCsl } from "@zotlit/db";
@@ -5,8 +7,6 @@ import type { CslItemData } from "@zotlit/db";
 import type { RenderDiagnostic } from "@zotlit/workbench/render";
 
 import type { CitationSource } from "@/lib/citation-source";
-// Draft citations use their own source and presentation, without entering the saved-note cache.
-import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { WikilinkCitation } from "@/lib/wikilink-citation";
 import {

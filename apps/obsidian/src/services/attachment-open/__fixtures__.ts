@@ -2,8 +2,9 @@
 // resolver and a seeded Zotero database. Obsidian's PDF view and the system
 // handler are the host boundaries, so both are recorders.
 
+import { Effect } from "effect";
+
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Effect } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import {
   DATA_DIR,

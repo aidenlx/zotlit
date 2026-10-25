@@ -1,11 +1,10 @@
+import { Effect } from "effect";
 import { stat } from "node:fs/promises";
 
 import type { Attachment } from "@zotlit/db";
 import { attachmentAbsPath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 import type { ResolveAttachmentFile } from "@zotlit/item-query";
-
-import { Effect } from "@/lib/effect";
 
 export interface AttachmentFile {
   readonly path: string | null;

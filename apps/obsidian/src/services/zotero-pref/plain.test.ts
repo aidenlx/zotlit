@@ -1,9 +1,9 @@
+import { it } from "@effect/vitest";
+import { Effect, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
-import { Effect, Queue, Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 
 import { zoteroPrefFixture } from "./__fixtures__";
 import { plainZoteroPref } from "./plain";

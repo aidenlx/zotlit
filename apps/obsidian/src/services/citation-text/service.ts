@@ -1,5 +1,17 @@
 import { abortable } from "@std/async/abortable";
 import { QueryObserver } from "@tanstack/query-core";
+import {
+  Cause,
+  Context,
+  Duration,
+  Effect,
+  Exit,
+  Layer,
+  PubSub,
+  Scope,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 import type { TFile } from "obsidian";
 
 // The formatted text of one document's Citations, held for every surface that shows them.
@@ -10,24 +22,15 @@ import {
 } from "@zotlit/templates/pandoc-citation";
 import type { ScannedPandocCitation } from "@zotlit/templates/pandoc-citation";
 
-import {
-  Cause,
-  Context,
-  Effect,
-  Exit,
-  Layer,
-  PubSub,
-  Scope,
-  Stream,
-  SubscriptionRef,
-} from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { forkEach } from "@/lib/effect-stream";
 import { mapsEqual } from "@/lib/maps-equal";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { workspaceOpenDocuments } from "@/lib/open-documents";
 import type { OpenDocuments } from "@/lib/open-documents";
+import { settleAtEdge } from "@/lib/signal-edge";
 import {
   citationOfRun,
   citationRuns,
@@ -78,9 +81,7 @@ export { type DocumentCitations } from "./present";
 const CITATION_TEXT = "citation-text";
 
 /** How long the text of a document no longer open stays held. */
-const TEXT_GC_TIME = Temporal.Duration.from({ minutes: 5 }).total(
-  "milliseconds",
-);
+const TEXT_GC_TIME = Duration.toMillis(Duration.minutes(5));
 
 /** What a citation shows in place of a note where no serial stands for one. */
 const NO_SERIALS: readonly undefined[] = [];
@@ -134,8 +135,7 @@ export class CitationText extends Context.Service<
     peek(path: string): Effect.Effect<Held<DocumentCitations> | null>;
     read(
       path: string,
-      options?: { signal?: AbortSignal },
-    ): Effect.Effect<DocumentCitations | null, unknown>;
+    ): Effect.Effect<DocumentCitations | null, Cause.UnknownError>;
   }
 >()("zotlit/citation-text/CitationText") {}
 
@@ -144,6 +144,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
     CitationText,
     Effect.gen(function* () {
       const app = yield* ObsidianApp;
+      const metadata = yield* MetadataCache;
       const index = yield* CitationIndex;
       const lookup = yield* CitationLookup;
       const notes = yield* NoteIndex;
@@ -156,17 +157,20 @@ export const layerCitationText = (open?: OpenDocuments) =>
       const runExit = Effect.runPromiseExitWith(context);
       /**
        * Runs a sibling service's read from the Promise code TanStack queries
-       * call. Interruption means this layer is closing, so the read answers
+       * call. `signal` interrupts the read and rejects with its reason. Any
+       * other interruption means this layer is closing, so the read answers
        * `released`; any other failure rethrows its cause.
        */
       const settle = async <A>(
         effect: Effect.Effect<A, unknown>,
         released: () => A,
+        signal?: AbortSignal,
       ): Promise<A> => {
-        const exit = await runExit(effect);
-        if (Exit.isSuccess(exit)) return exit.value;
-        if (Cause.hasInterruptsOnly(exit.cause)) return released();
-        throw Cause.squash(exit.cause);
+        const exit = await runExit(
+          effect,
+          signal === undefined ? undefined : { signal },
+        );
+        return settleAtEdge(exit, signal, released);
       };
       const releasedRead = (): never => {
         throw new DOMException("Citation text released", "AbortError");
@@ -177,14 +181,18 @@ export const layerCitationText = (open?: OpenDocuments) =>
       /** Releases for the pins that keep each open document's text held. */
       const pins = new Map<string, () => void>();
       let stopped = false;
-      const lifetime = new AbortController();
+      // Aborted as the layer stops, before the child scope closes.
+      const lifetimeScope = yield* Scope.fork(yield* Scope.Scope);
+      const lifetime = yield* Effect.abortSignal.pipe(
+        Scope.provide(lifetimeScope),
+      );
       const state = yield* SubscriptionRef.make<CitationTextState>({
         startup: "ready",
         stopped: false,
       });
       const bus = yield* Effect.acquireRelease(
         PubSub.unbounded<CitationTextEvent>(),
-        PubSub.shutdown,
+        (pubsub) => PubSub.shutdown(pubsub),
       ).pipe(Scope.provide(scope));
       const emit = (event: CitationTextEvent) => {
         if (!stopped) PubSub.publishUnsafe(bus, event);
@@ -204,15 +212,20 @@ export const layerCitationText = (open?: OpenDocuments) =>
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           stopped = true;
-          lifetime.abort();
-          queries.client.removeQueries({ queryKey: [CITATION_TEXT] });
-          run(
+        }).pipe(
+          Effect.andThen(Scope.close(lifetimeScope, Exit.void)),
+          Effect.andThen(
+            Effect.sync(() =>
+              queries.client.removeQueries({ queryKey: [CITATION_TEXT] }),
+            ),
+          ),
+          Effect.andThen(
             SubscriptionRef.update(state, (value) => ({
               ...value,
               stopped: true,
             })),
-          );
-        }),
+          ),
+        ),
       );
 
       /**
@@ -254,12 +267,11 @@ export const layerCitationText = (open?: OpenDocuments) =>
       ): Promise<DocumentCitations | null> {
         if (stopped) return null;
         const text = await settle(
-          queries.read(
-            documentKey(path),
-            ({ signal }) => readPath(path, signal),
-            signal,
+          queries.read(documentKey(path), ({ signal }) =>
+            readPath(path, signal),
           ),
           () => null,
+          signal,
         );
         // A file deleted while its read ran holds nothing: the path is resolved
         // again here, because the read may have started before the file went.
@@ -335,7 +347,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
         path: string,
         querySignal: AbortSignal,
       ): Promise<DocumentCitations> {
-        const signal = AbortSignal.any([querySignal, lifetime.signal]);
+        const signal = AbortSignal.any([querySignal, lifetime]);
         signal.throwIfAborted();
         const file = app.vault.getFileByPath(path);
         if (file === null) {
@@ -371,13 +383,14 @@ export const layerCitationText = (open?: OpenDocuments) =>
         signal: AbortSignal,
       ): Promise<DocumentCitations> {
         await abortable(
-          settle(notes.whenIndexed(), () => undefined),
+          settle(notes.whenIndexed, () => undefined),
           signal,
         );
         signal.throwIfAborted();
         const { facts, set } = await settle(
-          index.getParsedDocument(file, signal),
+          index.getParsedDocument(file),
           releasedRead,
+          signal,
         );
         signal.throwIfAborted();
         const { source: body, record } = facts;
@@ -470,11 +483,9 @@ export const layerCitationText = (open?: OpenDocuments) =>
           presentation === null
             ? null
             : await settle(
-                renders.readCitations(sources, items, {
-                  presentation,
-                  signal,
-                }),
+                renders.readCitations(sources, items, { presentation }),
                 releasedRead,
+                signal,
               );
         signal.throwIfAborted();
         // A style whose citations are footnotes leaves a note in the rendered
@@ -570,8 +581,9 @@ export const layerCitationText = (open?: OpenDocuments) =>
       ): Promise<ReadonlyMap<string, number>> {
         const serials = new Map<string, number>();
         const rendered = await settle(
-          renders.readBibliography(items, { presentation, signal }),
+          renders.readBibliography(items, { presentation }),
           releasedRead,
+          signal,
         );
         signal.throwIfAborted();
         if (rendered === null) {
@@ -676,24 +688,16 @@ export const layerCitationText = (open?: OpenDocuments) =>
             pins.clear();
           }),
         );
-        const intake = yield* obsidianEvents<{
-          changed: [TFile];
-          deleted: [TFile];
-          open: [];
-        }>();
+        const intake = yield* obsidianEvents<{ open: [] }>();
         yield* intake
-          .consume((event) =>
-            Effect.sync(() => {
-              if (event.type === "changed") invalidate(event.args[0].path);
-              else if (event.type === "deleted") drop(event.args[0].path);
-              else pinOpenDocuments();
-            }),
-          )
+          .consume(() => Effect.sync(pinOpenDocuments))
           .pipe(Effect.forkScoped({ startImmediately: true }));
         // A locator or prefix can change without moving the indexed citekeys.
         // Metadata changes therefore invalidate this document's render too.
-        yield* intake.on("changed", app.metadataCache, "changed");
-        yield* intake.on("deleted", app.metadataCache, "deleted");
+        yield* forkEach(metadata.changes, (event) => {
+          if (event._tag === "changed") invalidate(event.file.path);
+          else if (event._tag === "deleted") drop(event.file.path);
+        });
         yield* Effect.acquireDisposable(
           Effect.sync(() => openDocuments.subscribe(intake.callback("open"))),
         );
@@ -757,14 +761,8 @@ export const layerCitationText = (open?: OpenDocuments) =>
         peek: Effect.fn("CitationText.peek")(function* (path: string) {
           return yield* Effect.sync(() => peek(path));
         }),
-        read: Effect.fn("CitationText.read")(function* (
-          path: string,
-          options?: { signal?: AbortSignal },
-        ) {
-          return yield* Effect.tryPromise({
-            try: () => read(path, options),
-            catch: (error) => error,
-          });
+        read: Effect.fn("CitationText.read")(function* (path: string) {
+          return yield* Effect.tryPromise((signal) => read(path, { signal }));
         }),
       };
     }),

@@ -1,8 +1,8 @@
+import { Effect, SubscriptionRef } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Effect, SubscriptionRef } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import type {
   LocalServer,

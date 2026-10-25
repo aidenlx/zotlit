@@ -5,6 +5,7 @@
 // Capability and Annotation Source (apps/obsidian ADR 0069).
 import { history } from "@codemirror/commands";
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import { Effect } from "effect";
 import { Keymap, Scope } from "obsidian";
 import type { App, Editor, EventRef, MarkdownFileInfo, TFile } from "obsidian";
 import { act } from "preact/test-utils";
@@ -12,7 +13,6 @@ import type { DragEvent as ReactDragEvent } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
-import { Effect } from "@/lib/effect";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationList,

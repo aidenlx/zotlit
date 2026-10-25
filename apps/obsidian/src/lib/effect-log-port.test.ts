@@ -1,8 +1,4 @@
-import { TestClock } from "effect/testing";
-import { describe, expect, vi } from "vitest";
-
-import { logLibrary } from "@zotlit/shared/logging";
-
+import { it } from "@effect/vitest";
 import {
   Cause,
   DateTime,
@@ -12,8 +8,11 @@ import {
   Queue,
   Ref,
   References,
-} from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
+} from "effect";
+import { TestClock } from "effect/testing";
+import { describe, expect, vi } from "vitest";
+
+import { logLibrary } from "@zotlit/shared/logging";
 
 import { LogCategory, withLogCategory } from "./effect-log";
 import {
@@ -43,9 +42,9 @@ const captureLogger = (captured: Queue.Queue<CapturedLog>) =>
   });
 
 /** A time no wall clock reads, so only the Effect Clock can produce it. */
-const LIBRARY_LOG_TIME = Temporal.Instant.from(
-  "2001-02-03T04:05:06Z",
-).epochMilliseconds;
+const LIBRARY_LOG_TIME = DateTime.toEpochMillis(
+  DateTime.makeUnsafe("2001-02-03T04:05:06Z"),
+);
 
 const HOST_LOG_PORT = {
   malformedMessage: "Ignored a malformed Zotero reads worker log record",

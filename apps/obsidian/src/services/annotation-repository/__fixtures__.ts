@@ -1,3 +1,4 @@
+import { Context, Effect, Exit, Layer, PubSub, Scope, Stream } from "effect";
 import { vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
@@ -9,15 +10,6 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import {
-  Context,
-  Effect,
-  Exit,
-  Layer,
-  PubSub,
-  Scope,
-  Stream,
-} from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
@@ -50,6 +42,7 @@ import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
 import type { WireTag } from "@/services/zotero-local-api/wire";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type {
   ZoteroReadLease,
@@ -233,21 +226,25 @@ export async function setup(
       PubSub.publishUnsafe(dbBus, { _tag: "changed" });
     },
   };
+  // A rejection from a test's mock stands for a database that cannot answer,
+  // the failure the real service reports.
+  const unavailable = (error: unknown) =>
+    error instanceof DbUnavailable
+      ? error
+      : new DbUnavailable({
+          message: error instanceof Error ? error.message : String(error),
+        });
   const readsService = stubService<ZoteroReads["Service"]>("ZoteroReads", {
-    snapshot: Effect.acquireRelease(
+    snapshot: Effect.acquireDisposable(
       Effect.tryPromise({
         try: () => acquireRead(),
-        catch: (error) => error,
+        catch: unavailable,
       }),
-      (lease) => Effect.promise(() => lease[Symbol.asyncDispose]()),
-    ).pipe(
-      Effect.map((lease) => lease.reads),
-    ) as ZoteroReads["Service"]["snapshot"],
-    refresh: () =>
-      Effect.tryPromise({
-        try: () => refresh(),
-        catch: (error) => error,
-      }) as ReturnType<ZoteroReads["Service"]["refresh"]>,
+    ).pipe(Effect.map((lease) => lease.reads)),
+    refresh: Effect.tryPromise({
+      try: () => refresh(),
+      catch: unavailable,
+    }),
     events: Stream.fromPubSub(dbBus),
   });
 
@@ -424,6 +421,7 @@ export function repositoryClient(
         };
       }
       if (property === "capability") return bridge.runSync(service.capability);
+      if (property === "probe") return () => bridge.runPromise(service.probe);
       if (property === "refresh") {
         return (attachmentKey: string): Promise<AnnotationList | null> => {
           const running = refreshes.get(attachmentKey);

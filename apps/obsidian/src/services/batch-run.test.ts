@@ -1,8 +1,4 @@
-import { describe, expect, vi } from "vitest";
-
-import type { Library } from "@zotlit/db";
-
-import { stubService } from "@/lib/__fixtures__/service-stub";
+import { it } from "@effect/vitest";
 import {
   Cause,
   Effect,
@@ -10,10 +6,15 @@ import {
   Fiber,
   Logger,
   References,
+  Schema,
   Stream,
-} from "@/lib/effect";
+} from "effect";
+import { describe, expect, vi } from "vitest";
+
+import type { Library } from "@zotlit/db";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { LogCategory } from "@/lib/effect-log";
-import { it } from "@/lib/effect-vitest";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { BatchUpdateRefusedError } from "@/services/note-feature/update-batch";
 import { NoteImportProfileError } from "@/services/note-import/service";
@@ -26,8 +27,10 @@ import type {
 import {
   classifyStream,
   executeBatchRun,
+  makeStopRequest,
   runBatch,
   runBatchWrite,
+  TaskRejected,
 } from "./batch-run";
 import type {
   BatchClassifyControls,
@@ -38,23 +41,29 @@ import type {
 import { planBatchScope, resolveBatchScope } from "./batch-scope";
 import { resolveLibraryScope } from "./library-scope/scope";
 
-/** Settle event recorder for a run's controls, plus the abort controller so a
- * test can cancel mid-run from inside a settle callback. */
+/** The failure a test task answers its write with. */
+class WriteFailed extends Schema.TaggedError<
+  WriteFailed,
+  { readonly brand: unique symbol }
+>()("WriteFailed", { message: Schema.String }) {}
+
+/** Settle event recorder for a run's controls, plus `requestStop` so a test can
+ * stop the run mid-run from inside a settle callback. */
 function makeRunControls(onSettle?: () => void): {
   controls: BatchRunControls;
-  abort: AbortController;
+  requestStop: () => void;
   settled: Parameters<BatchRunControls["onItemSettled"]>[0][];
 } {
-  const abort = new AbortController();
+  const { stop, request: requestStop } = makeStopRequest();
   const settled: Parameters<BatchRunControls["onItemSettled"]>[0][] = [];
   const controls: BatchRunControls = {
     onItemSettled: (event) => {
       settled.push(event);
       onSettle?.();
     },
-    signal: abort.signal,
+    stop,
   };
-  return { controls, abort, settled };
+  return { controls, requestStop, settled };
 }
 
 function task(id: number): BatchRunTask {
@@ -126,15 +135,9 @@ describe("executeBatchRun", () => {
         const secondSettled = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         const started = Promise.withResolvers<void>();
-        const abort = new AbortController();
-        const settled: Parameters<BatchRunControls["onItemSettled"]>[0][] = [];
-        const controls: BatchRunControls = {
-          signal: abort.signal,
-          onItemSettled: (event) => {
-            settled.push(event);
-            if (event.id === 2) secondSettled.resolve();
-          },
-        };
+        const { controls, settled } = makeRunControls(() => {
+          if (settled.at(-1)?.id === 2) secondSettled.resolve();
+        });
         const pending = yield* Effect.forkChild(
           executeBatchRun({
             tasks: [task(1), task(2)],
@@ -203,21 +206,18 @@ describe("executeBatchRun", () => {
   );
 
   it.effect(
-    "keeps admitted work running when the run's signal aborts mid-run",
+    "keeps admitted work running when the run's stop is requested mid-run",
     () =>
       Effect.gen(function* () {
-        const { controls, abort, settled } = makeRunControls();
+        const { controls, requestStop, settled } = makeRunControls();
         const started = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         const run = vi.fn((t: BatchRunTask) =>
-          Effect.tryPromise({
-            try: async () => {
-              if (t.id !== 1) return "created" as const;
-              started.resolve();
-              await release.promise;
-              return "created" as const;
-            },
-            catch: (error) => error,
+          Effect.tryPromise(async () => {
+            if (t.id !== 1) return "created" as const;
+            started.resolve();
+            await release.promise;
+            return "created" as const;
           }),
         );
 
@@ -231,7 +231,7 @@ describe("executeBatchRun", () => {
         );
 
         yield* Effect.promise(() => started.promise);
-        abort.abort();
+        requestStop();
         expect(settled).toHaveLength(0);
         release.resolve();
         const result = yield* Fiber.join(pending);
@@ -252,7 +252,7 @@ describe("executeBatchRun", () => {
         concurrency: 4,
         run: (t) =>
           t.id === 2
-            ? Effect.fail(new Error("write blew up"))
+            ? Effect.fail(new WriteFailed({ message: "write blew up" }))
             : Effect.succeed("created" as const),
         onTaskFailed,
       });
@@ -300,10 +300,10 @@ describe("executeBatchRun", () => {
     }),
   );
 
-  it.effect("runs no tasks when the signal is already aborted", () =>
+  it.effect("runs no tasks when the stop is already requested", () =>
     Effect.gen(function* () {
-      const { controls, abort, settled } = makeRunControls();
-      abort.abort();
+      const { controls, requestStop, settled } = makeRunControls();
+      requestStop();
       const run = vi.fn(() => Effect.succeed("created" as const));
 
       const result = yield* executeBatchRun({
@@ -325,17 +325,11 @@ describe("executeBatchRun", () => {
     }),
   );
 
-  it.effect("stops issuing new work once aborted mid-run", () =>
+  it.effect("stops issuing new work once the stop is requested mid-run", () =>
     Effect.gen(function* () {
-      const abort = new AbortController();
-      const settled: unknown[] = [];
-      const controls: BatchRunControls = {
-        onItemSettled: (event) => {
-          settled.push(event);
-          abort.abort();
-        },
-        signal: abort.signal,
-      };
+      const { controls, requestStop, settled } = makeRunControls(() =>
+        requestStop(),
+      );
       const run = vi.fn(() => Effect.succeed("created" as const));
 
       const result = yield* executeBatchRun({
@@ -345,7 +339,7 @@ describe("executeBatchRun", () => {
         run,
       });
 
-      // Task 1 runs and settles; its settle aborts, so tasks 2 and 3 never run.
+      // Task 1 runs and settles; its settle requests the stop, so tasks 2 and 3 never run.
       expect(run).toHaveBeenCalledTimes(1);
       expect(settled).toHaveLength(1);
       expect(result).toMatchObject({ created: 1, failed: 0, cancelled: true });
@@ -404,7 +398,7 @@ describe("executeBatchRun", () => {
         tasks: [task(1)],
         controls,
         concurrency: 1,
-        run: () => Effect.fail(new Error("write blew up")),
+        run: () => Effect.fail(new WriteFailed({ message: "write blew up" })),
         haltOn: (error) => error instanceof ConfigError,
       });
 
@@ -505,25 +499,27 @@ describe("runBatchWrite", () => {
     }),
   );
 
-  it.effect("closes the Snapshot when aborted before any task runs", () =>
-    Effect.gen(function* () {
-      const { zoteroReads, dispose } = makeSnapshotReads();
-      const { controls, abort } = makeRunControls();
-      abort.abort();
-      const run = vi.fn(async () => "created" as const);
+  it.effect(
+    "closes the Snapshot when the stop is requested before any task runs",
+    () =>
+      Effect.gen(function* () {
+        const { zoteroReads, dispose } = makeSnapshotReads();
+        const { controls, requestStop } = makeRunControls();
+        requestStop();
+        const run = vi.fn(async () => "created" as const);
 
-      const result = yield* runBatchWrite({
-        zoteroReads,
-        tasks: [task(1), task(2)],
-        controls,
-        concurrency: 4,
-        run,
-      });
+        const result = yield* runBatchWrite({
+          zoteroReads,
+          tasks: [task(1), task(2)],
+          controls,
+          concurrency: 4,
+          run,
+        });
 
-      expect(run).not.toHaveBeenCalled();
-      expect(result.cancelled).toBe(true);
-      expect(dispose).toHaveBeenCalledTimes(1);
-    }),
+        expect(run).not.toHaveBeenCalled();
+        expect(result.cancelled).toBe(true);
+        expect(dispose).toHaveBeenCalledTimes(1);
+      }),
   );
 
   it.effect("closes the Snapshot when the run fails", () =>
@@ -545,8 +541,73 @@ describe("runBatchWrite", () => {
         }),
       );
 
-      expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(failure);
+      const error = Exit.isFailure(exit) && Cause.squash(exit.cause);
+      expect(error).toBeInstanceOf(TaskRejected);
+      expect(error instanceof TaskRejected && error.cause).toBe(failure);
       expect(dispose).toHaveBeenCalledTimes(1);
+    }),
+  );
+
+  it("rejects a halted run with the task's own rejection through runBatch", async () => {
+    const { zoteroReads } = makeSnapshotReads();
+    const { controls } = makeRunControls();
+    const failure = new Error("bad config");
+    const onTaskFailed = vi.fn();
+
+    await expect(
+      runBatch(
+        runBatchWrite({
+          zoteroReads,
+          tasks: [task(1)],
+          controls,
+          concurrency: 4,
+          run: async () => {
+            throw failure;
+          },
+          onTaskFailed,
+          haltOn: (error) => error === failure,
+        }),
+      ),
+    ).rejects.toBe(failure);
+    expect(onTaskFailed).not.toHaveBeenCalled();
+  });
+
+  it.effect("reports a rejected task's own error on its failure row", () =>
+    Effect.gen(function* () {
+      const { zoteroReads } = makeSnapshotReads();
+      const { controls, settled } = makeRunControls();
+      const failure = new NoteImportProfileError("Missing", {
+        path: "Reading/Paper.md",
+      });
+      const onTaskFailed = vi.fn();
+
+      const result = yield* runBatchWrite({
+        zoteroReads,
+        tasks: [task(1)],
+        controls,
+        concurrency: 1,
+        run: async () => {
+          throw failure;
+        },
+        onTaskFailed,
+      });
+
+      expect(result).toMatchObject({ failed: 1 });
+      expect(settled).toEqual([
+        {
+          id: 1,
+          status: "failed",
+          failure: {
+            label: "Item 1",
+            message: failure.message,
+            recovery: { action: "switch-profile", path: "Reading/Paper.md" },
+          },
+        },
+      ]);
+      expect(onTaskFailed).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 1 }),
+        failure,
+      );
     }),
   );
 
@@ -578,7 +639,7 @@ describe("runBatch", () => {
     const effect = Effect.uninterruptible(
       Effect.gen(function* () {
         abort.abort();
-        return yield* Effect.fail(error);
+        return yield* error;
       }),
     );
 
@@ -587,18 +648,41 @@ describe("runBatch", () => {
 });
 
 describe("classifyStream", () => {
-  function classifyControls(signal?: AbortSignal): {
+  /** The controls a batch modal hands its classify step, and its cancel. */
+  function classifyControls(): {
     controls: BatchClassifyControls;
+    abort: AbortController;
     progress: number[];
   } {
+    const abort = new AbortController();
     const progress: number[] = [];
     return {
       controls: {
         onProgress: (n) => progress.push(n),
-        signal: signal ?? new AbortController().signal,
+        signal: abort.signal,
       },
+      abort,
       progress,
     };
+  }
+
+  /**
+   * Runs `build`'s classification in its own fiber and returns how it ended.
+   * `interrupt` stops that fiber; `early` interrupts it before it starts.
+   */
+  function exitOf<A, E>(
+    build: (interrupt: () => void) => Effect.Effect<A, E>,
+    { early = false }: { early?: boolean } = {},
+  ): Effect.Effect<Exit.Exit<A, E>> {
+    return Effect.gen(function* () {
+      let run: Fiber.Fiber<A, E> | undefined;
+      const interrupt = () => run?.interruptUnsafe();
+      run = yield* Effect.forkChild(build(interrupt), {
+        startImmediately: false,
+      });
+      if (early) interrupt();
+      return yield* Fiber.await(run);
+    });
   }
 
   it.effect(
@@ -634,19 +718,20 @@ describe("classifyStream", () => {
       }),
   );
 
-  it.effect("starts no further request after cancellation", () =>
+  it.effect("starts no further request after interruption", () =>
     Effect.gen(function* () {
-      const abort = new AbortController();
-      const { controls } = classifyControls(abort.signal);
+      const { controls } = classifyControls();
       const read = vi.fn((ids: readonly number[]) => Stream.succeed(ids));
-      const exit = yield* Effect.exit(
+      const exit = yield* exitOf((interrupt) =>
         classifyStream(
           { itemIDs: Array.from({ length: 1001 }, (_, i) => i), read },
           controls,
-          () => abort.abort(),
+          interrupt,
         ),
       );
-      expect(Exit.isFailure(exit)).toBe(true);
+      expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(
+        true,
+      );
       expect(read).toHaveBeenCalledTimes(1);
     }),
   );
@@ -680,18 +765,16 @@ describe("classifyStream", () => {
     }),
   );
 
-  it.effect("interrupts a pre-aborted classification before any read", () =>
+  it.effect("reads nothing when interrupted before it starts", () =>
     Effect.gen(function* () {
-      const abort = new AbortController();
-      abort.abort();
-      const { controls } = classifyControls(abort.signal);
+      const { controls } = classifyControls();
       const read = vi.fn(() => Stream.succeed([1, 2, 3]));
       const processSlice = vi.fn();
 
-      // An empty selection isolates the preflight guard from the stream's
-      // per-slice abort check.
-      const exit = yield* Effect.exit(
-        classifyStream({ itemIDs: [], read }, controls, processSlice),
+      const exit = yield* exitOf(
+        () =>
+          classifyStream({ itemIDs: [1, 2, 3], read }, controls, processSlice),
+        { early: true },
       );
 
       expect(Exit.isFailure(exit)).toBe(true);
@@ -707,9 +790,8 @@ describe("classifyStream", () => {
     "runBatch rejects a pre-aborted classification before any read",
     () =>
       Effect.gen(function* () {
-        const abort = new AbortController();
+        const { controls, abort } = classifyControls();
         abort.abort();
-        const { controls } = classifyControls(abort.signal);
         const read = vi.fn(() => Stream.succeed([1, 2, 3]));
         const processSlice = vi.fn();
 
@@ -734,8 +816,7 @@ describe("classifyStream", () => {
     "interrupts a stream whose slices arrive synchronously at the next slice",
     () =>
       Effect.gen(function* () {
-        const abort = new AbortController();
-        const { controls } = classifyControls(abort.signal);
+        const { controls } = classifyControls();
         let interrupted = false;
         const slices = Stream.fromIterable([[1], [2], [3]], {
           chunkSize: 1,
@@ -748,13 +829,13 @@ describe("classifyStream", () => {
         );
         const seen: number[] = [];
 
-        const exit = yield* Effect.exit(
+        const exit = yield* exitOf((interrupt) =>
           classifyStream(
             { itemIDs: [1, 2, 3], read: () => slices },
             controls,
             (slice) => {
               seen.push(...slice);
-              abort.abort();
+              interrupt();
             },
           ),
         );
@@ -767,8 +848,7 @@ describe("classifyStream", () => {
 
   it.effect("interrupts the read when the signal aborts mid-classify", () =>
     Effect.gen(function* () {
-      const abort = new AbortController();
-      const { controls } = classifyControls(abort.signal);
+      const { controls, abort } = classifyControls();
       const held = Promise.withResolvers<void>();
       let interrupted = false;
       const slices = Stream.concat(

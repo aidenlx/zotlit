@@ -1,19 +1,21 @@
 // The real Note Index layer over a test's Obsidian host.
+import { Context, Effect, Layer } from "effect";
 import { basename } from "node:path/posix";
 import { TFile } from "obsidian";
 import type { App, CachedMetadata, EventRef } from "obsidian";
 
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
-import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { ObsidianApp } from "@/lib/obsidian-app";
 
 import type { PlainNoteIndex } from "./plain";
 import { plainNoteIndex } from "./plain";
 import { layerNoteIndex, NoteIndex } from "./service";
 
 export const noteIndexOver = (app: App) =>
-  layerNoteIndex.pipe(Layer.provide(Layer.succeed(ObsidianApp, app)));
+  layerNoteIndex.pipe(Layer.provide(layerHostApp(app)));
 
 export const noteIndexOf = Effect.fn("fixture.noteIndexOf")(function* (
   app: App,
@@ -67,32 +69,10 @@ export async function openNoteVault(
 }
 
 type Callback = (...args: unknown[]) => void;
-type MetadataEvent = "changed" | "deleted" | "resolved";
-type VaultEvent = "rename" | "delete";
+type VaultEvent = "create" | "modify" | "rename" | "delete";
 
-class MockMetadataCache {
-  readonly fileCache = new Map<string, CachedMetadata>();
-  /** Mirrors Obsidian's `isCacheClean()`: no parse pending, resolver idle. */
-  clean = false;
-  readonly #cleanCallbacks: Callback[] = [];
-
-  readonly #listeners: Record<MetadataEvent, Set<Callback>> = {
-    changed: new Set(),
-    deleted: new Set(),
-    resolved: new Set(),
-  };
-
-  getFileCache(file: TFile): CachedMetadata | null {
-    return this.getCache(file.path);
-  }
-
-  /** As Obsidian: `null` for a path it holds nothing for, `{}` for a non-Markdown file. */
-  getCache(path: string): CachedMetadata | null {
-    const cache = this.fileCache.get(path);
-    if (!cache) return null;
-    return path.endsWith(".md") ? cache : {};
-  }
-
+/** The in-memory metadata cache, following the vault as Obsidian's does. */
+class MockMetadataCache extends MemoryMetadataCache {
   /**
    * Obsidian's `watchVaultChanges()`: the cache follows a rename or delete as
    * one more vault listener, in registration order. It subscribes once its
@@ -102,56 +82,14 @@ class MockMetadataCache {
   watchVault(vault: MockVault): void {
     vault.on("rename", (...args) => {
       const [file, oldPath] = args as [TFile, string];
-      const cache = this.fileCache.get(oldPath);
+      const cache = this.entries.get(oldPath);
       if (!cache) return;
-      this.fileCache.delete(oldPath);
-      this.fileCache.set(file.path, cache);
+      this.entries.delete(oldPath);
+      this.entries.set(file.path, cache);
     });
     vault.on("delete", (file) => {
-      this.fileCache.delete((file as TFile).path);
+      this.entries.delete((file as TFile).path);
     });
-  }
-
-  on(name: MetadataEvent, callback: Callback): EventRef {
-    this.#listeners[name].add(callback);
-    return { e: this, name, callback } as unknown as EventRef;
-  }
-
-  offref(ref: EventRef): void {
-    const { name, callback } = ref as unknown as {
-      name: MetadataEvent;
-      callback: Callback;
-    };
-    this.#listeners[name].delete(callback);
-  }
-
-  setCache(path: string, cache: CachedMetadata): void {
-    this.fileCache.set(path, cache);
-  }
-
-  change(file: TFile, cache: CachedMetadata): void {
-    this.fileCache.set(file.path, cache);
-    this.#emit("changed", file, "", cache);
-  }
-
-  /**
-   * Obsidian's undocumented one-shot: at once when the cache is clean, else
-   * after the next `resolved` drains the queue.
-   */
-  onCleanCache(callback: () => void): void {
-    if (this.clean) callback();
-    else this.#cleanCallbacks.push(callback);
-  }
-
-  /** The resolver queue drains: `resolved` fires and queued clean-cache callbacks run. */
-  resolve(): void {
-    this.clean = true;
-    this.#emit("resolved");
-    for (const callback of this.#cleanCallbacks.splice(0)) callback();
-  }
-
-  #emit(name: MetadataEvent, ...args: unknown[]): void {
-    for (const callback of this.#listeners[name]) callback(...args);
   }
 }
 
@@ -159,6 +97,8 @@ class MockVault {
   readonly files = new Map<string, TFile>();
 
   readonly #listeners: Record<VaultEvent, Set<Callback>> = {
+    create: new Set(),
+    modify: new Set(),
     rename: new Set(),
     delete: new Set(),
   };
@@ -210,26 +150,10 @@ class MockVault {
   }
 }
 
-class MockWorkspace {
-  layoutReady = false;
-  readonly #callbacks: Callback[] = [];
-
-  onLayoutReady(callback: () => void): void {
-    if (this.layoutReady) callback();
-    else this.#callbacks.push(callback);
-  }
-
-  /** Layout settles after the cache initializes, so it runs queued callbacks then. */
-  ready(): void {
-    this.layoutReady = true;
-    for (const callback of this.#callbacks.splice(0)) callback();
-  }
-}
-
 export interface Harness {
   app: App;
   metadataCache: MockMetadataCache;
-  workspace: MockWorkspace;
+  workspace: MemoryWorkspace;
   service: PlainNoteIndex & {
     runtime: import("@/lib/effect-stream").SubscriptionRuntime;
   };
@@ -244,7 +168,7 @@ export interface Harness {
  */
 export const makeHarness = Effect.fn("fixture.makeHarness")(function* (
   files: Record<string, CachedMetadata>,
-  options: { enabledAtRuntime?: boolean; cleanCacheHook?: boolean } = {},
+  options: { enabledAtRuntime?: boolean } = {},
 ) {
   const { app, metadataCache, workspace, vault } = createNoteHost(
     files,
@@ -272,7 +196,7 @@ export function startup(
 ): void {
   harness.metadataCache.watchVault(harness.vault);
   harness.metadataCache.resolve();
-  harness.workspace.ready();
+  harness.workspace.layoutReady();
 }
 
 export function cache(options: {
@@ -318,16 +242,13 @@ function makeResource(app: App) {
 
 export function createNoteHost(
   files: Record<string, CachedMetadata>,
-  options: { enabledAtRuntime?: boolean; cleanCacheHook?: boolean } = {},
+  options: { enabledAtRuntime?: boolean } = {},
 ) {
   const metadataCache = new MockMetadataCache();
-  const workspace = new MockWorkspace();
+  const workspace = new MemoryWorkspace({
+    layoutReady: options.enabledAtRuntime,
+  });
   metadataCache.clean = options.enabledAtRuntime ?? false;
-  workspace.layoutReady = options.enabledAtRuntime ?? false;
-  if (options.cleanCacheHook === false) {
-    // A build that dropped the internal hook.
-    Object.defineProperty(metadataCache, "onCleanCache", { value: undefined });
-  }
   const vault = new MockVault();
   const app = { metadataCache, vault, workspace } as unknown as App;
   if (options.enabledAtRuntime) metadataCache.watchVault(vault);

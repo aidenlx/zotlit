@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { Menu, setMockPlatform } from "@mock/obsidian";
 import { delay } from "@std/async";
+import { Effect, Stream, SubscriptionRef } from "effect";
 import type { Menu as ObsidianMenu, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { expect, it, vi } from "vitest";
@@ -10,7 +11,6 @@ import type { AnnotViewAttachment } from "@zotlit/db";
 import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Effect, Stream, SubscriptionRef } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {

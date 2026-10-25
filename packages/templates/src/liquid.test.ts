@@ -625,15 +625,6 @@ describe("output coercion", () => {
       }),
     ).toBe("January 2013");
   });
-
-  it("renders a JS Date via toISOString", () => {
-    const engine = createLiquidEngine();
-    // oxlint-disable-next-line effecttsgo/global-date -- the test renders a JS Date.
-    const date = new Date("2026-06-21T04:00:00Z");
-    expect(
-      engine.parseAndRenderSync("{{ zt.value }}", { zt: { value: date } }),
-    ).toBe(date.toISOString());
-  });
 });
 
 describe("date filter", () => {

@@ -238,6 +238,14 @@ const FIXTURE_DDL = `
   );
 `;
 
+/**
+ * A row date (`dateAdded`, `dateModified`) at `iso`. Rows carry
+ * Temporal.Instant, the date type of the template contract.
+ */
+export function rowInstant(iso: string): Temporal.Instant {
+  return Temporal.Instant.from(iso);
+}
+
 /** A minimal full DB item fixture (Hensher2011-shaped defaults), overridable via `fields`/`base`. */
 export function makeItem(
   fields: { itemType: string } & Record<string, string | null>,

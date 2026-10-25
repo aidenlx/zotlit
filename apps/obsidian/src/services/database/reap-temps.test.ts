@@ -1,3 +1,5 @@
+import { it } from "@effect/vitest";
+import { Effect, Fiber } from "effect";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,8 +9,6 @@ import {
   ZOTERO_DB_READ_PARENT_DIRNAME,
   ZOTERO_DB_READ_TEMP_PREFIX,
 } from "@/lib/constants";
-import { Effect } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { reapReadClonesEffect, reapWorkerClones } from "./reap-temps";
 
@@ -49,7 +49,7 @@ describe("reapReadClonesEffect", () => {
     Effect.gen(function* () {
       yield* Effect.promise(() => readClone(DEAD_PID));
       yield* reapReadClonesEffect({ parent });
-      expect(yield* Effect.promise(names)).toEqual([]);
+      expect(yield* Effect.promise(() => names())).toEqual([]);
     }),
   );
 
@@ -57,7 +57,7 @@ describe("reapReadClonesEffect", () => {
     Effect.gen(function* () {
       const own = yield* Effect.promise(() => readClone(process.pid));
       yield* reapReadClonesEffect({ parent });
-      expect(yield* Effect.promise(names)).toEqual([own]);
+      expect(yield* Effect.promise(() => names())).toEqual([own]);
     }),
   );
 
@@ -65,7 +65,7 @@ describe("reapReadClonesEffect", () => {
     Effect.gen(function* () {
       const other = yield* Effect.promise(() => readClone(process.ppid));
       yield* reapReadClonesEffect({ parent });
-      expect(yield* Effect.promise(names)).toEqual([other]);
+      expect(yield* Effect.promise(() => names())).toEqual([other]);
     }),
   );
 
@@ -79,7 +79,7 @@ describe("reapReadClonesEffect", () => {
         writeFile(join(parent, `${ZOTERO_DB_READ_TEMP_PREFIX}-0-x`), "x"),
       );
       yield* reapReadClonesEffect({ parent });
-      expect(yield* Effect.promise(names)).toEqual([
+      expect(yield* Effect.promise(() => names())).toEqual([
         "unrelated-dir",
         `${ZOTERO_DB_READ_TEMP_PREFIX}-0-x`,
         `${ZOTERO_DB_READ_TEMP_PREFIX}notapid`,
@@ -105,18 +105,19 @@ describe("reapReadClonesEffect", () => {
     Effect.gen(function* () {
       yield* Effect.promise(() => readClone(DEAD_PID, "0123456789ab"));
       yield* reapReadClonesEffect({ parent });
-      expect(yield* Effect.promise(names)).toEqual([]);
+      expect(yield* Effect.promise(() => names())).toEqual([]);
     }),
   );
 
-  it.effect(
-    "leaves every clone in place when the signal is already aborted",
-    () =>
-      Effect.gen(function* () {
-        const dead = yield* Effect.promise(() => readClone(DEAD_PID));
-        yield* reapReadClonesEffect({ parent, signal: AbortSignal.abort() });
-        expect(yield* Effect.promise(names)).toEqual([dead]);
-      }),
+  it.effect("leaves every clone in place when interrupted before it runs", () =>
+    Effect.gen(function* () {
+      const dead = yield* Effect.promise(() => readClone(DEAD_PID));
+      const reap = yield* Effect.forkChild(reapReadClonesEffect({ parent }), {
+        startImmediately: false,
+      });
+      yield* Fiber.interrupt(reap);
+      expect(yield* Effect.promise(() => names())).toEqual([dead]);
+    }),
   );
 });
 
@@ -133,7 +134,7 @@ describe("reapWorkerClones", () => {
         owner: DEAD_WORKER,
         parents: [parent, beside],
       });
-      expect(yield* Effect.promise(names)).toEqual([
+      expect(yield* Effect.promise(() => names())).toEqual([
         ZOTERO_DB_READ_PARENT_DIRNAME,
       ]);
       expect(yield* Effect.promise(() => readdir(beside))).toEqual([]);
@@ -150,7 +151,7 @@ describe("reapWorkerClones", () => {
         owner: DEAD_WORKER,
         parents: [parent],
       });
-      expect(yield* Effect.promise(names)).toEqual([live]);
+      expect(yield* Effect.promise(() => names())).toEqual([live]);
     }),
   );
 
@@ -175,7 +176,7 @@ describe("reapWorkerClones", () => {
           owner: DEAD_WORKER,
           parents: [parent],
         });
-        expect(yield* Effect.promise(names)).toEqual(
+        expect(yield* Effect.promise(() => names())).toEqual(
           [
             untagged,
             `${DEAD_WORKER}-aBcDeF`,
@@ -192,7 +193,7 @@ describe("reapWorkerClones", () => {
         owner: DEAD_WORKER,
         parents: [join(parent, "absent"), parent],
       });
-      expect(yield* Effect.promise(names)).toEqual([]);
+      expect(yield* Effect.promise(() => names())).toEqual([]);
     }),
   );
 });

@@ -1,5 +1,6 @@
 // The Annotation Popover as an Effect service.
-import { Context, Effect, Layer } from "@/lib/effect";
+import { Context, Effect, Layer } from "effect";
+
 import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -65,7 +66,9 @@ export const layerAnnotationPopover: Layer.Layer<
     );
     return AnnotationPopover.of({
       // The core catches read failures, and this starts its first read now.
-      show: (request) => Effect.promise(() => core.show(request)),
+      show: Effect.fn("AnnotationPopover.show")((request) =>
+        Effect.promise(() => core.show(request)),
+      ),
     });
   }).pipe(withLogCategory("annotation-popover")),
 );

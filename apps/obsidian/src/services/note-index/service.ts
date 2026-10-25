@@ -1,12 +1,18 @@
+import { Context, Deferred, Effect, Layer, PubSub, Stream } from "effect";
 import { TFile } from "obsidian";
-import type { App, CachedMetadata, EventRef, TAbstractFile } from "obsidian";
+import type { App, CachedMetadata, TAbstractFile } from "obsidian";
 
 import { NON_VAULT_PROPERTY_KEYS } from "@/lib/constants";
-import { Context, Deferred, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
+import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
-import { DEFAULT_PROFILE, readProfileStamp } from "@/lib/profile-stamp";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
+import { Vault } from "@/lib/obsidian-vault";
+import type { VaultEvent } from "@/lib/obsidian-vault";
+import { Workspace } from "@/lib/obsidian-workspace";
+import { DEFAULT_PROFILE, profileStampOf } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 
 import {
@@ -99,34 +105,34 @@ export class NoteIndex extends Context.Service<
       literatureNotes: TFile[];
       importedNotes: TFile[];
     }>;
-    getPropertyNames(): Effect.Effect<string[]>;
-    getIndexedItemKeys(): Effect.Effect<string[]>;
+    readonly getPropertyNames: Effect.Effect<string[]>;
+    readonly getIndexedItemKeys: Effect.Effect<string[]>;
     /**
      * Settles after the Full Scan, or when the layer closes. Await this before
      * create-vs-existing decisions: a pre-scan read can mint a duplicate.
      */
-    whenIndexed(): Effect.Effect<void>;
+    readonly whenIndexed: Effect.Effect<void>;
     /** Waits for queued rename reads, including those that change no keys. */
-    whenSettled(): Effect.Effect<void>;
+    readonly whenSettled: Effect.Effect<void>;
   }
 >()("zotlit/note-index/NoteIndex") {}
 
 const makeNoteIndex = Effect.gen(function* () {
   const app = yield* ObsidianApp;
+  const metadata = yield* MetadataCache;
+  const workspace = yield* Workspace;
+  const vault = yield* Vault;
   const changes = yield* PubSub.unbounded<NoteIndexChange>();
   yield* Effect.addFinalizer(() => PubSub.shutdown(changes));
   const indexed = yield* Deferred.make<void>();
   const pendingRenames = new Set<Deferred.Deferred<void>>();
   const pendingBarriers = new Set<Deferred.Deferred<void>>();
   const events = yield* obsidianEvents<{
-    changed: [TFile, string, CachedMetadata];
-    deleted: [TFile];
-    delete: [TAbstractFile];
-    rename: [TAbstractFile, string];
+    metadata: [MetadataEvent];
+    vault: [Extract<VaultEvent, { _tag: "delete" | "rename" }>];
     "rename-settled": [TFile, Deferred.Deferred<void>];
     layout: [];
     clean: [];
-    resolved: [];
     barrier: [Deferred.Deferred<void>];
   }>();
   const notesByItemKey = new Map<string, Set<TFile>>();
@@ -136,8 +142,6 @@ const makeNoteIndex = Effect.gen(function* () {
   const frontmatterByFile = new Map<TFile, string>();
   const warnedDuplicatePaths = new Map<string, string>();
   let disposed = false;
-  /** The fallback `resolved` listener, held so disposal can drop it. */
-  let fallbackRef: EventRef | null = null;
 
   const publish = (change: NoteIndexChange) => PubSub.publish(changes, change);
 
@@ -173,11 +177,11 @@ const makeNoteIndex = Effect.gen(function* () {
   /** Await {@link whenIndexed} before querying; stamp labels are hints, IDs select membership. */
   const getNotesByProfile = Effect.fn("NoteIndex.getNotesByProfile")(
     (selector: ProfileSelector) =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         const literatureNotes: TFile[] = [];
         const importedNotes: TFile[] = [];
         for (const [file, contribution] of contribByFile) {
-          const stamp = readProfileStamp(app.metadataCache, file);
+          const stamp = profileStampOf(yield* metadata.fileCache(file));
           const profile = stamp === undefined ? DEFAULT_PROFILE : stamp.id;
           if (profile !== selector) continue;
           if (contribution.noteKey !== null) importedNotes.push(file);
@@ -192,57 +196,65 @@ const makeNoteIndex = Effect.gen(function* () {
    * but Obsidian's reserved keys and ZotLit's system keys: the names a vault
    * property can take.
    */
-  const getPropertyNames = Effect.fn("NoteIndex.getPropertyNames")(() =>
-    Effect.sync(() => {
-      const names = new Set<string>();
-      for (const [file, contribution] of contribByFile) {
-        if (contribution.itemKey === null || contribution.noteKey !== null)
-          continue;
-        const frontmatter = app.metadataCache.getFileCache(file)?.frontmatter;
-        for (const name of Object.keys(frontmatter ?? {}))
-          if (!NON_VAULT_PROPERTY_KEYS.has(name)) names.add(name);
-      }
-      return [...names].sort((a, b) => a.localeCompare(b));
-    }),
-  );
+  const getPropertyNames = Effect.gen(function* () {
+    const names = new Set<string>();
+    for (const [file, contribution] of contribByFile) {
+      if (contribution.itemKey === null || contribution.noteKey !== null)
+        continue;
+      const frontmatter = (yield* metadata.fileCache(file))?.frontmatter;
+      for (const name of Object.keys(frontmatter ?? {}))
+        if (!NON_VAULT_PROPERTY_KEYS.has(name)) names.add(name);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }).pipe(Effect.withSpan("NoteIndex.getPropertyNames"));
 
   /** Indexed keys that currently have at least one Literature Note. */
-  const getIndexedItemKeys = Effect.fn("NoteIndex.getIndexedItemKeys")(() =>
-    Effect.sync(() => [...notesByItemKey.keys()]),
+  const getIndexedItemKeys = Effect.sync(() => [...notesByItemKey.keys()]).pipe(
+    Effect.withSpan("NoteIndex.getIndexedItemKeys"),
   );
 
-  const whenIndexed = Effect.fn("NoteIndex.whenIndexed")(function* () {
-    yield* Deferred.await(indexed);
-  });
+  const whenIndexed = Deferred.await(indexed).pipe(
+    Effect.withSpan("NoteIndex.whenIndexed"),
+  );
 
-  const whenSettled = Effect.fn("NoteIndex.whenSettled")(function* () {
+  const whenSettled = Effect.gen(function* () {
     if (disposed) return;
     // The consumer must reach this marker before we snapshot pending renames.
     const barrier = yield* Deferred.make<void>();
     pendingBarriers.add(barrier);
     events.callback("barrier")(barrier);
     yield* Deferred.await(barrier);
-    yield* Effect.forEach([...pendingRenames], Deferred.await, {
-      discard: true,
-    });
-  });
+    yield* Effect.forEach(
+      [...pendingRenames],
+      (deferred) => Deferred.await(deferred),
+      {
+        discard: true,
+      },
+    );
+  }).pipe(Effect.withSpan("NoteIndex.whenSettled"));
 
   // Acquire listeners after the functions below have been initialized.
   const listen = Effect.fn("NoteIndex.listen")(function* () {
-    const { metadataCache, vault } = app;
-
-    yield* events.on("changed", metadataCache, "changed");
-    yield* events.on("deleted", metadataCache, "deleted");
-    yield* events.on("delete", vault, "delete");
-    yield* events.on("rename", vault, "rename");
-    app.workspace.onLayoutReady(events.callback("layout"));
+    // The metadata cache's events join the vault's in one ordered intake:
+    // forkEach hands each over inside Obsidian's callback.
+    yield* forkEach(metadata.changes, events.callback("metadata"));
+    yield* forkEach(
+      filterTag(vault.changes, "delete", "rename"),
+      events.callback("vault"),
+    );
+    // Started immediately: a ready layout completes at once, so the event is
+    // queued here; else it is queued inside Obsidian's layout-ready callback.
+    yield* workspace.layoutReady.pipe(
+      Effect.andThen(Effect.sync(() => events.callback("layout")())),
+      Effect.forkScoped({ startImmediately: true }),
+    );
     // Start immediately so a ready layout and clean cache finish the Full Scan
     // before acquisition returns, as they did through the synchronous callbacks.
     yield* events
       .consume(consume)
       .pipe(Effect.forkScoped({ startImmediately: true }));
 
-    // `onLayoutReady` and `onCleanCache` are one-shots with no unregister, so
+    // Layout-ready and `onCleanCache` are one-shots with no unregister, so
     // the scan gates on disposal instead. Callers parked on `whenIndexed()`
     // are torn down alongside the service and would otherwise wait on
     // nothing, so disposal settles them.
@@ -262,17 +274,8 @@ const makeNoteIndex = Effect.gen(function* () {
 
   /**
    * Runs the Full Scan exactly once, when the metadata cache covers every file.
-   *
-   * Obsidian's public API carries no "cache complete" signal. `resolved` is
-   * documented as firing "each time files get modified after the initial
-   * load", and it fires only when the link-resolver queue drains after
-   * running, so a vault with no indexable files never emits it. The
-   * undocumented `metadataCache.initialized` flips when the initial scan is
-   * dispatched, while parse tasks are still pending. The undocumented
-   * `onCleanCache(cb)` is Obsidian's own one-shot (it uses it before rewriting
-   * links on rename): it calls back at once when no parse task is in progress
-   * and the resolver queue is idle, else after the next `finished`/`resolved`
-   * (Obsidian 1.13.7). Layout-ready is the guard, since at plugin load during
+   * Obsidian's public API carries no "cache complete" signal; `whenResolved`
+   * waits for it. Layout-ready is the guard, since at plugin load during
    * startup the vault is not loaded yet and the empty cache reads as clean;
    * layout-ready runs strictly after the cache initializes, and synchronously
    * when the plugin is enabled at runtime.
@@ -280,20 +283,15 @@ const makeNoteIndex = Effect.gen(function* () {
   const scanWhenCacheClean = Effect.fn("NoteIndex.scanWhenCacheClean")(
     function* () {
       if (disposed) return;
-      const { metadataCache } = app;
-      if (typeof metadataCache.onCleanCache === "function") {
-        metadataCache.onCleanCache(events.callback("clean"));
-        yield* Effect.logDebug(
-          "Note index requested a clean metadata cache",
-        ).pipe(withLogCategory("note-index"));
-        return;
-      }
-      // A build without the hook: the documented signal, once. This misses an
-      // empty vault, where `resolved` never fires.
-      yield* Effect.logWarning(
-        "Metadata cache has no onCleanCache hook; scanning on resolved",
+      yield* Effect.logDebug(
+        "Note index requested a clean metadata cache",
       ).pipe(withLogCategory("note-index"));
-      fallbackRef = yield* events.on("resolved", metadataCache, "resolved");
+      // Started immediately: a clean cache calls back at once, so the Full
+      // Scan is queued before this event's handler returns.
+      yield* metadata.whenResolved.pipe(
+        Effect.andThen(Effect.sync(() => events.callback("clean")())),
+        Effect.forkScoped({ startImmediately: true }),
+      );
     },
   );
 
@@ -302,21 +300,21 @@ const makeNoteIndex = Effect.gen(function* () {
   ) {
     if (disposed) return;
     switch (event.type) {
-      case "changed": {
-        const [file, , cache] = event.args;
-        if (isMarkdownFile(file)) yield* apply(file, readCache(cache));
+      case "metadata": {
+        const [change] = event.args;
+        if (change._tag === "changed") {
+          if (isMarkdownFile(change.file))
+            yield* apply(change.file, readCache(change.cache));
+        } else if (change._tag === "deleted") yield* apply(change.file, NONE);
         break;
       }
-      case "deleted":
-        yield* apply(event.args[0], NONE);
-        break;
-      case "delete": {
-        const [file] = event.args;
-        if (isMarkdownFile(file)) yield* apply(file, NONE);
-        break;
-      }
-      case "rename": {
-        const [file] = event.args;
+      case "vault": {
+        const [change] = event.args;
+        const { file } = change;
+        if (change._tag === "delete") {
+          if (isMarkdownFile(file)) yield* apply(file, NONE);
+          break;
+        }
         if (!(file instanceof TFile)) break;
         if (!isMarkdownFile(file)) {
           yield* apply(file, NONE);
@@ -333,7 +331,8 @@ const makeNoteIndex = Effect.gen(function* () {
       }
       case "rename-settled": {
         const [file, settled] = event.args;
-        yield* Effect.suspend(() => apply(file, read(file))).pipe(
+        yield* read(file).pipe(
+          Effect.flatMap((reading) => apply(file, reading)),
           Effect.ensuring(
             Effect.gen(function* () {
               pendingRenames.delete(settled);
@@ -345,12 +344,6 @@ const makeNoteIndex = Effect.gen(function* () {
       }
       case "layout":
         yield* scanWhenCacheClean();
-        break;
-      case "resolved":
-        if (!fallbackRef) break;
-        app.metadataCache.offref(fallbackRef);
-        fallbackRef = null;
-        yield* fullScan();
         break;
       case "clean":
         yield* fullScan();
@@ -369,11 +362,12 @@ const makeNoteIndex = Effect.gen(function* () {
    * {@link UNREAD} while the cache has no entry for its path. A non-Markdown
    * file contributes nothing.
    */
-  function read(file: TFile): Reading {
-    if (!isMarkdownFile(file)) return NONE;
-    const cache = app.metadataCache.getFileCache(file);
-    return cache ? readCache(cache) : UNREAD;
-  }
+  const read = (file: TFile): Effect.Effect<Reading> =>
+    isMarkdownFile(file)
+      ? Effect.map(metadata.fileCache(file), (cache) =>
+          cache ? readCache(cache) : UNREAD,
+        )
+      : Effect.succeed(NONE);
 
   /** What a Markdown file's cache entry, as the cache hands it over, holds. */
   function readCache(cache: CachedMetadata): Read {
@@ -446,7 +440,7 @@ const makeNoteIndex = Effect.gen(function* () {
       clear();
 
       for (const file of app.vault.getMarkdownFiles()) {
-        settle(file, read(file));
+        settle(file, yield* read(file));
       }
 
       yield* Effect.logDebug("Note index scanned").pipe(
@@ -494,8 +488,11 @@ const makeNoteIndex = Effect.gen(function* () {
   });
 });
 
-export const layerNoteIndex: Layer.Layer<NoteIndex, never, ObsidianApp> =
-  Layer.effect(NoteIndex, makeNoteIndex);
+export const layerNoteIndex: Layer.Layer<
+  NoteIndex,
+  never,
+  ObsidianApp | MetadataCache | Vault | Workspace
+> = Layer.effect(NoteIndex, makeNoteIndex);
 
 function serializeFrontmatter(cache: CachedMetadata | null): string {
   return JSON.stringify(cache?.frontmatter ?? null);

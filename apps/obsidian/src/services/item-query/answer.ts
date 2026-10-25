@@ -10,6 +10,9 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
+import { Cause, Data, Effect } from "effect";
+import type { Scope } from "effect";
+
 import { readLibraries } from "@zotlit/db/item-query";
 import type {
   ItemQueryDatabase,
@@ -38,8 +41,6 @@ import { delimitedLines, delimitedStart } from "@zotlit/shared/delimited";
 import type { DelimitedFormat } from "@zotlit/shared/delimited";
 
 import { resourceReleaseUrl } from "@/lib/constants";
-import { Cause, Data, Effect } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log-category";
 import {
   resolveLibraryScope,
@@ -346,7 +347,7 @@ export function answerView(
         }),
       ),
     ),
-    Effect.catchDefect(dieOfDefect),
+    Effect.catchDefect((defect) => dieOfDefect(defect)),
   );
 }
 
@@ -719,7 +720,7 @@ function answerFailure(
           inline(command, failure(command, diagnostic)),
         ),
       ),
-      Effect.catchDefect(dieOfDefect),
+      Effect.catchDefect((defect) => dieOfDefect(defect)),
     );
 }
 

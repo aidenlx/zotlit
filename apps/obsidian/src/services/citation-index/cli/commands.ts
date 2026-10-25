@@ -1,9 +1,9 @@
 // Decodes citation questions and presents complete index answers as contract 4 JSON.
+import { Cause, Effect } from "effect";
 import type { CliData } from "obsidian";
 
 import type { CliCommandHandler } from "@/lib/cli-command";
 import { catchRejection } from "@/lib/cli-params";
-import { Cause, Effect } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import type {
   CitationIndex,
@@ -60,10 +60,10 @@ export function createCitationsCliHandlers(
   deps: CitationsCliDeps,
 ): CitationsCliHandlers {
   const timeout = deps.settleTimeoutMs ?? 5_000;
-  const answer = <A extends object, E>(
+  const answer = <A extends object, E, ReadE>(
     command: CitationsCommand,
     decode: (params: CliData) => Effect.Effect<A, E>,
-    read: (request: A) => Effect.Effect<EnvelopeTail, unknown>,
+    read: (request: A) => Effect.Effect<EnvelopeTail, ReadE>,
   ): CliCommandHandler =>
     Effect.fn(`CitationsCli.${command}`)(
       function* (params: CliData) {
@@ -79,23 +79,23 @@ export function createCitationsCliHandlers(
           });
         return yield* read(request).pipe(
           Effect.map((result) => envelope(command, { ...echoed, ...result })),
-          Effect.catchCause((cause) =>
-            Cause.hasInterruptsOnly(cause)
-              ? Effect.failCause(cause)
-              : Effect.logWarning("Cannot read the Citation Index").pipe(
-                  Effect.annotateLogs({ command, cause }),
-                  withLogCategory("citation-index", "cli"),
-                  Effect.as(
-                    envelope(command, {
-                      ok: false,
-                      ...echoed,
-                      diagnostic: diagnostic(
-                        "INDEX_NOT_READY",
-                        "The Citation Index cannot read the latest citation lookup. Refresh the Zotero source and run the command again.",
-                      ),
-                    }),
-                  ),
+          Effect.catchCauseIf(
+            (cause) => !Cause.hasInterruptsOnly(cause),
+            (cause) =>
+              Effect.logWarning("Cannot read the Citation Index").pipe(
+                Effect.annotateLogs({ command, cause }),
+                withLogCategory("citation-index", "cli"),
+                Effect.as(
+                  envelope(command, {
+                    ok: false,
+                    ...echoed,
+                    diagnostic: diagnostic(
+                      "INDEX_NOT_READY",
+                      "The Citation Index cannot read the latest citation lookup. Refresh the Zotero source and run the command again.",
+                    ),
+                  }),
                 ),
+              ),
           ),
         );
       },

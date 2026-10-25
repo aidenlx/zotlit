@@ -1,7 +1,7 @@
 // Effect exit handling for the repository's plain read seams.
 import type { QueryFunction, QueryKey } from "@tanstack/query-core";
+import { Effect } from "effect";
 
-import { Effect } from "@/lib/effect";
 import { valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import type { QueryClients } from "@/services/query-client/service";
@@ -12,7 +12,7 @@ export async function refreshDatabase(
   db: Pick<ZoteroReads["Service"], "refresh">,
 ): Promise<void> {
   if (bridge.closed()) return;
-  valueOr(await bridge.runPromiseExit(db.refresh()), undefined);
+  valueOr(await bridge.runPromiseExit(db.refresh), undefined);
 }
 
 export async function readHeld<T>(

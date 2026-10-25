@@ -1,8 +1,7 @@
+import { it } from "@effect/vitest";
+import { Context, Deferred, Effect, Fiber, Layer, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
-
-import { Context, Deferred, Effect, Fiber, Layer, Stream } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
 
 import { layerRcRef } from "./connection";
 import { layerZoteroReads, ZoteroReads } from "./service";

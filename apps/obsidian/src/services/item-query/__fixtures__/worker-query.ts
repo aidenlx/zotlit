@@ -2,7 +2,7 @@
 // the renderer, then passed through the codec of the worker seam.
 import type { CliData } from "obsidian";
 
-import { Effect, Schema } from "@/lib/effect";
+import { Effect, Schema } from "effect";
 
 import { decodeQuery } from "@/services/item-query/decode";
 import { DecodedQuery } from "@/services/item-query/query-codec";

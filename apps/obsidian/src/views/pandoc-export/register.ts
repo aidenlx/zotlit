@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { writeFile } from "node:fs/promises";
 // Registers the built-in export command and drives one export end to end:
 // modal → resolution → bibliography → engine → chosen destination.
@@ -8,13 +9,12 @@ import { parseIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
 import type { Library } from "@zotlit/db";
 
 import { citationStyleLabel } from "@/lib/citation-style";
-import { Effect } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { nodeFetch } from "@/lib/node-fetch";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
+import type { ZoteroHttp } from "@/lib/zotero-http";
 import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
@@ -56,8 +56,10 @@ export interface PandocExportDeps {
     "binary" | "runSync" | "runPromise"
   >;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "httpPort" | "get">;
+  /** The `ZoteroHttp` loopback client the bibliography is fetched over. */
+  zoteroHttp: ZoteroHttp["Service"];
   settings: Pick<PluginSettings["Service"], "current">;
-  bridge: Pick<EffectBridge, "runSync">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
   profile: ProfileReader;
   /** Opens the settings page the engine install lives on. */
   openSettings: () => void;
@@ -91,7 +93,7 @@ export async function runPandocExport(
 ): Promise<void> {
   const { app, bridge, pandocEngine, zoteroPref, settings } = deps;
   if (
-    pandocEngine.runSync(pandocEngine.binary.getStatus()).kind !== "installed"
+    pandocEngine.runSync(pandocEngine.binary.getStatus).kind !== "installed"
   ) {
     showEngineMissing(deps.openSettings);
     return;
@@ -165,9 +167,7 @@ export async function runPandocExport(
 
   let output: Uint8Array;
   try {
-    const engine = await pandocEngine.runPromise(
-      pandocEngine.binary.getEngine(),
-    );
+    const engine = await pandocEngine.runPromise(pandocEngine.binary.getEngine);
     if (!engine) return;
     const result = await exportCitedDocument(
       {
@@ -258,7 +258,8 @@ function exportPorts(
     readItemRefs: (indexedKeys) => readItemRefs(db, indexedKeys),
     fetchBibliography: (refs) =>
       fetchBibliography(refs, {
-        fetch: nodeFetch,
+        http: deps.zoteroHttp,
+        run: deps.bridge,
         httpPort: zoteroPref.httpPort,
         localApiEnabled: zoteroPref.get(LOCAL_API_PREF) === true,
       }),

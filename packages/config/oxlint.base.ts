@@ -38,6 +38,32 @@ export const uniqueIdPaths = ["react", "preact/compat", "preact/hooks"].map(
 );
 
 /**
+ * The date rule: Effect code uses Effect's `DateTime` (time read through
+ * `Clock`), other code uses TC39 `Temporal`, and no code uses `Date`,
+ * `date-fns` or `dayjs`. One date type per side keeps each value's instant,
+ * zone and serialized string the same as it crosses between them. A library
+ * that takes or hands in a `Date` converts in one adapter module, which an
+ * override names with its reason (CODING_STANDARDS.md → Dates).
+ */
+const dateFix =
+  "Use Temporal outside Effect and DateTime in Effect code (DateTime.now or Clock for the current time). A library that takes or gives a Date converts in its adapter module.";
+
+/** `no-restricted-globals`: every use of the `Date` global. */
+export const dateGlobals = {
+  globals: [{ name: "Date", message: dateFix }],
+  checkGlobalObject: true,
+};
+
+/** `typescript/no-restricted-types`: `Date` as a type. */
+export const dateTypes = { types: { Date: dateFix } };
+
+/** `no-restricted-imports` pattern for the date libraries. Every restatement of the rule spreads it. */
+export const datePattern = {
+  group: ["date-fns", "date-fns/**", "dayjs", "dayjs/**"],
+  message: dateFix,
+};
+
+/**
  * One override per baselined rule, with exact paths relative to the nested
  * lint config in `directory`, or to the repository root when it is omitted.
  */
@@ -62,34 +88,38 @@ export function testBaselineOverrides(directory?: string) {
 }
 
 /**
- * `@effect/tsgo` rules the tree already satisfies: errors, so no change adds
- * the first finding. The rest of the `recommended` preset stays at warn until
- * its findings are fixed; then the rule moves here.
+ * `@effect/tsgo` rules that are off by default and that this repository turns
+ * on (apps/obsidian/oxlint.config.ts opts in to the console rules). Every
+ * other rule keeps the level of the `recommended` preset.
  */
-const effectErrorRules = [
-  "catch-unfailable-effect",
-  "class-self-mismatch",
-  "effect-fn-iife",
-  "effect-fn-opportunity",
-  "effect-in-failure",
-  "effect-in-void-success",
-  "floating-effect",
-  "generic-effect-services",
+const effectOptInRules = [
   "global-date",
   "global-date-in-effect",
   "global-fetch-in-effect",
   "global-timers-in-effect",
-  "layer-merge-all-with-dependencies",
-  "leaking-requirements",
-  "missing-return-yield-star",
-  "missing-star-in-yield-effect-gen",
-  "multiple-effect-provide",
   "process-env-in-effect",
-  "return-effect-in-gen",
-  "run-effect-inside-effect",
-  "schema-sync-in-effect",
-  "scope-in-layer-effect",
 ].map((rule) => [`effecttsgo/${rule}`, "error"] as const);
+
+/**
+ * `@effect/tsgo` rules that support Effect v3 only (`SupportedEffect: ["v3"]`):
+ * they never report on the Effect v4 this repository uses, so they are off.
+ */
+const effectV3OnlyRules = [
+  "generic-effect-services",
+  "missing-effect-service-dependency",
+  "non-object-effect-service-type",
+  "schema-union-of-literals",
+  "scope-in-layer-effect",
+].map((rule) => [`effecttsgo/${rule}`, "off"] as const);
+
+/**
+ * `@effect/tsgo` rules this repository turns off. `any-unknown-in-error-context`:
+ * `unknown` is the correct error at a Promise seam and in generic helpers that
+ * accept any Effect; the tsgo default is also off.
+ */
+const effectOffRules = ["any-unknown-in-error-context"].map(
+  (rule) => [`effecttsgo/${rule}`, "off"] as const,
+);
 
 export default defineConfig({
   extends: [recommended],
@@ -111,7 +141,11 @@ export default defineConfig({
   jsPlugins: [join(import.meta.dirname, "oxlint-plugin-build.ts")],
   rules: {
     "zotlit-build/no-undeclared-env": "error",
-    ...Object.fromEntries(effectErrorRules),
+    "no-restricted-globals": ["error", dateGlobals],
+    "typescript/no-restricted-types": ["error", dateTypes],
+    ...Object.fromEntries(effectOptInRules),
+    ...Object.fromEntries(effectV3OnlyRules),
+    ...Object.fromEntries(effectOffRules),
     "typescript/no-non-null-assertion": "off",
     "typescript/no-explicit-any": "off",
     "typescript/ban-ts-comment": "off",
@@ -153,7 +187,7 @@ export default defineConfig({
     "no-restricted-imports": [
       "error",
       {
-        patterns: [parentImportPattern],
+        patterns: [parentImportPattern, datePattern],
         paths: [...itemQuerySchemaPaths, ...uniqueIdPaths],
       },
     ],
@@ -199,7 +233,7 @@ export default defineConfig({
         "no-restricted-imports": [
           "error",
           {
-            patterns: [parentImportPattern],
+            patterns: [parentImportPattern, datePattern],
             paths: uniqueIdPaths,
           },
         ],
@@ -212,7 +246,7 @@ export default defineConfig({
         "no-restricted-imports": [
           "error",
           {
-            patterns: [parentImportPattern],
+            patterns: [parentImportPattern, datePattern],
             paths: itemQuerySchemaPaths,
           },
         ],

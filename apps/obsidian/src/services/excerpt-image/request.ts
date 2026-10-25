@@ -1,3 +1,5 @@
+import { Cause, Data, Effect } from "effect";
+
 import {
   annotationTypeToName,
   parseAnnotationPosition,
@@ -14,7 +16,6 @@ import type {
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 
-import { Cause, Data, Effect } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import type {

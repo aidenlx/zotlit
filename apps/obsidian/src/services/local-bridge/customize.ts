@@ -4,10 +4,10 @@
 //
 // The sheet itself is a port (`confirmLaunch`), so the decision this module
 // makes is testable apart from the modal that renders it.
+import { Effect, Stream } from "effect";
 import type { App, TFile } from "obsidian";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
-import { Effect, Stream } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";

@@ -6,6 +6,7 @@ import { holdScopeWhileFocused } from "@/lib/focus-scope";
 import type { FocusScope } from "@/lib/focus-scope";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { modalAnswer } from "@/lib/modal-answer";
 import { BaseNotice } from "@/lib/notice";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
@@ -70,12 +71,14 @@ export function chooseLiteratureNoteProfile(
   const profiles = "previews" in profilesOrOptions ? [] : profilesOrOptions;
   const selectedOptions =
     "previews" in profilesOrOptions ? profilesOrOptions : options;
-  return new Promise((resolve) => {
-    new LiteratureNoteProfileModal(app, profiles, {
+  return modalAnswer<LiteratureNoteProfileChoice | undefined>((resolve) => {
+    const modal = new LiteratureNoteProfileModal(app, profiles, {
       resolve,
       ...selectedOptions,
       preselected: selectedOptions.preselected ?? DEFAULT_PROFILE,
-    }).open();
+    });
+    modal.open();
+    return modal;
   });
 }
 

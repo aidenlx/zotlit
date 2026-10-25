@@ -1,10 +1,10 @@
 // Installed Native Pandoc Workflow files and its focused CLI reference.
 
+import { Effect, Schema } from "effect";
 import type { CliData } from "obsidian";
 
 import type { CliCommandHandler } from "@/lib/cli-command";
 import { decodeCliParams, noCliParams, rejectionText } from "@/lib/cli-params";
-import { Effect } from "@/lib/effect";
 
 import { CONTRACT_VERSION } from "./contract";
 import {
@@ -65,14 +65,32 @@ export function createPandocIntegrationHandlers(
   };
 }
 
+/**
+ * A parameter-free command got a parameter. `message` is the rejection's text,
+ * hint included, which the CLI prints; `cause` holds the rejection.
+ */
+export class PandocParamsRejected extends Schema.TaggedError<
+  PandocParamsRejected,
+  { readonly brand: unique symbol }
+>()("PandocParamsRejected", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
 /** Fails with the rejection's text, hint included, which the CLI prints. */
 function assertNoParameters(
   command: string,
   params: CliData,
-): Effect.Effect<void, TypeError> {
+): Effect.Effect<void, PandocParamsRejected> {
   return decodeCliParams(params, noCliParams, { command }).pipe(
     Effect.asVoid,
-    Effect.mapError((rejection) => new TypeError(rejectionText(rejection))),
+    Effect.mapError(
+      (rejection) =>
+        new PandocParamsRejected({
+          message: rejectionText(rejection),
+          cause: rejection,
+        }),
+    ),
   );
 }
 

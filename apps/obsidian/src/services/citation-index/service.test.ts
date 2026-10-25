@@ -1,12 +1,12 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
 import type { CachedMetadata } from "obsidian";
 import { afterEach, describe, expect } from "vitest";
 
 import { effectTestParse } from "@/lib/__fixtures__/parse-client";
-import { Effect } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { buildSeededSettings } from "@/services/settings/__fixtures__";
@@ -619,6 +619,54 @@ describe("CitationIndex", () => {
       ]);
       expect(vault.bodies.has("draft.md")).toBe(false);
     }),
+  );
+
+  // Obsidian fires a metadata cache event and a vault event in one tick; the
+  // index takes them in that order, though they come from two sources.
+  it.effect(
+    "indexes a change and a rename made in one tick under the new path",
+    () =>
+      Effect.promise(async () => {
+        const { draft, index, metadataCache, vault } = await makeHarness({
+          "draft.md": "As @doe2024 wrote.",
+        });
+        await citationsOf(index, draft);
+
+        metadataCache.change(draft, "As @roe2025 wrote.");
+        vault.rename(draft, "Notes/paper.md");
+
+        await expect
+          .poll(() =>
+            [...index.citationsByPath(["citekey"])].map(([path, found]) => [
+              path,
+              found.map(({ raw }) => raw),
+            ]),
+          )
+          .toEqual([["Notes/paper.md", ["roe2025"]]]);
+      }),
+  );
+
+  it.effect(
+    "indexes a rename and a change made in one tick under the new path",
+    () =>
+      Effect.promise(async () => {
+        const { draft, index, metadataCache, vault } = await makeHarness({
+          "draft.md": "As @doe2024 wrote.",
+        });
+        await citationsOf(index, draft);
+
+        vault.rename(draft, "Notes/paper.md");
+        metadataCache.change(draft, "As @roe2025 wrote.");
+
+        await expect
+          .poll(() =>
+            [...index.citationsByPath(["citekey"])].map(([path, found]) => [
+              path,
+              found.map(({ raw }) => raw),
+            ]),
+          )
+          .toEqual([["Notes/paper.md", ["roe2025"]]]);
+      }),
   );
 
   it.effect("drops a deleted document", () =>

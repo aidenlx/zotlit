@@ -1,15 +1,20 @@
 // A Release service built from its layer over fake settings and App.
+import { Context, Effect, Layer } from "effect";
+import type { Scope } from "effect";
 import { TFile, TFolder } from "obsidian";
 import type { App } from "obsidian";
 import { vi } from "vitest";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Context, Effect, Layer } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { layerVaultFrom } from "@/lib/obsidian-vault";
+import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import type { HydrationOrigin } from "@/services/settings/classify";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -34,21 +39,17 @@ export function releaseApp(
     file.name = name;
     return file;
   });
-  let ready: (() => void) | undefined;
+  const workspace = new MemoryWorkspace();
   const app = {
-    workspace: {
-      onLayoutReady: (callback: () => void) => {
-        ready = callback;
-      },
-    },
+    workspace,
     internalPlugins: { getEnabledPluginById: () => null },
-    vault: {
+    vault: MemoryVault.with({
       getFolderByPath: (path: string) => (path === folderPath ? folder : null),
-    },
+    }),
   } as unknown as App;
   return {
     app,
-    layoutReady: () => ready?.(),
+    layoutReady: () => workspace.layoutReady(),
   };
 }
 
@@ -127,6 +128,9 @@ function releaseLayer(options: ReleaseFixtureOptions) {
     Layer.provide(
       Layer.mergeAll(
         Layer.succeed(ObsidianApp, options.app),
+        layerVaultFrom(options.app.vault),
+        layerWorkspaceFrom(options.app.workspace),
+        testNotifier().layer,
         Layer.succeed(PluginSettings, settings),
       ),
     ),

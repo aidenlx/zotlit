@@ -1,9 +1,11 @@
+import { it } from "@effect/vitest";
+import { Context, Effect, Fiber, Layer, Queue, Stream } from "effect";
 import { RpcGroup, RpcServer, RpcWorker } from "effect/rpc";
 import { TestClock } from "effect/testing";
 import { expect, vi } from "vitest";
 
-import { Context, Effect, Fiber, Layer, Queue, Stream } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
+import { testObsidianEnv } from "@/lib/__fixtures__/obsidian-env";
+import { ObsidianEnv } from "@/lib/obsidian-env";
 import {
   ChineseSegmenter,
   CHINESE_SEGMENTER,
@@ -141,6 +143,7 @@ it.effect("starts the worker with the loaded profile data directory", () =>
           Effect.provideService(PluginSettings, worker.settings),
           Effect.provideService(ZoteroPref, f.pref),
           Effect.provideService(ChineseSegmenter, worker.chineseSegmenter),
+          Effect.provideService(ObsidianEnv, testObsidianEnv()),
         ),
       ),
       Effect.forkChild,
@@ -166,13 +169,13 @@ it.effect(
     Effect.gen(function* () {
       const worker = yield* workerFixture();
       const f = yield* zoteroPrefFixture();
-      const opening = yield* workerClient()
-        .pipe(
-          Effect.provideService(PluginSettings, worker.settings),
-          Effect.provideService(ZoteroPref, f.pref),
-          Effect.provideService(ChineseSegmenter, worker.chineseSegmenter),
-        )
-        .pipe(Effect.forkChild);
+      const opening = yield* workerClient().pipe(
+        Effect.provideService(PluginSettings, worker.settings),
+        Effect.provideService(ZoteroPref, f.pref),
+        Effect.provideService(ChineseSegmenter, worker.chineseSegmenter),
+        Effect.provideService(ObsidianEnv, testObsidianEnv()),
+        Effect.forkChild,
+      );
       const spawned = yield* Queue.take(worker.spawned);
       yield* f.pref.setDataDir("/changed-during-connect");
       spawned.start();
@@ -194,6 +197,7 @@ it.effect(
         Effect.provideService(PluginSettings, worker.settings),
         Effect.provideService(ZoteroPref, f.pref),
         Effect.provideService(ChineseSegmenter, worker.chineseSegmenter),
+        Effect.provideService(ObsidianEnv, testObsidianEnv()),
         Effect.forkChild,
       );
       (yield* Queue.take(worker.spawned)).start();

@@ -1,9 +1,9 @@
+import { it } from "@effect/vitest";
+import { Stream } from "effect";
+import { Effect } from "effect";
 import { expect, vi } from "vitest";
 
-import { Stream } from "@/lib/effect";
-import { Effect } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import { layerRcRef } from "@/services/zotero-reads/connection";
 import {
   inProcessClient,
@@ -76,7 +76,7 @@ it.effect("all adapter methods remain safe after whole-runtime disposal", () =>
     const rows = f.plain.libraryRows;
     const listener = vi.fn();
     subscribe(f.runtime, Stream.drop(f.plain.changes, 1), listener);
-    yield* Effect.promise(f.close);
+    yield* Effect.promise(() => f.close());
     expect(f.plain.current).toBe(before);
     expect(f.plain.libraries).toEqual(before?.available);
     expect(f.plain.libraryRows).toBeNull();

@@ -8,6 +8,7 @@
 // @see apps/obsidian/docs/adr/0072-the-library-tree-writes-filters.md
 // @see apps/obsidian/docs/adr/0076-recent-is-a-library-tree-node-that-writes-a-sort.md
 // @see apps/obsidian/docs/adr/0078-the-tag-selector-writes-tag-filters.md
+import { Effect } from "effect";
 import { Component } from "obsidian";
 import type { IconName } from "obsidian";
 import { Fragment } from "react";
@@ -22,7 +23,6 @@ import { useUniqueId } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
-import { Effect } from "@/lib/effect";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";

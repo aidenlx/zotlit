@@ -1,5 +1,6 @@
 import { Menu } from "@mock/obsidian";
 import type { ItemView as MockItemView } from "@mock/obsidian";
+import { Effect, Stream } from "effect";
 // @vitest-environment happy-dom
 import type { App, EventRef, TFile, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
@@ -14,7 +15,6 @@ import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 import { createRenderScheduler } from "@zotlit/workbench/ui";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Effect, Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { yieldToMain } from "@/lib/yield-to-main";
 import { pickItem } from "@/services/item-lookup/search-modal";

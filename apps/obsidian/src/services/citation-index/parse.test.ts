@@ -1,12 +1,12 @@
+import { it } from "@effect/vitest";
+import { Stream } from "effect";
+import { Effect, Layer, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
 import { effectTestParse } from "@/lib/__fixtures__/parse-client";
-import { Stream } from "@/lib/effect";
-import { Effect, Layer, Scope } from "@/lib/effect";
 import { openScope } from "@/lib/effect-scope";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import { ParseFailed, ParseWorkerDied } from "@/services/citation-parse/client";
 import type {
   ParseReply,
@@ -676,7 +676,7 @@ async function recoveringClient(connect: () => PromiseParseConnection) {
       }),
     ).pipe(Scope.provide(scope)),
   );
-  await Effect.runPromiseWith(context)(client.start());
+  await Effect.runPromiseWith(context)(client.start);
   return {
     client: {
       parse: (request: ParseRequest) =>

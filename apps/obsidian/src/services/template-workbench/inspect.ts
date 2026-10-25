@@ -1,4 +1,6 @@
 // Resolve saved authoring inputs and prove which exact bytes reconciliation observed.
+import { Clock, Duration, Effect, Schema } from "effect";
+import type { Scope } from "effect";
 import { createHash } from "node:crypto";
 import { basename, join } from "node:path/posix";
 import { MarkdownView } from "obsidian";
@@ -21,8 +23,6 @@ import {
   amendRejection,
 } from "@/lib/cli-params";
 import type { CliOutput, CliParamName } from "@/lib/cli-params";
-import { Clock, Duration, Effect, Schema } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
@@ -108,11 +108,8 @@ export const verifySavedSources = Effect.fn(
         Effect.as({ state, versions, ...(errors.length ? { errors } : {}) }),
       );
     const read = (path: string) =>
-      Effect.tryPromise({
-        try: () => deps.read(path),
-        catch: (error) => error,
-      }).pipe(
-        Effect.catch((error) => {
+      Effect.tryPromise(() => deps.read(path)).pipe(
+        Effect.catch(({ cause: error }) => {
           if (!isErrno(error, "ENOENT")) {
             errors.push({
               path,
@@ -124,10 +121,12 @@ export const verifySavedSources = Effect.fn(
                 : {}),
             });
           }
-          return Effect.succeed(undefined);
+          return Effect.void;
         }),
       );
-    const readAll = Effect.forEach(paths, read, { concurrency: "unbounded" });
+    const readAll = Effect.forEach(paths, (path) => read(path), {
+      concurrency: "unbounded",
+    });
     const requested = yield* readAll;
     while (true) {
       const changed = wake.promise;

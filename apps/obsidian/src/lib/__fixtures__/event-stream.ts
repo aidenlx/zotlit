@@ -1,5 +1,5 @@
-import { Effect, Queue, Stream } from "@/lib/effect";
-import type { Cause, Fiber } from "@/lib/effect";
+import { Effect, Queue, Stream } from "effect";
+import type { Cause, Fiber } from "effect";
 
 /** A controlled event source at a consumer fixture's Stream boundary. */
 export function testEvent<A>() {

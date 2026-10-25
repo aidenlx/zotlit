@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { Keymap, MarkdownView, Platform } from "obsidian";
 import type {
   App,
@@ -11,7 +12,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Item } from "@zotlit/db";
 
 import { openAttachments } from "@/lib/attachment-open";
-import { Effect } from "@/lib/effect";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { resolveLiteratureNoteAttachments } from "@/services/attachment-open/actions";
 import type {

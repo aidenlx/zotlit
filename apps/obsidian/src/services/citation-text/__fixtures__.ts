@@ -1,9 +1,10 @@
+import { Context, Effect, Layer, PubSub, Stream } from "effect";
 import type { App } from "obsidian";
 
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import type { OpenDocuments } from "@/lib/open-documents";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { CitationLookupState } from "@/services/citation-index/lookup-service";
@@ -25,6 +26,7 @@ import type { RenderedCitation } from "@/services/pandoc/engine";
 import { inlineText } from "@/services/pandoc/inline-content";
 import { BibliographyRender } from "@/services/pandoc/render-cache";
 import type { BibliographyRenderEvent } from "@/services/pandoc/render-cache";
+import { renderFailure } from "@/services/pandoc/render-cache/__fixtures__";
 import type { PlainBibliographyRender } from "@/services/pandoc/render-cache/plain";
 import { Profile } from "@/services/profile/service";
 import type { ProfileReader } from "@/services/profile/service";
@@ -175,12 +177,15 @@ export function citationTextFixture(
     layerCitationText(deps.openDocuments).pipe(
       Layer.provide(
         Layer.mergeAll(
-          Layer.succeed(ObsidianApp, deps.app),
+          // A host without a workspace gets an empty in-memory one.
+          layerHostApp(
+            Object.assign({ workspace: new MemoryWorkspace() }, deps.app),
+          ),
           Layer.succeed(
             CitationIndex,
             stubService<CitationIndex["Service"]>("CitationIndex", {
-              getParsedDocument: (file, signal) =>
-                Effect.tryPromise(() =>
+              getParsedDocument: (file) =>
+                Effect.tryPromise((signal) =>
                   deps.citationIndex.getParsedDocument(file, signal),
                 ),
               changes: Stream.empty,
@@ -214,8 +219,7 @@ export function citationTextFixture(
           Layer.succeed(
             NoteIndex,
             stubService<NoteIndex["Service"]>("NoteIndex", {
-              whenIndexed: () =>
-                Effect.promise(() => deps.noteIndex.whenIndexed()),
+              whenIndexed: Effect.promise(() => deps.noteIndex.whenIndexed()),
               changes: Stream.merge(
                 deps.noteIndex.changed.pipe(
                   Stream.map((file): NoteIndexChange => ({
@@ -249,15 +253,23 @@ export function citationTextFixture(
                 vaultPresentation: deps.bibliographyRender.vaultPresentation,
                 missingStyle: null,
               })),
-              readCitations: (...args) =>
+              readCitations: (citations, items, options) =>
                 Effect.tryPromise({
-                  try: () => deps.bibliographyRender.readCitations(...args),
-                  catch: (error) => error,
+                  try: (signal) =>
+                    deps.bibliographyRender.readCitations(citations, items, {
+                      ...options,
+                      signal,
+                    }),
+                  catch: renderFailure,
                 }),
-              readBibliography: (...args) =>
+              readBibliography: (items, options) =>
                 Effect.tryPromise({
-                  try: () => deps.bibliographyRender.readBibliography(...args),
-                  catch: (error) => error,
+                  try: (signal) =>
+                    deps.bibliographyRender.readBibliography(items, {
+                      ...options,
+                      signal,
+                    }),
+                  catch: renderFailure,
                 }),
               changes: Stream.empty,
               events: deps.bibliographyRender.invalidated.pipe(
@@ -285,16 +297,9 @@ export function citationTextFixture(
                   }),
                 ];
               }),
-              ask: (key, fn) =>
-                Effect.tryPromise({
-                  try: () => queries.ask(key, fn),
-                  catch: (error) => error,
-                }),
-              read: (key, fn, signal) =>
-                Effect.tryPromise({
-                  try: () => queries.read(key, fn, signal),
-                  catch: (error) => error,
-                }),
+              ask: (key, fn) => Effect.promise(() => queries.ask(key, fn)),
+              read: (key, fn) =>
+                Effect.promise((signal) => queries.read(key, fn, signal)),
               peek: (key) => Effect.sync(() => queries.peek(key)),
               invalidate: (key) => Effect.sync(() => queries.invalidate(key)),
               watch: (prefix, on) =>

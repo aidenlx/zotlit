@@ -1,11 +1,23 @@
 // The Connection the ZoteroReads handlers borrow, and its RcRef-backed provider.
+import {
+  Context,
+  Duration,
+  Effect,
+  Layer,
+  Predicate,
+  RcRef,
+  Ref,
+  Schema,
+} from "effect";
+import type { Stream } from "effect";
+import type { Scope } from "effect";
+
 import { getZoteroDatabaseIdentity } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import { checkDatabaseLayout } from "@zotlit/db/item-query";
-
-import { Context, Duration, Effect, Layer, RcRef, Ref } from "@/lib/effect";
-import type { Stream } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
+import {
+  checkDatabaseLayout,
+  ItemQueryLayoutError,
+} from "@zotlit/db/item-query";
 
 import { makeChangeFeed } from "./change-feed";
 import { DbUnavailable } from "./rpc";
@@ -130,6 +142,19 @@ export function toDbUnavailable(cause: unknown): DbUnavailable {
 }
 
 /**
+ * The layout check threw for a reason other than a layout gap: the file is not
+ * a Zotero database, or a statement failed. `message` is the original's, which
+ * {@link toDbUnavailable} reads through `cause`.
+ */
+export class ClientValidationError extends Schema.TaggedError<
+  ClientValidationError,
+  { readonly brand: unique symbol }
+>()("ClientValidationError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
+/**
  * Prove a client reads as a Zotero database before it serves: its layout has
  * every table and column the readers need, so a copy that validates is a copy
  * Item Query reads. The layout read stays with the client, so the readers and
@@ -138,11 +163,19 @@ export function toDbUnavailable(cause: unknown): DbUnavailable {
  */
 export const validateClient = Effect.fnUntraced(function* (
   client: NodeDatabaseClient,
-): Effect.fn.Return<NodeDatabaseClient, Error> {
+): Effect.fn.Return<
+  NodeDatabaseClient,
+  ItemQueryLayoutError | ClientValidationError
+> {
   yield* Effect.try({
     try: () => checkDatabaseLayout(client),
     catch: (error) =>
-      error instanceof Error ? error : new Error(String(error)),
+      error instanceof ItemQueryLayoutError
+        ? error
+        : new ClientValidationError({
+            message: Error.isError(error) ? error.message : String(error),
+            cause: error,
+          }),
   }).pipe(Effect.tapError(() => closeClient(client)));
   return client;
 });
@@ -157,7 +190,9 @@ function openValidated(
     catch: toDbUnavailable,
   }).pipe(
     Effect.flatMap((client) =>
-      validateClient(client).pipe(Effect.mapError(toDbUnavailable)),
+      validateClient(client).pipe(
+        Effect.mapError((cause) => toDbUnavailable(cause)),
+      ),
     ),
   );
 }
@@ -193,7 +228,7 @@ export const makeClientRef = Effect.fnUntraced(function* (
   const ref = yield* RcRef.make({
     acquire: Effect.acquireRelease(
       Ref.getAndSet(staged, null).pipe(
-        Effect.flatMap((next) => (next ? Effect.succeed(next) : fallback)),
+        Effect.filterOrElse(Predicate.isNotNull, () => fallback),
       ),
       (open) => open.close,
     ),
@@ -277,7 +312,7 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
             serving: databaseGenerations.databaseFile(client),
           })),
         ),
-        Effect.map(bareClient),
+        Effect.map((client) => bareClient(client)),
         Effect.tap(() =>
           Effect.gen(function* () {
             const wasReady = (yield* Ref.get(status)).state === "ready";
@@ -351,8 +386,9 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
         changes,
         refresh,
         notifyExternalChange: Effect.ignore(refresh),
-        configure: (next) =>
+        configure: Effect.fn("Connection.configure")((next) =>
           Ref.set(config, next).pipe(Effect.andThen(Effect.ignore(refresh))),
+        ),
         databaseGeneration: databaseGenerations.databaseGeneration,
         databaseFile: databaseGenerations.databaseFile,
       });

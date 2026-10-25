@@ -1,8 +1,9 @@
+import { it } from "@effect/vitest";
+import { Effect, Exit, Scope, Stream } from "effect";
 import { describe, expect, it as plainIt, vi } from "vitest";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
-import { Effect, Exit, Scope, Stream } from "@/lib/effect";
-import { it } from "@/lib/effect-vitest";
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 
 import { libraryScopeInvalidNotice, watchLibraryScopeInvalid } from "./notices";
 import { DEFAULT_LIBRARY_SCOPE } from "./scope";
@@ -32,39 +33,40 @@ describe("watchLibraryScopeInvalid", () => {
   it.effect("warns once for a value that was already broken at the start", () =>
     Effect.gen(function* () {
       const scope = fakeScope(true);
-      const { showNotice } = yield* watch(scope);
+      const { notices } = yield* watch(scope);
 
       scope.set(true);
       scope.set(true);
 
-      expect(showNotice).toHaveBeenCalledOnce();
+      expect(notices).toHaveLength(1);
     }),
   );
 
   it.effect("stays quiet while the saved value is valid", () =>
     Effect.gen(function* () {
       const scope = fakeScope(false);
-      const { showNotice } = yield* watch(scope);
+      const { notices } = yield* watch(scope);
 
       scope.set(false);
 
-      expect(showNotice).not.toHaveBeenCalled();
+      expect(notices).toEqual([]);
     }),
   );
 
   it.effect("clears the notice on repair and arms the next break", () =>
     Effect.gen(function* () {
       const scope = fakeScope(false);
-      const { showNotice, hide } = yield* watch(scope);
+      const { notices } = yield* watch(scope);
 
       scope.set(true);
-      expect(showNotice).toHaveBeenCalledOnce();
+      expect(notices).toHaveLength(1);
 
       scope.set(false);
-      expect(hide).toHaveBeenCalledOnce();
+      expect(notices[0]?.hidden).toBe(true);
 
       scope.set(true);
-      expect(showNotice).toHaveBeenCalledTimes(2);
+      expect(notices).toHaveLength(2);
+      expect(notices[1]?.hidden).toBe(false);
     }),
   );
 
@@ -74,25 +76,29 @@ describe("watchLibraryScopeInvalid", () => {
       Effect.gen(function* () {
         const scope = fakeScope(true);
         const watched = yield* Scope.make();
-        const hide = vi.fn();
-        yield* watchLibraryScopeInvalid(scope.service, () => ({ hide })).pipe(
-          Scope.provide(watched),
-        );
+        const notifier = testNotifier();
+        yield* watchLibraryScopeInvalid(
+          scope.service,
+          invalidNotice(notifier),
+        ).pipe(Scope.provide(watched));
 
         yield* Scope.close(watched, Exit.void);
 
-        expect(hide).toHaveBeenCalledOnce();
+        expect(notifier.notices).toMatchObject([{ hidden: true }]);
         expect(scope.hasListener()).toBe(false);
       }),
   );
 });
 
+function invalidNotice(notifier: ReturnType<typeof testNotifier>) {
+  return notifier.service.show("Library scope is invalid", { duration: 0 });
+}
+
 function watch(scope: ReturnType<typeof fakeScope>) {
   return Effect.gen(function* () {
-    const hide = vi.fn();
-    const showNotice = vi.fn(() => ({ hide }));
-    yield* watchLibraryScopeInvalid(scope.service, showNotice);
-    return { showNotice, hide };
+    const notifier = testNotifier();
+    yield* watchLibraryScopeInvalid(scope.service, invalidNotice(notifier));
+    return { notices: notifier.notices };
   });
 }
 

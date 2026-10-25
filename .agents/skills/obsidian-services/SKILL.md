@@ -51,16 +51,16 @@ Use the source as the canonical reference. Do not copy service/container/plugin-
 
 New services are Effect services: a `Context.Service` tag and a scoped `Layer`, composed in `pluginLayer`. `buildServices` builds that graph first, as a `ManagedRuntime` from `buildRuntime` (`@/lib/effect-layer`), then the legacy container; disposing the runtime closes the graph after the last container service, so a container service never outlives a layer it uses. Settings and logging build below every other layer, so a service logs from its first line. `UseLedger` (`apps/obsidian/src/services/use-ledger/`) is the converted example; its `__fixtures__.ts` builds its layer over a fake App for tests.
 
-- Import Effect from `@/lib/effect`. Its run entry points carry the browser scheduler and the logger, and no graph service.
-- The tag shape is Effect-native: each method is an `Effect.fn("<Tag>.<method>")` generator returning an `Effect`. Events are Streams and state:
+- Import Effect from `effect`; the `effectEntry` Vite plugin (`apps/obsidian/scripts/effect-entry.ts`) resolves it to `src/lib/effect.ts`. Its run entry points carry the browser scheduler and the logger, and no graph service.
+- The tag shape is Effect-native: each method with arguments is `Effect.fn("<Tag>.<method>")`, a generator or a body that returns an `Effect` (`Effect.fnUntraced` on a per-message or per-item hot path; a test double stays a plain function). A member with no arguments is a `readonly` `Effect` value traced with `Effect.withSpan("<Tag>.<member>")`, and callers write `yield* service.refresh`, not `service.refresh()` (`effecttsgo/lazy-effect` reports a zero-argument method); its test double is an Effect value too. Events are Streams and state:
   - What others watch is a `SubscriptionRef`, exposed as `SubscriptionRef.changes(ref)`: it replays the current value and ends when the layer's finalizer runs `PubSub.shutdown(ref.pubsub)`. A stream that ends on a terminal state adds `Stream.takeUntil`.
   - A discrete occurrence is a `PubSub` exposed as a Stream.
   - A condition a late subscriber must still see (stopped, failed, finished) is state.
 - Export the layer beside the tag as `layer<Name>` (a function when it takes plain inputs).
 - Callers outside Effect hold the tag's service and the container's `bridge` (`EffectBridge`, `@/lib/effect-bridge`). `build.ts` reads the service once and injects it with `useValue` (`release: () => runtime.runSync(Release)`); consumers type their deps as `Pick<Release["Service"], …>` beside `Pick<EffectBridge, …>` and run each call through the bridge: `runSync`, `runPromise`, `runPromiseExit` (interrupted at unload, for a caller with its own closed answer), `subscribe(stream, callback)`. A fire-and-forget `void bridge.runPromise(…)` runs an Effect that cannot fail. The remaining `<service>/plain.ts` adapters are backlog that retires into the bridge (#1710); write no new one.
 - A large state machine may stay a plain class owned by its layer (`zotero-local-api/session.ts`): it publishes events through a callback the layer turns into Streams, and reaches other services through `scopedBridge`, the bridge over the layer's own Scope. A still-legacy consumer that needs the old synchronous surface gets a port over the tag and bridge (`zotero-local-api/port.ts`), made in `build.ts` for that consumer and inside `layerAnnotationRepository` for the repository's engine core.
-- A layer registers Obsidian events (`vault`, `metadataCache`, `workspace`, and one-shots such as `onLayoutReady`) through `obsidianEvents` (`@/lib/effect-obsidian-events`). Any other Obsidian callback a layer registers runs its Effect through a runner made from the layer's context: `const run = Effect.runSyncWith(yield* Effect.context<never>())`. It keeps the layer's services and Clock, which the bare entry points lack.
-- Obsidian's `App` is the `ObsidianApp` tag (`@/lib/obsidian-app`). Time is the Effect `Clock`; `instantClock` (`@/lib/effect-clock`) reads it as a `Temporal.Instant`.
+- A layer reads the events of an Obsidian source that has a capability tag from the tag: `forkEach(filterTag(metadata.changes, "changed"), …)` for `MetadataCache` (`@/lib/obsidian-metadata-cache`). A capability tag registers its listeners through `obsidianEventSource` (`@/lib/obsidian-event-source`); the pattern is in `apps/obsidian/policies/events.md` → Capability tags. A layer registers events from a source with no tag yet (`vault`, `workspace`, and one-shots such as `onLayoutReady`) through `obsidianEvents` (`@/lib/effect-obsidian-events`). Any other Obsidian callback a layer registers runs its Effect through a runner made from the layer's context: `const run = Effect.runSyncWith(yield* Effect.context<never>())`. It keeps the layer's services and Clock, which the bare entry points lack.
+- Obsidian's `App` is the `ObsidianApp` tag (`@/lib/obsidian-app`). Time is the Effect `Clock`, and dates in Effect code are `DateTime`; `@/lib/effect-clock` converts them to the `Temporal.Instant` of plain code (`toInstant`, `instantClock`).
 - Resources live on the layer's Scope: `Effect.acquireRelease`, `Effect.addFinalizer`, and `acquireDisposable` / `acquireAsyncDisposable` for a value from outside Effect (root `policies/resource-disposal.md` → Effect code).
 - Put a side effect behind a tag of its own when a test must replace it. `LogOutput` is the pattern: `layerLogging` drives LogTape through it, and its test supplies a fake whose work takes `TestClock` time.
 - An Effect service has no `ready`: the layer has finished building before anyone holds it. Consumers drop `ready` from their deps.
@@ -105,7 +105,7 @@ export class TimeService extends Service {
   ready = Promise.resolve();
 
   now(): number {
-    return Date.now();
+    return Temporal.Now.instant().epochMilliseconds;
   }
 }
 ```

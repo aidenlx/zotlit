@@ -1,8 +1,7 @@
 // A scoped, cloned protocol pair shared by the in-process RPC adapters.
+import { Effect, FiberSet, Queue, Schema } from "effect";
 import { RpcClient, RpcServer } from "effect/rpc";
 import type { RpcMessage, RpcSerialization } from "effect/rpc";
-
-import { Effect, FiberSet, Option, Queue, Schema } from "@/lib/effect";
 
 /** The server-side id of the one client the in-process pair serves. */
 const CLIENT_ID = 0;
@@ -39,7 +38,7 @@ export const makeInMemoryRpcProtocols = Effect.gen(function* () {
         Effect.suspend(() => toClient(structuredClone(response))),
       end: () => Effect.void,
       clientIds: Effect.succeed(new Set([CLIENT_ID])),
-      initialMessage: Effect.succeed(Option.none()),
+      initialMessage: Effect.succeedNone,
       supportsAck: true,
       supportsTransferables: false,
       supportsSpanPropagation: false,

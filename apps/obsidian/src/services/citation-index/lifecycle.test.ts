@@ -1,10 +1,10 @@
+import { it } from "@effect/vitest";
+import { Effect, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
 import { effectTestParse } from "@/lib/__fixtures__/parse-client";
-import { Effect, Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
 import type { CitationIndexState } from "./service";
@@ -403,7 +403,7 @@ it.effect(
         await put(record);
         if (record.path === "draft.md") written.resolve();
       };
-      const h = yield* Effect.acquireRelease(
+      const h = yield* Effect.acquireDisposable(
         Effect.promise(() =>
           createCitationIndexHarness(
             { ...documents, "draft.md": "@smith2021" },
@@ -418,7 +418,6 @@ it.effect(
             },
           ),
         ),
-        (h) => Effect.promise(() => h[Symbol.asyncDispose]()),
       );
       yield* TestClock.adjust("5 seconds");
       yield* Effect.promise(() => h.ready);

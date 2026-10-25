@@ -1,10 +1,15 @@
 /** The real bibliography layer over the dependency ports used by consumer fixtures. */
+import { Context, Effect, Layer, PubSub, Stream } from "effect";
+
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
+import { AbortError } from "@/lib/abort-error";
 import { buildRuntime } from "@/lib/effect-layer";
 import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
 import type { CitationEngine } from "@/services/pandoc/engine";
-import { layerBibliographyRender } from "@/services/pandoc/render-cache";
+import {
+  BibliographyRenderError,
+  layerBibliographyRender,
+} from "@/services/pandoc/render-cache";
 import { PandocEngine } from "@/services/pandoc/service";
 import type { PlainProfile } from "@/services/profile/plain";
 import { Profile } from "@/services/profile/service";
@@ -21,6 +26,22 @@ import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import { plainBibliographyRender } from "./plain";
+
+/**
+ * A render read's rejection as the real member fails: an abort and a
+ * {@link BibliographyRenderError} keep their identity, and any other rejection
+ * is the engine's, wrapped with its own message.
+ */
+export function renderFailure(
+  error: unknown,
+): BibliographyRenderError | DOMException {
+  if (error instanceof BibliographyRenderError || AbortError.test(error))
+    return error;
+  return new BibliographyRenderError({
+    message: Error.isError(error) ? error.message : String(error),
+    cause: error,
+  });
+}
 
 export interface BibliographyRenderFixtureOptions {
   profile: Pick<PlainProfile, "changed">;
@@ -95,16 +116,12 @@ export async function bibliographyRenderFixture(
               },
             });
           }),
-          ask: (key, fn) =>
-            Effect.tryPromise({
-              try: () => query.ask(key, fn),
-              catch: (error) => error,
-            }),
+          ask: (key, fn) => Effect.promise(() => query.ask(key, fn)),
           peek: (key) => Effect.sync(() => query.peek(key)),
-          readFresh: (key, fn, signal) =>
+          readFresh: (key, fn) =>
             Effect.tryPromise({
-              try: () => query.readFresh(key, fn, signal),
-              catch: (error) => error,
+              try: (signal) => query.readFresh(key, fn, signal),
+              catch: renderFailure,
             }),
           invalidate: (key) => Effect.sync(() => query.invalidate(key)),
         }),
@@ -134,8 +151,8 @@ export async function bibliographyRenderFixture(
         Layer.succeed(
           PandocEngine,
           stubService<PandocEngine["Service"]>("PandocEngine", {
-            getStatus: () => options.pandocEngine.binary.getStatus(),
-            getEngine: () => options.pandocEngine.binary.getEngine(),
+            getStatus: options.pandocEngine.binary.getStatus,
+            getEngine: options.pandocEngine.binary.getEngine,
             changes: options.pandocEngine.binary.changes,
           }),
         ),

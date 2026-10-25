@@ -1,6 +1,7 @@
 import { configureSync, resetSync } from "@logtape/logtape";
 import "@mock/dom-parser";
 import type { LogRecord } from "@logtape/logtape";
+import { Effect } from "effect";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,7 +20,6 @@ import { LOCAL_BRIDGE_PATHS } from "@zotlit/workbench/bridge";
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Effect } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { excerptAssetIdentities } from "@/services/excerpt-image/materialize";

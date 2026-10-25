@@ -135,7 +135,7 @@ export const logTapeLogger = Logger.make<unknown, void>(
   },
 );
 
-/** What every `@/lib/effect` entry point runs with to log through LogTape. */
+/** What every renderer Effect entry point runs with to log through LogTape. */
 export const logServices = Context.make(
   Logger.CurrentLoggers,
   new Set([logTapeLogger]),

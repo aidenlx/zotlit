@@ -4,10 +4,11 @@ import type {
   QueryFunction,
   QueryKey,
 } from "@tanstack/query-core";
+import { Effect } from "effect";
+import type { ManagedRuntime, Stream } from "effect";
 
-import { Cause, Effect, Exit } from "@/lib/effect";
-import type { ManagedRuntime, Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
+import { settleAtEdge } from "@/lib/signal-edge";
 
 import { QueryClients } from "./service";
 import type { Held, HeldReadChange, HeldReadEvents } from "./service";
@@ -46,16 +47,19 @@ export function plainQueryClients(
   const runSync = <T>(effect: Effect.Effect<T>, released: () => T): T =>
     bridge.closed() ? released() : bridge.runSync(effect);
   // Runtime disposal interrupts callers before closing the layer. Preserve
-  // the plain read contract for that release, as for a removed query.
+  // the plain read contract for that release, as for a removed query. The
+  // caller's signal interrupts the read's wait and rejects with its reason.
   const runRead = async <T>(
     effect: Effect.Effect<T, unknown>,
     released: () => T,
+    signal?: AbortSignal,
   ) => {
     if (bridge.closed()) return released();
-    const exit = await bridge.runPromiseExit(effect);
-    if (Exit.isSuccess(exit)) return exit.value;
-    if (exit.cause.reasons.every(Cause.isInterruptReason)) return released();
-    throw Cause.squash(exit.cause);
+    const exit = await bridge.runPromiseExit(
+      effect,
+      signal === undefined ? undefined : { signal },
+    );
+    return settleAtEdge(exit, signal, released);
   };
   return {
     client: queries.client,
@@ -65,11 +69,15 @@ export function plainQueryClients(
     peek: (key) => runSync(queries.peek(key), () => null),
     ask: (key, queryFn) => runRead(queries.ask(key, queryFn), () => null),
     read: (key, queryFn, signal) =>
-      runRead(queries.read(key, queryFn, signal), () => null),
+      runRead(queries.read(key, queryFn), () => null, signal),
     readFresh: (key, queryFn, signal) =>
-      runRead(queries.readFresh(key, queryFn, signal), () => {
-        throw new DOMException("Held read released", "AbortError");
-      }),
+      runRead(
+        queries.readFresh(key, queryFn),
+        () => {
+          throw new DOMException("Held read released", "AbortError");
+        },
+        signal,
+      ),
     watch: (prefix, on) => runSync(queries.watch(prefix, on), () => () => {}),
     changes: queries.changes,
   };

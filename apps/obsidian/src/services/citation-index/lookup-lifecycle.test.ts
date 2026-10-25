@@ -1,9 +1,9 @@
+import { it } from "@effect/vitest";
+import { Context, Deferred, Effect, Fiber, Layer, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
-import { Context, Deferred, Effect, Fiber, Layer, Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import { layerLibraryScope } from "@/services/library-scope/service";
 import { layerQueryClients } from "@/services/query-client/service";
 import { layerPluginSettings } from "@/services/settings/service";
@@ -91,7 +91,7 @@ it.effect(
         await expect.poll(() => view.current?.status).toBe("fresh");
       });
       const status = f.plain.status;
-      yield* Effect.promise(f.close);
+      yield* Effect.promise(() => f.close());
       expect(view.current).toBeNull();
       view.set({ citekeys: ["second"] });
       expect(view.current).toBeNull();
@@ -155,7 +155,7 @@ it.effect(
         revision: null,
       });
       yield* TestClock.adjust("1 second");
-      yield* f.service.whenResolved();
+      yield* f.service.whenResolved;
       expect(yield* Stream.runHead(f.service.changes)).toMatchObject({
         value: { status: "fresh", revision: expect.any(String) },
       });
@@ -207,7 +207,7 @@ it.effect(
       const events = yield* Stream.runDrain(f.service.invalidated).pipe(
         Effect.forkChild,
       );
-      yield* Effect.promise(f.close);
+      yield* Effect.promise(() => f.close());
       yield* Deferred.await(interrupted);
       yield* Effect.promise(() => rejected);
       yield* Effect.promise(() => waiting);

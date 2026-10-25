@@ -1,28 +1,31 @@
-import type { App, TFile } from "obsidian";
-
-import { isIndexedKey } from "@zotlit/db";
-
-import { registerEvent } from "@/lib/disposables";
 import {
-  Clock,
   Context,
+  DateTime,
   Effect,
   Layer,
   Option,
   PubSub,
   Schema,
   SubscriptionRef,
-} from "@/lib/effect";
-import type { Stream } from "@/lib/effect";
+} from "effect";
+import type { Stream } from "effect";
+import type { App, TFile } from "obsidian";
+
+import { isIndexedKey } from "@zotlit/db";
+
+import { parseInstant, toInstant } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
+import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import { Workspace } from "@/lib/obsidian-workspace";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 
 const UseKind = Schema.Literals(["opened", "read", "cited"]);
 export type UseKind = typeof UseKind.Type;
 
 export interface Use {
-  readonly instant: Temporal.Instant;
+  readonly instant: DateTime.Utc;
   readonly kind: UseKind;
 }
 
@@ -49,7 +52,7 @@ export class UseLedger extends Context.Service<
     record(
       itemKey: string,
       kind: UseKind,
-      instant?: Temporal.Instant,
+      instant?: DateTime.Utc,
     ): Effect.Effect<Use>;
     /** Keep a Companion update's own navigation outside the Use timeline. */
     withoutNoteUse<A, E, R>(
@@ -65,25 +68,25 @@ export class UseLedger extends Context.Service<
  */
 const makeUseLedger = Effect.gen(function* () {
   const app = yield* ObsidianApp;
+  const metadata = yield* MetadataCache;
+  const workspace = yield* Workspace;
   const ledger = yield* SubscriptionRef.make(newest(yield* readSaved(app)));
   const excludedOpens = new Map<TFile, number>();
   let closed = false;
 
-  const now = Effect.map(Clock.currentTimeMillis, (millis) =>
-    Temporal.Instant.fromEpochMilliseconds(millis),
-  );
+  const now = DateTime.now;
   const current = SubscriptionRef.get(ledger);
 
   const record = Effect.fn("UseLedger.record")(function* (
     itemKey: string,
     kind: UseKind,
-    instant?: Temporal.Instant,
+    instant?: DateTime.Utc,
   ) {
     const use: Use = Object.freeze({ instant: instant ?? (yield* now), kind });
     if (closed || !isIndexedKey(itemKey)) return use;
     const before = yield* current;
     const previous = before[itemKey];
-    if (previous && Temporal.Instant.compare(previous.instant, use.instant) > 0)
+    if (previous && DateTime.isGreaterThan(previous.instant, use.instant))
       return use;
     const next = newest({ ...before, [itemKey]: use });
     app.saveLocalStorage(
@@ -91,7 +94,8 @@ const makeUseLedger = Effect.gen(function* () {
       Object.fromEntries(
         Object.entries(next).map(([key, entry]) => [
           key,
-          { instant: entry.instant.toString(), kind: entry.kind },
+          // Temporal's ISO form, the bytes the ledger has always saved.
+          { instant: toInstant(entry.instant).toString(), kind: entry.kind },
         ]),
       ),
     );
@@ -99,50 +103,43 @@ const makeUseLedger = Effect.gen(function* () {
     return use;
   });
 
-  // Obsidian's callbacks run outside Effect; they run with the layer's own
-  // services, its Clock among them.
-  const run = Effect.runSyncWith(yield* Effect.context<never>());
-  const { workspace, metadataCache } = app;
   let enabled = false;
-  let pending: { file: TFile; instant: Temporal.Instant } | null = null;
-  workspace.onLayoutReady(() => {
-    if (closed) return;
-    enabled = true;
-  });
-  yield* Effect.acquireDisposable(
-    Effect.sync(() =>
-      registerEvent(
-        workspace.on("file-open", (file) => {
-          if (!enabled || closed) return;
-          pending = null;
-          if (!file || file.extension !== "md" || excludedOpens.has(file))
-            return;
-          const instant = run(now);
-          const cache = metadataCache.getFileCache(file);
-          const key = itemKeyFromFrontmatter(cache);
-          if (key) run(record(key, "opened", instant));
-          else if (!cache) pending = { file, instant };
-        }),
-      ),
+  let pending: { file: TFile; instant: DateTime.Utc } | null = null;
+  yield* workspace.layoutReady.pipe(
+    Effect.andThen(
+      Effect.sync(() => {
+        if (!closed) enabled = true;
+      }),
     ),
+    Effect.forkScoped({ startImmediately: true }),
   );
-  yield* Effect.acquireDisposable(
-    Effect.sync(() =>
-      registerEvent(
-        metadataCache.on("changed", (file, _text, cache) => {
-          if (
-            !pending ||
-            pending.file !== file ||
-            workspace.getActiveFile() !== file
-          )
-            return;
-          const { instant } = pending;
-          pending = null;
-          const key = itemKeyFromFrontmatter(cache);
-          if (key) run(record(key, "opened", instant));
-        }),
-      ),
-    ),
+  // Each `file-open` counts, from `changes`, which does not replay: the file
+  // active when the ledger builds is not an open. forkEach hands each over
+  // inside Obsidian's callback, so an open the flush below delivers lands
+  // inside or outside an operation's scope as it happened.
+  yield* forkEach(
+    filterTag(workspace.changes, "file-open"),
+    Effect.fnUntraced(function* ({ file }) {
+      if (!enabled || closed) return;
+      pending = null;
+      if (!file || file.extension !== "md" || excludedOpens.has(file)) return;
+      const instant = yield* now;
+      const cache = yield* metadata.fileCache(file);
+      const key = itemKeyFromFrontmatter(cache);
+      if (key) yield* record(key, "opened", instant);
+      else if (!cache) pending = { file, instant };
+    }),
+  );
+  yield* forkEach(
+    filterTag(metadata.changes, "changed"),
+    Effect.fnUntraced(function* ({ file, cache }) {
+      if (!pending || pending.file !== file) return;
+      if ((yield* workspace.getActiveFile) !== file) return;
+      const { instant } = pending;
+      pending = null;
+      const key = itemKeyFromFrontmatter(cache);
+      if (key) yield* record(key, "opened", instant);
+    }),
   );
   // Runs first on close: a Use recorded during teardown is not kept.
   yield* Effect.addFinalizer(() =>
@@ -153,22 +150,24 @@ const makeUseLedger = Effect.gen(function* () {
 
   // Obsidian defers file-open: deliver a pending open, so it lands inside or
   // outside an operation's scope as it happened.
-  const flush = () => workspace.requestActiveLeafEvents.run();
+  const flush = () => app.workspace.requestActiveLeafEvents.run();
 
   return UseLedger.of({
     current,
     changes: SubscriptionRef.changes(ledger),
-    get: (itemKey) => Effect.map(current, (entries) => entries[itemKey]),
+    get: Effect.fn("UseLedger.get")((itemKey) =>
+      Effect.map(current, (entries) => entries[itemKey]),
+    ),
     uses: Effect.map(current, (entries) =>
       Object.fromEntries(
         Object.entries(entries).map(([key, use]) => [
           key,
-          use.instant.epochMilliseconds,
+          DateTime.toEpochMillis(use.instant),
         ]),
       ),
     ),
     record,
-    withoutNoteUse: (file, open) =>
+    withoutNoteUse: Effect.fn("UseLedger.withoutNoteUse")((file, open) =>
       Effect.acquireUseRelease(
         Effect.sync(() => {
           flush();
@@ -186,24 +185,25 @@ const makeUseLedger = Effect.gen(function* () {
             }
           }),
       ),
+    ),
   });
 }).pipe(withLogCategory("use-ledger"));
 
-export const layerUseLedger: Layer.Layer<UseLedger, never, ObsidianApp> =
-  Layer.effect(UseLedger, makeUseLedger);
+export const layerUseLedger: Layer.Layer<
+  UseLedger,
+  never,
+  ObsidianApp | MetadataCache | Workspace
+> = Layer.effect(UseLedger, makeUseLedger);
 
 /**
  * The Uses saved for this vault, or none when they cannot be read: the ledger
  * builds during plugin load, so a failed read must not stop the plugin.
  */
 function readSaved(app: App): Effect.Effect<Record<string, Use>> {
-  return Effect.try({
-    try: () => loadUses(app.loadLocalStorage(STORAGE_KEY)),
-    catch: (error) => error,
-  }).pipe(
+  return Effect.try(() => loadUses(app.loadLocalStorage(STORAGE_KEY))).pipe(
     Effect.catch((error) =>
       Effect.logWarning("Could not read the saved Uses; starting empty").pipe(
-        Effect.annotateLogs({ error }),
+        Effect.annotateLogs({ error: error.cause }),
         Effect.as({}),
       ),
     ),
@@ -224,26 +224,18 @@ function loadUses(raw: unknown): Record<string, Use> {
   for (const [key, value] of Object.entries(saved)) {
     if (!isIndexedKey(key)) continue;
     const entry = Option.getOrUndefined(decodeEntry(value));
-    const instant = entry && parseInstant(entry.instant);
+    const instant = entry && Option.getOrUndefined(parseInstant(entry.instant));
     if (entry && instant)
       loaded[key] = Object.freeze({ instant, kind: entry.kind });
   }
   return loaded;
 }
 
-function parseInstant(text: string): Temporal.Instant | undefined {
-  try {
-    return Temporal.Instant.from(text);
-  } catch {
-    return undefined;
-  }
-}
-
 function newest(entries: Ledger): Ledger {
   return Object.freeze(
     Object.fromEntries(
       Object.entries(entries)
-        .sort(([, a], [, b]) => Temporal.Instant.compare(b.instant, a.instant))
+        .sort(([, a], [, b]) => DateTime.Order(b.instant, a.instant))
         .slice(0, CAPACITY),
     ),
   );

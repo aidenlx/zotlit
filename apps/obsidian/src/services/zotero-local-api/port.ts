@@ -51,11 +51,11 @@ export function localApiPort(
   bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">,
 ): LocalApiPort {
   return {
-    demandSource: () => bridge.runSync(api.demandSource()),
+    demandSource: () => bridge.runSync(api.demandSource),
     get state() {
       return bridge.runSync(api.state);
     },
-    probe: () => bridge.runPromise(api.probe()),
+    probe: () => bridge.runPromise(api.probe),
     writeStateFor: (attachmentKey) =>
       bridge.runSync(api.writeStateFor(attachmentKey)),
     authorize: (signal) => bridge.runPromise(api.authorize(signal)),

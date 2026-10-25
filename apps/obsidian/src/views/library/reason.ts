@@ -3,7 +3,8 @@ import type { LastActivitySource } from "@zotlit/item-query";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
 import type { QueryViewValue } from "@/services/item-query/query-view";
-import type { Use, UseKind } from "@/services/use-ledger/service";
+import type { PlainUse as Use } from "@/services/use-ledger/plain";
+import type { UseKind } from "@/services/use-ledger/service";
 
 export const RECENT_REASON_FIELDS = [
   "lastActivity",

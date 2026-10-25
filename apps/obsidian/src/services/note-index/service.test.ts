@@ -1,9 +1,9 @@
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import type { App, CachedMetadata, TFile } from "obsidian";
 import { describe, expect } from "vitest";
 
-import { Effect } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
-import { it } from "@/lib/effect-vitest";
 import type { ProfileId } from "@/lib/profile-stamp";
 
 import { makeHarness, startup, cache, paths, makeFile } from "./__fixtures__";
@@ -59,6 +59,123 @@ it.effect(
 );
 
 describe("NoteIndex", () => {
+  // Obsidian fires a metadata cache event and a vault event in one tick; the
+  // index takes them in that order, though they come from two sources.
+  it.effect(
+    "keeps Obsidian's order of a metadata change and a vault rename in one tick",
+    () =>
+      Effect.gen(function* () {
+        const { service, vault, metadataCache } = yield* makeHarness(
+          { "draft.md": {} },
+          { enabledAtRuntime: true },
+        );
+        const changes: string[] = [];
+        subscribe(service.runtime, service["changed"], (file) =>
+          changes.push(`changed ${file.path}`),
+        );
+        subscribe(service.runtime, service["frontmatter-changed"], (file) =>
+          changes.push(`frontmatter ${file.path}`),
+        );
+
+        const file = vault.files.get("draft.md")!;
+        metadataCache.change(file, cache({ itemKey: ITEM_A }));
+        vault.renameFile("draft.md", "paper.md");
+        yield* Effect.promise(() => service.whenSettled());
+
+        // The change lands first, while the note is still at its old path;
+        // the rename then moves a note that is already a Literature Note.
+        expect(changes).toEqual([
+          "changed draft.md",
+          "frontmatter draft.md",
+          "changed paper.md",
+        ]);
+        expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
+      }),
+  );
+
+  it.effect(
+    "keeps Obsidian's order of a vault rename and a metadata change in one tick",
+    () =>
+      Effect.gen(function* () {
+        const { service, vault, metadataCache } = yield* makeHarness(
+          { "draft.md": {} },
+          { enabledAtRuntime: true },
+        );
+        const changes: string[] = [];
+        subscribe(service.runtime, service["changed"], (file) =>
+          changes.push(`changed ${file.path}`),
+        );
+        subscribe(service.runtime, service["frontmatter-changed"], (file) =>
+          changes.push(`frontmatter ${file.path}`),
+        );
+
+        const file = vault.renameFile("draft.md", "paper.md");
+        metadataCache.change(file, cache({ itemKey: ITEM_A }));
+        yield* Effect.promise(() => service.whenSettled());
+
+        // The rename lands first and moves a note with no keys, so it says
+        // nothing; the change then makes it a Literature Note at its new path.
+        expect(changes).toEqual(["changed paper.md", "frontmatter paper.md"]);
+        expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
+      }),
+  );
+
+  it.effect(
+    "drops a note once for a vault delete and the cache's deleted in one tick",
+    () =>
+      Effect.gen(function* () {
+        const { service, vault, metadataCache } = yield* makeHarness(
+          { "paper.md": cache({ itemKey: ITEM_A }) },
+          { enabledAtRuntime: true },
+        );
+        const changes: string[] = [];
+        subscribe(service.runtime, service["changed"], (file) =>
+          changes.push(file.path),
+        );
+
+        const file = vault.files.get("paper.md")!;
+        vault.deleteFile("paper.md");
+        metadataCache.delete(file);
+        yield* Effect.promise(() => service.whenSettled());
+
+        expect(changes).toEqual(["paper.md"]);
+        expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
+      }),
+  );
+
+  // Layout-ready comes from the Workspace tag and the change from the
+  // MetadataCache tag; the index still takes them in Obsidian's order.
+  it.effect(
+    "keeps Obsidian's order of layout-ready and a metadata change in one tick",
+    () =>
+      Effect.gen(function* () {
+        const { service, vault, metadataCache, workspace } = yield* makeHarness(
+          { "paper.md": cache({ itemKey: ITEM_A }) },
+          { enabledAtRuntime: false },
+        );
+        metadataCache.watchVault(vault);
+        metadataCache.resolve();
+        const changes: string[] = [];
+        subscribe(service.runtime, service["indexed"], () =>
+          changes.push("indexed"),
+        );
+        subscribe(service.runtime, service["frontmatter-changed"], (file) =>
+          changes.push(`frontmatter ${file.path}`),
+        );
+
+        const file = vault.files.get("paper.md")!;
+        workspace.layoutReady();
+        metadataCache.change(file, cache({ itemKey: ITEM_B }));
+        yield* Effect.promise(() => service.whenSettled());
+
+        // The Full Scan runs first and indexes the old key; the change then
+        // moves the note to the new key.
+        expect(changes).toEqual(["indexed", "frontmatter paper.md"]);
+        expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
+        expect(paths(service.getNotesByItemKey(ITEM_B))).toEqual(["paper.md"]);
+      }),
+  );
+
   it.effect("runs the Full Scan at once when enabled at runtime", () =>
     Effect.gen(function* () {
       const { service } = yield* makeHarness(
@@ -363,31 +480,6 @@ describe("NoteIndex", () => {
       expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
       expect(paths(service.getNotesByItemKey(ITEM_B))).toEqual(["paper.md"]);
     }),
-  );
-
-  it.effect(
-    "scans once on resolved when the build has no clean-cache hook",
-    () =>
-      Effect.gen(function* () {
-        const { service, metadataCache, workspace, vault } = yield* makeHarness(
-          { "paper.md": cache({ itemKey: ITEM_A }) },
-          { cleanCacheHook: false },
-        );
-        const gate = service.whenIndexed();
-
-        metadataCache.watchVault(vault);
-        workspace.ready();
-        expect(service.getIndexedItemKeys()).toEqual([]);
-        metadataCache.resolve();
-
-        yield* Effect.promise(() => expect(gate).resolves.toBeUndefined());
-        expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
-
-        // A later `resolved` finds no listener: the silent swap stays unseen.
-        metadataCache.setCache("paper.md", cache({ itemKey: ITEM_B }));
-        metadataCache.resolve();
-        expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
-      }),
   );
 
   it.effect(
