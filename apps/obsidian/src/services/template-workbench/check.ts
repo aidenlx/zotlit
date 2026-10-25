@@ -352,12 +352,18 @@ const disclosure = {
 const notInLookup = cliNotApplicable(ATTEMPT_LOOKUP_MESSAGE);
 
 /** The parameters an attempt lookup takes; {@link notInLookup} rejects the rest. */
-const LOOKUP_PARAMETERS = new Set(["attempt", "output", "evidence"]);
+const LOOKUP_PARAMETERS = new Set(["attempt", ...Object.keys(disclosure)]);
 
-/** Whether `rejection` is {@link notInLookup}'s: a lookup given another parameter. */
+/**
+ * Whether `rejection` is {@link notInLookup}'s: a lookup whose decode refused a
+ * parameter it does not take. A token no check takes, or an empty value, is
+ * refused before the decode and carries no `issue`.
+ */
 function isNotInLookup(cliData: CliData, rejection: CliRejection): boolean {
   return (
-    cliData.attempt !== undefined && !LOOKUP_PARAMETERS.has(rejection.parameter)
+    cliData.attempt !== undefined &&
+    rejection.issue !== undefined &&
+    !LOOKUP_PARAMETERS.has(rejection.parameter)
   );
 }
 

@@ -282,6 +282,7 @@ async function harness(
   const deps: NoteFeatureDeps = {
     app,
     vault: vaultOver(app.vault as unknown as VaultSource),
+    fileManager: { renameFile: () => Effect.void },
     bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
     zoteroReads,
     query,

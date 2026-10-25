@@ -45,6 +45,7 @@ import {
   readLiveText,
 } from "@/lib/live-text";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { FileManager } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
 import { profileRevision } from "@/lib/profile-revision";
 import {
@@ -248,6 +249,8 @@ interface ProfileEngineDeps {
   readText(file: TFile): Promise<string>;
   /** Creates each Profile document; a taken path fails as `FileExists`. */
   vault: Pick<Vault["Service"], "create">;
+  /** Moves a note on Profile delete; a taken path fails as `FileExists`. */
+  fileManager: Pick<FileManager["Service"], "renameFile">;
   /** Runs an Effect on the layer's context; a failure rejects with its error. */
   runPromise<A, E>(effect: Effect.Effect<A, E>): Promise<A>;
   changed(): void;
@@ -1051,7 +1054,9 @@ class ProfileEngine {
     for (const { file, path } of destination?.files ?? []) {
       if (options.move && path !== file.path) {
         await ensureParentFolder(app, path);
-        await app.fileManager.renameFile(file, path);
+        await this.#deps.runPromise(
+          this.#deps.fileManager.renameFile(file, path),
+        );
         movedFiles++;
       }
       await processLiveFrontMatter(app, file, (frontmatter) => {
@@ -1452,6 +1457,7 @@ export const layerProfile = Layer.effect(
   Effect.gen(function* () {
     const app = yield* ObsidianApp;
     const vault = yield* Vault;
+    const fileManager = yield* FileManager;
     const settings = yield* PluginSettings;
     const template = yield* Template;
     const noteIndex = yield* NoteIndex;
@@ -1497,6 +1503,7 @@ export const layerProfile = Layer.effect(
     const engine = new ProfileEngine({
       app,
       vault,
+      fileManager,
       runPromise: Effect.runPromiseWith(context),
       readText: (file) =>
         preflight(attemptPromise(() => readLiveText(app, file))),

@@ -139,7 +139,6 @@ export default defineConfig({
       excludeFiles: ["src/**/*.test.{ts,tsx}"],
       rules: { "zotlit-errors/no-message-match": "error" },
     },
-
     {
       // Tests and the LogTape bridge and sink owners may use LogTape directly.
       files: [

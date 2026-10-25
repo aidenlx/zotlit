@@ -16,6 +16,7 @@ import {
   layerFileManager,
   layerFileManagerFrom,
 } from "@/lib/obsidian-file-manager";
+import { layerVault, layerVaultFrom } from "@/lib/obsidian-vault";
 import { VaultError } from "@/lib/vault-errors";
 
 import { MemoryFileManager } from "./__fixtures__/obsidian-file-manager";
@@ -30,7 +31,9 @@ function file(path: string): TFile {
 
 const over = (source: MemoryFileManager, vault = new MemoryVault()) =>
   Effect.service(FileManager).pipe(
-    Effect.provide(layerFileManagerFrom(source, vault)),
+    Effect.provide(
+      layerFileManagerFrom(source).pipe(Layer.provide(layerVaultFrom(vault))),
+    ),
   );
 
 it.effect("changes a note's Properties through processFrontMatter", () =>
@@ -151,7 +154,8 @@ it.effect("reads the live layer's file manager from ObsidianApp", () =>
     const files = yield* Effect.service(FileManager).pipe(
       Effect.provide(
         layerFileManager.pipe(
-          Layer.provide(
+          Layer.provide(layerVault),
+          Layer.provideMerge(
             Layer.succeed(
               ObsidianApp,
               stubService<ObsidianApp["Service"]>("ObsidianApp", {

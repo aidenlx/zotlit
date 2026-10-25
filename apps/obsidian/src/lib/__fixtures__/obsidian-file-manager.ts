@@ -3,7 +3,15 @@
 // ./obsidian-host-app). It copies the shape of ./obsidian-metadata-cache.
 import type { TFile } from "obsidian";
 
-import type { FileManagerSource } from "@/lib/obsidian-file-manager";
+import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
+import { Effect } from "@/lib/effect";
+import { makeFileManager } from "@/lib/obsidian-file-manager";
+import type {
+  FileManager,
+  FileManagerSource,
+} from "@/lib/obsidian-file-manager";
+import { Vault } from "@/lib/obsidian-vault";
+import type { VaultSource } from "@/lib/obsidian-vault";
 
 /**
  * The Properties of a test vault's notes, by path, and the renames the code
@@ -58,4 +66,17 @@ export class MemoryFileManager implements FileManagerSource {
   ): string {
     return `[[${file.path}${subpath}${alias ? `|${alias}` : ""}]]`;
   }
+}
+
+/**
+ * The tag's service over `source`, deciding its outcomes from `vault`'s
+ * cache, for Promise code under test that takes the service as a dep.
+ */
+export function fileManagerOver(
+  source: FileManagerSource,
+  vault: VaultSource,
+): FileManager["Service"] {
+  return Effect.runSync(
+    makeFileManager(source).pipe(Effect.provideService(Vault, vaultOver(vault))),
+  );
 }

@@ -7,6 +7,7 @@ import { layerNotifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerObsidianEnv } from "@/lib/obsidian-env";
 import { layerFileManager } from "@/lib/obsidian-file-manager";
+import type { FileManager } from "@/lib/obsidian-file-manager";
 import { layerMetadataCache } from "@/lib/obsidian-metadata-cache";
 import { layerVault } from "@/lib/obsidian-vault";
 import type { Vault } from "@/lib/obsidian-vault";
@@ -133,13 +134,16 @@ export function pluginLayer(
   | Template
   | TemplateMigration
   | Vault
+  | FileManager
 > {
+  // The file manager decides its outcomes from the vault's cache.
+  const fileManager = layerFileManager.pipe(Layer.provide(layerVault));
   // What both halves read from Obsidian: the App, its environment, notices.
   const obsidian = Layer.mergeAll(
     layerNotifier,
     layerObsidianEnv,
     layerMetadataCache,
-    layerFileManager,
+    fileManager,
     layerWorkspace,
     layerVault,
   ).pipe(Layer.provideMerge(Layer.succeed(ObsidianApp, plugin.app)));
@@ -212,8 +216,8 @@ export function pluginLayer(
         layerZoteroHttpNode.pipe(startingAs("ZoteroHttp")),
       ),
     ),
-    // The legacy note writers create through the Vault tag (`build.ts`).
-    Layer.provideMerge(layerVault),
+    // The legacy note writers create and move through the tags (`build.ts`).
+    Layer.provideMerge(Layer.mergeAll(layerVault, fileManager)),
     Layer.provide(obsidian),
     Layer.provideMerge(
       layerLogging.pipe(

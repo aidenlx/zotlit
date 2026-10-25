@@ -309,7 +309,7 @@ export interface CreateNoteOptions {
 
 interface CreateNoteInternalOptions extends CreateNoteOptions {
   onFileCreated?: (file: TFile) => void;
-  preparedPath?: { path: string; canSuffix: boolean };
+  preparedPath?: { path: string };
 }
 
 /**
@@ -693,7 +693,7 @@ async function prepareCreationPreviews(
     { profile, document, reserved }: (typeof profiles)[number],
   ): PreparedCreationProfile => {
     const { selector } = profile;
-    let preparedPath: { path: string; canSuffix: boolean } | undefined;
+    let preparedPath: { path: string } | undefined;
     let unavailable: string | undefined;
     try {
       if (document === null)
@@ -1353,7 +1353,7 @@ async function switchNoteProfile(
   const move = options.move && targetPath !== previousPath;
   if (move) {
     await ensureParentFolder(ctx.app, targetPath);
-    await ctx.app.fileManager.renameFile(file, targetPath);
+    await ctx.bridge.runPromise(ctx.fileManager.renameFile(file, targetPath));
   }
   try {
     await stampNoteFamily(
@@ -1364,7 +1364,9 @@ async function switchNoteProfile(
   } catch (error) {
     if (move) {
       try {
-        await ctx.app.fileManager.renameFile(file, previousPath);
+        await ctx.bridge.runPromise(
+          ctx.fileManager.renameFile(file, previousPath),
+        );
       } catch (rollbackError) {
         throw new AggregateError(
           [error, rollbackError],

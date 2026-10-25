@@ -56,6 +56,7 @@ import {
 } from "@zotlit/templates/obsidian";
 import type { ItemFields } from "@zotlit/zotero-types";
 
+import { fileManagerOver } from "@/lib/__fixtures__/obsidian-file-manager";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import type { ObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
@@ -68,6 +69,7 @@ import {
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { parseFrontMatter } from "@/lib/live-text";
+import type { FileManagerSource } from "@/lib/obsidian-file-manager";
 import type { VaultSource } from "@/lib/obsidian-vault";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type {
@@ -105,12 +107,26 @@ import {
 } from "@/services/zotero-reads/test-utils";
 
 import type { NoteFeatureDeps } from "./context";
-/** The note feature's deps, with the fixture database its reads serve. */
+/**
+ * The note feature's deps, with the fixture database its reads serve. The
+ * host's file manager also renames: the FileManager tag runs over it.
+ */
 type TestDeps = Omit<
   NoteFeatureDeps,
-  "bridge" | "profile" | "query" | "vault"
+  "bridge" | "profile" | "query" | "vault" | "fileManager" | "app"
 > &
-  Partial<Pick<NoteFeatureDeps, "bridge" | "profile" | "query" | "vault">> & {
+  Partial<
+    Pick<
+      NoteFeatureDeps,
+      "bridge" | "profile" | "query" | "vault" | "fileManager"
+    >
+  > & {
+    app: NoteFeatureDeps["app"] & {
+      fileManager: Pick<
+        FileManagerSource,
+        "generateMarkdownLink" | "renameFile"
+      >;
+    };
     db: { client: NodeDatabaseClient };
   };
 import { createNoteFeature as createFeature } from "./operations";
@@ -119,6 +135,12 @@ function createNoteFeature(deps: TestDeps) {
     ...deps,
     // The tag over the test host's vault, so a create sees its cache.
     vault: deps.vault ?? vaultOver(deps.app.vault as unknown as VaultSource),
+    fileManager:
+      deps.fileManager ??
+      fileManagerOver(
+        deps.app.fileManager as FileManagerSource,
+        deps.app.vault as unknown as VaultSource,
+      ),
     bridge: deps.bridge ?? {
       runSync: Effect.runSync,
       runPromise: Effect.runPromise,

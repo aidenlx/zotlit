@@ -51,20 +51,6 @@ describe("resolveFreeNotePath", () => {
     expect(rel).toMatch(/^smith2020_[A-Za-z0-9]{6}$/);
   });
 
-  it("forces a suffix even when the base name is free", () => {
-    const rel = resolveFreeNotePath(
-      `smith2020${filenameSuffix(6)}`,
-      existsIn([]),
-      true,
-    );
-    expect(rel).toMatch(/^smith2020_[A-Za-z0-9]{6}$/);
-  });
-
-  it("returns the base name under forceSuffix when there is no marker", () => {
-    const rel = resolveFreeNotePath("smith2020", existsIn([]), true);
-    expect(rel).toBe("smith2020");
-  });
-
   it("retries until it finds a free suffixed path", () => {
     const exists = vi
       .fn<(rel: string) => boolean>()

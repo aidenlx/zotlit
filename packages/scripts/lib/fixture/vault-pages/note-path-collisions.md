@@ -138,6 +138,13 @@ Expected on Linux: the import writes the Profile at the path the sheet named.
 
 ## Cases this page does not run
 
+- **A previewed Literature Note path taken before the create.** When another
+  note lands at the path a creation preview showed, after the preview and
+  before the create, the create fails with "File already exists.". Earlier
+  builds tried a new suffix. It is a race between the preview and the
+  create, which a tester cannot time by hand. A note-feature test covers it
+  (`operations.test.ts`, "keeps the preview's random suffix and refuses when
+  another file takes that path").
 - **Eject the Default beside a file that differs only in case.** The outcome
   did not change: with `templates/Zotlit-profile.default.md` in place, the
   eject fails on macOS and Windows, as it did before.

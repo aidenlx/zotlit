@@ -105,6 +105,7 @@ async function realCreate(
     },
     bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
     vault: vaultOver(host.vault as unknown as VaultSource),
+    fileManager: { renameFile: () => Effect.void },
     attachmentImport: {
       prepare: async () => ({
         decide: (path: string, origin: string) => ({

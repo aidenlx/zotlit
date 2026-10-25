@@ -20,10 +20,11 @@ export function layerHostApp(
 ): Layer.Layer<
   ObsidianApp | MetadataCache | FileManager | Vault | Workspace
 > {
+  const vault = layerVaultFrom(app.vault);
   return Layer.mergeAll(
     layerMetadataCacheFrom(app.metadataCache),
-    layerFileManagerFrom(app.fileManager, app.vault),
-    layerVaultFrom(app.vault),
+    layerFileManagerFrom(app.fileManager).pipe(Layer.provide(vault)),
+    vault,
     layerWorkspaceFrom(app.workspace),
   ).pipe(Layer.provideMerge(Layer.succeed(ObsidianApp, app)));
 }
