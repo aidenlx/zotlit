@@ -74,7 +74,7 @@ Every changed line traces to the user's request. Leave adjacent code, comments, 
 
 ## Speculative robustness
 
-Spend complexity on failures that happen. Before you add a guard, retry, lock or check for a race or security edge case that is speculative or very unlikely, tell the user the concrete failure, how likely it is and what the guard costs in complexity, and build it once they agree. Keep the task's scope to what was asked.
+Spend complexity on failures that happen. Before you add a guard, retry, lock or check for a race or security edge case that is speculative or very unlikely, tell the user the concrete failure, how likely it is and what the guard costs in complexity, and build it once they agree. A guard of this kind that is already in code you touch stays in place: report where it is, its failure, likelihood and cost, and the user decides. Keep the task's scope to what was asked.
 
 ## i18n
 
