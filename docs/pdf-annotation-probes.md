@@ -6,7 +6,7 @@ This record names the twenty probes that guard PDF annotation editing, tells you
 
 **The seam probes (P1 to P11)** are ZotLit's own structural guards. Obsidian's PDF reader exposes no public API for the members the overlay needs, so ZotLit checks each member before it uses it. The guards are in `apps/obsidian/src/services/pdf-annotation-editor/seam.ts`; `PDF_SEAM_MEMBERS` names the member each probe guards. They run once per binding at runtime, not in a test suite. A pass writes a `PDF reader seam probe passed` debug record. A miss writes the warning `PDF reader seam probe failed; ZotLit's PDF reader surfaces stay off for this view`, and `PdfSeamProbeLog.ok` then gates the reader surfaces alone. The annotation repository, the attachment resolver, and the Annotation View never read it, so a changed seam costs the reader its overlay and nothing more.
 
-**The transport probes (P1 to P9)** answer one question: can Obsidian's `requestUrl()` carry the Zotero Local API write state machine? The project answered no and rejected that transport. Production calls the Zotero Local API over the Node HTTP transport in `apps/obsidian/src/lib/node-fetch.ts`, which sends no `Origin`, no user agent, and reads no proxy variable. The probes still matter, because each one establishes a fact about the wire that the production transport also depends on: the shape of a `401`, the shape of a network failure, the `204` round trip, header case, the `file:` redirect, and the absence of a timeout. Each probe below was therefore run on both transports wherever the finding can differ.
+**The transport probes (P1 to P9)** answer one question: can Obsidian's `requestUrl()` carry the Zotero Local API write state machine? The project answered no and rejected that transport. Production calls the Zotero Local API over the Node HTTP transport in `apps/obsidian/src/lib/zotero-http-node.ts` (the `ZoteroHttp` client on `@effect/platform-node`), which sends no `Origin`, no user agent, and reads no proxy variable. The probes still matter, because each one establishes a fact about the wire that the production transport also depends on: the shape of a `401`, the shape of a network failure, the `204` round trip, header case, the `file:` redirect, and the absence of a timeout. Each probe below was therefore run on both transports wherever the finding can differ.
 
 ## The versions this record is against
 
@@ -123,7 +123,7 @@ The two P9 caveats: `net.request` through `@electron/remote` carries the same Ch
 
 3. Run the seam probes by opening `attachments/rougier-2014.pdf` in the Development Vault with the log level at **debug**, then reading the eleven `PDF reader seam probe passed` records in the developer console. Read the same verdicts as data from the binding's `probes` getter.
 
-4. Run the transport probes from the developer console of the same window for the `requestUrl` half, and from `require("http")` in that console for the Node half. That is the same stack `nodeFetch` uses. Drive the Zotero half over RDP with `packages/scripts/scripts/zotero-rdp.ts --port <rdp-port>`.
+4. Run the transport probes from the developer console of the same window for the `requestUrl` half, and from `require("http")` in that console for the Node half. That is the same stack the `ZoteroHttp` client uses. Drive the Zotero half over RDP with `packages/scripts/scripts/zotero-rdp.ts --port <rdp-port>`.
 
 5. Rebuild the Fixture afterwards with `pnpm fixture`. A probe run leaves seeded annotations behind.
 

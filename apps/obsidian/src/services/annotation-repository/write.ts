@@ -10,6 +10,7 @@ import type {
 } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
+import type { ZoteroMethod } from "@/lib/zotero-http";
 import type { LocalApiFailure } from "@/services/zotero-local-api/service";
 import type { WireTag } from "@/services/zotero-local-api/wire";
 
@@ -154,7 +155,7 @@ export interface WriteTarget {
 /** One request, as the Zotero Local API client's authorized seam takes it. */
 export interface WriteRequest {
   path: string;
-  method: string;
+  method: ZoteroMethod;
   headers?: Readonly<Record<string, string>>;
   body?: string;
 }
