@@ -7,11 +7,11 @@ export function testPluginData(initial: unknown = null) {
   const store = { current: initial, saved: [] as unknown[] };
   const service = PluginData.of({
     load: Effect.sync(() => structuredClone(store.current)),
-    save: Effect.fn("PluginData.save")((data) =>
+    save: (data) =>
       Effect.sync(() => {
         store.current = structuredClone(data);
         store.saved.push(store.current);
-      })),
+      }),
   });
   return { store, service, layer: Layer.succeed(PluginData, service) };
 }

@@ -162,7 +162,7 @@ it.effect("drives download, store, and consent Effects with TestClock", () =>
       }).pipe(
         Layer.provide(
           Layer.succeed(ManagedBinaryPlatform, {
-            openStore: Effect.fn("ManagedBinaryPlatform.openStore")(() =>
+            openStore: () =>
               Effect.succeed({
                 list: () => Effect.sync(() => [...files.keys()]),
                 read: (name: string) =>
@@ -186,10 +186,7 @@ it.effect("drives download, store, and consent Effects with TestClock", () =>
                   }),
                 clear: () => Effect.sync(() => files.clear()),
               }),
-            ),
-            download: Effect.fn("ManagedBinaryPlatform.download")(() =>
-              Effect.sleep("1 second").pipe(Effect.as(BYTES)),
-            ),
+            download: () => Effect.sleep("1 second").pipe(Effect.as(BYTES)),
             consent: {
               loadLocalStorage: () => Effect.sync(() => consent),
               saveLocalStorage: (_key: string, value: unknown) =>

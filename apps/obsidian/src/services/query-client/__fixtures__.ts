@@ -49,9 +49,7 @@ export function buildQueryClients(
               currentTimeNanos: Effect.sync(() => now().epochNanoseconds),
               monotonicTimeNanosUnsafe: () => clock.monotonicTimeNanosUnsafe(),
               monotonicTimeNanos: clock.monotonicTimeNanos,
-              sleep: Effect.fn("Clock.Clock.sleep")((duration) =>
-                clock.sleep(duration),
-              ),
+              sleep: (duration) => clock.sleep(duration),
               currentTimeMillisUnsafe: () => now().epochMilliseconds,
               currentTimeMillis: Effect.sync(() => now().epochMilliseconds),
             }),

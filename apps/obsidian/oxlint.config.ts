@@ -242,6 +242,18 @@ export default defineConfig({
       ],
       rules: { "zotlit-services/obsidian-capabilities": "error" },
     },
+    // A test double needs no span: service methods are Effect.fn in the plugin
+    // code only.
+    {
+      files: [
+        "**/*.test.*",
+        "**/*.bench.ts",
+        "**/*.browser-test.ts",
+        "**/__fixtures__/**",
+        "**/__fixtures__.ts",
+      ],
+      rules: { "effecttsgo/effect-fn-opportunity": "off" },
+    },
     // Capability backlog: files that import Effect and still reach the App,
     // grouped by what blocks the change. A file moves off its list when it
     // takes Obsidian from the capability tags.

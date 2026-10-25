@@ -2153,10 +2153,7 @@ describe("ZoteroReads SearchItems", () => {
       // A source that rebinds without a new client, as for a locale-only change.
       const quiet = Layer.effect(Connection)(
         Effect.map(Effect.service(Connection), (base) =>
-          Connection.of({
-            ...base,
-            configure: Effect.fn("Connection.configure")(() => Effect.void),
-          }),
+          Connection.of({ ...base, configure: () => Effect.void }),
         ),
       ).pipe(Layer.provide(layerRcRef(open)));
       const config = (locale: string | null): ReadsConfig => ({
@@ -2259,10 +2256,7 @@ describe("ZoteroReads SearchItems", () => {
       const { open, ran } = fixtureOpener(() => CHINESE_TITLE);
       const quiet = Layer.effect(Connection)(
         Effect.map(Effect.service(Connection), (base) =>
-          Connection.of({
-            ...base,
-            configure: Effect.fn("Connection.configure")(() => Effect.void),
-          }),
+          Connection.of({ ...base, configure: () => Effect.void }),
         ),
       ).pipe(Layer.provide(layerRcRef(open)));
       return Effect.gen(function* () {

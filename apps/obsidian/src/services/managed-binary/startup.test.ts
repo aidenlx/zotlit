@@ -47,19 +47,17 @@ for (const declined of [false, true]) {
           Layer.provide(
             Layer.succeed(ManagedBinaryPlatform, {
               ...ports,
-              openStore: Effect.fn("ManagedBinaryPlatform.openStore")(
-                (directory) =>
-                  ports.openStore(directory).pipe(
-                    Effect.map((store) => ({
-                      ...store,
-                      list: () =>
-                        Queue.offer(started, directory).pipe(
-                          Effect.andThen(Deferred.await(result)),
-                          Effect.as(device.names(directory)),
-                        ),
-                    })),
-                  ),
-              ),
+              openStore: (directory) =>
+                ports.openStore(directory).pipe(
+                  Effect.map((store) => ({
+                    ...store,
+                    list: () =>
+                      Queue.offer(started, directory).pipe(
+                        Effect.andThen(Deferred.await(result)),
+                        Effect.as(device.names(directory)),
+                      ),
+                  })),
+                ),
             }),
           ),
         );
