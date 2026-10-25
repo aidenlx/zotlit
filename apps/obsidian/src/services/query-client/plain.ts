@@ -4,10 +4,11 @@ import type {
   QueryFunction,
   QueryKey,
 } from "@tanstack/query-core";
-import { Cause, Effect, Exit } from "effect";
+import { Effect } from "effect";
 import type { ManagedRuntime, Stream } from "effect";
 
 import { effectBridge } from "@/lib/effect-bridge";
+import { settleAtEdge } from "@/lib/signal-edge";
 
 import { QueryClients } from "./service";
 import type { Held, HeldReadChange, HeldReadEvents } from "./service";
@@ -58,11 +59,7 @@ export function plainQueryClients(
       effect,
       signal === undefined ? undefined : { signal },
     );
-    if (Exit.isSuccess(exit)) return exit.value;
-    if (signal?.aborted && Cause.hasInterruptsOnly(exit.cause))
-      throw signal.reason;
-    if (exit.cause.reasons.every(Cause.isInterruptReason)) return released();
-    throw Cause.squash(exit.cause);
+    return settleAtEdge(exit, signal, released);
   };
   return {
     client: queries.client,

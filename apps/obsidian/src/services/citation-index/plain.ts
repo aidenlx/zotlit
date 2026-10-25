@@ -4,6 +4,7 @@ import type { ManagedRuntime } from "effect";
 import type { TFile } from "obsidian";
 
 import { effectBridge } from "@/lib/effect-bridge";
+import { settleAtEdge } from "@/lib/signal-edge";
 
 import type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 import {
@@ -102,14 +103,12 @@ export function plainCitationIndex(
           effect,
           signal === undefined ? undefined : { signal },
         );
+    // A call interrupted by unload reads the released service's terminal state.
     if (
-      signal?.aborted &&
+      !signal?.aborted &&
       Exit.isFailure(exit) &&
       Cause.hasInterruptsOnly(exit.cause)
-    )
-      throw signal.reason;
-    // A call interrupted by unload reads the released service's terminal state.
-    if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) {
+    ) {
       await bridge.runPromise(
         Stream.runHead(
           service.changes.pipe(Stream.filter((state) => state.stopped)),
@@ -117,9 +116,12 @@ export function plainCitationIndex(
       );
       exit = await bridge.runPromise(Effect.exit(effect));
     }
-    if (Exit.isSuccess(exit)) return exit.value;
-    const error = Cause.squash(exit.cause);
-    throw Cause.isUnknownError(error) ? error.cause : error;
+    return settleAtEdge(
+      Exit.mapError(exit, (error) =>
+        Cause.isUnknownError(error) ? error.cause : error,
+      ),
+      signal,
+    );
   }
   return {
     get coverage() {

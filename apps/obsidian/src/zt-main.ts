@@ -308,11 +308,15 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     // Clear the temp residue of crashed runs before any service adds more.
     // Fire-and-forget: a launch never waits on housekeeping, and unloading
     // mid-sweep aborts it. Each producer owns what its own residue is, and
-    // each reap reports its own failures rather than raising them.
-    const reapAbort = stack.use(new DisposableAbortController());
-    void reapReadClones({ signal: reapAbort.signal });
-    void reapCslStore({ signal: reapAbort.signal });
-    void reapExcerptTemps({ signal: reapAbort.signal });
+    // each reap reports its own failures rather than raising them. A reap the
+    // abort ends rejects with its reason, which unload means to ignore.
+    const { signal: reapSignal } = stack.use(new DisposableAbortController());
+    const ignoreReapAbort = (error: unknown) => {
+      if (error !== reapSignal.reason) throw error;
+    };
+    void reapReadClones({ signal: reapSignal }).catch(ignoreReapAbort);
+    void reapCslStore({ signal: reapSignal }).catch(ignoreReapAbort);
+    void reapExcerptTemps({ signal: reapSignal }).catch(ignoreReapAbort);
 
     const { services } = await buildServices(this, stack).catch(
       reportStartupFailure,

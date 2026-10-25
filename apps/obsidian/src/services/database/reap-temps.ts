@@ -1,10 +1,11 @@
 // What counts as a stale database read clone, next to the code that makes one.
 
-import { Cause, Effect, Exit } from "effect";
+import { Effect } from "effect";
 import { tmpdir } from "node:os";
 
 import { ZOTERO_DB_READ_TEMP_PREFIX } from "@/lib/constants";
 import { isErrno, systemCallError } from "@/lib/errno";
+import { settleAtEdge } from "@/lib/signal-edge";
 import { sweepTempDirectoryEffect } from "@/lib/temp-sweep";
 import type { PlainReapTempsOptions, ReapTempsOptions } from "@/lib/temp-sweep";
 
@@ -30,19 +31,18 @@ export const reapReadClonesEffect = Effect.fnUntraced(function* ({
 
 /**
  * Run the launch sweep through the existing Promise-shaped lifecycle call. An
- * abort of `signal` interrupts the sweep, which then resolves quietly.
+ * abort of `signal` interrupts the sweep, which then rejects with the
+ * signal's reason.
  */
 export async function reapReadClones({
   signal,
   ...options
 }: PlainReapTempsOptions = {}): Promise<void> {
-  if (signal?.aborted) return;
   const exit = await Effect.runPromiseExit(
     reapReadClonesEffect(options),
     signal === undefined ? undefined : { signal },
   );
-  if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
-    throw Cause.squash(exit.cause);
+  settleAtEdge(exit, signal);
 }
 
 /**
