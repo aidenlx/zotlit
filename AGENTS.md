@@ -72,6 +72,10 @@ Write reports to the user in ASD-STE100 Simplified Technical English.
 
 Every changed line traces to the user's request. Leave adjacent code, comments, and formatting as found. Remove only the orphans your own changes created; mention pre-existing dead code, don't delete it.
 
+## Speculative robustness
+
+Spend complexity on failures that happen. Before you add a guard, retry, lock or check for a race or security edge case that is speculative or very unlikely, tell the user the concrete failure, how likely it is and what the guard costs in complexity, and build it once they agree. A guard of this kind that is already in code you touch stays in place: report where it is, its failure, likelihood and cost, and the user decides. Keep the task's scope to what was asked.
+
 ## i18n
 
 User-facing strings are sourced from `messages/{locale}.json` and consumed through the generated Language Pack facade; ZotLit Companion copy lives in the same catalogs under the `zotero` object and compiles to Fluent at Companion build time. Run `/inlang-i18n` for message-format and runtime mechanics. Wording follows Obsidian's developer-guideline style (sentence case, terminology, phrasing) — run `/i18n-ui-text` before authoring or editing a string.
@@ -122,7 +126,11 @@ Multi-context layout — `GLOSSARY-MAP.md` at the repo root points to per-worksp
 
 Build a new Obsidian service as an Effect service: a `Context.Service` tag and a scoped `Layer` that joins the plugin's Layer graph. Legacy `Service` classes keep their shape until converted, and hook into the graph through a bridge layer. Run `/obsidian-services` before creating, converting, or wiring a service.
 
-Effect's API evolves between versions and may differ from your training data. Resolve the `effect` package from the relevant workspace. Read `AGENTS.md` inside the installed package before writing Effect code; follow its linked examples for the area being changed. Search the installed source before adding helpers.
+### This is NOT the Effect you know
+
+This repo runs Effect v4. Its modules, names, and signatures differ from the Effect v2/v3 that most training data covers. Take every Effect API from the installed package, not from memory.
+
+Resolve the `effect` package from the workspace you change; for example, run `node -p "require.resolve('effect/package.json')"` from `apps/obsidian`. Read `AGENTS.md` inside that package first, then the topic folder of its `ai-docs/src/` for the area being changed, and confirm each signature in its `dist/**/*.d.ts`. Search the installed source before adding helpers. These docs match the installed version and are available without network access.
 
 <!-- BEGIN:turborepo-agent-rules -->
 

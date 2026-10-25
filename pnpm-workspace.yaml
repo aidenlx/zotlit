@@ -38,7 +38,7 @@ catalog:
   hono: ^4.13.0
   yaml: ^2.9.0
   "@effect/tsgo": 0.56.0
-  "@effect/vitest": 4.0.0
+  "@effect/vitest": 4.0.5
   "@logtape/logtape": ^2.0.7
   "@pnpm/find-workspace-dir": ^1000.1.5
   "@std/collections": jsr:1.2.0
@@ -61,7 +61,7 @@ catalog:
   eta: 4.6.0
   drizzle-kit: 1.0.0-rc.4
   drizzle-orm: 1.0.0-rc.4
-  effect: 4.0.0
+  effect: 4.0.5
   fflate: ^0.8.2
   jieba-wasm: 2.4.0
   monkey-around: 3.0.0
