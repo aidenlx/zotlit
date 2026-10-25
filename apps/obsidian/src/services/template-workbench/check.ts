@@ -1,7 +1,7 @@
 // Saved-source checking and attempt retention. Output flags only disclose completed work.
-import { Clock, Effect, Result, Schema } from "effect";
+import { Clock, Effect, FileSystem, Result, Schema } from "effect";
+import type { PlatformError } from "effect";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import type { CliData, CliFlag } from "obsidian";
 
@@ -235,7 +235,19 @@ export interface CheckDeps {
 }
 
 /** What a check reads: the inspection's services and the item data's. */
-export type CheckServices = InspectServices | TemplateDataServices;
+export type CheckServices =
+  | InspectServices
+  | TemplateDataServices
+  | FileSystem.FileSystem;
+
+/**
+ * The message of what the draft read threw, as Node's own `readFile` gave it:
+ * the CLI shows it in `DRAFT_READ_FAILED`.
+ */
+const draftReadMessage = (error: PlatformError.PlatformError): string =>
+  error.cause instanceof Error
+    ? error.cause.message
+    : (error.reason.description ?? error.message);
 
 /** A command's answer to the caller's parameters, over the services it reads. */
 type CheckHandler<R> = (params: CliData) => Effect.Effect<string, unknown, R>;
@@ -746,21 +758,21 @@ export function createCheckHandler(
         const input = { origin: "draft", path: params.draft, revision: null };
         sourceContext = { ...sourceContext, documentPath: params.draft };
         const path = params.draft;
+        const fs = yield* FileSystem.FileSystem;
         const read = yield* Effect.result(
-          Effect.tryPromise((signal) => {
-            if (!isAbsolute(path))
-              throw new Error("Use an absolute scratch-file path for draft.");
-            return readFile(path, { encoding: "utf8", signal });
-          }),
+          isAbsolute(path)
+            ? fs
+                .readFileString(path)
+                .pipe(Effect.mapError((error) => draftReadMessage(error)))
+            : Effect.fail("Use an absolute scratch-file path for draft."),
         );
         if (Result.isFailure(read)) {
-          const error = read.failure.cause;
           return finish(sourceContext, {
             ok: false,
             input,
             diagnostic: {
               code: "DRAFT_READ_FAILED",
-              message: error instanceof Error ? error.message : String(error),
+              message: read.failure,
               hint: "Write a complete Profile document to a readable scratch file and supply its absolute path as draft.",
             },
           });

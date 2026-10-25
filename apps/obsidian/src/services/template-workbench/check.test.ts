@@ -946,7 +946,19 @@ describe("registered template-check", () => {
         expect(yield* f.check({ draft: missing })).toMatchObject({
           ok: false,
           input: { origin: "draft", path: missing, revision: null },
-          diagnostic: { code: "DRAFT_READ_FAILED", hint: expect.any(String) },
+          diagnostic: {
+            code: "DRAFT_READ_FAILED",
+            // Node's own message for the failed read.
+            message: `ENOENT: no such file or directory, open '${missing}'`,
+            hint: expect.any(String),
+          },
+        });
+        expect(yield* f.check({ draft: "draft.md" })).toMatchObject({
+          ok: false,
+          diagnostic: {
+            code: "DRAFT_READ_FAILED",
+            message: "Use an absolute scratch-file path for draft.",
+          },
         });
       }),
   );
