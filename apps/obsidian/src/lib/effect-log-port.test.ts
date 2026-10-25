@@ -19,7 +19,6 @@ import { LogCategory, withLogCategory } from "./effect-log";
 import {
   layerHostLogPort,
   layerLibraryLogPort,
-  layerPortLogger,
   makePortLogger,
 } from "./effect-log-port";
 import type { LogMessagePort, PortLogLevel } from "./effect-log-port";
@@ -92,7 +91,7 @@ describe("Effect log port", () => {
       const captured = yield* Queue.unbounded<CapturedLog>();
       const ports = channel();
       const level = yield* Ref.make<PortLogLevel | null>("trace");
-      const workerLayer = layerPortLogger(ports.worker, level);
+      const workerLayer = Logger.layer([makePortLogger(ports.worker, level)]);
 
       yield* Effect.scoped(
         Effect.gen(function* () {
@@ -121,7 +120,7 @@ describe("Effect log port", () => {
       const captured = yield* Queue.unbounded<CapturedLog>();
       const ports = channel();
       const level = yield* Ref.make<PortLogLevel | null>("info");
-      const workerLayer = layerPortLogger(ports.worker, level);
+      const workerLayer = Logger.layer([makePortLogger(ports.worker, level)]);
 
       yield* Effect.scoped(
         Effect.gen(function* () {
@@ -188,7 +187,7 @@ describe("Effect log port", () => {
         }).pipe(
           Effect.provide(
             Layer.mergeAll(
-              layerPortLogger(ports.worker, level),
+              Logger.layer([makePortLogger(ports.worker, level)]),
               layerLibraryLogPort,
             ),
           ),
@@ -204,7 +203,7 @@ describe("Effect log port", () => {
         const captured = yield* Queue.unbounded<CapturedLog>();
         const ports = channel();
         const level = yield* Ref.make<PortLogLevel | null>("trace");
-        const workerLayer = layerPortLogger(ports.worker, level);
+        const workerLayer = Logger.layer([makePortLogger(ports.worker, level)]);
 
         yield* Effect.scoped(
           Effect.gen(function* () {
@@ -314,7 +313,7 @@ describe("Effect log port", () => {
           yield* Layer.build(layerHostLogPort(ports.host, HOST_LOG_PORT));
           expect(ports.host.onmessage).not.toBeNull();
           yield* Effect.logInfo("before close").pipe(
-            Effect.provide(layerPortLogger(ports.worker, level)),
+            Effect.provide(Logger.layer([makePortLogger(ports.worker, level)])),
           );
           expect(yield* Queue.take(captured)).toMatchObject({
             message: ["before close"],
@@ -326,7 +325,7 @@ describe("Effect log port", () => {
       expect(ports.host.closed).toBe(true);
 
       yield* Effect.logInfo("after close").pipe(
-        Effect.provide(layerPortLogger(ports.worker, level)),
+        Effect.provide(Logger.layer([makePortLogger(ports.worker, level)])),
       );
       yield* Effect.yieldNow;
       expect(ports.worker.posted).toHaveLength(2);
