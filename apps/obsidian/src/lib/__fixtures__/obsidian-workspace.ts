@@ -90,6 +90,11 @@ export class MemoryWorkspace implements WorkspaceSource {
     return [...(this.leaves.get(type) ?? [])];
   }
 
+  /** As Obsidian: each open leaf, of every view type. */
+  iterateAllLeaves(callback: (leaf: WorkspaceLeaf) => void): void {
+    for (const leaves of this.leaves.values()) leaves.forEach(callback);
+  }
+
   /** Open a leaf of `type` that shows `view`. */
   openLeaf(type: string, view: View): WorkspaceLeaf {
     const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", { view });

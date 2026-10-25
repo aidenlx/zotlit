@@ -13,12 +13,14 @@ import type {
   OpenViewState,
   PaneType,
   TAbstractFile,
+  TextFileView,
   TFile,
   Workspace as ObsidianWorkspace,
   WorkspaceLeaf,
 } from "obsidian";
 
 import { logAndContinue } from "@/lib/effect-log";
+import { loadedTextFileView } from "@/lib/live-text";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import {
   obsidianEventSource,
@@ -33,6 +35,7 @@ export type WorkspaceSource = Pick<
   | "getActiveFile"
   | "getActiveViewOfType"
   | "getLeavesOfType"
+  | "iterateAllLeaves"
   | "updateOptions"
   | "openLinkText"
   | "getLeaf"
@@ -85,6 +88,11 @@ export interface WorkspaceShape {
   readonly markdownViews: Effect.Effect<readonly MarkdownView[]>;
   /** Each open leaf of view type `type` now, in every window, in Obsidian's leaf order. */
   leavesOfType(type: string): Effect.Effect<readonly WorkspaceLeaf[]>;
+  /**
+   * The loaded text view that edits `file` now, in any window, which holds
+   * the note's live text; `null` when none (`lib/live-text.ts`).
+   */
+  loadedTextView(file: TFile): Effect.Effect<TextFileView | null>;
   /**
    * Obsidian's undocumented `readWorkspaceFile()`: the serialized layout
    * Obsidian restored this session's leaves from. `null` when the build has
@@ -207,6 +215,9 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     ).pipe(Effect.withSpan("Workspace.markdownViews")),
     leavesOfType: Effect.fn("Workspace.leavesOfType")((type) =>
       Effect.sync(() => source.getLeavesOfType(type)),
+    ),
+    loadedTextView: Effect.fn("Workspace.loadedTextView")((file) =>
+      Effect.sync(() => loadedTextFileView({ workspace: source }, file)),
     ),
     readWorkspaceFile: Effect.suspend(() => {
       const read = source.readWorkspaceFile?.bind(source);
