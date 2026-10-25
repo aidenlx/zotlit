@@ -237,9 +237,15 @@
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
+  "apps/obsidian/src/services/template/__fixtures__.ts": [
+    "zotlit-effect-tests/typed-fake"
+  ],
   "apps/obsidian/src/services/template/migration-data.test.ts": [
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/use-ledger/__fixtures__.ts": [
+    "zotlit-effect-tests/typed-fake"
   ],
   "apps/obsidian/src/services/wikilink-editor/hover.test.ts": [
     "zotlit-tests/no-internal-mock",

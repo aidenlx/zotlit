@@ -3,6 +3,9 @@ import { ButtonComponent, TextComponent, controlsOf } from "@mock/obsidian";
 import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import type { NoteTemplateContext } from "@zotlit/db";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
@@ -10,7 +13,7 @@ import type { PreparedProfileCreation } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 
 import { CreateProfileModal } from "./profiles";
-import type { ProfileCreationDeps } from "./profiles";
+import type { ProfileCreationData, ProfileCreationDeps } from "./profiles";
 
 const id = "Bk3Qn7XvT2Lp" as ProfileId;
 function fixture() {
@@ -48,15 +51,39 @@ function fixture() {
     body: "# Paper\nDefault look marker.",
     create: vi.fn(),
   };
-  const deps = {
-    app: {} as App,
-    profile: { ...profileReader(), prepareCreate },
-    template: { prepareLiteratureNoteTemplateSource: () => ({}) },
-    noteFeature: { prepareProfileNote: () => preview },
-    zoteroPref: { dataDir: null },
+  const reader = profileReader();
+  const deps = stubService<ProfileCreationDeps>("ProfileCreationDeps", {
+    app: stubService<App>("App", {}),
+    profile: stubService<ProfileCreationDeps["profile"]>("Profile", {
+      profiles: reader.profiles,
+      resolveProfile: reader.resolveProfile,
+      prepareCreate,
+    }),
+    template: stubService<ProfileCreationDeps["template"]>("Template", {
+      prepareLiteratureNoteTemplateSource: () =>
+        stubService<
+          ReturnType<
+            ProfileCreationDeps["template"]["prepareLiteratureNoteTemplateSource"]
+          >
+        >("TemplateDocument", {}),
+    }),
+    noteFeature: stubService<ProfileCreationDeps["noteFeature"]>(
+      "NoteFeature",
+      { prepareProfileNote: () => preview },
+    ),
+    zoteroPref: stubService<ProfileCreationDeps["zoteroPref"]>("ZoteroPref", {
+      dataDir: undefined,
+    }),
     loadData: async () => null,
-  } as unknown as ProfileCreationDeps;
+  });
   return { deps, draft, create, prepareCreate, preview };
+}
+
+function previewData(): ProfileCreationData {
+  return {
+    note: stubService<NoteTemplateContext>("NoteTemplateContext", {}),
+    filename: {},
+  };
 }
 
 it("shows the preview while asking for a name, refuses a colliding label, then enables a name with no other difference", async () => {
@@ -79,7 +106,7 @@ it("shows the preview while asking for a name, refuses a colliding label, then e
     constraint: { kind: "invalid-name", message: "ASK_FOR_NAME" },
   });
   const modal = new CreateProfileModal(f.deps, {
-    data: { note: {} as never, filename: {} },
+    data: previewData(),
     styles: [],
   });
   modal.contentEl = document.createElement("div");
@@ -143,7 +170,7 @@ it.each([false, true])(
       })?.[0];
     const f = fixture();
     const modal = new CreateProfileModal(f.deps, {
-      data: { note: {} as never, filename: {} },
+      data: previewData(),
       styles: [],
       useForNote,
     });

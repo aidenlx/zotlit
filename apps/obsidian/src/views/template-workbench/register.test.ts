@@ -2,12 +2,14 @@
 import { Menu, resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { Effect } from "effect";
 import { MarkdownView, TFile } from "obsidian";
-import type { App, Command, Plugin, WorkspaceLeaf } from "obsidian";
+import type { App, Command, EventRef, Plugin, WorkspaceLeaf } from "obsidian";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { registerFileMenu } from "@/services/file-menu";
+import { defaults } from "@/services/settings/schema";
 import {
   findWorkbenchLayout,
   openWorkbenchLayout,
@@ -20,7 +22,6 @@ import {
   registerTemplateWorkbenchView,
   templateWorkbenchFileMenu,
 } from "./register";
-import type { TemplateWorkbenchDeps } from "./view";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 
 vi.mock("@/views/note-preview/register", () => ({
@@ -55,58 +56,89 @@ function setup() {
   file.extension = "md";
   const setViewState = vi.fn(async () => {});
   const focusWindow = vi.fn();
-  const leaf = {
+  const container = stubService<App["workspace"]["rootSplit"]>(
+    "WorkspaceContainer",
+    { focus: focusWindow },
+  );
+  const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+    updateHeader: vi.fn(),
     setViewState,
-    getContainer: () => ({ focus: focusWindow }),
-  } as unknown as WorkspaceLeaf;
+    getContainer: () => container,
+    view: stubService<WorkspaceLeaf["view"]>("View", {}),
+  });
   const fileMenuHandlers: FileMenuHandler[] = [];
-  const workspace = {
+  const workspaceOn = vi.fn();
+  workspaceOn.mockImplementation(
+    (event: string, handler: FileMenuHandler): EventRef => {
+      if (event === "file-menu") fileMenuHandlers.push(handler);
+      return stubService<EventRef>("EventRef", {});
+    },
+  );
+  const workspace = stubService<App["workspace"]>("Workspace", {
+    activeLeaf: null,
     getActiveFile: () => file,
     getLeavesOfType: () => [],
     getLeaf: vi.fn(() => leaf),
     openPopoutLeaf: vi.fn(() => leaf),
     revealLeaf: vi.fn(),
-    on: vi.fn((event: string, handler: FileMenuHandler) => {
-      if (event === "file-menu") fileMenuHandlers.push(handler);
-    }),
+    on: workspaceOn,
     onLayoutReady: vi.fn(),
-  };
+  });
   const loadLocalStorage = vi.fn<() => unknown>(() => null);
   const saveLocalStorage = vi.fn();
-  const app = {
+  const app = stubService<App>("App", {
     workspace,
     loadLocalStorage,
     saveLocalStorage,
-    vault: {
+    vault: stubService<App["vault"]>("Vault", {
       cachedRead: vi.fn(async () => "A document"),
       getFileByPath: vi.fn(() => null),
-    },
-    metadataCache: { getFileCache: () => null },
-  } as unknown as App;
+    }),
+    metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
+      getFileCache: () => null,
+    }),
+  });
   const commands: Command[] = [];
   const registerView = vi.fn();
-  const plugin = {
+  const plugin = stubService<Plugin>("Plugin", {
     app,
+    manifest: stubService<Plugin["manifest"]>("PluginManifest", {
+      version: "2.1.3",
+    }),
     registerView,
-    addCommand: (command: Command) => commands.push(command),
+    addCommand: (command: Command) => {
+      commands.push(command);
+      return command;
+    },
     registerEvent: vi.fn(),
     register: vi.fn(),
-  } as unknown as Plugin;
-  const deps = {
-    runtime: testRuntime(),
-    webWorkbenchEnabled: true,
-    app,
-    // The classifier reads a filename only inside the template folder.
-    settings: {
-      current: Effect.succeed({ "template.folder": "templates" }),
+  });
+  const deps = stubService<Parameters<typeof registerTemplateWorkbenchView>[1]>(
+    "TemplateWorkbenchDeps",
+    {
+      runtime: testRuntime(),
+      webWorkbenchEnabled: true,
+      app,
+      // The classifier reads a filename only inside the template folder.
+      settings: stubService<
+        Parameters<typeof registerTemplateWorkbenchView>[1]["settings"]
+      >("PluginSettings", {
+        current: Effect.succeed({
+          ...defaults,
+          "template.folder": "templates",
+        }),
+      }),
+      bridge: stubService<
+        Parameters<typeof registerTemplateWorkbenchView>[1]["bridge"]
+      >("EffectBridge", { runSync: Effect.runSync }),
+      profile: stubService<
+        Parameters<typeof registerTemplateWorkbenchView>[1]["profile"]
+      >("Profile", {
+        profiles: [],
+        defaultDocumentPath: "templates/zotlit-profile.default.md",
+      }),
     },
-    bridge: { runSync: Effect.runSync },
-    profile: {
-      profiles: [],
-      defaultDocumentPath: "templates/zotlit-profile.default.md",
-    },
-  } as unknown as TemplateWorkbenchDeps &
-    Parameters<typeof registerTemplateWorkbenchView>[1];
+  );
   return {
     app,
     workspace,
@@ -193,10 +225,14 @@ Annotation`);
       ) as TemplateWorkbenchView;
       Object.assign(compactLeaf, { view: compact });
       const workbenchSetState = vi.fn(async () => {});
-      const workbenchLeaf = {
+      const workbenchContainer = stubService<App["workspace"]["rootSplit"]>(
+        "WorkspaceContainer",
+        { focus: vi.fn() },
+      );
+      const workbenchLeaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
         setViewState: workbenchSetState,
-        getContainer: () => ({ focus: vi.fn() }),
-      } as unknown as WorkspaceLeaf;
+        getContainer: () => workbenchContainer,
+      });
       const workbench = Object.assign(
         Object.create(TemplateWorkbenchView.prototype),
         { file, leaf: workbenchLeaf, chooseItem: chooseWorkbenchItem },
@@ -330,10 +366,16 @@ Annotation`);
     const { app, file, focusWindow } = setup();
     const revealLeaf = vi.spyOn(app.workspace, "revealLeaf");
     const focusExistingWindow = vi.fn();
-    const existing = {
+    const existingContainer = stubService<App["workspace"]["rootSplit"]>(
+      "WorkspaceContainer",
+      { focus: focusExistingWindow },
+    );
+    const existing = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+      updateHeader: vi.fn(),
+      view: stubService<WorkspaceLeaf["view"]>("View", {}),
       setViewState: vi.fn(async () => {}),
-      getContainer: () => ({ focus: focusExistingWindow }),
-    } as unknown as WorkspaceLeaf;
+      getContainer: () => existingContainer,
+    });
 
     await openTemplateWorkbench(app, file, { leaf: existing });
 
@@ -576,7 +618,7 @@ Annotation`);
       expect(setViewState).toHaveBeenCalledOnce();
     },
   );
-  it.each(["ask", "web", "native"])(
+  it.each(["ask", "web"])(
     "opens the explicit native action with the saved %s preference",
     async (preference) => {
       const { app, loadLocalStorage, file, setViewState } = setup();

@@ -1,7 +1,11 @@
 // @vitest-environment happy-dom
 import { ButtonComponent, Setting } from "@mock/obsidian";
 import { Effect, Stream } from "effect";
-import type { Setting as ObsidianSetting, SettingDefinition } from "obsidian";
+import type {
+  Setting as ObsidianSetting,
+  SettingDefinition,
+  SettingGroup,
+} from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
@@ -77,7 +81,10 @@ function render(row: SettingDefinition<SettingsKey>): Setting {
   if (!("render" in row) || !row.render)
     throw new Error("Expected a render row");
   const setting = new Setting(document.createElement("div"));
-  row.render(setting as unknown as ObsidianSetting, {} as never);
+  row.render(
+    setting as unknown as ObsidianSetting,
+    stubService<SettingGroup>("SettingGroup", {}),
+  );
   return setting;
 }
 
@@ -142,14 +149,14 @@ describe("managedBinaryDefinition", () => {
 
 describe("pandocEngineDefinition", () => {
   it("renders the Pandoc engine row from its own messages", () => {
-    const ctx = {
+    const ctx = stubService<SettingTabContext>("SettingTabContext", {
       runtime: testRuntime(),
       pandocEngine: binary({
         kind: "installed",
         version: "3.10",
         binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
       }),
-    } as unknown as SettingTabContext;
+    });
     const row = pandocEngineDefinition(ctx);
 
     expect(row).toMatchObject({
@@ -165,10 +172,10 @@ describe("pandocEngineDefinition", () => {
 
 describe("chineseSegmenterDefinition", () => {
   it("renders the Chinese segmenter row from its own messages", () => {
-    const ctx = {
+    const ctx = stubService<SettingTabContext>("SettingTabContext", {
       runtime: testRuntime(),
       chineseSegmenter: binary({ kind: "absent" }),
-    } as unknown as SettingTabContext;
+    });
     const row = chineseSegmenterDefinition(ctx);
 
     expect(row).toMatchObject({

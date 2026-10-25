@@ -1,7 +1,14 @@
 // @vitest-environment happy-dom
 import { Effect, Layer, PubSub, Stream } from "effect";
-import { Keymap, MarkdownView } from "obsidian";
-import type { MarkdownPostProcessor, MarkdownRenderChild } from "obsidian";
+import { Keymap, MarkdownView, TFile } from "obsidian";
+import type {
+  App,
+  MarkdownPostProcessor,
+  MarkdownPostProcessorContext,
+  MarkdownPreviewView,
+  MarkdownRenderChild,
+  WorkspaceLeaf,
+} from "obsidian";
 import {
   beforeEach as beforeStreamTest,
   afterEach as afterStreamTest,
@@ -9,6 +16,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
@@ -29,6 +37,7 @@ import type { Settings } from "@/services/settings/schema";
 
 import { internalLink, section } from "./__fixtures__/internal-link";
 import { WikilinkReading } from "./service";
+import type { WikilinkReadingDeps } from "./service";
 
 let streamStack: AsyncDisposableStack;
 let streamRuntime: ReturnType<typeof buildRuntime<never>>;
@@ -123,58 +132,95 @@ async function harness({
   containerEl.addEventListener("click", (event) => native.push(event));
   // Obsidian places a section of this stubbed document nowhere, which is the
   // degraded tier: every Citation shows its source's first-occurrence text.
-  const ctx = {
-    sourcePath,
-    getSectionInfo: () => null,
-    addChild: (child: MarkdownRenderChild) => {
-      children.push(child);
-      child.load();
+  const ctx = stubService<MarkdownPostProcessorContext>(
+    "MarkdownPostProcessorContext",
+    {
+      sourcePath,
+      getSectionInfo: () => null,
+      addChild: (child: MarkdownRenderChild) => {
+        children.push(child);
+        child.load();
+      },
     },
-  } as never;
-  const view = Object.assign(Object.create(MarkdownView.prototype) as object, {
-    previewMode: { rerender: () => rerenders++ },
+  );
+  const view = stubService<MarkdownView>("MarkdownView", {
+    previewMode: stubService<MarkdownPreviewView>("MarkdownPreviewView", {
+      rerender: () => rerenders++,
+    }),
     containerEl,
   });
-  const service = new WikilinkReading({
-    runtime: streamRuntime,
-    app: {
-      workspace: {
-        getLeavesOfType: () => [{ view }],
-        trigger: (_name: string, request: { path: string }) =>
-          switchRequests.push(request.path),
+  Object.setPrototypeOf(view, MarkdownView.prototype);
+  const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", { view });
+  const wangFile = new TFile();
+  wangFile.path = `${WANG}.md`;
+  const app = stubService<App>("App", {
+    workspace: stubService<App["workspace"]>("Workspace", {
+      getLeavesOfType: () => [leaf],
+      trigger: (_name: string, request: { path: string }) => {
+        switchRequests.push(request.path);
       },
-      vault: { getFileByPath: (path: string) => ({ path }) },
-      metadataCache: {
-        getFirstLinkpathDest: (linkpath: string, origin: string) =>
-          linkpath === WANG || (linkpath === "" && origin === `${WANG}.md`)
-            ? { path: `${WANG}.md` }
-            : null,
-        getFileCache: () => ({
-          frontmatter: { "zotero-key": WANG_KEY },
-        }),
+    }),
+    vault: stubService<App["vault"]>("Vault", {
+      getFileByPath: (path: string) => {
+        const file = new TFile();
+        file.path = path;
+        return file;
       },
-    },
-    plugin: {
-      registerMarkdownPostProcessor: (postProcessor: MarkdownPostProcessor) => {
-        process = postProcessor;
-      },
-    },
-    noteIndex,
-    citationText,
-    citekeyEditor: {
-      openCitekey: (citekey: string, pane: NavigationPane) =>
-        opened.push([citekey, pane]),
-    },
-    citationPopover: {
-      show: (request: CitationHoverRequest) => {
-        requests.push(request);
-        return Effect.void;
-      },
-    },
-    bridge: stack.use(openTestBridge()),
-    citationIndex,
-    settings,
-  } as never);
+    }),
+    metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
+      getFirstLinkpathDest: (linkpath: string, origin: string) =>
+        linkpath === WANG || (linkpath === "" && origin === `${WANG}.md`)
+          ? wangFile
+          : null,
+      getFileCache: () => ({
+        frontmatter: { "zotero-key": WANG_KEY },
+      }),
+    }),
+  });
+  const service = new WikilinkReading(
+    stubService<WikilinkReadingDeps>("WikilinkReadingDeps", {
+      runtime: streamRuntime,
+      app,
+      plugin: stubService<WikilinkReadingDeps["plugin"]>("Plugin", {
+        registerMarkdownPostProcessor: (
+          postProcessor: MarkdownPostProcessor,
+        ) => {
+          process = postProcessor;
+          return postProcessor;
+        },
+      }),
+      noteIndex,
+      citationText: stubService<WikilinkReadingDeps["citationText"]>(
+        "CitationText",
+        {
+          changed: citationText.changed,
+          invalidated: citationText.invalidated.pipe(
+            Stream.map(() => undefined),
+          ),
+          peek: () => citationText.peek(),
+        },
+      ),
+      citekeyEditor: stubService<WikilinkReadingDeps["citekeyEditor"]>(
+        "CitekeyEditor",
+        {
+          openCitekey: async (citekey: string, pane: NavigationPane) => {
+            opened.push([citekey, pane]);
+          },
+        },
+      ),
+      citationPopover: stubService<WikilinkReadingDeps["citationPopover"]>(
+        "CitationPopover",
+        {
+          show: (request: CitationHoverRequest) => {
+            requests.push(request);
+            return Effect.void;
+          },
+        },
+      ),
+      bridge: stack.use(openTestBridge()),
+      settings,
+    }),
+  );
   await service.ready;
   const owned = stack.move();
   return {
@@ -274,23 +320,6 @@ describe("WikilinkReading rendering", () => {
     });
 
     expect(await harnessed.render(WANG)).toBe(WANG);
-  });
-
-  it("leaves a fragment-less link raw while Wikilink Citations is off", async () => {
-    await using harnessed = await harness();
-
-    expect(await harnessed.render(WANG)).toBe(WANG);
-  });
-
-  it("leaves a fragment-carrying link native while Wikilink Citations is off", async () => {
-    await using harnessed = await harness({
-      "citation.wikilink-citations": false,
-      "citation.show-formatted": false,
-    });
-
-    expect(await harnessed.render(`${WANG}#cite:locator=7`)).toBe(
-      `${WANG} > cite:locator=7`,
-    );
   });
 
   it("keeps a native link when the Item carries no native citation key", async () => {

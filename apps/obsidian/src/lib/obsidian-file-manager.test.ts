@@ -4,7 +4,9 @@ import { TFile } from "obsidian";
 import type {
   App,
   FileManager as FileManagerApi,
+  MetadataCache as MetadataCacheApi,
   Vault as VaultApi,
+  Workspace as WorkspaceApi,
 } from "obsidian";
 import { expect, vi } from "vitest";
 
@@ -21,7 +23,6 @@ import { VaultError } from "@/lib/vault-errors";
 
 import { MemoryFileManager } from "./__fixtures__/obsidian-file-manager";
 import { MemoryVault } from "./__fixtures__/obsidian-vault";
-import { MemoryWorkspace } from "./__fixtures__/obsidian-workspace";
 
 function file(path: string): TFile {
   const file = new TFile();
@@ -157,8 +158,14 @@ it.effect("reads the live layer's file manager from ObsidianApp", () =>
             Layer.succeed(
               ObsidianApp,
               stubService<ObsidianApp["Service"]>("ObsidianApp", {
-                fileManager: source as unknown as FileManagerApi,
-                vault: new MemoryVault() as unknown as VaultApi,
+                fileManager: stubService<FileManagerApi>("FileManager", {
+                  renameFile: source.renameFile.bind(source),
+                }),
+                vault: stubService<VaultApi>("Vault", {
+                  getAbstractFileByPath: () => null,
+                  on: () => ({}),
+                  offref: () => {},
+                }),
               }),
             ),
           ),
@@ -174,11 +181,21 @@ it.effect("reads the live layer's file manager from ObsidianApp", () =>
 // Test hosts that never touch the file manager stub no `fileManager`.
 it.effect("builds over a test host's app that has no file manager", () =>
   Effect.gen(function* () {
-    const app = {
-      metadataCache: { on() {}, offref() {} },
-      workspace: new MemoryWorkspace(),
-      vault: { on() {}, offref() {} },
-    } as unknown as App;
+    const app = stubService<App>("App", {
+      metadataCache: stubService<MetadataCacheApi>("MetadataCache", {
+        on: () => ({}),
+        offref: () => {},
+      }),
+      workspace: stubService<WorkspaceApi>("Workspace", {
+        on: () => ({}),
+        offref: () => {},
+      }),
+      vault: stubService<VaultApi>("Vault", {
+        on: () => ({}),
+        offref: () => {},
+      }),
+    });
+    Reflect.set(app, "fileManager", undefined);
     yield* Effect.service(FileManager).pipe(Effect.provide(layerHostApp(app)));
   }),
 );

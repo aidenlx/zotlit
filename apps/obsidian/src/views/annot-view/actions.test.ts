@@ -1,19 +1,29 @@
 // @vitest-environment happy-dom
 import { Menu } from "@mock/obsidian";
-import { Effect } from "effect";
+import { DateTime, Effect } from "effect";
+import type { App } from "obsidian";
 import type { MouseEvent } from "react";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as confirmation from "@/lib/confirm";
+import { toInstant } from "@/lib/effect-clock";
 import * as m from "@/lib/i18n/generated/messages";
-import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import type {
+  AnnotationRecord,
+  TagDraft,
+  TextFieldDraft,
+} from "@/services/annotation-repository/service";
+import type { ExcerptDisplayDemand } from "@/services/excerpt-image/display";
+import type { AnnotationCitation } from "@/services/note-feature/annotation-citation";
 import { annotation } from "@/services/pdf-annotation-editor/__fixtures__";
 
 import { createAnnotActions } from "./actions";
 import type { AnnotActionDeps } from "./actions";
 import { hasQuotedText } from "./card-controls";
 import type { CardControl, CardControls } from "./card-controls";
+import type { AnnotState } from "./store";
 
 const FIRST = annotation("PUPR5FG5", "highlight", { pageIndex: 0, rects: [] });
 const SECOND = annotation("K3JRFLFQ", "underline", { pageIndex: 0, rects: [] });
@@ -49,6 +59,45 @@ const LOCKED: CardControl = {
 const bridge = openTestBridge();
 afterAll(() => bridge[Symbol.asyncDispose]());
 
+function inertActionDeps(): Partial<AnnotActionDeps> {
+  return {
+    now: () => toInstant(DateTime.nowUnsafe()),
+    opener: stubService<AnnotActionDeps["opener"]>("TargetOpener", {}),
+    excerptDisplay: {
+      open: () => stubService<ExcerptDisplayDemand>("ExcerptDisplayDemand", {}),
+    },
+    excerptImageRequest: async () => null,
+    controls: () => stubService<CardControls>("CardControls", {}),
+    selectedCards: () => [],
+    libraryTagNames: async () => [],
+    getState: () => stubService<AnnotState>("AnnotState", {}),
+    setSelectedAttachmentKey: () => {},
+    toggleSelectedTag: () => {},
+    refresh: async () => {},
+    noteFeature: stubService<AnnotActionDeps["noteFeature"]>("NoteFeature", {
+      renderAnnotationCitation: async () =>
+        stubService<AnnotationCitation>("AnnotationCitation", {}),
+    }),
+    onDragStart: () => {},
+    renderComment: () => () => {},
+    fillViewMenu: () => {},
+    onSetFollowMode: () => {},
+    onAllowEditing: () => {},
+    onOpenPdf: () => {},
+    onPinCurrentItem: () => {},
+    onPinItem: () => {},
+    onUnpin: () => {},
+    onEnableLiveUpdates: () => {},
+    onSelectAnnotation: () => {},
+    onClearSelection: () => {},
+    selectAlone: () => {},
+    closeEditors: () => {},
+    openEditor: () => {},
+    onExploreAnnotation: () => {},
+    offerAnnotationInsert: () => null,
+  };
+}
+
 /**
  * The actions over a Card Selection, with every other dependency inert. The
  * view's own seams are the fakes: what it holds selected, and the select a
@@ -61,17 +110,22 @@ function setup(
 ) {
   const selectAlone = vi.fn();
   const openEditor = vi.fn();
-  const annotations = {
-    editTextField: vi.fn(() => Effect.succeed({})),
-    deleteAnnotation: vi.fn(() => Effect.succeed({ kind: "idle" as const })),
-    deleteAnnotations: vi.fn((keys: readonly string[]) =>
-      Effect.succeed(keys.map(() => ({ kind: "idle" as const }))),
-    ),
-    patchColor: vi.fn(() => Effect.succeed({ kind: "idle" as const })),
-    patchColors: vi.fn((keys: readonly string[]) =>
-      Effect.succeed(keys.map(() => ({ kind: "idle" as const }))),
-    ),
-  };
+  const annotations = stubService<AnnotActionDeps["annotations"]>(
+    "AnnotationRepository",
+    {
+      editTextField: vi.fn(() =>
+        Effect.succeed(stubService<TextFieldDraft>("TextFieldDraft", {})),
+      ),
+      deleteAnnotation: vi.fn(() => Effect.succeed({ kind: "idle" as const })),
+      deleteAnnotations: vi.fn((keys: readonly string[]) =>
+        Effect.succeed(keys.map(() => ({ kind: "idle" as const }))),
+      ),
+      patchColor: vi.fn(() => Effect.succeed({ kind: "idle" as const })),
+      patchColors: vi.fn((keys: readonly string[]) =>
+        Effect.succeed(keys.map(() => ({ kind: "idle" as const }))),
+      ),
+    },
+  );
   const controls: CardControls = {
     color: control,
     comment: control,
@@ -79,14 +133,15 @@ function setup(
     delete: control,
     text: control,
   };
-  const deps = {
-    app: {
-      workspace: {
+  const deps = stubService<AnnotActionDeps>("AnnotActionDeps", {
+    ...inertActionDeps(),
+    app: stubService<App>("App", {
+      workspace: stubService<App["workspace"]>("Workspace", {
         activeEditor: null,
         getMostRecentLeaf: () => null,
         trigger: () => {},
-      },
-    },
+      }),
+    }),
     annotations,
     bridge,
     // Only a highlight or underline has a Quoted Text, as `cardControls` rules.
@@ -101,7 +156,7 @@ function setup(
     onExploreAnnotation: () => {},
     offerAnnotationInsert: () => null,
     ...overrides,
-  } as unknown as AnnotActionDeps;
+  });
   return {
     actions: createAnnotActions(deps),
     selectAlone,
@@ -192,8 +247,10 @@ describe("the menu a card opens", () => {
       expect(menu.items.length).toBeGreaterThan(0);
     });
     const { actions } = setup([FIRST, SECOND], LIVE, {
-      app: { workspace: { trigger } },
-    } as unknown as Partial<AnnotActionDeps>);
+      app: stubService<App>("App", {
+        workspace: stubService<App["workspace"]>("Workspace", { trigger }),
+      }),
+    });
 
     const menu = openMenu(actions, SECOND);
 
@@ -426,18 +483,31 @@ describe("opening a card editor", () => {
    */
   function opening(draft: object | null) {
     const calls: string[] = [];
-    const deps = {
+    const deps = stubService<AnnotActionDeps>("AnnotActionDeps", {
+      ...inertActionDeps(),
       selectAlone: () => calls.push("select alone"),
       closeEditors: () => calls.push("close editors"),
-      annotations: {
-        editTextField: (field: string) => (
-          calls.push(`open ${field}`),
-          Effect.succeed(draft)
-        ),
-        editTags: () => (calls.push("open tags"), Effect.succeed(draft)),
-      },
+      annotations: stubService<AnnotActionDeps["annotations"]>(
+        "AnnotationRepository",
+        {
+          editTextField: (field: string) => {
+            calls.push(`open ${field}`);
+            return Effect.succeed(
+              draft === null
+                ? null
+                : stubService<TextFieldDraft>("TextFieldDraft", {}),
+            );
+          },
+          editTags: () => {
+            calls.push("open tags");
+            return Effect.succeed(
+              draft === null ? null : stubService<TagDraft>("TagDraft", {}),
+            );
+          },
+        },
+      ),
       bridge,
-    } as unknown as AnnotActionDeps;
+    });
     return { actions: createAnnotActions(deps), calls };
   }
 
@@ -475,15 +545,19 @@ describe("the verbs that end a text field's draft", () => {
         calls.push(args.length > 1 ? `${name} ${args[0]} draft` : name);
         return Effect.succeed({ kind: "idle" as const });
       };
-    const deps = {
-      annotations: {
-        retryTextDraft: call("retry"),
-        retryWrite: call("retry write"),
-        discardTextDraft: call("discard"),
-        discardConflict: call("discard conflict"),
-      },
+    const deps = stubService<AnnotActionDeps>("AnnotActionDeps", {
+      ...inertActionDeps(),
+      annotations: stubService<AnnotActionDeps["annotations"]>(
+        "AnnotationRepository",
+        {
+          retryTextDraft: call("retry"),
+          retryWrite: call("retry write"),
+          discardTextDraft: call("discard"),
+          discardConflict: call("discard conflict"),
+        },
+      ),
       bridge,
-    } as unknown as AnnotActionDeps;
+    });
     return { actions: createAnnotActions(deps), calls };
   }
 

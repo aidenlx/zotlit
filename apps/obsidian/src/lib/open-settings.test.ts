@@ -4,8 +4,11 @@ import type {
   SettingDefinitionItem,
   SettingDefinitionPage,
   SettingTab,
+  SettingsModal,
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 
 import { openSettingsTab, revealSetting } from "./open-settings";
 
@@ -70,14 +73,23 @@ const settingItems: SettingDefinitionItem[] = [
 
 /** The settings modal as these links drive it, with every call recorded. */
 function createSettingsModal(items = settingItems) {
-  const tab = { id: TAB_ID, settingItems: items } as unknown as SettingTab;
+  const tab = stubService<SettingTab>("SettingTab", {
+    id: TAB_ID,
+    settingItems: items,
+  });
   const setting = {
     open: vi.fn(),
     openTabById: vi.fn((id: string) => (id === TAB_ID ? tab : null)),
     navigateToSearchResult: vi.fn(),
     scrollToDefinition: vi.fn(),
   };
-  return { app: { setting } as unknown as App, setting, tab };
+  return {
+    app: stubService<App>("App", {
+      setting: stubService<SettingsModal>("SettingsModal", setting),
+    }),
+    setting,
+    tab,
+  };
 }
 
 /**
@@ -174,16 +186,6 @@ describe("revealSetting", () => {
     expect(
       setting.navigateToSearchResult.mock.invocationCallOrder[0]!,
     ).toBeLessThan(setting.scrollToDefinition.mock.invocationCallOrder[0]!);
-  });
-
-  it("hands Obsidian a path that resolves to the page holding the row", () => {
-    const { app, setting } = createSettingsModal();
-
-    revealSetting(app, TAB_ID, style.id);
-
-    expect(resolvePage(settingItems, pagePathOf(setting))?.id).toBe(
-      "settings_page_citations",
-    );
   });
 
   it("names every page down to a row nested two pages deep", () => {

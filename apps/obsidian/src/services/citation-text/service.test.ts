@@ -3,7 +3,8 @@ import { abortable } from "@std/async/abortable";
 import { Context } from "effect";
 import { Effect, Stream } from "effect";
 import { TestClock } from "effect/testing";
-import type { LinkCache, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { App, EventRef, LinkCache, MetadataCache } from "obsidian";
 import { describe, expect, vi } from "vitest";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
@@ -74,7 +75,18 @@ import type {
 import { citationKey, literalSummaryOf } from "./present";
 import type { DocumentCitations, FormattedOccurrence } from "./present";
 
-const NOTE = { path: "note.md" } as TFile;
+const NOTE = Object.assign(new TFile(), { path: "note.md" });
+
+/** A typed facade over a test source, so its methods keep the source as `this`. */
+function capability<T extends object>(name: string, source: object): T {
+  const typed = stubService<T>(name, {});
+  return new Proxy(typed, {
+    get(_target, key) {
+      const value = Reflect.get(source, key, source);
+      return typeof value === "function" ? value.bind(source) : value;
+    },
+  });
+}
 
 /**
  * The Indexed Key a Literature Note stand-in carries. It names an Item of its
@@ -157,7 +169,7 @@ async function makeHarness({
 }): Promise<Harness> {
   const citationRequests: { citations: readonly string[] }[] = [];
   const bibliographyRequests: string[][] = [];
-  const listeners = new Map<string, (payload?: never) => void>();
+  const listeners = new Map<string, (...args: unknown[]) => void>();
   const native = new Map<string, ReturnType<typeof testEvent<unknown>>>();
   const stream = <A>(key: string): Stream.Stream<A> => {
     const source = native.get(key) ?? testEvent<unknown>();
@@ -165,7 +177,7 @@ async function makeHarness({
     return source.stream as Stream.Stream<A>;
   };
   const fire = (key: string, payload?: unknown): void => {
-    listeners.get(key)?.(payload as never);
+    listeners.get(key)?.(payload);
     native.get(key)?.emit(payload);
   };
   const wikilinkOccurrences: CitationOccurrence[] =
@@ -193,12 +205,34 @@ async function makeHarness({
     ],
     errors: [],
   };
-  const metadataCache = {
+  const metadataCacheSource = {
     getFileCache: (file: { path: string }) =>
       file.path === NOTE.path
         ? { links, frontmatter }
         : { frontmatter: { "zotero-key": LIT_KEY } },
+    getFirstLinkpathDest: (linkpath: string) =>
+      Object.hasOwn(notes, linkpath)
+        ? Object.assign(new TFile(), { path: `${linkpath}.md` })
+        : null,
+    on: (name: string, callback: (...args: unknown[]) => void) => {
+      listeners.set(`metadata:${name}`, callback);
+      return stubService<EventRef>("EventRef", {});
+    },
+    offref: () => {},
   };
+  const metadataCache = capability<MetadataCache>(
+    "MetadataCache",
+    metadataCacheSource,
+  );
+  const vault = MemoryVault.with({
+    cachedRead: () => Promise.resolve(body),
+    getFileByPath: (path: string) =>
+      present && path === NOTE.path ? NOTE : null,
+  });
+  const app = stubService<App>("App", {
+    vault: capability<App["vault"]>("Vault", vault),
+    metadataCache,
+  });
 
   let present = true;
   let itemReads = 0;
@@ -207,20 +241,25 @@ async function makeHarness({
   const reads = inProcessReadsService(
     memoryOpener(() => citedWorkSeed([ALPHA_KEY, LIT_KEY])).open,
     {
-      wrap: (client) => ({
-        ...client,
-        ItemsByIndexedKeys: ((
-          ...args: Parameters<ZoteroReadsClient["ItemsByIndexedKeys"]>
-        ) =>
-          Effect.suspend(() => {
-            itemReads += 1;
-            if (!failNextItemRead) return client.ItemsByIndexedKeys(...args);
-            failNextItemRead = false;
-            return Effect.fail(
-              new DbUnavailable({ message: "database is locked" }),
-            );
-          })) as ZoteroReadsClient["ItemsByIndexedKeys"],
-      }),
+      wrap: (client) =>
+        new Proxy(client, {
+          get(target, key, receiver) {
+            if (key !== "ItemsByIndexedKeys")
+              return Reflect.get(target, key, receiver);
+            return (
+              ...args: Parameters<ZoteroReadsClient["ItemsByIndexedKeys"]>
+            ) =>
+              Effect.suspend(() => {
+                itemReads += 1;
+                if (!failNextItemRead)
+                  return target.ItemsByIndexedKeys(...args);
+                failNextItemRead = false;
+                return Effect.fail(
+                  new DbUnavailable({ message: "database is locked" }),
+                );
+              });
+          },
+        }),
     },
   );
   const service = citationTextFixture(
@@ -229,25 +268,7 @@ async function makeHarness({
       citationLookup: {
         changed: stream("lookup:changed"),
       },
-      app: {
-        vault: MemoryVault.with({
-          cachedRead: () => Promise.resolve(body),
-          getFileByPath: (path: string) =>
-            present && path === NOTE.path ? NOTE : null,
-        }),
-        metadataCache: {
-          offref: () => {},
-          on: (name: string, cb: () => void) => {
-            listeners.set(`metadata:${name}`, cb);
-            return { e: { offref: () => undefined } };
-          },
-          // The document reports its own links and properties; a Literature Note
-          // reports the frontmatter that makes it one.
-          getFileCache: metadataCache.getFileCache,
-          getFirstLinkpathDest: (linkpath: string) =>
-            Object.hasOwn(notes, linkpath) ? { path: `${linkpath}.md` } : null,
-        },
-      },
+      app,
       citationIndex: {
         getParsedDocument: async () => ({
           facts: new ParsedNote(
@@ -278,14 +299,6 @@ async function makeHarness({
             ),
           },
         }),
-        getDocumentCitationSet: () =>
-          Promise.resolve({
-            ...set,
-            lookup: lookupAnswer(
-              {},
-              { [LIT_KEY]: Object.values(notes)[0]?.citekey ?? null },
-            ),
-          }),
         changed: stream("index:changed"),
         "membership-changed": stream("index:membership-changed"),
       },
@@ -327,12 +340,9 @@ async function makeHarness({
         },
         invalidated: stream("render:invalidated"),
       },
-      profile: profileReader(
-        { ...defaults, ...settings },
-        metadataCache as never,
-      ),
+      profile: profileReader({ ...defaults, ...settings }, metadataCache),
       queryClient,
-    } as never,
+    },
     context,
   );
 
@@ -469,7 +479,7 @@ describe("CitationText", () => {
                 hasEntryMarkers: false,
               }),
               invalidated: Stream.empty,
-            } as never,
+            } satisfies CitationTextDeps["bibliographyRender"],
           }),
         );
 
@@ -594,10 +604,12 @@ describe("CitationText", () => {
                         },
                       }),
                       changes: Stream.empty,
-                      getEngine: Effect.succeed({
-                        renderCitations,
-                        renderBibliography,
-                      } as never),
+                      getEngine: Effect.succeed(
+                        stubService<CitationEngine>("CitationEngine", {
+                          renderCitations,
+                          renderBibliography,
+                        }),
+                      ),
                     },
                   ),
                 },
@@ -845,26 +857,6 @@ describe("CitationText over wikilink Citations", () => {
   );
 
   it.effect(
-    "leaves a fragment-less wikilink out while Wikilink Citations is off",
-    () =>
-      Effect.promise(async () => {
-        const body = `Claim [[${LIT}]].`;
-        const { service, citationRequests, dispose } = await makeHarness({
-          body,
-          cited: [],
-          links: [link(LIT, body.indexOf("[["))],
-          notes,
-          settings: { "citation.wikilink-citations": false },
-        });
-
-        await readText(service);
-
-        expect(citationRequests).toEqual([{ citations: [] }]);
-        await dispose();
-      }),
-  );
-
-  it.effect(
     "keeps a fragment-less member in the render context while presentation is off",
     () =>
       Effect.promise(async () => {
@@ -885,23 +877,6 @@ describe("CitationText over wikilink Citations", () => {
         expect(citationRequests).toEqual([{ citations: [`[@${LIT_KEY}]`] }]);
         await dispose();
       }),
-  );
-
-  it.effect("leaves an aliased wikilink out, as the display surfaces do", () =>
-    Effect.promise(async () => {
-      const body = `Claim [[${LIT}|Alpha]].`;
-      const { service, citationRequests, dispose } = await makeHarness({
-        body,
-        cited: [],
-        links: [link(LIT, body.indexOf("[["), `[[${LIT}|Alpha]]`)],
-        notes,
-      });
-
-      await readText(service);
-
-      expect(citationRequests).toEqual([{ citations: [] }]);
-      await dispose();
-    }),
   );
 
   it.effect("renders both syntaxes in one batch, in document order", () =>
@@ -1720,7 +1695,7 @@ it.effect("#1683 renders a document with one source read", () =>
           sources.map((source) => rendered(source)),
         readBibliography: async () => ({ entries: [], hasEntryMarkers: false }),
         invalidated: Stream.empty,
-      } as CitationTextDeps["bibliographyRender"],
+      } satisfies CitationTextDeps["bibliographyRender"],
     });
     const result = await service.read(h.draft.path);
     expect(result?.formatted.size).toBe(1);

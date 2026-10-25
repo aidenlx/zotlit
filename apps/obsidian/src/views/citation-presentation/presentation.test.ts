@@ -22,7 +22,7 @@ const INSTALLED: InstalledCslStyle[] = [
 ];
 
 function cacheOf(frontmatter: Record<string, unknown>): CachedMetadata {
-  return { frontmatter } as CachedMetadata;
+  return { frontmatter };
 }
 
 describe("what a note declares", () => {

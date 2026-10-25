@@ -1,5 +1,7 @@
-import type { App } from "obsidian";
+import type { App, EventRef, MetadataTypeManager } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 
 import { assignedWidget, onTypesChanged } from "./metadata-type-manager";
 
@@ -13,7 +15,6 @@ beforeEach(() => warn.mockClear());
 /** A type manager as Obsidian 1.14.4 keeps it, with `types.json` as given. */
 function manager(types: Record<string, string>) {
   const listeners = new Set<(name: string) => void>();
-  const ref = {};
   return {
     getAssignedWidget: (name: string) => {
       const found = Object.entries(types).find(
@@ -23,10 +24,13 @@ function manager(types: Record<string, string>) {
     },
     on: vi.fn((_event: "changed", cb: (name: string) => void) => {
       listeners.add(cb);
-      return Object.assign(ref, { cb });
+      const ref = { cb };
+      return ref;
     }),
-    offref: vi.fn((eventRef: { cb?: (name: string) => void }) => {
-      if (eventRef.cb) listeners.delete(eventRef.cb);
+    offref: vi.fn((eventRef: EventRef) => {
+      const callback = (eventRef as unknown as { cb?: (name: string) => void })
+        .cb;
+      if (callback) listeners.delete(callback);
     }),
     /** Assign a type, as `setType` does. */
     setType(name: string, widget: string) {
@@ -38,9 +42,9 @@ function manager(types: Record<string, string>) {
 
 describe("assignedWidget", () => {
   it("reads the type assigned to a property, whatever its case", () => {
-    const app = {
+    const app = stubService<App>("App", {
       metadataTypeManager: manager({ Pages: "number" }),
-    } as unknown as App;
+    });
 
     expect(assignedWidget(app, "pages")).toBe("number");
     expect(assignedWidget(app, "status")).toBeNull();
@@ -48,7 +52,7 @@ describe("assignedWidget", () => {
   });
 
   it("reads no type, and warns once, when the app has no type manager", () => {
-    const app = {} as App;
+    const app = stubService<App>("App", { metadataTypeManager: undefined });
 
     expect(assignedWidget(app, "pages")).toBeNull();
     expect(assignedWidget(app, "status")).toBeNull();
@@ -57,7 +61,12 @@ describe("assignedWidget", () => {
 
   it("reads no type when the manager lost its read", () => {
     const { on, offref } = manager({});
-    const app = { metadataTypeManager: { on, offref } } as unknown as App;
+    const app = stubService<App>("App", {
+      metadataTypeManager: {
+        on,
+        offref,
+      } satisfies Partial<MetadataTypeManager>,
+    });
 
     expect(assignedWidget(app, "pages")).toBeNull();
     expect(warn).toHaveBeenCalledOnce();
@@ -67,7 +76,7 @@ describe("assignedWidget", () => {
 describe("onTypesChanged", () => {
   it("runs the callback on each change of an assigned type, until the returned callback stops it", () => {
     const types = manager({});
-    const app = { metadataTypeManager: types } as unknown as App;
+    const app = stubService<App>("App", { metadataTypeManager: types });
     const listener = vi.fn();
 
     const off = onTypesChanged(app, listener);
@@ -80,7 +89,10 @@ describe("onTypesChanged", () => {
   });
 
   it("does nothing when the app has no type manager", () => {
-    const off = onTypesChanged({} as App, vi.fn());
+    const off = onTypesChanged(
+      stubService<App>("App", { metadataTypeManager: undefined }),
+      vi.fn(),
+    );
 
     expect(() => off()).not.toThrow();
   });

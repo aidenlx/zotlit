@@ -68,6 +68,7 @@ New services are Effect services: a `Context.Service` tag and a scoped `Layer`, 
 - A legacy service joins the graph through `serviceLayer` (`apps/obsidian/src/services/service-layer.ts`), as `ExcerptImages` and `ExcerptDisplays` do. The layer constructs it and disposes it on scope close, without waiting for `ready`: an Effect service that uses a bridged one awaits its `ready` before the first call, or calls only what the service allows before it (`layerLogging` subscribes to `PluginSettings`).
 - An existing legacy service keeps its shape until a change whose purpose is converting it. Convert leaves first, so the services it depends on are already in the graph, and take the file off the legacy list in `apps/obsidian/oxlint.config.ts`.
 - The `zotlit-services` lint rules (`apps/obsidian/scripts/oxlint-plugin-services.ts`) enforce the mechanical rules.
+- A test fake of a service keeps its type: root `policies/testing-strategy.md` → Service fakes holds the pattern.
 
 ## Container Notes
 

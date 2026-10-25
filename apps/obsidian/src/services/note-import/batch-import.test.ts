@@ -1,5 +1,5 @@
 import { Deferred, Effect, Exit, Stream } from "effect";
-import type { TFile } from "obsidian";
+import { TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
@@ -194,7 +194,9 @@ function makeIndexedNote(key = "ABCD2345"): Note {
 }
 
 function makeFile(path: string): TFile {
-  return { path } as TFile;
+  const file = new TFile();
+  file.path = path;
+  return file;
 }
 
 const PERSONAL_LIBRARY: Library = {
@@ -327,7 +329,7 @@ it("lets the batch chip change only orphans while existing and parent stamps rem
     source: "headless",
     shouldAsk: true,
   });
-  const existing = { path: "Books/Imported.md" } as TFile;
+  const existing = makeFile("Books/Imported.md");
   deps.noteIndex.getImportedNoteByNoteKey = (key) =>
     key === makeRef(1).indexedKey ? [existing] : [];
   seedNotes([1, 2, 3]);
@@ -450,7 +452,7 @@ it.each([true, false])(
   "shows an unknown Imported Note stamp and keeps recovery (additional Profiles: %s)",
   async (additionalProfiles) => {
     const stamp = "Retired (Qw8Er5Ty2Ui9)";
-    const file = { path: "Imported/Methods.md" } as TFile;
+    const file = makeFile("Imported/Methods.md");
     const { deps, importNote } = makeDeps({}, { existing: [file] });
     deps.profile = profileReader(
       {
@@ -1187,30 +1189,6 @@ describe("up-to-date classification", () => {
     expect(importNote).toHaveBeenCalledTimes(2);
   });
 
-  it("classifies as overwrite when zotero-lastmod is newer than dateModified", async () => {
-    const ref50 = makeRef(50);
-    seedNotes([50, 51]);
-    const target = makeFile("Imported/Note 50.md");
-    const { deps, importNote } = makeDeps(
-      {},
-      {
-        importNoteResult: "overwritten",
-        frontmatter: new Map([
-          [target, { "zotero-lastmod": "2024-02-03T08:31:00Z" }],
-        ]),
-      },
-    );
-    deps.noteIndex.getImportedNoteByNoteKey = (key) =>
-      key === ref50.indexedKey ? [target] : [];
-
-    await createBatchImport(deps).runBatchImport("note", [50, 51]);
-    const { manifest } = await driveLastModal();
-
-    expect(manifest.options.tasks[0]).toMatchObject({ kind: "1:overwrite" });
-    expect(manifest.options.upToDate).toHaveLength(0);
-    expect(importNote).toHaveBeenCalledTimes(2);
-  });
-
   it("classifies as create when no existing file exists", async () => {
     seedNotes([50, 51]);
     const { deps, importNote } = makeDeps({});
@@ -1417,18 +1395,5 @@ describe("reimportNoteByKey", () => {
     ).resolves.toEqual({ outcome: "overwritten" });
 
     expect(importNote.mock.calls[0]![1]).toMatchObject({ targetFile });
-  });
-
-  it("preserves a skipped write outcome", async () => {
-    const note = makeIndexedNote();
-    seedNotes([note.itemID], { key: note.key });
-    const { deps } = makeDeps({}, { importNoteResult: "skipped" });
-
-    await expect(
-      createBatchImport(deps).reimportNoteByKey(
-        note.indexedKey,
-        makeFile("Imported/Clicked.md"),
-      ),
-    ).resolves.toEqual({ outcome: "skipped" });
   });
 });

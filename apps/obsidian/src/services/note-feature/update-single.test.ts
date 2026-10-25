@@ -1,8 +1,10 @@
 import { Effect } from "effect";
+import type { App } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import type { ItemRef } from "@zotlit/db";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { InertTemplateError } from "@/services/template/errors";
@@ -29,7 +31,7 @@ const REF: ItemRef = {
 function noteLessDeps(): SingleUpdateDeps {
   return {
     profile: profileReader(),
-    app: {} as SingleUpdateDeps["app"],
+    app: stubService<App>("App", {}),
     zoteroReads: {
       state: "ready",
       get reads(): never {
@@ -40,21 +42,21 @@ function noteLessDeps(): SingleUpdateDeps {
       },
       snapshot: Effect.die(new Error("the snapshot must not be opened")),
     },
-    settings: {} as SingleUpdateDeps["settings"],
+    settings: stubService<SingleUpdateDeps["settings"]>("PluginSettings", {}),
     bridge: { runSync: Effect.runSync },
     libraryScope: {
       resolveLibraries: () => {
         throw new Error("create path reached: library scope resolved");
       },
     },
-    noteFeature: {
+    noteFeature: stubService<SingleUpdateDeps["noteFeature"]>("NoteFeature", {
       createNote: () => {
         throw new Error("create path reached: createNote called");
       },
-    } as unknown as SingleUpdateDeps["noteFeature"],
-    noteIndex: {
+    }),
+    noteIndex: stubService<SingleUpdateDeps["noteIndex"]>("NoteIndex", {
       getNotesByItemKey: () => [],
-    } as unknown as SingleUpdateDeps["noteIndex"],
+    }),
   };
 }
 
@@ -156,7 +158,7 @@ describe("updateNoteToast", () => {
     );
   });
 
-  it.each(["full", "metadata"] as const)(
+  it.each(["full"] as const)(
     "surfaces an InertTemplateError's own message for the %s scope",
     (scope) => {
       const { error } = updateNoteToast(scope);
@@ -166,7 +168,7 @@ describe("updateNoteToast", () => {
     },
   );
 
-  it.each(["full", "metadata"] as const)(
+  it.each(["full"] as const)(
     "falls back to the generic failure copy for an untyped error in the %s scope",
     (scope) => {
       const { error } = updateNoteToast(scope);

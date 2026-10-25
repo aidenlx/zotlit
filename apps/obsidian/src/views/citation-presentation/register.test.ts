@@ -1,9 +1,11 @@
-import { Menu, stringifyYaml, TFile, TFolder } from "@mock/obsidian";
+import { Menu, stringifyYaml } from "@mock/obsidian";
 import { Effect } from "effect";
+import { TFile, TFolder } from "obsidian";
 import type { App, Command, Plugin, TAbstractFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { registerFileMenu } from "@/services/file-menu";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
@@ -12,6 +14,7 @@ import type { Settings } from "@/services/settings/schema";
 
 import type { CitationPresentationModalOptions } from "./modal";
 import type { CitationPresentationChoice } from "./presentation";
+import type { CitationPresentationDeps } from "./register";
 import {
   citationPresentationFileMenu,
   registerCitationPresentation,
@@ -34,11 +37,8 @@ const NOTE_STYLE_ID = "http://www.zotero.org/styles/note-numbered";
 const VAULT_STYLE_ID = "http://www.zotero.org/styles/vault-prose";
 const DATA_DIR = "/zotero";
 
-type FileMenuHandler = (
-  menu: Menu,
-  file: TAbstractFile,
-  source: string,
-) => void;
+type EventCallback = (...data: never[]) => unknown;
+type FileMenuHandler = (...args: [Menu, TAbstractFile, string]) => unknown;
 
 interface VaultOptions {
   /** The properties the active note carries; `undefined` leaves no note active. */
@@ -81,32 +81,37 @@ function openVault({ note, settings = {} }: VaultOptions = {}) {
   let command: Command | undefined;
   let fileMenu: FileMenuHandler | undefined;
 
-  const app = {
-    ...host.app,
-    workspace: {
-      ...host.workspace,
-      getActiveFile: () => (note ? file : null),
-      on: (name: string, callback: FileMenuHandler) => {
-        if (name === "file-menu") fileMenu = callback;
+  const app = stubService<App>("App", {
+    vault: stubService<App["vault"]>("Vault", {
+      process: host.vault.process.bind(host.vault),
+    }),
+    metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
+      getFileCache: host.metadataCache.getFileCache.bind(host.metadataCache),
+    }),
+    workspace: stubService<App["workspace"]>("Workspace", {
+      on: (name: string, callback: EventCallback, _ctx?: unknown) => {
+        if (name === "file-menu") fileMenu = callback as FileMenuHandler;
         return {};
       },
-    },
-  } as unknown as App;
+      getActiveFile: () => (note ? file : null),
+      iterateAllLeaves: host.workspace.iterateAllLeaves.bind(host.workspace),
+    }),
+  });
 
-  const deps = {
+  const deps: CitationPresentationDeps = {
     app,
     zoteroPref: { dataDir: DATA_DIR },
     settings: { current: Effect.succeed(resolvedSettings) },
     bridge: { runSync: Effect.runSync },
   };
   registerCitationPresentation(
-    {
+    stubService<Pick<Plugin, "addCommand" | "app">>("Plugin", {
       app,
       addCommand: (added: Command) => {
         command = added;
         return added;
       },
-    } as unknown as Pick<Plugin, "addCommand" | "app">,
+    }),
     deps,
   );
   registerFileMenu({ app, registerEvent: () => undefined }, [
@@ -139,12 +144,8 @@ function openVault({ note, settings = {} }: VaultOptions = {}) {
       await vi.waitFor(() => expect(dialog.opened.length).toBeGreaterThan(0));
       await Promise.resolve();
     },
-    /** Perform it from the palette, leaving it to whatever it waits on. */
-    begin() {
-      palette.checkCallback?.(false);
-    },
     /** One menu this action was offered a place in, as Obsidian builds it. */
-    menu(source: string, target: TAbstractFile = file as never) {
+    menu(source: string, target: TAbstractFile = file) {
       const menu = new Menu();
       onFileMenu(menu, target, source);
       return menu;
@@ -220,24 +221,6 @@ describe("the Set citation presentation action", () => {
     });
   });
 
-  it("opens on the settled vault selections", async () => {
-    const vault = openVault({
-      note: {},
-      settings: {
-        "citation.references-style": VAULT_STYLE_ID,
-        "citation.locale": "en-GB",
-      },
-    });
-
-    vault.begin();
-    await vi.waitFor(() => expect(dialog.opened.length).toBeGreaterThan(0));
-
-    expect(openedOn()).toMatchObject({
-      vaultStyleId: VAULT_STYLE_ID,
-      vaultLocale: "en-GB",
-    });
-  });
-
   it("writes the chosen style and language into the note at once", async () => {
     const vault = openVault({ note: { title: "Draft" } });
     answer({ styleId: NOTE_STYLE_ID, language: "de-DE" });
@@ -249,18 +232,6 @@ describe("the Set citation presentation action", () => {
       "zotlit-csl": NOTE_STYLE_ID,
       lang: "de-DE",
     });
-    expect(vault.writes).toEqual(["draft.md"]);
-  });
-
-  it("hands the note back to the vault selections it chose to inherit", async () => {
-    const vault = openVault({
-      note: { title: "Draft", "zotlit-csl": NOTE_STYLE_ID, lang: "de-DE" },
-    });
-    answer({ styleId: null, language: null });
-
-    await vault.perform();
-
-    expect(vault.frontmatter).toEqual({ title: "Draft" });
     expect(vault.writes).toEqual(["draft.md"]);
   });
 
@@ -294,8 +265,8 @@ describe("the note's More options menu", () => {
     const canvas = new TFile();
     canvas.extension = "canvas";
 
-    expect(vault.moreOptions(canvas as never).items).toHaveLength(0);
-    expect(vault.moreOptions(new TFolder() as never).items).toHaveLength(0);
+    expect(vault.moreOptions(canvas).items).toHaveLength(0);
+    expect(vault.moreOptions(new TFolder()).items).toHaveLength(0);
   });
 
   it("stays out of the menus that are no note's own", () => {

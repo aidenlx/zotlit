@@ -12,6 +12,7 @@ import type {
 } from "obsidian";
 import { vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { parseFrontMatter } from "@/lib/live-text";
 
@@ -53,7 +54,8 @@ export class MockVault {
 
   on(name: VaultEvent, callback: VaultCallback): EventRef {
     this.#listeners[name].add(callback);
-    return { e: this, name, callback } as unknown as EventRef;
+    const ref = { e: this, name, callback };
+    return ref;
   }
 
   offref(ref: EventRef): void {
@@ -220,7 +222,14 @@ export class HostTextView extends TextFileView {
     readonly host: ObsidianHost,
     readonly lineEndings: "keep" | "lf",
   ) {
-    super({ app: host.app } as unknown as WorkspaceLeaf);
+    super(
+      Object.assign(
+        stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+          updateHeader: () => {},
+        }),
+        { app: host.app },
+      ),
+    );
   }
 
   /** Type into the editor: the view holds `text` as an unsaved edit. */
@@ -351,7 +360,8 @@ class HostMetadataCache {
   /** Only `changed` fires; a listener for any other event hears nothing. */
   on(name: MetadataEvent | (string & {}), callback: MetadataCallback): EventRef {
     if (name === "changed") this.#listeners.add(callback);
-    return { e: this, callback } as unknown as EventRef;
+    const ref = { e: this, callback };
+    return ref;
   }
 
   offref(ref: EventRef): void {
@@ -412,7 +422,8 @@ export function createObsidianHost(files: Record<string, string> = {}) {
   const workspace = Object.assign(new MemoryWorkspace({ layoutReady: true }), {
     updateOptions: vi.fn(),
     iterateAllLeaves: (callback: (leaf: WorkspaceLeaf) => void) => {
-      for (const view of views) callback({ view } as unknown as WorkspaceLeaf);
+      for (const view of views)
+        callback(stubService<WorkspaceLeaf>("WorkspaceLeaf", { view }));
     },
   });
   const app = { vault, metadataCache, workspace };

@@ -220,6 +220,14 @@ export default defineConfig({
       rules: { "zotlit-effect-tests/service-stub": "error" },
     },
     {
+      files: [
+        "src/**/*.test.{ts,tsx}",
+        "src/**/__fixtures__.ts",
+        "src/**/__fixtures__/**",
+      ],
+      rules: { "zotlit-effect-tests/typed-fake": "error" },
+    },
+    {
       // These tests exercise the run entry points themselves.
       files: ["src/lib/effect-runtime.test.ts", "src/lib/effect-entry.test.ts"],
       rules: { "zotlit-effect-tests/no-effect-run-in-test": "off" },

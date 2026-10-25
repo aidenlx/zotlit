@@ -10,11 +10,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileSystemAdapter, TFolder } from "obsidian";
-import type { App } from "obsidian";
+import type { App, FileManager, Vault } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { copyAttachments } from "@/lib/copy-attachments";
 import { effectBridge } from "@/lib/effect-bridge";
 import { defaults } from "@/services/settings/schema";
@@ -47,21 +48,21 @@ function makeFolder(path: string): TFolder {
 function makeApp(storage = makeDeviceStorage()): App {
   const root = makeFolder("/");
   const attachments = makeFolder("Attachments");
-  return {
+  return stubService<App>("App", {
     loadLocalStorage: storage.loadLocalStorage,
     saveLocalStorage: storage.saveLocalStorage,
-    vault: {
+    vault: stubService<Vault>("Vault", {
       adapter: new FileSystemAdapter(),
       getRoot: () => root,
       getAbstractFileByPath: (path: string) =>
         path === "Attachments" ? attachments : null,
-      createFolder: vi.fn(),
-    },
-    fileManager: {
+      createFolder: vi.fn(async () => attachments),
+    }),
+    fileManager: stubService<FileManager>("FileManager", {
       getAvailablePathForAttachment: vi.fn(async () => "Attachments/file.png"),
       generateMarkdownLink: (file: { name: string }) => `[[${file.name}]]`,
-    },
-  } as unknown as App;
+    }),
+  });
 }
 
 function makeSettings(value: {

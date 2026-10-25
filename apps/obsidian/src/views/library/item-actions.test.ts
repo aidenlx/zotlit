@@ -1,18 +1,37 @@
 // @vitest-environment happy-dom
 // Insert citation from a Library View row goes to the note the researcher was
 // in last, which Obsidian no longer names once the Library View tab is active.
-import { Effect } from "effect";
 import { MarkdownView } from "obsidian";
-import type { App, Editor, TFile, WorkspaceLeaf } from "obsidian";
-import { expect, it, vi } from "vitest";
+import { TFile } from "obsidian";
+import type {
+  App,
+  Editor,
+  MarkdownFileInfo,
+  Workspace,
+  WorkspaceLeaf,
+} from "obsidian";
+import { afterEach, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { CitationLookupAnswer } from "@/services/citation-index/lookup";
+import {
+  inProcessReadsService,
+  memoryOpener,
+  seedWorksSql,
+} from "@/services/zotero-reads/test-utils";
 import { stateEditor } from "@/views/annot-view/__fixtures__/editor";
 
 import { itemActions } from "./item-actions";
 import type { ItemActionsDeps } from "./item-actions";
 
 const KEY = "ABCD2345";
+
+let cleanup = new AsyncDisposableStack();
+afterEach(async () => {
+  await cleanup.disposeAsync();
+  cleanup = new AsyncDisposableStack();
+});
 
 /** A tab of the workspace: a note, in `mode`, or the Library View. */
 interface Tab {
@@ -42,8 +61,13 @@ function workspaceFixture() {
       );
     activeFile = path;
   };
-  const workspace = {
-    getActiveFile: () => (activeFile === null ? null : { path: activeFile }),
+  const workspace = stubService<Workspace>("Workspace", {
+    getActiveFile: () => {
+      if (activeFile === null) return null;
+      const file = new TFile();
+      file.path = activeFile;
+      return file;
+    },
     getLastOpenFiles: () => [...lastOpen],
     get activeEditor() {
       return active?.view instanceof MarkdownView ? active.view : null;
@@ -56,7 +80,7 @@ function workspaceFixture() {
     // The row actions here change no tab while an insert is held.
     on: () => ({}),
     offref: () => {},
-  };
+  });
   /** The researcher makes `tab` the active tab. */
   const activate = (tab: Tab) => {
     active = tab.leaf;
@@ -70,19 +94,27 @@ function workspaceFixture() {
   /** A note at `path`, in Source mode or Reading view. */
   const note = (path: string, mode: "source" | "preview" = "source"): Tab => {
     const cm = stateEditor({ doc: "LEFT RIGHT" });
-    const view = Object.assign(Object.create(MarkdownView.prototype), {
-      file: { path } as TFile,
-      editor: { cm } as Editor,
+    const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {});
+    const file = new TFile();
+    file.path = path;
+    const view = Object.assign(new MarkdownView(leaf), {
+      file,
+      editor: stubService<Editor>("Editor", { cm }),
       getMode: () => mode,
       getViewType: () => "markdown",
-    }) as MarkdownView;
-    const leaf = { view } as unknown as WorkspaceLeaf;
+    });
+    leaf.view = view;
     Object.assign(view, { leaf });
     open.push(leaf);
     return { leaf, text: () => cm.state.doc.toString() };
   };
   const library: Tab = {
-    leaf: { view: { getViewType: () => "zotlit-library" } } as WorkspaceLeaf,
+    leaf: stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+      view: stubService<WorkspaceLeaf["view"] & { file: null }>("View", {
+        file: null,
+        getViewType: () => "zotlit-library",
+      }),
+    }),
     text: () => "",
   };
   open.push(library.leaf);
@@ -102,36 +134,57 @@ function setup(
 ) {
   const fixture = workspaceFixture();
   before(fixture);
-  const app = { workspace: fixture.workspace } as unknown as App;
+  const app = stubService<App>("App", { workspace: fixture.workspace });
   const notify = vi.fn();
   const record = vi.fn();
-  const actions = itemActions({
-    app,
-    notify,
-    reads: {
-      acquireRead: () =>
-        Promise.resolve({
-          reads: {
-            ItemsByIndexedKeys: () =>
-              Effect.succeed(
-                new Map([
-                  [KEY, { key: KEY, fields: { citationKey: "vaswani2017" } }],
-                ]),
-              ),
+  const reads = cleanup.use(
+    inProcessReadsService(
+      memoryOpener(() =>
+        seedWorksSql([{ itemID: 1, key: KEY, citationKey: "vaswani2017" }]),
+      ).open,
+    ),
+  );
+  const lookup = new CitationLookupAnswer({
+    revision: "test",
+    citekeys: new Map([
+      [
+        "vaswani2017",
+        {
+          kind: "unique",
+          item: {
+            itemID: 1,
+            libraryID: 1,
+            key: KEY,
+            indexedKey: KEY,
           },
-          [Symbol.asyncDispose]: () => Promise.resolve(),
-        }),
-    },
-    citationLookup: {
-      status: "ready",
-      read: () => Promise.resolve({ resolve: () => ({ kind: "unique" }) }),
-    },
-    noteFeature: {
-      renderCitation: (cites: { citationKey: string }[]) =>
-        cites.map(({ citationKey }) => `[@${citationKey}]`).join(""),
-    },
-    useLedger: { record },
-  } as unknown as ItemActionsDeps);
+        },
+      ],
+    ]),
+    indexedKeys: new Map([[KEY, "vaswani2017"]]),
+    annotationKeys: new Map(),
+  });
+  const readyStatus: ItemActionsDeps["citationLookup"]["status"] = "fresh";
+  const actions = itemActions(
+    stubService<ItemActionsDeps>("ItemActionsDeps", {
+      app,
+      notify,
+      reads,
+      citationLookup: stubService<ItemActionsDeps["citationLookup"]>(
+        "CitationLookup",
+        {
+          status: readyStatus,
+          read: () => Promise.resolve(lookup),
+        },
+      ),
+      noteFeature: stubService<ItemActionsDeps["noteFeature"]>("NoteFeature", {
+        renderCitation: (cites: { citationKey: string }[]) =>
+          cites.map(({ citationKey }) => `[@${citationKey}]`).join(""),
+      }),
+      useLedger: stubService<ItemActionsDeps["useLedger"]>("UseLedger", {
+        record,
+      }),
+    }),
+  );
   return { ...fixture, actions, notify, record };
 }
 
@@ -175,7 +228,13 @@ it("inserts into a new tab that became active before it opened its note", async 
   // A new tab is active while it is empty, then opens the note.
   const fresh = env.note("Fresh.md");
   const view = fresh.leaf.view;
-  env.show(fresh, { getViewType: () => "empty" } as WorkspaceLeaf["view"]);
+  env.show(
+    fresh,
+    stubService<WorkspaceLeaf["view"] & { file: null }>("View", {
+      file: null,
+      getViewType: () => "empty",
+    }),
+  );
   env.activate(fresh);
   env.show(fresh, view);
   env.activate(env.library);
@@ -210,7 +269,11 @@ it("parts a dropped or inserted citation from the word before it with a space, a
   env.activate(draft);
   env.activate(env.library);
   const view = draft.leaf.view as MarkdownView;
-  const target = (at: number) => ({ editor: view.editor, info: view, at });
+  const target = (at: number) => ({
+    editor: view.editor,
+    info: view as MarkdownFileInfo,
+    at,
+  });
 
   // Dropped right after LEFT.
   await env.actions.insertCitation(KEY, target(4));

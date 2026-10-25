@@ -5,15 +5,14 @@
 // `views/annot-view/async-insert.test.ts`; a landed insert and its Use are
 // proven in the running app by `packages/e2e/src/annotation-links.e2e.ts`.
 import type { EditorView } from "@codemirror/view";
-import type { App, Editor, MarkdownFileInfo, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { App, Editor, MarkdownFileInfo } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
-import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
-import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { setup as repositorySetup } from "@/services/annotation-repository/__fixtures__";
 import type { NoteFeature } from "@/services/note-feature";
-import { buildUseLedger } from "@/services/use-ledger/__fixtures__";
+import { buildUseLedger, fakeApp } from "@/services/use-ledger/__fixtures__";
 import { stateEditor } from "@/views/annot-view/__fixtures__/editor";
 
 import { insertAnnotation } from "./annotation-insert";
@@ -36,15 +35,16 @@ const hit: AnnotationHit = {
 /** Obsidian's workspace and per-vault storage, the host the insert runs in. */
 function host(): App {
   let stored: unknown;
-  return {
-    loadLocalStorage: () => stored,
-    saveLocalStorage: (_key: string, value: unknown) => {
+  const app = fakeApp({
+    load: () => stored,
+    save: (_key, value) => {
       stored = structuredClone(value);
     },
-    workspace: new MemoryWorkspace(),
-    metadataCache: new MemoryMetadataCache(),
-    vault: new MemoryVault(),
-  } as unknown as App;
+  });
+  Object.assign(app, {
+    fileManager: stubService<App["fileManager"]>("FileManager", {}),
+  });
+  return app;
 }
 
 /**
@@ -63,14 +63,16 @@ async function harness(
   const useLedger = buildUseLedger(app, stack);
   const cm = stateEditor({ doc });
   stack.defer(() => cm.destroy());
-  const editor = {
+  const editor = stubService<Editor>("Editor", {
     cm,
     getValue: () => cm.state.doc.toString(),
-  } as unknown as Editor;
-  const info = {
+  });
+  const file = new TFile();
+  file.path = "Draft.md";
+  const info = stubService<MarkdownFileInfo>("MarkdownFileInfo", {
     editor,
-    file: { path: "Draft.md" } as TFile,
-  } as MarkdownFileInfo;
+    file,
+  });
   const prepare = vi.fn<NoteFeature["prepareAnnotationInsert"]>(async () => {
     whileRendering?.(cm);
     return {
@@ -81,7 +83,7 @@ async function harness(
         unavailable: 0,
         written: 0,
         reused: 0,
-      } as never,
+      },
     };
   });
   const insert = (target: AnnotationHit, from: number, to: number) =>

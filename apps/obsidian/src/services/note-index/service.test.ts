@@ -1,8 +1,9 @@
 import { it } from "@effect/vitest";
 import { Effect } from "effect";
-import type { App, CachedMetadata, TFile } from "obsidian";
+import type { App, CachedMetadata, MetadataCache, TFile } from "obsidian";
 import { describe, expect } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { subscribe } from "@/lib/effect-stream";
 import type { ProfileId } from "@/lib/profile-stamp";
 
@@ -370,7 +371,7 @@ describe("NoteIndex", () => {
         );
         metadataCache.change(vault.files.get("Import.md")!, {
           frontmatter: { "zotero-note-key": ITEM_B, rating: 3 },
-        } as CachedMetadata);
+        });
         expect(frontmatter).toEqual(["paper.md", "Import.md"]);
         expect(changed).toEqual([]);
 
@@ -441,7 +442,7 @@ describe("NoteIndex", () => {
             }),
             "Import.md": {
               frontmatter: { "zotero-note-key": "NOTE2345", imported: true },
-            } as CachedMetadata,
+            },
             "scratch.md": cache({ properties: { draft: true } }),
           },
           { enabledAtRuntime: true },
@@ -566,13 +567,13 @@ describe("NoteIndex", () => {
       ["Ordinary.md", cache({})],
     ]);
     // Exact-path resolution; enough to tell a hit from a dangling link.
-    const app = {
-      metadataCache: {
+    const app = stubService<App>("App", {
+      metadataCache: stubService<MetadataCache>("MetadataCache", {
         getFirstLinkpathDest: (linkpath: string) =>
           notes.has(`${linkpath}.md`) ? makeFile(`${linkpath}.md`) : null,
         getFileCache: (file: TFile) => notes.get(file.path) ?? null,
-      },
-    } as unknown as App;
+      }),
+    });
 
     expect(resolveIndexedKey("Doe 2024", "source.md", app)).toBe(ITEM_A);
     expect(resolveIndexedKey("Ordinary", "source.md", app)).toBeNull();

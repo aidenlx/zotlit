@@ -3,12 +3,14 @@
 // its own save, and the toolbar says when the write failed.
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { Stream } from "effect";
-import type { WorkspaceLeaf } from "obsidian";
+import { debounce } from "obsidian";
+import type { App, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
@@ -30,7 +32,7 @@ const EMPTY: QueryViewOutcome = {
   kind: "result",
   result: {
     libraries: [{ type: "personal" }],
-    query: {} as never,
+    query: { filter: null, fields: [], sort: [], limit: null },
     returnedCount: 0,
     matchedCount: 0,
     truncated: false,
@@ -56,32 +58,58 @@ async function openTab() {
   cleanup.defer(resetMockPlatform);
   const host = createObsidianHost({});
   const runtime = testRuntime();
-  const deps = {
+  const app = stubService<App>("App", {
+    scope: stubService<App["scope"]>("Scope", {}),
+    vault: host.vault as unknown as App["vault"],
+    metadataCache: host.metadataCache as unknown as App["metadataCache"],
+    workspace: Object.assign(host.workspace, {
+      requestSaveLayout: debounce(() => Promise.resolve(), 0),
+    }) as unknown as App["workspace"],
+  });
+  const deps = stubService<QueryViewDeps>("QueryViewDeps", {
     runtime,
     bridge: effectBridge(runtime),
-    app: {
-      ...host.app,
-      scope: undefined,
-      workspace: { ...host.workspace, requestSaveLayout: () => {} },
-    },
-    reads: {
+    app,
+    reads: stubService<QueryViewDeps["reads"]>("ZoteroReads", {
       changed: Stream.empty,
       degraded: Stream.empty,
       "refresh-failed": Stream.empty,
       refreshing: Stream.empty,
       "db-file-missing": Stream.empty,
       "refresh-requested": Stream.empty,
-    },
-    libraryScope: { changed: Stream.empty, "libraries-changed": Stream.empty },
+    }),
+    libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
+      changed: Stream.empty,
+      "libraries-changed": Stream.empty,
+    }),
     query: fakeQuery(() => Promise.resolve(EMPTY)),
-    cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
-    annotations: annotationReads(),
+    cardFocus: stubService<QueryViewDeps["cardFocus"]>("QueryCardFocus", {
+      hold: () => ({ [Symbol.dispose]: () => {} }),
+    }),
+    annotations: stubService<QueryViewDeps["annotations"]>(
+      "Annotations",
+      annotationReads(),
+    ),
+    opener: stubService<QueryViewDeps["opener"]>("TargetOpener", {}),
+    allowEditing: vi.fn(),
+    reportBlockedGesture: vi.fn(),
+    libraryTagNames: async () => [],
+    zoteroPref: stubService<QueryViewDeps["zoteroPref"]>("ZoteroPref", {
+      dataDir: "/Zotero",
+      baseAttachmentPath: null,
+    }),
+    excerptDisplay: stubService<QueryViewDeps["excerptDisplay"]>(
+      "ExcerptDisplay",
+      { open: vi.fn(), refresh: vi.fn() },
+    ),
+    noteFeature: stubService<QueryViewDeps["noteFeature"]>("NoteFeature", {}),
     literatureNotes: noLiteratureNotes(),
-  } as unknown as QueryViewDeps;
-  const tab = new QueryFileView(
-    { app: deps.app } as unknown as WorkspaceLeaf,
-    deps,
-  );
+  });
+  const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+    updateHeader: vi.fn(),
+  });
+  Object.defineProperty(leaf, "app", { value: deps.app });
+  const tab = new QueryFileView(leaf, deps);
   const written: string[] = [];
   const write = vi.fn(async (text: string) => {
     written.push(text);

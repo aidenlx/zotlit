@@ -9,10 +9,12 @@ import type {
   Setting as ObsidianSetting,
   SettingDefinitionItem,
   SettingDefinitionList,
+  SettingGroup,
 } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import type { CitationTemplateStatus } from "@/services/template/service";
@@ -37,7 +39,10 @@ function renderItem(row: SettingDefinitionItem): Setting {
   if (!("render" in row) || !row.render)
     throw new Error("Expected a render row");
   const setting = new Setting(document.createElement("div"));
-  row.render(setting as unknown as ObsidianSetting, {} as never);
+  row.render(
+    setting as unknown as ObsidianSetting,
+    stubService<SettingGroup>("SettingGroup", {}),
+  );
   return setting;
 }
 
@@ -51,20 +56,24 @@ const DEFAULT_STATUS: CitationTemplateStatus = {
 
 /** The Citation text row as it renders for one Citation Template state. */
 function citationRow(status: CitationTemplateStatus): Setting {
-  const [row] = citationTextItems({
+  const ctx = stubService<SettingTabContext>("SettingTabContext", {
     runtime: testRuntime(),
-    app: {},
+    app: stubService<SettingTabContext["app"]>("App", {}),
     requestUpdate: () => {},
-    template: {
+    template: stubService<SettingTabContext["template"]>("Template", {
       loaded: true,
       getCitationTemplateStatus: () => status,
-    },
-  } as unknown as SettingTabContext);
+    }),
+  });
+  const [row] = citationTextItems(ctx);
   if (!row || !("render" in row) || !row.render) {
     throw new Error("Expected one Citation text render row");
   }
   const setting = new Setting(document.createElement("div"));
-  row.render(setting as unknown as ObsidianSetting, {} as never);
+  row.render(
+    setting as unknown as ObsidianSetting,
+    stubService<SettingGroup>("SettingGroup", {}),
+  );
   return setting;
 }
 
@@ -128,19 +137,27 @@ function partialRows(
   partials: readonly { name: string; path: string; language: "liquid" }[],
   reserved: readonly { name: string; path: string }[] = [],
 ) {
-  return partialItems({
+  const ctx = stubService<SettingTabContext>("SettingTabContext", {
     runtime: testRuntime(),
-    app: { setting: { close: vi.fn() }, vault: { getFileByPath: () => null } },
+    app: stubService<SettingTabContext["app"]>("App", {
+      setting: stubService<SettingTabContext["app"]["setting"]>(
+        "SettingsModal",
+        { close: vi.fn() },
+      ),
+      vault: stubService<SettingTabContext["app"]["vault"]>("Vault", {
+        getFileByPath: () => null,
+      }),
+    }),
     requestUpdate: () => {},
-    template: {
-      ready: Promise.resolve(),
+    template: stubService<SettingTabContext["template"]>("Template", {
       loaded: true,
       getPartialDocuments: () => partials,
       getReservedPartialFiles: () => reserved,
       getPartialNames: () => partials.map(({ name }) => name),
       deletePartial,
-    },
-  } as unknown as SettingTabContext);
+    }),
+  });
+  return partialItems(ctx);
 }
 
 const deletePartial = vi.fn(async () => {});
@@ -187,22 +204,29 @@ it("holds Delete in the row's menu and trashes the partial once confirmed", asyn
 it("closes settings only once Add partial has created a document", async () => {
   const close = vi.fn();
   const requestUpdate = vi.fn();
-  const ctx = {
+  const partialDocument = stubService<
+    NonNullable<ReturnType<SettingTabContext["app"]["vault"]["getFileByPath"]>>
+  >("TFile", { path: AUTHORS.path });
+  const ctx = stubService<SettingTabContext>("SettingTabContext", {
     runtime: testRuntime(),
-    app: {
-      setting: { close },
-      vault: { getFileByPath: (path: string) => ({ path }) },
-    },
+    app: stubService<SettingTabContext["app"]>("App", {
+      setting: stubService<SettingTabContext["app"]["setting"]>(
+        "SettingsModal",
+        { close },
+      ),
+      vault: stubService<SettingTabContext["app"]["vault"]>("Vault", {
+        getFileByPath: () => partialDocument,
+      }),
+    }),
     requestUpdate,
-    template: {
-      ready: Promise.resolve(),
+    template: stubService<SettingTabContext["template"]>("Template", {
       loaded: true,
       getPartialDocuments: () => [],
       getReservedPartialFiles: () => [],
       getPartialNames: () => [],
       getPartialDocument: () => AUTHORS,
-    },
-  } as unknown as SettingTabContext;
+    }),
+  });
   const [list] = partialItems(ctx) as [SettingDefinitionList];
 
   vi.mocked(createSharedPartial).mockResolvedValueOnce(null);

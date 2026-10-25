@@ -15,11 +15,14 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type {
   App,
-  CachedMetadata,
   EventRef,
+  FileSystemAdapter,
   HoverParent,
   LinkCache,
+  MetadataCache,
   TFile,
+  Vault,
+  Workspace,
   WorkspaceLeaf,
 } from "obsidian";
 import { act } from "preact/test-utils";
@@ -325,7 +328,7 @@ export async function openCitationVault({
   // The wikilink Obsidian's own cache reports for the exported note.
   harness.metadataCache.fileCache.set(EXPORT_NOTE, {
     links: [link(LINKPATH)],
-  } as CachedMetadata);
+  });
   /** The presentation properties both notes carry right now. */
   const declared: { style: unknown; language: unknown } = {
     style: documentStyle,
@@ -395,7 +398,11 @@ export async function openCitationVault({
   );
 
   const view = new TestReferencesView(
-    {} as WorkspaceLeaf,
+    // The view's leaf carries no App, as before the stub.
+    Object.assign(
+      stubService<WorkspaceLeaf>("WorkspaceLeaf", { updateHeader: () => {} }),
+      { app: undefined },
+    ),
     {
       runtime: citationText.runtime,
       app: sidebarApp(harness),
@@ -427,7 +434,7 @@ export async function openCitationVault({
         getFileByPath: (path: string) =>
           harness.metadataCache.files.get(path) ?? null,
       }),
-    } as unknown as App,
+    },
     db: harness.db,
     citationIndex: harness.index,
     citationLookup: harness.lookup,
@@ -586,14 +593,14 @@ export async function openCitationVault({
  * away from it.
  */
 function sidebarApp({ app, draft }: CitationIndexHarness): App {
-  return {
+  return stubService<App>("App", {
     metadataCache: app.metadataCache,
     vault: app.vault,
-    workspace: {
+    workspace: stubService<Workspace>("Workspace", {
       getActiveFile: () => draft,
-      on: () => ({}) as EventRef,
-    },
-  } as unknown as App;
+      on: () => stubService<EventRef>("EventRef", {}),
+    }),
+  });
 }
 
 /**
@@ -636,21 +643,24 @@ function exportAdapter({
   return {
     citationParse: plainTestParseClient(inProcessParseClient),
     profile: profileReader(profileSettings, harness.metadataCache),
-    app: {
-      metadataCache: harness.metadataCache,
-      vault: {
-        adapter: { getBasePath: () => dataDir },
+    app: stubService<App>("App", {
+      metadataCache: harness.metadataCache as unknown as MetadataCache,
+      vault: stubService<Vault>("Vault", {
+        adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
+          getBasePath: () => dataDir,
+        }),
         cachedRead: (file: TFile) => harness.vault.cachedRead(file),
-      },
-    } as unknown as App,
+      }),
+    }),
     db: harness.db,
     citationLookup: harness.lookup,
     pandocEngine: pandocEngineHandle(engine),
-    zoteroPref: {
-      ready: Promise.resolve(),
+    zoteroPref: stubService<PandocExportDeps["zoteroPref"]>("ZoteroPref", {
       dataDir,
+      // Zotero's default port; the fetch below answers in its place.
+      httpPort: 23119,
       get: () => true,
-    } as unknown as PandocExportDeps["zoteroPref"],
+    }),
     // The bibliography fetch is mocked, so nothing reaches Zotero.
     zoteroHttp: fakeFetchClient(() => {
       throw new Error("No Zotero in this fixture");

@@ -3,6 +3,7 @@ import "fake-indexeddb/auto";
 import type { App } from "obsidian";
 import { expect, it } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { subscribe } from "@/lib/effect-stream";
 
 import { openCitekeyStore, SCANNER_REVISION } from "./store";
@@ -104,7 +105,7 @@ it("restores schema v2 Annotation Occurrences with link text without a read (#16
       { "draft.md": body },
       {
         notes: false,
-        openStore: () => openCitekeyStore({ appId } as App),
+        openStore: () => openCitekeyStore(stubService<App>("App", { appId })),
       },
     );
     expect(harness.index.getAnnotationUses("EFGH6789")).toMatchObject([

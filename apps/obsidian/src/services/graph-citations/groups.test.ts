@@ -2,6 +2,7 @@
 import type { GraphColor, GraphEngine, GraphOptions } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 
 import {
@@ -42,10 +43,10 @@ function fixture() {
     const groups = options.colorGroups;
     if (Array.isArray(groups)) section.setColorQueries(groups);
   });
-  const engine = {
+  const engine = stubService<GraphEngine>("GraphEngine", {
     colorGroupOptions: section,
     setOptions,
-  } as unknown as GraphEngine;
+  });
   return {
     engine,
     section,
@@ -205,7 +206,8 @@ describe("installGroupsButton", () => {
   });
 
   it("builds no button and reports once when the build moved a member", () => {
-    const engine = { colorGroupOptions: {} } as GraphEngine;
+    const engine: GraphEngine = Object.create(null);
+    engine.colorGroupOptions = Object.create(null);
 
     using _first = installGroupsButton(engine, new GraphNodeColors());
     using _second = installGroupsButton(engine, new GraphNodeColors());

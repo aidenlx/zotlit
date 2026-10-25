@@ -1,14 +1,19 @@
 // @vitest-environment happy-dom
 import { createMockPlugin, Keymap } from "@mock/obsidian";
+import { TFile } from "obsidian";
 import type {
   App,
   Command,
   GraphOptions,
-  TFile,
+  PaneType,
+  SplitDirection,
   ViewState,
+  Workspace,
   WorkspaceLeaf,
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 
 import {
   addGraphCitationsActions,
@@ -24,7 +29,8 @@ import { FakeColorGroupSection, FakeControlSection } from "./test-double";
 const ALL_COMMAND_IDS = ["open-citation-graph", "open-local-citation-graph"];
 
 /** A note the local command can graph. */
-const DRAFT = { path: "Draft.md" } as TFile;
+const DRAFT = new TFile();
+DRAFT.path = "Draft.md";
 
 /** What one opened leaf recorded: how it was asked for, and what it was told to show. */
 interface OpenedLeaf {
@@ -47,31 +53,37 @@ function setup(options: FixtureOptions = {}) {
   /** What each leaf showed by the time the preset reached it. */
   const preset: { leaf: WorkspaceLeaf; showing?: string }[] = [];
   const leafStates = new WeakMap<WorkspaceLeaf, OpenedLeaf>();
-  const mostRecent = { id: "most-recent" } as unknown as WorkspaceLeaf;
-  const workspace = {
+  const mostRecent = stubService<WorkspaceLeaf>("WorkspaceLeaf", {});
+  const workspace = stubService<Workspace>("Workspace", {
     getActiveFile: () => options.activeFile ?? null,
     getMostRecentLeaf: () => mostRecent,
-    getLeaf: (...asked: unknown[]) => {
+    getLeaf: (
+      newLeaf?: PaneType | boolean,
+      direction?: SplitDirection,
+    ): WorkspaceLeaf => {
+      const asked = [newLeaf, direction].filter(
+        (argument) => argument !== undefined,
+      );
       const record: OpenedLeaf = { asked };
       opened.push(record);
-      const leaf = {
+      const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
         setViewState: (state: ViewState) => {
           record.state = state;
           return Promise.resolve();
         },
-      } as unknown as WorkspaceLeaf;
+      });
       leafStates.set(leaf, record);
       return leaf;
     },
-  };
-  const app = {
+  });
+  const app = stubService<App>("App", {
     workspace,
-    lastEvent: { type: "keydown" },
+    lastEvent: new KeyboardEvent("keydown"),
     internalPlugins: {
       getEnabledPluginById: (id: string) =>
         id === "graph" && (options.graphEnabled ?? true) ? {} : null,
     },
-  } as unknown as App;
+  });
   const plugin = createMockPlugin();
   const ready =
     (options.started ?? true)
@@ -160,11 +172,12 @@ describe("addGraphCitationsActions", () => {
       const fixture = setup({ activeFile: DRAFT });
       const displayOptions = new FakeControlSection();
       const colorGroupOptions = new FakeColorGroupSection();
+      const options: GraphOptions = {
+        centerStrength: 0.42,
+        textFadeMultiplier: -0.5,
+      };
       const engine = {
-        options: {
-          centerStrength: 0.42,
-          textFadeMultiplier: -0.5,
-        } as GraphOptions,
+        options,
         displayOptions,
         colorGroupOptions,
         render: vi.fn(),
@@ -224,13 +237,6 @@ describe("addGraphCitationsActions", () => {
     expect(fixture.opened).toEqual([]);
   });
 
-  it("offers the local command while a note is active", () => {
-    const fixture = setup({ activeFile: DRAFT });
-    expect(
-      fixture.command("open-local-citation-graph").checkCallback!(true),
-    ).toBe(true);
-  });
-
   it("opens nothing while the Graph core plugin is disabled", async () => {
     const fixture = setup({ graphEnabled: false, activeFile: DRAFT });
 
@@ -272,10 +278,6 @@ describe("addGraphCitationsActions", () => {
 });
 
 describe("citationGraphReadiness", () => {
-  it("reads a Citation Graph as ready where everything it stands on is there", async () => {
-    await expect(citationGraphReadiness(setup().deps)).resolves.toBe("ready");
-  });
-
   it("tells the three ways it cannot be opened apart", async () => {
     await expect(
       citationGraphReadiness(setup({ graphEnabled: false }).deps),

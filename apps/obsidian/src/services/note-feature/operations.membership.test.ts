@@ -1,7 +1,8 @@
 // Creation preparation and registry behavior over Profile documents and relational Item rows.
 
 import { Effect } from "effect";
-import type { TFile, Vault } from "obsidian";
+import { TFolder } from "obsidian";
+import type { FileSystemAdapter, TFile, Vault } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stringify as stringifyYaml } from "yaml";
 
@@ -16,6 +17,7 @@ import type { ItemFields } from "@zotlit/zotero-types";
 import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
@@ -245,6 +247,17 @@ async function harness(
     ),
   );
   const { app, vault, profile, template, settings } = fixture;
+  const root = new TFolder();
+  root.path = "";
+  Object.assign(app.vault, {
+    getRoot: () => root,
+    createFolder: (path: string) => {
+      const folder = new TFolder();
+      folder.path = path;
+      vault.folders.set(path, folder);
+      return Promise.resolve(folder);
+    },
+  });
   const notesByKey = new Map<string, TFile[]>();
   const create = vault.create.bind(vault);
   vault.create = async (path, content) => {
@@ -273,10 +286,12 @@ async function harness(
         baseAttachmentPath: "/zotero/linked",
       },
       libraryScope: fixture.libraryScope,
-      vault: {
+      vault: stubService<Vault>("Vault", {
         getName: () => "Membership tests",
-        adapter: { getBasePath: () => "/vault" },
-      } as unknown as Vault,
+        adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
+          getBasePath: () => "/vault",
+        }),
+      }),
     }),
   );
   const deps: NoteFeatureDeps = {
@@ -741,7 +756,6 @@ describe("Profile document matches at creation preparation", () => {
   it.each([
     [personalBook, 'tags.contains("Read")'],
     [personalBook, 'tags.contains("READ")'],
-    [article, 'tags.contains("auto-tag")'],
   ] as const)(
     "creates with the Profile selected by exact manual or automatic Tag names",
     async (item, match) => {

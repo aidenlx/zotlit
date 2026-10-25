@@ -1,5 +1,5 @@
 import { Stream } from "effect";
-import type { App } from "obsidian";
+import type { App, Vault } from "obsidian";
 import { expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
@@ -10,6 +10,7 @@ import {
   LOCAL_BRIDGE_PATHS,
 } from "@zotlit/workbench/bridge";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { DOCS_SITE_URL } from "@/lib/constants";
 import { effectBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
@@ -34,49 +35,53 @@ const ITEM = { key: "IANNP5A2", title: "Why research findings are false" };
 function makeDevice(held: Map<string, unknown> = new Map()) {
   return {
     held,
-    app: {
-      vault: { getName: () => VAULT_NAME },
+    app: stubService<App>("App", {
+      vault: stubService<Vault>("Vault", { getName: () => VAULT_NAME }),
       loadLocalStorage: (key: string) => held.get(key) ?? null,
       saveLocalStorage: (key: string, value: unknown) => {
         if (value === null) held.delete(key);
         else held.set(key, value);
       },
-    } as unknown as App,
+    }),
   };
 }
 
-const PROFILES = {
-  ready: Promise.resolve(),
+const PROFILES = stubService<BridgeProfileWriter>("BridgeProfileWriter", {
   loaded: true,
   resolveProfile: (selector: string) =>
     selector === BOOKS_PROFILE
-      ? ({ label: "Books" } as ReturnType<ProfileReader["resolveProfile"]>)
+      ? stubService<NonNullable<ReturnType<ProfileReader["resolveProfile"]>>>(
+          "ResolvedProfile",
+          { label: "Books" },
+        )
       : undefined,
   getSource: () => Promise.resolve(""),
-} as unknown as BridgeProfileWriter;
+});
 
 /**
  * The vault data the reads answer from. This suite is about the lifecycle and
  * the grant, so nothing here is asked for a value; `reads.test.ts` drives them.
  */
-const READ_DEPS = {
-  zoteroReads: {
-    acquireRead: () => Promise.reject(new Error("not used here")),
-  },
-  noteIndex: {
+const READ_DEPS: Pick<
+  LocalBridgeServiceDeps,
+  "zoteroReads" | "noteIndex" | "template" | "zoteroPref"
+> = {
+  zoteroReads: stubService<LocalBridgeServiceDeps["zoteroReads"]>(
+    "ZoteroReads",
+    {
+      acquireRead: () => Promise.reject(new Error("not used here")),
+    },
+  ),
+  noteIndex: stubService<LocalBridgeServiceDeps["noteIndex"]>("NoteIndex", {
     whenIndexed: () => Promise.resolve(),
     getNotesByItemKey: () => [],
     getImportedNoteByNoteKey: () => [],
-  },
-  template: {
-    ready: Promise.resolve(),
+  }),
+  template: stubService<LocalBridgeServiceDeps["template"]>("PlainTemplate", {
     exportLiteratureNotePackSource: (source: string) => Promise.resolve(source),
-  },
+  }),
   zoteroPref: { dataDir: "" },
-} as unknown as Pick<
-  LocalBridgeServiceDeps,
-  "zoteroReads" | "noteIndex" | "template" | "zoteroPref"
->;
+};
 
 /** Resolve the port once the listener binds one. */
 async function whenListening(

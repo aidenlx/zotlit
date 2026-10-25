@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, vi } from "vitest";
 import { parse } from "yaml";
 
 import { withAnnotationCitation } from "@zotlit/db";
+import type { TemplateAnnotation } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
@@ -16,6 +17,7 @@ import { TemplateError } from "@zotlit/templates/facade";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import { getProfileBinding } from "@/services/profile/bindings";
 import {
@@ -23,6 +25,7 @@ import {
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
+import { workbenchRegistrationDeps } from "./__fixtures__";
 import { TEMPLATE_CHECK_COMMAND } from "./check";
 import { readTemplateData } from "./data";
 import { registerTemplateWorkbench } from "./register";
@@ -33,6 +36,19 @@ vi.mock("./data", async (original) => ({
 }));
 
 const PATH = "templates/zotlit-profile.books.md";
+function annotationOf(
+  members: Partial<TemplateAnnotation>,
+): TemplateAnnotation {
+  const annotation = stubService<TemplateAnnotation>(
+    "TemplateAnnotation",
+    members,
+  );
+  // A template root must read as non-iterable while the rest stays strict.
+  Object.defineProperty(annotation, "next", { value: undefined });
+  Object.defineProperty(annotation, "toLiquid", { value: undefined });
+  return annotation;
+}
+
 const SOURCE = `---
 id: Bk3Qn7XvT2Lp
 name: Books
@@ -93,18 +109,22 @@ async function fixture(
     dataDir: "/fixture",
     baseAttachmentPath: null,
   };
-  registerTemplateWorkbench({ ...host, manifest: { version: "test" } }, {
-    runtime: testRuntime(),
-    app: f.app,
-    templates: f.template,
-    settings: f.settings,
-    bridge: f.bridge,
-    profile: f.profile,
-    zoteroPref,
-    noteIndex,
-    zoteroReads:
-      client && stack.use(inProcessReadsService(sharedClientOpener(client))),
-  } as never);
+  const zoteroReads =
+    client && stack.use(inProcessReadsService(sharedClientOpener(client)));
+  registerTemplateWorkbench(
+    { ...host, manifest: { version: "test" } },
+    workbenchRegistrationDeps({
+      runtime: testRuntime(),
+      app: f.app,
+      templates: f.template,
+      settings: f.settings,
+      bridge: f.bridge,
+      profile: f.profile,
+      zoteroPref,
+      noteIndex,
+      ...(zoteroReads === undefined ? {} : { zoteroReads }),
+    }),
+  );
   const cleanup = stack.move();
   return {
     ...f,
@@ -1616,7 +1636,7 @@ Annotation`;
             ? Effect.succeed({
                 kind: "data",
                 data: withAnnotationCitation(
-                  { indexedKey: key } as never,
+                  annotationOf({ indexedKey: key }),
                   () => {
                     if (broken)
                       throw new TemplateError("Citation failed", "citation");
@@ -1685,11 +1705,11 @@ Annotation`;
               return {
                 kind: "data" as const,
                 data: withAnnotationCitation(
-                  {
+                  annotationOf({
                     indexedKey: key,
                     comment:
                       key === "ANNQ2345" ? firstComment : "Second annotation",
-                  } as never,
+                  }),
                   () => {
                     throw new TemplateError(
                       `Citation failed for ${key}`,

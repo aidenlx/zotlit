@@ -1,9 +1,10 @@
 import { it } from "@effect/vitest";
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { Effect, Layer } from "effect";
-import type { App } from "obsidian";
+import type { App, FileSystemAdapter, Vault } from "obsidian";
 import { afterEach, describe, expect } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import { layerTestObsidianEnv } from "./__fixtures__/obsidian-env";
@@ -18,16 +19,16 @@ describe("layerObsidianEnv", () => {
     Effect.gen(function* () {
       setMockPlatform({ isMacOS: true, isWin: false, isDesktopApp: true });
       let reads = 0;
-      const app = {
-        vault: {
-          adapter: {
+      const app = stubService<App>("App", {
+        vault: stubService<Vault>("Vault", {
+          adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
             getBasePath: () => {
               reads += 1;
               return "/Users/me/vault";
             },
-          },
-        },
-      } as unknown as App;
+          }),
+        }),
+      });
       const env = yield* ObsidianEnv.pipe(
         Effect.provide(
           layerObsidianEnv.pipe(Layer.provide(Layer.succeed(ObsidianApp, app))),

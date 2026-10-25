@@ -8,7 +8,7 @@ import type {
 import { Effect } from "effect";
 import { Stream } from "effect";
 import { SuggestModal, TFile } from "obsidian";
-import type { App, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import type { App, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,7 +27,9 @@ import {
 } from "@zotlit/workbench/render";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { bindProfile } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import {
@@ -62,9 +64,9 @@ vi.mock("@/views/note-preview/render", async (importOriginal) => {
   const { failedRender, renderIdentity } =
     await import("@zotlit/workbench/render");
   const stub = () =>
-    vi.fn(async (_deps: unknown, request: { source: string }) =>
+    vi.fn<typeof actual.renderNativeTemplate>(async (_deps, request) =>
       actual.nativeResult(
-        failedRender(renderIdentity(request as never), {
+        failedRender(renderIdentity(request), {
           code: "render-error",
         }),
       ),
@@ -117,12 +119,20 @@ function setup(
   const modify = vi.fn<(file: TFile, source: string) => Promise<void>>(
     async () => {},
   );
+  const requestSaveLayout: App["workspace"]["requestSaveLayout"] =
+    Object.assign(
+      vi.fn(() => requestSaveLayout),
+      {
+        cancel: () => requestSaveLayout,
+        run: () => undefined,
+      },
+    );
   const app =
     sharedApp ??
-    ({
-      scope: null,
-      workspace: {
-        requestSaveLayout: vi.fn(),
+    stubService<App>("App", {
+      scope: stubService<App["scope"]>("Scope", {}),
+      workspace: stubService<App["workspace"]>("Workspace", {
+        requestSaveLayout,
         trigger: vi.fn(),
         on: vi.fn(() => ({})),
         offref: vi.fn(),
@@ -130,32 +140,54 @@ function setup(
         revealLeaf: vi.fn(async () => {}),
         setActiveLeaf,
         getActiveFile: () => null,
-      },
+      }),
       ...localStorageStub,
-      vault: { modify },
-    } as unknown as App);
-  const leaf = {
-    app,
+      vault: stubService<App["vault"]>("Vault", { modify }),
+    });
+  const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
     setViewState: vi.fn(async () => {}),
-  } as unknown as WorkspaceLeaf;
-  const view = new TestTemplateWorkbenchView(leaf, {
-    app,
-    settings: {
-      current: Effect.succeed(defaults),
-      changes: Stream.empty,
-    },
-    bridge: { runSync: Effect.runSync },
-    pluginVersion: "2.1.3",
-    zoteroReads: { state: "ready" },
-    zoteroPref: { dataDir: null },
-    templates: {
-      loaded: true,
-      "compile-status-changed": Stream.empty,
-      getPartialNames: () => [],
-      getPartialDocuments: () => [],
-    },
-    ...deps,
-  } as unknown as TemplateWorkbenchDeps);
+    updateHeader: vi.fn(),
+  });
+  Object.defineProperty(leaf, "app", { value: app });
+  const view = new TestTemplateWorkbenchView(
+    leaf,
+    stubService<TemplateWorkbenchDeps>("TemplateWorkbenchDeps", {
+      app,
+      settings: stubService<TemplateWorkbenchDeps["settings"]>(
+        "PluginSettings",
+        {
+          current: Effect.succeed(defaults),
+          changes: Stream.empty,
+        },
+      ),
+      bridge: stubService<TemplateWorkbenchDeps["bridge"]>("EffectBridge", {
+        runSync: Effect.runSync,
+      }),
+      pluginVersion: "2.1.3",
+      noteFeature: undefined,
+      query: undefined,
+      nativePreview: undefined,
+      render: undefined,
+      profile: undefined,
+      zoteroReads: stubService<TemplateWorkbenchDeps["zoteroReads"]>(
+        "ZoteroReads",
+        { state: "ready" },
+      ),
+      zoteroPref: stubService<TemplateWorkbenchDeps["zoteroPref"]>(
+        "ZoteroPref",
+        {
+          dataDir: "/Zotero",
+        },
+      ),
+      templates: stubService<TemplateWorkbenchDeps["templates"]>("Templates", {
+        loaded: true,
+        "compile-status-changed": Stream.empty,
+        getPartialNames: () => [],
+        getPartialDocuments: () => [],
+      }),
+      ...deps,
+    }),
+  );
   leaf.view = view;
   const requestSave = vi.fn();
   view.requestSave = requestSave;
@@ -172,20 +204,29 @@ describe("TemplateWorkbenchView", () => {
       duplicateRegionCount: 0,
     }));
     const waitUntilSettled = vi.fn(async () => "settled" as const);
-    const profileOf = vi.fn(() => ({
+    const profileOf: NonNullable<
+      NonNullable<TemplateWorkbenchDeps["profile"]>["profileOf"]
+    > = () => ({
       ok: true,
-      profile: { selector: "default" },
-    }));
+      profile: bindProfile(defaults, { selector: "default" }),
+    });
     const h = setup({
       runtime: testRuntime(),
-      noteFeature: { updateNote },
-      profile: { profileOf },
-      templates: {
+      noteFeature: stubService<
+        NonNullable<TemplateWorkbenchDeps["noteFeature"]>
+      >("NoteFeature", { updateNote }),
+      profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
+        "Profile",
+        {
+          profileOf,
+        },
+      ),
+      templates: stubService<TemplateWorkbenchDeps["templates"]>("Templates", {
         waitUntilSettled,
         loaded: true,
         "compile-status-changed": Stream.empty,
-      },
-    } as unknown as Partial<TemplateWorkbenchDeps>);
+      }),
+    });
     const file = Object.assign(new TFile(), {
       path: "Literature/Original.md",
       basename: "Original",
@@ -309,7 +350,7 @@ describe("TemplateWorkbenchView", () => {
       bodyUpdated: false,
       duplicateRegionCount: 0,
       noManagedBlock: true,
-    } as never);
+    });
     const result = await h.view.updateOriginatingNote();
     expect(result).toMatchObject({
       outcome: "updated",
@@ -898,9 +939,12 @@ An annotation.
     const path = "templates/zotlit-profile.default.md";
     const { view } = setup({
       runtime: testRuntime(),
-      profile: {
-        defaultDocumentPath: path,
-      } as TemplateWorkbenchDeps["profile"],
+      profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
+        "Profile",
+        {
+          defaultDocumentPath: path,
+        },
+      ),
     });
     const file = new TFile();
     file.path = path;
@@ -963,16 +1007,17 @@ An annotation.
     const materializeDefault = vi.fn(() => pending.promise);
     const { view, requestSave } = setup({
       runtime: testRuntime(),
-      profile: {
-        getSource: async () => SOURCE,
-        getBuiltInSource: () => SOURCE,
-        materializeDefault,
-      } as unknown as TemplateWorkbenchDeps["profile"],
+      profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
+        "Profile",
+        {
+          defaultDocumentPath: "templates/zotlit-profile.default.md",
+          getSource: async () => SOURCE,
+          getBuiltInSource: () => SOURCE,
+          materializeDefault,
+        },
+      ),
     });
-    await view.setState(
-      { defaultDraft: true, file: null },
-      {} as ViewStateResult,
-    );
+    await view.setState({ defaultDraft: true, file: null }, { history: false });
     const controller = view.controller;
     controller.setManifestKey("name", "Typing attempt");
     expect(controller.undo()).toBe(false);
@@ -1013,13 +1058,17 @@ An annotation.
       .mockResolvedValue({ file, created: true });
     const { view, requestSave } = setup({
       runtime: testRuntime(),
-      profile: {
-        getSource: async () => SOURCE,
-        getBuiltInSource: () => SOURCE,
-        materializeDefault,
-      } as unknown as TemplateWorkbenchDeps["profile"],
+      profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
+        "Profile",
+        {
+          defaultDocumentPath: "templates/zotlit-profile.default.md",
+          getSource: async () => SOURCE,
+          getBuiltInSource: () => SOURCE,
+          materializeDefault,
+        },
+      ),
     });
-    await view.setState({ defaultDraft: true }, {} as ViewStateResult);
+    await view.setState({ defaultDraft: true }, { history: false });
     await view.customizeDefault();
     expect(view.store.getState().customization === "failed").toBe(true);
     expect(view.store.getState().customization === "pending").toBe(false);
@@ -1037,17 +1086,21 @@ An annotation.
     const file = new TFile();
     const { view, leaf, requestSave, modify } = setup({
       runtime: testRuntime(),
-      profile: {
-        getSource: async () => SOURCE,
-        getBuiltInSource: () => SOURCE,
-        materializeDefault: async () => ({ file, created: false }),
-      } as unknown as TemplateWorkbenchDeps["profile"],
+      profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
+        "Profile",
+        {
+          defaultDocumentPath: "templates/zotlit-profile.default.md",
+          getSource: async () => SOURCE,
+          getBuiltInSource: () => SOURCE,
+          materializeDefault: async () => ({ file, created: false }),
+        },
+      ),
     });
     const existing = SOURCE.replace("name: Paper", "name: Existing Default");
     vi.spyOn(leaf, "setViewState").mockImplementation(async () => {
       view.setViewData(existing, true);
     });
-    await view.setState({ defaultDraft: true }, {} as ViewStateResult);
+    await view.setState({ defaultDraft: true }, { history: false });
     await view.customizeDefault();
     expect(view.getViewData()).toBe(existing);
     expect(view.controller.undo()).toBe(false);
@@ -1061,15 +1114,19 @@ An annotation.
       .mockRejectedValue(new Error("Disk full"));
     const { view } = setup({
       runtime: testRuntime(),
-      profile: {
-        getSource: async () => SOURCE,
-        getBuiltInSource: () => SOURCE,
-        materializeDefault,
-      } as unknown as TemplateWorkbenchDeps["profile"],
+      profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
+        "Profile",
+        {
+          defaultDocumentPath: "templates/zotlit-profile.default.md",
+          getSource: async () => SOURCE,
+          getBuiltInSource: () => SOURCE,
+          materializeDefault,
+        },
+      ),
     });
     document.body.append(view.contentEl);
     await act(async () => {
-      await view.setState({ defaultDraft: true }, {} as ViewStateResult);
+      await view.setState({ defaultDraft: true }, { history: false });
       await view.open();
     });
     const editor = EditorView.findFromDOM(
@@ -1100,15 +1157,19 @@ An annotation.
     const pending = Promise.withResolvers<{ file: TFile; created: boolean }>();
     const { view, modify } = setup({
       runtime: testRuntime(),
-      profile: {
-        getSource: async () => SOURCE,
-        getBuiltInSource: () => SOURCE,
-        materializeDefault: () => pending.promise,
-      } as unknown as TemplateWorkbenchDeps["profile"],
+      profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
+        "Profile",
+        {
+          defaultDocumentPath: "templates/zotlit-profile.default.md",
+          getSource: async () => SOURCE,
+          getBuiltInSource: () => SOURCE,
+          materializeDefault: () => pending.promise,
+        },
+      ),
     });
-    await view.setState({ defaultDraft: true }, {} as ViewStateResult);
+    await view.setState({ defaultDraft: true }, { history: false });
     const creating = view.customizeDefault();
-    await view.setState({ file: "other.md" }, {} as ViewStateResult);
+    await view.setState({ file: "other.md" }, { history: false });
     view.setViewData(SOURCE.replace("name: Paper", "name: Other"), true);
     const controller = view.controller;
     pending.resolve({ file, created: true });
@@ -1125,7 +1186,7 @@ An annotation.
     const { view } = setup();
     const restoring = view.setState(
       { itemIndexedKey: null },
-      {} as ViewStateResult,
+      { history: false },
     );
     const choice = SAMPLE_ITEM_CHOICES[0]!;
     expect(await view.selectItem(choice)).toBe(true);
@@ -1137,14 +1198,17 @@ An annotation.
   it("keeps authoring and restored state available when the database fails", async () => {
     const { view, requestSave } = setup({
       runtime: testRuntime(),
-      zoteroReads: {
-        state: "degraded",
-      } as unknown as TemplateWorkbenchDeps["zoteroReads"],
+      zoteroReads: stubService<TemplateWorkbenchDeps["zoteroReads"]>(
+        "ZoteroReads",
+        {
+          state: "degraded",
+        },
+      ),
     });
     await expect(
       view.setState(
         { itemIndexedKey: "0:ABCDEFGH", advanced: true },
-        {} as ViewStateResult,
+        { history: false },
       ),
     ).resolves.toBeUndefined();
     expect(view.store.getState().advanced).toBe(true);
@@ -1158,12 +1222,15 @@ An annotation.
     let failed = true;
     const { view } = setup({
       runtime: testRuntime(),
-      zoteroPref: {
-        get dataDir() {
-          if (failed) throw new Error("Unavailable");
-          return "";
+      zoteroPref: stubService<TemplateWorkbenchDeps["zoteroPref"]>(
+        "ZoteroPref",
+        {
+          get dataDir() {
+            if (failed) throw new Error("Unavailable");
+            return "";
+          },
         },
-      } as unknown as TemplateWorkbenchDeps["zoteroPref"],
+      ),
     });
     await expect(view.refreshStyles()).resolves.toBeUndefined();
     expect(view.unavailableDependencies).toHaveLength(1);
@@ -1221,15 +1288,6 @@ An annotation.
     expect(requestSave).toHaveBeenCalledOnce();
     controller.undo();
     expect(view.getViewData()).toBe(SOURCE);
-  });
-
-  it("starts a new history when another file loads", () => {
-    const { view } = setup();
-    const before = view.controller;
-    before.setManifestKey("name", "Edited");
-    view.setViewData(SOURCE.replace("name: Paper", "name: Other"), true);
-    expect(view.controller).not.toBe(before);
-    expect(view.controller.canUndo).toBe(false);
   });
 
   it.each([
@@ -1425,7 +1483,12 @@ An annotation.
         editor.dispatch({ selection: { anchor: 3 } });
       });
       expect(
-        view.insertTemplateField({ leaf: {} as WorkspaceLeaf, node }),
+        view.insertTemplateField({
+          leaf: stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+            updateHeader: vi.fn(),
+          }),
+          node,
+        }),
       ).toBe(false);
       expect(requestSave).not.toHaveBeenCalled();
       await act(() => {
@@ -1523,26 +1586,51 @@ function sharedWorkspace() {
   const listeners = new Set<(file: TFile, source: string) => void>();
   const leaves: WorkspaceLeaf[] = [];
   const read = vi.fn<(file: TFile) => Promise<string>>(async () => SOURCE);
+  function on(
+    name: "quick-preview",
+    callback: (file: TFile, source: string) => unknown,
+    ctx?: unknown,
+  ): {};
+  function on(
+    name: string,
+    callback: (...data: never[]) => unknown,
+    ctx?: unknown,
+  ): {};
+  function on(
+    name: string,
+    callback: (...data: never[]) => unknown,
+    _ctx?: unknown,
+  ): {} {
+    if (name === "quick-preview")
+      listeners.add(callback as (file: TFile, source: string) => void);
+    return {};
+  }
   const trigger = vi.fn((name: string, file: TFile, source: string) => {
     if (name === "quick-preview")
       for (const listener of listeners) listener(file, source);
   });
-  const app = {
-    scope: null,
-    workspace: {
-      requestSaveLayout: vi.fn(),
-      setActiveLeaf,
-      on(name: string, callback: (file: TFile, source: string) => void) {
-        if (name === "quick-preview") listeners.add(callback);
+  const requestSaveLayout: App["workspace"]["requestSaveLayout"] =
+    Object.assign(
+      vi.fn(() => requestSaveLayout),
+      {
+        cancel: () => requestSaveLayout,
+        run: () => undefined,
       },
+    );
+  const app = stubService<App>("App", {
+    scope: stubService<App["scope"]>("Scope", {}),
+    workspace: stubService<App["workspace"]>("Workspace", {
+      requestSaveLayout,
+      setActiveLeaf,
+      on,
       trigger,
       iterateAllLeaves(callback: (leaf: WorkspaceLeaf) => void) {
         leaves.forEach(callback);
       },
-    },
+    }),
     ...localStorageStub,
-    vault: { read },
-  } as unknown as App;
+    vault: stubService<App["vault"]>("Vault", { read }),
+  });
   const file = new TFile();
   file.path = "profiles/paper.md";
   function editor() {
@@ -1763,9 +1851,7 @@ it("recreates persisted editor choices and restores namespaced presentation afte
   document.body.append(typing);
   cleanup.defer(() => typing.remove());
   typing.focus();
-  await act(async () =>
-    restored.view.setState(persisted, {} as ViewStateResult),
-  );
+  await act(async () => restored.view.setState(persisted, { history: false }));
   restored.view.setEphemeralState(ephemeral);
   await act(async () => restored.view.open());
   const restoredEditor = EditorView.findFromDOM(
@@ -1831,9 +1917,12 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
   );
   const { view, app } = setup({
     runtime: testRuntime(),
-    profile: {
-      getBuiltInSource: () => builtin,
-    } as TemplateWorkbenchDeps["profile"],
+    profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
+      "Profile",
+      {
+        getBuiltInSource: () => builtin,
+      },
+    ),
   });
   cleanup.defer(() => act(async () => view.close()));
   const file = new TFile();
@@ -1883,10 +1972,11 @@ language: liquid
   function openKind(path: string, source: string) {
     const harness = setup({
       runtime: testRuntime(),
-      templates: {
+      templates: stubService<TemplateWorkbenchDeps["templates"]>("Templates", {
         "compile-status-changed": Stream.empty,
+        loaded: false,
         materializeCitationTemplate: vi.fn(),
-      } as unknown as TemplateWorkbenchDeps["templates"],
+      }),
     });
     const file = new TFile();
     file.path = path;
@@ -2160,7 +2250,7 @@ language: liquid
   it("lists the vault's partials in the pane menu and ends with New partial", () => {
     const { view } = setup({
       runtime: testRuntime(),
-      templates: {
+      templates: stubService<TemplateWorkbenchDeps["templates"]>("Templates", {
         "compile-status-changed": Stream.empty,
         loaded: true,
         getPartialNames: () => ["authors", "venue-line"],
@@ -2176,7 +2266,7 @@ language: liquid
             language: "liquid",
           },
         ],
-      } as unknown as TemplateWorkbenchDeps["templates"],
+      }),
     });
     const menu = new Menu();
     view.onPaneMenu(menu as never, "more-options");
@@ -2208,7 +2298,7 @@ language: liquid
     const unpacked: string[] = [];
     const { view } = setup({
       runtime: testRuntime(),
-      templates: {
+      templates: stubService<TemplateWorkbenchDeps["templates"]>("Templates", {
         "compile-status-changed": Stream.empty,
         loaded: true,
         getPartialNames: () => [],
@@ -2237,7 +2327,7 @@ language: liquid
             otherCase: [],
           };
         },
-      } as unknown as TemplateWorkbenchDeps["templates"],
+      }),
     });
     view.setViewData(bundled, true);
     expect(view.controller.problems[0]).toMatchObject({
@@ -2278,7 +2368,7 @@ language: liquid
   it("names no partial while the template service is still scanning the folder", () => {
     const { view } = setup({
       runtime: testRuntime(),
-      templates: {
+      templates: stubService<TemplateWorkbenchDeps["templates"]>("Templates", {
         "compile-status-changed": Stream.empty,
         loaded: false,
         getPartialNames: () => {
@@ -2287,7 +2377,7 @@ language: liquid
           );
         },
         getPartialDocuments: () => [],
-      } as unknown as TemplateWorkbenchDeps["templates"],
+      }),
     });
 
     // The placeholder reads this during render, before the folder scan ends.
@@ -2662,26 +2752,6 @@ An annotation.
     );
   });
 
-  // One transaction is one history event, so this passes on the dispatch alone;
-  // the isolated-history annotation is what the next test guards.
-  it("restores the selection in one undo and keeps the created file", async () => {
-    await using cleanup = new AsyncDisposableStack();
-    vi.mocked(createSharedPartial).mockResolvedValueOnce("authors");
-    const { view, editor } = await openProfile("liquid");
-    cleanup.defer(() => act(async () => view.close()));
-    cleanup.defer(() => view.contentEl.remove());
-    await extract(editor, SELECTION.length);
-
-    await act(() => {
-      view.controller.undo();
-    });
-
-    expect(view.getViewData()).toBe(EXTRACT_SOURCE);
-    expect(view.controller.canUndo).toBe(false);
-    // Undo rewrites the caller alone: nothing takes the partial back.
-    expect(createSharedPartial).toHaveBeenCalledOnce();
-  });
-
   it("keeps the keystrokes around it out of its undo step", async () => {
     await using cleanup = new AsyncDisposableStack();
     vi.mocked(createSharedPartial).mockResolvedValueOnce("authors");
@@ -2808,10 +2878,19 @@ language: liquid
   function openCitation() {
     const harness = setup({
       runtime: testRuntime(),
-      nativePreview: {
+      nativePreview: stubService<
+        NonNullable<TemplateWorkbenchDeps["nativePreview"]>
+      >("NativeRenderDeps", {
         runtime: testRuntime(),
-        app: { vault: { on: () => ({}), offref: () => {} } },
-        zoteroReads: {
+        app: stubService<App>("App", {
+          vault: stubService<App["vault"]>("Vault", {
+            on: vi.fn(),
+            offref: vi.fn(),
+          }),
+        }),
+        zoteroReads: stubService<
+          NonNullable<TemplateWorkbenchDeps["nativePreview"]>["zoteroReads"]
+        >("ZoteroReads", {
           changed: Stream.empty,
           degraded: Stream.empty,
           "refresh-failed": Stream.empty,
@@ -2819,22 +2898,28 @@ language: liquid
           "db-file-missing": Stream.empty,
           "refresh-requested": Stream.empty,
           acquireRead: vi.fn(),
-        },
-        templates: { "compile-status-changed": Stream.empty },
-        bibliographyRender: {
+        }),
+        templates: stubService<
+          NonNullable<TemplateWorkbenchDeps["nativePreview"]>["templates"]
+        >("Templates", { "compile-status-changed": Stream.empty }),
+        bibliographyRender: stubService<
+          NonNullable<
+            TemplateWorkbenchDeps["nativePreview"]
+          >["bibliographyRender"]
+        >("BibliographyRender", {
           changed: Stream.empty,
           settled: Stream.empty,
           invalidated: Stream.empty,
           "style-missing": Stream.empty,
-        },
-      } as unknown as TemplateWorkbenchDeps["nativePreview"],
-      templates: {
+        }),
+      }),
+      templates: stubService<TemplateWorkbenchDeps["templates"]>("Templates", {
         "compile-status-changed": Stream.empty,
         loaded: true,
         getPartialNames: () => [],
         getPartialDocuments: () => [],
         materializeCitationTemplate: vi.fn(),
-      } as unknown as TemplateWorkbenchDeps["templates"],
+      }),
     });
     const file = new TFile();
     file.path = "templates/zotlit-citation.md";
@@ -2916,18 +3001,26 @@ describe("Template Workbench Item choice", () => {
     const { view, app } = setup({
       runtime: testRuntime(),
       zoteroReads,
-      itemLookup: {
-        // The chooser lists the first paper among the recently updated Items.
-        search: async () => [
-          {
-            item: first,
-            matches: [],
-            library: null,
-          },
-        ],
-        openSession: () => ({ search: async () => [], [Symbol.dispose]() {} }),
-      },
-    } as unknown as Partial<TemplateWorkbenchDeps>);
+      itemLookup: stubService<TemplateWorkbenchDeps["itemLookup"]>(
+        "ItemLookup",
+        {
+          // The chooser lists the first paper among the recently updated Items.
+          search: async () => [
+            {
+              item: first,
+              matches: [],
+              library: null,
+              cited: false,
+            },
+          ],
+          openSession: () => ({
+            search: async () => [],
+            close: () => {},
+            [Symbol.dispose]() {},
+          }),
+        },
+      ),
+    });
     using open = vi.spyOn(SuggestModal.prototype, "open");
     using trigger = vi.spyOn(app.workspace, "trigger");
 

@@ -1,12 +1,13 @@
 // Excerpt preparation reads the database before the vault, through ZoteroReads.
 import { TFile } from "obsidian";
-import type { App } from "obsidian";
+import type { App, FileSystemAdapter, Vault, Workspace } from "obsidian";
 import { expect, it } from "vitest";
 
 import { getAnnotationsByKey } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { defaults } from "@/services/settings/schema";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import {
@@ -51,25 +52,36 @@ it("reads every database input before it reads the previous note", async () => {
     inProcessReadsService(sharedClientOpener(client)),
   ).ready;
   const log: string[] = [];
-  const logged = { ...reads } as Record<string, unknown>;
-  for (const operation of READ_OPERATIONS) {
-    const call = reads[operation] as (payload: object) => unknown;
-    logged[operation] = (payload: object) => {
-      log.push(operation);
-      return call(payload);
-    };
-  }
+  const logged: ZoteroReadsApi = new Proxy(
+    stubService<ZoteroReadsApi>("ZoteroReadsApi", {}),
+    {
+      get(_target, key) {
+        const value = Reflect.get(reads, key, reads);
+        if (
+          typeof value !== "function" ||
+          !READ_OPERATIONS.includes(key as (typeof READ_OPERATIONS)[number])
+        )
+          return typeof value === "function" ? value.bind(reads) : value;
+        return (...args: unknown[]) => {
+          log.push(String(key));
+          return Reflect.apply(value, reads, args);
+        };
+      },
+    },
+  );
   const requests: ExcerptRequest[] = [];
-  const app = {
-    vault: {
-      adapter: {},
+  const app = stubService<App>("App", {
+    vault: stubService<Vault>("Vault", {
+      adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {}),
       cachedRead: async () => {
         log.push("vault");
         return "";
       },
-    },
-    workspace: { iterateAllLeaves: () => {} },
-  } as unknown as App;
+    }),
+    workspace: stubService<Workspace>("Workspace", {
+      iterateAllLeaves: () => {},
+    }),
+  });
   const prepared = createExcerptPreparation({
     app,
     paths: { dataDir: "/zotero", baseAttachmentPath: null },
@@ -83,7 +95,7 @@ it("reads every database input before it reads the previous note", async () => {
       }),
     },
   })({
-    reads: logged as unknown as ZoteroReadsApi,
+    reads: logged,
     notePath: "Note.md",
     settings: { ...defaults, "attachment.import": true },
     previousNote: Object.assign(new TFile(), { path: "Note.md" }),

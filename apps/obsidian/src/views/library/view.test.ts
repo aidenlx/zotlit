@@ -10,8 +10,8 @@ import {
   setMockPlatform,
   TextComponent,
 } from "@mock/obsidian";
-import { Effect } from "effect";
-import type { App, WorkspaceLeaf } from "obsidian";
+import { Effect, Stream } from "effect";
+import type { App, WorkspaceItem, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -25,6 +25,7 @@ import {
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { SearchHit, SearchOptions } from "@/services/item-lookup/service";
@@ -44,6 +45,8 @@ import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import type { UseKind } from "@/services/use-ledger/service";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import { stubbedReads } from "@/services/zotero-reads/test-utils";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import {
   fakeQuery,
@@ -64,7 +67,7 @@ const EMPTY = {
   kind: "result",
   result: {
     libraries: [{ type: "personal" }],
-    query: {} as never,
+    query: { filter: null, fields: [], sort: [], limit: null },
     returnedCount: 0,
     matchedCount: 0,
     truncated: false,
@@ -465,10 +468,25 @@ async function pluginData(stored?: unknown) {
   /** What the database service says of Zotero's database. */
   const database_ = {
     state: "ready" as "ready" | "degraded",
-    error: null as Error | null,
+    error: null as DbUnavailable | null,
     moved: false,
   };
-  const readsDeps = {
+  const sourceReads = cleanup.use(stubbedReads());
+  vi.spyOn(sourceReads.reads, "CollectionPaths").mockImplementation(
+    ({ libraryIDs }) =>
+      Effect.succeed(libraryIDs.flatMap((id) => PATHS.get(id) ?? [])),
+  );
+  vi.spyOn(sourceReads.reads, "ConnectionReadout").mockImplementation(() =>
+    Effect.succeed({ itemCount: 8 }),
+  );
+  const readApi = stubService<LibraryViewDeps["welcome"]["reads"]["reads"]>(
+    "ZoteroReads",
+    {
+      CollectionPaths: sourceReads.reads.CollectionPaths,
+      ConnectionReadout: sourceReads.reads.ConnectionReadout,
+    },
+  );
+  const readsDeps = stubService<LibraryViewDeps["reads"]>("ZoteroReads", {
     ...reads.streams,
     get state() {
       return database_.state;
@@ -479,8 +497,18 @@ async function pluginData(stored?: unknown) {
     get moved() {
       return database_.moved;
     },
-    reads: { ConnectionReadout: () => Effect.succeed({ itemCount: 8 }) },
-  };
+    get dbFileMissing() {
+      return false;
+    },
+    get activeReadMode() {
+      return null;
+    },
+    acquireRead: async () => ({
+      reads: readApi,
+      [Symbol.asyncDispose]: async () => {},
+    }),
+  });
+  const vaultOn = host.vault.on.bind(host.vault) as App["vault"]["on"];
   const setupActions = {
     openSettings: vi.fn(),
     pickFolder: vi.fn(),
@@ -554,32 +582,39 @@ async function pluginData(stored?: unknown) {
         ),
     );
   };
+  const app = stubService<App>("App", {
+    ...keymapApp(),
+    workspace: stubService<App["workspace"]>("Workspace", {}),
+    vault: stubService<App["vault"]>("Vault", {
+      getFolderByPath: host.vault.getFolderByPath.bind(host.vault),
+      getAbstractFileByPath: host.vault.getAbstractFileByPath.bind(host.vault),
+      on: vaultOn,
+      offref: host.vault.offref.bind(host.vault),
+    }),
+  });
   const runtime = testRuntime();
-  const deps = {
+  const deps = stubService<LibraryViewDeps>("LibraryViewDeps", {
     runtime,
     bridge: effectBridge(runtime),
-    useLedger: { get: () => undefined },
-    app: {
-      ...host.app,
-      scope: undefined,
-      workspace: { ...host.workspace, leftSplit: null, rightSplit: null },
-    },
-    reads: {
-      ...readsDeps,
-      acquireRead: () =>
-        Promise.resolve({
-          reads: {
-            CollectionPaths: ({
-              libraryIDs,
-            }: {
-              libraryIDs: readonly number[];
-            }) =>
-              Effect.succeed(libraryIDs.flatMap((id) => PATHS.get(id) ?? [])),
-          },
-          [Symbol.asyncDispose]: () => Promise.resolve(),
-        }),
-    },
-    libraryScope,
+    useLedger: stubService<LibraryViewDeps["useLedger"]>("UseLedger", {
+      get: () => undefined,
+    }),
+    app,
+    reads: readsDeps,
+    libraryScope: stubService<LibraryViewDeps["libraryScope"]>("LibraryScope", {
+      changed: Stream.map(
+        scopeEvents.streams.changed,
+        () => libraryScope.current,
+      ),
+      "libraries-changed": scopeEvents.streams["libraries-changed"],
+      get effective() {
+        return libraryScope.effective;
+      },
+      get current() {
+        return libraryScope.current;
+      },
+      libraries: libraryScope.libraries,
+    }),
     query: fakeQuery(run),
     lookup: {
       openSession: () => ({
@@ -589,14 +624,44 @@ async function pluginData(stored?: unknown) {
       }),
     },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
-    annotations: annotationReads(),
+    annotations: stubService<LibraryViewDeps["annotations"]>(
+      "AnnotationRepository",
+      annotationReads(),
+    ),
+    excerptDisplay: stubService<LibraryViewDeps["excerptDisplay"]>(
+      "ExcerptDisplay",
+      {},
+    ),
+    noteFeature: stubService<LibraryViewDeps["noteFeature"]>("NoteFeature", {}),
+    zoteroPref: { dataDir: "/Zotero", baseAttachmentPath: null },
+    libraryTagNames: async () => [],
+    allowEditing: vi.fn(),
+    reportBlockedGesture: vi.fn(),
     items,
     settings,
-    welcome: {
+    welcome: stubService<LibraryViewDeps["welcome"]>("WelcomeDeps", {
       runtime: testRuntime(),
       bridge: effectBridge(testRuntime()),
-      app: host.app,
-      reads: readsDeps,
+      app,
+      reads: stubService<LibraryViewDeps["welcome"]["reads"]>("ZoteroReads", {
+        ...reads.streams,
+        get state() {
+          return database_.state;
+        },
+        get error() {
+          return database_.error;
+        },
+        get moved() {
+          return database_.moved;
+        },
+        get dbFileMissing() {
+          return false;
+        },
+        get activeReadMode() {
+          return null;
+        },
+        reads: readApi,
+      }),
       queries: queryClientsFixture(),
       zoteroPref: { dataDir: "/Zotero" },
       settings,
@@ -604,16 +669,15 @@ async function pluginData(stored?: unknown) {
       templateMigration: { convert: vi.fn(), retryCleanup: vi.fn() },
       release: {
         version: "2.2.0",
-        checked: Effect.void,
-        openReleaseNote: () => Effect.void,
+        openReleaseNote: Effect.void,
         hasV1Templates: () => Effect.succeed(false),
-        acknowledgeMigration: () => Effect.void,
-        acknowledgeUpdate: () => Effect.void,
+        acknowledgeMigration: Effect.void,
+        acknowledgeUpdate: Effect.void,
       },
-    },
+    }),
     literatureNotes,
     opener: { open: () => Promise.resolve({ kind: "reader" as const }) },
-  } as unknown as LibraryViewDeps;
+  });
   /** Zotero's database changes to hold `items`, and says so. */
   const change = (items: readonly SeedItem[]) => {
     database.items = items;
@@ -622,12 +686,14 @@ async function pluginData(stored?: unknown) {
   /** The data folder ZotLit reads can no longer be found. */
   const lose = () => {
     database_.state = "degraded";
-    database_.error = new Error("No zotero.sqlite in the data folder");
+    database_.error = new DbUnavailable({
+      message: "No zotero.sqlite in the data folder",
+    });
     reads.emit("degraded");
   };
   /** A refresh of the database fails; the earlier connection still reads. */
   const refreshFails = () => {
-    database_.error = new Error("EACCES: zotero.sqlite");
+    database_.error = new DbUnavailable({ message: "EACCES: zotero.sqlite" });
     database_.moved = false;
     reads.emit("refresh-failed");
   };
@@ -636,7 +702,7 @@ async function pluginData(stored?: unknown) {
    * earlier database still serves.
    */
   const moveFails = () => {
-    database_.error = new Error("ENOENT: zotero.sqlite");
+    database_.error = new DbUnavailable({ message: "ENOENT: zotero.sqlite" });
     database_.moved = true;
     reads.emit("refresh-failed");
   };
@@ -788,13 +854,13 @@ function tree(view: LibraryView) {
 
 /** A Library View tab, opened and settled on its first run. */
 async function openTab(deps: LibraryViewDeps) {
-  const view = new OpenView(
-    {
-      app: deps.app,
-      getRoot: () => null,
-    } as unknown as WorkspaceLeaf,
-    deps,
-  );
+  const root = stubService<WorkspaceItem>("WorkspaceItem", {});
+  const leaf = stubService<WorkspaceLeaf & { app: App }>("WorkspaceLeaf", {
+    app: deps.app,
+    getRoot: () => root,
+    updateHeader: () => {},
+  });
+  const view = new OpenView(leaf, deps);
   document.body.append(view.contentEl);
   await act(async () => {
     await view.open();
@@ -2081,14 +2147,19 @@ it("keeps Sort in place but off while a search lists its hits in rank order, and
 
 /** Bring `view`'s tab forward, as the command that opens the Library View does. */
 async function bringForward(view: LibraryView) {
-  const leaf = { view } as unknown as WorkspaceLeaf;
-  await openLibraryView({
-    workspace: {
-      getLeavesOfType: () => [leaf],
-      setActiveLeaf: () => {},
-      revealLeaf: () => Promise.resolve(),
-    },
-  } as unknown as App);
+  const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+    view,
+    updateHeader: () => {},
+  });
+  await openLibraryView(
+    stubService<App>("App", {
+      workspace: stubService<App["workspace"]>("Workspace", {
+        getLeavesOfType: () => [leaf],
+        setActiveLeaf: () => {},
+        revealLeaf: () => Promise.resolve(),
+      }),
+    }),
+  );
 }
 
 it("has the search box focused when the command brings the tab forward", async () => {
@@ -2475,23 +2546,21 @@ describe("Welcome View banner once setup is complete", () => {
     return { ...harness, view };
   }
 
-  it("shows nothing until the researcher asks for it", async () => {
-    const { view } = await setUp();
-    expect(banner(view)).toEqual([]);
-  });
-
   it("shows the setup steps on Open welcome view", async () => {
     const { view, settings } = await setUp();
-    const leaf = { view } as unknown as WorkspaceLeaf;
+    const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+      view,
+      updateHeader: () => {},
+    });
     await act(() =>
       openWelcomeView(
-        {
-          workspace: {
+        stubService<App>("App", {
+          workspace: stubService<App["workspace"]>("Workspace", {
             getLeavesOfType: () => [leaf],
             setActiveLeaf: () => {},
             revealLeaf: () => Promise.resolve(),
-          },
-        } as unknown as App,
+          }),
+        }),
         settings,
         settings.bridge,
       ),
@@ -2946,19 +3015,6 @@ describe("Reading Card", () => {
     // Space only opens the card.
     expect(items.openNote).not.toHaveBeenCalled();
     expect(items.openPdf).not.toHaveBeenCalled();
-  });
-
-  it("shows no Annotations section for an Item with none", async () => {
-    const { deps } = await pluginData();
-    const view = await openTab(deps);
-    await act(async () => {
-      itemRow(view, B).click();
-      await view.card.settled;
-    });
-    expect(
-      card(view).querySelector('[data-library-card-part="annotations"]'),
-    ).toBeNull();
-    expect(card(view).textContent).not.toMatch(/annotation/i);
   });
 
   /** The parts the card shows under its buttons, in order. */

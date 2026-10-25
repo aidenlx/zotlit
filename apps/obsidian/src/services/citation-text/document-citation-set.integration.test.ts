@@ -370,7 +370,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
             link("Roe 2025#cite:locator=4", fragmentOffset),
             link("Doe 2024", fragmentlessOffset),
           ],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
         await using engine = await openEngine();
         await using text = openText(harness, engine, NUMERIC_STYLE);
 
@@ -566,7 +566,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
           link("folder1/Draft", body.indexOf("[[folder1")),
           link("folder2/Draft", body.indexOf("[[folder2")),
         ],
-      } as CachedMetadata);
+      } satisfies CachedMetadata);
       await using engine = await openEngine();
       await using text = openText(harness, engine, AUTHOR_STYLE);
 
@@ -601,7 +601,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
           link("Papers/Ess", body.indexOf("[[Papers")),
           link("Archive/Ess2", body.indexOf("[[Archive")),
         ],
-      } as CachedMetadata);
+      } satisfies CachedMetadata);
       await using engine = await openEngine();
       await using text = openText(harness, engine, NUMERIC_STYLE);
 
@@ -652,7 +652,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
         );
         harness.metadataCache.fileCache.set("draft.md", {
           links: [link("Roe 2025", body.indexOf("[["))],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
         await using engine = await openEngine();
         await using text = openText(harness, engine, AUTHOR_STYLE);
 

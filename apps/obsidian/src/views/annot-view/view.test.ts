@@ -2,9 +2,10 @@
 import { Menu, setMockPlatform } from "@mock/obsidian";
 import { delay } from "@std/async";
 import { Effect, Stream, SubscriptionRef } from "effect";
-import type { Menu as ObsidianMenu, WorkspaceLeaf } from "obsidian";
+import { debounce, Scope } from "obsidian";
+import type { App, Menu as ObsidianMenu, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import type { AnnotViewAttachment } from "@zotlit/db";
 
@@ -28,6 +29,7 @@ import type {
   ReaderTarget,
 } from "@/services/local-server/service";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
+import { stubbedReads } from "@/services/zotero-reads/test-utils";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { requested } from "@/views/query-view/__fixtures__/query-run";
 import { serializeQueryFile } from "@/views/query-view/query-file";
@@ -37,6 +39,12 @@ import { AnnotationView } from "./view";
 import type { AnnotViewDeps } from "./view";
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
+
+let readsCleanup = new AsyncDisposableStack();
+afterEach(async () => {
+  await readsCleanup.disposeAsync();
+  readsCleanup = new AsyncDisposableStack();
+});
 
 class TestView extends AnnotationView {
   close(): Promise<void> {
@@ -48,32 +56,51 @@ it("settles a pending attachment load without restarting a closed view", async (
   const pending = Promise.withResolvers<AnnotViewAttachment[]>();
   const started = Promise.withResolvers<void>();
   const subscribe = vi.fn(() => vi.fn());
-  const read = vi.fn(() => Promise.resolve({ annotations: [], source: null }));
+  const read = vi.fn(() =>
+    Effect.sync(() => {
+      subscribe();
+      return null;
+    }),
+  );
   const runtime = testRuntime();
-  const deps = {
+  const reads = readsCleanup.use(stubbedReads());
+  vi.spyOn(reads.reads, "AnnotViewAttachments").mockImplementation(() =>
+    Effect.promise(() => {
+      started.resolve();
+      return pending.promise;
+    }),
+  );
+  const deps = stubService<AnnotViewDeps>("AnnotViewDeps", {
     runtime,
     bridge: effectBridge(runtime),
-    app: {
-      scope: {},
+    app: stubService<App>("App", {
+      scope: new Scope(),
       loadLocalStorage: () => null,
-      workspace: { getActiveFile: () => null },
-    },
-    reads: {
+      workspace: stubService<App["workspace"]>("Workspace", {
+        getActiveFile: () => null,
+      }),
+    }),
+    reads: stubService<AnnotViewDeps["reads"]>("ZoteroReads", {
+      ...reads,
       state: "ready",
-      reads: {
-        ItemsByIndexedKeys: () => Effect.succeed(new Map()),
-        AnnotViewAttachments: () =>
-          Effect.promise(() => {
-            started.resolve();
-            return pending.promise;
-          }),
-      },
-    },
-    libraryScope: { libraryRows: [] },
-    annotations: { on: subscribe, read },
-    zoteroPref: { dataDir: "/data" },
-  } as unknown as AnnotViewDeps;
-  const view = new TestView({} as WorkspaceLeaf, deps);
+    }),
+    libraryScope: stubService<AnnotViewDeps["libraryScope"]>("LibraryScope", {
+      libraryRows: [],
+    }),
+    annotations: stubService<AnnotViewDeps["annotations"]>(
+      "AnnotationRepository",
+      { read },
+    ),
+    zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
+    literatureNotes: noLiteratureNotes(),
+  });
+  const view = new TestView(
+    stubService<WorkspaceLeaf & { app: App }>("WorkspaceLeaf", {
+      app: deps.app,
+      updateHeader: () => {},
+    }),
+    deps,
+  );
   await using cleanup = new AsyncDisposableStack();
   cleanup.defer(() => view.close());
   await view.setState(
@@ -149,7 +176,7 @@ function rows(list: QueryViewRow[]): QueryViewOutcome {
     kind: "result",
     result: {
       libraries: [{ type: "personal" }],
-      query: {} as never,
+      query: { filter: null, fields: [], sort: [], limit: null },
       returnedCount: list.length,
       matchedCount: list.length,
       truncated: false,
@@ -199,19 +226,23 @@ async function openSidebar(
     "degraded",
     "db-file-missing",
   ]);
-  const app = Object.assign(editorApp(), {
-    loadLocalStorage: () => null,
-    saveLocalStorage: () => {},
-    workspace: {
-      trigger: () => {},
-      getActiveFile: () => null,
-      on: () => ({}),
-      requestSaveLayout: () => Promise.resolve(),
-      leftSplit: {},
-      rightSplit: {},
-      getMostRecentLeaf: () => null,
-    },
-    metadataCache: { on: () => ({}), getFileCache: () => null },
+  const sourceReads = readsCleanup.use(stubbedReads());
+  vi.spyOn(sourceReads.reads, "AnnotViewAttachments").mockImplementation(
+    ({ key }) => Effect.succeed(attachmentsOf?.(key) ?? attachments),
+  );
+  const app = editorApp();
+  app.loadLocalStorage = () => null;
+  app.saveLocalStorage = () => {};
+  app.workspace = stubService<App["workspace"]>("Workspace", {
+    trigger: () => {},
+    getActiveFile: () => null,
+    on: () => ({}),
+    requestSaveLayout: debounce(() => Promise.resolve()),
+    getMostRecentLeaf: () => null,
+  });
+  app.metadataCache = stubService<App["metadataCache"]>("MetadataCache", {
+    on: () => ({}),
+    getFileCache: () => null,
   });
   const events = annotationReads();
   const repository = {
@@ -237,62 +268,82 @@ async function openSidebar(
     readerClosed: SubscriptionRef.get(readerClosed),
     readerClosedChanges: SubscriptionRef.changes(readerClosed),
   });
-  const deps = {
+  const deps = stubService<AnnotViewDeps>("AnnotViewDeps", {
     runtime,
     bridge,
     app,
-    reads: {
+    opener: stubService<AnnotViewDeps["opener"]>("TargetOpener", {}),
+    reads: stubService<AnnotViewDeps["reads"]>("ZoteroReads", {
       state: readsState,
       ...reads.streams,
-      reads: {
-        ItemsByIndexedKeys: () => Effect.succeed(new Map()),
-        AnnotViewAttachments: ({ key }: { key: string }) =>
-          Effect.succeed(attachmentsOf?.(key) ?? attachments),
-      },
-    },
-    libraryScope: {
+      reads: sourceReads.reads,
+    }),
+    libraryScope: stubService<AnnotViewDeps["libraryScope"]>("LibraryScope", {
       libraryRows: [],
       changed: Stream.empty,
       "libraries-changed": Stream.empty,
       current: null,
-    },
+    }),
     liveUpdate,
-    pdfReaders: { on: () => () => {}, sessionFor: () => null },
-    query: { run, on: () => () => {} },
+    pdfReaders: stubService<AnnotViewDeps["pdfReaders"]>("PdfReaders", {
+      on: () => () => {},
+      sessionFor: () => null,
+    }),
+    query: stubService<AnnotViewDeps["query"]>("Query", {
+      run,
+      on: () => () => {},
+      customFieldNames: async () => [],
+    }),
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
-    annotations: {
-      ...events,
-      capability: Effect.succeed({ kind: "writable" }),
-      read: (attachmentKey: string) =>
-        Effect.promise(async () => {
-          await listRead?.(attachmentKey);
-          return listOf?.(attachmentKey) ?? list;
-        }),
-      peek: () => Effect.succeed({ value: list }),
-      refresh: () => Effect.void,
-      capabilityFor: (): Effect.Effect<EditingCapability> =>
-        Effect.succeed({ kind: "writable" }),
-      textDraftFor: () => Effect.succeed(null),
-      tagDraftFor: () => Effect.succeed(null),
-      annotationState: () =>
-        Effect.succeed({
-          mutation: IDLE,
-          textDrafts: { comment: null, text: null },
-          tagDraft: null,
-          hidden: false,
-          gone: false,
-        }),
-    },
+    annotations: stubService<AnnotViewDeps["annotations"]>(
+      "AnnotationRepository",
+      {
+        ...events,
+        capability: Effect.succeed({ kind: "writable" }),
+        read: (attachmentKey: string) =>
+          Effect.promise(async () => {
+            await listRead?.(attachmentKey);
+            return listOf?.(attachmentKey) ?? list;
+          }),
+        peek: () =>
+          Effect.succeed({
+            value: list,
+            status: "fresh" as const,
+            settled: Promise.resolve(list),
+          }),
+        refresh: () => Effect.succeed(list),
+        capabilityFor: (): Effect.Effect<EditingCapability> =>
+          Effect.succeed({ kind: "writable" }),
+        textDraftFor: () => Effect.succeed(null),
+        tagDraftFor: () => Effect.succeed(null),
+        annotationState: () =>
+          Effect.succeed({
+            mutation: IDLE,
+            textDrafts: { comment: null, text: null },
+            tagDraft: null,
+            hidden: false,
+            gone: false,
+          }),
+      },
+    ),
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     excerptDisplay: { open: vi.fn(), refresh: vi.fn(), revalidate: vi.fn() },
-    noteFeature: {},
-    noteIndex: { getNotesByItemKey: () => [] },
+    noteFeature: stubService<AnnotViewDeps["noteFeature"]>("NoteFeature", {}),
+    noteIndex: stubService<AnnotViewDeps["noteIndex"]>("NoteIndex", {
+      getNotesByItemKey: () => [],
+    }),
     literatureNotes: noLiteratureNotes(),
     libraryTagNames: () => Promise.resolve([]),
     allowEditing: vi.fn(),
     reportBlockedGesture: vi.fn(),
-  } as unknown as AnnotViewDeps;
-  const view = new OpenView({} as WorkspaceLeaf, deps);
+  });
+  const view = new OpenView(
+    stubService<WorkspaceLeaf & { app: App }>("WorkspaceLeaf", {
+      app: deps.app,
+      updateHeader: () => {},
+    }),
+    deps,
+  );
   document.body.append(view.contentEl);
   await act(() => view.open());
   await act(() =>
@@ -440,7 +491,10 @@ const FAILED: QueryViewOutcome = {
     hint: "Try again.",
     severity: "error",
     report: [],
-  } as never,
+    found: "",
+    expected: [],
+    suggestions: [],
+  },
 };
 
 it("says why the cards cannot show when the query fails", async () => {
@@ -498,11 +552,14 @@ it("keeps the last cards under a note when a filter condition has an error", asy
               hint: "",
               severity: "error",
               report: [],
+              found: "",
+              expected: [],
+              suggestions: [],
               location: {
                 argument: "filter",
                 span: { from, to: from + "colorName".length },
               },
-            } as never,
+            },
           }
         : rows(ROWS),
     { query },

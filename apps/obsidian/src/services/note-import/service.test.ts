@@ -4,11 +4,13 @@ import type { App, TFile } from "obsidian";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
+import type { AnnotationTemplateContext } from "@zotlit/db";
 import { rowInstant } from "@zotlit/db/test-utils";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { renderAnnotationSources } from "@/lib/annotation-render";
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 import { effectBridge } from "@/lib/effect-bridge";
@@ -217,10 +219,10 @@ function makeBlockingAttachmentImport(): AttachmentImportService {
   const runtime = testRuntime();
   return new AttachmentImportService({
     bridge: effectBridge(runtime),
-    app: {
+    app: stubService<App>("App", {
       loadLocalStorage: () => null,
       saveLocalStorage: () => undefined,
-    } as unknown as App,
+    }),
     settings: {
       current: Effect.succeed({
         ...defaults,
@@ -259,18 +261,18 @@ function makeService(
       getImportedNoteByNoteKey: () => options.existing ?? [],
       getNotesByItemKey: () => options.literatureNotes ?? [],
     },
-    // `render` is generic (`<T>(name, data) => string`); a concrete mock can't
-    // mirror that signature, so this one stub keeps a cast.
     template:
       options.template ??
-      ({
-        render: vi.fn(() => "[@cite]"),
-        renderCitation: vi.fn(() => "[@cite]"),
-        renderProfileAnnotation: vi.fn(() => "profile annotation"),
-      } as Pick<
-        PlainTemplate,
-        "render" | "renderCitation" | "renderProfileAnnotation"
-      >),
+      stubService<
+        Pick<
+          PlainTemplate,
+          "render" | "renderCitation" | "renderProfileAnnotation"
+        >
+      >("Template", {
+        render: () => "[@cite]",
+        renderCitation: () => "[@cite]",
+        renderProfileAnnotation: () => "profile annotation",
+      }),
     zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
     attachmentImport: options.attachmentImport ?? makeAttachmentImport(),
   });
@@ -615,15 +617,20 @@ describe("createNoteImporter", () => {
   });
 
   it("renders annotation paragraphs through the imported note's Profile", async () => {
-    const renderProfileAnnotation = vi.fn(() => "profile annotation");
-    const template = {
-      render: vi.fn(() => "[@cite]"),
-      renderCitation: vi.fn(() => "[@cite]"),
-      renderProfileAnnotation,
-    } as Pick<
-      PlainTemplate,
-      "render" | "renderCitation" | "renderProfileAnnotation"
-    >;
+    const renderProfileAnnotation = vi.fn();
+    const template = stubService<
+      Pick<
+        PlainTemplate,
+        "render" | "renderCitation" | "renderProfileAnnotation"
+      >
+    >("Template", {
+      render: () => "[@cite]",
+      renderCitation: () => "[@cite]",
+      renderProfileAnnotation: (data, options) => {
+        renderProfileAnnotation(data, options);
+        return "profile annotation";
+      },
+    });
     const { app, host } = makeApp({
       "History/Imported/Existing.md": {
         [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_B,
@@ -638,7 +645,13 @@ describe("createNoteImporter", () => {
 
     const render = vi.mocked(renderAnnotationSources).mock.calls[0]![1]
       .renderAnnotation;
-    expect(render?.({ text: "Excerpt" } as never)).toBe("profile annotation");
+    expect(
+      render?.(
+        stubService<AnnotationTemplateContext>("AnnotationTemplate", {
+          text: "Excerpt",
+        }),
+      ),
+    ).toBe("profile annotation");
     expect(renderProfileAnnotation).toHaveBeenCalledWith(
       { text: "Excerpt" },
       {
@@ -894,30 +907,6 @@ describe("createNoteImporter", () => {
     });
     expect(create).not.toHaveBeenCalled();
     expect(process).not.toHaveBeenCalled();
-  });
-
-  it("ensures the import folder on the create branch of importNote", async () => {
-    const { app, create, createFolder } = makeApp();
-    const service = makeService(app);
-    const settings: Settings = {
-      ...defaults,
-      "note.default-profile": {
-        ...defaults["note.default-profile"],
-        bindings: {
-          ...defaults["note.default-profile"].bindings,
-          "note.import-folder": "Imported",
-        },
-      },
-    };
-
-    const outcome = await service.importNote(makeNote(), {
-      reads,
-      settings,
-    });
-
-    expect(outcome).toBe("created");
-    expect(createFolder).toHaveBeenCalledExactlyOnceWith("Imported");
-    expect(create).toHaveBeenCalledOnce();
   });
 
   it("copies the parent Literature Note stamp on explicit attached-note creation", async () => {

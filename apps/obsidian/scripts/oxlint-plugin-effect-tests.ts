@@ -252,11 +252,191 @@ export const serviceStub: Rule = {
   },
 };
 
+/** Whether service-stub reports this cast: a literal cast to `Tag["Service"]`. */
+function isServiceStubCase(cast: TsNode): boolean {
+  return isServiceType(cast.typeAnnotation) && castObject(cast.expression);
+}
+
+/** Modules whose exports are Obsidian's host types and capability tags. */
+const isHostModule = (source: string) =>
+  source === "obsidian" || source.startsWith("@/lib/obsidian-");
+
+/** Calls that take a service implementation or a capability's source. */
+function takesFake(
+  callee: AstNode | undefined,
+  names: { readonly layer: Set<string>; readonly effect: Set<string> },
+): boolean {
+  if (callee?.type === "CallExpression") return takesFake(callee.callee, names);
+  if (callee?.type === "Identifier") {
+    const name = callee.name as string;
+    return name === "layerHostApp" || /^layer\w*From$/.test(name);
+  }
+  return (
+    isMemberOf(
+      callee,
+      names.layer,
+      (name) => name === "succeed" || name === "mock",
+    ) ||
+    isMemberOf(callee, names.effect, (name) => name === "provideService") ||
+    (callee?.type === "MemberExpression" &&
+      callee.object?.type === "Identifier" &&
+      /^[A-Z]/.test(callee.object.name as string) &&
+      callee.property?.type === "Identifier" &&
+      callee.property.name === "of")
+  );
+}
+
+/** The innermost value under `as` / `satisfies` / parentheses. */
+function castValue(node: TsNode | undefined): TsNode | undefined {
+  let at = node;
+  while (
+    at?.type === "TSAsExpression" ||
+    at?.type === "TSSatisfiesExpression" ||
+    at?.type === "ParenthesizedExpression"
+  )
+    at = at.expression;
+  return at;
+}
+
+/** Every type name a type annotation references, `Pick<A["Service"], …>` included. */
+function typeNames(node: unknown, names: string[] = []): string[] {
+  if (!node || typeof node !== "object") return names;
+  if (Array.isArray(node)) {
+    for (const child of node) typeNames(child, names);
+    return names;
+  }
+  const type = node as TsNode & {
+    readonly typeName?: TsNode & { readonly left?: TsNode };
+    readonly exprName?: TsNode;
+  };
+  if (type.type === "TSTypeReference") {
+    let id = type.typeName;
+    while (id?.type === "TSQualifiedName") id = id.left;
+    if (id?.type === "Identifier") names.push(id.name as string);
+  }
+  for (const [key, child] of Object.entries(type))
+    if (key !== "parent" && child && typeof child === "object")
+      typeNames(child, names);
+  return names;
+}
+
+function hasServiceIndex(node: unknown): boolean {
+  if (!node || typeof node !== "object") return false;
+  if (Array.isArray(node)) return node.some(hasServiceIndex);
+  if (isServiceType(node as TsNode)) return true;
+  return Object.entries(node).some(
+    ([key, child]) =>
+      key !== "parent" &&
+      child &&
+      typeof child === "object" &&
+      hasServiceIndex(child),
+  );
+}
+
+/**
+ * A test fake built as `{ … } as never`, `{ … } as unknown as App` or
+ * `reads as never` given to `Layer.succeed` compiles whatever the real API
+ * becomes: when a member turns from a method into an `Effect` value (#1737),
+ * the fake still compiles and the test runs against a shape no code has. A
+ * typed fake keeps typecheck on it (policies/testing-strategy.md → Effect
+ * code): `Layer.mock(Tag, { … })` or `Layer.succeed(Tag, Tag.of({ … }))` for
+ * a layer, `stubService<T>(name, { … })` for a value that a legacy consumer
+ * takes, the capability test layers for Obsidian's host, and a type
+ * annotation for plain Obsidian data. Reports a cast given to a call that
+ * takes a fake, and an object literal cast to a type from `obsidian` or
+ * `@/lib/obsidian-*`, a service type, a `…Deps` type, or `never`.
+ */
+export const typedFake: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Build a test fake with its real type, not behind a cast.",
+    },
+    messages: {
+      layer:
+        "Give the layer a typed fake: Layer.mock(Tag, { … }) or Layer.succeed(Tag, Tag.of({ … })); a capability layer takes its in-memory source (Memory…) or layerHostApp(app).",
+      host: "Type this Obsidian fake: a capability test layer (layerHostApp, Memory…) for Effect code, stubService<T>(name, { … }) from @/lib/__fixtures__/service-stub for an object with members, or a type annotation for plain data.",
+      service:
+        "Build this fake with stubService<T>(name, { … }) from @/lib/__fixtures__/service-stub, or Layer.mock(Tag, { … }) where a layer takes it: typecheck holds each member to the real shape.",
+      never:
+        "`as never` hides the fake's type: build it with stubService<T>(name, { … }), Layer.mock(Tag, { … }) or a typed value, so typecheck holds it to the real shape.",
+    },
+    schema: [],
+  },
+  create(context) {
+    const names = { layer: new Set<string>(), effect: new Set<string>() };
+    const host = new Set<string>();
+    return {
+      ImportDeclaration(node) {
+        const source = node.source.value;
+        for (const specifier of node.specifiers as readonly ImportSpecifier[]) {
+          const imported =
+            specifier.imported?.name ?? specifier.imported?.value;
+          if (isHostModule(source)) host.add(specifier.local.name);
+          if (node.importKind === "type") continue;
+          if (source === "effect" && imported === "Layer")
+            names.layer.add(specifier.local.name);
+          else if (source === "effect" && imported === "Effect")
+            names.effect.add(specifier.local.name);
+          else if (specifier.type === "ImportNamespaceSpecifier") {
+            if (source === "effect/Layer")
+              names.layer.add(specifier.local.name);
+            if (source === "effect/Effect")
+              names.effect.add(specifier.local.name);
+          }
+        }
+      },
+      TSAsExpression(node) {
+        const cast = node as unknown as TsNode;
+        // Report the outermost cast once, not each layer of `as unknown as`.
+        if (cast.parent?.type === "TSAsExpression") return;
+        const target = cast.typeAnnotation;
+        if (
+          target?.type === "TSUnknownKeyword" ||
+          target?.type === "TSAnyKeyword" ||
+          (target?.type === "TSTypeReference" &&
+            (target as TsNode & { typeName?: TsNode }).typeName?.name ===
+              "const")
+        )
+          return;
+        if (isServiceStubCase(cast)) return;
+        let argument: AstNode = cast;
+        let parent = cast.parent;
+        while (
+          parent?.type === "ParenthesizedExpression" ||
+          parent?.type === "TSSatisfiesExpression"
+        ) {
+          argument = parent;
+          parent = parent.parent;
+        }
+        if (
+          parent?.type === "CallExpression" &&
+          parent.arguments?.includes(argument) &&
+          takesFake(parent.callee, names)
+        )
+          return context.report({ node, messageId: "layer" });
+        if (castValue(cast.expression)?.type !== "ObjectExpression") return;
+        const referenced = typeNames(target);
+        if (referenced.some((name) => host.has(name)))
+          return context.report({ node, messageId: "host" });
+        if (
+          hasServiceIndex(target) ||
+          referenced.some((name) => name.endsWith("Deps"))
+        )
+          return context.report({ node, messageId: "service" });
+        if (target?.type === "TSNeverKeyword")
+          context.report({ node, messageId: "never" });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-effect-tests" },
   rules: {
     "no-effect-run-in-test": noEffectRunInTest,
     "no-real-timer-in-effect-test": noRealTimerInEffectTest,
     "service-stub": serviceStub,
+    "typed-fake": typedFake,
   },
 };

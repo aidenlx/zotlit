@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { liquidTemplate } from "@zotlit/workbench/language";
 import { AnnotationPointer, NO_MATCH_DATA } from "@zotlit/workbench/ui";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { createTemplateWorkbenchHost } from "./host";
@@ -17,11 +18,11 @@ import type { NativeWorkbenchSuggesterRequest } from "./host";
 
 function setup() {
   const memory = new Map<string, string | null>();
-  const app = {
+  const app = stubService<App>("App", {
     loadLocalStorage: (key: string) => memory.get(key),
     saveLocalStorage: (key: string, value: string | null) =>
       memory.set(key, value),
-  } as unknown as App;
+  });
   const host = createTemplateWorkbenchHost(app, {
     render: () => Promise.reject(new Error("This test renders nothing.")),
     matchData: NO_MATCH_DATA,

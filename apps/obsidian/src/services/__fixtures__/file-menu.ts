@@ -1,6 +1,15 @@
 // Drive Obsidian's `file-menu` event through the real `registerFileMenu`.
-import type { Menu, TAbstractFile, WorkspaceLeaf } from "obsidian";
+import type {
+  App,
+  EventRef,
+  Menu,
+  MetadataCache,
+  TAbstractFile,
+  Workspace,
+  WorkspaceLeaf,
+} from "obsidian";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { registerFileMenu } from "@/services/file-menu";
 import type {
   FileMenuSegment,
@@ -26,18 +35,21 @@ export function fileMenuHandler(
   folderSegments: readonly FolderMenuSegment[] = [],
 ): FileMenuHandler {
   let handler: FileMenuHandler | undefined;
+  const app = stubService<App>("App", {
+    workspace: Object.assign(stubService<Workspace>("Workspace", {}), {
+      on: (name: string, callback: FileMenuHandler) => {
+        if (name === "file-menu") handler = callback;
+        return stubService<EventRef>("EventRef", {});
+      },
+    }),
+    metadataCache: stubService<MetadataCache>("MetadataCache", {
+      getFileCache: () => ({ frontmatter }),
+    }),
+  });
   registerFileMenu(
     {
       registerEvent: () => {},
-      app: {
-        workspace: {
-          on: (name: string, cb: FileMenuHandler) => {
-            if (name === "file-menu") handler = cb;
-            return {};
-          },
-        },
-        metadataCache: { getFileCache: () => ({ frontmatter }) },
-      } as never,
+      app,
     },
     segments,
     folderSegments,

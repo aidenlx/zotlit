@@ -1,4 +1,5 @@
-import type { CachedMetadata, MetadataCache, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { MetadataCache } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -12,7 +13,8 @@ import {
   samePresentation,
 } from "./document-presentation";
 
-const FILE = { path: "draft.md" } as TFile;
+const FILE = new TFile();
+FILE.path = "draft.md";
 
 const STYLE_ID = "http://www.zotero.org/styles/nature";
 
@@ -398,8 +400,7 @@ function cacheOf(
   frontmatter: Record<string, unknown> | null,
 ): Pick<MetadataCache, "getFileCache"> {
   return {
-    getFileCache: () =>
-      frontmatter === null ? null : ({ frontmatter } as CachedMetadata),
+    getFileCache: () => (frontmatter === null ? null : { frontmatter }),
   };
 }
 

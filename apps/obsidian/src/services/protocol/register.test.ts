@@ -1,5 +1,11 @@
 import { Effect, Stream } from "effect";
-import type { ObsidianProtocolData } from "obsidian";
+import { TFile } from "obsidian";
+import type {
+  App,
+  FileSystemAdapter,
+  ObsidianProtocolData,
+  WorkspaceLeaf,
+} from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Attachment, getItemDisplayRefByID } from "@zotlit/db";
@@ -9,11 +15,14 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { openAttachments } from "@/lib/attachment-open";
 import { effectBridge } from "@/lib/effect-bridge";
 import { toObsidianOpenableAttachments } from "@/services/attachment-open/resolve";
+import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 import type { LocalServer } from "@/services/local-server/service";
 import { openCompanionNote } from "@/services/note-feature";
 import { runBatchUpdateAll } from "@/services/note-feature/update-batch";
+import type { BatchImportResult } from "@/services/note-import/batch-import";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
@@ -57,17 +66,42 @@ type DisplayRefSlice = { itemID: number; ref: ItemDisplayRef | null }[];
 
 /** The ZoteroReads operations the handlers call, answering what a test sets. */
 const reads = {
-  DisplayRefs: vi.fn((_payload: { itemIDs: readonly number[] }) =>
-    Stream.make<DisplayRefSlice[]>([]),
+  DisplayRefs: vi.fn(
+    (
+      _input: Parameters<ZoteroReadsApi["DisplayRefs"]>[0],
+      _options?: Parameters<ZoteroReadsApi["DisplayRefs"]>[1],
+    ) => Stream.make<DisplayRefSlice[]>([]),
   ),
-  AttachmentsAt: vi.fn((_payload: { itemID: number }) =>
-    Effect.succeed<readonly Attachment[]>([]),
+  AttachmentsAt: vi.fn(
+    (
+      _input: Parameters<ZoteroReadsApi["AttachmentsAt"]>[0],
+      _options?: Parameters<ZoteroReadsApi["AttachmentsAt"]>[1],
+    ) => Effect.succeed<readonly Attachment[]>([]),
   ),
 };
+const readsApi = stubService<ProtocolDeps["zoteroReads"]["reads"]>(
+  "ZoteroReadsApi",
+  {
+    DisplayRefs: ((input, options) =>
+      options === undefined
+        ? reads.DisplayRefs(input)
+        : reads.DisplayRefs(input, options)) as ZoteroReadsApi["DisplayRefs"],
+    AttachmentsAt: ((input, options) =>
+      options === undefined
+        ? reads.AttachmentsAt(input)
+        : reads.AttachmentsAt(
+            input,
+            options,
+          )) as ZoteroReadsApi["AttachmentsAt"],
+  },
+);
 
 /** The reads dependency in `state`, answering through {@link reads}. */
 function readsIn(state: "loading" | "ready" | "degraded" = "ready") {
-  return { state, reads };
+  return stubService<ProtocolDeps["zoteroReads"]>("ZoteroReads", {
+    state,
+    reads: readsApi,
+  });
 }
 
 /** Item `itemID` reads as `ref`. */
@@ -78,10 +112,23 @@ function refOf(ref: ItemDisplayRef): void {
 }
 
 /** The id reads as these Attachments. */
-function attachmentsAt(attachments: readonly unknown[]): void {
-  reads.AttachmentsAt.mockReturnValue(
-    Effect.succeed(attachments as readonly Attachment[]),
-  );
+function attachmentsAt(attachments: readonly Attachment[]): void {
+  reads.AttachmentsAt.mockReturnValue(Effect.succeed(attachments));
+}
+
+/** An Attachment row with only the id a handler reads. */
+function attachmentOf(itemID: number): Attachment {
+  return stubService<Attachment>("Attachment", { itemID });
+}
+
+/** An Obsidian-Openable Attachment with the fields the reader reads. */
+function openableAttachment(indexedKey: string): ObsidianOpenableAttachment {
+  return {
+    indexedKey,
+    label: `${indexedKey}.pdf`,
+    openPath: `attachments/${indexedKey}.pdf`,
+    absolutePath: `/vault/attachments/${indexedKey}.pdf`,
+  };
 }
 
 /** An Item ref as the database reads it. */
@@ -96,10 +143,29 @@ const REF: ItemDisplayRef = {
 /** {@link REF} as a handler passes it on: the ref without the title. */
 const { title: _title, ...ITEM_REF } = REF;
 
-const runBatchImportAll = vi.fn(async () => ({ outcome: "batch-modal" }));
+const runBatchImportAll = vi.fn(async (): Promise<BatchImportResult> => ({
+  outcome: "batch-modal",
+}));
 
 /** Protocol handlers registered by the plugin, keyed by their action id. */
 const handlers = new Map<string, (data: ObsidianProtocolData) => void>();
+
+function protocolData(
+  action: string,
+  query: Record<string, string> = {},
+): ObsidianProtocolData {
+  return { action, ...query };
+}
+
+function appStub(members: Partial<App> = {}): App {
+  const app = stubService<App>("App", members);
+  // Vitest's pretty-printer probes this React marker after a failed match.
+  Object.defineProperty(app, "$$typeof", { value: undefined });
+  Object.defineProperty(app, "nodeType", { value: undefined });
+  Object.defineProperty(app, "tagName", { value: undefined });
+  Object.defineProperty(app, "nodeName", { value: undefined });
+  return app;
+}
 
 function register(overrides: Partial<ProtocolDeps> = {}): Disposable {
   const plugin = {
@@ -110,19 +176,37 @@ function register(overrides: Partial<ProtocolDeps> = {}): Disposable {
       handlers.set(action, handler);
     },
   };
-  const deps = {
+  const app =
+    overrides.app ??
+    appStub({
+      metadataCache: stubService<App["metadataCache"]>("MetadataCache", {}),
+    });
+  if (!("metadataCache" in app))
+    Object.defineProperty(app, "metadataCache", {
+      value: stubService<App["metadataCache"]>("MetadataCache", {}),
+    });
+  const deps = stubService<ProtocolDeps>("ProtocolDeps", {
     webWorkbenchEnabled: true,
-    zoteroPref: { sourceId: SOURCE_ID },
+    zoteroPref: {
+      sourceId: SOURCE_ID,
+      dataDir: "/data",
+      baseAttachmentPath: null,
+    },
+    settings: stubService<ProtocolDeps["settings"]>("PluginSettings", {
+      current: Effect.succeed(defaults),
+    }),
     batchImport: { runBatchImport: vi.fn(), runBatchImportAll },
     liveUpdate: stubService<LocalServer["Service"]>("LocalServer", {
       updateManyRequests: Stream.empty,
       importNotesRequests: Stream.empty,
     }),
     bridge: effectBridge(testRuntime()),
+    zoteroReads: readsIn(),
     ...overrides,
-  } as unknown as ProtocolDeps;
+    app,
+  });
   deps.profile = profileReader(
-    () => ({ ...defaults, ...deps.settings?.current }),
+    () => ({ ...defaults, ...deps.bridge.runSync(deps.settings.current) }),
     deps.app?.metadataCache,
   );
   return registerProtocolHandlers(plugin, deps);
@@ -135,7 +219,7 @@ async function dispatch(
 ): Promise<void> {
   const handler = handlers.get(action);
   if (!handler) throw new Error(`no handler for ${action}`);
-  handler({ action, "source-id": SOURCE_ID, ...query } as ObsidianProtocolData);
+  handler(protocolData(action, { "source-id": SOURCE_ID, ...query }));
   await vi.waitFor(() => {
     expect(
       vi.mocked(runBatchUpdateAll).mock.calls.length +
@@ -162,13 +246,14 @@ describe("single-note protocol links", () => {
       refOf(REF);
       using _handlers = register({
         zoteroReads: readsIn(),
-      } as unknown as Partial<ProtocolDeps>);
-      handlers.get(`zotlit/${action}`)?.({
-        action: `zotlit/${action}`,
-        item: "1",
-        profile: "Bk3Qn7XvT2Lp",
-        "source-id": SOURCE_ID,
-      } as ObsidianProtocolData);
+      });
+      handlers.get(`zotlit/${action}`)?.(
+        protocolData(`zotlit/${action}`, {
+          item: "1",
+          profile: "Bk3Qn7XvT2Lp",
+          "source-id": SOURCE_ID,
+        }),
+      );
       await vi.waitFor(() =>
         expect(openCompanionNote).toHaveBeenCalledExactlyOnceWith(
           expect.anything(),
@@ -183,17 +268,18 @@ describe("single-note protocol links", () => {
 describe("paneType", () => {
   it("routes an explore link's paneType to the explorer", async () => {
     refOf(REF);
-    const app = {} as ProtocolDeps["app"];
+    const app = appStub();
     using _handlers = register({
       app,
       zoteroReads: readsIn(),
-    } as unknown as Partial<ProtocolDeps>);
-    handlers.get("zotlit/explore")?.({
-      action: "zotlit/explore",
-      item: "1",
-      paneType: "window",
-      "source-id": SOURCE_ID,
-    } as ObsidianProtocolData);
+    });
+    handlers.get("zotlit/explore")?.(
+      protocolData("zotlit/explore", {
+        item: "1",
+        paneType: "window",
+        "source-id": SOURCE_ID,
+      }),
+    );
     await vi.waitFor(() =>
       expect(openTemplateDataExplorer).toHaveBeenCalledExactlyOnceWith(
         app,
@@ -207,13 +293,14 @@ describe("paneType", () => {
     refOf(REF);
     using _handlers = register({
       zoteroReads: readsIn(),
-    } as unknown as Partial<ProtocolDeps>);
-    handlers.get("zotlit/open")?.({
-      action: "zotlit/open",
-      item: "1",
-      paneType: "split",
-      "source-id": SOURCE_ID,
-    } as ObsidianProtocolData);
+    });
+    handlers.get("zotlit/open")?.(
+      protocolData("zotlit/open", {
+        item: "1",
+        paneType: "split",
+        "source-id": SOURCE_ID,
+      }),
+    );
     await vi.waitFor(() =>
       expect(openCompanionNote).toHaveBeenCalledExactlyOnceWith(
         expect.anything(),
@@ -225,9 +312,13 @@ describe("paneType", () => {
 });
 
 describe("open-attachment protocol link", () => {
-  const app = {
-    vault: { adapter: { getBasePath: () => "/vault" } },
-  } as unknown as ProtocolDeps["app"];
+  const app = appStub({
+    vault: stubService<App["vault"]>("Vault", {
+      adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
+        getBasePath: () => "/vault",
+      }),
+    }),
+  });
 
   function baseDeps(
     overrides: Partial<ProtocolDeps> = {},
@@ -242,7 +333,7 @@ describe("open-attachment protocol link", () => {
       },
       opener,
       ...overrides,
-    } as unknown as Partial<ProtocolDeps>;
+    };
   }
 
   const opener = {
@@ -251,18 +342,19 @@ describe("open-attachment protocol link", () => {
   beforeEach(() => opener.open.mockClear());
 
   it("treats the id as the Attachment itself when it names one", async () => {
-    const attachment = { itemID: 9 };
+    const attachment = attachmentOf(9);
     attachmentsAt([attachment]);
     vi.mocked(toObsidianOpenableAttachments).mockReturnValue([
-      { indexedKey: "ATCH1" },
-    ] as never);
+      openableAttachment("ATCH1"),
+    ]);
     using _handlers = register(baseDeps());
 
-    handlers.get("zotlit/open-attachment")?.({
-      action: "zotlit/open-attachment",
-      item: "9",
-      "source-id": SOURCE_ID,
-    } as ObsidianProtocolData);
+    handlers.get("zotlit/open-attachment")?.(
+      protocolData("zotlit/open-attachment", {
+        item: "9",
+        "source-id": SOURCE_ID,
+      }),
+    );
 
     await vi.waitFor(() =>
       expect(toObsidianOpenableAttachments).toHaveBeenCalledWith(
@@ -274,21 +366,23 @@ describe("open-attachment protocol link", () => {
   });
 
   it("falls back to the item's own Attachments when the id names a regular item", async () => {
-    attachmentsAt([{ itemID: 2 }]);
+    const attachment = attachmentOf(2);
+    attachmentsAt([attachment]);
     vi.mocked(toObsidianOpenableAttachments).mockReturnValue([
-      { indexedKey: "ATCH2" },
-    ] as never);
+      openableAttachment("ATCH2"),
+    ]);
     using _handlers = register(baseDeps());
 
-    handlers.get("zotlit/open-attachment")?.({
-      action: "zotlit/open-attachment",
-      item: "42",
-      "source-id": SOURCE_ID,
-    } as ObsidianProtocolData);
+    handlers.get("zotlit/open-attachment")?.(
+      protocolData("zotlit/open-attachment", {
+        item: "42",
+        "source-id": SOURCE_ID,
+      }),
+    );
 
     await vi.waitFor(() =>
       expect(toObsidianOpenableAttachments).toHaveBeenCalledWith(
-        [{ itemID: 2 }],
+        [attachment],
         expect.anything(),
       ),
     );
@@ -302,11 +396,12 @@ describe("open-attachment protocol link", () => {
     vi.mocked(toObsidianOpenableAttachments).mockReturnValue([]);
     using _handlers = register(baseDeps());
 
-    handlers.get("zotlit/open-attachment")?.({
-      action: "zotlit/open-attachment",
-      item: "42",
-      "source-id": SOURCE_ID,
-    } as ObsidianProtocolData);
+    handlers.get("zotlit/open-attachment")?.(
+      protocolData("zotlit/open-attachment", {
+        item: "42",
+        "source-id": SOURCE_ID,
+      }),
+    );
 
     await vi.waitFor(() =>
       expect(openAttachments).toHaveBeenCalledExactlyOnceWith([], {
@@ -317,31 +412,31 @@ describe("open-attachment protocol link", () => {
   });
 
   it("shows the db-unavailable notice instead of resolving Attachments", () => {
-    using _handlers = register(
-      baseDeps({ zoteroReads: readsIn("loading") } as never),
-    );
+    using _handlers = register(baseDeps({ zoteroReads: readsIn("loading") }));
 
-    handlers.get("zotlit/open-attachment")?.({
-      action: "zotlit/open-attachment",
-      item: "9",
-      "source-id": SOURCE_ID,
-    } as ObsidianProtocolData);
+    handlers.get("zotlit/open-attachment")?.(
+      protocolData("zotlit/open-attachment", {
+        item: "9",
+        "source-id": SOURCE_ID,
+      }),
+    );
 
     expect(reads.AttachmentsAt).not.toHaveBeenCalled();
     expect(openAttachments).not.toHaveBeenCalled();
   });
 
   it("offers no event, so the picker is always the Suggest modal", async () => {
-    attachmentsAt([{}]);
-    const opened = { indexedKey: "ATCH1" };
-    vi.mocked(toObsidianOpenableAttachments).mockReturnValue([opened] as never);
+    attachmentsAt([attachmentOf(9)]);
+    const opened = openableAttachment("ATCH1");
+    vi.mocked(toObsidianOpenableAttachments).mockReturnValue([opened]);
     using _handlers = register(baseDeps());
 
-    handlers.get("zotlit/open-attachment")?.({
-      action: "zotlit/open-attachment",
-      item: "9",
-      "source-id": SOURCE_ID,
-    } as ObsidianProtocolData);
+    handlers.get("zotlit/open-attachment")?.(
+      protocolData("zotlit/open-attachment", {
+        item: "9",
+        "source-id": SOURCE_ID,
+      }),
+    );
 
     await vi.waitFor(() =>
       expect(openAttachments).toHaveBeenCalledExactlyOnceWith([opened], {
@@ -352,20 +447,21 @@ describe("open-attachment protocol link", () => {
   });
 
   it("opens a picked row in the pane the pick asked for when the link names none", async () => {
-    attachmentsAt([{}]);
-    const opened = { indexedKey: "ATCH1" };
-    vi.mocked(toObsidianOpenableAttachments).mockReturnValue([opened] as never);
+    attachmentsAt([attachmentOf(9)]);
+    const opened = openableAttachment("ATCH1");
+    vi.mocked(toObsidianOpenableAttachments).mockReturnValue([opened]);
     using _handlers = register(baseDeps());
 
-    handlers.get("zotlit/open-attachment")?.({
-      action: "zotlit/open-attachment",
-      item: "9",
-      "source-id": SOURCE_ID,
-    } as ObsidianProtocolData);
+    handlers.get("zotlit/open-attachment")?.(
+      protocolData("zotlit/open-attachment", {
+        item: "9",
+        "source-id": SOURCE_ID,
+      }),
+    );
 
     await vi.waitFor(() => expect(openAttachments).toHaveBeenCalledOnce());
     const { reader } = vi.mocked(openAttachments).mock.calls[0]![1];
-    void reader.open(opened as never, "tab");
+    void reader.open(opened, "tab");
     expect(opener.open).toHaveBeenCalledExactlyOnceWith(
       { kind: "attachment", attachmentKey: "ATCH1" },
       "tab",
@@ -373,21 +469,22 @@ describe("open-attachment protocol link", () => {
   });
 
   it("honors the link's paneType even for a single Attachment that would open directly", async () => {
-    attachmentsAt([{}]);
-    const opened = { indexedKey: "ATCH1" };
-    vi.mocked(toObsidianOpenableAttachments).mockReturnValue([opened] as never);
+    attachmentsAt([attachmentOf(9)]);
+    const opened = openableAttachment("ATCH1");
+    vi.mocked(toObsidianOpenableAttachments).mockReturnValue([opened]);
     using _handlers = register(baseDeps());
 
-    handlers.get("zotlit/open-attachment")?.({
-      action: "zotlit/open-attachment",
-      item: "9",
-      paneType: "split",
-      "source-id": SOURCE_ID,
-    } as ObsidianProtocolData);
+    handlers.get("zotlit/open-attachment")?.(
+      protocolData("zotlit/open-attachment", {
+        item: "9",
+        paneType: "split",
+        "source-id": SOURCE_ID,
+      }),
+    );
 
     await vi.waitFor(() => expect(openAttachments).toHaveBeenCalledOnce());
     const { reader } = vi.mocked(openAttachments).mock.calls[0]![1];
-    void reader.open(opened as never, false);
+    void reader.open(opened, false);
     expect(opener.open).toHaveBeenCalledExactlyOnceWith(
       { kind: "attachment", attachmentKey: "ATCH1" },
       "split",
@@ -461,41 +558,53 @@ describe("clipboard Profile protocol handoff", () => {
         Awaited<ReturnType<ProtocolDeps["importProfile"]>>
       >();
     const importProfile = vi.fn(() => consent.promise);
-    const file = { path: "templates/shared.md" };
-    const app = {
-      vault: { getFileByPath: vi.fn(() => file) },
-    } as unknown as ProtocolDeps["app"];
-    using _handlers = register({ app, importProfile });
-    handlers.get("zotlit/import-profile")!({
-      action: "zotlit/import-profile",
-      clipboard: "true",
+    const file = new TFile();
+    file.path = "templates/shared.md";
+    const app = appStub({
+      vault: stubService<App["vault"]>("Vault", {
+        getFileByPath: vi.fn(() => file),
+      }),
     });
+    using _handlers = register({ app, importProfile });
+    handlers.get("zotlit/import-profile")!(
+      protocolData("zotlit/import-profile", { clipboard: "true" }),
+    );
     expect(importProfile).toHaveBeenCalledWith({ source: "clipboard" });
     expect(openTemplateWorkbench).not.toHaveBeenCalled();
-    consent.resolve({ path: file.path } as Awaited<
-      ReturnType<ProtocolDeps["importProfile"]>
-    >);
+    consent.resolve(
+      stubService<
+        NonNullable<Awaited<ReturnType<ProtocolDeps["importProfile"]>>>
+      >("LiteratureNoteProfile", { path: file.path }),
+    );
     await vi.waitFor(() =>
       expect(openTemplateWorkbench).toHaveBeenCalledWith(app, file, {}),
     );
   });
   it("hands the workbench the pane the link names", async () => {
-    const leaf = {};
+    const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {});
     const getLeaf = vi.fn(() => leaf);
-    const file = { path: "templates/shared.md" };
-    const app = {
-      vault: { getFileByPath: vi.fn(() => file) },
-      workspace: { getLeaf },
-    } as unknown as ProtocolDeps["app"];
+    const file = new TFile();
+    file.path = "templates/shared.md";
+    const app = appStub({
+      vault: stubService<App["vault"]>("Vault", {
+        getFileByPath: vi.fn(() => file),
+      }),
+      workspace: stubService<App["workspace"]>("Workspace", { getLeaf }),
+    });
     using _handlers = register({
       app,
-      importProfile: vi.fn(async () => ({ path: file.path })),
-    } as unknown as Partial<ProtocolDeps>);
-    handlers.get("zotlit/import-profile")!({
-      action: "zotlit/import-profile",
-      clipboard: "true",
-      paneType: "split",
-    } as ObsidianProtocolData);
+      importProfile: vi.fn(async () =>
+        stubService<
+          NonNullable<Awaited<ReturnType<ProtocolDeps["importProfile"]>>>
+        >("LiteratureNoteProfile", { path: file.path }),
+      ),
+    });
+    handlers.get("zotlit/import-profile")!(
+      protocolData("zotlit/import-profile", {
+        clipboard: "true",
+        paneType: "split",
+      }),
+    );
     await vi.waitFor(() =>
       expect(openTemplateWorkbench).toHaveBeenCalledWith(app, file, { leaf }),
     );
@@ -506,10 +615,9 @@ describe("clipboard Profile protocol handoff", () => {
     vi.mocked(openTemplateWorkbench).mockClear();
     const importProfile = vi.fn(async () => undefined);
     using _handlers = register({ importProfile });
-    handlers.get("zotlit/import-profile")!({
-      action: "zotlit/import-profile",
-      clipboard: "true",
-    });
+    handlers.get("zotlit/import-profile")!(
+      protocolData("zotlit/import-profile", { clipboard: "true" }),
+    );
     await Promise.resolve();
     expect(openTemplateWorkbench).not.toHaveBeenCalled();
   });
@@ -518,10 +626,12 @@ describe("clipboard Profile protocol handoff", () => {
     (clipboard) => {
       const importProfile = vi.fn(async () => undefined);
       using _handlers = register({ importProfile });
-      handlers.get("zotlit/import-profile")!({
-        action: "zotlit/import-profile",
-        ...(clipboard === undefined ? {} : { clipboard }),
-      });
+      handlers.get("zotlit/import-profile")!(
+        protocolData(
+          "zotlit/import-profile",
+          clipboard === undefined ? {} : { clipboard },
+        ),
+      );
       expect(importProfile).not.toHaveBeenCalled();
     },
   );

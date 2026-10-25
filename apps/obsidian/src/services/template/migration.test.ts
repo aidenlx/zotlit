@@ -1,7 +1,8 @@
 import { it } from "@effect/vitest";
 import { Context, Effect, Layer } from "effect";
 import { TestClock } from "effect/testing";
-import type { App } from "obsidian";
+import { TFile } from "obsidian";
+import type { App, Events } from "obsidian";
 import { afterEach, beforeEach, describe, expect, vi } from "vitest";
 
 import { citekeysToCiteTemplateData } from "@zotlit/db";
@@ -25,7 +26,32 @@ import type { TemplateMigrationOptions } from "./migration";
 import { plainTemplateMigration } from "./plain";
 import type { PlainTemplate } from "./plain";
 import { Template, templateFailure } from "./service";
-import type { LegacyTemplateDocuments } from "./service";
+import type {
+  ConvertedLegacyProfileDocument,
+  LegacyTemplateDocuments,
+} from "./service";
+
+type EventSource = Pick<Events, "on" | "offref">;
+type EventCallback = (...args: never[]) => unknown;
+
+function eventMethods(source: EventSource) {
+  return {
+    on: (name: string, callback: EventCallback) =>
+      source.on(name, (...args: unknown[]) =>
+        Reflect.apply(callback, undefined, args),
+      ),
+    offref: (ref: Parameters<EventSource["offref"]>[0]) => source.offref(ref),
+  };
+}
+
+function workspaceOf(workspace: MemoryWorkspace): App["workspace"] {
+  return stubService<App["workspace"]>("Workspace", {
+    ...eventMethods(workspace),
+    onLayoutReady: (callback) => workspace.onLayoutReady(callback),
+    getActiveFile: () => workspace.getActiveFile(),
+    getActiveViewOfType: (type) => workspace.getActiveViewOfType(type),
+  });
+}
 
 async function makeHarness(
   options?: {
@@ -65,21 +91,27 @@ async function makeHarness(
   if (options?.ejectedAnnotation) {
     legacyPaths.push("templates/zotlit-annotation.liquid.md");
   }
-  const files = new Map(legacyPaths.map((path) => [path, { path }]));
+  const fileAt = (path: string) => {
+    const file = new TFile();
+    file.path = path;
+    return file;
+  };
+  const files = new Map(legacyPaths.map((path) => [path, fileAt(path)]));
   if (options?.defaultDocument)
-    files.set("templates/zotlit-profile.default.md", {
-      path: "templates/zotlit-profile.default.md",
-    });
+    files.set(
+      "templates/zotlit-profile.default.md",
+      fileAt("templates/zotlit-profile.default.md"),
+    );
   const workspace = new MemoryWorkspace();
-  const create = vi.fn(async (path: string, source: string) => {
-    const file = { path, source };
+  const create = vi.fn(async (path: string, _source: string) => {
+    const file = fileAt(path);
     files.set(path, file);
     return file;
   });
-  const trashFile = vi.fn(async (file: { path: string }) => {
+  const trashFile = vi.fn(async (file: TFile) => {
     files.delete(file.path);
   });
-  const snapshot = () => ({ ...defaults, ...state }) as Settings;
+  const snapshot = (): Settings => ({ ...defaults, ...state });
   const update = vi.fn(
     (patch: SettingsPatch | ((current: Readonly<Settings>) => SettingsPatch)) =>
       Effect.sync(() => {
@@ -92,11 +124,14 @@ async function makeHarness(
   );
   /** Called once per run of the `flush` Effect, so a test orders the flushes. */
   const flushRuns = vi.fn(() => Effect.void);
+  // `update` stays the spy, so a case reads its calls.
   const settings = Object.assign(
     stubService<PluginSettings["Service"]>("PluginSettings", {
       current: Effect.sync(snapshot),
+      update,
+      flush: Effect.suspend(flushRuns),
     }),
-    { update, flush: Effect.suspend(flushRuns) },
+    { update },
   );
   const bridge = { runSync: Effect.runSync, runPromise: Effect.runPromise };
   const template = {
@@ -113,17 +148,22 @@ async function makeHarness(
             "templates/zotlit-content.liquid.md",
           ],
     ),
-    convertLegacyLiteratureNoteTemplates: vi.fn(async () => ({
-      source: "converted source",
-      legacyFiles: [
-        "templates/zotlit-filename.liquid.md",
-        "templates/zotlit-note.liquid.md",
-        ...(options?.ejectedAnnotation
-          ? ["templates/zotlit-annotation.liquid.md"]
-          : []),
-        "templates/zotlit-content.liquid.md",
-      ],
-    })),
+    convertLegacyLiteratureNoteTemplates: vi.fn(async () =>
+      stubService<ConvertedLegacyProfileDocument>(
+        "ConvertedLegacyProfileDocument",
+        {
+          source: "converted source",
+          legacyFiles: [
+            "templates/zotlit-filename.liquid.md",
+            "templates/zotlit-note.liquid.md",
+            ...(options?.ejectedAnnotation
+              ? ["templates/zotlit-annotation.liquid.md"]
+              : []),
+            "templates/zotlit-content.liquid.md",
+          ],
+        },
+      ),
+    ),
     getLegacyTemplateDocuments: vi.fn(
       (): LegacyTemplateDocuments =>
         options?.legacyDocuments ?? { citation: [], partials: [] },
@@ -137,14 +177,16 @@ async function makeHarness(
   const openPrompt = vi.fn();
   const service = await buildMigration(
     {
-      app: {
-        vault: {
+      app: stubService<App>("App", {
+        vault: stubService<App["vault"]>("Vault", {
           getFileByPath: (path: string) => files.get(path) ?? null,
           create,
-        },
-        fileManager: { trashFile },
-        workspace,
-      } as unknown as App,
+        }),
+        fileManager: stubService<App["fileManager"]>("FileManager", {
+          trashFile,
+        }),
+        workspace: workspaceOf(workspace),
+      }),
       settings,
       bridge,
       template,
@@ -453,10 +495,11 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         });
         let writes = 0;
         harness.create.mockImplementation(
-          async (path: string, source: string) => {
+          async (path: string, _source: string) => {
             writes += 1;
             if (writes === 2) throw new Error("Disk full");
-            const file = { path, source };
+            const file = new TFile();
+            file.path = path;
             harness.files.set(path, file);
             return file;
           },
@@ -682,19 +725,35 @@ async function makeVaultHarness(
     options?.javascriptTemplates ? [["zotlit-javascript-templates", "1"]] : [],
   );
   const workspace = new MemoryWorkspace();
-  const trashFile = vi.fn(async (file: { path: string }) => {
+  const trashFile = vi.fn(async (file: TFile) => {
     vault.deleteFile(file.path);
   });
-  const app = {
-    vault,
-    workspace: Object.assign(workspace, { updateOptions: vi.fn() }),
-    fileManager: { trashFile },
+  const app = stubService<App>("App", {
+    vault: stubService<App["vault"]>("Vault", {
+      ...eventMethods(vault),
+      read: (file) => vault.read(file),
+      cachedRead: (file) => vault.cachedRead(file),
+      process: (file, fn) => vault.process(file, fn),
+      create: (path, data) => vault.create(path, data),
+      trash: async (file) => vault.deleteFile(file.path),
+      getFileByPath: (path) => vault.getFileByPath(path),
+      getFolderByPath: (path) => vault.getFolderByPath(path),
+      getAbstractFileByPath: (path) => vault.getAbstractFileByPath(path),
+      getRoot: () => vault.getRoot(),
+      getMarkdownFiles: () => vault.getMarkdownFiles(),
+    }),
+    workspace: workspaceOf(
+      Object.assign(workspace, { updateOptions: vi.fn() }),
+    ),
+    fileManager: stubService<App["fileManager"]>("FileManager", {
+      trashFile,
+    }),
     loadLocalStorage: (key: string) => localStorage.get(key) ?? null,
     saveLocalStorage: (key: string, data: unknown) => {
       if (data === null) localStorage.delete(key);
       else localStorage.set(key, data);
     },
-  } as unknown as App;
+  });
   const plugin = new PluginStub(
     app,
     options?.storedSettings ?? { __VERSION__: 1 },
@@ -1422,22 +1481,20 @@ async function buildMigration(
               template.getLegacyTemplateDocuments(),
             ),
             // The fake template converts to the fields migration reads only.
-            convertLegacyLiteratureNoteTemplates: ((data: {
-              note: object;
-              filename: object;
-              annotation?: object;
-            }) =>
+            convertLegacyLiteratureNoteTemplates: (data) =>
               Effect.tryPromise({
-                try: () => template.convertLegacyLiteratureNoteTemplates(data),
+                try: async (): Promise<ConvertedLegacyProfileDocument> =>
+                  stubService<ConvertedLegacyProfileDocument>(
+                    "ConvertedLegacyProfileDocument",
+                    await template.convertLegacyLiteratureNoteTemplates(data),
+                  ),
                 catch: templateFailure,
-              })) as unknown as Template["Service"]["convertLegacyLiteratureNoteTemplates"],
-            convertLegacyTemplateDocuments: ((
-              refs: readonly import("@zotlit/db").CiteRef[],
-            ) =>
+              }),
+            convertLegacyTemplateDocuments: (refs) =>
               Effect.tryPromise({
                 try: () => template.convertLegacyTemplateDocuments(refs),
                 catch: templateFailure,
-              })) as unknown as Template["Service"]["convertLegacyTemplateDocuments"],
+              }),
           }),
         ),
       ),

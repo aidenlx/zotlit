@@ -1,16 +1,19 @@
 import "@mock/dom-parser";
 import { it } from "@effect/vitest";
-import { TFile } from "@mock/obsidian";
 import { Effect } from "effect";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { TFile } from "obsidian";
+import type { App, FileSystemAdapter, MetadataCache, Vault } from "obsidian";
 import { describe, expect, vi } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ProfileReader } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 
 import type { CslResponse } from "./csl";
 import {
@@ -25,9 +28,11 @@ const APA = "http://www.zotero.org/styles/apa";
 
 /** The Profile service, answering from a fixture reader. */
 const effectProfile = (reader: ProfileReader) => ({
-  loaded: Effect.sync(() => reader.loaded),
-  profileOf: (file?: Parameters<ProfileReader["profileOf"]>[0]) =>
-    Effect.sync(() => reader.profileOf(file)),
+  ...stubService<PandocResolveDeps["profile"]>("Profile", {
+    loaded: Effect.sync(() => reader.loaded),
+    profileOf: (file?: Parameters<ProfileReader["profileOf"]>[0]) =>
+      Effect.sync(() => reader.profileOf(file)),
+  }),
 });
 const UNINSTALLED = "http://www.zotero.org/styles/uninstalled";
 const NOTE_PATH = "/vault/draft.md";
@@ -65,7 +70,9 @@ async function cslVault({
 
   const file = new TFile();
   file.path = "draft.md";
-  const metadataCache = { getFileCache: () => ({ frontmatter: note }) };
+  const metadataCache = stubService<MetadataCache>("MetadataCache", {
+    getFileCache: () => ({ frontmatter: note }),
+  });
   const settings = {
     ...defaults,
     "note.default-profile": {
@@ -77,18 +84,29 @@ async function cslVault({
     },
   };
   const { host, command } = fakeCliHost();
-  registerPandocResolve({ ...host, manifest: { version: "2.0.1-test" } }, {
-    app: {
-      vault: {
+  const deps: PandocResolveDeps = {
+    app: stubService<App>("App", {
+      vault: stubService<Vault>("Vault", {
+        adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
+          getBasePath: () => "/vault",
+        }),
         getFileByPath: (path: string) => (path === file.path ? file : null),
-      },
+      }),
       metadataCache,
-    },
+    }),
     basePath: "/vault",
-    zoteroPref: { current: Effect.succeed({ dataDir }) },
-    settings: { current: Effect.succeed(settings) },
+    reads: stubService<PandocResolveDeps["reads"]>("ZoteroReads", {}),
+    zoteroPref: stubService<PandocResolveDeps["zoteroPref"]>("ZoteroPref", {
+      current: Effect.succeed(
+        stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", { dataDir }),
+      ),
+    }),
+    settings: stubService<PandocResolveDeps["settings"]>("PluginSettings", {
+      current: Effect.succeed(settings),
+    }),
     profile: effectProfile(profileReader(settings, metadataCache)),
-  } as unknown as PandocResolveDeps);
+  };
+  registerPandocResolve({ ...host, manifest: { version: "2.0.1-test" } }, deps);
   const handlerOf = (name: string) => command(name).handler;
 
   const held = stack.move();

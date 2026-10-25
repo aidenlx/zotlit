@@ -1,18 +1,25 @@
 import { ToggleComponent, controlsOf } from "@mock/obsidian";
-import { Effect } from "effect";
 // @vitest-environment happy-dom
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ButtonComponent, Modal, SuggestModal, TextComponent } from "obsidian";
+import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import type { NoteTemplateContext } from "@zotlit/db";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import * as nativeDialog from "@/lib/require";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import type { PreparedProfileImport } from "@/services/profile/service";
+import {
+  inProcessReadsService,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import { ImportProfileModal, createProfileImporter } from "./profiles";
 import type { ImportProfileDeps, ProfileDialogServices } from "./profiles";
@@ -63,7 +70,7 @@ function observeButtons() {
 }
 function fixture(
   kind: "fresh" | "replace" = "fresh",
-  partials: { name: string; verdict: string; document: string }[] = [
+  partials: PreparedProfileImport["partials"][number][] = [
     { name: "summary", verdict: "write", document: "Summary" },
     { name: "authors", verdict: "conflict", document: "Authors" },
     { name: "venue-line", verdict: "unchanged", document: "Venue" },
@@ -75,8 +82,12 @@ function fixture(
     path: "templates/zotlit-profile.shared.md",
     document: "zotlit-profile.shared.md",
     bindings: {},
+    match: {
+      state: "absent" as const,
+      summary: m.profile_match_absent(),
+    },
   }));
-  const plan = {
+  const plan: PreparedProfileImport = {
     kind,
     held: {
       label: "Held",
@@ -88,14 +99,17 @@ function fixture(
       id,
       name: "Shared",
       version: "2.0.0",
+      contract: 2,
       author: "Research group",
       description: "Reading notes",
+      filename: "{{ zt.title }}",
+      language: "liquid",
       folder: "Sender",
       citationStyle: "missing-style",
       partials: [
-        { name: "summary" },
-        { name: "authors" },
-        { name: "venue-line" },
+        { name: "summary", language: "liquid", source: "Summary" },
+        { name: "authors", language: "liquid", source: "Authors" },
+        { name: "venue-line", language: "liquid", source: "Venue" },
       ],
     },
     partials,
@@ -110,26 +124,43 @@ function fixture(
     },
     previewSource: () => "Shared source",
     import: save,
-  } as unknown as PreparedProfileImport;
+  };
   const prepareImport = vi.fn<ImportProfileDeps["profile"]["prepareImport"]>(
     async () => plan,
   );
-  const deps = {
-    app: {},
-    profile: { ...profileReader(), prepareImport },
-    template: { prepareLiteratureNoteTemplateSource: () => ({}) },
-    noteFeature: {
+  const reader = profileReader();
+  const deps = stubService<ImportProfileDeps>("ImportProfileDeps", {
+    app: stubService<App>("App", {}),
+    profile: stubService<ImportProfileDeps["profile"]>("Profile", {
+      resolveProfile: reader.resolveProfile,
+      prepareImport,
+    }),
+    template: stubService<ImportProfileDeps["template"]>("Template", {
+      prepareLiteratureNoteTemplateSource: () =>
+        stubService<
+          ReturnType<
+            ImportProfileDeps["template"]["prepareLiteratureNoteTemplateSource"]
+          >
+        >("TemplateDocument", {}),
+    }),
+    noteFeature: stubService<ImportProfileDeps["noteFeature"]>("NoteFeature", {
       prepareProfileNote: () => ({
         path: "Reading/Paper.md",
         properties: { "zotlit-profile": "Shared (Ry4Ua8Nv2Mx6)" },
         body: "Recipient item",
+        create: async () => {
+          throw new Error("The import test does not create the preview");
+        },
       }),
-    },
-  } as unknown as ImportProfileDeps;
+    }),
+  });
   const modal = new ImportProfileModal(deps, {
     source: "IMPORTED SOURCE",
     plan,
-    data: { note: {} as never, filename: {} },
+    data: {
+      note: stubService<NoteTemplateContext>("NoteTemplateContext", {}),
+      filename: {},
+    },
     styles: [],
   });
   modal.contentEl = document.createElement("div");
@@ -305,17 +336,29 @@ async function importerFixture(kind: "fresh" | "replace" = "fresh") {
     filePaths: [filePath],
   }));
   stack.use(
-    vi
-      .spyOn(nativeDialog, "requireDialog")
-      .mockReturnValue({ showOpenDialog } as unknown as ReturnType<
-        typeof nativeDialog.requireDialog
-      >),
+    vi.spyOn(nativeDialog, "requireDialog").mockReturnValue(
+      stubService<ReturnType<typeof nativeDialog.requireDialog>>("Dialog", {
+        showOpenDialog,
+      }),
+    ),
   );
+  type ReadLease = Awaited<
+    ReturnType<ProfileDialogServices["zoteroReads"]["acquireRead"]>
+  >;
+  const reads = stack.use(inProcessReadsService(memoryOpener(() => "").open));
   const releaseRead = vi.fn();
-  const acquireRead = vi.fn(async () => ({
-    reads: { Libraries: () => Effect.succeed([]) },
-    [Symbol.dispose]: releaseRead,
-  }));
+  const acquireRead = vi.fn<
+    ProfileDialogServices["zoteroReads"]["acquireRead"]
+  >(async () => {
+    const lease = await reads.acquireRead();
+    return stubService<ReadLease>("ZoteroReadLease", {
+      reads: lease.reads,
+      [Symbol.asyncDispose]: async () => {
+        await lease[Symbol.asyncDispose]();
+        releaseRead();
+      },
+    });
+  });
   const opened = stack.use(
     vi.spyOn(Modal.prototype, "open").mockImplementation(function (
       this: Modal,
@@ -324,14 +367,44 @@ async function importerFixture(kind: "fresh" | "replace" = "fresh") {
     }),
   );
   const suggestions = stack.use(vi.spyOn(SuggestModal.prototype, "open"));
-  const run = createProfileImporter({
-    ...f.deps,
-    zoteroReads: { acquireRead },
-    libraryScope: {
-      resolveLibraries: () => ({ available: [] }),
-    },
-    zoteroPref: { dataDir: null },
-  } as unknown as ProfileDialogServices);
+  const run = createProfileImporter(
+    stubService<ProfileDialogServices>("ProfileDialogServices", {
+      app: f.deps.app,
+      profile: stubService<ProfileDialogServices["profile"]>("Profile", {
+        resolveProfile: f.deps.profile.resolveProfile,
+        prepareImport: f.deps.profile.prepareImport,
+      }),
+      template: stubService<ProfileDialogServices["template"]>("Template", {
+        prepareLiteratureNoteTemplateSource:
+          f.deps.template.prepareLiteratureNoteTemplateSource,
+      }),
+      noteFeature: stubService<ProfileDialogServices["noteFeature"]>(
+        "NoteFeature",
+        {
+          prepareProfileNote: f.deps.noteFeature.prepareProfileNote,
+        },
+      ),
+      zoteroReads: stubService<ProfileDialogServices["zoteroReads"]>(
+        "ZoteroReads",
+        { acquireRead },
+      ),
+      libraryScope: stubService<ProfileDialogServices["libraryScope"]>(
+        "LibraryScope",
+        {
+          resolveLibraries: () => ({
+            mode: "all",
+            invalid: false,
+            available: [],
+            unavailable: [],
+          }),
+        },
+      ),
+      zoteroPref: stubService<ProfileDialogServices["zoteroPref"]>(
+        "ZoteroPref",
+        { dataDir: undefined, baseAttachmentPath: undefined },
+      ),
+    }),
+  );
   const cleanup = stack.move();
   return {
     ...f,
@@ -464,21 +537,29 @@ async function realImportFixture(held: boolean, source = incoming) {
       held ? { [importedPath]: incoming.replace("2.0.0", "1.0.0") } : {},
     ),
   );
-  const deps = {
-    ...f,
+  const deps: ImportProfileDeps = {
+    app: f.app,
+    profile: f.profile,
+    template: f.template,
     noteFeature: {
       prepareProfileNote: () => ({
         path: "Reading/Paper.md",
         properties: {},
         body: "Preview",
+        create: async () => {
+          throw new Error("The import test does not create the preview");
+        },
       }),
     },
-  } as unknown as ImportProfileDeps;
+  };
   const plan = await f.profile.prepareImport(source);
   const modal = new ImportProfileModal(deps, {
     source,
     plan,
-    data: { note: {} as never, filename: {} },
+    data: {
+      note: stubService<NoteTemplateContext>("NoteTemplateContext", {}),
+      filename: {},
+    },
     styles: [],
   });
   modal.contentEl = document.createElement("div");

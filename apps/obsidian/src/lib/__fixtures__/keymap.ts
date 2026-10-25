@@ -2,7 +2,9 @@
 // app whose keymap records the Scopes pushed on it, and one keystroke handed
 // to a Scope as Obsidian hands it.
 import { Scope } from "obsidian";
-import type { App, Modifier } from "obsidian";
+import type { App, Keymap, Modifier } from "obsidian";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 
 /** An app whose keymap records its stack, the last Scope pushed on top. */
 export function keymapApp(): Pick<App, "scope" | "keymap"> & {
@@ -12,13 +14,13 @@ export function keymapApp(): Pick<App, "scope" | "keymap"> & {
   return {
     scope: new Scope(),
     scopes,
-    keymap: {
+    keymap: stubService<Keymap>("Keymap", {
       pushScope: (scope: Scope) => scopes.push(scope),
       popScope: (scope: Scope) => {
         const index = scopes.indexOf(scope);
         if (index !== -1) scopes.splice(index, 1);
       },
-    } as App["keymap"],
+    }),
   };
 }
 

@@ -1,8 +1,9 @@
 import { it } from "@effect/vitest";
 import { Effect, Exit, Scope } from "effect";
-import type { Command, Plugin } from "obsidian";
+import type { App, Command, Plugin, PluginManifest } from "obsidian";
 import { describe, expect, it as plainIt, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { CliHost } from "@/lib/cli-command";
 
 import { makePluginHost } from "./plugin-host";
@@ -10,9 +11,12 @@ import { makePluginHost } from "./plugin-host";
 /** The command registry a plugin writes to, shaped as Obsidian 1.15.0 keeps it. */
 function fakeObsidian() {
   const commands = new Map<string, Command>();
-  const plugin = {
-    app: {},
-    manifest: { id: "zotlit", version: "2.0.0" },
+  const plugin = stubService<Plugin & CliHost>("Plugin", {
+    app: stubService<App>("App", {}),
+    manifest: stubService<PluginManifest>("PluginManifest", {
+      id: "zotlit",
+      version: "2.0.0",
+    }),
     addCommand: (command: Command) => {
       command.id = `zotlit:${command.id}`;
       commands.set(command.id, command);
@@ -21,7 +25,7 @@ function fakeObsidian() {
     removeCommand: (id: string) => commands.delete(`zotlit:${id}`),
     registerMarkdownPostProcessor: vi.fn(),
     registerCliCommand: vi.fn(),
-  } as unknown as Plugin & CliHost;
+  });
   return { plugin, commands };
 }
 

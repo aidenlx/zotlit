@@ -2,6 +2,7 @@
 // Needs a DOM, so every consumer runs under `// @vitest-environment happy-dom`.
 import type { App, Scope } from "obsidian";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { keymapApp } from "@/lib/__fixtures__/keymap";
 
 /**
@@ -9,16 +10,20 @@ import { keymapApp } from "@/lib/__fixtures__/keymap";
  * scopes a test can read and press, and no editor commands to hold.
  */
 export function editorApp(): App & { scopes: Scope[] } {
-  return {
+  return stubService<App & { scopes: Scope[] }>("App", {
     ...keymapApp(),
-    commands: { editorCommands: {} },
+    commands: stubService<App["commands"]>("Commands", {
+      editorCommands: {},
+    }),
     // Where the comment editor and the reader's menus raise their menu events.
-    workspace: { trigger: () => {} },
-    hotkeyManager: {
+    workspace: stubService<App["workspace"]>("Workspace", {
+      trigger: () => {},
+    }),
+    hotkeyManager: stubService<App["hotkeyManager"]>("HotkeyManager", {
       getHotkeys: () => undefined,
       getDefaultHotkeys: () => undefined,
-    },
-  } as unknown as App & { scopes: Scope[] };
+    }),
+  });
 }
 
 /** Mod+Enter, through the scope the focused comment editor pushed last. */

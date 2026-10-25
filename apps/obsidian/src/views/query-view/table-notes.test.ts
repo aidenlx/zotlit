@@ -3,14 +3,16 @@
 // that holds the view.
 import { Stream } from "effect";
 import { Effect } from "effect";
-import type { App, TFile } from "obsidian";
+import type { App, EventRef, TFile } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Item } from "@zotlit/db";
+import { makeItem } from "@zotlit/db/test-utils";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import type {
   CreationPlan,
@@ -22,8 +24,10 @@ import {
   createNoteHost,
   startup,
 } from "@/services/note-index/__fixtures__";
+import { stubbedReads } from "@/services/zotero-reads/test-utils";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
+import { openTextFileView } from "./__fixtures__/open-text-view";
 import { literatureNotes } from "./table-notes";
 import type { LiteratureNotesDeps } from "./table-notes";
 
@@ -106,32 +110,47 @@ async function setup(
   );
   const noteIndex = buildNoteIndex(host.app, owned);
   if (scanned) await noteIndex.whenIndexed();
-  const typesChanged = new Set<() => void>();
+  const typesChanged = new Set<(name: string) => void>();
   const getCache = vi.fn((path: string) => host.metadataCache.getCache(path));
-  const deps = {
+  const deps = stubService<LiteratureNotesDeps>("LiteratureNotesDeps", {
     runtime: testRuntime(),
-    app: {
-      metadataCache: { getCache },
-      ...(types && {
-        metadataTypeManager: {
-          getAssignedWidget: (name: string) => types[name] ?? null,
-          on: (_event: string, cb: () => void) => {
-            typesChanged.add(cb);
-            return cb;
-          },
-          offref: (cb: () => void) => typesChanged.delete(cb),
-        },
+    app: stubService<LiteratureNotesDeps["app"]>("App", {
+      metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
+        getCache,
       }),
-    },
+      metadataTypeManager: types
+        ? stubService<NonNullable<App["metadataTypeManager"]>>(
+            "MetadataTypeManager",
+            {
+              getAssignedWidget: (name: string) => types[name] ?? null,
+              on: (_event: "changed", callback: (name: string) => void) => {
+                typesChanged.add(callback);
+                return stubService<EventRef>("EventRef", {});
+              },
+              offref: (callback: (name: string) => void) =>
+                typesChanged.delete(callback),
+            },
+          )
+        : undefined,
+    }),
     noteIndex,
-    profile: { changed: Stream.empty },
-    template: { "compile-status-changed": Stream.empty },
-    noteFeature: { replacedKeys: async () => new Set() },
-  } as unknown as LiteratureNotesDeps;
+    profile: stubService<LiteratureNotesDeps["profile"]>("Profile", {
+      changed: Stream.empty,
+    }),
+    template: stubService<LiteratureNotesDeps["template"]>("Template", {
+      "compile-status-changed": Stream.empty,
+    }),
+    noteFeature: stubService<LiteratureNotesDeps["noteFeature"]>(
+      "NoteFeature",
+      {
+        replacedKeys: async () => new Set(),
+      },
+    ),
+  });
   /** Assign `widget` to `name`, as the Properties panel does. */
   const setType = (name: string, widget: string) => {
     types![name] = widget;
-    for (const cb of typesChanged) cb();
+    for (const callback of typesChanged) callback(name);
   };
   /** The note at `path`, created when the vault holds none, now carries `properties`. */
   const write = async (path: string, properties: Record<string, unknown>) => {
@@ -393,37 +412,68 @@ describe("literatureNotes vault property writes", () => {
         `---\nzotero-key: ${item.indexedKey}\n---\n`,
       ),
     }));
-    const deps = {
-      runtime: testRuntime(),
-      app: {
-        ...host.app,
-        metadataCache: {
-          getFileCache: (file: TFile) => host.metadataCache.getFileCache(file),
-          getCache: (path: string) =>
-            host.metadataCache.getFileCache(host.file(path)),
-        },
-      },
-      noteIndex,
-      profile: { changed: sources.profile.stream },
-      template: { "compile-status-changed": sources.template.stream },
-      zoteroReads: {
-        reads: {
-          ItemsByIndexedKeys: ({ indexedKeys }: { indexedKeys: string[] }) =>
+    const app = stubService<LiteratureNotesDeps["app"]>("App", {
+      vault: host.vault as unknown as LiteratureNotesDeps["app"]["vault"],
+      metadataTypeManager: undefined,
+      metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
+        getFileCache: (file: TFile) => host.metadataCache.getFileCache(file),
+        getCache: (path: string) =>
+          host.metadataCache.getFileCache(host.file(path)),
+      }),
+      workspace:
+        host.workspace as unknown as LiteratureNotesDeps["app"]["workspace"],
+    });
+    const readsService = owned.use(stubbedReads());
+    const reads = new Proxy(readsService.reads, {
+      get(target, property, receiver) {
+        if (property === "ItemsByIndexedKeys")
+          return ({ indexedKeys }: { indexedKeys: readonly string[] }) =>
             Effect.succeed(
               new Map(
-                indexedKeys.map((key) => [key, { indexedKey: key, key }]),
+                indexedKeys.map((key) => [
+                  key,
+                  makeItem(
+                    { itemType: "journalArticle", key },
+                    { key, indexedKey: key },
+                  ),
+                ]),
               ),
-            ),
+            );
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const deps = stubService<LiteratureNotesDeps>("LiteratureNotesDeps", {
+      runtime: testRuntime(),
+      app,
+      noteIndex,
+      profile: stubService<LiteratureNotesDeps["profile"]>("Profile", {
+        changed: sources.profile.stream,
+      }),
+      template: stubService<LiteratureNotesDeps["template"]>("Template", {
+        "compile-status-changed": sources.template.stream,
+      }),
+      zoteroReads: stubService<LiteratureNotesDeps["zoteroReads"]>(
+        "ZoteroReads",
+        {
+          reads: stubService<LiteratureNotesDeps["zoteroReads"]["reads"]>(
+            "ZoteroReadsApi",
+            reads,
+          ),
         },
-      },
-      zoteroPref: { dataDir: null },
-      noteFeature: {
-        createNote,
-        planCreations: async (keys: readonly string[]) =>
-          creationPlans(keys, selection, createNote),
-        replacedKeys,
-      },
-    } as unknown as LiteratureNotesDeps;
+      ),
+      zoteroPref: stubService<LiteratureNotesDeps["zoteroPref"]>("ZoteroPref", {
+        dataDir: "/Zotero",
+      }),
+      noteFeature: stubService<LiteratureNotesDeps["noteFeature"]>(
+        "NoteFeature",
+        {
+          createNote,
+          planCreations: async (keys: readonly string[]) =>
+            creationPlans(keys, selection, createNote),
+          replacedKeys,
+        },
+      ),
+    });
     return {
       host,
       replaced,
@@ -461,7 +511,7 @@ describe("literatureNotes vault property writes", () => {
     const { host, notes } = await vault({
       "A.md": "---\nzotero-key: ITEMAAAA\nstatus: unread\n---\nSaved\n",
     });
-    const editor = host.openInEditor(host.file("A.md"));
+    const editor = openTextFileView(host, host.file("A.md"));
     editor.edit("---\nzotero-key: ITEMAAAA\nstatus: unread\n---\nTyped\n");
 
     await notes.write({
@@ -592,7 +642,7 @@ describe("literatureNotes vault property writes", () => {
       vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce({
         id: "default",
         label: "Default",
-      } as never);
+      });
       const { host, notes } = await vault({}, { selection: ask });
 
       await expect(notes.write(edit)).resolves.toBe("created");

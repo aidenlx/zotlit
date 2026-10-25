@@ -233,9 +233,17 @@ it.each([null, "BBBBBBBBBBBB"])(
     await using bridge = openTestBridge();
     const writeLastRead = vi.fn(() => Effect.void);
     const reads = stubService<ZoteroReads["Service"]>("ZoteroReads", {
-      snapshot: Effect.succeed({
-        DatabaseIdentity: () => Effect.succeed({ serverID }),
-      } as never),
+      // The RPC client's members are generic over queue options; the
+      // read answers the one call the code makes.
+      snapshot: Effect.succeed(
+        Object.assign(
+          stubService<Effect.Success<ZoteroReads["Service"]["snapshot"]>>(
+            "ZoteroReadsSnapshot",
+            {},
+          ),
+          { DatabaseIdentity: () => Effect.succeed({ serverID }) },
+        ),
+      ),
     });
     const api = stubService<ZoteroLocalApi["Service"]>("ZoteroLocalApi", {
       state: Effect.succeed({

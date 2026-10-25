@@ -19,8 +19,14 @@ const directive = regex(
 const rule = regex(
   "\\bzotlit-tests/(?:no-source-text|no-internal-mock|no-markup-assertion)\\b",
 );
+/** The fake rule, held like the three test rules (policies/testing-strategy.md → Baseline). */
+const fakeRule = regex("\\bzotlit-effect-tests/typed-fake\\b");
 const disabledRule = regex(
   "['\"](zotlit-tests/(?:no-source-text|no-internal-mock|no-markup-assertion))['\"]\\s*\\]?\\s*:",
+  "g",
+);
+const disabledFakeRule = regex(
+  "['\"](zotlit-effect-tests/typed-fake)['\"]\\s*\\]?\\s*:",
   "g",
 );
 const disabledSeverity = regex(
@@ -115,7 +121,10 @@ export async function checkTestPolicy(
       for (const comment of comments) {
         // The optional -- suffix is a reason, not part of the rule list.
         const rules = comment.value.split("--")[0] ?? "";
-        if (directive.test(rules) && rule.test(rules)) {
+        if (
+          directive.test(rules) &&
+          (rule.test(rules) || fakeRule.test(rules))
+        ) {
           const line = source.slice(0, comment.start).split("\n").length;
           errors.push(`${file}:${line}: test-rule disable directive`);
         }
@@ -129,7 +138,10 @@ export async function checkTestPolicy(
           code.slice(0, comment.start) +
           " ".repeat(comment.end - comment.start) +
           code.slice(comment.end);
-      for (const match of code.matchAll(disabledRule))
+      for (const match of [
+        ...code.matchAll(disabledRule),
+        ...code.matchAll(disabledFakeRule),
+      ])
         if (disabledSeverity.test(code.slice(match.index + match[0].length)))
           errors.push(`${file}: ${match[1]} must stay enabled`);
     }

@@ -1,13 +1,14 @@
 // The Annotation Suggester's search through ZotLit Query over the Zotero
 // database alone, as it runs with Zotero closed.
 import { dirname, join } from "node:path";
-import type { Vault } from "obsidian";
+import type { FileSystemAdapter, Vault } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { QueryService } from "@/services/item-query/service";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 import { inertUseLedger } from "@/services/use-ledger/__fixtures__";
@@ -62,10 +63,12 @@ function setup(uses: Record<string, number> = {}) {
     libraryScope: {
       effective: MY_LIBRARY_SCOPE,
     },
-    vault: {
+    vault: stubService<Vault>("Vault", {
       getName: () => "Annotation search",
-      adapter: { getBasePath: () => dirname(scenario.path) },
-    } as unknown as Vault,
+      adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
+        getBasePath: () => dirname(scenario.path),
+      }),
+    }),
   });
   const search = async (text: string) =>
     (await searchAnnotations(service, text, {

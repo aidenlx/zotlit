@@ -7,10 +7,12 @@ import {
   TExternalFile,
   WorkspaceLeaf,
 } from "obsidian";
+import type { App, EventRef, View, Vault, Workspace } from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { toInstant } from "@/lib/effect-clock";
 import { themeHook } from "@/lib/theme-hooks";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
@@ -96,19 +98,31 @@ function pdfView(path: string | null, reader = pdfReader()) {
 function workspace(views: { view: unknown }[]) {
   const offref = vi.fn();
   const handlers = new Map<string, ((leaf?: { view: unknown }) => void)[]>();
-  const app = {
-    vault: { adapter: new FileSystemAdapter() },
-    workspace: {
-      getLeavesOfType: () => views,
+  const app = stubService<App>("App", {
+    vault: stubService<Vault>("Vault", {
+      adapter: new FileSystemAdapter(),
+    }),
+    workspace: stubService<Workspace>("Workspace", {
+      getLeavesOfType: () =>
+        views.map(({ view }) =>
+          stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+            view: view as unknown as View,
+          }),
+        ),
       onLayoutReady: (callback: () => void) => callback(),
-      on: (name: string, callback: (leaf?: { view: unknown }) => void) => {
+      on: ((
+        name: string,
+        callback: (leaf?: { view: unknown }) => void,
+      ): EventRef => {
         const eventHandlers = handlers.get(name) ?? [];
         eventHandlers.push(callback);
         handlers.set(name, eventHandlers);
-        return { e: { offref } };
-      },
-    },
-  } as never;
+        return stubService<EventRef>("EventRef", {
+          e: stubService<App["workspace"]>("WorkspaceEvents", { offref }),
+        });
+      }) as Workspace["on"],
+    }),
+  });
 
   return {
     app,
@@ -353,14 +367,16 @@ function paintedPage() {
       vi.spyOn(Range.prototype, "getClientRects").mockReturnValue([
         { left: 87, top: 81, right: 96, bottom: 98 },
       ] as never);
-      vi.spyOn(window, "getSelection").mockReturnValue({
-        rangeCount: 1,
-        isCollapsed: false,
-        anchorNode: textLayer,
-        getRangeAt: () => range,
-        removeAllRanges: () => undefined,
-        toString: () => "E",
-      } as never);
+      vi.spyOn(window, "getSelection").mockReturnValue(
+        stubService<Selection>("Selection", {
+          rangeCount: 1,
+          isCollapsed: false,
+          anchorNode: textLayer,
+          getRangeAt: () => range,
+          removeAllRanges: () => undefined,
+          toString: () => "E",
+        }),
+      );
       page.div.dispatchEvent(
         new PointerEvent("pointerdown", {
           bubbles: true,

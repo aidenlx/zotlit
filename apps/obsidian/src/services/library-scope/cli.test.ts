@@ -194,7 +194,10 @@ it.effect("registers its commands when the layer is built", () =>
       layerLibraryScopeCli.pipe(
         Layer.provide(
           Layer.mergeAll(
-            Layer.succeed(PluginHost, host as PluginHostShape),
+            Layer.succeed(
+              PluginHost,
+              stubService<PluginHostShape>("PluginHost", host),
+            ),
             Layer.succeed(
               LibraryScope,
               stubService<LibraryScope["Service"]>("LibraryScope", {

@@ -9,6 +9,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { emptyRender } from "@zotlit/workbench/render";
 import { WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { isDraftMarkdown } from "@/lib/reading-view";
 
@@ -16,6 +17,9 @@ import { NativeMarkdown } from "./markdown";
 import type { NativeRenderResult } from "./render";
 
 const renderer = vi.hoisted(() => ({ render: vi.fn() }));
+const app = stubService<App>("App", {
+  vault: stubService<App["vault"]>("Vault", { getConfig: () => false }),
+});
 vi.mock("obsidian", async (original) => ({
   ...(await original<typeof import("obsidian")>()),
   MarkdownRenderer: renderer,
@@ -40,7 +44,7 @@ it("preserves native paragraph styling when the note supplies annotation ranges"
     await act(async () => {
       render(
         h(NativeMarkdown, {
-          app: { vault: { getConfig: () => false } } as unknown as App,
+          app,
           markdown,
           marks: [{ from: 0, to: markdown.length }],
           result: null,
@@ -91,7 +95,7 @@ it.each([
     await act(async () => {
       render(
         h(NativeMarkdown, {
-          app: { vault: { getConfig: () => false } } as unknown as App,
+          app,
           markdown,
           surface,
           result,
@@ -128,7 +132,7 @@ it("keeps native Markdown outside the plugin preflight and preserves its footer 
   await act(async () => {
     render(
       h(NativeMarkdown, {
-        app: { vault: { getConfig: () => false } } as unknown as App,
+        app,
         markdown: "> Quoted paragraph",
         result: null,
       }),
@@ -175,7 +179,7 @@ it("keeps managed Markdown free of extra borders and unloads children when repla
   await act(async () => {
     render(
       h(NativeMarkdown, {
-        app: { vault: { getConfig: () => false } } as unknown as App,
+        app,
         markdown: source,
         result: null,
       }),
@@ -198,7 +202,7 @@ it("keeps managed Markdown free of extra borders and unloads children when repla
   await act(async () => {
     render(
       h(NativeMarkdown, {
-        app: { vault: { getConfig: () => false } } as unknown as App,
+        app,
         markdown: "Replacement",
         result: null,
       }),
@@ -216,7 +220,6 @@ it("keeps managed Markdown free of extra borders and unloads children when repla
 it("shows a placeholder instead of a blank sheet when there is nothing to preview", async () => {
   const container = document.createElement("div");
   document.body.append(container);
-  const app = { vault: { getConfig: () => false } } as unknown as App;
   await act(async () => {
     render(
       h(NativeMarkdown, { app, markdown: " \n", result: null }),
@@ -275,7 +278,6 @@ it("shows the placeholder when the source renders to nothing, as an empty Manage
   );
   const container = document.createElement("div");
   document.body.append(container);
-  const app = { vault: { getConfig: () => false } } as unknown as App;
   await act(async () => {
     render(
       h(NativeMarkdown, {
@@ -300,7 +302,6 @@ it("shows the placeholder when the source renders to nothing, as an empty Manage
 it("prints the render's own frontmatter block above the body in the Markdown view", async () => {
   const container = document.createElement("div");
   document.body.append(container);
-  const app = { vault: { getConfig: () => false } } as unknown as App;
   await act(async () => {
     render(
       h(NativeMarkdown, {
@@ -321,7 +322,6 @@ it("prints the render's own frontmatter block above the body in the Markdown vie
 it("opens the Properties block when the Properties tab asks, and leaves the toggle to the reader after that", async () => {
   const container = document.createElement("div");
   document.body.append(container);
-  const app = { vault: { getConfig: () => false } } as unknown as App;
   const sheet = (expandProperties: boolean) =>
     h(WorkbenchMessagesProvider, {
       messages: m,

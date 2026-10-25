@@ -163,7 +163,9 @@ describe("toggleRowTarget", () => {
   });
 
   it("answers null when the build moved a member, and reports it once per section", () => {
-    const engine = { options: {}, render: vi.fn() } as GraphEngine;
+    const engine: GraphEngine = Object.create(null);
+    engine.options = {};
+    engine.render = vi.fn();
 
     expect(
       toggleRowTarget(engine, { section: "filter", saved: null }),
@@ -184,12 +186,11 @@ describe("toggleRowTarget", () => {
 
   it("leaves the other section readable when one of them moved", () => {
     const displayOptions = new FakeControlSection();
-    const engine = {
-      options: {},
-      render: vi.fn(),
-      onOptionsChange: vi.fn(),
-      displayOptions,
-    } as unknown as GraphEngine;
+    const engine: GraphEngine = Object.create(null);
+    engine.options = {};
+    engine.render = vi.fn();
+    engine.onOptionsChange = vi.fn();
+    engine.displayOptions = displayOptions;
 
     expect(
       toggleRowTarget(engine, { section: "filter", saved: null }),

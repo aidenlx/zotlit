@@ -11,6 +11,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import type {
   QueryViewOutcome,
@@ -20,6 +21,7 @@ import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 
 import { noLiteratureNotes } from "./__fixtures__/literature-notes";
+import { openTextFileView } from "./__fixtures__/open-text-view";
 import { QueryCardFocus } from "./card-focus";
 import { createQueryFileEmbed } from "./embed";
 import type { QueryView, QueryViewDeps } from "./view";
@@ -47,7 +49,7 @@ const EMPTY: QueryViewOutcome = {
   kind: "result",
   result: {
     libraries: [{ type: "personal" }],
-    query: {} as never,
+    query: { filter: null, fields: [], sort: [], limit: null },
     returnedCount: 0,
     matchedCount: 0,
     truncated: false,
@@ -71,34 +73,59 @@ function setup() {
     "notes/Lab.md": NOTE,
     "notes/Plain.md": "No properties\n",
   });
-  const app = {
-    ...host.app,
-    scope: undefined,
-    keymap: { pushScope: () => {}, popScope: () => {} },
-    workspace: { ...host.workspace, getLeaf: vi.fn() },
-  } as unknown as App;
+  const app = stubService<App>("App", {
+    vault: host.vault as unknown as App["vault"],
+    metadataCache: host.metadataCache as unknown as App["metadataCache"],
+    workspace: Object.assign(host.workspace, {
+      getLeaf: vi.fn(),
+    }) as unknown as App["workspace"],
+    scope: stubService<App["scope"]>("Scope", {}),
+    keymap: stubService<App["keymap"]>("Keymap", {
+      pushScope: () => {},
+      popScope: () => {},
+    }),
+  });
   const run = vi.fn((_request: QueryViewRequest, _signal: AbortSignal) =>
     Promise.resolve(EMPTY),
   );
   const runtime = testRuntime();
-  const deps = {
+  const deps = stubService<QueryViewDeps>("QueryViewDeps", {
     runtime,
     bridge: effectBridge(runtime),
     app,
-    reads: {
+    reads: stubService<QueryViewDeps["reads"]>("ZoteroReads", {
       changed: Stream.empty,
       degraded: Stream.empty,
       "refresh-failed": Stream.empty,
       refreshing: Stream.empty,
       "db-file-missing": Stream.empty,
       "refresh-requested": Stream.empty,
-    },
-    libraryScope: { changed: Stream.empty, "libraries-changed": Stream.empty },
+    }),
+    libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
+      changed: Stream.empty,
+      "libraries-changed": Stream.empty,
+    }),
     query: fakeQuery(run),
     cardFocus: new QueryCardFocus(app),
-    annotations: annotationReads(),
+    annotations: stubService<QueryViewDeps["annotations"]>(
+      "Annotations",
+      annotationReads(),
+    ),
+    opener: stubService<QueryViewDeps["opener"]>("TargetOpener", {}),
+    allowEditing: vi.fn(),
+    reportBlockedGesture: vi.fn(),
+    libraryTagNames: async () => [],
+    zoteroPref: stubService<QueryViewDeps["zoteroPref"]>("ZoteroPref", {
+      dataDir: "/Zotero",
+      baseAttachmentPath: null,
+    }),
+    excerptDisplay: stubService<QueryViewDeps["excerptDisplay"]>(
+      "ExcerptDisplay",
+      { open: vi.fn(), refresh: vi.fn() },
+    ),
+    noteFeature: stubService<QueryViewDeps["noteFeature"]>("NoteFeature", {}),
     literatureNotes: noLiteratureNotes(),
-  } as unknown as QueryViewDeps;
+  });
 
   /** Embed the Query File in `sourcePath` as Obsidian does, and load it. */
   async function embed(
@@ -185,7 +212,7 @@ it("shows a placeholder named after the file in a note preview", async () => {
 
 it("saves through an open tab of the file, so the tab shows the change", async () => {
   const { embed, host } = setup();
-  const tab = host.openInEditor(host.file(FILE_PATH));
+  const tab = openTextFileView(host, host.file(FILE_PATH));
   const { view } = await embed("notes/Lab.md");
   await act(async () => {
     view.document.moveView(1, 0);

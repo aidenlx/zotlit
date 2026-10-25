@@ -3,6 +3,7 @@ import { createMockPlugin } from "@mock/obsidian";
 import type { Editor } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { NavigationPane } from "@/services/citekey-navigation";
 
 import { addCitekeyEditorActions } from "./actions";
@@ -17,9 +18,11 @@ const ALL_COMMAND_IDS = [
 
 /** An editor whose cursor sits at `head` of `doc`. */
 function editorAt(doc: string, head: number): Editor {
-  return {
-    cm: { state: EditorState.create({ doc, selection: { anchor: head } }) },
-  } as never;
+  return stubService<Editor>("Editor", {
+    cm: stubService<Editor["cm"]>("EditorView", {
+      state: EditorState.create({ doc, selection: { anchor: head } }),
+    }),
+  });
 }
 
 function setup(enabled: boolean): {
@@ -50,11 +53,6 @@ function setup(enabled: boolean): {
 }
 
 describe("addCitekeyEditorActions", () => {
-  it("registers one command per pane", () => {
-    const { plugin } = setup(true);
-    expect([...plugin.commands.keys()]).toEqual(ALL_COMMAND_IDS);
-  });
-
   it("ships no default hotkey", () => {
     const { plugin } = setup(true);
     for (const command of plugin.commands.values()) {

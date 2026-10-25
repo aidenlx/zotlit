@@ -1,9 +1,13 @@
 // @vitest-environment happy-dom
 // A Library View row dragged into a note inserts the Item's citation where it
 // lands; dropped back on the view, it is refused.
+import type { App } from "obsidian";
+import type { DragEvent as ReactDragEvent } from "react";
 import { expect, it, vi } from "vitest";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 
 import { createItemDrag, ITEM_DRAG_TYPE, refuseItemDrop } from "./item-drag";
 
@@ -25,23 +29,28 @@ function setup() {
   const events = createNanoEvents<{
     "editor-drop": (event: unknown, editor: unknown, info: unknown) => void;
   }>();
-  const workspace = {
-    on: (name: "editor-drop", callback: (...args: unknown[]) => void) => {
-      const off = events.on(name, callback);
+  const workspace = stubService<App["workspace"]>("Workspace", {
+    on: (name: string, callback: (...args: never[]) => unknown) => {
+      const off = events.on("editor-drop", (...args) =>
+        callback(...(args as unknown as never[])),
+      );
       return { off };
     },
     offref: (ref: { off: () => void }) => ref.off(),
-  };
+  });
   const insertCitation = vi.fn(() => Promise.resolve());
   const drag = createItemDrag({
-    app: { workspace } as never,
+    app: stubService<App>("App", { workspace }),
     actions: { insertCitation },
   });
   const row = document.createElement("div");
   document.body.append(row);
   const start = (key: string) => {
     const dataTransfer = transfer();
-    drag(key, { dataTransfer, currentTarget: row } as never);
+    drag(key, {
+      dataTransfer,
+      currentTarget: row,
+    } as unknown as ReactDragEvent<HTMLElement>);
     return dataTransfer;
   };
   const drop = (dataTransfer: ReturnType<typeof transfer>) => {
@@ -97,12 +106,15 @@ it("refuses an Item dropped on the view, and lets any other drag through", () =>
   const item = transfer();
   item.setData(ITEM_DRAG_TYPE, "a drag");
   const over = { dataTransfer: item, preventDefault: vi.fn() };
-  refuseItemDrop(over as never);
+  refuseItemDrop(over as unknown as globalThis.DragEvent);
   expect(item.dropEffect).toBe("none");
 
   const file = transfer();
   file.dropEffect = "copy";
   file.setData("Files", "");
-  refuseItemDrop({ dataTransfer: file, preventDefault: vi.fn() } as never);
+  refuseItemDrop({
+    dataTransfer: file,
+    preventDefault: vi.fn(),
+  } as unknown as globalThis.DragEvent);
   expect(file.dropEffect).toBe("copy");
 });

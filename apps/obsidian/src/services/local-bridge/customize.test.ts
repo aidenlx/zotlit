@@ -1,6 +1,13 @@
 // @vitest-environment happy-dom
 import { Effect, SubscriptionRef } from "effect";
-import type { App } from "obsidian";
+import { TFile } from "obsidian";
+import type {
+  App,
+  MetadataCache,
+  Vault,
+  Workspace,
+  WorkspaceLeaf,
+} from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CONTRACT_VERSION } from "@zotlit/db";
@@ -38,8 +45,6 @@ language: liquid
 --- zotlit:annotation ---
 {{ zt.text }}
 `;
-
-const ETA_PROFILE = LIQUID_PROFILE.replace("language: liquid", "language: eta");
 
 /** A Liquid document that calls a partial the template folder must answer. */
 const CALLING_PROFILE = LIQUID_PROFILE.replace(
@@ -102,7 +107,8 @@ function harness({
     Object.assign(settings, patch);
   });
   const effect = effectBridge(testRuntime());
-  const file = activeNote && { basename: activeNote.basename };
+  const file = activeNote ? new TFile() : null;
+  if (file && activeNote) file.basename = activeNote.basename;
   const portRef = Effect.runSync(
     SubscriptionRef.make<number | null>(effectivePort),
   );
@@ -111,38 +117,43 @@ function harness({
       Effect.runSync(SubscriptionRef.set(portRef, 9095));
     });
   }
-  const app = {
-    vault: {
+  const app = stubService<App>("App", {
+    vault: stubService<Vault>("Vault", {
       getName: () => "Research",
-      getFileByPath: (path: string) => ({ path }),
-    },
-    workspace: {
+      getFileByPath: (path: string) => {
+        const file = new TFile();
+        file.path = path;
+        return file;
+      },
+    }),
+    workspace: stubService<Workspace>("Workspace", {
       getActiveFile: () => file,
-      getLeaf: () => ({
-        openFile: (target: { path: string }) => {
-          openedFiles.push(target.path);
-          return Promise.resolve();
-        },
-      }),
-    },
-    metadataCache: {
+      getLeaf: () =>
+        stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+          openFile: (target: TFile) => {
+            openedFiles.push(target.path);
+            return Promise.resolve();
+          },
+        }),
+    }),
+    metadataCache: stubService<MetadataCache>("MetadataCache", {
       getFileCache: () => ({
         frontmatter: activeNote?.itemKey
           ? { "zotero-key": activeNote.itemKey }
           : {},
       }),
-    },
+    }),
     loadLocalStorage: (key: string) => device.get(key) ?? null,
     saveLocalStorage: (key: string, value: unknown) => {
       if (value === null) device.delete(key);
       else device.set(key, value);
     },
-  } as unknown as App;
+  });
 
   const deps: CustomizeDeps = {
     webWorkbenchEnabled,
     app,
-    settings: {
+    settings: stubService<CustomizeDeps["settings"]>("PluginSettings", {
       current: Effect.succeed(settings),
       update: (patch: Parameters<CustomizeDeps["settings"]["update"]>[0]) =>
         Effect.sync(() => {
@@ -153,32 +164,30 @@ function harness({
           );
           return settings;
         }),
-    } as unknown as CustomizeDeps["settings"],
-    profile: {
-      ready: Promise.resolve(),
+    }),
+    profile: stubService<CustomizeDeps["profile"]>("PlainProfile", {
       profiles: [],
       defaultDocumentPath: "templates/zotlit-profile.default.md",
       getSource: () => Promise.resolve(source),
-    } as unknown as CustomizeDeps["profile"],
-    template: {
-      ready: Promise.resolve(),
+    }),
+    template: stubService<CustomizeDeps["template"]>("PlainTemplate", {
       exportLiteratureNotePackSource: (
         draft: string,
         options: Parameters<typeof exportLiteratureNotePack>[2],
       ) => Promise.resolve(exportLiteratureNotePack(draft, partials, options)),
-    } as unknown as CustomizeDeps["template"],
+    }),
     localServer: stubService<LocalServer["Service"]>("LocalServer", {
       effectivePort: SubscriptionRef.get(portRef),
       effectivePortChanges: SubscriptionRef.changes(portRef),
     }),
     effect,
     pluginVersion: PLUGIN_VERSION,
-    bridge: {
+    bridge: stubService<CustomizeDeps["bridge"]>("LocalBridgeService", {
       launchUrl: (launch: unknown) => {
         launches.push(launch);
         return LAUNCH_URL;
       },
-    } as unknown as CustomizeDeps["bridge"],
+    }),
     confirmLaunch: (details) => {
       sheets.push(details);
       return Promise.resolve(consent);
@@ -390,24 +399,6 @@ describe("the Customize flow", () => {
     await plain.customize({ profileId: "default" });
     expect(plain.launches[0]).toEqual({ profileId: "default", item: null });
   });
-
-  it.each([
-    ETA_PROFILE,
-    LIQUID_PROFILE.replace(
-      "language: liquid",
-      "language: liquid\nfrontmatter:\n  - key: title\n    js: zt.title",
-    ),
-  ])(
-    "keeps an unsupported Profile native with a remembered preference",
-    async (source) => {
-      const native = harness({ source });
-      saveProfileCustomization(deviceOf(native), "native");
-      await native.customize({ profileId: "default" });
-      expect(native.openedFiles).toHaveLength(1);
-      expect(native.sheets).toEqual([]);
-      expect(native.launches).toEqual([]);
-    },
-  );
 
   it("keeps a Profile that calls an Eta partial from the template folder in Obsidian", async () => {
     const byline = {

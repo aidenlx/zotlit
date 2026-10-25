@@ -10,7 +10,14 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
-import type { App, TFile } from "obsidian";
+import type {
+  App,
+  FileManager,
+  MetadataCache,
+  TFile,
+  Vault,
+  Workspace,
+} from "obsidian";
 import Turndown from "turndown";
 import { expect, it, vi } from "vitest";
 
@@ -23,6 +30,7 @@ import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import type { VaultSource } from "@/lib/obsidian-vault";
 import { AttachmentImportService } from "@/services/attachment-import/service";
@@ -98,14 +106,16 @@ async function fixture(
   statement.run(childNoteHtml, 6);
 
   const host = diskImageHost(vaultRoot);
-  const app = {
-    ...host.app,
+  const app = stubService<App>("App", {
+    vault: host.app.vault as unknown as Vault,
+    metadataCache: host.app.metadataCache as unknown as MetadataCache,
+    workspace: host.app.workspace as unknown as Workspace,
     loadLocalStorage: () => null,
     saveLocalStorage: () => {},
-    fileManager: {
+    fileManager: stubService<FileManager>("FileManager", {
       generateMarkdownLink: (file: TFile) => `![[${file.path}]]`,
-    },
-  } as unknown as App;
+    }),
+  });
   const settings = {
     ...defaults,
     "attachment.import": true,

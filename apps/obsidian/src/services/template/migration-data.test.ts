@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 import { USER_LIBRARY_ID } from "@zotlit/db";
 import type { Library } from "@zotlit/db";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   MY_LIBRARY_SCOPE,
   resolveLibraryScope,
@@ -65,13 +66,38 @@ it("verifies against the first in-scope item that renders, its Citation read bef
       ? { kind: "not-found" }
       : { kind: "data", data: { root, key } };
   });
-  const deps = {
-    zoteroReads: reads,
-    libraryScope: {
-      resolveLibraries: (libraries: readonly Library[]) =>
-        resolveLibraryScope(libraries, MY_LIBRARY_SCOPE),
+  const deps = stubService<LiteratureNoteTemplateMigrationDataDeps>(
+    "LiteratureNoteTemplateMigrationDataDeps",
+    {
+      app: stubService<LiteratureNoteTemplateMigrationDataDeps["app"]>(
+        "App",
+        {},
+      ),
+      zoteroReads: stubService<
+        LiteratureNoteTemplateMigrationDataDeps["zoteroReads"]
+      >("ZoteroReads", {
+        acquireRead: () => reads.acquireRead(),
+      }),
+      libraryScope: stubService<
+        LiteratureNoteTemplateMigrationDataDeps["libraryScope"]
+      >("LibraryScope", {
+        resolveLibraries: (libraries: readonly Library[]) =>
+          resolveLibraryScope(libraries, MY_LIBRARY_SCOPE),
+      }),
+      noteIndex: stubService<
+        LiteratureNoteTemplateMigrationDataDeps["noteIndex"]
+      >("NoteIndex", {}),
+      settings: stubService<
+        LiteratureNoteTemplateMigrationDataDeps["settings"]
+      >("PluginSettings", {}),
+      templates: stubService<
+        LiteratureNoteTemplateMigrationDataDeps["templates"]
+      >("Template", {}),
+      zoteroPref: stubService<
+        LiteratureNoteTemplateMigrationDataDeps["zoteroPref"]
+      >("ZoteroPref", {}),
     },
-  } as unknown as LiteratureNoteTemplateMigrationDataDeps;
+  );
 
   const data = await loadLiteratureNoteTemplateMigrationData(deps, {
     annotation: false,

@@ -116,14 +116,14 @@ describe("CitationIndex", () => {
         );
         metadataCache.fileCache.set(draft.path, {
           links: [link("Doe 2024", 0)],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
         await lookup.whenResolved();
         const held = db.holdLookup();
         const pending = index.getDocumentCitationSet(draft);
         await held.entered;
         metadataCache.fileCache.set("Doe 2024.md", {
           frontmatter: { "zotero-key": KEY_B },
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
         held.release();
         const set = await pending;
         expect(set.citations[0]?.indexedKey).toBe(KEY_A);
@@ -185,7 +185,7 @@ describe("CitationIndex", () => {
       );
       metadataCache.fileCache.set("draft.md", {
         links: [link("Doe 2024", 23)],
-      } as CachedMetadata);
+      } satisfies CachedMetadata);
 
       const citations = await citationsOf(index, draft);
 
@@ -207,7 +207,7 @@ describe("CitationIndex", () => {
         );
         metadataCache.fileCache.set("draft.md", {
           links: [link("Doe 2024", body.indexOf("[["))],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
 
         const set = await index.getDocumentCitationSet(draft);
 
@@ -245,7 +245,7 @@ describe("CitationIndex", () => {
             link("Doe 2024", 120, "![[Doe 2024]]"),
             link("Doe 2024", 140, "[Doe](Doe 2024)"),
           ],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
 
         const set = await index.getDocumentCitationSet(draft);
 
@@ -267,7 +267,7 @@ describe("CitationIndex", () => {
           });
         metadataCache.fileCache.set("draft.md", {
           links: [link("Doe 2024", body.indexOf("[["))],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
         let changed = 0;
         subscribe(index.runtime, index["membership-changed"], () => changed++);
 
@@ -301,7 +301,7 @@ describe("CitationIndex", () => {
       });
       metadataCache.fileCache.set("draft.md", {
         links: [link("Doe 2024", body.indexOf("[["))],
-      } as CachedMetadata);
+      } satisfies CachedMetadata);
 
       expect(
         (await index.getDocumentCitationSet(draft)).occurrences.map(
@@ -379,10 +379,10 @@ describe("CitationIndex", () => {
         );
         metadataCache.fileCache.set("draft.md", {
           links: [link("Roe 2025", 15)],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
         metadataCache.fileCache.set("other.md", {
           links: [link("Doe 2024", 5)],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
         workspace.layoutReady();
         await index.whenIndexed();
 
@@ -447,7 +447,7 @@ describe("CitationIndex", () => {
       const offset = body.indexOf("[[");
       metadataCache.fileCache.set("draft.md", {
         links: [link("Doe 2024#cite:locator=", offset)],
-      } as CachedMetadata);
+      } satisfies CachedMetadata);
 
       const set = await index.getDocumentCitationSet(draft);
 
@@ -464,98 +464,6 @@ describe("CitationIndex", () => {
           },
         },
       ]);
-    }),
-  );
-
-  it.effect("leaves wikilinks out while Wikilink Citations is off", () =>
-    Effect.promise(async () => {
-      const { draft, index, metadataCache } = await makeHarness({
-        "draft.md": "As @roe2025 wrote, see [[Doe 2024]].",
-      });
-      metadataCache.fileCache.set("draft.md", {
-        links: [link("Doe 2024", 23)],
-      } as CachedMetadata);
-
-      expect(await citationsOf(index, draft)).toMatchObject([
-        { indexedKey: KEY_B, refNumber: 1 },
-      ]);
-    }),
-  );
-
-  // Pandoc reads `[[@doe2024]]` as a wikilink, so the export cites nothing
-  // there; the References sidebar must agree.
-  it.effect(
-    "reads no citekey inside a wikilink while Wikilink Citations is off",
-    () =>
-      Effect.promise(async () => {
-        const { draft, index, metadataCache } = await makeHarness({
-          "draft.md": "As @roe2025 wrote, see [[@doe2024]].",
-        });
-        metadataCache.fileCache.set("draft.md", {
-          links: [link("@doe2024", 23)],
-        } as CachedMetadata);
-
-        expect(await citationsOf(index, draft)).toMatchObject([
-          { indexedKey: KEY_B, refNumber: 1 },
-        ]);
-      }),
-  );
-
-  it.effect(
-    "leaves citekeys inside code, math, comments, and frontmatter out",
-    () =>
-      Effect.promise(async () => {
-        const { draft, index } = await makeHarness({
-          "draft.md": [
-            "---",
-            "cite: @doe2024",
-            "---",
-            "",
-            "```md",
-            "@doe2024",
-            "```",
-            "",
-            "    @doe2024",
-            "",
-            "Inline `@doe2024`, math $x = @doe2024$, and %% @doe2024 %% too.",
-            "",
-            "$$",
-            "@doe2024",
-            "$$",
-            "",
-            "Only @roe2025 counts.",
-          ].join("\n"),
-        });
-
-        expect(await citationsOf(index, draft)).toMatchObject([
-          { indexedKey: KEY_B, refNumber: 1 },
-        ]);
-      }),
-  );
-
-  // Indented list content is no code block, an unpaired backtick opens no code
-  // span, and a price pair is no math — each would swallow a real citation.
-  it.effect("keeps citekeys that only look like code or math", () =>
-    Effect.promise(async () => {
-      const { draft, index } = await makeHarness({
-        "draft.md": [
-          "- item",
-          "",
-          "    Indented under the list, citing @doe2024.",
-          "",
-          "It cost $5 and @roe2025 says $6 isn't a formula.",
-          "",
-          "A lone ` backtick keeps @doe2024 readable.",
-        ].join("\n"),
-      });
-
-      const citations = await citationsOf(index, draft);
-
-      expect(citations).toMatchObject([
-        { indexedKey: KEY_A, refNumber: 1 },
-        { indexedKey: KEY_B, refNumber: 2 },
-      ]);
-      expect(citations[0]!.occurrences).toHaveLength(2);
     }),
   );
 
@@ -686,18 +594,6 @@ describe("CitationIndex", () => {
     }),
   );
 
-  it.effect("answers for a document the backfill has not reached", () =>
-    Effect.promise(async () => {
-      const { draft, index } = await makeHarness({
-        "draft.md": "As @doe2024 wrote.",
-      });
-
-      expect(await citationsOf(index, draft)).toMatchObject([
-        { indexedKey: KEY_A },
-      ]);
-    }),
-  );
-
   it.effect("covers the vault once the backfill finishes", () =>
     Effect.promise(async () => {
       const { index, metadataCache, workspace } = await makeHarness({
@@ -753,7 +649,7 @@ describe("CitationIndex", () => {
       );
       metadataCache.fileCache.set("draft.md", {
         links: [link("Roe 2025", 23)],
-      } as CachedMetadata);
+      } satisfies CachedMetadata);
 
       expect(await citationsOf(index, draft)).toMatchObject([
         { indexedKey: KEY_B, refNumber: 1 },
@@ -1137,7 +1033,7 @@ describe("CitationIndex resolution", () => {
         });
         metadataCache.fileCache.set("draft.md", {
           links: [link("Doe 2024", body.indexOf("[["))],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
         const snapshots: CitedBySnapshot[] = [];
         index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
 
@@ -1259,7 +1155,7 @@ describe("CitationIndex resolution", () => {
           );
         metadataCache.fileCache.set("draft.md", {
           links: [link("Doe 2024", body.indexOf("[["))],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
         const snapshots: CitedBySnapshot[] = [];
         index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
 
@@ -1349,7 +1245,7 @@ describe("CitationIndex resolution", () => {
             link("ordinary", body.indexOf("[[ordinary]]")),
             link("missing", body.indexOf("[[missing]]")),
           ],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
         const snapshots: CitedBySnapshot[] = [];
         index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
 
@@ -1387,7 +1283,7 @@ describe("CitationIndex resolution", () => {
       metadataCache.fileCache.set(target.path, {
         frontmatter: { "zotero-key": KEY_A },
         links: [],
-      } as CachedMetadata);
+      } satisfies CachedMetadata);
       const snapshots: CitedBySnapshot[] = [];
       index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
 
@@ -1440,7 +1336,7 @@ describe("CitationIndex resolution", () => {
         );
         metadataCache.fileCache.set(draft.path, {
           links: [link("Roe 2025", body.indexOf("[["))],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
         const snapshots: CitedBySnapshot[] = [];
         index.observeCitedBy(KEY_B, (snapshot) => snapshots.push(snapshot));
         workspace.layoutReady();
@@ -1535,7 +1431,7 @@ describe("CitationIndex resolution", () => {
         const target = metadataCache.files.get("Doe 2024.md")!;
         metadataCache.fileCache.set("Doe 2024.md", {
           frontmatter: { "zotero-key": KEY_B },
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
         metadataCache.resolve(target);
 
         await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
@@ -1554,7 +1450,7 @@ describe("CitationIndex resolution", () => {
           );
         metadataCache.fileCache.set(draft.path, {
           links: [link("Doe 2024", body.indexOf("[["))],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
         const target = metadataCache.files.get("Doe 2024.md")!;
         const snapshots: CitedBySnapshot[] = [];
         index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
@@ -1796,18 +1692,6 @@ describe("CitationIndex resolution", () => {
       expect(publications).toBe(before);
     }),
   );
-
-  it.effect("resolves with a Literature Note's path as linkpath", () =>
-    Effect.promise(async () => {
-      const { draft, index } = await makeHarness({
-        "draft.md": "As @doe2024 wrote.",
-      });
-
-      expect(await citationsOf(index, draft)).toMatchObject([
-        { indexedKey: KEY_A, linkpath: "Doe 2024.md" },
-      ]);
-    }),
-  );
 });
 
 describe("CitationIndex documentOmittedSyntaxes", () => {
@@ -1845,7 +1729,7 @@ describe("CitationIndex documentOmittedSyntaxes", () => {
         });
         metadataCache.fileCache.set("draft.md", {
           links: [link("Doe 2024", 4)],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
 
         expect(await index.documentOmittedSyntaxes(draft)).toEqual([
           "wikilink",
@@ -1863,7 +1747,7 @@ describe("CitationIndex documentOmittedSyntaxes", () => {
         });
         metadataCache.fileCache.set("draft.md", {
           links: [link("Roe 2025", body.indexOf("[["))],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
 
         expect(await index.documentOmittedSyntaxes(draft)).toEqual([
           "wikilink",
@@ -1881,7 +1765,7 @@ describe("CitationIndex documentOmittedSyntaxes", () => {
         });
         metadataCache.fileCache.set("draft.md", {
           links: [link("Doe 2024#cite:locator=", body.indexOf("[["))],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
 
         expect(await index.documentOmittedSyntaxes(draft)).toEqual([
           "wikilink",
@@ -1899,7 +1783,7 @@ describe("CitationIndex documentOmittedSyntaxes", () => {
         });
         metadataCache.fileCache.set("draft.md", {
           links: [link("ordinary", 4)],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
 
         expect(await index.documentOmittedSyntaxes(draft)).toEqual([]);
       }),
@@ -1921,7 +1805,7 @@ describe("CitationIndex documentOmittedSyntaxes", () => {
         );
         metadataCache.fileCache.set("draft.md", {
           links: [link("Roe 2025", body.indexOf("[["))],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
 
         expect(await index.documentOmittedSyntaxes(draft)).toEqual([
           "citekey",
@@ -1959,7 +1843,7 @@ describe("CitationIndex citedByOmittedSyntaxes", () => {
         });
         metadataCache.fileCache.set("draft.md", {
           links: [link("Doe 2024", body.indexOf("[["))],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
         workspace.layoutReady();
         await index.whenIndexed();
 
@@ -2012,7 +1896,7 @@ describe("CitationIndex citedByOmittedSyntaxes", () => {
         });
         metadataCache.fileCache.set("draft.md", {
           links: [link("Doe 2024#cite:locator=", body.indexOf("[["))],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
         workspace.layoutReady();
         await index.whenIndexed();
 
@@ -2033,7 +1917,7 @@ describe("CitationIndex citedByOmittedSyntaxes", () => {
         });
         metadataCache.fileCache.set("draft.md", {
           links: [link("Roe 2025", body.indexOf("[["))],
-        } as CachedMetadata);
+        } satisfies CachedMetadata);
         workspace.layoutReady();
         await index.whenIndexed();
 

@@ -5,7 +5,8 @@ import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Settings } from "@/services/settings/schema";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { defaults as defaultSettings } from "@/services/settings/schema";
 import type { PluginSettings } from "@/services/settings/service";
 
 import { ItemSearchModal, pickItem } from "./search-modal";
@@ -48,11 +49,14 @@ function searches() {
     [Symbol.dispose]: () => undefined,
   };
   const deps: ItemSearchDeps = {
-    app: {} as App,
+    app: stubService<App>("App", {}),
     lookup: { openSession: () => session },
-    settings: {
-      current: Effect.succeed({} as Settings),
-    } as Pick<PluginSettings["Service"], "current">,
+    settings: stubService<Pick<PluginSettings["Service"], "current">>(
+      "PluginSettings",
+      {
+        current: Effect.succeed(defaultSettings),
+      },
+    ),
     bridge: { runSync: Effect.runSync },
   };
   return { answers, deps };

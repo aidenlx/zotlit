@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
+
+import type { OverlayPageView } from "./render";
 import { selectionPagesOf } from "./selection-capture";
 import type { ClientBox } from "./selection-capture";
 
@@ -100,7 +103,12 @@ function rounded(rects: readonly (readonly number[])[]): number[][] {
 }
 
 const view = (div: HTMLElement, transform = UNROTATED) =>
-  ({ div, viewport: { transform } }) as never;
+  stubService<OverlayPageView>("OverlayPageView", {
+    div,
+    viewport: stubService<OverlayPageView["viewport"]>("PDFPageViewport", {
+      transform,
+    }),
+  });
 
 afterEach(() => {
   vi.restoreAllMocks();

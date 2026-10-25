@@ -16,7 +16,7 @@ import type {
   Workspace as WorkspaceApi,
   WorkspaceLeaf,
 } from "obsidian";
-import { expect } from "vitest";
+import { expect, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -51,7 +51,11 @@ it.effect("reads the live layer's workspace from ObsidianApp", () =>
           Layer.succeed(
             ObsidianApp,
             stubService<ObsidianApp["Service"]>("ObsidianApp", {
-              workspace: source as unknown as WorkspaceApi,
+              workspace: stubService<WorkspaceApi>("Workspace", {
+                getActiveFile: () => source.getActiveFile(),
+                on: vi.fn(() => ({})),
+                offref: vi.fn(),
+              }),
             }),
           ),
         ),
@@ -105,7 +109,9 @@ it.effect("reads the active Markdown view", () =>
     const source = new MemoryWorkspace();
     const { workspace } = yield* open(layerWorkspaceFrom(source));
     expect(yield* workspace.activeMarkdownView).toBeNull();
-    const view = new MarkdownView({} as WorkspaceLeaf);
+    const view = new MarkdownView(
+      stubService<WorkspaceLeaf>("WorkspaceLeaf", {}),
+    );
     source.activeView = view;
     expect(yield* workspace.activeMarkdownView).toBe(view);
     source.activeView = {};
@@ -141,7 +147,9 @@ it.effect("fills the editor menu inside Obsidian's callback", () =>
   Effect.gen(function* () {
     const source = new MemoryWorkspace();
     const { workspace } = yield* open(layerWorkspaceFrom(source));
-    const view = new MarkdownView({} as WorkspaceLeaf);
+    const view = new MarkdownView(
+      stubService<WorkspaceLeaf>("WorkspaceLeaf", {}),
+    );
     yield* workspace.onEditorMenu((menu, editor, info) =>
       Effect.sync(() => {
         menu.addItem((item) =>
@@ -152,7 +160,9 @@ it.effect("fills the editor menu inside Obsidian's callback", () =>
       }),
     );
     const menu = new Menu();
-    const editor = { getValue: () => "text" } as unknown as Editor;
+    const editor = stubService<Editor>("Editor", {
+      getValue: () => "text",
+    });
     source.trigger("editor-menu", menu, editor, view);
     expect(menu.items.map((item) => item.title)).toEqual(["text:view"]);
   }),

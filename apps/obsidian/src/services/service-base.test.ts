@@ -3,6 +3,7 @@ import type { App, EventRef } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 
 import { buildNoteIndex } from "./note-index/__fixtures__";
 import type { PlainNoteIndex } from "./note-index/plain";
@@ -12,7 +13,7 @@ vi.mock("@/lib/log", () => ({
   getLogger: () => ({ debug: vi.fn(), warn: vi.fn() }),
 }));
 
-type Callback = (...args: unknown[]) => void;
+type Callback = (...args: never[]) => unknown;
 
 /** Obsidian's `Events`: a listener list per event name, cut by `offref`. */
 class FakeEvents {
@@ -22,7 +23,8 @@ class FakeEvents {
     const listeners = this.listeners.get(name) ?? new Set();
     listeners.add(callback);
     this.listeners.set(name, listeners);
-    return { e: this, name, callback } as unknown as EventRef;
+    const ref = { e: this, name, callback };
+    return ref;
   }
 
   offref(ref: EventRef): void {
@@ -70,11 +72,40 @@ class ReadsOnTeardown extends Service {
 it("disposes services newest first, so an older service keeps its vault and metadata cache listeners while a newer one tears down, and none after", async () => {
   const vault = new FakeEvents();
   const metadataCache = new FakeEvents();
-  const app = {
-    vault,
-    metadataCache,
-    workspace: new MemoryWorkspace(),
-  } as unknown as App;
+  const workspace = new MemoryWorkspace();
+  const app = stubService<App>("App", {
+    vault: stubService<App["vault"]>("Vault", {
+      read: async () => "",
+      cachedRead: async () => "",
+      process: async () => "",
+      create: async () => {
+        throw new Error("Unread Vault.create");
+      },
+      trash: async () => {},
+      getFileByPath: () => null,
+      getFolderByPath: () => null,
+      getAbstractFileByPath: () => null,
+      on: (name, callback) => vault.on(name, callback),
+      offref: (ref) => vault.offref(ref),
+    }),
+    metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
+      getFileCache: () => null,
+      onCleanCache: () => {},
+      on: (name, callback) => metadataCache.on(name, callback),
+      offref: (ref) => metadataCache.offref(ref),
+    }),
+    fileManager: stubService<App["fileManager"]>("FileManager", {}),
+    workspace: stubService<App["workspace"]>("Workspace", {
+      onLayoutReady: (callback) => workspace.onLayoutReady(callback),
+      getActiveFile: () => workspace.getActiveFile(),
+      getActiveViewOfType: (type) => workspace.getActiveViewOfType(type),
+      on: (name: string, callback: Callback) =>
+        workspace.on(name, (...args: unknown[]) =>
+          Reflect.apply(callback, undefined, args),
+        ),
+      offref: (ref) => workspace.offref(ref),
+    }),
+  });
 
   const stack = new AsyncDisposableStack();
   const { services } = new ServiceContainer(stack, () => undefined)

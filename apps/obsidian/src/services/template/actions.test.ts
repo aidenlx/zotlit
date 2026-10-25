@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
-import { TFile } from "@mock/obsidian";
 import { Effect } from "effect";
-import type { Command, TFile as ObsidianFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { App, Command, WorkspaceContainer, WorkspaceLeaf } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import type { PluginHostShape } from "@/lib/plugin-host";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE } from "@/views/template-workbench/view";
 
 import { addCitationTemplateActions } from "./actions";
@@ -17,42 +19,47 @@ interface Harness {
 }
 
 function harness(
-  materialize = vi.fn(
-    async () =>
-      Object.assign(new TFile(), {
-        path: "Templates/zotlit-citation.md",
-      }) as unknown as ObsidianFile,
+  materialize = vi.fn(async () =>
+    Object.assign(new TFile(), {
+      path: "Templates/zotlit-citation.md",
+    }),
   ),
 ): Harness {
   const commands: Command[] = [];
   const opened: { type: string; path: unknown }[] = [];
-  const leaf = {
+  const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
     setViewState: async (state: { type: string; state: { file: unknown } }) => {
       opened.push({ type: state.type, path: state.state.file });
     },
-    getContainer: () => ({ focus: () => {} }),
-  };
-  const plugin = {
-    addCommand: (command: Command) =>
-      Effect.sync(() => {
-        commands.push(command);
-        return command;
+    getContainer: () =>
+      stubService<WorkspaceContainer>("WorkspaceContainer", {
+        focus: () => {},
       }),
-    app: {
-      workspace: {
-        getLeavesOfType: () => [],
-        getLeaf: () => leaf,
-        revealLeaf: async () => {},
-      },
+  });
+  const app = stubService<App>("App", {
+    workspace: stubService<App["workspace"]>("Workspace", {
+      getLeavesOfType: () => [],
+      getLeaf: () => leaf,
+      revealLeaf: async () => {},
+    }),
+  });
+  const plugin = stubService<Pick<PluginHostShape, "addCommand" | "app">>(
+    "PluginHost",
+    {
+      addCommand: (command: Command) =>
+        Effect.sync(() => {
+          commands.push(command);
+          return command;
+        }),
+      app,
     },
-  };
+  );
 
   Effect.runSync(
     Effect.scoped(
-      addCitationTemplateActions(
-        plugin as never,
-        { template: { materializeCitationTemplate: materialize } } as never,
-      ),
+      addCitationTemplateActions(plugin, {
+        template: { materializeCitationTemplate: materialize },
+      }),
     ),
   );
   return { command: commands[0]!, opened, materialize };

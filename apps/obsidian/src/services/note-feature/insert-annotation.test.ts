@@ -10,7 +10,7 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { FileSystemAdapter, TFile, TFolder } from "obsidian";
-import type { App } from "obsidian";
+import type { App, FileManager, Vault } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import type { Annotation } from "@zotlit/db";
@@ -20,6 +20,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import { redPng } from "@/services/excerpt-image/__fixtures__/png";
@@ -87,8 +88,8 @@ async function fixture(mode: string) {
     "attachment.folder-path": "Images",
   };
   const registered = new Map<string, TFile>();
-  const app = {
-    vault: {
+  const app = stubService<App>("App", {
+    vault: stubService<Vault>("Vault", {
       adapter: Object.assign(Object.create(FileSystemAdapter.prototype), {
         getFullPath: (path: string) => join(root, path),
         reconcileInternalFile: async (path: string) => {
@@ -108,11 +109,11 @@ async function fixture(mode: string) {
         await mkdir(join(root, path), { recursive: true });
         return Object.assign(new TFolder(), { path });
       },
-    },
-    fileManager: {
+    }),
+    fileManager: stubService<FileManager>("FileManager", {
       generateMarkdownLink: (file: { path: string }) => `[[${file.path}]]`,
-    },
-  } as unknown as App;
+    }),
+  });
   const resolver = {
     resolve: vi.fn(
       async (_request: ExcerptRequest): Promise<ExcerptOutcome> => {

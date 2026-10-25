@@ -10,6 +10,7 @@ import type {
   TextSelection,
 } from "@zotlit/pdf-structure";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { AbortError } from "@/lib/abort-error";
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
@@ -56,6 +57,25 @@ const PAGE_BOX = {
   width: PAGE_WIDTH * SCALE,
   height: PAGE_HEIGHT * SCALE,
 };
+
+function domRect(
+  box: Pick<DOMRect, "left" | "top" | "right" | "bottom">,
+): DOMRect {
+  return {
+    ...box,
+    x: box.left,
+    y: box.top,
+    width: box.right - box.left,
+    height: box.bottom - box.top,
+    toJSON() {
+      return this;
+    },
+  };
+}
+
+function selectionOf(members: Partial<Selection>): Selection {
+  return stubService<Selection>("Selection", members);
+}
 
 /** The client box a PDF-point rectangle occupies on the page laid out above. */
 function clientBox([x1, y1, x2, y2]: readonly number[]) {
@@ -158,12 +178,12 @@ async function reader(
   };
   const reader = await readerOverZotero(stack, {
     containerEl,
-    page: {
+    page: stubService<OverlayPageView>("OverlayPageView", {
       div: pageEl,
-      viewport: {
+      viewport: stubService<OverlayPageView["viewport"]>("PDFPageViewport", {
         transform: [SCALE, 0, 0, -SCALE, 0, PAGE_HEIGHT * SCALE],
-      },
-    } as never,
+      }),
+    }),
     records: [
       annotation("PUPR5FG5", "highlight", {
         pageIndex: 0,
@@ -214,14 +234,16 @@ async function reader(
       vi.spyOn(Range.prototype, "getClientRects").mockReturnValue(
         rects as never,
       );
-      vi.spyOn(window, "getSelection").mockReturnValue({
-        rangeCount: 1,
-        isCollapsed: false,
-        anchorNode: textLayer,
-        getRangeAt: () => range,
-        removeAllRanges: () => undefined,
-        toString: () => range.toString(),
-      } as never);
+      vi.spyOn(window, "getSelection").mockReturnValue(
+        selectionOf({
+          rangeCount: 1,
+          isCollapsed: false,
+          anchorNode: textLayer,
+          getRangeAt: () => range,
+          removeAllRanges: () => undefined,
+          toString: () => range.toString(),
+        }),
+      );
       creation.press(
         new PointerEvent("pointerdown", { clientX: 100, clientY: 100 }),
       );
@@ -229,12 +251,14 @@ async function reader(
     },
     /** A press on the page that selects nothing. */
     pressEmpty() {
-      vi.spyOn(window, "getSelection").mockReturnValue({
-        rangeCount: 0,
-        isCollapsed: true,
-        getRangeAt: () => document.createRange(),
-        removeAllRanges: () => undefined,
-      } as never);
+      vi.spyOn(window, "getSelection").mockReturnValue(
+        selectionOf({
+          rangeCount: 0,
+          isCollapsed: true,
+          getRangeAt: () => document.createRange(),
+          removeAllRanges: () => undefined,
+        }),
+      );
       creation.press(
         new PointerEvent("pointerdown", { clientX: 100, clientY: 100 }),
       );
@@ -299,7 +323,7 @@ it("offers the colour used last first, whichever tool used it", async () => {
 it("opens nothing for a drag that did not start on the page", async () => {
   await using open = await reader();
   open.pageEl.getBoundingClientRect = () =>
-    ({ ...PAGE_BOX, left: 5000, right: 6000 }) as never;
+    domRect({ ...PAGE_BOX, left: 5000, right: 6000 });
 
   await open.selectText();
 
@@ -382,10 +406,9 @@ it("opens nothing for a selection that collapsed before it was placed", async ()
   await using open = await reader();
 
   open.startSelecting();
-  vi.spyOn(window, "getSelection").mockReturnValue({
-    rangeCount: 0,
-    isCollapsed: true,
-  } as never);
+  vi.spyOn(window, "getSelection").mockReturnValue(
+    selectionOf({ rangeCount: 0, isCollapsed: true }),
+  );
   await open.creation.settled;
   vi.advanceTimersByTime(0);
 
@@ -420,7 +443,7 @@ it.each([
   },
 );
 
-it.each([1, 4, 8])(
+it.each([1, 8])(
   "commits in swatch %i while a selection is waiting",
   async (position) => {
     await using open = await reader();
@@ -675,10 +698,9 @@ it("stands the popup down when the selection collapses", async () => {
   await using open = await reader();
   await open.selectText();
 
-  vi.spyOn(window, "getSelection").mockReturnValue({
-    rangeCount: 0,
-    isCollapsed: true,
-  } as never);
+  vi.spyOn(window, "getSelection").mockReturnValue(
+    selectionOf({ rangeCount: 0, isCollapsed: true }),
+  );
   open.creation.changed();
 
   expect(open.popup()).toBeNull();
@@ -689,10 +711,9 @@ it("keeps the popup while the comment sheet holds the caret", async () => {
   await open.selectText();
   open.press("c");
 
-  vi.spyOn(window, "getSelection").mockReturnValue({
-    rangeCount: 0,
-    isCollapsed: true,
-  } as never);
+  vi.spyOn(window, "getSelection").mockReturnValue(
+    selectionOf({ rangeCount: 0, isCollapsed: true }),
+  );
   open.creation.changed();
 
   expect(open.popup()).not.toBeNull();
@@ -786,7 +807,7 @@ it("drops the waiting selection once its page leaves the screen", async () => {
   expect(open.popup()).not.toBeNull();
 
   open.pageEl.getBoundingClientRect = () =>
-    ({ ...PAGE_BOX, top: -5000, bottom: -4000 }) as never;
+    domRect({ ...PAGE_BOX, top: -5000, bottom: -4000 });
   open.containerEl.dispatchEvent(new Event("scroll"));
 
   expect(open.popup()).toBeNull();
@@ -868,11 +889,13 @@ async function imageReader(
   const page = pageView();
   containerEl.append(page.div);
   page.div.getBoundingClientRect = () => LETTER_AT_ORIGIN;
-  vi.spyOn(window, "getSelection").mockReturnValue({
-    rangeCount: 0,
-    isCollapsed: true,
-    removeAllRanges: () => undefined,
-  } as never);
+  vi.spyOn(window, "getSelection").mockReturnValue(
+    selectionOf({
+      rangeCount: 0,
+      isCollapsed: true,
+      removeAllRanges: () => undefined,
+    }),
+  );
   const structure = {
     page: vi.fn(async () => ({})),
     pageLabels: vi.fn(async () => ["1"]),

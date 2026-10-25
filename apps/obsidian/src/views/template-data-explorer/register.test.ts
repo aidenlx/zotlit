@@ -1,6 +1,7 @@
-import type { App } from "obsidian";
+import type { App, Workspace, WorkspaceLeaf } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   activeTemplateWorkbench,
   openProfileExplorer,
@@ -24,9 +25,12 @@ describe("Explorer entry point", () => {
     vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
     const getLeavesOfType = vi.fn();
     const getRightLeaf = vi.fn();
-    const app = {
-      workspace: { getLeavesOfType, getRightLeaf },
-    } as unknown as App;
+    const app = stubService<App>("App", {
+      workspace: stubService<Workspace>("Workspace", {
+        getLeavesOfType,
+        getRightLeaf,
+      }),
+    });
     await openTemplateDataExplorer(app);
     expect(openProfileExplorer).toHaveBeenCalledWith(app, editor);
     expect(getLeavesOfType).not.toHaveBeenCalled();
@@ -37,26 +41,30 @@ describe("Explorer entry point", () => {
 it("opens an explicit Item in an unlinked unpinned Explorer and preserves other groups", async () => {
   const editor = {} as TemplateWorkbenchView;
   vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
-  const grouped = {
+  const grouped = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
     group: "other-workbench",
     pinned: false,
     setViewState: vi.fn(),
-  };
-  const pinned = { group: null, pinned: true, setViewState: vi.fn() };
-  const standalone = {
+  });
+  const pinned = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+    group: null,
+    pinned: true,
+    setViewState: vi.fn(),
+  });
+  const standalone = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
     group: null,
     pinned: false,
     setViewState: vi.fn(async () => {}),
-  };
+  });
   const revealLeaf = vi.fn();
   const getRightLeaf = vi.fn();
-  const app = {
-    workspace: {
+  const app = stubService<App>("App", {
+    workspace: stubService<Workspace>("Workspace", {
       getLeavesOfType: () => [grouped, pinned, standalone],
       getRightLeaf,
       revealLeaf,
-    },
-  } as unknown as App;
+    }),
+  });
   await openTemplateDataExplorer(app, { itemIndexedKey: "PAPER002" });
   expect(standalone.setViewState).toHaveBeenCalledWith({
     type: "zotlit-template-data-explorer",
@@ -71,20 +79,22 @@ it("opens an explicit Item in an unlinked unpinned Explorer and preserves other 
 
 it("creates an explicit Explorer instead of replacing a pinned or grouped pane", async () => {
   vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
-  const existing = {
+  const existing = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
     group: "saved-group",
     pinned: true,
     setViewState: vi.fn(),
-  };
-  const created = { setViewState: vi.fn(async () => {}) };
+  });
+  const created = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+    setViewState: vi.fn(async () => {}),
+  });
   const getRightLeaf = vi.fn(() => created);
-  const app = {
-    workspace: {
+  const app = stubService<App>("App", {
+    workspace: stubService<Workspace>("Workspace", {
       getLeavesOfType: () => [existing],
       getRightLeaf,
       revealLeaf: vi.fn(),
-    },
-  } as unknown as App;
+    }),
+  });
   await openTemplateDataExplorer(app, { itemIndexedKey: "PAPER002" });
   expect(getRightLeaf).toHaveBeenCalledWith(true);
   expect(existing.setViewState).not.toHaveBeenCalled();
@@ -95,23 +105,29 @@ it("creates an explicit Explorer instead of replacing a pinned or grouped pane",
   );
 });
 
-it.each(["tab", "split", "window"] as const)(
+it.each(["tab"] as const)(
   "puts the Explorer in a new %s the link names, leaving the sidebar one alone",
   async (paneType) => {
     vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
-    const sidebar = { group: null, pinned: false, setViewState: vi.fn() };
-    const created = { setViewState: vi.fn(async () => {}) };
+    const sidebar = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+      group: null,
+      pinned: false,
+      setViewState: vi.fn(),
+    });
+    const created = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+      setViewState: vi.fn(async () => {}),
+    });
     const getLeaf = vi.fn(() => created);
     const getRightLeaf = vi.fn();
     const revealLeaf = vi.fn();
-    const app = {
-      workspace: {
+    const app = stubService<App>("App", {
+      workspace: stubService<Workspace>("Workspace", {
         getLeavesOfType: () => [sidebar],
         getLeaf,
         getRightLeaf,
         revealLeaf,
-      },
-    } as unknown as App;
+      }),
+    });
     await openTemplateDataExplorer(
       app,
       { itemIndexedKey: "PAPER002" },

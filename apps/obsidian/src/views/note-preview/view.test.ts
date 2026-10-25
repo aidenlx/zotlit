@@ -15,6 +15,7 @@ import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 import { createRenderScheduler } from "@zotlit/workbench/ui";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { yieldToMain } from "@/lib/yield-to-main";
 import { pickItem } from "@/services/item-lookup/search-modal";
@@ -123,6 +124,16 @@ const NO_PROFILES: PreviewViewDeps["profile"] = {
   resolveProfile: () => undefined,
 };
 
+function leafWithApp(app: App): WorkspaceLeaf {
+  const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+    group: null,
+    pinned: false,
+    updateHeader: vi.fn(),
+  });
+  Object.defineProperty(leaf, "app", { value: app });
+  return leaf;
+}
+
 async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
   const fixture = await createRenderFixture();
   const { app } = fixture.deps;
@@ -132,7 +143,7 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
   >();
   const workspace = {
     on(name: string, callback: (...args: unknown[]) => void) {
-      const ref = {} as EventRef;
+      const ref: EventRef = {};
       events.set(ref, { name, callback });
       return ref;
     },
@@ -150,17 +161,39 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
     setActiveLeaf: vi.fn(),
   };
   Object.assign(app.workspace, workspace);
-  const editorLeaf = { app } as unknown as WorkspaceLeaf;
-  const editor = new Editor(editorLeaf, {
-    runtime: testRuntime(),
-    app,
-    settings: fixture.deps.settings,
-    bridge: fixture.deps.bridge,
-    zoteroReads: fixture.deps.zoteroReads,
-    zoteroPref: { dataDir: null },
-    templates: fixture.deps.templates,
-    nativePreview: fixture.deps,
-  } as unknown as TemplateWorkbenchDeps);
+  const editorLeaf = leafWithApp(app);
+  const editor = new Editor(
+    editorLeaf,
+    stubService<TemplateWorkbenchDeps>("TemplateWorkbenchDeps", {
+      runtime: testRuntime(),
+      app,
+      settings: fixture.settings,
+      bridge: fixture.deps.bridge,
+      zoteroReads: fixture.zoteroReads,
+      zoteroPref: stubService<TemplateWorkbenchDeps["zoteroPref"]>(
+        "ZoteroPref",
+        { dataDir: "/Zotero", baseAttachmentPath: null },
+      ),
+      templates: fixture.templates,
+      nativePreview: fixture.deps,
+      itemLookup: stubService<TemplateWorkbenchDeps["itemLookup"]>(
+        "ItemLookup",
+        {
+          search: async () => [],
+          openSession: () => ({
+            search: async () => [],
+            close: () => {},
+            [Symbol.dispose]() {},
+          }),
+        },
+      ),
+      noteFeature: undefined,
+      query: undefined,
+      render: undefined,
+      profile: undefined,
+      pluginVersion: undefined,
+    }),
+  );
   const file = fixture.vault.addFile("templates/paper.md", PROFILE_SOURCE);
   editor.file = file;
   editor.setViewData(PROFILE_SOURCE, true);
@@ -186,7 +219,7 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
     state?: Record<string, unknown>,
     ephemeral?: Record<string, unknown>,
   ) {
-    const preview = new Preview({ app } as unknown as WorkspaceLeaf, "zotlit", {
+    const preview = new Preview(leafWithApp(app), "zotlit", {
       ...fixture.deps,
       settings: fixture.settings,
       profile,
@@ -2052,12 +2085,16 @@ Annotation`,
     const showProblem = vi.fn();
     const earlierPeer = {
       runtime: testRuntime(),
-      leaf: {} as WorkspaceLeaf,
+      leaf: stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+        updateHeader: vi.fn(),
+      }),
       file: otherFile,
       nativeRenderDeps: test.editor.nativeRenderDeps,
       authoringContext: {
         ...test.editor.authoringContext,
-        leaf: {} as WorkspaceLeaf,
+        leaf: stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+          updateHeader: vi.fn(),
+        }),
         path: otherFile.path,
         item: null,
       },

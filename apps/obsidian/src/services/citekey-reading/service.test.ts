@@ -1,18 +1,22 @@
 import { Layer, Stream } from "effect";
 import { Effect } from "effect";
-import { Keymap, MarkdownView } from "obsidian";
+import { Keymap, MarkdownView, TFile } from "obsidian";
 import type {
+  App,
   MarkdownPostProcessor,
   MarkdownPostProcessorContext,
   MarkdownRenderChild,
-  TFile,
+  WorkspaceLeaf,
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
@@ -44,6 +48,72 @@ import {
 } from "@/services/zotero-reads/test-utils";
 
 import { CitekeyReading } from "./service";
+import type { CitekeyReadingDeps } from "./service";
+
+/** A typed facade over a test source, so its methods keep the source as `this`. */
+function capability<T extends object>(name: string, source: object): T {
+  const typed = stubService<T>(name, {});
+  return new Proxy(typed, {
+    get(_target, key) {
+      const value = Reflect.get(source, key, source);
+      return typeof value === "function" ? value.bind(source) : value;
+    },
+  });
+}
+
+function appWith(
+  sources: {
+    vault?: object;
+    metadataCache?: object;
+    workspace?: object;
+  } = {},
+): App {
+  return stubService<App>("App", {
+    vault: capability<App["vault"]>(
+      "Vault",
+      sources.vault ?? new MemoryVault(),
+    ),
+    metadataCache: capability<App["metadataCache"]>(
+      "MetadataCache",
+      sources.metadataCache ?? new MemoryMetadataCache(),
+    ),
+    workspace: capability<App["workspace"]>(
+      "Workspace",
+      sources.workspace ?? new MemoryWorkspace(),
+    ),
+  });
+}
+
+/** A Citekey Reading over only the dependencies one case reads. */
+function readingDeps(
+  runtime: CitekeyReadingDeps["runtime"],
+  overrides: Partial<Omit<CitekeyReadingDeps, "runtime">> = {},
+): CitekeyReadingDeps {
+  return {
+    runtime,
+    app: appWith(),
+    plugin: stubService<CitekeyReadingDeps["plugin"]>("Plugin", {}),
+    citationText: stubService<CitekeyReadingDeps["citationText"]>(
+      "CitationText",
+      {},
+    ),
+    citationLookup: stubService<CitekeyReadingDeps["citationLookup"]>(
+      "CitationLookup",
+      {},
+    ),
+    citekeyEditor: stubService<CitekeyReadingDeps["citekeyEditor"]>(
+      "CitekeyEditor",
+      {},
+    ),
+    citationPopover: stubService<CitekeyReadingDeps["citationPopover"]>(
+      "CitationPopover",
+      {},
+    ),
+    bridge: stubService<CitekeyReadingDeps["bridge"]>("EffectBridge", {}),
+    settings: stubService<CitekeyReadingDeps["settings"]>("PluginSettings", {}),
+    ...overrides,
+  };
+}
 
 /** One rendered section, as a Markdown post-processor receives it. */
 function section(html: string): HTMLElement {
@@ -61,14 +131,17 @@ function viewedCtx(
   el: HTMLElement,
 ): MarkdownPostProcessorContext {
   harness.views.push(
-    Object.assign(Object.create(MarkdownView.prototype) as MarkdownView, {
-      containerEl: el,
-      previewMode: {
-        rerender: () => {
-          harness.rerendered();
+    Object.assign(
+      new MarkdownView(stubService<WorkspaceLeaf>("WorkspaceLeaf", {})),
+      {
+        containerEl: el,
+        previewMode: {
+          rerender: () => {
+            harness.rerendered();
+          },
         },
       },
-    }),
+    ),
   );
   return harness.ctx;
 }
@@ -175,10 +248,10 @@ async function makeHarness({
       profile: profileReader(defaults, {
         getFileCache: () => ({ frontmatter }),
       }),
-      app: {
+      app: appWith({
         vault: MemoryVault.with({
           cachedRead: () => Promise.resolve(body),
-          getFileByPath: (path: string) => ({ path }) as TFile,
+          getFileByPath: (path: string) => Object.assign(new TFile(), { path }),
         }),
         metadataCache: {
           offref: () => {},
@@ -188,7 +261,7 @@ async function makeHarness({
           },
           getFileCache: () => ({ frontmatter }),
         },
-      },
+      }),
       citationIndex: {
         getParsedDocument: async () => ({
           facts: new ParsedNote(
@@ -218,19 +291,11 @@ async function makeHarness({
             coverage: "complete",
           },
         }),
-        getDocumentCitationSet: () =>
-          Promise.resolve({
-            occurrences,
-            citations: cited,
-            errors: [],
-            lookup: answer(occurrences.map((occurrence) => occurrence.raw)),
-          }),
         changed: Stream.empty,
         "membership-changed": Stream.empty,
       },
       noteIndex: {
         changed: Stream.empty,
-        "frontmatter-changed": Stream.empty,
         indexed: Stream.empty,
         whenIndexed: () => Promise.resolve(),
       },
@@ -246,13 +311,14 @@ async function makeHarness({
                 )
               : null;
         },
-        changed: Stream.empty,
-        settled: Stream.empty,
+        readBibliography: async () => ({
+          entries: [],
+          hasEntryMarkers: false,
+        }),
         invalidated: Stream.empty,
-        "style-missing": Stream.empty,
       },
       queryClient: stack.use(queryClientsFixture()),
-    } as never),
+    }),
   );
   if (!formatCitations) {
     citationText.peek("note.md");
@@ -263,41 +329,48 @@ async function makeHarness({
   }
 
   const service = stack.use(
-    new CitekeyReading({
-      runtime: citationText.runtime,
-      app: {
-        vault: { getFileByPath: (path: string) => ({ path }) as TFile },
-        workspace: {
-          getLeavesOfType: () => views.map((view) => ({ view })),
-          trigger: (_name: string, request: { path: string }) =>
-            switchRequests.push(request.path),
+    new CitekeyReading(
+      readingDeps(citationText.runtime, {
+        app: appWith({
+          vault: {
+            getFileByPath: (path: string) =>
+              Object.assign(new TFile(), { path }),
+          },
+          workspace: {
+            getLeavesOfType: () => views.map((view) => ({ view })),
+            trigger: (_name: string, request: { path: string }) =>
+              switchRequests.push(request.path),
+          },
+        }),
+        plugin: {
+          registerMarkdownPostProcessor: (
+            postProcessor: MarkdownPostProcessor,
+          ) => {
+            process = postProcessor;
+            return postProcessor;
+          },
         },
-      },
-      plugin: {
-        registerMarkdownPostProcessor: (
-          postProcessor: MarkdownPostProcessor,
-        ) => {
-          process = postProcessor;
-          return postProcessor;
+        citationText,
+        citationLookup,
+        citekeyEditor: capability<CitekeyReadingDeps["citekeyEditor"]>(
+          "CitekeyEditor",
+          {
+            openCitekey: (citekey: string, pane: unknown) => {
+              opened.push([citekey, pane]);
+              return Promise.resolve();
+            },
+          },
+        ),
+        citationPopover: {
+          show: (request: CitationHoverRequest) => {
+            popoverRequests.push(request);
+            return Effect.void;
+          },
         },
-      },
-      citationText,
-      citationLookup,
-      citekeyEditor: {
-        openCitekey: (citekey: string, pane: unknown) => {
-          opened.push([citekey, pane]);
-          return Promise.resolve();
-        },
-      },
-      citationPopover: {
-        show: (request: CitationHoverRequest) => {
-          popoverRequests.push(request);
-          return Effect.void;
-        },
-      },
-      bridge: stack.use(openTestBridge()),
-      settings: settingsStub(overrides),
-    } as never),
+        bridge: stack.use(openTestBridge()),
+        settings: settingsStub(overrides),
+      }),
+    ),
   );
   await service.ready;
   const resources = stack.move();
@@ -305,7 +378,7 @@ async function makeHarness({
   const sectionCtx = (
     lines: { from: number; to: number } | null,
   ): MarkdownPostProcessorContext =>
-    ({
+    stubService<MarkdownPostProcessorContext>("MarkdownPostProcessorContext", {
       sourcePath: "note.md",
       getSectionInfo: () =>
         lines && { text: body, lineStart: lines.from, lineEnd: lines.to },
@@ -313,7 +386,7 @@ async function makeHarness({
         children.push(child);
         child.load();
       },
-    }) as never;
+    });
 
   return {
     process: process!,
@@ -351,24 +424,31 @@ describe("CitekeyReading", () => {
     const notify = (value: Readonly<Settings>) => settingsChanged.emit(value);
     const rerender = vi.fn();
     const view = Object.assign(
-      Object.create(MarkdownView.prototype) as MarkdownView,
+      new MarkdownView(stubService<WorkspaceLeaf>("WorkspaceLeaf", {})),
       { previewMode: { rerender } },
     );
     await using stack = new AsyncDisposableStack();
-    await using service = new CitekeyReading({
-      runtime: buildRuntime(Layer.empty, stack),
-      app: {
-        workspace: { getLeavesOfType: () => [{ view }] },
-      },
-      plugin: { registerMarkdownPostProcessor: () => undefined },
-      citationText: { changed: Stream.empty, invalidated: Stream.empty },
-      citekeyEditor: {},
-      settings: {
-        current: Effect.succeed(defaults),
-        changes: settingsChanged.stream.pipe(Stream.prepend([defaults])),
-      },
-      bridge: { runSync: Effect.runSync },
-    } as never);
+    await using service = new CitekeyReading(
+      readingDeps(buildRuntime(Layer.empty, stack), {
+        app: appWith({ workspace: { getLeavesOfType: () => [{ view }] } }),
+        plugin: {
+          registerMarkdownPostProcessor: (postProcessor) => postProcessor,
+        },
+        citationText: capability<CitekeyReadingDeps["citationText"]>(
+          "CitationText",
+          { changed: Stream.empty, invalidated: Stream.empty },
+        ),
+        citekeyEditor: capability<CitekeyReadingDeps["citekeyEditor"]>(
+          "CitekeyEditor",
+          {},
+        ),
+        settings: {
+          current: Effect.succeed(defaults),
+          changes: settingsChanged.stream.pipe(Stream.prepend([defaults])),
+        },
+        bridge: { runSync: Effect.runSync },
+      }),
+    );
     await service.ready;
     expect(rerender).not.toHaveBeenCalled();
 
@@ -614,10 +694,13 @@ describe("CitekeyReading", () => {
     const { process, ctx, views, popoverRequests } = harnessed;
     const el = section("<p>Blah [@alpha].</p>");
     views.push(
-      Object.assign(Object.create(MarkdownView.prototype) as MarkdownView, {
-        containerEl: el,
-        previewMode: { rerender: () => undefined },
-      }),
+      Object.assign(
+        new MarkdownView(stubService<WorkspaceLeaf>("WorkspaceLeaf", {})),
+        {
+          containerEl: el,
+          previewMode: { rerender: () => undefined },
+        },
+      ),
     );
 
     await process(el, ctx);
@@ -929,5 +1012,5 @@ describe("CitekeyReading refresh", () => {
 /** Hands out one settings snapshot, the way the service reads its toggles. */
 function settingsStub(overrides: Partial<Settings>) {
   const current: Readonly<Settings> = { ...defaults, ...overrides };
-  return { current, changes: Stream.succeed(current) };
+  return { current: Effect.succeed(current), changes: Stream.succeed(current) };
 }

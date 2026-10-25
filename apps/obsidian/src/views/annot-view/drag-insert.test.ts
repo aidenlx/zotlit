@@ -1,10 +1,19 @@
 // @vitest-environment happy-dom
 import { history, undo } from "@codemirror/commands";
 import { MarkdownView } from "obsidian";
-import type { App, Editor, EventRef, MarkdownFileInfo, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type {
+  App,
+  Editor,
+  EventRef,
+  MarkdownFileInfo,
+  Workspace,
+  WorkspaceLeaf,
+} from "obsidian";
 import type { DragEvent as ReactDragEvent } from "react";
 import { expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type { NoteFeature } from "@/services/note-feature";
@@ -34,23 +43,55 @@ function fixture() {
     selection: { anchor: 4, head: 7 },
     extensions: [history()],
   });
-  const info = {
-    file: { path: "Target.md" } as TFile,
-    editor: { cm } as Editor,
-  } as MarkdownFileInfo;
-  const listeners = new Set<() => void>();
-  const workspace = {
-    activeEditor: info as MarkdownFileInfo | null,
-    getMostRecentLeaf: () => ({
-      view: Object.assign(Object.create(MarkdownView.prototype), info, {
-        getMode: () => "source",
-      }),
-    }),
-    on: (_event: string, cb: () => void) => {
-      listeners.add(cb);
-      return cb;
+  const file = new TFile();
+  file.path = "Target.md";
+  const editor = stubService<Editor>("Editor", { cm });
+  const info = stubService<MarkdownFileInfo>("MarkdownFileInfo", {
+    file,
+    editor,
+  });
+  let activeEditor: MarkdownFileInfo | null = info;
+  const listeners = new Map<string, Set<EventRef>>();
+  const refs = new Map<
+    EventRef,
+    { name: string; callback: (...args: never[]) => unknown }
+  >();
+  const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {});
+  const view = new MarkdownView(leaf);
+  Object.assign(view, info, { getMode: () => "source" });
+  leaf.view = view;
+  const workspace = stubService<Workspace>("Workspace", {
+    get activeEditor() {
+      return activeEditor;
     },
-    offref: (cb: () => void) => listeners.delete(cb),
+    set activeEditor(value) {
+      activeEditor = value;
+    },
+    getMostRecentLeaf: () => leaf,
+    on: (
+      name: string,
+      callback: (...args: never[]) => unknown,
+      _ctx?: unknown,
+    ) => {
+      const callbacks = listeners.get(name) ?? new Set();
+      const ref = stubService<EventRef>("EventRef", {});
+      callbacks.add(ref);
+      listeners.set(name, callbacks);
+      refs.set(ref, { name, callback });
+      return ref;
+    },
+    offref: (ref: EventRef) => {
+      const entry = refs.get(ref);
+      if (!entry) return;
+      listeners.get(entry.name)?.delete(ref);
+      refs.delete(ref);
+    },
+  });
+  const changed = () => {
+    for (const ref of listeners.get("active-leaf-change") ?? []) {
+      const callback = refs.get(ref);
+      if (callback) callback.callback();
+    }
   };
   const pending: ReturnType<typeof Promise.withResolvers<Result>>[] = [];
   const prepare = vi.fn<NoteFeature["prepareAnnotationInsert"]>(() => {
@@ -60,8 +101,13 @@ function fixture() {
   });
   const notify = vi.fn();
   const insert = createInsertHandler({
-    app: { workspace } as unknown as App,
-    noteFeature: { prepareAnnotationInsert: prepare },
+    app: stubService<App>("App", { workspace }),
+    noteFeature: stubService<Pick<NoteFeature, "prepareAnnotationInsert">>(
+      "NoteFeature",
+      {
+        prepareAnnotationInsert: prepare,
+      },
+    ),
     notify,
     snapshot: () => ({
       source: { kind: "zotero-local-api", serverID: "SERVER000001" },
@@ -76,9 +122,7 @@ function fixture() {
     notify,
     insert,
     pending,
-    changed: () => {
-      for (const cb of listeners) cb();
-    },
+    changed,
     [Symbol.dispose]() {
       insert.cancel();
       cm.destroy();
@@ -103,11 +147,13 @@ it("inserts at the note's selection after the annotation sidebar takes focus", a
 
 it("offers no insert into a note in Reading view, and says to open one", async () => {
   using f = fixture();
-  const reading = Object.assign(Object.create(MarkdownView.prototype), f.info, {
+  const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {});
+  const reading = Object.assign(new MarkdownView(leaf), f.info, {
     getMode: () => "preview",
-  }) as MarkdownView;
+  });
+  leaf.view = reading;
   f.workspace.activeEditor = reading;
-  f.workspace.getMostRecentLeaf = () => ({ view: reading });
+  f.workspace.getMostRecentLeaf = () => leaf;
 
   expect(f.insert.offer()).toBeNull();
   await f.insert(card);
@@ -120,10 +166,12 @@ it("keeps a menu offer bound to its note if another tab becomes active", async (
   using f = fixture();
   const offered = f.insert.offer();
   expect(offered).not.toBeNull();
-  f.workspace.activeEditor = {
-    file: { path: "Other.md" },
-    editor: {},
-  } as MarkdownFileInfo;
+  const file = new TFile();
+  file.path = "Other.md";
+  f.workspace.activeEditor = stubService<MarkdownFileInfo>("MarkdownFileInfo", {
+    file,
+    editor: stubService<Editor>("Editor", {}),
+  });
   await offered!(card);
   expect(f.prepare).not.toHaveBeenCalled();
   expect(f.cm.state.doc.toString()).toBe("one two");
@@ -177,10 +225,15 @@ it.each(["switch", "close", "cancel"])(
     using f = fixture();
     const operation = f.insert(card);
     if (mode === "switch") {
-      f.workspace.activeEditor = {
-        file: { path: "Other.md" } as TFile,
-        editor: {} as Editor,
-      } as MarkdownFileInfo;
+      const file = new TFile();
+      file.path = "Other.md";
+      f.workspace.activeEditor = stubService<MarkdownFileInfo>(
+        "MarkdownFileInfo",
+        {
+          file,
+          editor: stubService<Editor>("Editor", {}),
+        },
+      );
       f.changed();
       f.workspace.activeEditor = f.info;
     }
@@ -216,31 +269,48 @@ it("uses a source-link fallback when preparation cannot build template context",
 
 function dragFixture() {
   const cm = stateEditor({ doc: "one two", extensions: [history()] });
-  const editor = { cm } as Editor;
-  const info = {
-    file: { path: "Drop.md" } as TFile,
+  const file = new TFile();
+  file.path = "Drop.md";
+  const editor = stubService<Editor>("Editor", { cm });
+  const info = stubService<MarkdownFileInfo>("MarkdownFileInfo", {
+    file,
     editor,
-  } as MarkdownFileInfo;
-  const listeners = new Map<string, Set<(...args: never[]) => void>>();
+  });
+  const listeners = new Map<string, Set<EventRef>>();
+  const refs = new Map<
+    EventRef,
+    { name: string; callback: (...args: never[]) => unknown }
+  >();
   let preparing = false;
   const cleaned = Promise.withResolvers<void>();
   const allListenersRemoved = () =>
     [...listeners.values()].every((callbacks) => callbacks.size === 0);
-  const workspace = {
-    on: (event: string, cb: (...args: never[]) => void) => {
-      const callbacks = listeners.get(event) ?? new Set();
-      callbacks.add(cb);
-      listeners.set(event, callbacks);
-      return cb as unknown as EventRef;
+  const workspace = stubService<Workspace>("Workspace", {
+    on: (
+      name: string,
+      callback: (...args: never[]) => unknown,
+      _ctx?: unknown,
+    ) => {
+      const callbacks = listeners.get(name) ?? new Set();
+      const ref = stubService<EventRef>("EventRef", {});
+      callbacks.add(ref);
+      listeners.set(name, callbacks);
+      refs.set(ref, { name, callback });
+      return ref;
     },
     offref: (ref: EventRef) => {
-      for (const callbacks of listeners.values())
-        callbacks.delete(ref as never);
+      const entry = refs.get(ref);
+      if (!entry) return;
+      listeners.get(entry.name)?.delete(ref);
+      refs.delete(ref);
       if (preparing && allListenersRemoved()) cleaned.resolve();
     },
-  };
+  });
   const emit = (event: string, ...args: unknown[]) => {
-    for (const cb of listeners.get(event) ?? []) cb(...(args as never[]));
+    for (const ref of listeners.get(event) ?? []) {
+      const callback = refs.get(ref);
+      if (callback) callback.callback(...(args as never[]));
+    }
   };
   const pending: ReturnType<typeof Promise.withResolvers<Result>>[] = [];
   const prepare = vi.fn<NoteFeature["prepareAnnotationInsert"]>(() => {
@@ -251,8 +321,13 @@ function dragFixture() {
   });
   const notify = vi.fn();
   const handler = createDragInsertHandler({
-    app: { workspace } as unknown as App,
-    noteFeature: { prepareAnnotationInsert: prepare },
+    app: stubService<App>("App", { workspace }),
+    noteFeature: stubService<Pick<NoteFeature, "prepareAnnotationInsert">>(
+      "NoteFeature",
+      {
+        prepareAnnotationInsert: prepare,
+      },
+    ),
     notify,
     snapshot: () => ({
       source: { kind: "zotero-local-api", serverID: "SERVER000001" },

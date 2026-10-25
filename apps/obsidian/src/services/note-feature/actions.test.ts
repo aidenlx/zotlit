@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 import { TFile } from "obsidian";
-import type { Command } from "obsidian";
-import type { App } from "obsidian";
+import type { App, Command, MetadataCache, Vault, Workspace } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { MissingTemplateError } from "@zotlit/templates/facade";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 
 import {
@@ -35,7 +35,9 @@ it.each([
 });
 
 function appStub(): App {
-  return { workspace: { trigger: vi.fn() } } as unknown as App;
+  return stubService<App>("App", {
+    workspace: stubService<Workspace>("Workspace", { trigger: vi.fn() }),
+  });
 }
 
 it("offers Profile switching only for the active Literature Note and opens its consent flow", () => {
@@ -45,14 +47,27 @@ it("offers Profile switching only for the active Literature Note and opens its c
   let frontmatter: Record<string, string> = { "zotero-key": "ABCD2345" };
   const commands: Command[] = [];
   const on = vi.fn();
-  const deps = {
-    app: {
-      workspace: { getActiveFile: () => active, on },
-      vault: { getFileByPath: () => file },
-      metadataCache: { getFileCache: () => ({ frontmatter }) },
-    },
-    noteFeature: { on: () => () => {} },
-  } as unknown as Parameters<typeof addNoteFeatureActions>[1];
+  type NoteDeps = Parameters<typeof addNoteFeatureActions>[1];
+  const deps: NoteDeps = {
+    app: stubService<App>("App", {
+      workspace: stubService<Workspace>("Workspace", {
+        getActiveFile: () => active,
+        on,
+      }),
+      vault: stubService<Vault>("Vault", { getFileByPath: () => file }),
+      metadataCache: stubService<MetadataCache>("MetadataCache", {
+        getFileCache: () => ({ frontmatter }),
+      }),
+    }),
+    noteFeature: stubService<NoteDeps["noteFeature"]>("NoteFeature", {
+      on: () => () => {},
+    }),
+    batchImport: stubService<NoteDeps["batchImport"]>("BatchImport", {}),
+    updateAll: vi.fn(),
+    createProfile: vi.fn(),
+    importProfile: vi.fn(),
+    zoteroPref: { dataDir: "" },
+  };
   addNoteFeatureActions(
     {
       app: deps.app,

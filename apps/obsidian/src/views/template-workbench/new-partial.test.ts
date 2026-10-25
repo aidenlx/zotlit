@@ -5,9 +5,10 @@ import {
   TextComponent,
   controlsOf,
 } from "@mock/obsidian";
-import type { App } from "obsidian";
+import type { App, PaneType, SplitDirection, WorkspaceLeaf } from "obsidian";
 import { beforeEach, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { createSharedPartial } from "./new-partial";
@@ -16,9 +17,30 @@ import { openTemplateWorkbench } from "./register";
 
 vi.mock("./register", () => ({ openTemplateWorkbench: vi.fn(async () => {}) }));
 
-const split = { id: "split-leaf" };
-const getLeaf = vi.fn(() => split);
-const app = { workspace: { getLeaf } } as unknown as App;
+const split = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+  updateHeader: vi.fn(),
+});
+const getLeaf = vi.fn(
+  (_newLeaf?: PaneType | boolean, _direction?: SplitDirection) => split,
+);
+function getLeafForWorkspace(
+  newLeaf?: "split",
+  direction?: SplitDirection,
+): WorkspaceLeaf;
+function getLeafForWorkspace(newLeaf?: PaneType | boolean): WorkspaceLeaf;
+function getLeafForWorkspace(
+  newLeaf?: PaneType | boolean,
+  direction?: SplitDirection,
+): WorkspaceLeaf {
+  return direction === undefined
+    ? getLeaf(newLeaf)
+    : getLeaf(newLeaf, direction);
+}
+const app = stubService<App>("App", {
+  workspace: stubService<App["workspace"]>("Workspace", {
+    getLeaf: getLeafForWorkspace,
+  }),
+});
 
 function actions(taken: readonly string[] = []): SharedPartialActions & {
   createPartial: ReturnType<typeof vi.fn>;

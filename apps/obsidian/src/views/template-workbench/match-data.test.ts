@@ -1,11 +1,12 @@
 // Vault-wide suggestions and the Match test of a real Item read one database.
-import type { Vault } from "obsidian";
+import type { FileSystemAdapter, Vault } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { QueryService } from "@/services/item-query/service";
 import { inertUseLedger } from "@/services/use-ledger/__fixtures__";
 import {
@@ -59,10 +60,12 @@ it("includes Libraries outside the chosen paper and keeps automatic Tags and dir
     libraryScope: {
       effective: { mode: "all" },
     },
-    vault: {
+    vault: stubService<Vault>("Vault", {
       getName: () => "Match tests",
-      adapter: { getBasePath: () => "/vault" },
-    } as unknown as Vault,
+      adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
+        getBasePath: () => "/vault",
+      }),
+    }),
   });
   const data = createMatchData(db, query);
   await expect(data.tags()).resolves.toEqual([

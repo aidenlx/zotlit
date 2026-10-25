@@ -1,10 +1,12 @@
-import { Keymap, Menu, TFile } from "@mock/obsidian";
+import { Keymap, Menu } from "@mock/obsidian";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { App } from "obsidian";
+import { TFile } from "obsidian";
+import type { App, Vault, Workspace, WorkspaceLeaf } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 
 import {
@@ -30,7 +32,9 @@ function row(label: string): Row {
 
 /** The workspace the picker raises `zotlit:attachments-menu` on. */
 const trigger = vi.fn();
-const APP = { workspace: { trigger } } as unknown as App;
+const APP = stubService<App>("App", {
+  workspace: stubService<Workspace>("Workspace", { trigger }),
+});
 
 function fakeReactMouseEvent(
   overrides: Partial<{
@@ -113,7 +117,10 @@ describe("openAttachments", () => {
   it("opens a single Attachment with no event and no modifier, for an event-less invocation", () => {
     const reader = fakeReader();
     const attachment = row("Doe 2024.pdf");
-    openAttachments([attachment], { reader, app: {} as App });
+    openAttachments([attachment], {
+      reader,
+      app: stubService<App>("App", {}),
+    });
     expect(reader.calls).toStrictEqual([[attachment, false]]);
   });
 
@@ -174,12 +181,13 @@ describe("createObsidianAttachmentReader", () => {
     openFile: ReturnType<typeof vi.fn>;
   } {
     const openFile = vi.fn();
-    const app = {
-      vault: { getFileByPath: getFile },
-      workspace: {
-        getLeaf: () => ({ openFile }),
-      },
-    } as unknown as App;
+    const app = stubService<App>("App", {
+      vault: stubService<Vault>("Vault", { getFileByPath: getFile }),
+      workspace: stubService<Workspace>("Workspace", {
+        getLeaf: () =>
+          stubService<WorkspaceLeaf>("WorkspaceLeaf", { openFile }),
+      }),
+    });
     return { app, openFile };
   }
 

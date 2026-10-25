@@ -3,12 +3,17 @@ import { Effect, Layer, Stream } from "effect";
 import type { ManagedRuntime } from "effect";
 import type { App, TFile } from "obsidian";
 
+import { MemoryFileManager } from "@/lib/__fixtures__/obsidian-file-manager";
 import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
+import type { FileManagerSource } from "@/lib/obsidian-file-manager";
+import type { MetadataCacheSource } from "@/lib/obsidian-metadata-cache";
+import type { VaultSource } from "@/lib/obsidian-vault";
+import type { WorkspaceSource } from "@/lib/obsidian-workspace";
 import type {
   CitationLookupAnswer,
   CitationLookupRequest,
@@ -40,8 +45,15 @@ import type {
 
 import { layerCitationPopover, CitationPopover } from "./service";
 
-interface PopoverFixtureDeps {
-  app: App | Record<string, unknown>;
+interface FixtureApp {
+  fileManager?: App["fileManager"] | FileManagerSource;
+  metadataCache?: App["metadataCache"] | MetadataCacheSource;
+  vault?: App["vault"] | VaultSource;
+  workspace?: App["workspace"] | WorkspaceSource;
+}
+
+export interface CitationPopoverFixtureDeps {
+  app: FixtureApp;
   db: {
     state: ZoteroReadsState["state"];
     reads?: ZoteroReadsApi;
@@ -95,6 +107,17 @@ export interface CitationPopoverFixture extends AsyncDisposable {
   runtime: ManagedRuntime.ManagedRuntime<CitationPopover, never>;
 }
 
+/** A capability over the test source, so its methods keep the source as `this`. */
+function capability<T extends object>(name: string, source: object): T {
+  const typed = stubService<T>(name, {});
+  return new Proxy(typed, {
+    get(_target, key) {
+      const value = Reflect.get(source, key, source);
+      return typeof value === "function" ? value.bind(source) : value;
+    },
+  });
+}
+
 const READS_IDLE: Omit<ZoteroReadsState, "state"> = {
   error: null,
   moved: false,
@@ -109,17 +132,29 @@ const READS_IDLE: Omit<ZoteroReadsState, "state"> = {
  *   place of the plugin's loggers.
  */
 export function citationPopoverFixture(
-  deps: PopoverFixtureDeps,
+  deps: CitationPopoverFixtureDeps,
   options: { logs?: Layer.Layer<never> } = {},
 ): CitationPopoverFixture {
   const stack = new AsyncDisposableStack();
   // A host without a metadata cache, a vault or a workspace gets an empty in-memory one.
-  const app = {
-    metadataCache: new MemoryMetadataCache(),
-    vault: new MemoryVault(),
-    workspace: new MemoryWorkspace(),
-    ...deps.app,
-  } as unknown as App;
+  const app = stubService<App>("App", {
+    fileManager: capability<App["fileManager"]>(
+      "FileManager",
+      deps.app.fileManager ?? new MemoryFileManager(),
+    ),
+    metadataCache: capability<App["metadataCache"]>(
+      "MetadataCache",
+      deps.app.metadataCache ?? new MemoryMetadataCache(),
+    ),
+    vault: capability<App["vault"]>(
+      "Vault",
+      deps.app.vault ?? new MemoryVault(),
+    ),
+    workspace: capability<App["workspace"]>(
+      "Workspace",
+      deps.app.workspace ?? new MemoryWorkspace(),
+    ),
+  });
   let revision = 0;
   const lookupState = () => ({
     status: deps.citationLookup.status,
@@ -140,9 +175,9 @@ export function citationPopoverFixture(
             })),
             reads:
               deps.db.reads ??
-              ({
+              Object.assign(stubService<ZoteroReadsApi>("ZoteroReadsApi", {}), {
                 ItemsByIndexedKeys: () => Effect.succeed(new Map()),
-              } as unknown as ZoteroReadsApi),
+              }),
             snapshot: Effect.acquireDisposable(
               Effect.tryPromise({
                 try: () => deps.db.acquireRead(),

@@ -9,7 +9,7 @@ import {
   Scope,
   Stream,
 } from "effect";
-import type { EventRef, Events } from "obsidian";
+import type { Events } from "obsidian";
 import { expect } from "vitest";
 
 import { LogCategory } from "@/lib/effect-log";
@@ -79,7 +79,8 @@ it.effect("unregisters the Obsidian event when its scope closes", () =>
     const source: Pick<Events, "on" | "offref"> = {
       on: (_name, callback) => {
         listeners.add(callback);
-        return { callback } as unknown as EventRef;
+        const ref = { callback };
+        return ref;
       },
       offref: (ref) => {
         listeners.delete(

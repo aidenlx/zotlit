@@ -19,6 +19,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import type {
   QueryViewOutcome,
@@ -52,7 +53,7 @@ const EMPTY: QueryViewOutcome = {
   kind: "result",
   result: {
     libraries: [{ type: "personal" }],
-    query: {} as never,
+    query: { filter: null, fields: [], sort: [], limit: null },
     returnedCount: 0,
     matchedCount: 0,
     truncated: false,
@@ -87,41 +88,63 @@ function setup(kind: HostKind) {
   });
   /** The keymap's pushed Scopes, the last one on top. */
   const scopes: Scope[] = [];
-  const app = {
-    ...host.app,
-    scope: undefined,
-    keymap: {
+  const app = stubService<App>("App", {
+    vault: host.vault as unknown as App["vault"],
+    metadataCache: host.metadataCache as unknown as App["metadataCache"],
+    scope: stubService<App["scope"]>("Scope", {}),
+    keymap: stubService<App["keymap"]>("Keymap", {
       pushScope: (scope: Scope) => scopes.push(scope),
       popScope: (scope: Scope) => {
         const index = scopes.indexOf(scope);
         if (index !== -1) scopes.splice(index, 1);
       },
-    },
-    workspace: { ...host.workspace, getLeaf: vi.fn() },
-  } as unknown as App;
+    }),
+    workspace: Object.assign(host.workspace, {
+      getLeaf: vi.fn(),
+    }) as unknown as App["workspace"],
+  });
   const cardFocus = new QueryCardFocus(app);
   const run = vi.fn((_request: QueryViewRequest, _signal: AbortSignal) =>
     Promise.resolve(EMPTY),
   );
   const runtime = testRuntime();
-  const deps = {
+  const deps = stubService<QueryViewDeps>("QueryViewDeps", {
     runtime,
     bridge: effectBridge(runtime),
     app,
-    reads: {
+    reads: stubService<QueryViewDeps["reads"]>("ZoteroReads", {
       changed: Stream.empty,
       degraded: Stream.empty,
       "refresh-failed": Stream.empty,
       refreshing: Stream.empty,
       "db-file-missing": Stream.empty,
       "refresh-requested": Stream.empty,
-    },
-    libraryScope: { changed: Stream.empty, "libraries-changed": Stream.empty },
+    }),
+    libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
+      changed: Stream.empty,
+      "libraries-changed": Stream.empty,
+    }),
     query: fakeQuery(run),
     cardFocus,
-    annotations: annotationReads(),
+    annotations: stubService<QueryViewDeps["annotations"]>(
+      "Annotations",
+      annotationReads(),
+    ),
+    opener: stubService<QueryViewDeps["opener"]>("TargetOpener", {}),
+    allowEditing: vi.fn(),
+    reportBlockedGesture: vi.fn(),
+    libraryTagNames: async () => [],
+    zoteroPref: stubService<QueryViewDeps["zoteroPref"]>("ZoteroPref", {
+      dataDir: "/Zotero",
+      baseAttachmentPath: null,
+    }),
+    excerptDisplay: stubService<QueryViewDeps["excerptDisplay"]>(
+      "ExcerptDisplay",
+      { open: vi.fn(), refresh: vi.fn() },
+    ),
+    noteFeature: stubService<QueryViewDeps["noteFeature"]>("NoteFeature", {}),
     literatureNotes: noLiteratureNotes(),
-  } as unknown as QueryViewDeps;
+  });
 
   type Plugin = Parameters<typeof registerQueryBlock>[0];
   type Processor = Parameters<Plugin["registerMarkdownCodeBlockProcessor"]>[1];
@@ -130,7 +153,7 @@ function setup(kind: HostKind) {
     {
       registerMarkdownCodeBlockProcessor: (_language, handler) => {
         processor = handler;
-        return {} as never;
+        return () => {};
       },
     },
     deps,
@@ -169,14 +192,17 @@ function setup(kind: HostKind) {
     }
     let child: MarkdownRenderChild | undefined;
     // The block has no section to save to, as in a print.
-    const ctx = {
-      sourcePath,
-      getSectionInfo: () => null,
-      addChild: (added: MarkdownRenderChild) => {
-        child = added;
-        added.load();
+    const ctx = stubService<MarkdownPostProcessorContext>(
+      "MarkdownPostProcessorContext",
+      {
+        sourcePath,
+        getSectionInfo: () => null,
+        addChild: (added: MarkdownRenderChild) => {
+          child = added;
+          added.load();
+        },
       },
-    } as unknown as MarkdownPostProcessorContext;
+    );
     const shown = processor!(FILE, el, ctx);
     const unload = () => child?.unload();
     cleanup.defer(() => act(unload));
@@ -207,13 +233,17 @@ function setup(kind: HostKind) {
     const el = document.body.createDiv();
     let child: MarkdownRenderChild | undefined;
     await act(async () => {
-      await processor!(source, el, {
-        ...ctx,
-        addChild: (added: MarkdownRenderChild) => {
-          child = added;
-          added.load();
+      const context = stubService<MarkdownPostProcessorContext>(
+        "MarkdownPostProcessorContext",
+        {
+          ...ctx,
+          addChild: (added: MarkdownRenderChild) => {
+            child = added;
+            added.load();
+          },
         },
-      } as MarkdownPostProcessorContext);
+      );
+      await processor!(source, el, context);
       await viewOf(el).settled;
     });
     const unload = () => child?.unload();
@@ -378,7 +408,7 @@ describe("a Query Block that leaves the page", () => {
     const { block, host } = setup("block");
     host.vault.modifyFile(PATH, BLOCK_NOTE);
     let onPage = true;
-    const held = await block(SOURCE, {
+    const ctx: Omit<MarkdownPostProcessorContext, "addChild"> = {
       docId: "doc",
       sourcePath: PATH,
       frontmatter: {},
@@ -387,7 +417,8 @@ describe("a Query Block that leaves the page", () => {
           ? { text: BLOCK_NOTE, lineStart: LINE_START, lineEnd: LINE_START + 7 }
           : null,
       ...(replaceCode && { replaceCode }),
-    } as Omit<MarkdownPostProcessorContext, "addChild">);
+    };
+    const held = await block(SOURCE, ctx);
     return {
       host,
       held,

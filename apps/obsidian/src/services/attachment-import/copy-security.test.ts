@@ -16,10 +16,11 @@ import { tmpdir } from "node:os";
 // moves, and the destination-containment guarantees around the write itself.
 import { join } from "node:path";
 import { FileSystemAdapter, TFolder } from "obsidian";
-import type { App } from "obsidian";
+import type { App, FileManager, Vault } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import { reflink } from "@/lib/reflink";
 import { defaults } from "@/services/settings/schema";
@@ -86,30 +87,26 @@ function makeFolder(path: string): TFolder {
   return folder;
 }
 
-// The real `obsidian` types declare a zero-arg constructor; the runtime mock
-// (`__mocks__/obsidian.ts`) adds an optional `basePath` so tests can point
-// `getFullPath` at a real temporary directory.
-const Adapter = FileSystemAdapter as unknown as new (
-  basePath: string,
-) => FileSystemAdapter;
-
 function makeApp(basePath: string): App {
   const root = makeFolder("/");
   const attachments = makeFolder("Attachments");
-  return {
+  const adapter = Object.assign(new FileSystemAdapter(), {
+    getFullPath: (path: string) => `${basePath}/${path}`,
+  });
+  return stubService<App>("App", {
     // Obsidian's vault-scoped localStorage, where the approved folders live.
     ...makeDeviceStorage(),
-    vault: {
-      adapter: new Adapter(basePath),
+    vault: stubService<Vault>("Vault", {
+      adapter,
       getRoot: () => root,
       getAbstractFileByPath: (path: string) =>
         path === "Attachments" ? attachments : null,
       createFolder: async () => attachments,
-    },
-    fileManager: {
+    }),
+    fileManager: stubService<FileManager>("FileManager", {
       generateMarkdownLink: (file: { name: string }) => `[[${file.name}]]`,
-    },
-  } as unknown as App;
+    }),
+  });
 }
 
 function makeSettings(value: {
