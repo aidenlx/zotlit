@@ -1,7 +1,8 @@
 import { Cause, Deferred, Effect, Exit, Layer } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
-import { Notifier, reportProgress } from "@/lib/notifier";
+import type { Notifier} from "@/lib/notifier";
+import { reportProgress } from "@/lib/notifier";
 import { PluginHost } from "@/lib/plugin-host";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
@@ -21,10 +22,9 @@ export const layerDatabaseActions: Layer.Layer<
 > = Layer.effectDiscard(
   Effect.gen(function* () {
     const host = yield* PluginHost;
-    const notifier = yield* Notifier;
     const reads = yield* ZoteroReads;
     const layerScope: Scope.Scope = yield* Effect.scope;
-    const run = Effect.runPromiseExitWith(yield* Effect.context<never>());
+    const run = Effect.runPromiseExitWith(yield* Effect.context<Notifier>());
     // The toast outlives the command, as `toast.promise` did, until the
     // layer closes.
     const refresh = Effect.gen(function* () {
@@ -34,7 +34,7 @@ export const layerDatabaseActions: Layer.Layer<
           loading: m.notice_db_refreshing(),
           success: m.notice_db_refreshed(),
           error: m.notice_db_refresh_failed(),
-        }).pipe(Effect.provideService(Notifier, notifier)),
+        }),
         layerScope,
       );
       yield* reads

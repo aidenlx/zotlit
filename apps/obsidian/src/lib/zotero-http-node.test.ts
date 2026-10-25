@@ -115,13 +115,17 @@ describe("ZoteroHttp over node:http", () => {
 
     await send(server.origin, {
       method: "POST",
-      headers: { "Zotero-Allowed-Request": "1" },
+      headers: {
+        "Zotero-Allowed-Request": "1",
+        "Content-Type": "application/json",
+      },
       body: '{"jsonrpc":"2.0"}',
     });
 
     const { method, headers } = await seen.arrived;
     expect(method).toBe("POST");
     expect(headers["zotero-allowed-request"]).toBe("1");
+    expect(headers["content-type"]).toBe("application/json");
     expect(await seen.body).toBe('{"jsonrpc":"2.0"}');
   });
 
