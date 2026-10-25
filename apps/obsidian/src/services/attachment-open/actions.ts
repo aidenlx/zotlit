@@ -18,6 +18,7 @@ import { BaseNotice } from "@/lib/notice";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { activateAnnotView } from "@/views/annot-view/register";
 
@@ -83,22 +84,25 @@ export interface AttachmentOpenDeps extends AttachmentOpenLookupDeps {
 
 /**
  * Attachments already fetched from the database, narrowed to the
- * Obsidian-Openable ones — the vault-adapter cast and path-context setup
+ * Obsidian-Openable ones — the path-context setup
  * `resolveLiteratureNoteAttachments` and the `open-attachment` protocol
  * handler both need, written once here.
  */
 export function toObsidianOpenable(
   attachments: readonly Attachment[],
-  deps: Pick<AttachmentOpenLookupDeps, "app" | "zoteroPref">,
+  {
+    vaultBasePath,
+    zoteroPref,
+  }: {
+    /** The vault's folder on disk. */
+    vaultBasePath: string;
+    zoteroPref: Pick<ZoteroPrefSnapshot, "dataDir" | "baseAttachmentPath">;
+  },
 ): ObsidianOpenableAttachment[] {
-  // Desktop-only plugin: the adapter is always a `FileSystemAdapter`.
-  const vaultBasePath = (
-    deps.app.vault.adapter as FileSystemAdapter
-  ).getBasePath();
   return toObsidianOpenableAttachments(attachments, {
     pathContext: {
-      dataDir: deps.zoteroPref.dataDir,
-      baseAttachmentPath: deps.zoteroPref.baseAttachmentPath,
+      dataDir: zoteroPref.dataDir,
+      baseAttachmentPath: zoteroPref.baseAttachmentPath,
     },
     vaultBasePath,
     platform: process.platform,
@@ -130,7 +134,13 @@ export async function resolveLiteratureNoteAttachments(
     const attachments = await Effect.runPromise(
       reads.AttachmentsOf({ itemIDs: [itemID] }),
     );
-    return toObsidianOpenable(attachments, deps);
+    return toObsidianOpenable(attachments, {
+      // Desktop-only plugin: the adapter is always a `FileSystemAdapter`.
+      vaultBasePath: (
+        deps.app.vault.adapter as FileSystemAdapter
+      ).getBasePath(),
+      zoteroPref: deps.zoteroPref,
+    });
   } catch (error) {
     logger.warn("Literature Note Attachments unavailable", {
       indexedKey,
