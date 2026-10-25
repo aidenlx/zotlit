@@ -443,6 +443,27 @@ it("starts a new request for a press after the last one settled", async () => {
   ).toHaveLength(2);
 });
 
+it("clears the slot of a request that finishes without suspending", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { service, bridge, zoteroPref } = await setup(stack);
+  // With no port, the request answers `unreachable` before the starter resumes.
+  zoteroPref.httpPort = null;
+  let changes = 0;
+  stack.defer(
+    bridge.subscribe(service.capabilityChanges, () => (changes += 1)),
+  );
+
+  const first = await bridge.runPromise(service.authorize);
+  const second = await bridge.runPromise(service.authorize);
+
+  expect(first).toEqual({ failure: { kind: "unreachable" } });
+  expect(second).toEqual({ failure: { kind: "unreachable" } });
+  // The first press moves the capability (the probe lands), and each of the
+  // two requests announces its start and its end.
+  await vi.waitFor(() => expect(changes).toBe(5));
+  expect(bridge.runSync(service.writeStateFor(null)).authorizing).toBe(false);
+});
+
 it("says a request is in flight only while Zotero's dialog waits", async () => {
   await using stack = new AsyncDisposableStack();
   const pending = Promise.withResolvers<Response>();
