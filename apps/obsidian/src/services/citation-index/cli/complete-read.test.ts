@@ -37,6 +37,7 @@ it.effect.each(["annotation-uses", "cited-by"])(
   "#1683 waits for an edited note before answering %s as complete",
   (command) =>
     Effect.gen(function* () {
+      const run = Effect.runPromiseWith(yield* Effect.context<never>());
       const entered = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
       let held = false;
@@ -53,12 +54,9 @@ it.effect.each(["annotation-uses", "cited-by"])(
                     entered.resolve();
                     await release.promise;
                   }
-                  return Effect.runPromise(
-                    inProcessParseClient.parse(request),
-                    {
-                      signal,
-                    },
-                  );
+                  return run(inProcessParseClient.parse(request), {
+                    signal,
+                  });
                 }),
               },
             },
@@ -173,6 +171,7 @@ it.effect(
   "#1683 reports incomplete coverage when a pending edit exceeds the bounded wait",
   () =>
     Effect.gen(function* () {
+      const run = Effect.runPromiseWith(yield* Effect.context<never>());
       const entered = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
       let held = false;
@@ -187,12 +186,9 @@ it.effect(
                     entered.resolve();
                     await release.promise;
                   }
-                  return Effect.runPromise(
-                    inProcessParseClient.parse(request),
-                    {
-                      signal,
-                    },
-                  );
+                  return run(inProcessParseClient.parse(request), {
+                    signal,
+                  });
                 }),
               },
             },
