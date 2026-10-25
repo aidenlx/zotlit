@@ -1,5 +1,6 @@
 // Obsidian's @effect/vitest: each Effect test runs with the services the
-// plugin's `@/lib/effect` entry points add, beside the test services.
+// plugin's Effect entry points add, beside the test services. The effectEntry
+// Vite plugin (scripts/effect-entry.ts) resolves `@effect/vitest` to it in tests.
 import * as Vitest from "@effect/vitest";
 import * as NativeEffect from "effect/Effect";
 

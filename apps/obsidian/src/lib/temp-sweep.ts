@@ -11,8 +11,9 @@
 // A sweep never throws: a directory that refuses to be listed or emptied is a
 // logged warning, never a failed launch.
 
-// The worker build aliases the exact specifier `@/lib/effect`, so a relative
-// import here would pull the renderer's LogTape bridge into the worker.
+// The worker build resolves the specifier `effect` to the worker entry, so a
+// relative import of a wrapper here would pull the renderer's LogTape bridge
+// into the worker.
 import { Cause, Effect } from "effect";
 import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";

@@ -119,7 +119,7 @@ function enclosingCase(node: AstNode): ReturnType<typeof caseKind> {
 }
 
 /**
- * An Effect test runs through `it.effect` from `@/lib/effect-vitest`
+ * An Effect test runs through `it.effect` from `@effect/vitest`
  * (policies/testing-strategy.md → Effect code), which supplies the plugin's
  * runtime services and the test services such as TestClock. A
  * `ManagedRuntime`'s own `run…` stays allowed: a plain adapter's test drives
@@ -132,7 +132,7 @@ export const noEffectRunInTest: Rule = {
       description: "Require it.effect for a test that runs Effect code.",
     },
     messages: {
-      run: "Write this case with it.effect from @/lib/effect-vitest and yield* the Effect; it runs with the plugin's runtime services and TestClock.",
+      run: "Write this case with it.effect from @effect/vitest and yield* the Effect; it runs with the plugin's runtime services and TestClock.",
     },
     schema: [],
   },

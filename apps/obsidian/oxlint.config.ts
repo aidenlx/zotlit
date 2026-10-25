@@ -24,6 +24,21 @@ const obsidianImportPaths = [
   ...uniqueIdPaths,
 ];
 
+// The wrappers are applied by the effectEntry Vite plugin
+// (scripts/effect-entry.ts); code imports the package names.
+const effectWrapperPaths = [
+  {
+    name: "@/lib/effect",
+    message:
+      'Import from "effect": the effectEntry Vite plugin (scripts/effect-entry.ts) resolves "effect" to this wrapper.',
+  },
+  {
+    name: "@/lib/effect-vitest",
+    message:
+      'Import from "@effect/vitest": the effectEntry Vite plugin (scripts/effect-entry.ts) resolves "@effect/vitest" to this wrapper in tests.',
+  },
+];
+
 const commonImports = {
   patterns: [
     parentImportPattern,
@@ -69,13 +84,7 @@ const runtimeImports = {
       message:
         "Obsidian scheduling is owned by @/lib/effect-runtime and @/lib/browser-scheduler.",
     },
-    {
-      name: "@/lib/effect",
-      importNames: ["ManagedRuntime", "Scheduler"],
-      allowTypeImports: true,
-      message:
-        "Start Effects through Effect from effect; its entry points supply the browser scheduler.",
-    },
+    ...effectWrapperPaths,
     ...commonImports.paths,
   ],
 };
@@ -208,7 +217,7 @@ export default defineConfig({
     },
     {
       // These tests exercise the run entry points themselves.
-      files: ["src/lib/effect-runtime.test.ts"],
+      files: ["src/lib/effect-runtime.test.ts", "src/lib/effect-entry.test.ts"],
       rules: { "zotlit-effect-tests/no-effect-run-in-test": "off" },
     },
     {
@@ -496,21 +505,24 @@ export default defineConfig({
           "error",
           {
             patterns: [parentImportPattern],
-            paths: obsidianImportPaths,
+            paths: [...effectWrapperPaths, ...obsidianImportPaths],
           },
         ],
       },
     },
     {
+      // The wrappers, which reach the real package (NATIVE in scripts/effect-entry.ts).
       files: [
+        "src/lib/browser-scheduler.ts",
         "src/lib/effect.ts",
-        "src/lib/effect-worker.ts",
-        "src/lib/effect-runtime.ts",
         "src/lib/effect-layer.ts",
         "src/lib/effect-log.ts",
+        "src/lib/effect-runtime.ts",
+        "src/lib/effect-runtime-factory.ts",
         "src/lib/effect-services.ts",
         "src/lib/effect-vitest.ts",
-        "src/lib/browser-scheduler.ts",
+        "src/lib/effect-worker.ts",
+        "src/lib/effect-worker-runtime.ts",
       ],
       rules: { "no-restricted-imports": ["error", commonImports] },
     },
