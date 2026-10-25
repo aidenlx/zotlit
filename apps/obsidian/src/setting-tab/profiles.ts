@@ -7,7 +7,6 @@ import type {
 } from "obsidian";
 
 import { confirm } from "@/lib/confirm";
-import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
@@ -15,7 +14,6 @@ import { BaseNotice } from "@/lib/notice";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { listInstalledStyles } from "@/services/pandoc/styles";
-import type { PluginSettings } from "@/services/settings/service";
 import { openNativeProfile } from "@/views/template-workbench/register";
 
 import { referencesStyleDefinition } from "./citations";
@@ -44,6 +42,7 @@ export {
   type ImportProfile,
   type ImportProfileDeps,
 } from "./import-profile-modal";
+import type { ProfileControlField } from "./controls";
 import { duplicateProfileToWorkbench } from "./duplicate-profile";
 import { addProfileDestination } from "./profile-destination-modal";
 export { duplicateProfileToWorkbench } from "./duplicate-profile";
@@ -68,24 +67,9 @@ const logger = getLogger(["setting-tab", "profiles"]);
 function profileActionsLocked(ctx: SettingTabContext): boolean {
   return (
     !ctx.profile.loaded ||
-    !!ctx.bridge.runSync(ctx.settings.current)[
-      "note.template-conversion-pending"
-    ]
+    !!ctx.tab.sync(ctx.settings.current)["note.template-conversion-pending"]
   );
 }
-type ProfileControlField =
-  | "folder"
-  | "citation-style"
-  | "import-folder"
-  | "colored-highlights"
-  | "annotations-as-template";
-const bindingKeys = {
-  folder: "note.literature-folder",
-  "citation-style": "citation.references-style",
-  "import-folder": "note.import-folder",
-  "colored-highlights": "note.import-colored-highlights",
-  "annotations-as-template": "note.import-annotations-as-template",
-} as const;
 
 /**
  * The main-page rows of the default Profile: both note folders it binds, then
@@ -507,48 +491,4 @@ export function profileControlKey(
   field: ProfileControlField,
 ): ProfileControlKey {
   return `note-profile:${id}:${field}`;
-}
-export function isProfileControlKey(key: string): key is ProfileControlKey {
-  return (
-    key.startsWith("note-profile:default:") &&
-    key.slice("note-profile:default:".length) in bindingKeys
-  );
-}
-export function getProfileControlValue(
-  settings: Pick<PluginSettings["Service"], "current">,
-  bridge: Pick<EffectBridge, "runSync">,
-  key: ProfileControlKey,
-): unknown {
-  const field = key.slice(
-    "note-profile:default:".length,
-  ) as ProfileControlField;
-  return (
-    bridge.runSync(settings.current)["note.default-profile"].bindings[
-      bindingKeys[field]
-    ] ?? ""
-  );
-}
-// oxlint-disable-next-line max-params -- settings and bridge are separate injected dependencies.
-export function setProfileControlValue(
-  settings: Pick<
-    PluginSettings["Service"],
-    "updateDefaultLiteratureNoteProfileBindings"
-  >,
-  bridge: Pick<EffectBridge, "runSync">,
-  key: ProfileControlKey,
-  value: unknown,
-): void {
-  const field = key.slice(
-    "note-profile:default:".length,
-  ) as ProfileControlField;
-  bridge.runSync(
-    settings.updateDefaultLiteratureNoteProfileBindings({
-      [bindingKeys[field]]:
-        field === "colored-highlights" || field === "annotations-as-template"
-          ? Boolean(value)
-          : field === "citation-style" && value === ""
-            ? null
-            : String(value),
-    }),
-  );
 }

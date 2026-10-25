@@ -1,7 +1,7 @@
 // The plugin as a service the Effect layers register their commands on.
 import { Context, Effect, Layer } from "effect";
 import type { Scope } from "effect";
-import type { Command, Plugin } from "obsidian";
+import type { Command, Plugin, PluginSettingTab } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
 
@@ -19,6 +19,14 @@ export interface PluginHostShape
     CliHost {
   /** Add a command. Obsidian prefixes its id with the plugin id, as `Plugin.addCommand` does. */
   addCommand(command: Command): Effect.Effect<Command, never, Scope.Scope>;
+  /**
+   * Add the setting tab `build` makes over this plugin. The caller's Scope
+   * closing removes it, closing it first when it is open, so its `render`
+   * cleanups run while the services they read are still up.
+   */
+  addSettingTab<T extends PluginSettingTab>(
+    build: (plugin: Plugin) => T,
+  ): Effect.Effect<T, never, Scope.Scope>;
 }
 
 /** The plugin the layer graph runs in. */
@@ -48,6 +56,15 @@ export function makePluginHost(plugin: Plugin & CliHost): PluginHostShape {
         () => Effect.sync(() => plugin.removeCommand(id)),
       );
     }),
+    addSettingTab: (build) =>
+      Effect.acquireRelease(
+        Effect.sync(() => {
+          const tab = build(plugin);
+          plugin.addSettingTab(tab);
+          return tab;
+        }),
+        (tab) => Effect.sync(() => plugin.app.setting.removeSettingTab(tab)),
+      ),
   };
 }
 

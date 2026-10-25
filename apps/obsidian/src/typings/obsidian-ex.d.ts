@@ -786,6 +786,12 @@ declare module "obsidian" {
     /** Render a tab, closing any open sub-pages. */
     openTab(tab: SettingTab): void;
     /**
+     * Drop a plugin tab from the list and the search index, closing it first
+     * when it is open (its `render` cleanups run, then `hide()`). Verified
+     * against Obsidian 1.14.4.
+     */
+    removeSettingTab(tab: SettingTab): void;
+    /**
      * Open a tab, descend its `pagePath` sub-pages, then reveal `result`'s definition.
      * Reads only the listed fields, so synthetic arguments navigate without a real search.
      */

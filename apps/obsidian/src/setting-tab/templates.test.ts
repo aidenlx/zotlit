@@ -13,7 +13,6 @@ import type {
 } from "obsidian";
 import { expect, it, vi } from "vitest";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
@@ -21,6 +20,7 @@ import type { CitationTemplateStatus } from "@/services/template/service";
 import { createSharedPartial } from "@/views/template-workbench/new-partial";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
+import { testSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
 import { citationTextItems, partialItems } from "./templates";
 
@@ -57,7 +57,7 @@ const DEFAULT_STATUS: CitationTemplateStatus = {
 /** The Citation text row as it renders for one Citation Template state. */
 function citationRow(status: CitationTemplateStatus): Setting {
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    runtime: testRuntime(),
+    tab: testSettingTab().tab,
     app: stubService<SettingTabContext["app"]>("App", {}),
     requestUpdate: () => {},
     template: stubService<SettingTabContext["template"]>("Template", {
@@ -138,7 +138,7 @@ function partialRows(
   reserved: readonly { name: string; path: string }[] = [],
 ) {
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    runtime: testRuntime(),
+    tab: testSettingTab().tab,
     app: stubService<SettingTabContext["app"]>("App", {
       setting: stubService<SettingTabContext["app"]["setting"]>(
         "SettingsModal",
@@ -208,7 +208,7 @@ it("closes settings only once Add partial has created a document", async () => {
     NonNullable<ReturnType<SettingTabContext["app"]["vault"]["getFileByPath"]>>
   >("TFile", { path: AUTHORS.path });
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    runtime: testRuntime(),
+    tab: testSettingTab().tab,
     app: stubService<SettingTabContext["app"]>("App", {
       setting: stubService<SettingTabContext["app"]["setting"]>(
         "SettingsModal",

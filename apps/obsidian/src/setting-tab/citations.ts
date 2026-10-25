@@ -7,7 +7,6 @@ import type {
 
 import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
 import { ANNOTATION_SUGGESTER_ENABLED } from "@/lib/constants";
-import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { isLanguageTag } from "@/lib/language-tag";
 import { GRAPH_CORE_PLUGIN_ID } from "@/services/graph-citations/install";
@@ -18,6 +17,7 @@ import type { HoverAction } from "@/services/settings/schema";
 import { annotationTriggerError } from "@/views/citation-suggest/annotation-trigger";
 
 import type { SettingsKey, SettingTabContext } from "./context";
+import { paintEach } from "./effect-tab";
 import { pandocEngineDefinition } from "./pandoc-engine";
 import { pandocIntegrationDefinition } from "./pandoc-integration";
 import { citationTextItems } from "./templates";
@@ -43,9 +43,7 @@ export function citationsPageItems(
           name: m.settings_citation_at_trigger_name(),
           desc: m.settings_citation_at_trigger_desc(),
           visible: () =>
-            ctx.bridge.runSync(ctx.settings.current)[
-              "citation.editor-suggester"
-            ],
+            ctx.tab.sync(ctx.settings.current)["citation.editor-suggester"],
           control: { type: "toggle", key: "citation.at-trigger" },
         },
         {
@@ -250,8 +248,7 @@ function requireModPage(
     name: m.settings_citation_hover_mod_page_name(),
     desc: m.settings_citation_hover_mod_desc(),
     visible: () =>
-      ctx.bridge.runSync(ctx.settings.current)["citation.hover-action"] ===
-      "popover",
+      ctx.tab.sync(ctx.settings.current)["citation.hover-action"] === "popover",
     items: REQUIRE_MOD_KEYS.map(([key, id, name]) => ({
       id,
       name: name(),
@@ -290,7 +287,7 @@ function renderReferencesStyleRow(
   });
 
   const selectedValue = (): string =>
-    ctx.bridge.runSync(ctx.settings.current)["note.default-profile"].bindings[
+    ctx.tab.sync(ctx.settings.current)["note.default-profile"].bindings[
       "citation.references-style"
     ] ?? STYLE_DEFAULT;
 
@@ -338,7 +335,7 @@ function renderReferencesStyleRow(
   setting.addDropdown((d) => {
     dropdown = d;
     d.onChange((value) => {
-      ctx.bridge.runSync(
+      ctx.tab.sync(
         ctx.settings.updateDefaultLiteratureNoteProfileBindings({
           "citation.references-style": value === STYLE_DEFAULT ? null : value,
         }),
@@ -349,12 +346,14 @@ function renderReferencesStyleRow(
 
   reload();
   stack.defer(
-    subscribe(ctx.runtime, ctx.zoteroPref["resolved-changed"], reload),
+    ctx.tab.mount(paintEach(ctx.zoteroPref["resolved-changed"], reload)),
   );
   stack.defer(
-    subscribe(ctx.runtime, ctx.settings.changes, () => {
-      if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
-    }),
+    ctx.tab.mount(
+      paintEach(ctx.settings.changes, () => {
+        if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
+      }),
+    ),
   );
 
   return () => stack.dispose();

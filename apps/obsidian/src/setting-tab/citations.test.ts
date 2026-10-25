@@ -2,15 +2,14 @@
 import { Effect } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
-import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
+import { testSettingTab } from "./__fixtures__";
 import {
   citationLocaleError,
   citationsPageItems,
@@ -29,10 +28,8 @@ beforeAll(() => {
 describe("hover settings", () => {
   /** The Hover group's rows for a given saved hover action. */
   const hoverRows = (settings: Settings) => {
-    const runtime = testRuntime();
     const ctx = {
-      runtime,
-      bridge: effectBridge(runtime),
+      tab: testSettingTab().tab,
       app: { internalPlugins: { getEnabledPluginById: () => null } },
       settings: { current: Effect.succeed(settings) },
       pandocEngine: {
@@ -74,10 +71,8 @@ describe("hover settings", () => {
 
 describe("citation source settings", () => {
   it("offers each citation syntax as a source", () => {
-    const runtime = testRuntime();
     const ctx = {
-      runtime,
-      bridge: effectBridge(runtime),
+      tab: testSettingTab().tab,
       app: { internalPlugins: { getEnabledPluginById: () => null } },
       settings: { current: Effect.succeed(defaults) },
       pandocEngine: {

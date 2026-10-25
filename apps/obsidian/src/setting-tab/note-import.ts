@@ -75,9 +75,7 @@ export function highlightMappingItems(
     (color) => {
       const current = () =>
         getHighlightMapping(
-          ctx.bridge.runSync(ctx.settings.current)[
-            "note.import-highlight-mappings"
-          ],
+          ctx.tab.sync(ctx.settings.current)["note.import-highlight-mappings"],
           color,
         );
       return [
@@ -136,7 +134,7 @@ function updateMapping(
   color: AnnotationColorName,
   patch: Partial<HighlightMapping>,
 ): void {
-  ctx.bridge.runSync(
+  ctx.tab.sync(
     ctx.settings.update((settings) => {
       const mappings = settings["note.import-highlight-mappings"];
       return {

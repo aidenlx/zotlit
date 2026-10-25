@@ -64,7 +64,7 @@ export function advancedPageItems(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsKey>[] {
   const fileDisabled = (): boolean =>
-    !ctx.bridge.runSync(ctx.settings.current)["log.to-file"];
+    !ctx.tab.sync(ctx.settings.current)["log.to-file"];
   return [
     ...(ctx.webWorkbenchEnabled
       ? [

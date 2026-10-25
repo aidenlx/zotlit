@@ -1,10 +1,7 @@
 import type { App, PluginManifest } from "obsidian";
 
-import type { EffectBridge } from "@/lib/effect-bridge";
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import type { LanguagePackLifecycle } from "@/lib/i18n";
 import type { CapabilityNotices } from "@/services/annotation-repository/notices";
-import type { AnnotationRepository } from "@/services/annotation-repository/service";
 import type { AttachmentImportService } from "@/services/attachment-import/service";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type {} from "@/services/citation-index/service";
@@ -20,10 +17,10 @@ import type { Release } from "@/services/release/service";
 import type { Settings } from "@/services/settings/schema";
 import type { PluginSettings } from "@/services/settings/service";
 import type { PlainTemplate } from "@/services/template/plain";
-import type { ZoteroLocalApi } from "@/services/zotero-local-api/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
+import type { SettingTabShape } from "./effect-tab";
 import type { ImportProfile } from "./import-profile-modal";
 
 /** Settings keys, used to type declarative `control` bindings against the schema. */
@@ -60,23 +57,10 @@ export type LocalBridgeActions = Pick<
 export type CitationIndexActions = Pick<PlainCitationIndex, "reset">;
 
 /**
- * The Editing Capability the "Zotero editing" row renders, and the signal that
- * it moved.
+ * The one Allow editing every entry shares. The row reads the Editing
+ * Capability and the Remembered Write Authorization through their services.
  */
-export type AnnotationCapabilityActions = Pick<
-  AnnotationRepository["Service"],
-  "capability" | "capabilityChanges" | "probe"
->;
-
-/**
- * The Write Authorization the "Zotero editing" row asks for, through the one
- * Allow editing every entry shares, and forgets.
- */
-export type WriteAuthorizationActions = Pick<
-  ZoteroLocalApi["Service"],
-  "forgetAuthorization" | "remembered"
-> &
-  Pick<CapabilityNotices, "allowEditing">;
+export type WriteAuthorizationActions = Pick<CapabilityNotices, "allowEditing">;
 
 /** The attachment-import surface the setting tab needs: read and edit the grants. */
 export type AttachmentImportActions = Pick<
@@ -91,8 +75,8 @@ export type AttachmentImportActions = Pick<
  * search indexing.
  */
 export interface SettingTabContext {
-  runtime: SubscriptionRuntime;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
+  /** Runs the tab's Effects on the tab layer's context and Scope. */
+  tab: SettingTabShape;
   webWorkbenchEnabled: boolean;
   app: App;
   importProfile: ImportProfile;
@@ -186,8 +170,6 @@ export interface SettingTabContext {
   excerptImage: Pick<ExcerptImageService, "clear">;
   /** The live Excerpt Image display, released with the store it paints from. */
   excerptDisplay: Pick<ExcerptDisplayService, "clear">;
-  /** The session's Editing Capability, read by the "Zotero editing" row. */
-  annotations: AnnotationCapabilityActions;
   /** The Write Authorization that row grants and forgets. */
   writeAuthorization: WriteAuthorizationActions;
   release: ReleaseTabActions;

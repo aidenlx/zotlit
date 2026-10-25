@@ -1,408 +1,122 @@
-import { Stream } from "effect";
 import { PluginSettingTab } from "obsidian";
-import type { SettingDefinitionItem } from "obsidian";
+import type { Plugin, SettingDefinitionItem } from "obsidian";
 
-import type { EffectBridge } from "@/lib/effect-bridge";
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
-import type { LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
-import type { PlainLibraryScope } from "@/services/library-scope/plain";
-import type { CustomizeAction } from "@/services/local-bridge/customize";
-import type {
-  PluginSettings,
-  SettingsPatch,
-} from "@/services/settings/service";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
-import type ZotLitPlugin from "@/zt-main";
 
-import {
-  advancedPageItems,
-  decodeLogLevel,
-  encodeLogLevel,
-  LOG_LEVEL_KEY,
-} from "./advanced";
+import { advancedPageItems } from "./advanced";
 import { attachmentPageItems } from "./attachments";
 import { citationsPageItems } from "./citations";
-import type {
-  AnnotationCapabilityActions,
-  AttachmentImportActions,
-  CitationIndexActions,
-  LocalBridgeActions,
-  LocalServerActions,
-  ManagedBinaryActions,
-  ReleaseTabActions,
-  SettingsControlKey,
-  SettingsKey,
-  SettingTabContext,
-  WriteAuthorizationActions,
-} from "./context";
+import type { SettingsControlKey, SettingTabContext } from "./context";
+import { controlValue, writeControlValue } from "./controls";
 import { noteImportPageItems } from "./note-import";
-import {
-  getProfileControlValue,
-  isProfileControlKey,
-  literatureNoteItems,
-  profilesPage,
-  setProfileControlValue,
-} from "./profiles";
+import { literatureNoteItems, profilesPage } from "./profiles";
 import { readerPageItems } from "./reader";
 import { resourcesGroup } from "./resources";
-import { AUTO_TRIM_KEYS, decodeAutoTrim, encodeAutoTrim } from "./templates";
 import { zoteroPageItems } from "./zotero";
 
-export interface ZotLitSettingTabOptions {
-  runtime: SubscriptionRuntime;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
-  webWorkbenchEnabled: boolean;
-  importProfile: SettingTabContext["importProfile"];
-  plugin: ZotLitPlugin;
-  settings: Pick<
-    PluginSettings["Service"],
-    | "current"
-    | "update"
-    | "updateDefaultLiteratureNoteProfileBindings"
-    | "changes"
-  >;
-  profile: SettingTabContext["profile"];
-  db: Pick<
-    PlainZoteroReads,
-    | "refresh"
-    | "state"
-    | "error"
-    | "changed"
-    | "degraded"
-    | "refresh-failed"
-    | "refreshing"
-    | "db-file-missing"
-    | "refresh-requested"
-    | "activeReadMode"
-  >;
-  libraryScope: Pick<
-    PlainLibraryScope,
-    | "current"
-    | "effective"
-    | "invalid"
-    | "libraries"
-    | "changed"
-    | "libraries-changed"
-  >;
-  zoteroPref: SettingTabContext["zoteroPref"];
-  localServer: LocalServerActions;
-  localBridge: LocalBridgeActions;
-  customize: CustomizeAction;
-  attachmentImport: AttachmentImportActions;
-  citationIndex: CitationIndexActions;
-  excerptImage: SettingTabContext["excerptImage"];
-  excerptDisplay: SettingTabContext["excerptDisplay"];
-  annotations: AnnotationCapabilityActions;
-  writeAuthorization: WriteAuthorizationActions;
-  template: SettingTabContext["template"];
-  release: ReleaseTabActions;
-  pandocEngine: ManagedBinaryActions;
-  chineseSegmenter: ManagedBinaryActions;
-  languagePack: LanguagePackLifecycle;
-}
-
+/**
+ * ZotLit's declarative tab. It holds no state of its own: every callback
+ * Obsidian makes runs an Effect through `ctx.tab`, and the tab layer
+ * (`layer.ts`) owns its subscriptions and lifetime.
+ */
 export class ZotLitSettingTab extends PluginSettingTab {
-  readonly #webWorkbenchEnabled: boolean;
-  readonly #importProfile: SettingTabContext["importProfile"];
-  readonly #plugin: ZotLitPlugin;
-  readonly #settings: Pick<
-    PluginSettings["Service"],
-    | "current"
-    | "update"
-    | "updateDefaultLiteratureNoteProfileBindings"
-    | "changes"
-  >;
-  readonly #db: Pick<
-    PlainZoteroReads,
-    | "refresh"
-    | "state"
-    | "error"
-    | "changed"
-    | "degraded"
-    | "refresh-failed"
-    | "refreshing"
-    | "db-file-missing"
-    | "refresh-requested"
-    | "activeReadMode"
-  >;
-  readonly #libraryScope: Pick<
-    PlainLibraryScope,
-    | "current"
-    | "effective"
-    | "invalid"
-    | "libraries"
-    | "changed"
-    | "libraries-changed"
-  >;
-  readonly #zoteroPref: SettingTabContext["zoteroPref"];
-  readonly #localServer: LocalServerActions;
-  readonly #localBridge: LocalBridgeActions;
-  readonly #customize: CustomizeAction;
-  readonly #attachmentImport: AttachmentImportActions;
-  readonly #citationIndex: CitationIndexActions;
-  readonly #excerptImage: SettingTabContext["excerptImage"];
-  readonly #excerptDisplay: SettingTabContext["excerptDisplay"];
-  readonly #annotations: AnnotationCapabilityActions;
-  readonly #writeAuthorization: WriteAuthorizationActions;
-  readonly #profile: SettingTabContext["profile"];
-  readonly #template: SettingTabContext["template"];
-  readonly #release: ReleaseTabActions;
-  readonly #pandocEngine: ManagedBinaryActions;
-  readonly #chineseSegmenter: ManagedBinaryActions;
-  readonly #languagePack: LanguagePackLifecycle;
+  readonly #ctx: SettingTabContext;
 
-  readonly #runtime;
-  readonly #bridge;
-
-  constructor({
-    runtime,
-    bridge,
-    webWorkbenchEnabled,
-    importProfile,
-    plugin,
-    settings,
-    db,
-    libraryScope,
-    zoteroPref,
-    localServer,
-    localBridge,
-    customize,
-    attachmentImport,
-    citationIndex,
-    excerptImage,
-    excerptDisplay,
-    annotations,
-    writeAuthorization,
-    template,
-    profile,
-    release,
-    pandocEngine,
-    chineseSegmenter,
-    languagePack,
-  }: ZotLitSettingTabOptions) {
+  constructor(
+    plugin: Plugin,
+    context: Omit<SettingTabContext, "app" | "manifest">,
+  ) {
     super(plugin.app, plugin);
-    this.#runtime = runtime;
-    this.#bridge = bridge;
-    this.#webWorkbenchEnabled = webWorkbenchEnabled;
-    this.#plugin = plugin;
-    this.#importProfile = importProfile;
-    this.#settings = settings;
-    this.#db = db;
-    this.#libraryScope = libraryScope;
-    this.#zoteroPref = zoteroPref;
-    this.#localServer = localServer;
-    // The Local server rows name the port the listener actually bound, so a
-    // bind, a rebind, and a close each rebuild them.
-    plugin.register(
-      subscribe(runtime, Stream.drop(localServer.effectivePortChanges, 1), () =>
-        this.#requestUpdate(),
-      ),
-    );
-    this.#localBridge = localBridge;
-    // The Workbench Connection row is included structurally, so a connection
-    // opening, ending, or being taken over rebuilds the definitions.
-    plugin.register(localBridge.on("connection", () => this.#requestUpdate()));
-    this.#customize = customize;
-    this.#attachmentImport = attachmentImport;
-    this.#citationIndex = citationIndex;
-    this.#excerptImage = excerptImage;
-    this.#excerptDisplay = excerptDisplay;
-    this.#annotations = annotations;
-    this.#writeAuthorization = writeAuthorization;
-    this.#template = template;
-    this.#profile = profile;
-    plugin.register(
-      subscribe(runtime, profile["changed"], () => this.#requestUpdate()),
-    );
-    this.#release = release;
-    this.#pandocEngine = pandocEngine;
-    this.#chineseSegmenter = chineseSegmenter;
-    this.#languagePack = languagePack;
-
-    plugin.register(
-      subscribe(runtime, template["compile-status-changed"], () =>
-        this.#requestUpdate(),
-      ),
-    );
-    plugin.register(languagePack.subscribe(() => this.#requestUpdate()));
-    plugin.register(
-      subscribe(runtime, Stream.drop(pandocEngine.binary.changes, 1), () =>
-        this.#requestUpdate(),
-      ),
-    );
-    plugin.register(
-      subscribe(runtime, Stream.drop(chineseSegmenter.binary.changes, 1), () =>
-        this.#requestUpdate(),
-      ),
-    );
-    // Library scope rows are built from the resolved scope, so a database
-    // refresh, a group rename, and a repair each rebuild them.
-    plugin.register(
-      subscribe(runtime, libraryScope["changed"], () => this.#requestUpdate()),
-    );
-
-    // Settings: the two pending flags are structural — the reminder rows are
-    // included or left out, not toggled via `visible` — so the tab re-renders
-    // when either flips. Scalar `control` edits (read on the framework's own
-    // render cycle) never trigger a rebuild and never steal focus from inline
-    // inputs.
-    const current = this.#bridge.runSync(settings.current);
-    let lastPending = current["release.migration-pending"];
-    let lastTemplateConversionPending =
-      current["note.template-conversion-pending"];
-    plugin.register(
-      subscribe(runtime, settings.changes, (value) => {
-        const pending = value["release.migration-pending"];
-        const templateConversionPending =
-          value["note.template-conversion-pending"];
-        if (
-          pending === lastPending &&
-          templateConversionPending === lastTemplateConversionPending
-        ) {
-          return;
-        }
-        lastPending = pending;
-        lastTemplateConversionPending = templateConversionPending;
-        this.#requestUpdate();
-      }),
-    );
+    this.#ctx = { ...context, app: plugin.app, manifest: plugin.manifest };
   }
 
-  /** Re-runs `getSettingDefinitions()` and re-renders the declarative tab. */
-  #requestUpdate(): void {
-    this.update();
-  }
-
-  /** Bridge declarative `control` reads to {@link PluginSettings}. */
   override getControlValue(key: string): unknown {
-    if (isProfileControlKey(key)) {
-      return getProfileControlValue(this.#settings, this.#bridge, key);
-    }
-    const value = this.#bridge.runSync(this.#settings.current)[
-      key as SettingsKey
-    ];
-    // Auto-trim stores `false | "nl" | "slurp"`; its dropdown reads a string.
-    if (AUTO_TRIM_KEYS.has(key as SettingsKey)) return encodeAutoTrim(value);
-    // Log level stores `LogLevel | null`; its dropdown reads a string.
-    if (key === LOG_LEVEL_KEY) return encodeLogLevel(value);
-    return value;
+    return this.#ctx.tab.sync(controlValue(key));
   }
 
-  /** Bridge declarative `control` writes to {@link PluginSettings}. */
-  override setControlValue(key: string, value: unknown): void {
-    if (isProfileControlKey(key)) {
-      setProfileControlValue(this.#settings, this.#bridge, key, value);
-      return;
-    }
-    const next = AUTO_TRIM_KEYS.has(key as SettingsKey)
-      ? decodeAutoTrim(value)
-      : key === LOG_LEVEL_KEY
-        ? decodeLogLevel(value)
-        : value;
-    // `key` is constrained to schema keys by every `control` definition below,
-    // and `value` matches that key's control type, so the patch always validates.
-    this.#bridge.runSync(
-      this.#settings.update({ [key]: next } as SettingsPatch),
+  /**
+   * Obsidian awaits this, then refreshes `visible`/`disabled` from the stored
+   * value; it reports no failure itself, so `run` does.
+   */
+  override setControlValue(key: string, value: unknown): Promise<void> {
+    return this.#ctx.tab.run(
+      writeControlValue(key, value),
+      "Cannot save the setting",
     );
   }
 
   override getSettingDefinitions(): SettingDefinitionItem[] {
-    const ctx: SettingTabContext = {
-      runtime: this.#runtime,
-      bridge: this.#bridge,
-      webWorkbenchEnabled: this.#webWorkbenchEnabled,
-      app: this.#plugin.app,
-      importProfile: this.#importProfile,
-      manifest: this.#plugin.manifest,
-      settings: this.#settings,
-      profile: this.#profile,
-      db: this.#db,
-      libraryScope: this.#libraryScope,
-      zoteroPref: this.#zoteroPref,
-      localServer: this.#localServer,
-      localBridge: this.#localBridge,
-      customize: this.#customize,
-      attachmentImport: this.#attachmentImport,
-      citationIndex: this.#citationIndex,
-      excerptImage: this.#excerptImage,
-      excerptDisplay: this.#excerptDisplay,
-      annotations: this.#annotations,
-      writeAuthorization: this.#writeAuthorization,
-      template: this.#template,
-      release: this.#release,
-      pandocEngine: this.#pandocEngine,
-      chineseSegmenter: this.#chineseSegmenter,
-      languagePack: this.#languagePack,
-      requestUpdate: () => this.update(),
-    };
-
-    const items: SettingDefinitionItem<SettingsControlKey>[] = [
-      // Migration reminder (while pending) and the resources strip, one
-      // headerless group — see resourcesGroup for why the reminder is
-      // included structurally rather than via `visible`.
-      resourcesGroup(ctx),
-
-      // The main page is the default Profile: its Literature Note rows inline,
-      // no top-level heading (per Obsidian style) — see ADR 0036. Both note
-      // folders it binds read as one set, so the imported note folder sits
-      // here; the import rendering rows have their own page below.
-      ...literatureNoteItems(ctx),
-      // Everything else lives on navigable sub-pages, grouped apart from the
-      // rows above so the page rows read as their own section. Profiles leads
-      // because it extends the default Profile's rows right above it.
-      {
-        type: "group",
-        id: "settings_pages",
-        items: [
-          profilesPage(ctx),
-          {
-            type: "page",
-            id: "settings_page_note_import",
-            name: m.settings_page_note_import(),
-            desc: m.settings_page_note_import_desc(),
-            items: noteImportPageItems(ctx),
-          },
-          {
-            type: "page",
-            id: "settings_page_citations",
-            name: m.settings_page_citations(),
-            desc: m.settings_page_citations_desc(),
-            items: citationsPageItems(ctx),
-          },
-          {
-            type: "page",
-            id: "settings_page_zotero",
-            name: m.settings_page_zotero(),
-            desc: m.settings_page_zotero_desc(),
-            items: zoteroPageItems(ctx),
-          },
-          {
-            type: "page",
-            id: "settings_page_attachments",
-            name: m.settings_page_attachments(),
-            desc: m.settings_page_attachments_desc(),
-            items: attachmentPageItems(ctx),
-          },
-          {
-            type: "page",
-            id: "settings_page_reader",
-            name: m.settings_page_reader(),
-            desc: m.settings_page_reader_desc(),
-            items: readerPageItems(),
-          },
-          {
-            type: "page",
-            id: "settings_page_advanced",
-            name: m.settings_page_advanced(),
-            desc: m.settings_page_advanced_desc(),
-            items: advancedPageItems(ctx),
-          },
-        ],
-      },
-    ];
-
-    return items;
+    return settingDefinitions(this.#ctx);
   }
+}
+
+function settingDefinitions(
+  ctx: SettingTabContext,
+): SettingDefinitionItem<SettingsControlKey>[] {
+  const items: SettingDefinitionItem<SettingsControlKey>[] = [
+    // Migration reminder (while pending) and the resources strip, one
+    // headerless group — see resourcesGroup for why the reminder is
+    // included structurally rather than via `visible`.
+    resourcesGroup(ctx),
+
+    // The main page is the default Profile: its Literature Note rows inline,
+    // no top-level heading (per Obsidian style) — see ADR 0036. Both note
+    // folders it binds read as one set, so the imported note folder sits
+    // here; the import rendering rows have their own page below.
+    ...literatureNoteItems(ctx),
+    // Everything else lives on navigable sub-pages, grouped apart from the
+    // rows above so the page rows read as their own section. Profiles leads
+    // because it extends the default Profile's rows right above it.
+    {
+      type: "group",
+      id: "settings_pages",
+      items: [
+        profilesPage(ctx),
+        {
+          type: "page",
+          id: "settings_page_note_import",
+          name: m.settings_page_note_import(),
+          desc: m.settings_page_note_import_desc(),
+          items: noteImportPageItems(ctx),
+        },
+        {
+          type: "page",
+          id: "settings_page_citations",
+          name: m.settings_page_citations(),
+          desc: m.settings_page_citations_desc(),
+          items: citationsPageItems(ctx),
+        },
+        {
+          type: "page",
+          id: "settings_page_zotero",
+          name: m.settings_page_zotero(),
+          desc: m.settings_page_zotero_desc(),
+          items: zoteroPageItems(ctx),
+        },
+        {
+          type: "page",
+          id: "settings_page_attachments",
+          name: m.settings_page_attachments(),
+          desc: m.settings_page_attachments_desc(),
+          items: attachmentPageItems(ctx),
+        },
+        {
+          type: "page",
+          id: "settings_page_reader",
+          name: m.settings_page_reader(),
+          desc: m.settings_page_reader_desc(),
+          items: readerPageItems(),
+        },
+        {
+          type: "page",
+          id: "settings_page_advanced",
+          name: m.settings_page_advanced(),
+          desc: m.settings_page_advanced_desc(),
+          items: advancedPageItems(ctx),
+        },
+      ],
+    },
+  ];
+
+  return items;
 }
