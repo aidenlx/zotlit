@@ -244,7 +244,7 @@ function makeDeps(
       update: () => Effect.succeed(defaults),
     }),
     bridge: { runSync: Effect.runSync },
-    batchScope: batchScopeOver(zoteroReads, () => currentScope),
+    batchScope: batchScopeOver(zoteroReads, () => currentScope, caseResources),
     noteFeature: stubService<SingleUpdateDeps["noteFeature"]>("NoteFeature", {
       ready: Promise.resolve(),
       reportExcerptImages: vi.fn(),

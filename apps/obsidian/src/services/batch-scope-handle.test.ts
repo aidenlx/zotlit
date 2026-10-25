@@ -24,18 +24,21 @@ const UNUSED_SCOPE = (): ResolvedLibraryScope => {
   throw new Error("Library Scope read for an exact target");
 };
 
+const GROUP_READS = readsAnswering({
+  Libraries: () => Effect.succeed([GROUP_LIBRARY]),
+  ScopeItemIDs: () => Effect.succeed([3, 4]),
+});
+
 it("resolves the plan of an exact target", async () => {
+  await using stack = new AsyncDisposableStack();
   const zoteroReads = stubService<ZoteroReads["Service"]>("ZoteroReads", {
-    snapshot: Effect.succeed(
-      readsAnswering({
-        Libraries: () => Effect.succeed([GROUP_LIBRARY]),
-        ScopeItemIDs: () => Effect.succeed([3, 4]),
-      }),
-    ),
+    snapshot: Effect.succeed(GROUP_READS),
   });
 
   await expect(
-    batchScopeOver(zoteroReads, UNUSED_SCOPE).plan("notes", { groupID: 7 }),
+    batchScopeOver(zoteroReads, UNUSED_SCOPE, stack).plan("notes", {
+      groupID: 7,
+    }),
   ).resolves.toEqual({
     outcome: "resolved",
     itemIDs: [3, 4],
@@ -44,12 +47,39 @@ it("resolves the plan of an exact target", async () => {
 });
 
 it("rejects with the plan's own failure", async () => {
+  await using stack = new AsyncDisposableStack();
   const failure = new DbUnavailable({ message: "the read failed" });
   const zoteroReads = stubService<ZoteroReads["Service"]>("ZoteroReads", {
     snapshot: Effect.fail(failure),
   });
 
   await expect(
-    batchScopeOver(zoteroReads, UNUSED_SCOPE).plan("notes", {}),
+    batchScopeOver(zoteroReads, UNUSED_SCOPE, stack).plan("notes", {}),
   ).rejects.toBe(failure);
+});
+
+it("settles a pending plan after the runtime is disposed", async () => {
+  const stack = new AsyncDisposableStack();
+  const opened = Promise.withResolvers<void>();
+  const gate = Promise.withResolvers<void>();
+  const zoteroReads = stubService<ZoteroReads["Service"]>("ZoteroReads", {
+    snapshot: Effect.promise(async () => {
+      opened.resolve();
+      await gate.promise;
+      return GROUP_READS;
+    }),
+  });
+  const plan = batchScopeOver(zoteroReads, UNUSED_SCOPE, stack).plan("notes", {
+    groupID: 7,
+  });
+
+  await opened.promise;
+  await stack.disposeAsync();
+  gate.resolve();
+
+  await expect(plan).resolves.toEqual({
+    outcome: "resolved",
+    itemIDs: [3, 4],
+    unavailableLibraries: 0,
+  });
 });

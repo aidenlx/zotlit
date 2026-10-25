@@ -289,7 +289,7 @@ function makeDeps(
         })) as PluginSettings["Service"]["update"],
     },
     bridge: { runSync: Effect.runSync },
-    batchScope: batchScopeOver(zoteroReads, () => currentScope),
+    batchScope: batchScopeOver(zoteroReads, () => currentScope, caseResources),
     noteImport: {
       importNote,
       prepareExplicitImport: vi.fn<NoteImporter["prepareExplicitImport"]>(),
