@@ -59,6 +59,8 @@ export interface WorkspaceShape {
    * the file of each `file-open`. Its `changes` replay the current value.
    */
   readonly activeFile: SubscriptionRef.SubscriptionRef<TFile | null>;
+  /** Obsidian's `getActiveFile()` now; `activeFile` can lag it, as Obsidian defers `file-open`. */
+  readonly getActiveFile: Effect.Effect<TFile | null>;
   /** The Markdown view of the active leaf now, `null` when it holds none. */
   readonly activeMarkdownView: Effect.Effect<MarkdownView | null>;
   /**
@@ -138,6 +140,7 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     }),
     changes: events.stream,
     activeFile,
+    getActiveFile: Effect.sync(() => source.getActiveFile()),
     activeMarkdownView: Effect.sync(() =>
       source.getActiveViewOfType(MarkdownView),
     ),

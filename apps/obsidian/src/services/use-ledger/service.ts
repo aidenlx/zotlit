@@ -135,7 +135,7 @@ const makeUseLedger = Effect.gen(function* () {
     filterTag(metadata.changes, "changed"),
     Effect.fnUntraced(function* ({ file, cache }) {
       if (!pending || pending.file !== file) return;
-      if ((yield* SubscriptionRef.get(workspace.activeFile)) !== file) return;
+      if ((yield* workspace.getActiveFile) !== file) return;
       const { instant } = pending;
       pending = null;
       const key = itemKeyFromFrontmatter(cache);
