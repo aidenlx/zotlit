@@ -2,7 +2,10 @@
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 
-export class ParseError extends Schema.TaggedError<ParseError>()("ParseError", {
+export class ParseError extends Schema.TaggedError<
+  ParseError,
+  { readonly brand: unique symbol }
+>()("ParseError", {
   message: Schema.String,
 }) {}
 

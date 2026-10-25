@@ -4,19 +4,19 @@ import type { Effect } from "effect";
 
 import type { NoteScanRecord } from "@/services/citation-index/scan-note";
 
-export class ParseWorkerDied extends Schema.TaggedError<ParseWorkerDied>()(
-  "ParseWorkerDied",
-  {
-    message: Schema.String,
-  },
-) {}
+export class ParseWorkerDied extends Schema.TaggedError<
+  ParseWorkerDied,
+  { readonly brand: unique symbol }
+>()("ParseWorkerDied", {
+  message: Schema.String,
+}) {}
 
-export class ParseFailed extends Schema.TaggedError<ParseFailed>()(
-  "ParseFailed",
-  {
-    message: Schema.String,
-  },
-) {}
+export class ParseFailed extends Schema.TaggedError<
+  ParseFailed,
+  { readonly brand: unique symbol }
+>()("ParseFailed", {
+  message: Schema.String,
+}) {}
 
 export interface ParseRequest {
   path: string;

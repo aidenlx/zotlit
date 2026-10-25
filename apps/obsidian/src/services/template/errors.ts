@@ -138,16 +138,22 @@ export function reportedFaultSpan(
 }
 
 /** A host operation failed at the Template service boundary. */
-export class TemplateOperationError extends Schema.TaggedError<TemplateOperationError>()(
-  "TemplateOperationError",
-  { message: Schema.String, cause: Schema.Defect() },
-) {}
+export class TemplateOperationError extends Schema.TaggedError<
+  TemplateOperationError,
+  { readonly brand: unique symbol }
+>()("TemplateOperationError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
 /** A template engine or a lazy render-data getter failed. */
-export class TemplateRenderError extends Schema.TaggedError<TemplateRenderError>()(
-  "TemplateRenderError",
-  { message: Schema.String, cause: Schema.Defect() },
-) {}
+export class TemplateRenderError extends Schema.TaggedError<
+  TemplateRenderError,
+  { readonly brand: unique symbol }
+>()("TemplateRenderError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
 /** Plain callers keep the original external exception and its diagnostic shape. */
 export function plainTemplateError(error: unknown): unknown {

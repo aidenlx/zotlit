@@ -1378,10 +1378,13 @@ export type ProfileOperations = Pick<
   | "delete"
 >;
 
-export class ProfileOperationError extends Schema.TaggedError<ProfileOperationError>()(
-  "ProfileOperationError",
-  { message: Schema.String, cause: Schema.Defect() },
-) {}
+export class ProfileOperationError extends Schema.TaggedError<
+  ProfileOperationError,
+  { readonly brand: unique symbol }
+>()("ProfileOperationError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
 export interface ProfileState {
   readonly loaded: boolean;

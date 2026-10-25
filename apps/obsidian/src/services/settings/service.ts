@@ -199,15 +199,21 @@ export interface PluginSettingsOptions {
 const LAST_WRITE = Symbol.for("zotlit.settings.last-write");
 type Handoff = { [LAST_WRITE]?: Promise<void> };
 
-export class SettingsMutationError extends Schema.TaggedError<SettingsMutationError>()(
-  "SettingsMutationError",
-  { message: Schema.String, cause: Schema.Defect() },
-) {}
+export class SettingsMutationError extends Schema.TaggedError<
+  SettingsMutationError,
+  { readonly brand: unique symbol }
+>()("SettingsMutationError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
-export class SettingsPersistenceError extends Schema.TaggedError<SettingsPersistenceError>()(
-  "SettingsPersistenceError",
-  { message: Schema.String, cause: Schema.Defect() },
-) {}
+export class SettingsPersistenceError extends Schema.TaggedError<
+  SettingsPersistenceError,
+  { readonly brand: unique symbol }
+>()("SettingsPersistenceError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
 const mutationFailure = (cause: unknown) =>
   new SettingsMutationError({

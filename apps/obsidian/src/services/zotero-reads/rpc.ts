@@ -116,16 +116,16 @@ function codeRequest(
 // --- Errors ---------------------------------------------------------------
 
 /** The database cannot answer: no connection opens, or the source is not a Zotero database. */
-export class DbUnavailable extends Schema.TaggedError<DbUnavailable>()(
-  "DbUnavailable",
-  { message: Schema.String },
-) {}
+export class DbUnavailable extends Schema.TaggedError<
+  DbUnavailable,
+  { readonly brand: unique symbol }
+>()("DbUnavailable", { message: Schema.String }) {}
 
 /** The Snapshot id names no open Snapshot: it ended or never existed. */
-export class SnapshotExpired extends Schema.TaggedError<SnapshotExpired>()(
-  "SnapshotExpired",
-  { snapshot: Schema.String },
-) {}
+export class SnapshotExpired extends Schema.TaggedError<
+  SnapshotExpired,
+  { readonly brand: unique symbol }
+>()("SnapshotExpired", { snapshot: Schema.String }) {}
 
 /** The errors a read can fail with. */
 export const ReadError = Schema.Union([DbUnavailable, SnapshotExpired]);
