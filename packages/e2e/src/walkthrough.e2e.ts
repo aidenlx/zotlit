@@ -375,6 +375,8 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     for (const gesture of [result.plain, result.drag, result.extend]) {
       expect(gesture.source).toBe(source);
     }
+    // The stub records the open and hands the bridge an Effect that changes
+    // nothing (`navigationEnabled`), so no note opens.
     const navigation = JSON.parse(
       await obEval(
         vaultId,
@@ -388,7 +390,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           const original=service.openCitekey,requests=[];
           await using restore=new AsyncDisposableStack();
           restore.defer(async()=>{service.openCitekey=original;await tab.setControlValue('citation.open-as-links',previous);});
-          service.openCitekey=async(...args)=>{requests.push(args);};
+          service.openCitekey=(...args)=>{requests.push(args);return service.navigationEnabled;};
             for(const openAsLinks of [false,true]){
               await tab.setControlValue('citation.open-as-links',openAsLinks);
               view.editor.setCursor({line:2,ch:3});view.editor.focus();

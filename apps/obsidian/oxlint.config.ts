@@ -321,8 +321,9 @@ export default defineConfig({
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
-      // No tag member yet: `metadataCache.getFirstLinkpathDest` and
-      // `metadataCache.getCache`. citation-text/service.ts also calls
+      // No tag member yet: `metadataCache.getCache`. Both files also call
+      // `metadataCache.getFirstLinkpathDest` (the MetadataCache tag's
+      // `firstLinkpathDest`), and citation-text/service.ts calls
       // `vault.getFileByPath`, which the Vault tag has.
       files: [
         "src/services/citation-text/service.ts",
@@ -332,9 +333,10 @@ export default defineConfig({
     },
     {
       // No tag member yet: `workspace.requestActiveLeafEvents` (use-ledger),
-      // `workspace.openLinkText` (companion-view), the side splits
-      // (library/view.ts), and the raw workspace that the editor lookup
-      // takes (library/view.ts, library/item-actions.ts).
+      // the side splits (library/view.ts), and the raw workspace that the
+      // editor lookup takes (library/view.ts, library/item-actions.ts).
+      // companion-view.ts holds the App until Note Feature converts; the
+      // Workspace tag has its `openLinkText`.
       files: [
         "src/services/note-feature/companion-view.ts",
         "src/services/use-ledger/service.ts",
