@@ -282,7 +282,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       leaf.view.editor.setCursor({line:2,ch:3});
       const first=await services.citationText.read(file.path);
       if(!first?.formatted.size)throw new Error('Initial citations were not formatted');
-      const engine=await services.pandocEngine.getEngine();
+      const engine=await services.pandocEngine.runPromise(services.pandocEngine.binary.getEngine);
       const original=engine.renderCitations;
       cleanup.defer(()=>{engine.renderCitations=original;});
       let fail=true,reads=0;
@@ -297,10 +297,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       fail=false;
       await services.citationText.read(file.path);
       const duringCooldown=reads;
-      const instant=Temporal.Now.instant;
-      const afterCooldown=instant().add({seconds:6});
-      Temporal.Now.instant=()=>afterCooldown;
-      cleanup.defer(()=>{Temporal.Now.instant=instant;});
+      const now=Date.now;
+      const afterCooldown=now()+6000;
+      Date.now=()=>afterCooldown;
+      cleanup.defer(()=>{Date.now=now;});
       const recovered=await services.citationText.read(file.path);
       const status=services.citationText.peek(file.path)?.status;
       await new Promise(resolve=>leaf.view.editor.cm.requestMeasure({read:()=>null,write:resolve}));
