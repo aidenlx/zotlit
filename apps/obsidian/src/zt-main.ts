@@ -381,6 +381,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     const queryCardFocus = new QueryCardFocus(this.app);
     const queryViewDeps: QueryViewDeps = {
+      registry: services.runtime.runSync(ViewRegistry),
       runtime: services.runtime,
       app: this.app,
       cardFocus: queryCardFocus,
@@ -423,7 +424,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);
     registerLibraryView(this, {
-      registry: services.runtime.runSync(ViewRegistry),
       ...queryViewDeps,
       reads: services.zoteroReads,
       libraryScope: services.libraryScope,

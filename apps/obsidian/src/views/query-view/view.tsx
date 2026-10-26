@@ -10,8 +10,6 @@ import { Component } from "obsidian";
 import type { Scope } from "obsidian";
 import { useLayoutEffect, useMemo } from "react";
 import type { ComponentType } from "react";
-import { useStore } from "zustand";
-import { createStore } from "zustand/vanilla";
 
 import { nameDictionary } from "@zotlit/item-query";
 import type { NameDictionary, QueryContext } from "@zotlit/item-query";
@@ -22,6 +20,8 @@ import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { HistoryDirection } from "@/services/annotation-repository/service";
 import type { Diagnostic } from "@/services/item-query/contract";
@@ -58,6 +58,12 @@ import { GroupEditor } from "./group-control";
 import type { ItemRowGestures } from "./item-rows";
 import { annotationsLayoutOptions, layoutOf } from "./layouts";
 import { ListLayout } from "./list-layout";
+import { useQueryViewState } from "./model";
+import {
+  holdQueryViewModel,
+  makeQueryViewModel,
+  queryStateHandle,
+} from "./model";
 import { PapersLayout } from "./papers-layout";
 import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
@@ -108,6 +114,7 @@ const logger = getLogger(["views", "query-view"]);
 
 /** The services a Query View reads through. */
 export interface QueryViewDeps extends AnnotationsLayoutDeps {
+  registry: ViewRegistryHandle;
   runtime: SubscriptionRuntime;
   query: Pick<QueryHandle, "run" | "on" | "customFieldNames">;
   reads: AnnotationsLayoutDeps["reads"] &
@@ -373,17 +380,6 @@ export interface QueryViewState {
   defaults: QueryViewDefaults;
 }
 
-const INITIAL_STATE: QueryViewState = {
-  file: null,
-  view: null,
-  problems: [],
-  phase: "idle",
-  results: null,
-  failure: null,
-  saveFailed: false,
-  defaults: {},
-};
-
 /** The text of a warning: the researcher's words where ZotLit has them. */
 function warningText(warning: QueryViewWarning): string {
   return warning.code === "key-outside-target-libraries"
@@ -512,7 +508,10 @@ function formulaIssues(
 }
 
 export class QueryView extends Component implements HistorySurface {
-  readonly state = createStore<QueryViewState>()(() => INITIAL_STATE);
+  readonly model = makeQueryViewModel();
+  readonly registry: ViewRegistryHandle;
+  readonly state: ReturnType<typeof queryStateHandle>;
+  #release: (() => void) | null;
   readonly #deps: QueryViewDeps;
   readonly #host: QueryViewHost;
   readonly #layout: AnnotationsLayout;
@@ -552,6 +551,9 @@ export class QueryView extends Component implements HistorySurface {
   constructor(deps: QueryViewDeps, host: QueryViewHost) {
     super();
     this.#deps = deps;
+    this.registry = deps.registry;
+    this.#release = holdQueryViewModel(this.registry, this.model);
+    this.state = queryStateHandle(this.registry, this.model);
     this.#host = host;
     this.#document = new QueryFileDocument(host, {
       show: () => this.#choose(),
@@ -678,6 +680,7 @@ export class QueryView extends Component implements HistorySurface {
   }
 
   override onload(): void {
+    this.#release ??= holdQueryViewModel(this.registry, this.model);
     this.addChild(this.#layout);
     const rerun = () => this.refresh();
     const { reads, libraryScope } = this.#deps;
@@ -735,6 +738,8 @@ export class QueryView extends Component implements HistorySurface {
     void this.flush();
     this.#subscriptions?.dispose();
     this.#subscriptions = null;
+    this.#release?.();
+    this.#release = null;
     this.#run?.abort();
     this.#run = null;
     this.#shownRequest = null;
@@ -749,7 +754,12 @@ export class QueryView extends Component implements HistorySurface {
   render(el: HTMLElement): void {
     el.addClass("zt-query-view");
     this.#rendered = true;
-    this.#layout.render(el, <QueryViewBody view={this} />);
+    this.#layout.render(
+      el,
+      <ViewRegistryProvider registry={this.registry}>
+        <QueryViewBody view={this} />
+      </ViewRegistryProvider>,
+    );
   }
 
   /**
@@ -1252,13 +1262,6 @@ export class QueryView extends Component implements HistorySurface {
     }
     await this.#layout.showRows(rows, this.#host.attachments?.() ?? []);
   }
-}
-
-function useQueryViewState<T>(
-  view: QueryView,
-  selector: (state: QueryViewState) => T,
-): T {
-  return useStore(view.state, selector);
 }
 
 function Problems({ view }: { view: QueryView }) {

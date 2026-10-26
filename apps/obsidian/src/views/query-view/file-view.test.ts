@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 // The Query File tab writes a toolbar change to its file at once, through
 // its own save, and the toolbar says when the write failed.
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
@@ -16,6 +15,8 @@ import type { QueryViewOutcome } from "@/services/item-query/query-view";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 
+// @vitest-environment happy-dom
+import { makeQueryHost } from "./__fixtures__/host";
 import { noLiteratureNotes } from "./__fixtures__/literature-notes";
 import { QueryFileView } from "./file-view";
 import type { QueryViewDeps } from "./view";
@@ -41,10 +42,10 @@ const EMPTY: QueryViewOutcome = {
   },
 };
 
-let cleanup = new DisposableStack();
-afterEach(() => {
-  cleanup.dispose();
-  cleanup = new DisposableStack();
+let cleanup = new AsyncDisposableStack();
+afterEach(async () => {
+  await cleanup.disposeAsync();
+  cleanup = new AsyncDisposableStack();
   document.body.replaceChildren();
 });
 
@@ -66,7 +67,9 @@ async function openTab() {
       requestSaveLayout: debounce(() => Promise.resolve(), 0),
     }) as unknown as App["workspace"],
   });
+  const queryHost = cleanup.use(await makeQueryHost());
   const deps = stubService<QueryViewDeps>("QueryViewDeps", {
+    registry: queryHost.registry,
     runtime,
     bridge: effectBridge(runtime),
     app,

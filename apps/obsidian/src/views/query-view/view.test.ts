@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 // The Query View runs one view of a Query File through ZotLit Query and shows
 // its rows as live Annotation Cards. These tests drive it as a host does: the
 // file's text in, the cards, the count and the messages out.
@@ -47,6 +46,8 @@ import type { LibraryScope } from "@/services/library-scope/scope";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
+// @vitest-environment happy-dom
+import { makeQueryHost } from "./__fixtures__/host";
 import { fakeQuery, requested } from "./__fixtures__/query-run";
 import { QueryCardFocus } from "./card-focus";
 import type { ContextSource } from "./context-hint";
@@ -160,10 +161,10 @@ function emitter() {
   };
 }
 
-let cleanup = new DisposableStack();
-afterEach(() => {
-  cleanup.dispose();
-  cleanup = new DisposableStack();
+let cleanup = new AsyncDisposableStack();
+afterEach(async () => {
+  await cleanup.disposeAsync();
+  cleanup = new AsyncDisposableStack();
   document.body.replaceChildren();
 });
 
@@ -346,7 +347,9 @@ async function mount(
       },
     },
   );
+  const queryHost = cleanup.use(await makeQueryHost());
   const deps = stubService<QueryViewDeps>("QueryViewDeps", {
+    registry: queryHost.registry,
     runtime,
     bridge: effectBridge(runtime),
     app: editorApp(),
@@ -534,7 +537,9 @@ it("runs again on a database change and a Library Scope change", async () => {
 
 it("runs again once an Attachment it shows gains an Annotation, so a grouped view shows it", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-  cleanup.defer(() => vi.useRealTimers());
+  cleanup.defer(() => {
+    vi.useRealTimers();
+  });
   const { view, el, run, repository, setList, settle } = await mount([
     result([row("ANNOTAAA"), row("ANNOTBBB")]),
     result([row("ANNOTAAA"), row("ANNOTBBB"), row("ANNOTCCC")]),
@@ -565,7 +570,9 @@ it("runs again once an Attachment it shows gains an Annotation, so a grouped vie
 
 it("keeps a new Annotation on screen when a run from its list change has not read it yet", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-  cleanup.defer(() => vi.useRealTimers());
+  cleanup.defer(() => {
+    vi.useRealTimers();
+  });
   const { view, el, run, reads, repository, setList, settle } = await mount(
     [
       result([row("ANNOTBBB")]),
@@ -801,7 +808,9 @@ it("changes the cards at once for an Annotations layout option, and saves it", a
 describe("saving a toolbar edit", () => {
   it("writes typed text that still waits when it unloads", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    cleanup.defer(() => vi.useRealTimers());
+    cleanup.defer(() => {
+      vi.useRealTimers();
+    });
     const { view, saved, settle } = await mount([]);
     await act(() => view.setText(FILE));
     await settle();
@@ -921,8 +930,8 @@ describe("saving a toolbar edit", () => {
       "data-query-properties",
       "search",
     ]);
-    cleanup.dispose();
-    cleanup = new DisposableStack();
+    await cleanup.disposeAsync();
+    cleanup = new AsyncDisposableStack();
     document.body.replaceChildren();
 
     const saveAs = vi.fn();
@@ -2987,7 +2996,9 @@ it("keeps the warnings of the last results on a filter error, and shows them", a
 
 it("keeps the Formula marks of the cards on screen when it keeps back a run", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-  cleanup.defer(() => vi.useRealTimers());
+  cleanup.defer(() => {
+    vi.useRealTimers();
+  });
   const fault = (message: string): Diagnostic => ({
     code: "unknown-function",
     message,
