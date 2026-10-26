@@ -15,7 +15,7 @@ import { LocalServer } from "@/services/local-server/service";
 import { defaults } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 
-import { testSettingTab } from "./__fixtures__";
+import { profileRowServices, testSettingTab } from "./__fixtures__";
 import { advancedPageItems } from "./advanced";
 import type { SettingsKey, SettingTabContext } from "./context";
 
@@ -42,7 +42,7 @@ function items(overrides: Partial<SettingTabContext> = {}) {
     ),
   );
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    tab: testSettingTab(services).tab,
+    tab: testSettingTab(Context.merge(services, profileRowServices())).tab,
     webWorkbenchEnabled: true,
     app: stubService<SettingTabContext["app"]>("App", {
       loadLocalStorage: () => null,
@@ -50,9 +50,6 @@ function items(overrides: Partial<SettingTabContext> = {}) {
     }),
     settings: stubService<SettingTabContext["settings"]>("Settings", {
       current: Effect.succeed(settings),
-    }),
-    template: stubService<SettingTabContext["template"]>("Template", {
-      loaded: false,
     }),
     ...overrides,
   });

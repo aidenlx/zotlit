@@ -5,6 +5,8 @@ import { onTestFinished } from "vitest";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Notifier } from "@/lib/notifier";
+import { FileManager } from "@/lib/obsidian-file-manager";
+import { Vault } from "@/lib/obsidian-vault";
 import { CapabilityNotices } from "@/services/annotation-repository/notices";
 import { AnnotationRepository } from "@/services/annotation-repository/service";
 import { AttachmentImport } from "@/services/attachment-import/service";
@@ -16,6 +18,8 @@ import { LanguagePack } from "@/services/language-pack/service";
 import { LibraryScope } from "@/services/library-scope/service";
 import { LocalBridge } from "@/services/local-bridge/service";
 import { LocalServer } from "@/services/local-server/service";
+import { NoteFeature } from "@/services/note-feature/service";
+import { NoteIndex } from "@/services/note-index/service";
 import { PandocEngine } from "@/services/pandoc/service";
 import { Profile } from "@/services/profile/service";
 import { Release } from "@/services/release/service";
@@ -66,6 +70,10 @@ export const unimplementedTabServices = Layer.mergeAll(
     ExcerptDisplays,
     stubService<ExcerptDisplays["Service"]>("ExcerptDisplays", {}),
   ),
+  Layer.mock(NoteFeature)({}),
+  Layer.mock(NoteIndex)({}),
+  Layer.mock(Vault)({}),
+  Layer.mock(FileManager)({}),
 );
 
 /**
@@ -92,5 +100,50 @@ export function testSettingTab(...args: Parameters<typeof scopedSettingTab>) {
   onTestFinished(() => Effect.runPromise(Scope.close(scope, Exit.void)));
   return Effect.runSync(
     scopedSettingTab(...args).pipe(Effect.provideService(Scope.Scope, scope)),
+  );
+}
+
+/**
+ * The Profile, Template and Vault reads of the Profile and Template rows:
+ * a loaded registry with no Profile, no excluded document, no partial and no
+ * saved Default document, unless a test overrides a member.
+ */
+export function profileRowServices(
+  overrides: {
+    profile?: Partial<Profile["Service"]>;
+    template?: Partial<Template["Service"]>;
+    vault?: Partial<Vault["Service"]>;
+  } = {},
+) {
+  return Context.make(
+    Profile,
+    stubService<Profile["Service"]>("Profile", {
+      loaded: Effect.succeed(true),
+      profiles: Effect.succeed([]),
+      diagnostics: Effect.succeed([]),
+      defaultDocumentPath: Effect.succeed(
+        "templates/zotlit-profile.default.md",
+      ),
+      ...overrides.profile,
+    }),
+  ).pipe(
+    Context.add(
+      Template,
+      stubService<Template["Service"]>("Template", {
+        loaded: Effect.succeed(true),
+        javascriptTemplatesEnabled: Effect.succeed(false),
+        getPartialDocuments: Effect.succeed([]),
+        getReservedPartialFiles: Effect.succeed([]),
+        getUnrecognizedFiles: Effect.succeed([]),
+        ...overrides.template,
+      }),
+    ),
+    Context.add(
+      Vault,
+      stubService<Vault["Service"]>("Vault", {
+        getFileByPath: () => Effect.succeed(null),
+        ...overrides.vault,
+      }),
+    ),
   );
 }

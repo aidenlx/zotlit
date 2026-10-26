@@ -1,5 +1,4 @@
 // Source selection opens one consent sheet for a fresh or held Profile ID.
-import { readFile } from "node:fs/promises";
 import {
   DropdownComponent,
   Modal,
@@ -13,24 +12,18 @@ import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import { requireDialog } from "@/lib/require";
-import { listInstalledStyles } from "@/services/pandoc/styles";
+import type { ProfileNoteDraft } from "@/services/note-feature/service";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { describeMatch } from "@/services/profile-selection";
-import type { PlainProfile } from "@/services/profile/plain";
+import type { ResolvedProfile } from "@/services/profile/bindings";
 import type {
   LiteratureNoteProfile,
   PreparedProfileImport,
   ProfileImportOptions,
 } from "@/services/profile/service";
 
-import { loadProfilePreviewData } from "./create-profile-modal";
-import type {
-  ProfileCreationData,
-  ProfileCreationDeps,
-  ProfileDialogServices,
-} from "./create-profile-modal";
 import {
+  DialogClosed,
   NOTE_CLASS,
   dialogFooter,
   field,
@@ -42,89 +35,41 @@ import {
 } from "./profile-dialog";
 
 const logger = getLogger(["setting-tab", "profile-import"]);
-type ImportSource = "clipboard" | "file";
+export type ImportSource = "clipboard" | "file";
 export type ImportProfile = (options?: {
   indexedKey?: string;
   source?: ImportSource;
 }) => Promise<LiteratureNoteProfile | undefined>;
-export interface ImportProfileDeps extends Pick<
-  ProfileCreationDeps,
-  "app" | "template" | "noteFeature"
-> {
-  profile: Pick<PlainProfile, "resolveProfile" | "prepareImport">;
+
+/** What the import dialog reads and runs while it is open. */
+export interface ImportProfileDeps {
+  app: App;
+  /** The default Profile, whose values the fields fall back to. */
+  base: ResolvedProfile;
+  prepareImport(
+    source: string,
+    options: ProfileImportOptions,
+  ): Promise<PreparedProfileImport>;
+  /**
+   * The note `profile` would create from the document `source`; absent when
+   * no item supplies preview data.
+   */
+  previewNote?(
+    profile: ResolvedProfile,
+    source: string,
+  ): Promise<ProfileNoteDraft>;
 }
 
-export function createProfileImporter(
-  deps: ProfileDialogServices,
-): ImportProfile {
-  return async (options = {}) => {
-    const sourceKind = options.source ?? (await chooseImportSource(deps.app));
-    if (sourceKind === undefined) return undefined;
-    let source: string | null;
-    try {
-      source =
-        sourceKind === "clipboard"
-          ? await navigator.clipboard.readText()
-          : await readProfileFile();
-    } catch (error) {
-      logger.error("Failed to read Profile import source", {
-        source: sourceKind,
-        error,
-      });
-      new BaseNotice(m.profile_import_read_failed());
-      return undefined;
-    }
-    if (source === null) return undefined;
-    if (!source.trim()) {
-      new BaseNotice(m.profile_import_empty());
-      return undefined;
-    }
-    try {
-      let plan: PreparedProfileImport;
-      try {
-        plan = await deps.profile.prepareImport(source, {});
-      } catch (error) {
-        logger.debug("Refused Profile import source", { error });
-        new BaseNotice(
-          Error.isError(error) ? error.message : m.profile_import_invalid(),
-        );
-        return undefined;
-      }
-      const [data, styles] =
-        plan.kind === "replace"
-          ? ([null, []] as const)
-          : await Promise.all([
-              loadProfilePreviewData(deps, options).catch((error) => {
-                logger.warn("Profile import preview data unavailable", {
-                  error,
-                });
-                return null;
-              }),
-              deps.zoteroPref.dataDir
-                ? listInstalledStyles(deps.zoteroPref.dataDir)
-                : [],
-            ]);
-      return await importProfileDialog(deps, { source, plan, data, styles });
-    } catch (error) {
-      logger.error("Failed to open Profile import", { error });
-      new BaseNotice(m.notice_profile_action_failed());
-      return undefined;
-    }
-  };
-}
-
-function chooseImportSource(app: App): Promise<ImportSource | undefined> {
-  const picker = new ImportSourceModal(app);
-  picker.setPlaceholder(m.command_import_profile_name());
-  picker.open();
-  return picker.result;
-}
-
-class ImportSourceModal extends SuggestModal<ImportSource> {
+/**
+ * The source picker: it answers the source the user picks, or `undefined`
+ * when the user dismisses it.
+ */
+export class ImportSourceModal extends SuggestModal<ImportSource> {
   readonly #decision = Promise.withResolvers<ImportSource | undefined>();
   readonly result = this.#decision.promise;
   constructor(app: App) {
     super(app);
+    this.setPlaceholder(m.command_import_profile_name());
     this.setInstructions([
       { command: "↑↓", purpose: m.instruction_navigate() },
       { command: "↵", purpose: m.instruction_select() },
@@ -156,36 +101,10 @@ class ImportSourceModal extends SuggestModal<ImportSource> {
   }
 }
 
-async function readProfileFile(): Promise<string | null> {
-  const selection = await requireDialog().showOpenDialog({
-    title: m.profile_import_file(),
-    properties: ["openFile"],
-    filters: [{ name: "Markdown", extensions: ["md"] }],
-  });
-  return selection.canceled || !selection.filePaths[0]
-    ? null
-    : readFile(selection.filePaths[0], "utf8");
-}
-
-export function importProfileDialog(
-  deps: ImportProfileDeps,
-  options: {
-    source: string;
-    plan: PreparedProfileImport;
-    data: ProfileCreationData | null;
-    styles: readonly InstalledCslStyle[];
-  },
-): Promise<LiteratureNoteProfile | undefined> {
-  const modal = new ImportProfileModal(deps, options);
-  modal.open();
-  return modal.result;
-}
-
 export class ImportProfileModal extends Modal {
   readonly #deps: ImportProfileDeps;
   readonly #source: string;
   readonly #plan: PreparedProfileImport;
-  readonly #data: ProfileCreationData | null;
   readonly #styles: readonly InstalledCslStyle[];
   readonly #decision = Promise.withResolvers<
     LiteratureNoteProfile | undefined
@@ -202,7 +121,6 @@ export class ImportProfileModal extends Modal {
     options: {
       source: string;
       plan: PreparedProfileImport;
-      data: ProfileCreationData | null;
       styles: readonly InstalledCslStyle[];
     },
   ) {
@@ -210,7 +128,6 @@ export class ImportProfileModal extends Modal {
     this.#deps = deps;
     this.#source = options.source;
     this.#plan = options.plan;
-    this.#data = options.data;
     this.#styles = options.styles;
   }
   override onOpen(): void {
@@ -261,7 +178,7 @@ export class ImportProfileModal extends Modal {
         cls: "zt:text-sm zt:leading-(--line-height-tight) zt:text-pretty",
         text: initial.manifest.description,
       });
-    const base = this.#deps.profile.resolveProfile("default")!;
+    const base = this.#deps.base;
     const options = this.#options;
     const incomingStyle = initial.profile.bindings["citation.references-style"];
     const missingStyle =
@@ -343,25 +260,22 @@ export class ImportProfileModal extends Modal {
       button.setDisabled(true);
       panel.set(undefined);
       try {
-        const plan = await this.#deps.profile.prepareImport(source, options);
+        const plan = await this.#deps.prepareImport(source, options);
         if (this.#closed || revision !== this.#revision) return;
         if (plan.kind === "replace") {
           this.#replace(plan);
           return;
         }
-        if (!this.#data)
+        if (!this.#deps.previewNote)
           throw new Error(m.settings_profile_preview_unavailable());
-        panel.set(
-          this.#deps.noteFeature.prepareProfileNote({
-            profile: plan.profile,
-            document: this.#deps.template.prepareLiteratureNoteTemplateSource(
-              plan.previewSource({
-                replacePartials: [...this.#replacePartials],
-              }),
-            ),
-            ...this.#data,
+        const preview = await this.#deps.previewNote(
+          plan.profile,
+          plan.previewSource({
+            replacePartials: [...this.#replacePartials],
           }),
         );
+        if (this.#closed || revision !== this.#revision) return;
+        panel.set(preview);
         current = plan;
         error.set("");
         button.setDisabled(this.#saving);
@@ -480,6 +394,7 @@ export class ImportProfileModal extends Modal {
       this.close();
       new BaseNotice(profileImportNotice(profile));
     } catch (cause) {
+      if (cause instanceof DialogClosed) return;
       logger.error("Failed to write imported Profile", { cause });
       error.set(
         Error.isError(cause) ? cause.message : m.notice_profile_action_failed(),

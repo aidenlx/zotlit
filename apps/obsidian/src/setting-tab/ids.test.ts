@@ -17,13 +17,14 @@ import { revealSetting } from "@/lib/open-settings";
 import { AttachmentImport } from "@/services/attachment-import/service";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 import { LanguagePack } from "@/services/language-pack/service";
+import { LibraryScope } from "@/services/library-scope/service";
 import { LocalBridge } from "@/services/local-bridge/service";
 import { LocalServer } from "@/services/local-server/service";
 import { PandocEngine } from "@/services/pandoc/service";
 import { defaults } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 
-import { testSettingTab } from "./__fixtures__";
+import { profileRowServices, testSettingTab } from "./__fixtures__";
 import { advancedPageItems } from "./advanced";
 import { attachmentPageItems } from "./attachments";
 import { citationsPageItems } from "./citations";
@@ -42,13 +43,27 @@ vi.mock("@/views/template-workbench/register", () => ({
 function ctx(): SettingTabContext {
   return stubService<SettingTabContext>("SettingTabContext", {
     tab: testSettingTab(
-      Context.make(
-        PandocEngine,
-        stubService<PandocEngine["Service"]>("PandocEngine", {
-          getStatus: Effect.succeed({ kind: "absent" }),
-          changes: Stream.empty,
-        }),
-      ).pipe(
+      profileRowServices().pipe(
+        Context.add(
+          LibraryScope,
+          LibraryScope.of({
+            state: Effect.die("unread"),
+            changes: Stream.empty,
+            current: Effect.succeed(null),
+            effective: Effect.succeed({ mode: "all" }),
+            invalid: Effect.succeed(false),
+            libraries: Effect.succeed([]),
+            libraryRows: Effect.succeed(null),
+            resolveLibraries: () => Effect.die("unread"),
+          }),
+        ),
+        Context.add(
+          PandocEngine,
+          stubService<PandocEngine["Service"]>("PandocEngine", {
+            getStatus: Effect.succeed({ kind: "absent" }),
+            changes: Stream.empty,
+          }),
+        ),
         Context.add(
           LanguagePack,
           stubService<LanguagePack["Service"]>("LanguagePack", {
@@ -115,33 +130,7 @@ function ctx(): SettingTabContext {
       current: Effect.succeed(defaults),
       changes: Stream.empty,
     }),
-    profile: stubService<SettingTabContext["profile"]>("Profile", {
-      loaded: true,
-      profiles: [],
-      diagnostics: [],
-      defaultDocumentPath: "templates/zotlit-profile.default.md",
-    }),
-    db: stubService<SettingTabContext["db"]>("ZoteroReads", {}),
-    libraryScope: stubService<SettingTabContext["libraryScope"]>(
-      "LibraryScope",
-      {
-        effective: { mode: "all" },
-        current: null,
-        invalid: false,
-      },
-    ),
-    zoteroPref: stubService<SettingTabContext["zoteroPref"]>("ZoteroPref", {
-      databasePath: "",
-      dataDir: undefined,
-    }),
     customize: async () => {},
-    template: stubService<SettingTabContext["template"]>("Template", {
-      loaded: true,
-      javascriptTemplatesEnabled: false,
-      getPartialDocuments: () => [],
-      getReservedPartialFiles: () => [],
-      getUnrecognizedFiles: () => [],
-    }),
     requestUpdate: () => {},
   });
 }

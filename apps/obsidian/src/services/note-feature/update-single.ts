@@ -3,7 +3,6 @@ import type { App, TFile } from "obsidian";
 
 import { recover } from "@/lib/effect-cause";
 import * as m from "@/lib/i18n/generated/messages";
-import { LegacyPortError } from "@/lib/legacy-port";
 import { BaseNotice } from "@/lib/notice";
 import { withProgress } from "@/lib/notifier";
 import type { NoticeMessage, ProgressCopy } from "@/lib/notifier";
@@ -134,15 +133,10 @@ export const createWithNotice = Effect.fnUntraced(function* <E, R>(
 ) {
   const result = yield* withProgress(
     create,
-    createNoteToast(options, plainCreateError),
+    createNoteToast(options, plainNoteError),
   ).pipe(recover(() => Effect.void, Effect.void));
   return result?.outcome === "created" ? result.file : null;
 });
-
-/** What a create failed with, as its notice shows it: a legacy port's rejection, or a Note Feature failure, as thrown. */
-function plainCreateError(error: unknown): unknown {
-  return plainNoteError(error instanceof LegacyPortError ? error.cause : error);
-}
 
 /**
  * The create notice's messages. `plainError` gives what a failure threw, for

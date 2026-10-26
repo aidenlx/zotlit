@@ -9,7 +9,7 @@ import { PandocEngine } from "@/services/pandoc/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
-import { testSettingTab } from "./__fixtures__";
+import { profileRowServices, testSettingTab } from "./__fixtures__";
 import {
   citationLocaleError,
   citationsPageItems,
@@ -28,11 +28,13 @@ beforeAll(() => {
 /** The tab over a Pandoc engine that is not installed. */
 const pandocTab = () =>
   testSettingTab(
-    Context.make(
-      PandocEngine,
-      stubService<PandocEngine["Service"]>("PandocEngine", {
-        getStatus: Effect.succeed({ kind: "absent" }),
-      }),
+    profileRowServices({ template: { loaded: Effect.succeed(false) } }).pipe(
+      Context.add(
+        PandocEngine,
+        stubService<PandocEngine["Service"]>("PandocEngine", {
+          getStatus: Effect.succeed({ kind: "absent" }),
+        }),
+      ),
     ),
   ).tab;
 
@@ -44,7 +46,6 @@ describe("hover settings", () => {
       app: { internalPlugins: { getEnabledPluginById: () => null } },
       settings: { current: Effect.succeed(settings) },
       manifest: { version: "test" },
-      template: { loaded: false },
     } as unknown as SettingTabContext;
     const group = citationsPageItems(ctx).find(
       (item) =>
@@ -77,7 +78,6 @@ describe("citation source settings", () => {
       app: { internalPlugins: { getEnabledPluginById: () => null } },
       settings: { current: Effect.succeed(defaults) },
       manifest: { version: "test" },
-      template: { loaded: false },
     } as unknown as SettingTabContext;
     const sourceGroup = citationsPageItems(ctx).find(
       (item) =>

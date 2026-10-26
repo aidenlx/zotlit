@@ -33,6 +33,14 @@ export function frameDialog(modal: Modal, options: { wide?: boolean } = {}) {
   modal.contentEl.addClass("zt-root");
 }
 
+/**
+ * What a dialog callback rejects with when the dialog's Scope stopped its
+ * work: the dialog is closing, and the callback says nothing more.
+ */
+export class DialogClosed extends Error {
+  override readonly name = "DialogClosed";
+}
+
 /** The pinned button row after `contentEl`; a second call replaces the first. */
 export function dialogFooter(modal: Modal): HTMLElement {
   modal.modalEl.querySelector(":scope > .modal-button-container")?.remove();
@@ -107,7 +115,7 @@ export function previewPanel(
     properties: string;
     body: string;
   },
-): { set(preview: ProfileNotePreview | undefined): void } {
+): { set(preview: Omit<ProfileNotePreview, "create"> | undefined): void } {
   const panel = parent.createDiv({
     cls: "zt:flex zt:flex-col zt:gap-3 zt:rounded-md zt:border zt:border-border zt:bg-(--background-secondary) zt:p-3",
   });

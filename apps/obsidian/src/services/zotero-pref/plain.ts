@@ -6,14 +6,13 @@ import { effectBridge } from "@/lib/effect-bridge";
 
 import type { PrefValue } from "./prefs-file";
 import { resolvedChanged, ZoteroPref } from "./service";
-import type { ZoteroPrefSnapshot, ZoteroProfileInfo } from "./service";
+import type { ZoteroPrefSnapshot } from "./service";
 
 export interface PlainZoteroPref extends Omit<ZoteroPrefSnapshot, "prefs"> {
   get(name: string): PrefValue | undefined;
   setProfileDir(dir: string | null): void;
   setDataDir(dir: string | null): void;
   companionInstalled(): Promise<boolean>;
-  listProfiles(): Promise<ZoteroProfileInfo[]>;
   readonly changes: Stream.Stream<ZoteroPrefSnapshot>;
   readonly changed: Stream.Stream<void>;
   readonly "data-dir-changed": Stream.Stream<void>;
@@ -61,7 +60,6 @@ export function plainZoteroPref(
     setProfileDir: (dir) => bridge.runSync(pref.setProfileDir(dir)),
     setDataDir: (dir) => bridge.runSync(pref.setDataDir(dir)),
     companionInstalled: () => bridge.runPromise(pref.companionInstalled),
-    listProfiles: () => bridge.runPromise(pref.listProfiles),
     changes: pref.changes,
     changed: pref.changes.pipe(
       Stream.changesWith((a, b) => a.prefs === b.prefs),

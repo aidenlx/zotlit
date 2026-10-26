@@ -15,8 +15,6 @@ import type {
   CreationProfileSelection,
   CreationProfileSources,
   NoteFeatureEvents,
-  ProfileNotePreview,
-  ProfileNotePreviewOptions,
   UpdateResult,
 } from "./types";
 
@@ -64,7 +62,6 @@ export interface NoteFeatureHandle extends NoteCitations, NoteCreation {
   resolveCreationProfile(
     sources?: CreationProfileSources,
   ): Promise<CreationProfileSelection>;
-  prepareProfileNote(options: ProfileNotePreviewOptions): ProfileNotePreview;
   /** @see updateNote */
   updateNote(
     file: TFile,
