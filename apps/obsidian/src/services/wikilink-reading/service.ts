@@ -6,7 +6,7 @@ import { Effect, Layer } from "effect";
 import { setTooltip } from "obsidian";
 import type { MarkdownPostProcessorContext } from "obsidian";
 
-import { scopedBridge } from "@/lib/effect-bridge";
+import { scopedBridge, valueOr } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
@@ -28,9 +28,10 @@ import {
 import {
   WikilinkDisplaySettings,
   citationOfRun,
+  citationTarget,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
-import type { RunMember } from "@/lib/wikilink-citation";
+import type { LiteratureNoteTarget, RunMember } from "@/lib/wikilink-citation";
 import type { CitationLookupAnswer } from "@/services/citation-index/service";
 import { CitationPopover } from "@/services/citation-popover/service";
 import {
@@ -38,7 +39,10 @@ import {
   sectionCoordinates,
   showCitation,
 } from "@/services/citation-text/present";
-import type { ShownCitation } from "@/services/citation-text/present";
+import type {
+  DocumentCitations,
+  ShownCitation,
+} from "@/services/citation-text/present";
 import { CitationText } from "@/services/citation-text/service";
 import { CitekeyEditor } from "@/services/citekey-editor/service";
 import {
@@ -51,12 +55,14 @@ import {
   NoteIndex,
   literatureNoteTargetIn,
 } from "@/services/note-index/service";
+import type { Held } from "@/services/query-client/service";
 import { PluginSettings } from "@/services/settings/service";
 
 import {
   hasInternalLink,
   renderCitationRuns,
   sectionCitationRuns,
+  sectionLinktexts,
 } from "./render";
 import type { SectionRuns } from "./render";
 import "./style.css";
@@ -113,24 +119,43 @@ export const layerWikilinkReading = Layer.effectDiscard(
     const rerender = rerenderReadingViewsIn(workspace);
 
     /**
+     * The Literature Note each linkpath of a section's native links names, or
+     * null for one that names an ordinary note or nothing. Read before the
+     * scan, which asks it per link.
+     */
+    const literatureNoteTargets = Effect.fnUntraced(function* (
+      el: HTMLElement,
+      ctx: MarkdownPostProcessorContext,
+      lookup: CitationLookupAnswer | null,
+    ) {
+      const targets = new Map<string, LiteratureNoteTarget | null>();
+      if (!display.enabled) return targets;
+      for (const linktext of sectionLinktexts(el)) {
+        const target = citationTarget(linktext);
+        if (target === null || targets.has(target.linkpath)) continue;
+        targets.set(
+          target.linkpath,
+          yield* literatureNoteTargetIn(metadata, target.linkpath, {
+            sourcePath: ctx.sourcePath,
+            lookup,
+          }),
+        );
+      }
+      return targets;
+    });
+
+    /**
      * The Citation Runs of a section's native links, which is every run that
      * has not rendered yet: a rendered run's anchor shows formatted text, so
      * the scan passes it by.
      */
     const sectionRuns = (
       el: HTMLElement,
-      ctx: MarkdownPostProcessorContext,
-      lookup: CitationLookupAnswer | null,
+      targets: ReadonlyMap<string, LiteratureNoteTarget | null>,
     ): SectionRuns =>
       sectionCitationRuns(el, (linktext) =>
         wikilinkCitation(linktext, {
-          literatureNote: (linkpath) =>
-            run(
-              literatureNoteTargetIn(metadata, linkpath, {
-                sourcePath: ctx.sourcePath,
-                lookup,
-              }),
-            ),
+          literatureNote: (linkpath) => targets.get(linkpath) ?? null,
           enabled: display.enabled,
         }),
       );
@@ -162,8 +187,11 @@ export const layerWikilinkReading = Layer.effectDiscard(
         // the popover reads it again.
         shown,
         where: { surface: "reading" },
+        // Unload interrupts a pending open.
         open: (citekey, pane) => {
-          void bridge.runPromise(citekeyEditor.openCitekey(citekey, pane));
+          void bridge
+            .runPromiseExit(citekeyEditor.openCitekey(citekey, pane))
+            .then((exit) => valueOr(exit, undefined));
         },
         showPopover: (request) => run(citationPopover.show(request)),
         hoverPreferences: () => display.hover,
@@ -210,6 +238,9 @@ export const layerWikilinkReading = Layer.effectDiscard(
      * @param rendered the runs that already show formatted text, in the order
      *   they rendered; a run this call renders is appended.
      * @param signal retires the gesture listeners this call attaches.
+     * @param text the document's Held Read.
+     * @param targets the Literature Note each linkpath of the section names.
+     * @returns how many Citations show their formatted text.
      */
     const show = (
       el: HTMLElement,
@@ -217,21 +248,18 @@ export const layerWikilinkReading = Layer.effectDiscard(
       {
         rendered,
         signal,
+        text,
+        targets,
       }: {
         rendered: SectionRuns;
         signal: AbortSignal;
+        text: Held<DocumentCitations>;
+        targets: ReadonlyMap<string, LiteratureNoteTarget | null>;
       },
-    ): void => {
-      // Read only once a Citation is on screen, so a section that writes none
-      // waits for nothing.
-      const file = run(vault.getFileByPath(ctx.sourcePath));
-      const text = file === null ? null : run(citationText.peek(file.path));
-      if (text === null) return;
-
-      const runs = [
-        ...rendered,
-        ...sectionRuns(el, ctx, text.value.lookup),
-      ].sort((a, b) => documentOrder(a[0]!.source, b[0]!.source));
+    ): number => {
+      const runs = [...rendered, ...sectionRuns(el, targets)].sort((a, b) =>
+        documentOrder(a[0]!.source, b[0]!.source),
+      );
       // Which occurrence each Citation of the section is, so a
       // position-dependent style shows every one of them the text rendered
       // for its own place.
@@ -270,14 +298,7 @@ export const layerWikilinkReading = Layer.effectDiscard(
           showCitation(members[0]!.source, content, "suppress");
         return null;
       });
-      if (shown > 0) {
-        run(
-          Effect.logTrace("Rendered wikilink citations").pipe(
-            Effect.annotateLogs({ path: ctx.sourcePath, count: shown }),
-          ),
-        );
-      }
-      if (!display.popoverHover && !display.clickIntercepted) return;
+      if (!display.popoverHover && !display.clickIntercepted) return shown;
       for (const [index, members] of runs.entries()) {
         // A run the style formatted no text for keeps Obsidian's own link,
         // hover and click and all; only the Citation this surface rendered
@@ -289,6 +310,7 @@ export const layerWikilinkReading = Layer.effectDiscard(
           { sourcePath: ctx.sourcePath, signal },
         );
       }
+      return shown;
     };
 
     /**
@@ -308,14 +330,30 @@ export const layerWikilinkReading = Layer.effectDiscard(
       const rendered: SectionRuns = [];
       /** Retires the gesture listeners the previous rewrite attached. */
       let gestures = new AbortController();
-      const rewrite = () => {
+      const rewrite = Effect.gen(function* () {
         if (retired) return;
         gestures.abort();
         gestures = new AbortController();
-        show(el, ctx, { rendered, signal: gestures.signal });
-      };
+        const signal = gestures.signal;
+        // Read only once a Citation is on screen, so a section that writes none
+        // waits for nothing.
+        const file = yield* vault.getFileByPath(ctx.sourcePath);
+        const text = file === null ? null : yield* citationText.peek(file.path);
+        if (text === null) return;
+        const targets = yield* literatureNoteTargets(
+          el,
+          ctx,
+          text.value.lookup,
+        );
+        const shown = show(el, ctx, { rendered, signal, text, targets });
+        if (shown > 0) {
+          yield* Effect.logTrace("Rendered wikilink citations").pipe(
+            Effect.annotateLogs({ path: ctx.sourcePath, count: shown }),
+          );
+        }
+      });
       sections.hold(el, ctx, rewrite);
-      rewrite();
+      run(rewrite);
     };
 
     host.registerMarkdownPostProcessor((el, ctx) => process(el, ctx));
@@ -330,10 +368,13 @@ export const layerWikilinkReading = Layer.effectDiscard(
     // What a placed Citation says follows its document's Held Read: the live
     // sections of that document rewrite on its change, and every live section
     // rewrites when all text goes stale.
-    yield* forkEach(citationText.events, (event) => {
-      if (event.type === "changed") sections.refresh(event.path);
-      else if (event.type === "invalidated") sections.refresh();
-    });
+    yield* forkEach(citationText.events, (event) =>
+      event.type === "changed"
+        ? sections.refresh(event.path)
+        : event.type === "invalidated"
+          ? sections.refresh()
+          : undefined,
+    );
     // A reading view holds the text this layer wrote, so the views render
     // again without it once it is gone.
     yield* retireReadingSurface(workspace, () => {

@@ -1,5 +1,14 @@
 import { it } from "@effect/vitest";
-import { Effect, Exit, Fiber, Logger, Queue, Scope, Stream } from "effect";
+import {
+  Effect,
+  Exit,
+  Fiber,
+  Logger,
+  Option,
+  Queue,
+  Scope,
+  Stream,
+} from "effect";
 import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
 import { expect } from "vitest";
@@ -24,6 +33,16 @@ const itemKey = (n: number) =>
 class UnreadableStorage extends MemoryDeviceStorage {
   override loadLocalStorage(): unknown {
     throw new SyntaxError("Unexpected token");
+  }
+}
+
+/** Device storage whose write throws, as a full quota would. */
+class FullStorage extends MemoryDeviceStorage {
+  override saveLocalStorage(): void {
+    throw new DOMException(
+      "The quota has been exceeded.",
+      "QuotaExceededError",
+    );
   }
 }
 
@@ -132,6 +151,25 @@ it.effect(
 
       expect(yield* ledger.current).toEqual({});
       expect(logged).toEqual([{ level: "Warn", category: ["use-ledger"] }]);
+    }),
+);
+
+// Failure modes: a failed save kills the caller as a defect, so no caller
+// can recover from it, or the failed Use stays in the ledger.
+it.effect(
+  "fails a record whose save throws with the storage failure and keeps the ledger",
+  () =>
+    Effect.gen(function* () {
+      const host = ledgerHost({ deviceStorage: new FullStorage() });
+      const ledger = yield* useLedgerOf(host);
+
+      const exit = yield* Effect.exit(ledger.record("AAAAAAAA", "opened"));
+
+      expect(Option.getOrUndefined(Exit.findErrorOption(exit))).toMatchObject({
+        _tag: "DeviceStorageError",
+        operation: "saveLocalStorage",
+      });
+      expect(yield* ledger.current).toEqual({});
     }),
 );
 

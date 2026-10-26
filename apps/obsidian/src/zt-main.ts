@@ -607,10 +607,13 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       libraryScope: services.libraryScope,
       citationText: services.citationText,
       citekeyEditor: {
-        openIndexedKey: (indexedKey, pane) =>
-          services.bridge.runPromise(
+        // Unload interrupts a pending open. The open logs its own failures,
+        // so the Exit is a success or an interrupt.
+        openIndexedKey: async (indexedKey, pane) => {
+          await services.bridge.runPromiseExit(
             services.citekeyEditor.openIndexedKey(indexedKey, pane),
-          ),
+          );
+        },
       },
       pandocEngine: services.pandocEngine,
       bibliographyRender: services.bibliographyRender,

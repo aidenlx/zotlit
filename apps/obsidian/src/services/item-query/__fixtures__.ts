@@ -4,9 +4,7 @@ import { Effect, Layer, Stream } from "effect";
 
 import { layerTestObsidianEnv } from "@/lib/__fixtures__/obsidian-env";
 import { effectBridge } from "@/lib/effect-bridge";
-import type { EffectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
-import { settleAtEdge } from "@/lib/signal-edge";
 import type { LibraryScope as SavedLibraryScope } from "@/services/library-scope/scope";
 import { LibraryScope } from "@/services/library-scope/service";
 import { UseLedger } from "@/services/use-ledger/service";
@@ -87,20 +85,10 @@ export function layerTestQueryService(
   );
 }
 
-/** The built service, its Promise edge, and the runners a test calls it through. */
+/** The built service and its Promise edge. */
 export interface QueryFixture {
   readonly service: QueryService["Service"];
   readonly handle: QueryHandle;
-  readonly bridge: EffectBridge;
-  /**
-   * One run as Obsidian's CLI makes it: `signal` interrupts it, and a
-   * failure rejects with its error. It runs outside the runtime's Scope, so
-   * a run after the unload reaches the closed service.
-   */
-  readonly cli: <A, E>(
-    effect: Effect.Effect<A, E, QueryService>,
-    signal?: AbortSignal,
-  ) => Promise<A>;
 }
 
 /** ZotLit Query from {@link layerTestQueryService}; `stack` closes it. */
@@ -109,15 +97,7 @@ export async function buildQueryService(
   stack: AsyncDisposableStack,
 ): Promise<QueryFixture> {
   const runtime = buildRuntime(layerTestQueryService(options), stack);
-  const context = await runtime.context();
+  await runtime.context();
   const service = runtime.runSync(QueryService);
-  const bridge = effectBridge(runtime);
-  const runExit = Effect.runPromiseExitWith(context);
-  return {
-    service,
-    handle: bindQuery(bridge, service),
-    bridge,
-    cli: async (effect, signal = new AbortController().signal) =>
-      settleAtEdge(await runExit(effect, { signal }), signal),
-  };
+  return { service, handle: bindQuery(effectBridge(runtime), service) };
 }
