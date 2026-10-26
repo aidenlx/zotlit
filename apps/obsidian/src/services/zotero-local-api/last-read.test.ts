@@ -388,3 +388,86 @@ it("lets the caller see a defect of the write-back", async () => {
     bridge.runPromise(service.writeLastRead(ATTACHMENT_KEY, SERVER_ID, NOW)),
   ).rejects.toMatchObject({ cause: new Error("keychain locked") });
 });
+
+const AVAILABLE = {
+  kind: "available",
+  source: { kind: "zotero-local-api", serverID: SERVER_ID },
+  authorized: true,
+} as const;
+
+/** The two services a read write-back reads, with the calls it makes counted. */
+function readUseServices({
+  state = AVAILABLE,
+  writeLastRead = vi.fn(() => Effect.void),
+}: {
+  state?: Effect.Success<ZoteroLocalApi["Service"]["state"]>;
+  writeLastRead?: ZoteroLocalApi["Service"]["writeLastRead"];
+} = {}) {
+  const snapshots = vi.fn();
+  const reads = stubService<ZoteroReads["Service"]>("ZoteroReads", {
+    snapshot: Effect.sync(() => {
+      snapshots();
+      return Object.assign(
+        stubService<Effect.Success<ZoteroReads["Service"]["snapshot"]>>(
+          "ZoteroReadsSnapshot",
+          {},
+        ),
+        { DatabaseIdentity: () => Effect.succeed({ serverID: SERVER_ID }) },
+      );
+    }),
+  });
+  const api = stubService<ZoteroLocalApi["Service"]>("ZoteroLocalApi", {
+    state: Effect.succeed(state),
+    writeLastRead,
+  });
+  return { reads, api, snapshots, writeLastRead };
+}
+
+it("writes the read against the database that resolved its Attachment", async () => {
+  await using bridge = openTestBridge();
+  const { reads, api, writeLastRead } = readUseServices();
+  await writeReadUse(
+    { reads, bridge, api },
+    { attachmentKey: ATTACHMENT_KEY, instant: NOW, serverID: SERVER_ID },
+  );
+  expect(writeLastRead).toHaveBeenCalledWith(ATTACHMENT_KEY, SERVER_ID, NOW);
+});
+
+it.each([
+  { name: "a group Attachment", key: `${ATTACHMENT_KEY}g42` },
+  { name: "a key that names no Attachment", key: "not a key" },
+  {
+    name: "an unavailable Local API",
+    state: { kind: "unavailable", failure: { kind: "unreachable" } } as const,
+  },
+  { name: "no authorization", state: { ...AVAILABLE, authorized: false } },
+  { name: "no resolved database", serverID: null },
+  { name: "another resolved database", serverID: "BBBBBBBBBBBB" },
+])(
+  "skips $name before it reads the database",
+  async ({ key = ATTACHMENT_KEY, state, serverID = SERVER_ID }) => {
+    await using bridge = openTestBridge();
+    const { reads, api, snapshots, writeLastRead } = readUseServices({
+      state,
+    });
+    await writeReadUse(
+      { reads, bridge, api },
+      { attachmentKey: key, instant: NOW, serverID },
+    );
+    expect(snapshots).not.toHaveBeenCalled();
+    expect(writeLastRead).not.toHaveBeenCalled();
+  },
+);
+
+it("contains a write-back that fails", async () => {
+  await using bridge = openTestBridge();
+  const { reads, api } = readUseServices({
+    writeLastRead: () => Effect.die(new Error("keychain locked")),
+  });
+  await expect(
+    writeReadUse(
+      { reads, bridge, api },
+      { attachmentKey: ATTACHMENT_KEY, instant: NOW, serverID: SERVER_ID },
+    ),
+  ).resolves.toBeUndefined();
+});
