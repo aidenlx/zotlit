@@ -54,7 +54,7 @@ import type {
   FlatTask,
 } from "@/views/batch-modal";
 
-import { reimportNoteByKey, runBatchImport } from "./batch-import";
+import { runBatchImport } from "./batch-import";
 import type { BatchImport, BatchImportPorts } from "./batch-import";
 import type { BatchImportServices } from "./batch-import";
 import { bindBatchImport } from "./batch-import-handle";
@@ -321,18 +321,6 @@ function importOver(deps: ImportDeps): BatchImport {
     effectBridge(runtime),
     runtime.runSync(Effect.context<BatchImportServices>()),
     portsOf(deps),
-  );
-}
-
-/** The reimport of `noteKey` into `targetFile` over `deps`, as the note actions run it. */
-function reimportOver(deps: ImportDeps, noteKey: string, targetFile: TFile) {
-  const runtime = buildRuntime(layerOver(deps), caseResources);
-  return runtime.runPromise(
-    reimportNoteByKey(
-      { ...portsOf(deps), bridge: effectBridge(runtime) },
-      noteKey,
-      targetFile,
-    ),
   );
 }
 
@@ -1568,7 +1556,10 @@ describe("reimportNoteByKey", () => {
       });
       return "overwritten";
     };
-    await reimportOver(deps, note.indexedKey, makeFile("Imported/Clicked.md"));
+    await importOver(deps).reimportNoteByKey(
+      note.indexedKey,
+      makeFile("Imported/Clicked.md"),
+    );
     expect(
       deps.noteFeature.reportExcerptImages,
     ).toHaveBeenCalledExactlyOnceWith({
@@ -1583,8 +1574,7 @@ describe("reimportNoteByKey", () => {
     const { deps } = makeDeps({}, { dbState: "loading" });
 
     await expect(
-      reimportOver(
-        deps,
+      importOver(deps).reimportNoteByKey(
         formatIndexedKey("ABCD2345", null),
         makeFile("Imported/Clicked.md"),
       ),
@@ -1595,8 +1585,7 @@ describe("reimportNoteByKey", () => {
     const { deps } = makeDeps({});
 
     await expect(
-      reimportOver(
-        deps,
+      importOver(deps).reimportNoteByKey(
         formatIndexedKey("GONE1234", null),
         makeFile("Imported/Clicked.md"),
       ),
@@ -1613,7 +1602,7 @@ describe("reimportNoteByKey", () => {
     );
 
     await expect(
-      reimportOver(deps, note.indexedKey, targetFile),
+      importOver(deps).reimportNoteByKey(note.indexedKey, targetFile),
     ).resolves.toEqual({ outcome: "overwritten" });
 
     expect(importNote.mock.calls[0]![1]).toMatchObject({ targetFile });

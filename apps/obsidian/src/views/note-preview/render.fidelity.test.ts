@@ -134,8 +134,8 @@ async function realCreate(
     libraryID: 1,
   })[0]!;
   await using stack = new AsyncDisposableStack();
-  const { calls } = noteFeatureHandle(deps, stack);
-  const result = await calls.createNote(item, { profile: entry.id });
+  const { handle } = noteFeatureHandle(deps, stack);
+  const result = await handle.createNote(item, { profile: entry.id });
   const [file] = host.vault.getMarkdownFiles();
   return {
     result,

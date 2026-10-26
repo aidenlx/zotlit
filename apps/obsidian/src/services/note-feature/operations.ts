@@ -1,13 +1,17 @@
 import type { TFile } from "obsidian";
 
+import type { Item } from "@zotlit/db";
 import type { UpdateScope } from "@zotlit/protocol";
 
 import type { ProfileSelector } from "@/lib/profile-stamp";
+import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 
 import type { NoteCitations } from "./citations-handle";
 import type { NoteCreation } from "./creation-handle";
 import type {
   CompanionNoteTarget,
+  CreateNoteOptions,
+  CreateNoteResult,
   CreationProfileSelection,
   CreationProfileSources,
   NoteFeatureEvents,
@@ -81,6 +85,17 @@ export interface NoteFeatureHandle extends NoteCitations, NoteCreation {
   getImportedNotesForItem(indexedKey: string): Promise<TFile[]>;
   /** @see replacedKeys */
   replacedKeys(file: TFile): Promise<ReadonlySet<string>>;
+  /** @see createNote */
+  createNote(
+    item: Item,
+    options?: CreateNoteOptions,
+  ): Promise<CreateNoteResult>;
+  /** @see overwriteNote */
+  overwriteNote(
+    file: TFile,
+    indexedKey: string,
+    options?: { outcomes?: ExcerptOutcomeScope },
+  ): Promise<UpdateResult>;
   /** Subscribe to {@link NoteFeatureEvents}; returns an unsubscribe. */
   on<K extends keyof NoteFeatureEvents>(
     event: K,

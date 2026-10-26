@@ -108,7 +108,7 @@ import type { NoteFeatureSources } from "./__fixtures__/note-feature";
 import type { PlanningSources } from "./__fixtures__/planning-context";
 import type { NoteCitations } from "./citations-handle";
 import { plainNoteError } from "./errors";
-import type { CreateNoteResult, UpdateScope } from "./operations";
+import type { NoteFeatureHandle, UpdateScope } from "./operations";
 import { NoteFeature } from "./service";
 import type { WriteNoteUpdateOptions } from "./types";
 /**
@@ -176,9 +176,9 @@ function createNoteFeature(deps: TestDeps) {
   return {
     ...handle,
     ...calls,
-    createNote: (...args: Parameters<typeof calls.createNote>) => {
+    createNote: (...args: Parameters<NoteFeatureHandle["createNote"]>) => {
       know(args[0]);
-      return calls.createNote(...args);
+      return handle.createNote(...args);
     },
     /** Run a create on the runtime as a fiber, which a case can interrupt. */
     forkCreateNote: (item: Item) => {
@@ -190,7 +190,7 @@ function createNoteFeature(deps: TestDeps) {
     /** Create on the runtime under a TestClock set to `millis`. */
     createNoteAt: (
       item: Item,
-      options: Parameters<typeof calls.createNote>[1],
+      options: Parameters<NoteFeatureHandle["createNote"]>[1],
       millis: number,
     ) => {
       know(item);
@@ -4875,7 +4875,9 @@ function makeFile(path: string): TFile {
   return file;
 }
 
-function createdFile(result: CreateNoteResult): TFile {
+function createdFile(
+  result: Awaited<ReturnType<NoteFeatureHandle["createNote"]>>,
+): TFile {
   expect(result.outcome).toBe("created");
   if (result.outcome !== "created") {
     throw new Error(`Expected a created note, got ${result.outcome}`);

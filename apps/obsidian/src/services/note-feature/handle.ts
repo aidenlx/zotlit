@@ -29,7 +29,10 @@ export function bindNoteFeature(
     );
   return {
     ...edges,
+    createNote: (item, options) => run(service.createNote(item, options)),
     updateNote: (file, options) => run(service.updateNote(file, options)),
+    overwriteNote: (file, indexedKey, options) =>
+      run(service.overwriteNote(file, indexedKey, options)),
     replacedKeys: (file) => run(service.replacedKeys(file)),
     resolveCompanionNote: (indexedKey, options) =>
       run(service.resolveCompanionNote(indexedKey, options)),

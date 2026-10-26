@@ -267,10 +267,6 @@ function noteFeatureCalls(
   const call = <A, E>(operation: (service: Service) => Effect.Effect<A, E>) =>
     run(Effect.flatMap(NoteFeature, (service) => operation(service)));
   return {
-    createNote: (...[item, options]: Parameters<Service["createNote"]>) =>
-      call((service) => service.createNote(item, options)),
-    overwriteNote: (...args: Parameters<Service["overwriteNote"]>) =>
-      call((service) => service.overwriteNote(...args)),
     switchNoteProfile: (...args: Parameters<Service["switchNoteProfile"]>) =>
       call((service) => service.switchNoteProfile(...args)),
     prepareProfileSwitch: (file: Parameters<Service["prepareProfileSwitch"]>[0]) =>
