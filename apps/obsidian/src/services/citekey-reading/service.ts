@@ -5,7 +5,7 @@ import { Effect, Layer } from "effect";
 import { MarkdownRenderChild, setTooltip } from "obsidian";
 import type { MarkdownPostProcessorContext } from "obsidian";
 
-import { scopedBridge } from "@/lib/effect-bridge";
+import { scopedBridge, valueOr } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
@@ -45,6 +45,7 @@ import {
 } from "@/services/citation-text/present";
 import type {
   CitationKeyState,
+  DocumentCitations,
   PresentedCitation,
 } from "@/services/citation-text/present";
 import { CitationText } from "@/services/citation-text/service";
@@ -61,6 +62,7 @@ import type {
   HoverPreferences,
 } from "@/services/citekey-navigation";
 import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
+import type { Held } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -240,8 +242,11 @@ export const layerCitekeyReading = Layer.effectDiscard(
         // none.
         shown: at,
         where: { surface: "reading" },
+        // Unload interrupts a pending open.
         open: (citekey, pane) => {
-          void bridge.runPromise(citekeyEditor.openCitekey(citekey, pane));
+          void bridge
+            .runPromiseExit(citekeyEditor.openCitekey(citekey, pane))
+            .then((exit) => valueOr(exit, undefined));
         },
         showPopover: (request) => run(citationPopover.show(request)),
         hoverPreferences: () => hover,
@@ -293,13 +298,19 @@ export const layerCitekeyReading = Layer.effectDiscard(
      * — and swaps a rebuilt element for one they differ from, so its theme
      * hooks and handlers follow the current answer. A citation the fresh text
      * holds nothing for keeps what it shows.
+     *
+     * `text` is the document's Held Read, as `CitationText.peek` reads it.
      */
     const show = (
       el: HTMLElement,
       ctx: MarkdownPostProcessorContext,
-      { citations, lookup, placed }: HeldSection,
+      {
+        citations,
+        lookup,
+        placed,
+        text,
+      }: HeldSection & { text: Held<DocumentCitations> | null },
     ): void => {
-      const text = run(citationText.peek(ctx.sourcePath));
       const answer = text?.value.lookup ?? lookup.current?.value ?? null;
       const resolutionPending = answer === null;
       // Source stays until a first answer: native text while the read
@@ -388,16 +399,17 @@ export const layerCitekeyReading = Layer.effectDiscard(
       const file = run(vault.getFileByPath(ctx.sourcePath));
       if (!file) return;
 
-      let rewrite = (): void => undefined;
-      const lookup = run(citationLookup.observe(() => rewrite()));
+      let rewrite: Effect.Effect<void> = Effect.void;
+      const lookup = run(citationLookup.observe(() => run(rewrite)));
       const child = new MarkdownRenderChild(el);
       child.onunload = () => lookup[Symbol.dispose]();
       ctx.addChild(child);
       const held: HeldSection = { citations, lookup, placed: [] };
-      rewrite = () => {
+      rewrite = Effect.gen(function* () {
         if (active !== true) return;
-        show(el, ctx, held);
-      };
+        const text = yield* citationText.peek(ctx.sourcePath);
+        show(el, ctx, { ...held, text });
+      });
       lookup.set({
         citekeys: [
           ...new Set(
@@ -408,7 +420,7 @@ export const layerCitekeyReading = Layer.effectDiscard(
         ],
       });
       sections.hold(el, ctx, rewrite);
-      rewrite();
+      run(rewrite);
     };
 
     host.registerMarkdownPostProcessor((el, ctx) => process(el, ctx));
@@ -417,10 +429,13 @@ export const layerCitekeyReading = Layer.effectDiscard(
     // sections of that document rewrite on its change, and every live section
     // rewrites when all text goes stale — which a citekey resolution snapshot
     // rebuild counts as.
-    yield* forkEach(citationText.events, (event) => {
-      if (event.type === "changed") sections.refresh(event.path);
-      else if (event.type === "invalidated") sections.refresh();
-    });
+    yield* forkEach(citationText.events, (event) =>
+      event.type === "changed"
+        ? sections.refresh(event.path)
+        : event.type === "invalidated"
+          ? sections.refresh()
+          : undefined,
+    );
     // A rendered citation carries this layer's own click and hover handlers,
     // so the reading views render again without it once it is gone.
     yield* retireReadingSurface(workspace, () => {

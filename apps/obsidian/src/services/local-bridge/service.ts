@@ -6,6 +6,7 @@ import {
   Clock,
   Context,
   Effect,
+  FiberSet,
   Layer,
   PubSub,
   Ref,
@@ -126,10 +127,10 @@ export const layerLocalBridge = (options: {
           Effect.provideService(Profile, profiles),
         );
       const { vaultName } = yield* ObsidianEnv;
-      // Hono handlers and the sessions' callback run outside Effect.
-      const context = yield* Effect.context<never>();
-      const runSync = Effect.runSyncWith(context);
-      const runPromise = Effect.runPromiseWith(context);
+      // Hono handlers and the sessions' callback run outside Effect. A pending
+      // grant read ends when the layer closes.
+      const runSync = Effect.runSyncWith(yield* Effect.context<never>());
+      const runPromise = yield* FiberSet.makeRuntimePromise();
 
       const held = yield* SubscriptionRef.make<BridgeConnection | null>(null);
       const saved = yield* PubSub.unbounded<string>();

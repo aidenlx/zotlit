@@ -7,6 +7,7 @@ import {
   cli,
   cliCommand,
   obEval,
+  obEvalUntil,
   obJson,
   obReadUntil,
 } from "./obsidian-cli.ts";
@@ -32,23 +33,23 @@ export async function verifyRecentUses(
   const originalNote = await readFile(join(vaultPath, targetPath), "utf8");
   const saved = await obEval(
     vaultId,
-    `JSON.stringify({layout:app.workspace.getLayout(),settings:${services}.settings.current,ledger:app.loadLocalStorage('zotlit-use-ledger')??null})`,
+    `JSON.stringify({layout:app.workspace.getLayout(),settings:${services}.bridge.runSync(${services}.settings.current),ledger:app.loadLocalStorage('zotlit-use-ledger')??null})`,
   );
   await using cleanup = new AsyncDisposableStack();
   cleanup.defer(async () => {
     const restored = await obEval(
       vaultId,
-      `(async()=>{app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();await oldServices.useLedger[Symbol.asyncDispose]();await oldServices.zoteroLocalApi[Symbol.asyncDispose]();app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');await app.plugins.plugins.zotlit.services.useLedger.ready;return JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current);})()`,
+      `(async()=>{app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();for(let i=0;i<200&&!oldServices.bridge.closed();i++)await new Promise(r=>setTimeout(r,25));if(!oldServices.bridge.closed())throw new Error('The ZotLit services did not close');app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');return JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current);})()`,
     );
     expect(JSON.parse(restored)).toEqual(JSON.parse(saved).ledger ?? {});
   });
   cleanup.defer(async () => {
     await run(
-      `await app.vault.modify(app.vault.getFileByPath('${targetPath}'),${JSON.stringify(originalNote)});const saved=JSON.parse(${JSON.stringify(saved)});s.settings.update({'library.document':saved.settings['library.document']??null,'citation.pandoc-citations':saved.settings['citation.pandoc-citations'],'citation.open-as-links':saved.settings['citation.open-as-links']});await s.settings.flush();await app.workspace.changeLayout(saved.layout);const file=app.vault.getFileByPath(${JSON.stringify(sourcePath)});if(file)await app.vault.delete(file);return true;`,
+      `await app.vault.modify(app.vault.getFileByPath('${targetPath}'),${JSON.stringify(originalNote)});const saved=JSON.parse(${JSON.stringify(saved)});s.bridge.runSync(s.settings.update({'library.document':saved.settings['library.document']??null,'citation.pandoc-citations':saved.settings['citation.pandoc-citations'],'citation.open-as-links':saved.settings['citation.open-as-links']}));await s.bridge.runPromise(s.settings.flush);await app.workspace.changeLayout(saved.layout);const file=app.vault.getFileByPath(${JSON.stringify(sourcePath)});if(file)await app.vault.delete(file);return true;`,
     );
   });
   await run(
-    `app.workspace.getLeavesOfType('zotlit-library').forEach(l=>l.detach());s.settings.update({'library.document':null,'citation.pandoc-citations':true,'citation.open-as-links':true});await s.settings.flush();await app.vault.create(${JSON.stringify(sourcePath)},${JSON.stringify(sourceText)});app.commands.executeCommandById('zotlit:open-library-view');await until('Recent view',()=>app.workspace.getLeavesOfType('zotlit-library')[0]?.view.query);return true;`,
+    `app.workspace.getLeavesOfType('zotlit-library').forEach(l=>l.detach());s.bridge.runSync(s.settings.update({'library.document':null,'citation.pandoc-citations':true,'citation.open-as-links':true}));await s.bridge.runPromise(s.settings.flush);await app.vault.create(${JSON.stringify(sourcePath)},${JSON.stringify(sourceText)});app.commands.executeCommandById('zotlit:open-library-view');await until('Recent view',()=>app.workspace.getLeavesOfType('zotlit-library')[0]?.view.query);return true;`,
   );
 
   const timeline = async () => {
@@ -159,7 +160,9 @@ export async function verifyRecentUses(
   for (const use of Object.values(JSON.parse(ledger)) as { instant: string }[])
     expect(pluginData).not.toContain(use.instant);
   await cli([`vault=${vaultId}`, "plugin:reload", "id=zotlit"]);
-  await run("await s.useLedger.ready;return true;");
+  expect(
+    await obEvalUntil(vaultId, `String(!!${services})`, { expected: "true" }),
+  ).toBe(true);
   expect(await timeline()).toEqual(beforeReload);
   expect(
     await obEval(vaultId, `JSON.stringify(${services}.useLedger.current)`),

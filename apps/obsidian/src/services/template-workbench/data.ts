@@ -19,7 +19,7 @@ import type {
   NoteSource,
 } from "@zotlit/db";
 import { TemplateError } from "@zotlit/templates/facade";
-import { resolveExcerptImageContext } from "@zotlit/workbench/explorer";
+import type { ExcerptImageContext } from "@zotlit/workbench/explorer";
 import { citationExampleData } from "@zotlit/workbench/render";
 import type { CitationExampleId } from "@zotlit/workbench/render";
 
@@ -298,6 +298,29 @@ function renderAnnotationCitation(
   }
 }
 
+/**
+ * Which side-effect-free excerpt-image path a render takes: a `file://` link
+ * while attachments are not imported; nothing when no folder is set and no
+ * Literature Note anchors the default folder; else the vault folder the
+ * note's imports go to.
+ *
+ * @param litNotePath the item's Literature Note, or `null` when it has none.
+ */
+export const excerptImageContext = (
+  settings: Pick<Settings, "attachment.import" | "attachment.folder-path">,
+  litNotePath: string | null,
+): Effect.Effect<ExcerptImageContext, TemplateDataError, FileManager> => {
+  const folderPath = settings["attachment.folder-path"];
+  if (!settings["attachment.import"])
+    return Effect.succeed({ kind: "file-url" });
+  if (!folderPath && litNotePath === null)
+    return Effect.succeed({ kind: "not-imported" });
+  return attachmentFolderPath(folderPath, litNotePath ?? undefined).pipe(
+    Effect.map((folderPath) => ({ kind: "vault" as const, folderPath })),
+    Effect.mapError(({ cause }) => failed(cause)),
+  );
+};
+
 const createInertResolvers = Effect.fnUntraced(function* (
   settings: Readonly<Settings>,
   item: Item | null,
@@ -312,7 +335,6 @@ const createInertResolvers = Effect.fnUntraced(function* (
   const { dataDir, baseAttachmentPath } = yield* (yield* ZoteroPref).current;
   const context = yield* Effect.context<FileManager>();
   const runSync = Effect.runSyncWith(context);
-  const runPromise = Effect.runPromiseWith(context);
   // The resolvers run synchronously while a Template renders.
   const noteIndex = {
     getNotesByItemKey: (key: string) => runSync(index.getNotesByItemKey(key)),
@@ -327,21 +349,7 @@ const createInertResolvers = Effect.fnUntraced(function* (
       )
     : null;
   const litNotePath = litNote?.path ?? null;
-  const excerptImages = yield* Effect.tryPromise({
-    try: () =>
-      resolveExcerptImageContext({
-        attachmentImport: settings["attachment.import"],
-        attachmentFolderPath: settings["attachment.folder-path"],
-        litNotePath,
-        resolveAttachmentFolderPath: (folderPath, sourcePath) =>
-          runPromise(
-            attachmentFolderPath(folderPath, sourcePath).pipe(
-              Effect.mapError(({ cause }) => cause),
-            ),
-          ),
-      }),
-    catch: failed,
-  });
+  const excerptImages = yield* excerptImageContext(settings, litNotePath);
   return yield* build(() =>
     buildObsidianInertNoteResolvers({
       noteIndex,

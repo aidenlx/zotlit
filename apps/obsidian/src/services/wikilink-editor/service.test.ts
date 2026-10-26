@@ -42,7 +42,7 @@ const openEditor = Effect.fnUntraced(function* (
   const notes = testEvent<NoteIndexChange>();
   const text = testEvent<CitationTextEvent>();
   const lookup = testEvent<CitationLookupState>();
-  const scope = yield* Scope.make();
+  const scope = yield* Scope.fork(yield* Scope.Scope);
   yield* Layer.buildWithScope(
     layerWikilinkEditor.pipe(
       Layer.provide(

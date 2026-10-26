@@ -49,6 +49,7 @@ import type { ProfileReader } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 import { InertTemplateError } from "@/services/template/errors";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
@@ -322,6 +323,8 @@ function makeDeps(
           Effect.sync(() => deps.profile.resolveProfile(selector)),
         profileOf: (file) => Effect.sync(() => deps.profile.profileOf(file)),
       }),
+      // Only the real Profile picker reads it; the fake view does not.
+      Layer.mock(ZoteroPref, {}),
       Layer.mock(ZoteroReads, {
         current: Effect.sync(() =>
           stubService<ZoteroReadsState>("ZoteroReadsState", {
@@ -869,6 +872,8 @@ describe("one item without additional Profiles", () => {
       Layer.mock(Profile, {
         profiles: Effect.succeed([]),
       }),
+      // Only the real Profile picker reads it; the fake view does not.
+      Layer.mock(ZoteroPref, {}),
       Layer.mock(ZoteroReads, {
         current: Effect.succeed(
           stubService<ZoteroReadsState>("ZoteroReadsState", {
