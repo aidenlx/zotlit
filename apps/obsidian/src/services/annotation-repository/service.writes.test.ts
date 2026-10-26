@@ -1273,6 +1273,50 @@ it.effect(
     }),
 );
 
+it.effect(
+  "keeps the answer of an accepted send when the unload lands on its database check",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const reply = Promise.withResolvers<Response>();
+      const sent = Promise.withResolvers<void>();
+      const verifying = Promise.withResolvers<void>();
+      const lease = Promise.withResolvers<ZoteroReadLease>();
+      const { repository, service, client, acquireRead, dbEvents } =
+        yield* Effect.promise(() =>
+          writable(stack, {
+            write: () => {
+              sent.resolve();
+              return reply.promise;
+            },
+            item: () =>
+              annotationItem(
+                afterWrite("PUPR5FG5", { color: "#5fb236", version: 20 }),
+              ),
+          }),
+        );
+
+      const color = yield* Effect.forkChild(
+        service.patchColor("PUPR5FG5", "#5fb236"),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(() => sent.promise);
+      // The database changes under the send, so the write checks its binding
+      // against a new read of the Zotero database once Zotero answers.
+      dbEvents.emit("changed");
+      acquireRead.mockImplementationOnce(() => {
+        verifying.resolve();
+        return lease.promise;
+      });
+      reply.resolve(writeAccepted(20));
+      yield* Effect.promise(() => verifying.promise);
+      yield* Effect.promise(() => repository[Symbol.asyncDispose]());
+      lease.resolve(yield* Effect.promise(() => leaseOver(stack, client)));
+
+      expect(yield* Fiber.join(color)).toEqual({ kind: "idle" });
+    }),
+);
+
 it.effect("accepts a write completion after the same database refreshes", () =>
   Effect.gen(function* () {
     const stack = yield* scopedStack;
