@@ -1,4 +1,5 @@
 import {
+  Clock,
   Context,
   DateTime,
   Deferred,
@@ -9,6 +10,8 @@ import {
   Scope,
   Stream,
 } from "effect";
+import type { Duration } from "effect";
+import { TestClock } from "effect/testing";
 import { vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
@@ -327,10 +330,17 @@ export async function setup(
   const bridge = effectBridge(runtime);
   const repository = repositoryClient(service, bridge, closeRepository);
   const queryClient = plainQueryClients(runtime);
+  // The repository reads the harness runtime's TestClock, not the case's.
+  const layerClock = Context.get(dependencies, Clock.Clock);
+  const adjustLayerClock = (duration: Duration.Input) =>
+    TestClock.adjust(duration).pipe(
+      Effect.provideService(Clock.Clock, layerClock),
+    );
   return {
     repository,
     service,
     runtime,
+    adjustLayerClock,
     client,
     db: { acquireRead, refresh },
     dbEvents,

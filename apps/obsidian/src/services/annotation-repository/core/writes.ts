@@ -1,14 +1,28 @@
 // Writes and conflicts: every command to Zotero, run one at a time per Annotation, and what its answer leaves behind.
+import {
+  Cause,
+  DateTime,
+  Effect,
+  Exit,
+  Fiber,
+  FiberSet,
+  Option,
+  Result,
+  Schema,
+} from "effect";
+
 import { parseAnnotationPosition, parseIndexedKey } from "@zotlit/db";
 import type { AnnotationPositionRaw } from "@zotlit/db";
 
-import { getLogger } from "@/lib/log";
+import { valueOr } from "@/lib/effect-bridge";
+import { recover } from "@/lib/effect-cause";
+import { fromInstant, toInstant } from "@/lib/effect-clock";
 import { contentOf } from "@/services/annotation-repository/history";
 import type {
   HistoryJoin,
   HistoryStep,
 } from "@/services/annotation-repository/history";
-import { firstLockRefusal } from "@/services/annotation-repository/lock";
+import { lockRefuses } from "@/services/annotation-repository/lock";
 import type {
   AnnotationLock,
   LockedVerb,
@@ -41,7 +55,6 @@ import type {
   WriteRequest,
   WriteTarget,
 } from "@/services/annotation-repository/write";
-import { cooldownFailure } from "@/services/zotero-local-api/plain";
 import type {
   LocalApiFailure,
   LocalApiSource,
@@ -51,7 +64,8 @@ import {
   readCreateResult,
 } from "@/services/zotero-local-api/wire";
 
-import { awaitRead, demandedSource, invalidate } from "./bridge";
+import { demandedSource, invalidate } from "./bridge";
+import type { DatabaseRowsError } from "./bridge";
 import {
   cancelTextSave,
   draftFor,
@@ -73,6 +87,7 @@ import {
   rememberAcknowledgedRevision,
   sourceStillBound,
 } from "./lists";
+import type { AnnotationLibraryUnresolved } from "./lists";
 import {
   ANNOTATIONS,
   TEXT_FIELD_SPECS,
@@ -94,10 +109,26 @@ import type {
 import { leave, settle, standingOutcome, takeOver } from "./outcomes";
 import type { CoreState } from "./state";
 
-const logger = getLogger("annotation-repository");
-
 /** The write failure a lock gives, with its Lock Reason. */
 type LockedFailure = Extract<WriteFailure, { kind: "locked" }>;
+
+/**
+ * Why a write's run answered no outcome: a read under it failed, or it threw.
+ * Its `cause` is a `WriteReadError` or a defect from the run.
+ */
+export class WriteRunFailed extends Schema.TaggedError<
+  WriteRunFailed,
+  { readonly brand: unique symbol }
+>()("WriteRunFailed", { cause: Schema.Defect() }) {}
+
+/**
+ * What a write answers when the repository closed under it: Zotero may or
+ * may not have taken it.
+ */
+const UNKNOWN_OUTCOME: MutationState = {
+  kind: "failed",
+  failure: { kind: "unknown-outcome" },
+};
 
 /** One write on the query client's mutation cache; its variables are its proposal. */
 /**
@@ -109,6 +140,42 @@ type WriteTurn = (
   send: () => Promise<MutationState>,
   own: AnnotationMutation,
 ) => Promise<MutationState>;
+
+/** One command, as {@link command} takes it. */
+type Command = WriteAttempt & {
+  request: (target: WriteTarget, record: AnnotationRecord) => WriteRequest;
+  settle?: "re-read" | "drop";
+  join?: HistoryJoin;
+  /** The fields the write proposes, from the confirmed record it goes to. */
+  propose?: (record: AnnotationRecord) => ProposedFields;
+  run?: WriteTurn;
+  gather?: GroupWrites;
+};
+
+/** One command once it is queued, as {@link runCommand} sends it. */
+type QueuedCommand = WriteAttempt & {
+  expectedServerID: string | null;
+  generation: number;
+  request: (target: WriteTarget, record: AnnotationRecord) => WriteRequest;
+  settle?: "re-read" | "drop";
+  join?: HistoryJoin;
+  /**
+   * Where a write of a group puts what it landed; the group records one
+   * step for all of them once every write settles.
+   */
+  gather?: GroupWrites;
+  /** Set on the second send of a tag write, after its `412` re-read. */
+  reapplied?: true;
+  /**
+   * What Zotero answered the send, or `null` while no answer is read. A close
+   * of the layer after the answer interrupts only the reads that follow, so
+   * the write keeps it. Read only by the `mutationFn` edge.
+   */
+  progress?: { answer: MutationState | null };
+};
+
+/** Why a write's reads failed under it. */
+type WriteReadError = DatabaseRowsError | AnnotationLibraryUnresolved;
 
 /** What one create ended with. */
 export type CreateOutcome =
@@ -129,99 +196,116 @@ export type CreateOutcome =
  * Annotation in it.
  *
  * @param attachmentKey the Attachment's Indexed Key.
- * @param draft everything about the Annotation except its parent, which this
- *   Attachment names; its Sort Index was computed from the unrounded position.
- * @param options.group what joins this create to the others of one gesture in
+ * @param create.draft everything about the Annotation except its parent,
+ *   which this Attachment names; its Sort Index was computed from the
+ *   unrounded position.
+ * @param create.group what joins this create to the others of one gesture in
  *   the Annotation History — one ink stroke split at the position ceiling
  *   creates several Annotations and is still one History Step. A create that
  *   names none is a step of its own.
  * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
  */
-async function createAnnotation(
+const createAnnotation = Effect.fnUntraced(function* (
   core: CoreState,
   attachmentKey: string,
-  draft: Omit<AnnotationDraft, "parentKey">,
-  options: { group?: string } = {},
-): Promise<CreateOutcome> {
-  return await counted(
-    core,
-    attachmentKey,
-    sendCreate(core, attachmentKey, draft, options.group),
+  create: { draft: Omit<AnnotationDraft, "parentKey">; group?: string },
+): Effect.fn.Return<CreateOutcome, WriteReadError> {
+  // The create runs on the layer's Scope, as a command does. A close of the
+  // layer interrupts it: before Zotero answered the send, its outcome is
+  // unknown; after, the create keeps that answer.
+  const progress: { answer: CreateOutcome | null } = { answer: null };
+  const fiber = yield* FiberSet.run(
+    core.fibers,
+    counted(
+      core,
+      attachmentKey,
+      sendCreate(core, attachmentKey, { ...create, progress }),
+    ),
   );
-}
+  const exit = yield* Fiber.await(fiber);
+  if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) {
+    return (
+      progress.answer ?? {
+        kind: "failed",
+        failure: { kind: "unknown-outcome" },
+      }
+    );
+  }
+  return yield* exit;
+});
 
-async function sendCreate(
+const sendCreate = Effect.fnUntraced(function* (
   core: CoreState,
   attachmentKey: string,
-  draft: Omit<AnnotationDraft, "parentKey">,
-  group: string | undefined,
-): Promise<CreateOutcome> {
+  {
+    draft,
+    group,
+    progress,
+  }: {
+    draft: Omit<AnnotationDraft, "parentKey">;
+    group?: string;
+    /**
+     * What Zotero answered the create, or `null` while no answer is read.
+     * Read only by {@link createAnnotation}.
+     */
+    progress: { answer: CreateOutcome | null };
+  },
+): Effect.fn.Return<CreateOutcome, WriteReadError> {
   const parsed = parseIndexedKey(attachmentKey);
   if (!parsed) {
     return { kind: "failed", failure: { kind: "unknown-annotation" } };
   }
-  const expectedSource = core.bridge.runSync(
-    compatibleApiSource(core, attachmentKey),
-  );
+  const expectedSource = yield* compatibleApiSource(core, attachmentKey);
   if (!expectedSource) {
     return { kind: "failed", failure: { kind: "db-source" } };
   }
-  if (
-    !(await awaitRead(
-      core,
-      prepareCollection(core, attachmentKey, expectedSource),
-      false,
-    ))
-  ) {
+  if (!(yield* prepareCollection(core, attachmentKey, expectedSource))) {
     return { kind: "failed", failure: { kind: "server-changed" } };
   }
   const whole = { ...draft, parentKey: parsed.key };
   if (writePosition(whole.position).length > MAX_POSITION_LENGTH) {
-    logger.debug("A selection's position is longer than Zotero accepts", {
-      attachmentKey,
-    });
+    yield* Effect.logDebug(
+      "A selection's position is longer than Zotero accepts",
+    ).pipe(Effect.annotateLogs({ attachmentKey }));
     return { kind: "failed", failure: { kind: "position-too-large" } };
   }
 
-  const blocked = writeBlocked(core, attachmentKey);
+  const blocked = yield* writeBlocked(core, attachmentKey);
   if (blocked) return { kind: "failed", failure: blocked };
 
   const library = libraryPath(parsed);
   const request = createRequest(library, whole, core.writeToken());
-  const source = core.bridge.runSync(compatibleApiSource(core, attachmentKey));
-  const reply = await core.bridge.runPromise(
-    core.localApi.authorizedSend(request.path, {
-      library,
-      method: request.method,
-      headers: request.headers,
-      body: request.body,
-    }),
-  );
-  if (
-    !source ||
-    !(await awaitRead(
-      core,
-      sourceStillBound(core, attachmentKey, source),
-      false,
-    ))
-  ) {
+  const source = yield* compatibleApiSource(core, attachmentKey);
+  const reply = yield* core.localApi.authorizedSend(request.path, {
+    library,
+    method: request.method,
+    headers: request.headers,
+    body: request.body,
+  });
+  const created =
+    "failure" in reply
+      ? reply
+      : readCreateResult(reply.value.text, {
+          parentKey: attachmentKey,
+          type: whole.type,
+        });
+  progress.answer =
+    "failure" in created
+      ? { kind: "failed", failure: created.failure }
+      : { kind: "created", annotationKey: created.value.key };
+  if (!source || !(yield* sourceStillBound(core, attachmentKey, source))) {
     return { kind: "failed", failure: { kind: "server-changed" } };
   }
   if ("failure" in reply) {
-    logger.debug("Zotero did not confirm an annotation create", {
-      attachmentKey,
-      failure: reply.failure,
-    });
-    await awaitRead(core, refresh(core, attachmentKey), null);
+    yield* Effect.logDebug("Zotero did not confirm an annotation create").pipe(
+      Effect.annotateLogs({ attachmentKey, failure: reply.failure }),
+    );
+    yield* refresh(core, attachmentKey);
     return { kind: "failed", failure: reply.failure };
   }
 
-  const created = readCreateResult(reply.value.text, {
-    parentKey: attachmentKey,
-    type: whole.type,
-  });
   if ("failure" in created) {
-    await awaitRead(core, refresh(core, attachmentKey), null);
+    yield* refresh(core, attachmentKey);
     return { kind: "failed", failure: created.failure };
   }
 
@@ -229,30 +313,28 @@ async function sendCreate(
   rememberAcknowledgedRevision(core, attachmentKey, reply.value.headers);
   const record = fromLocalApi(created.value);
   if (
-    !(await publishApiChange(core, attachmentKey, source, {
-      kind: "created",
-      record,
-    }))
+    !(yield* publishApiChange(
+      core,
+      { attachmentKey, source },
+      { kind: "created", record },
+    ))
   )
     return { kind: "failed", failure: { kind: "server-changed" } };
-  await awaitRead(core, refresh(core, attachmentKey), null);
-  logger.debug("Zotero created an annotation", {
-    attachmentKey,
-    annotationKey,
-    type: whole.type,
-  });
+  yield* refresh(core, attachmentKey);
+  yield* Effect.logDebug("Zotero created an annotation").pipe(
+    Effect.annotateLogs({ attachmentKey, annotationKey, type: whole.type }),
+  );
   const content = contentOf(record);
   if (content) {
-    recordExistence(
+    yield* recordExistence(
       core,
-      attachmentKey,
       { annotationKey, before: { content: null }, after: { content } },
-      group,
+      { attachmentKey, group },
     );
   }
   core.publish({ _tag: "annotations-changed", attachmentKey });
   return { kind: "created", annotationKey };
-}
+});
 
 /**
  * Recolour one Annotation, of whatever type: Zotero's colour setter is one
@@ -261,13 +343,13 @@ async function sendCreate(
  * @param annotationKey the Annotation's Indexed Key.
  * @param color the swatch to store, in any case; the write sends lower case.
  */
-async function patchColor(
+const patchColor = Effect.fnUntraced(function* (
   core: CoreState,
   annotationKey: string,
   color: string,
-): Promise<MutationState> {
-  return await recolor(core, annotationKey, color);
-}
+) {
+  return yield* recolor(core, annotationKey, { color });
+});
 
 /**
  * Recolour a group of Annotations in Zotero, from one gesture on the Card
@@ -281,64 +363,67 @@ async function patchColor(
  * @param color the swatch to store, in any case; the write sends lower case.
  * @returns one outcome per key, in the order of `annotationKeys`.
  */
-async function patchColors(
+const patchColors = Effect.fnUntraced(function* (
   core: CoreState,
   annotationKeys: readonly string[],
   color: string,
-): Promise<MutationState[]> {
-  return await groupWrite(core, "color", annotationKeys, (key, gather) =>
-    recolor(core, key, color, gather),
+) {
+  return yield* groupWrite(
+    core,
+    { kind: "color", annotationKeys },
+    (key, gather) => recolor(core, key, { color, gather }),
   );
-}
+});
 
 /**
- * @param gather where a recolour of a group puts its landed write, rather
- *   than recording a step of its own.
+ * @param recolour.gather where a recolour of a group puts its landed write,
+ *   rather than recording a step of its own.
  */
-async function recolor(
+const recolor = Effect.fnUntraced(function* (
   core: CoreState,
   annotationKey: string,
-  color: string,
-  gather?: GroupWrites,
-): Promise<MutationState> {
-  return await command(core, annotationKey, {
+  { color, gather }: { color: string; gather?: GroupWrites },
+) {
+  return yield* command(core, annotationKey, {
     write: "color",
     attempted: color,
     request: (target) => colorPatch(target, color),
     propose: () => ({ color: wireColor(color) }),
     ...(gather && { gather }),
   });
-}
+});
 
 /**
  * Replace one Annotation's comment. An empty string clears it.
  *
  * @param annotationKey the Annotation's Indexed Key.
  */
-async function patchComment(
+const patchComment = Effect.fnUntraced(function* (
   core: CoreState,
   annotationKey: string,
   comment: string,
-): Promise<MutationState> {
-  return await writeText(core, "comment", annotationKey, { value: comment });
-}
+) {
+  return yield* writeText(core, annotationKey, {
+    field: "comment",
+    value: comment,
+  });
+});
 
 /** Replace one text field of an Annotation. An empty string clears it. */
-async function writeText(
+const writeText = Effect.fnUntraced(function* (
   core: CoreState,
-  field: TextField,
   annotationKey: string,
-  { value, run }: { value: string; run?: WriteTurn },
-): Promise<MutationState> {
+  { field, value, run }: { field: TextField; value: string; run?: WriteTurn },
+) {
   const spec = TEXT_FIELD_SPECS[field];
-  return await command(core, annotationKey, {
+  return yield* command(core, annotationKey, {
     write: field,
     attempted: value,
     request: (target) => spec.request(target, value),
     propose: () => spec.propose(value),
     run,
   });
-}
+});
 
 /**
  * Save one Geometry Edit: the new position, the Sort Index recomputed from
@@ -346,37 +431,37 @@ async function writeText(
  * answers after the write is what the marks and cards draw next.
  *
  * @param annotationKey the Annotation's Indexed Key.
- * @param edit its Sort Index was computed from the unrounded position.
- * @param input what made the edit. A run of keyboard edits on one Annotation
- *   is one History Step; a pointer gesture is a step of its own.
+ * @param geometry.edit its Sort Index was computed from the unrounded
+ *   position.
+ * @param geometry.input what made the edit. A run of keyboard edits on one
+ *   Annotation is one History Step; a pointer gesture is a step of its own.
  * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
  */
-async function patchGeometry(
+const patchGeometry = Effect.fnUntraced(function* (
   core: CoreState,
   annotationKey: string,
-  edit: GeometryEdit,
-  input: GeometryInput,
-): Promise<MutationState> {
+  { edit, input }: { edit: GeometryEdit; input: GeometryInput },
+) {
   if (writePosition(edit.position).length > MAX_POSITION_LENGTH) {
-    logger.debug("A Geometry Edit's position is longer than Zotero accepts", {
-      annotationKey,
-    });
+    yield* Effect.logDebug(
+      "A Geometry Edit's position is longer than Zotero accepts",
+    ).pipe(Effect.annotateLogs({ annotationKey }));
     return settle(core, annotationKey, "geometry", {
       kind: "failed",
       failure: { kind: "position-too-large" },
     });
   }
-  return await command(core, annotationKey, {
+  return yield* command(core, annotationKey, {
     write: "geometry",
     attempted: edit,
     input,
     request: (target, record) => geometryPatch(target, record.type, edit),
     propose: (record) => proposedGeometry(record, edit),
     ...(input === "keyboard" && {
-      join: { input, at: core.now() },
+      join: { input, at: toInstant(yield* DateTime.now) },
     }),
   });
-}
+});
 
 /**
  * Erase one Annotation in Zotero. The record leaves the Attachment's list
@@ -385,34 +470,34 @@ async function patchGeometry(
  *
  * @param annotationKey the Annotation's Indexed Key.
  */
-async function deleteAnnotation(
+const deleteAnnotation = Effect.fnUntraced(function* (
   core: CoreState,
   annotationKey: string,
-): Promise<MutationState> {
-  return await erase(core, annotationKey);
-}
+) {
+  return yield* erase(core, annotationKey);
+});
 
 /**
  * @param gather where a delete of a group puts its landed write, rather than
  *   recording a step of its own.
  */
-async function erase(
+const erase = Effect.fnUntraced(function* (
   core: CoreState,
   annotationKey: string,
   gather?: GroupWrites,
-): Promise<MutationState> {
+) {
   for (const field of TEXT_FIELDS) {
     const draft = draftFor(core, field, annotationKey);
     if (draft) cancelTextSave(core, field, draft);
   }
-  return await command(core, annotationKey, {
+  return yield* command(core, annotationKey, {
     write: "delete",
     attempted: null,
     request: eraseRequest,
     settle: "drop",
     ...(gather && { gather }),
   });
-}
+});
 
 /**
  * Erase a group of Annotations in Zotero, from one gesture on the Card
@@ -425,14 +510,16 @@ async function erase(
  * @param annotationKeys Indexed Keys, in the order the step names them.
  * @returns one outcome per key, in the order of `annotationKeys`.
  */
-async function deleteAnnotations(
+const deleteAnnotations = Effect.fnUntraced(function* (
   core: CoreState,
   annotationKeys: readonly string[],
-): Promise<MutationState[]> {
-  return await groupWrite(core, "existence", annotationKeys, (key, gather) =>
-    erase(core, key, gather),
+) {
+  return yield* groupWrite(
+    core,
+    { kind: "existence", annotationKeys },
+    (key, gather) => erase(core, key, gather),
   );
-}
+});
 
 /**
  * Send one write per Annotation of a group at once, and record what landed
@@ -448,44 +535,54 @@ async function deleteAnnotations(
  * failure, so the notice names its Lock Reason once, and every other
  * Annotation answers `idle`.
  *
- * @param kind the one kind of step every write of the group joins.
+ * @param group.kind the one kind of step every write of the group joins.
+ * @param group.annotationKeys Indexed Keys, in the order the step names them.
  * @param write one Annotation's write, which puts what it landed in `gather`.
  * @returns one outcome per key, in the order of `annotationKeys`.
  */
-async function groupWrite(
+const groupWrite = Effect.fnUntraced(function* <E>(
   core: CoreState,
-  kind: GroupKind,
-  annotationKeys: readonly string[],
-  write: (annotationKey: string, gather: GroupWrites) => Promise<MutationState>,
-): Promise<MutationState[]> {
+  {
+    kind,
+    annotationKeys,
+  }: { kind: GroupKind; annotationKeys: readonly string[] },
+  write: (
+    annotationKey: string,
+    gather: GroupWrites,
+  ) => Effect.Effect<MutationState, E>,
+) {
   // A group verb is all or nothing, as in Zotero's reader: one Annotation
   // the lock refuses keeps every write of the group from going out.
-  const locked = firstHeldLockRefusal(core, annotationKeys, kind);
+  const locked = yield* firstHeldLockRefusal(core, annotationKeys, kind);
   if (locked)
-    return annotationKeys.map((key) =>
+    return annotationKeys.map((key): MutationState =>
       key === locked.annotationKey
         ? { kind: "failed", failure: locked.failure }
         : IDLE,
     );
   const gather: GroupWrites = { kind, writes: [] };
-  const settled = await Promise.allSettled(
-    annotationKeys.map((key) => write(key, gather)),
+  const settled = yield* Effect.forEach(
+    annotationKeys,
+    (annotationKey) =>
+      write(annotationKey, gather).pipe(
+        recover(
+          (cause) =>
+            Effect.logWarning("A write of a group threw", cause).pipe(
+              Effect.annotateLogs({ annotationKey }),
+            ),
+          Effect.succeed(UNKNOWN_OUTCOME),
+        ),
+      ),
+    { concurrency: "unbounded" },
   );
   const byAttachment = Map.groupBy(
     gather.writes,
     (entry) => entry.attachmentKey,
   );
   for (const [attachmentKey, writes] of byAttachment)
-    recordGroup(core, attachmentKey, annotationKeys, { kind, writes });
-  return settled.map((result, index) => {
-    if (result.status === "fulfilled") return result.value;
-    logger.warn("A write of a group threw", {
-      annotationKey: annotationKeys[index],
-      error: result.reason,
-    });
-    return { kind: "failed", failure: { kind: "unknown-outcome" } };
-  });
-}
+    yield* recordGroup(core, annotationKeys, { attachmentKey, kind, writes });
+  return settled;
+});
 
 /**
  * Send one conflicted write again, against the value Zotero holds now — the
@@ -497,34 +594,33 @@ async function groupWrite(
  * @returns what the second write left, which is `idle` where it landed and
  *   another conflict where Zotero moved again.
  */
-async function retryWrite(
+const retryWrite = Effect.fnUntraced(function* (
   core: CoreState,
   annotationKey: string,
-): Promise<MutationState> {
+) {
   const standing = standingOutcome(core, annotationKey);
   if (standing?.kind !== "conflict") return standing ?? IDLE;
   const { conflict } = standing;
   switch (conflict.write) {
     case "color":
-      return await patchColor(core, annotationKey, conflict.attempted ?? "");
+      return yield* patchColor(core, annotationKey, conflict.attempted ?? "");
     case "comment":
     case "text":
-      return await writeText(core, conflict.write, annotationKey, {
+      return yield* writeText(core, annotationKey, {
+        field: conflict.write,
         value: conflict.attempted ?? "",
       });
     case "delete":
-      return await deleteAnnotation(core, annotationKey);
+      return yield* deleteAnnotation(core, annotationKey);
     case "geometry":
-      return await patchGeometry(
-        core,
-        annotationKey,
-        conflict.attempted,
+      return yield* patchGeometry(core, annotationKey, {
+        edit: conflict.attempted,
         // The re-send is the very edit the conflict refused, so a nudge goes
         // again as a nudge and the run it belongs to stays one step.
-        conflict.input,
-      );
+        input: conflict.input,
+      });
   }
-}
+});
 
 /**
  * Leave Zotero's copy as it stands, from the card's "Discard". The card goes
@@ -532,12 +628,17 @@ async function retryWrite(
  *
  * @param annotationKey the Annotation's Indexed Key.
  */
-function discardConflict(core: CoreState, annotationKey: string): void {
+const discardConflict = Effect.fnUntraced(function* (
+  core: CoreState,
+  annotationKey: string,
+) {
   const standing = standingOutcome(core, annotationKey);
   if (standing?.kind !== "conflict") return;
-  logger.debug("A write conflict was discarded", { annotationKey });
+  yield* Effect.logDebug("A write conflict was discarded").pipe(
+    Effect.annotateLogs({ annotationKey }),
+  );
   settle(core, annotationKey, standing.conflict.write, IDLE);
-}
+});
 
 /**
  * One command, from the record it stamps its precondition off to the state it
@@ -549,6 +650,11 @@ function discardConflict(core: CoreState, annotationKey: string): void {
  * for an active Local API source and its authorization state.
  *
  * Every mutation requires an existing authorization.
+ *
+ * The write is a mutation on the query client's mutation cache, which runs
+ * the writes of one Annotation one at a time. Query Core calls the write for
+ * a Promise: it runs on the layer's bridge, so the layer's close interrupts
+ * it, and the write then answers that its outcome is not known.
  *
  * @param command.write which verb this is, so a conflict can name the two
  *   values the card puts side by side.
@@ -562,27 +668,18 @@ function discardConflict(core: CoreState, annotationKey: string): void {
  * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
  * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
  */
-async function command(
+const command = Effect.fnUntraced(function* (
   core: CoreState,
   annotationKey: string,
-  command: WriteAttempt & {
-    request: (target: WriteTarget, record: AnnotationRecord) => WriteRequest;
-    settle?: "re-read" | "drop";
-    join?: HistoryJoin;
-    /** The fields the write proposes, from the confirmed record it goes to. */
-    propose?: (record: AnnotationRecord) => ProposedFields;
-    run?: WriteTurn;
-    gather?: GroupWrites;
-  },
-): Promise<MutationState> {
+  command: Command,
+): Effect.fn.Return<MutationState, WriteRunFailed> {
   // A lock refuses the write before it is built, so no Pending Proposal is
   // drawn and a Write Conflict standing on the Annotation stays.
-  const locked = lockRefusal(core, annotationKey, command.write);
+  const locked = yield* lockRefusal(core, annotationKey, command.write);
   if (locked) return { kind: "failed", failure: locked };
-  const expectedServerID =
-    core.bridge.runSync(demandedSource(core))?.serverID ?? null;
+  const expectedServerID = (yield* demandedSource(core))?.serverID ?? null;
   const generation = core.commandGeneration;
-  const held = core.bridge.runSync(holding(core, annotationKey));
+  const held = yield* holding(core, annotationKey);
   const proposal: PendingProposal | null =
     held && command.propose
       ? {
@@ -600,9 +697,17 @@ async function command(
     scope: { id: JSON.stringify([ANNOTATIONS, annotationKey]) },
     // Zotero runs on this device, so no write waits for an online event.
     networkMode: "always",
-    mutationFn: async () => {
-      const send = () => runCommand(core, annotationKey, queued);
-      return await (command.run?.(send, mutation) ?? send());
+    mutationFn: () => {
+      // A close of the layer interrupts the write: before Zotero answered the
+      // send, its outcome is unknown; after, the write keeps that answer.
+      const send = async () => {
+        const progress: { answer: MutationState | null } = { answer: null };
+        const exit = await core.bridge.runPromiseExit(
+          runCommand(core, annotationKey, { ...queued, progress }),
+        );
+        return valueOr(exit, progress.answer ?? UNKNOWN_OUTCOME);
+      };
+      return command.run ? command.run(send, mutation) : send();
     },
   });
   // The mutation holds its proposal from here on, so a surface redrawing on
@@ -623,7 +728,8 @@ async function command(
   core.publish({ _tag: "annotation-changed", annotationKey });
   // A write that settles lets its proposal go: confirmed, the list already
   // holds the same value; refused, the confirmed value is drawn again. What
-  // it left on the Annotation is announced in the same turn.
+  // it left on the Annotation is announced in the same turn, on the
+  // mutation's own Promise, before any caller of the write resumes.
   const settled = () => {
     if (proposal) {
       core.publish({
@@ -634,203 +740,193 @@ async function command(
     core.publish({ _tag: "annotation-changed", annotationKey });
   };
   void operation.then(settled, settled);
-  return await counted(core, attachmentHolding(core, annotationKey), operation);
-}
+  return yield* counted(
+    core,
+    attachmentHolding(core, annotationKey),
+    Effect.tryPromise({
+      try: () => operation,
+      catch: (cause) => new WriteRunFailed({ cause }),
+    }),
+  );
+});
 
-async function runCommand(
+const runCommand: (
   core: CoreState,
   annotationKey: string,
-  command: WriteAttempt & {
-    expectedServerID: string | null;
-    generation: number;
-    request: (target: WriteTarget, record: AnnotationRecord) => WriteRequest;
-    settle?: "re-read" | "drop";
-    join?: HistoryJoin;
-    /**
-     * Where a write of a group puts what it landed; the group records one
-     * step for all of them once every write settles.
-     */
-    gather?: GroupWrites;
-    /** Set on the second send of a tag write, after its `412` re-read. */
-    reapplied?: true;
-  },
-): Promise<MutationState> {
-  const held = await awaitRead(core, prepareWrite(core, annotationKey), null);
-  if (held === "server-changed") {
-    return leave(core, annotationKey, command.write, {
-      kind: "failed",
-      failure: { kind: "server-changed" },
-    });
-  }
-  if (command.generation !== core.commandGeneration) {
-    return { kind: "failed", failure: { kind: "unknown-outcome" } };
-  }
-  if (
-    (core.bridge.runSync(demandedSource(core))?.serverID ?? null) !==
-    command.expectedServerID
-  ) {
-    return { kind: "failed", failure: { kind: "server-changed" } };
-  }
-  const parsed = parseIndexedKey(annotationKey);
-  if (!held || !parsed) {
-    return leave(core, annotationKey, command.write, {
-      kind: "failed",
-      failure: { kind: "unknown-annotation" },
-    });
-  }
-  if (!core.bridge.runSync(compatibleApiSource(core, held.attachmentKey))) {
-    return leave(core, annotationKey, command.write, {
-      kind: "failed",
-      failure: { kind: "db-source" },
-    });
-  }
-  const { version } = held.record;
-  if (version === null) {
-    return leave(core, annotationKey, command.write, {
-      kind: "failed",
-      failure: { kind: "db-source" },
-    });
-  }
+  command: QueuedCommand,
+) => Effect.Effect<MutationState, WriteReadError> = Effect.fnUntraced(
+  function* (core, annotationKey, command) {
+    const held = yield* prepareWrite(core, annotationKey);
+    if (held === "server-changed") {
+      return leave(core, annotationKey, command.write, {
+        kind: "failed",
+        failure: { kind: "server-changed" },
+      });
+    }
+    if (command.generation !== core.commandGeneration) {
+      return UNKNOWN_OUTCOME;
+    }
+    if (
+      ((yield* demandedSource(core))?.serverID ?? null) !==
+      command.expectedServerID
+    ) {
+      return { kind: "failed", failure: { kind: "server-changed" } };
+    }
+    const parsed = parseIndexedKey(annotationKey);
+    if (!held || !parsed) {
+      return leave(core, annotationKey, command.write, {
+        kind: "failed",
+        failure: { kind: "unknown-annotation" },
+      });
+    }
+    if (!(yield* compatibleApiSource(core, held.attachmentKey))) {
+      return leave(core, annotationKey, command.write, {
+        kind: "failed",
+        failure: { kind: "db-source" },
+      });
+    }
+    const { version } = held.record;
+    if (version === null) {
+      return leave(core, annotationKey, command.write, {
+        kind: "failed",
+        failure: { kind: "db-source" },
+      });
+    }
 
-  // The write takes over its field: a failure on the Annotation, or a
-  // conflict of this field, is over once this one runs.
-  takeOver(core, annotationKey, command.write);
-  const blocked = writeBlocked(core, held.attachmentKey);
-  if (blocked) {
-    return leave(core, annotationKey, command.write, {
-      kind: "failed",
-      failure: blocked,
-    });
-  }
+    // The write takes over its field: a failure on the Annotation, or a
+    // conflict of this field, is over once this one runs.
+    takeOver(core, annotationKey, command.write);
+    const blocked = yield* writeBlocked(core, held.attachmentKey);
+    if (blocked) {
+      return leave(core, annotationKey, command.write, {
+        kind: "failed",
+        failure: blocked,
+      });
+    }
 
-  // The lock is read before the write goes out: a database read after it
-  // no longer holds a deleted Annotation, and so no longer its lock.
-  const lock = core.locks.get(held.attachmentKey)?.get(annotationKey)?.reason;
-  const library = libraryPath(parsed);
-  const { path, method, headers, body } = command.request(
-    { library, key: parsed.key, version },
-    held.record,
-  );
-  const source = core.bridge.runSync(
-    compatibleApiSource(core, held.attachmentKey),
-  );
-  const reply = await core.bridge.runPromise(
-    core.localApi.authorizedSend(path, {
+    // The lock is read before the write goes out: a database read after it
+    // no longer holds a deleted Annotation, and so no longer its lock.
+    const lock = core.locks.get(held.attachmentKey)?.get(annotationKey)?.reason;
+    const library = libraryPath(parsed);
+    const { path, method, headers, body } = command.request(
+      { library, key: parsed.key, version },
+      held.record,
+    );
+    const source = yield* compatibleApiSource(core, held.attachmentKey);
+    // A second send (a tag write applied again) starts with no answer.
+    if (command.progress) command.progress.answer = null;
+    const reply = yield* core.localApi.authorizedSend(path, {
       library,
       method,
       headers,
       body,
-    }),
-  );
-  if (
-    !source ||
-    !(await awaitRead(
-      core,
-      sourceStillBound(core, held.attachmentKey, source),
-      false,
-    ))
-  ) {
-    if (
-      core.databaseBindings.get(held.attachmentKey)?.source.database
-        .serverID !== source?.serverID
-    ) {
-      return { kind: "failed", failure: { kind: "server-changed" } };
+    });
+    if (command.progress) {
+      command.progress.answer =
+        "failure" in reply ? { kind: "failed", failure: reply.failure } : IDLE;
     }
-    return leave(core, annotationKey, command.write, {
-      kind: "failed",
-      failure: { kind: "server-changed" },
-    });
-  }
-  if ("failure" in reply) {
-    logger.debug("Zotero refused a write", {
-      annotationKey,
-      method,
-      failure: reply.failure,
-    });
-    const refused = await writeRefused(
-      core,
-      held,
-      {
+    if (
+      !source ||
+      !(yield* sourceStillBound(core, held.attachmentKey, source))
+    ) {
+      if (
+        core.databaseBindings.get(held.attachmentKey)?.source.database
+          .serverID !== source?.serverID
+      ) {
+        return { kind: "failed", failure: { kind: "server-changed" } };
+      }
+      return leave(core, annotationKey, command.write, {
+        kind: "failed",
+        failure: { kind: "server-changed" },
+      });
+    }
+    if ("failure" in reply) {
+      yield* Effect.logDebug("Zotero refused a write").pipe(
+        Effect.annotateLogs({ annotationKey, method, failure: reply.failure }),
+      );
+      const refused = yield* writeRefused(core, held, {
         ...command,
         failure: reply.failure,
-      },
-      source,
-    );
-    if (refused.kind === "re-apply" && !command.reapplied) {
-      logger.debug("A tag write applies its names again to fresh tags", {
-        annotationKey,
+        source,
       });
-      return await runCommand(core, annotationKey, {
-        ...command,
-        reapplied: true,
-      });
+      if (refused.kind === "re-apply" && !command.reapplied) {
+        yield* Effect.logDebug(
+          "A tag write applies its names again to fresh tags",
+        ).pipe(Effect.annotateLogs({ annotationKey }));
+        return yield* runCommand(core, annotationKey, {
+          ...command,
+          reapplied: true,
+        });
+      }
+      const state: MutationState =
+        refused.kind === "re-apply"
+          ? { kind: "failed", failure: reply.failure }
+          : refused;
+      if (state.kind === "failed") yield* refresh(core, held.attachmentKey);
+      leave(core, annotationKey, command.write, state);
+      if (state.kind === "conflict") {
+        core.publish({
+          _tag: "write-conflict",
+          annotationKey,
+          attachmentKey: held.attachmentKey,
+        });
+      }
+      return state;
     }
-    const state: MutationState =
-      refused.kind === "re-apply"
-        ? { kind: "failed", failure: reply.failure }
-        : refused;
-    if (state.kind === "failed")
-      await awaitRead(core, refresh(core, held.attachmentKey), null);
-    leave(core, annotationKey, command.write, state);
-    if (state.kind === "conflict") {
-      core.publish({
-        _tag: "write-conflict",
-        annotationKey,
-        attachmentKey: held.attachmentKey,
-      });
-    }
-    return state;
-  }
 
-  logger.debug("Zotero took a write", { annotationKey, method });
-  rememberAcknowledgedRevision(core, held.attachmentKey, reply.value.headers);
-  const applied = await applyWrite(core, held, annotationKey, {
-    write: command.write,
-    settle: command.settle ?? "re-read",
-    lock,
-  });
-  if ("failure" in applied) {
-    await awaitRead(core, refresh(core, held.attachmentKey), null);
-    return leave(core, annotationKey, command.write, {
-      kind: "failed",
-      failure: applied.failure,
+    yield* Effect.logDebug("Zotero took a write").pipe(
+      Effect.annotateLogs({ annotationKey, method }),
+    );
+    rememberAcknowledgedRevision(core, held.attachmentKey, reply.value.headers);
+    const applied = yield* applyWrite(core, held, {
+      write: command.write,
+      settle: command.settle ?? "re-read",
+      lock,
     });
-  }
-  if (command.settle === "drop") {
-    dropDrafts(core, annotationKey);
-  }
-  if (
-    !(await awaitRead(
-      core,
-      sourceStillBound(core, held.attachmentKey, source),
-      false,
-    )) ||
-    !(await publishApiChange(core, held.attachmentKey, source, applied.value))
-  ) {
-    return leave(core, annotationKey, command.write, {
-      kind: "failed",
-      failure: { kind: "server-changed" },
-    });
-  }
-  await awaitRead(core, refresh(core, held.attachmentKey), null);
-  if (command.gather) {
-    command.gather.writes.push({
+    if ("failure" in applied) {
+      yield* refresh(core, held.attachmentKey);
+      return leave(core, annotationKey, command.write, {
+        kind: "failed",
+        failure: applied.failure,
+      });
+    }
+    if (command.settle === "drop") {
+      dropDrafts(core, annotationKey);
+    }
+    if (
+      !(yield* sourceStillBound(core, held.attachmentKey, source)) ||
+      !(yield* publishApiChange(
+        core,
+        { attachmentKey: held.attachmentKey, source },
+        applied.value,
+      ))
+    ) {
+      return leave(core, annotationKey, command.write, {
+        kind: "failed",
+        failure: { kind: "server-changed" },
+      });
+    }
+    yield* refresh(core, held.attachmentKey);
+    if (command.gather) {
+      command.gather.writes.push({
+        attachmentKey: held.attachmentKey,
+        before: held.record,
+        applied: applied.value,
+      });
+    } else {
+      yield* recordStep(core, held.record, {
+        attachmentKey: held.attachmentKey,
+        applied: applied.value,
+        join: command.join,
+      });
+    }
+    core.publish({
+      _tag: "annotations-changed",
       attachmentKey: held.attachmentKey,
-      before: held.record,
-      applied: applied.value,
     });
-  } else {
-    recordStep(core, held.attachmentKey, held.record, {
-      applied: applied.value,
-      join: command.join,
-    });
-  }
-  core.publish({
-    _tag: "annotations-changed",
-    attachmentKey: held.attachmentKey,
-  });
-  return leave(core, annotationKey, command.write, IDLE);
-}
+    return leave(core, annotationKey, command.write, IDLE);
+  },
+);
 
 /**
  * Count one write against its Attachment while it is in flight, which is what
@@ -839,36 +935,54 @@ async function runCommand(
  * @param attachmentKey the Attachment the write lands on, or `undefined`
  *   where no list holds the Annotation and the write will refuse itself.
  */
-async function counted<T>(
+function counted<A, E>(
   core: CoreState,
   attachmentKey: string | undefined,
-  work: Promise<T>,
-): Promise<T> {
-  if (attachmentKey === undefined) return await work;
-  core.writesInFlight.set(
-    attachmentKey,
-    (core.writesInFlight.get(attachmentKey) ?? 0) + 1,
+  work: Effect.Effect<A, E>,
+): Effect.Effect<A, E> {
+  if (attachmentKey === undefined) return work;
+  return Effect.acquireUseRelease(
+    Effect.sync(() => {
+      core.writesInFlight.set(
+        attachmentKey,
+        (core.writesInFlight.get(attachmentKey) ?? 0) + 1,
+      );
+    }),
+    () => work,
+    () => uncount(core, attachmentKey),
   );
-  try {
-    return await work;
-  } finally {
-    const left = (core.writesInFlight.get(attachmentKey) ?? 1) - 1;
-    if (left > 0) core.writesInFlight.set(attachmentKey, left);
-    else {
-      core.writesInFlight.delete(attachmentKey);
-      if (!core.bridge.runSync(demandedSource(core))) {
-        void awaitRead(core, read(core, attachmentKey), null).catch(
-          (error: unknown) => {
-            logger.debug(
-              "The database fallback after a write could not be read",
-              { attachmentKey, error },
-            );
-          },
-        );
-      }
-    }
-  }
 }
+
+/**
+ * The end of one counted write. The last write on an Attachment while no
+ * Local API source stands reads its list again from the Zotero database, on
+ * the layer's Scope.
+ */
+const uncount = Effect.fnUntraced(function* (
+  core: CoreState,
+  attachmentKey: string,
+) {
+  const left = (core.writesInFlight.get(attachmentKey) ?? 1) - 1;
+  if (left > 0) {
+    core.writesInFlight.set(attachmentKey, left);
+    return;
+  }
+  core.writesInFlight.delete(attachmentKey);
+  if (yield* demandedSource(core)) return;
+  yield* FiberSet.run(
+    core.fibers,
+    read(core, attachmentKey).pipe(
+      recover(
+        (cause) =>
+          Effect.logDebug(
+            "The database fallback after a write could not be read",
+            cause,
+          ).pipe(Effect.annotateLogs({ attachmentKey })),
+        Effect.void,
+      ),
+    ),
+  );
+});
 
 /**
  * The `locked` failure one verb meets on an Annotation; see
@@ -876,13 +990,15 @@ async function counted<T>(
  *
  * @param annotationKey the Annotation's Indexed Key.
  */
-function lockRefusal(
+const lockRefusal = Effect.fnUntraced(function* (
   core: CoreState,
   annotationKey: string,
   verb: LockedVerb,
-): LockedFailure | null {
-  return firstHeldLockRefusal(core, [annotationKey], verb)?.failure ?? null;
-}
+) {
+  return (
+    (yield* firstHeldLockRefusal(core, [annotationKey], verb))?.failure ?? null
+  );
+});
 
 /**
  * The first lock that refuses a write of `kind` over these Annotations: one
@@ -896,47 +1012,54 @@ function lockRefusal(
  * @returns the first refused Annotation with its `locked` failure, or `null`
  *   where every lock allows the write.
  */
-function firstHeldLockRefusal(
+const firstHeldLockRefusal = Effect.fnUntraced(function* (
   core: CoreState,
   annotationKeys: readonly string[],
   kind: LockedVerb | HistoryStep["kind"],
-): { annotationKey: string; failure: LockedFailure } | null {
+): Effect.fn.Return<{
+  annotationKey: string;
+  failure: LockedFailure;
+} | null> {
   const verb: LockedVerb = kind === "existence" ? "delete" : kind;
-  const refused = firstLockRefusal(annotationKeys, verb, (annotationKey) =>
-    writeLock(core, annotationKey),
+  const refused = Option.getOrNull(
+    yield* Effect.findFirstFilter(annotationKeys, (annotationKey) =>
+      writeLock(core, annotationKey).pipe(
+        Effect.map((lock) =>
+          lock && lockRefuses(lock, verb)
+            ? Result.succeed({ annotationKey, lock })
+            : Result.fail(undefined),
+        ),
+      ),
+    ),
   );
   if (!refused) return null;
   const { annotationKey, lock } = refused;
-  logger.debug("A lock refused a write", {
-    annotationKey,
-    verb,
-    reason: lock.reason,
-  });
+  yield* Effect.logDebug("A lock refused a write").pipe(
+    Effect.annotateLogs({ annotationKey, verb, reason: lock.reason }),
+  );
   return { annotationKey, failure: { kind: "locked", reason: lock.reason } };
-}
+});
 
 /**
  * The lock a write meets on one Annotation, or `null` where it has none or
  * where the Editing Capability of its Attachment refuses the write first.
  */
-function writeLock(
+const writeLock = Effect.fnUntraced(function* (
   core: CoreState,
   annotationKey: string,
-): AnnotationLock | null {
+): Effect.fn.Return<AnnotationLock | null> {
   for (const [attachmentKey, locks] of core.locks) {
     const lock = locks.get(annotationKey);
-    if (lock) return writeBlocked(core, attachmentKey) ? null : lock;
+    if (lock) return (yield* writeBlocked(core, attachmentKey)) ? null : lock;
   }
   return null;
-}
+});
 
-function writeBlocked(
+const writeBlocked = Effect.fnUntraced(function* (
   core: CoreState,
   attachmentKey: string,
-): WriteFailure | null {
-  const capability = core.bridge.runSync(
-    editingCapability(core, attachmentKey),
-  );
+): Effect.fn.Return<WriteFailure | null> {
+  const capability = yield* editingCapability(core, attachmentKey);
   switch (capability.kind) {
     case "writable":
       return null;
@@ -944,7 +1067,13 @@ function writeBlocked(
     case "authorizing":
       return { kind: "unauthorized" };
     case "cooldown":
-      return cooldownFailure(core.now().until(capability.retryAfter));
+      return {
+        kind: "cooldown",
+        retryAfter: DateTime.distance(
+          yield* DateTime.now,
+          fromInstant(capability.retryAfter),
+        ),
+      };
     case "read-only":
       if (
         capability.reason === "probing" ||
@@ -958,7 +1087,7 @@ function writeBlocked(
         };
       return { kind: capability.reason };
   }
-}
+});
 
 /**
  * What a refused write leaves on the card.
@@ -976,36 +1105,32 @@ function writeBlocked(
  * A tag write never conflicts: once the fresh record stands in the list, it
  * answers `re-apply`, and the same names are applied to the fresh tags.
  *
+ * @param refusal.source the Local API source the write was sent through.
  * @see https://github.com/aidenlx/zotlit/issues/1139 — "Editing Capability and degraded states"
  * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
  */
-async function writeRefused(
+const writeRefused = Effect.fnUntraced(function* (
   core: CoreState,
   held: HeldAnnotation,
-  refusal: WriteAttempt & { failure: WriteFailure },
-  source: LocalApiSource,
-): Promise<MutationState | { kind: "re-apply" }> {
-  const { failure } = refusal;
+  refusal: WriteAttempt & { failure: WriteFailure; source: LocalApiSource },
+): Effect.fn.Return<MutationState | { kind: "re-apply" }, WriteReadError> {
+  const { failure, source } = refusal;
   const annotationKey = held.record.key;
   if (failure.kind === "not-found") {
-    core.bridge.runSync(
-      dropAttachment(core, held.attachmentKey, held.queryKey),
-    );
+    yield* dropAttachment(core, held.attachmentKey, held.queryKey);
     return { kind: "failed", failure };
   }
   if (failure.kind !== "conflict") return { kind: "failed", failure };
 
-  const fresh = await core.bridge.runPromise(
-    core.localApi.readAnnotation(annotationKey, held.attachmentKey),
+  const fresh = yield* core.localApi.readAnnotation(
+    annotationKey,
+    held.attachmentKey,
   );
   if ("failure" in fresh) {
-    logger.debug("A conflicted annotation could not be read back", {
-      annotationKey,
-      failure: fresh.failure,
-    });
-    core.bridge.runSync(
-      dropAttachment(core, held.attachmentKey, held.queryKey),
-    );
+    yield* Effect.logDebug(
+      "A conflicted annotation could not be read back",
+    ).pipe(Effect.annotateLogs({ annotationKey, failure: fresh.failure }));
+    yield* dropAttachment(core, held.attachmentKey, held.queryKey);
     return {
       kind: "failed",
       failure: fresh.failure.kind === "not-found" ? fresh.failure : failure,
@@ -1014,31 +1139,27 @@ async function writeRefused(
 
   const record = fromLocalApi(fresh.value);
   if (
-    !(await awaitRead(
+    !(yield* sourceStillBound(core, held.attachmentKey, source)) ||
+    !(yield* publishApiChange(
       core,
-      sourceStillBound(core, held.attachmentKey, source),
-      false,
-    )) ||
-    !(await publishApiChange(core, held.attachmentKey, source, {
-      kind: "observed",
-      record,
-    }))
+      { attachmentKey: held.attachmentKey, source },
+      { kind: "observed", record },
+    ))
   ) {
     return { kind: "failed", failure: { kind: "server-changed" } };
   }
-  core.bridge.runSync(dropAttachment(core, held.attachmentKey, held.queryKey));
+  yield* dropAttachment(core, held.attachmentKey, held.queryKey);
 
   if (refusal.write === "tags") return { kind: "re-apply" };
   const conflict = conflictOf(refusal, record);
   if (!conflict) {
-    logger.debug("A write conflict resolved to the value Zotero holds", {
-      annotationKey,
-      write: refusal.write,
-    });
+    yield* Effect.logDebug(
+      "A write conflict resolved to the value Zotero holds",
+    ).pipe(Effect.annotateLogs({ annotationKey, write: refusal.write }));
     return IDLE;
   }
   return { kind: "conflict", conflict };
-}
+});
 
 /**
  * The Attachment's list, once Zotero has taken the write.
@@ -1049,10 +1170,9 @@ async function writeRefused(
  * so the Attachment reconciles on its next read rather than holding a record
  * whose version is known to be stale.
  */
-async function applyWrite(
+const applyWrite = Effect.fnUntraced(function* (
   core: CoreState,
   held: HeldAnnotation,
-  annotationKey: string,
   {
     write,
     settle,
@@ -1063,22 +1183,23 @@ async function applyWrite(
     /** The Lock Reason the Annotation stood under when the write was sent. */
     lock: LockReason | undefined;
   },
-): Promise<{ value: ConfirmedWrite } | { failure: LocalApiFailure }> {
-  const { queryKey, attachmentKey } = held;
+): Effect.fn.Return<{ value: ConfirmedWrite } | { failure: LocalApiFailure }> {
+  const { queryKey, attachmentKey, record: sent } = held;
+  const annotationKey = sent.key;
   if (settle === "drop") {
     return {
       value: { kind: "deleted", annotationKey, ...(lock && { lock }) },
     };
   }
-  const fresh = await core.bridge.runPromise(
-    core.localApi.readAnnotation(annotationKey, attachmentKey),
+  const fresh = yield* core.localApi.readAnnotation(
+    annotationKey,
+    attachmentKey,
   );
   if ("failure" in fresh) {
-    logger.debug("A written annotation could not be read back", {
-      annotationKey,
-      failure: fresh.failure,
-    });
-    core.bridge.runSync(invalidate(core, queryKey));
+    yield* Effect.logDebug("A written annotation could not be read back").pipe(
+      Effect.annotateLogs({ annotationKey, failure: fresh.failure }),
+    );
+    yield* invalidate(core, queryKey);
     return fresh;
   }
   const record = fromLocalApi(fresh.value);
@@ -1089,15 +1210,18 @@ async function applyWrite(
       write: write === "delete" ? "color" : write,
     },
   };
-}
+});
 
-/** Publish API confirmations independently of the transport cache's lifetime. */
-async function publishApiChange(
+/**
+ * Publish API confirmations independently of the transport cache's lifetime.
+ *
+ * @param target.source the Local API source the confirmation came through.
+ */
+const publishApiChange = Effect.fnUntraced(function* (
   core: CoreState,
-  attachmentKey: string,
-  source: LocalApiSource,
+  { attachmentKey, source }: { attachmentKey: string; source: LocalApiSource },
   confirmation: AnnotationConfirmation,
-): Promise<boolean> {
+) {
   const previous = core.publishedLists.get(attachmentKey);
   if (
     !previous ||
@@ -1130,9 +1254,9 @@ async function publishApiChange(
   if (confirmation.kind === "deleted") {
     reconcileDrafts(core, source.serverID, attachmentKey, annotations);
   }
-  await awaitRead(core, announceReadPixels(core, previous, next), undefined);
+  yield* announceReadPixels(core, previous, next);
   return true;
-}
+});
 
 function confirmationKey(confirmation: AnnotationConfirmation): string {
   return confirmation.kind === "deleted"
@@ -1192,6 +1316,7 @@ function proposedGeometry(
 }
 
 export {
+  UNKNOWN_OUTCOME,
   createAnnotation,
   patchColor,
   patchColors,
@@ -1207,3 +1332,4 @@ export {
   firstHeldLockRefusal,
   writeBlocked,
 };
+export type { WriteReadError };

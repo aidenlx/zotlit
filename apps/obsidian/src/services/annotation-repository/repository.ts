@@ -16,40 +16,13 @@ import {
   tagDraftFor,
   textDraftFor,
 } from "./core/drafts";
-import {
-  canRedo,
-  canUndo,
-  closeHistory,
-  openHistory,
-  redo,
-  undo,
-} from "./core/history-steps";
 import { capabilityFor } from "./core/lists";
 import type { AnnotationState, TagDraft, TextFieldDraft } from "./core/model";
-import { mutationFor } from "./core/outcomes";
 import type { CoreState } from "./core/state";
-import {
-  createAnnotation,
-  deleteAnnotation,
-  deleteAnnotations,
-  discardConflict,
-  patchColor,
-  patchColors,
-  patchComment,
-  patchGeometry,
-  retryWrite,
-} from "./core/writes";
-import type { CreateOutcome } from "./core/writes";
-import type { HistoryOutcome } from "./history";
 import { TEXT_FIELDS } from "./write";
-import type {
-  AnnotationDraft,
-  GeometryEdit,
-  GeometryInput,
-  MutationState,
-  TextField,
-} from "./write";
-export type { CreateOutcome } from "./core/writes";
+import type { MutationState, TextField } from "./write";
+export type { CreateOutcome, WriteReadError } from "./core/writes";
+export { WriteRunFailed } from "./core/writes";
 export {
   UNHELD_RETENTION,
   LocalApiReadFailed,
@@ -167,10 +140,6 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
     return this.#stack.disposeAsync();
   }
 
-  mutationFor(annotationKey: string): MutationState {
-    return mutationFor(this.#core, annotationKey);
-  }
-
   annotationState(annotationKey: string): AnnotationState {
     return annotationState(this.#core, annotationKey);
   }
@@ -223,78 +192,5 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
 
   discardTagDraft(annotationKey: string): void {
     return discardTagDraft(this.#core, annotationKey);
-  }
-
-  createAnnotation(
-    attachmentKey: string,
-    draft: Omit<AnnotationDraft, "parentKey">,
-    options: { group?: string } = {},
-  ): Promise<CreateOutcome> {
-    return createAnnotation(this.#core, attachmentKey, draft, options);
-  }
-
-  patchColor(annotationKey: string, color: string): Promise<MutationState> {
-    return patchColor(this.#core, annotationKey, color);
-  }
-
-  patchColors(
-    annotationKeys: readonly string[],
-    color: string,
-  ): Promise<MutationState[]> {
-    return patchColors(this.#core, annotationKeys, color);
-  }
-
-  patchComment(annotationKey: string, comment: string): Promise<MutationState> {
-    return patchComment(this.#core, annotationKey, comment);
-  }
-
-  patchGeometry(
-    annotationKey: string,
-    edit: GeometryEdit,
-    input: GeometryInput,
-  ): Promise<MutationState> {
-    return patchGeometry(this.#core, annotationKey, edit, input);
-  }
-
-  deleteAnnotation(annotationKey: string): Promise<MutationState> {
-    return deleteAnnotation(this.#core, annotationKey);
-  }
-
-  deleteAnnotations(
-    annotationKeys: readonly string[],
-  ): Promise<MutationState[]> {
-    return deleteAnnotations(this.#core, annotationKeys);
-  }
-
-  retryWrite(annotationKey: string): Promise<MutationState> {
-    return retryWrite(this.#core, annotationKey);
-  }
-
-  discardConflict(annotationKey: string): void {
-    return discardConflict(this.#core, annotationKey);
-  }
-
-  openHistory(attachmentKey: string): void {
-    return openHistory(this.#core, attachmentKey);
-  }
-
-  closeHistory(attachmentKey: string): void {
-    return closeHistory(this.#core, attachmentKey);
-  }
-
-  canUndo(attachmentKey: string): boolean {
-    return canUndo(this.#core, attachmentKey);
-  }
-
-  canRedo(attachmentKey: string): boolean {
-    return canRedo(this.#core, attachmentKey);
-  }
-
-  undo(attachmentKey: string): Promise<HistoryOutcome> {
-    return undo(this.#core, attachmentKey);
-  }
-
-  redo(attachmentKey: string): Promise<HistoryOutcome> {
-    return redo(this.#core, attachmentKey);
   }
 }

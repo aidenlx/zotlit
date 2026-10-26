@@ -97,9 +97,9 @@ function databaseRows(
 // `scopedBridge`, until its own slice converts it.
 
 /**
- * A converted read, for a plain part of the core that waits on it: it runs on
- * the layer's bridge, in the layer's Scope, and answers `released` where the
- * layer closed under it.
+ * A converted read or write, for a plain part of the core that waits on it:
+ * it runs on the layer's bridge, in the layer's Scope, and answers `released`
+ * where the layer closed under it.
  */
 function awaitRead<A, E>(
   core: CoreState,

@@ -1,5 +1,6 @@
 // How a confirmed write is recorded as a History Step in an open Annotation History.
-import { getLogger } from "@/lib/log";
+import { Effect } from "effect";
+
 import {
   contentOf,
   historyFieldsOf,
@@ -27,8 +28,6 @@ import type {
   GroupWrites,
 } from "./model";
 import type { CoreState } from "./state";
-
-const logger = getLogger("annotation-repository");
 
 /**
  * What one confirmed write changed, as the History Step that puts it back
@@ -78,20 +77,24 @@ function historyChangeOf(
  * already the one that steps it back.
  *
  * @param before the held record the write was sent against.
+ * @param confirmed.attachmentKey the Attachment the write landed on.
  * @param confirmed.applied what Zotero answered the write with.
  * @param confirmed.join what this edit joins the step before it by, where it
  *   came from an input that runs.
  */
-function recordStep(
+const recordStep = Effect.fnUntraced(function* (
   core: CoreState,
-  attachmentKey: string,
   before: AnnotationRecord,
-  { applied, join }: { applied: ConfirmedWrite; join?: HistoryJoin },
-): void {
+  {
+    attachmentKey,
+    applied,
+    join,
+  }: { attachmentKey: string; applied: ConfirmedWrite; join?: HistoryJoin },
+) {
   const history = core.histories.get(attachmentKey);
   if (!history || core.steppingWrites.has(before.key)) return;
   if (applied.kind === "record" && applied.write === "tags") {
-    recordTagStep(core, history, {
+    yield* recordTagStep(core, history, {
       attachmentKey,
       before,
       record: applied.record,
@@ -99,7 +102,8 @@ function recordStep(
     return;
   }
   if (applied.kind === "record" && isTextField(applied.write)) {
-    recordTextStep(core, history, applied.write, {
+    yield* recordTextStep(core, history, {
+      field: applied.write,
       attachmentKey,
       before,
       record: applied.record,
@@ -109,7 +113,7 @@ function recordStep(
   const made = historyChangeOf(before, applied);
   if (!made) return;
   if (made.kind === "existence") {
-    recordExistence(core, attachmentKey, made.change);
+    yield* recordExistence(core, made.change, { attachmentKey });
     return;
   }
   const joined = history.record({
@@ -117,14 +121,16 @@ function recordStep(
     changes: [made.change],
     ...(join && { join }),
   });
-  logger.debug("An edit was recorded in the annotation history", {
-    attachmentKey,
-    annotationKey: made.change.annotationKey,
-    kind: made.kind,
-    joined,
-  });
+  yield* Effect.logDebug("An edit was recorded in the annotation history").pipe(
+    Effect.annotateLogs({
+      attachmentKey,
+      annotationKey: made.change.annotationKey,
+      kind: made.kind,
+      joined,
+    }),
+  );
   core.publish({ _tag: "history-changed", attachmentKey });
-}
+});
 
 /**
  * Take one confirmed write of a text field — the comment or the Quoted Text —
@@ -143,22 +149,23 @@ function recordStep(
  * apart too, and the Mark Popup handing the comment editor to an Annotation
  * Card keeps them one.
  */
-function recordTextStep(
+const recordTextStep = Effect.fnUntraced(function* (
   core: CoreState,
   history: AnnotationHistory,
-  field: TextField,
   {
+    field,
     attachmentKey,
     before,
     record,
   }: {
+    field: TextField;
     attachmentKey: string;
     /** The record the write was stamped off. */
     before: AnnotationRecord;
     /** The record Zotero confirmed. */
     record: AnnotationRecord;
   },
-): void {
+) {
   const { valueOf } = TEXT_FIELD_SPECS[field];
   const top = history.peek("undo");
   const open =
@@ -193,14 +200,18 @@ function recordTextStep(
   if (open) history.reshape(open, step);
   else if (step) history.record(step);
   else return;
-  logger.debug("A text editing session moved in the annotation history", {
-    attachmentKey,
-    annotationKey: record.key,
-    field,
-    recorded: !!step,
-  });
+  yield* Effect.logDebug(
+    "A text editing session moved in the annotation history",
+  ).pipe(
+    Effect.annotateLogs({
+      attachmentKey,
+      annotationKey: record.key,
+      field,
+      recorded: !!step,
+    }),
+  );
   core.publish({ _tag: "history-changed", attachmentKey });
-}
+});
 
 /**
  * Take one confirmed tag session into the Attachment's Annotation History,
@@ -210,7 +221,7 @@ function recordTextStep(
  *
  * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
  */
-function recordTagStep(
+const recordTagStep = Effect.fnUntraced(function* (
   core: CoreState,
   history: AnnotationHistory,
   {
@@ -224,21 +235,25 @@ function recordTagStep(
     /** The record Zotero confirmed. */
     record: AnnotationRecord;
   },
-): void {
+) {
   const tags = tagChange(annotationTags(before), annotationTags(record));
   if (noTagChange(tags)) return;
   history.record({
     kind: "tags",
     changes: [{ annotationKey: record.key, tags }],
   });
-  logger.debug("A tag session was recorded in the annotation history", {
-    attachmentKey,
-    annotationKey: record.key,
-    added: tags.added.length,
-    removed: tags.removed.length,
-  });
+  yield* Effect.logDebug(
+    "A tag session was recorded in the annotation history",
+  ).pipe(
+    Effect.annotateLogs({
+      attachmentKey,
+      annotationKey: record.key,
+      added: tags.added.length,
+      removed: tags.removed.length,
+    }),
+  );
   core.publish({ _tag: "history-changed", attachmentKey });
-}
+});
 
 /**
  * Take the writes of one group that landed on one Attachment into its
@@ -250,14 +265,14 @@ function recordTagStep(
  * kind of step is a caller's mistake: it is refused from the step and
  * logged, rather than letting any one write decide what the step is.
  *
+ * @param group.attachmentKey the Attachment the writes landed on.
  * @param group.writes the landed writes on this Attachment.
  */
-function recordGroup(
+const recordGroup = Effect.fnUntraced(function* (
   core: CoreState,
-  attachmentKey: string,
   annotationKeys: readonly string[],
-  { kind, writes }: GroupWrites,
-): void {
+  { attachmentKey, kind, writes }: GroupWrites & { attachmentKey: string },
+) {
   const history = core.histories.get(attachmentKey);
   if (!history || core.steppingAttachments.has(attachmentKey)) return;
   const order = (entry: GroupWrite) => annotationKeys.indexOf(entry.before.key);
@@ -272,22 +287,26 @@ function recordGroup(
       changes.push(made.change);
       continue;
     }
-    logger.error("A write of a group changed another kind of step", {
-      attachmentKey,
-      annotationKey: before.key,
-      group: kind,
-      write: made.kind,
-    });
+    yield* Effect.logError(
+      "A write of a group changed another kind of step",
+    ).pipe(
+      Effect.annotateLogs({
+        attachmentKey,
+        annotationKey: before.key,
+        group: kind,
+        write: made.kind,
+      }),
+    );
   }
   if (changes.length === 0) return;
   history.record({ kind, changes });
-  logger.debug("A group write was recorded in the history as one step", {
-    attachmentKey,
-    kind,
-    annotations: changes.length,
-  });
+  yield* Effect.logDebug(
+    "A group write was recorded in the history as one step",
+  ).pipe(
+    Effect.annotateLogs({ attachmentKey, kind, annotations: changes.length }),
+  );
   core.publish({ _tag: "history-changed", attachmentKey });
-}
+});
 
 /**
  * Take one confirmed create or delete into the Attachment's Annotation
@@ -297,15 +316,15 @@ function recordGroup(
  * advance, so a running step keeps its own creates out by the Attachment it
  * runs on rather than by the Annotation every other kind names.
  *
- * @param group what joins this create to the others of one gesture, where one
- *   gesture created several Annotations.
+ * @param made.attachmentKey the Attachment the create or delete landed on.
+ * @param made.group what joins this create to the others of one gesture,
+ *   where one gesture created several Annotations.
  */
-function recordExistence(
+const recordExistence = Effect.fnUntraced(function* (
   core: CoreState,
-  attachmentKey: string,
   change: HistoryChange,
-  group?: string,
-): void {
+  { attachmentKey, group }: { attachmentKey: string; group?: string },
+) {
   const history = core.histories.get(attachmentKey);
   if (!history || core.steppingAttachments.has(attachmentKey)) return;
   history.record({
@@ -313,12 +332,16 @@ function recordExistence(
     changes: [change],
     ...(group !== undefined && { group }),
   });
-  logger.debug("A create or a delete was recorded in the history", {
-    attachmentKey,
-    annotationKey: change.annotationKey,
-    restores: change.before.content !== null,
-  });
+  yield* Effect.logDebug(
+    "A create or a delete was recorded in the history",
+  ).pipe(
+    Effect.annotateLogs({
+      attachmentKey,
+      annotationKey: change.annotationKey,
+      restores: change.before.content !== null,
+    }),
+  );
   core.publish({ _tag: "history-changed", attachmentKey });
-}
+});
 
 export { recordStep, recordGroup, recordExistence };

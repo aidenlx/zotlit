@@ -25,6 +25,7 @@ import {
 } from "@/views/annot-view/card-controls";
 
 import {
+  collect,
   afterWrite,
   GROUP_ATTACHMENT,
   GROUP_ID,
@@ -46,7 +47,12 @@ import {
 } from "./__fixtures__";
 import type { GroupLibrary } from "./__fixtures__";
 import type { RepositoryClient } from "./__fixtures__";
-import type { AnnotationList, AnnotationRecord, LockReason } from "./service";
+import type {
+  AnnotationList,
+  AnnotationRecord,
+  AnnotationRepository,
+  LockReason,
+} from "./service";
 
 // #region annotation locks
 
@@ -105,6 +111,22 @@ function recordOf(repository: RepositoryClient, key: string): AnnotationRecord {
     ?.value.annotations.find((annotation) => annotation.key === key);
   if (!record) throw new Error(`No record ${key}`);
   return record;
+}
+
+/** {@link recordOf}, read through the repository tag. */
+function recordIn(
+  service: AnnotationRepository["Service"],
+  key: string,
+): Effect.Effect<AnnotationRecord> {
+  return service.peek("RGRPDF24").pipe(
+    Effect.map((held) => {
+      const record = held?.value.annotations.find(
+        (annotation) => annotation.key === key,
+      );
+      if (!record) throw new Error(`No record ${key}`);
+      return record;
+    }),
+  );
 }
 
 /**
@@ -213,36 +235,40 @@ it.effect(
     }),
 );
 
-it("refuses every verb on an External Annotation before any request", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository, requests } = await writable(
-    stack,
-    {},
-    { external: ["PUPR5FG5"] },
-  );
-  const sent = requests.length;
-  const drawn: string[] = [];
-  stack.defer(
-    repository.listen("annotations-changed", (key) => drawn.push(key)),
-  );
+it.effect(
+  "refuses every verb on an External Annotation before any request",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const { service, requests } = yield* Effect.promise(() =>
+        writable(stack, {}, { external: ["PUPR5FG5"] }),
+      );
+      const sent = requests.length;
+      const drawn: string[] = [];
+      yield* collect(service.annotationsChanged, (key) =>
+        Effect.sync(() => drawn.push(key)),
+      );
 
-  const outcomes = [
-    await repository.patchColor("PUPR5FG5", "#ff6666"),
-    await repository.patchComment("PUPR5FG5", "Worth citing"),
-    await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5"), "pointer"),
-    await repository.deleteAnnotation("PUPR5FG5"),
-  ];
+      const outcomes = [
+        yield* service.patchColor("PUPR5FG5", "#ff6666"),
+        yield* service.patchComment("PUPR5FG5", "Worth citing"),
+        yield* service.patchGeometry("PUPR5FG5", moved("PUPR5FG5"), "pointer"),
+        yield* service.deleteAnnotation("PUPR5FG5"),
+      ];
 
-  expect(outcomes).toEqual([LOCKED, LOCKED, LOCKED, LOCKED]);
-  // No draft starts, so no autosave and no Done can send one.
-  expect(repository.editTextField("comment", "PUPR5FG5", "typed")).toBeNull();
-  expect(repository.editTextField("text", "PUPR5FG5")).toBeNull();
-  expect(repository.editTags("PUPR5FG5", ["review"])).toBeNull();
-  expect(requests.slice(sent)).toEqual([]);
-  // No Pending Proposal was drawn, and no outcome stands on the card.
-  expect(drawn).toEqual([]);
-  expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
-});
+      expect(outcomes).toEqual([LOCKED, LOCKED, LOCKED, LOCKED]);
+      // No draft starts, so no autosave and no Done can send one.
+      expect(
+        yield* service.editTextField("comment", "PUPR5FG5", "typed"),
+      ).toBeNull();
+      expect(yield* service.editTextField("text", "PUPR5FG5")).toBeNull();
+      expect(yield* service.editTags("PUPR5FG5", ["review"])).toBeNull();
+      expect(requests.slice(sent)).toEqual([]);
+      // No Pending Proposal was drawn, and no outcome stands on the card.
+      expect(drawn).toEqual([]);
+      expect(yield* service.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
+    }),
+);
 
 it("holds the drafts open when the lock appears, and sends none of them", async () => {
   useFakeTimers();
@@ -315,25 +341,32 @@ it("holds the drafts open when the lock appears, and sends none of them", async 
   }
 });
 
-it("keeps a Write Conflict that stands when the lock appears, and sends no Apply again", async () => {
-  await using stack = new AsyncDisposableStack();
-  const harness = await writable(stack, {
-    write: () => staleVersion(),
-    item: () => annotationItem(afterWrite("PUPR5FG5", { color: "#5fb236" })),
-  });
-  const { repository, requests } = harness;
-  const conflict = await repository.patchColor("PUPR5FG5", "#ff6666");
-  expect(conflict.kind).toBe("conflict");
+it.effect(
+  "keeps a Write Conflict that stands when the lock appears, and sends no Apply again",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const harness = yield* Effect.promise(() =>
+        writable(stack, {
+          write: () => staleVersion(),
+          item: () =>
+            annotationItem(afterWrite("PUPR5FG5", { color: "#5fb236" })),
+        }),
+      );
+      const { service, requests } = harness;
+      const conflict = yield* service.patchColor("PUPR5FG5", "#ff6666");
+      expect(conflict.kind).toBe("conflict");
 
-  await importFromPdf(harness, "PUPR5FG5");
-  const sent = requests.length;
+      yield* Effect.promise(() => importFromPdf(harness, "PUPR5FG5"));
+      const sent = requests.length;
 
-  expect(await repository.retryWrite("PUPR5FG5")).toEqual(LOCKED);
-  expect(repository.mutationFor("PUPR5FG5")).toEqual(conflict);
-  expect(requests.slice(sent).filter(({ method }) => method !== "GET")).toEqual(
-    [],
-  );
-});
+      expect(yield* service.retryWrite("PUPR5FG5")).toEqual(LOCKED);
+      expect(yield* service.mutationFor("PUPR5FG5")).toEqual(conflict);
+      expect(
+        requests.slice(sent).filter(({ method }) => method !== "GET"),
+      ).toEqual([]);
+    }),
+);
 
 it.effect(
   "draws a lock the database moved while the list it gave is not published",
@@ -374,28 +407,36 @@ it.effect(
     }),
 );
 
-it("keeps the History Steps of an Annotation the lock refuses where they stand", async () => {
-  await using stack = new AsyncDisposableStack();
-  const zotero = zoteroLibrary();
-  const harness = await writable(stack, zotero.answers);
-  const { repository, requests } = harness;
-  repository.openHistory("RGRPDF24");
-  await repository.patchColor("K3JRFLFQ", "#5fb236");
-  await repository.patchColor("K3JRFLFQ", "#2ea8e5");
-  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+it.effect(
+  "keeps the History Steps of an Annotation the lock refuses where they stand",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const zotero = zoteroLibrary();
+      const harness = yield* Effect.promise(() =>
+        writable(stack, zotero.answers),
+      );
+      const { service, requests } = harness;
+      yield* service.openHistory("RGRPDF24");
+      yield* service.patchColor("K3JRFLFQ", "#5fb236");
+      yield* service.patchColor("K3JRFLFQ", "#2ea8e5");
+      expect(yield* service.undo("RGRPDF24")).toMatchObject({
+        kind: "stepped",
+      });
 
-  await importFromPdf(harness, "K3JRFLFQ");
-  const sent = requests.length;
+      yield* Effect.promise(() => importFromPdf(harness, "K3JRFLFQ"));
+      const sent = requests.length;
 
-  expect(await repository.undo("RGRPDF24")).toEqual(LOCKED_STEP);
-  expect(await repository.redo("RGRPDF24")).toEqual(LOCKED_STEP);
-  expect(repository.canUndo("RGRPDF24")).toBe(true);
-  expect(repository.canRedo("RGRPDF24")).toBe(true);
-  expect(zotero.at("K3JRFLFQ")?.color).toBe("#5fb236");
-  expect(requests.slice(sent).filter(({ method }) => method !== "GET")).toEqual(
-    [],
-  );
-});
+      expect(yield* service.undo("RGRPDF24")).toEqual(LOCKED_STEP);
+      expect(yield* service.redo("RGRPDF24")).toEqual(LOCKED_STEP);
+      expect(yield* service.canUndo("RGRPDF24")).toBe(true);
+      expect(yield* service.canRedo("RGRPDF24")).toBe(true);
+      expect(zotero.at("K3JRFLFQ")?.color).toBe("#5fb236");
+      expect(
+        requests.slice(sent).filter(({ method }) => method !== "GET"),
+      ).toEqual([]);
+    }),
+);
 
 it("refuses the Text Edit step of an External Annotation with the Lock Reason, and the step stays", async () => {
   useFakeTimers();
@@ -439,26 +480,32 @@ it("refuses the Text Edit step of an External Annotation with the Lock Reason, a
   }
 });
 
-it("refuses a group recolour with one External Annotation whole, and sends nothing", async () => {
-  await using stack = new AsyncDisposableStack();
-  const zotero = zoteroLibrary();
-  const { repository, requests } = await writable(stack, zotero.answers, {
-    external: ["K3JRFLFQ"],
-  });
-  repository.openHistory("RGRPDF24");
-  const keys = ["PUPR5FG5", "K3JRFLFQ", "C94NJNYG"];
-  const before = keys.map((key) => zotero.at(key)?.color);
-  const sent = requests.length;
+it.effect(
+  "refuses a group recolour with one External Annotation whole, and sends nothing",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const zotero = zoteroLibrary();
+      const { service, requests } = yield* Effect.promise(() =>
+        writable(stack, zotero.answers, {
+          external: ["K3JRFLFQ"],
+        }),
+      );
+      yield* service.openHistory("RGRPDF24");
+      const keys = ["PUPR5FG5", "K3JRFLFQ", "C94NJNYG"];
+      const before = keys.map((key) => zotero.at(key)?.color);
+      const sent = requests.length;
 
-  expect(await repository.patchColors(keys, "#5fb236")).toEqual([
-    { kind: "idle" },
-    LOCKED,
-    { kind: "idle" },
-  ]);
-  expect(requests.slice(sent)).toEqual([]);
-  expect(keys.map((key) => zotero.at(key)?.color)).toEqual(before);
-  expect(repository.canUndo("RGRPDF24")).toBe(false);
-});
+      expect(yield* service.patchColors(keys, "#5fb236")).toEqual([
+        { kind: "idle" },
+        LOCKED,
+        { kind: "idle" },
+      ]);
+      expect(requests.slice(sent)).toEqual([]);
+      expect(keys.map((key) => zotero.at(key)?.color)).toEqual(before);
+      expect(yield* service.canUndo("RGRPDF24")).toBe(false);
+    }),
+);
 
 it("refuses a group delete with one External Annotation whole, and keeps the drafts of the others", async () => {
   useFakeTimers();
@@ -486,72 +533,81 @@ it("refuses a group delete with one External Annotation whole, and keeps the dra
   }
 });
 
-it("dims every verb of an External Annotation with the Lock Reason, and none of its neighbour's", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository } = await writable(stack, {}, { external: ["PUPR5FG5"] });
-  const controls = (key: string) => {
-    const annotation = recordOf(repository, key);
-    return cardControls({
-      blocks: annotationBlocks({
-        annotation,
-        capability: repository.capabilityFor("RGRPDF24"),
+it.effect(
+  "dims every verb of an External Annotation with the Lock Reason, and none of its neighbour's",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const { service } = yield* Effect.promise(() =>
+        writable(stack, {}, { external: ["PUPR5FG5"] }),
+      );
+      const controls = (key: string) =>
+        Effect.gen(function* () {
+          const annotation = yield* recordIn(service, key);
+          return cardControls({
+            blocks: annotationBlocks({
+              annotation,
+              capability: yield* service.capabilityFor("RGRPDF24"),
+              now: NOW,
+            }),
+            mutation: yield* service.mutationFor(key),
+            hasTags: annotation.tags.length > 0,
+            type: annotation.type,
+          });
+        });
+
+      const locked = { disabled: false, blocked: EXTERNAL_BLOCK };
+      expect(yield* controls("PUPR5FG5")).toMatchObject({
+        color: locked,
+        comment: locked,
+        tags: locked,
+        text: locked,
+        delete: locked,
+      });
+      const free = { disabled: false, blocked: null };
+      expect(yield* controls("K3JRFLFQ")).toMatchObject({
+        color: free,
+        comment: free,
+        tags: free,
+        text: free,
+        delete: free,
+      });
+    }),
+);
+
+it.effect(
+  "gives the Editing Capability's reason where it refuses an External Annotation too",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const { service, requests } = yield* Effect.promise(() =>
+        writable(stack, {}, { key: undefined, external: ["PUPR5FG5"] }),
+      );
+      const sent = requests.length;
+      const capability = yield* service.capabilityFor("RGRPDF24");
+
+      const blocks = annotationBlocks({
+        annotation: yield* recordIn(service, "PUPR5FG5"),
+        capability,
         now: NOW,
-      }),
-      mutation: repository.mutationFor(key),
-      hasTags: annotation.tags.length > 0,
-      type: annotation.type,
-    });
-  };
+      });
 
-  const locked = { disabled: false, blocked: EXTERNAL_BLOCK };
-  expect(controls("PUPR5FG5")).toMatchObject({
-    color: locked,
-    comment: locked,
-    tags: locked,
-    text: locked,
-    delete: locked,
-  });
-  const free = { disabled: false, blocked: null };
-  expect(controls("K3JRFLFQ")).toMatchObject({
-    color: free,
-    comment: free,
-    tags: free,
-    text: free,
-    delete: free,
-  });
-});
-
-it("gives the Editing Capability's reason where it refuses an External Annotation too", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository, requests } = await writable(
-    stack,
-    {},
-    { key: undefined, external: ["PUPR5FG5"] },
-  );
-  const sent = requests.length;
-  const capability = repository.capabilityFor("RGRPDF24");
-
-  const blocks = annotationBlocks({
-    annotation: recordOf(repository, "PUPR5FG5"),
-    capability,
-    now: NOW,
-  });
-
-  const allow = capabilityBlock(capability, NOW);
-  expect(allow?.action).toBe("allow-editing");
-  expect(blocks).toEqual({
-    color: allow,
-    comment: allow,
-    tags: allow,
-    text: allow,
-    delete: allow,
-  });
-  expect(await repository.patchColor("PUPR5FG5", "#ff6666")).toEqual({
-    kind: "failed",
-    failure: { kind: "unauthorized" },
-  });
-  expect(requests.slice(sent)).toEqual([]);
-});
+      const allow = capabilityBlock(capability, NOW);
+      expect(allow?.action).toBe("allow-editing");
+      expect(blocks).toEqual({
+        color: allow,
+        comment: allow,
+        tags: allow,
+        text: allow,
+        delete: allow,
+      });
+      expect(yield* service.patchColor("PUPR5FG5", "#ff6666")).toEqual({
+        kind: "failed",
+        failure: { kind: "unauthorized" },
+      });
+      expect(requests.slice(sent)).toEqual([]);
+    }),
+);
 
 // #endregion
 
@@ -767,117 +823,140 @@ it.effect(
     }),
 );
 
-it("refuses every edit of another user's Annotation before any request, and sends its delete", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository, requests } = await groupWritable(stack);
-  const key = inGroup("PUPR5FG5");
-  const sent = requests.length;
+it.effect(
+  "refuses every edit of another user's Annotation before any request, and sends its delete",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const { service, requests } = yield* Effect.promise(() =>
+        groupWritable(stack),
+      );
+      const key = inGroup("PUPR5FG5");
+      const sent = requests.length;
 
-  const outcomes = [
-    await repository.patchColor(key, "#ff6666"),
-    await repository.patchComment(key, "Worth citing"),
-    await repository.patchGeometry(key, moved("PUPR5FG5"), "pointer"),
-  ];
+      const outcomes = [
+        yield* service.patchColor(key, "#ff6666"),
+        yield* service.patchComment(key, "Worth citing"),
+        yield* service.patchGeometry(key, moved("PUPR5FG5"), "pointer"),
+      ];
 
-  expect(outcomes).toEqual([
-    ANOTHER_USER_LOCKED,
-    ANOTHER_USER_LOCKED,
-    ANOTHER_USER_LOCKED,
-  ]);
-  // No draft starts, so no autosave and no Done can send one.
-  expect(repository.editTextField("comment", key, "typed")).toBeNull();
-  expect(repository.editTextField("text", key)).toBeNull();
-  expect(repository.editTags(key, ["review"])).toBeNull();
-  expect(requests.slice(sent)).toEqual([]);
+      expect(outcomes).toEqual([
+        ANOTHER_USER_LOCKED,
+        ANOTHER_USER_LOCKED,
+        ANOTHER_USER_LOCKED,
+      ]);
+      // No draft starts, so no autosave and no Done can send one.
+      expect(yield* service.editTextField("comment", key, "typed")).toBeNull();
+      expect(yield* service.editTextField("text", key)).toBeNull();
+      expect(yield* service.editTags(key, ["review"])).toBeNull();
+      expect(requests.slice(sent)).toEqual([]);
 
-  expect(await repository.deleteAnnotation(key)).toEqual({ kind: "idle" });
-  const [erase] = requests.slice(sent);
-  expect([erase?.method, erase?.url.pathname]).toEqual([
-    "DELETE",
-    `/api/groups/${GROUP_ID}/items/PUPR5FG5`,
-  ]);
-});
+      expect(yield* service.deleteAnnotation(key)).toEqual({ kind: "idle" });
+      const [erase] = requests.slice(sent);
+      expect([erase?.method, erase?.url.pathname]).toEqual([
+        "DELETE",
+        `/api/groups/${GROUP_ID}/items/PUPR5FG5`,
+      ]);
+    }),
+);
 
-it("refuses the held drafts of an Annotation once the account's first sync names another creator", async () => {
-  await using stack = new AsyncDisposableStack();
-  const harness = await groupWritable(stack, { createdBy: CREATED_BY });
-  const { repository, requests, client, dbEvents } = harness;
-  const key = inGroup("PUPR5FG5");
-  repository.editTextField("comment", key, "typed before the sync");
-  repository.editTextField("text", key, "Identify your message");
-  repository.editTags(key, ["review"]);
-  const sent = requests.length;
+it.effect(
+  "refuses the held drafts of an Annotation once the account's first sync names another creator",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const harness = yield* Effect.promise(() =>
+        groupWritable(stack, { createdBy: CREATED_BY }),
+      );
+      const { repository, service, requests, client, dbEvents } = harness;
+      const key = inGroup("PUPR5FG5");
+      yield* service.editTextField("comment", key, "typed before the sync");
+      yield* service.editTextField("text", key, "Identify your message");
+      yield* service.editTags(key, ["review"]);
+      const sent = requests.length;
 
-  client.$client.exec(
-    `insert into settings (setting, key, value) values ('account', 'userID', ${ME});`,
-  );
-  dbEvents.emit("changed");
-  await vi.waitFor(async () => {
-    const list = await repository.read(GROUP_ATTACHMENT);
-    expect(groupLocks(list).PUPR5FG5).toEqual({ reason: "another-user" });
-  });
+      client.$client.exec(
+        `insert into settings (setting, key, value) values ('account', 'userID', ${ME});`,
+      );
+      dbEvents.emit("changed");
+      yield* Effect.promise(() =>
+        vi.waitFor(async () => {
+          const list = await repository.read(GROUP_ATTACHMENT);
+          expect(groupLocks(list).PUPR5FG5).toEqual({
+            reason: "another-user",
+          });
+        }),
+      );
 
-  expect(await repository.submitTextField("comment", key)).toEqual(
-    ANOTHER_USER_LOCKED,
-  );
-  expect(await repository.submitTextField("text", key)).toEqual(
-    ANOTHER_USER_LOCKED,
-  );
-  expect(await repository.retryTextDraft("comment", key)).toEqual(
-    ANOTHER_USER_LOCKED,
-  );
-  expect(await repository.submitTags(key)).toEqual(ANOTHER_USER_LOCKED);
-  expect(requests.slice(sent).filter(({ method }) => method !== "GET")).toEqual(
-    [],
-  );
-});
+      expect(yield* service.submitTextField("comment", key)).toEqual(
+        ANOTHER_USER_LOCKED,
+      );
+      expect(yield* service.submitTextField("text", key)).toEqual(
+        ANOTHER_USER_LOCKED,
+      );
+      expect(yield* service.retryTextDraft("comment", key)).toEqual(
+        ANOTHER_USER_LOCKED,
+      );
+      expect(yield* service.submitTags(key)).toEqual(ANOTHER_USER_LOCKED);
+      expect(
+        requests.slice(sent).filter(({ method }) => method !== "GET"),
+      ).toEqual([]);
+    }),
+);
 
-it("sends a group delete over another user's Annotations, and one undo puts them back unlocked", async () => {
-  await using stack = new AsyncDisposableStack();
-  const zotero = zoteroLibrary(
-    ROUGIER_ANNOTATIONS.map((annotation) => ({
-      ...annotation,
-      groupID: GROUP_ID,
-    })),
-  );
-  const { repository, requests, client, dbEvents } = await setup(
-    stack,
-    zotero.answers,
-    { key: REMEMBERED_KEY, group: SYNCED },
-  );
-  await repository.read(GROUP_ATTACHMENT);
-  await vi.waitFor(async () =>
-    expect((await repository.read(GROUP_ATTACHMENT))?.source.kind).toBe(
-      "zotero-local-api",
-    ),
-  );
-  repository.openHistory(GROUP_ATTACHMENT);
-  const sent = requests.length;
+it.effect(
+  "sends a group delete over another user's Annotations, and one undo puts them back unlocked",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const zotero = zoteroLibrary(
+        ROUGIER_ANNOTATIONS.map((annotation) => ({
+          ...annotation,
+          groupID: GROUP_ID,
+        })),
+      );
+      const { repository, service, requests, client, dbEvents } =
+        yield* Effect.promise(() =>
+          setup(stack, zotero.answers, {
+            key: REMEMBERED_KEY,
+            group: SYNCED,
+          }),
+        );
+      yield* service.read(GROUP_ATTACHMENT);
+      yield* Effect.promise(() =>
+        vi.waitFor(async () =>
+          expect((await repository.read(GROUP_ATTACHMENT))?.source.kind).toBe(
+            "zotero-local-api",
+          ),
+        ),
+      );
+      yield* service.openHistory(GROUP_ATTACHMENT);
+      const sent = requests.length;
 
-  expect(
-    await repository.deleteAnnotations([
-      inGroup("PUPR5FG5"),
-      inGroup("C94NJNYG"),
-    ]),
-  ).toEqual([{ kind: "idle" }, { kind: "idle" }]);
-  expect(
-    requests
-      .slice(sent)
-      .filter(({ method }) => method === "DELETE")
-      .map(({ url }) => url.pathname),
-  ).toEqual([
-    `/api/groups/${GROUP_ID}/items/PUPR5FG5`,
-    `/api/groups/${GROUP_ID}/items/C94NJNYG`,
-  ]);
+      expect(
+        yield* service.deleteAnnotations([
+          inGroup("PUPR5FG5"),
+          inGroup("C94NJNYG"),
+        ]),
+      ).toEqual([{ kind: "idle" }, { kind: "idle" }]);
+      expect(
+        requests
+          .slice(sent)
+          .filter(({ method }) => method === "DELETE")
+          .map(({ url }) => url.pathname),
+      ).toEqual([
+        `/api/groups/${GROUP_ID}/items/PUPR5FG5`,
+        `/api/groups/${GROUP_ID}/items/C94NJNYG`,
+      ]);
 
-  // Zotero restores each under a new key, with the current user as creator,
-  // and the database copy ZotLit reads holds them so. The undo says so.
-  expect(await repository.undo(GROUP_ATTACHMENT)).toMatchObject({
-    kind: "stepped",
-    restoredAsCreator: { count: 2 },
-  });
-  client.$client.exec(
-    `insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+      // Zotero restores each under a new key, with the current user as creator,
+      // and the database copy ZotLit reads holds them so. The undo says so.
+      expect(yield* service.undo(GROUP_ATTACHMENT)).toMatchObject({
+        kind: "stepped",
+        restoredAsCreator: { count: 2 },
+      });
+      client.$client.exec(
+        `insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
        values (80, 4, '2026-09-26 12:00:00', '2026-09-26 12:00:00', 2, 'MADE2345'),
               (81, 4, '2026-09-26 12:00:00', '2026-09-26 12:00:00', 2, 'MADE2346');
      insert into itemAnnotations
@@ -889,11 +968,12 @@ it("sends a group delete over another user's Annotations, and one undo puts them
        select 81, parentItemID, type, text, comment, color, pageLabel, sortIndex, position, 0
          from itemAnnotations where itemID = 52;
      insert into groupItems (itemID, createdByUserID) values (80, ${ME}), (81, ${ME});`,
-  );
-  dbEvents.emit("changed");
-  const restored = groupLocks(await repository.refresh(GROUP_ATTACHMENT));
-  expect([restored.MADE2345, restored.MADE2346]).toEqual([null, null]);
-});
+      );
+      dbEvents.emit("changed");
+      const restored = groupLocks(yield* service.refresh(GROUP_ATTACHMENT));
+      expect([restored.MADE2345, restored.MADE2346]).toEqual([null, null]);
+    }),
+);
 
 /**
  * The repository over a group library that Zotero answers writes for, with
@@ -906,7 +986,7 @@ async function groupHistory(stack: AsyncDisposableStack) {
       groupID: GROUP_ID,
     })),
   );
-  const { repository } = await setup(stack, zotero.answers, {
+  const { repository, service } = await setup(stack, zotero.answers, {
     key: REMEMBERED_KEY,
     group: SYNCED,
   });
@@ -917,93 +997,112 @@ async function groupHistory(stack: AsyncDisposableStack) {
     ),
   );
   repository.openHistory(GROUP_ATTACHMENT);
-  return repository;
+  return service;
 }
 
-it("counts only another user's Annotations as restored with the user as creator", async () => {
-  await using stack = new AsyncDisposableStack();
-  const repository = await groupHistory(stack);
+it.effect(
+  "counts only another user's Annotations as restored with the user as creator",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const service = yield* Effect.promise(() => groupHistory(stack));
 
-  expect(
-    await repository.deleteAnnotations([
-      inGroup("PUPR5FG5"),
-      inGroup("K3JRFLFQ"),
-      inGroup("FDRFQ7C2"),
-    ]),
-  ).toEqual([{ kind: "idle" }, { kind: "idle" }, { kind: "idle" }]);
+      expect(
+        yield* service.deleteAnnotations([
+          inGroup("PUPR5FG5"),
+          inGroup("K3JRFLFQ"),
+          inGroup("FDRFQ7C2"),
+        ]),
+      ).toEqual([{ kind: "idle" }, { kind: "idle" }, { kind: "idle" }]);
 
-  expect(await repository.undo(GROUP_ATTACHMENT)).toMatchObject({
-    kind: "stepped",
-    restoredAsCreator: { count: 1 },
-  });
-});
+      expect(yield* service.undo(GROUP_ATTACHMENT)).toMatchObject({
+        kind: "stepped",
+        restoredAsCreator: { count: 1 },
+      });
+    }),
+);
 
-it("says nothing of the creator on the undo of a delete of the user's own group Annotation", async () => {
-  await using stack = new AsyncDisposableStack();
-  const repository = await groupHistory(stack);
+it.effect(
+  "says nothing of the creator on the undo of a delete of the user's own group Annotation",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const service = yield* Effect.promise(() => groupHistory(stack));
 
-  expect(await repository.deleteAnnotation(inGroup("K3JRFLFQ"))).toEqual({
-    kind: "idle",
-  });
+      expect(yield* service.deleteAnnotation(inGroup("K3JRFLFQ"))).toEqual({
+        kind: "idle",
+      });
 
-  expect(await repository.undo(GROUP_ATTACHMENT)).toEqual({
-    kind: "stepped",
-    annotationKey: inGroup("MADE2345"),
-  });
-});
+      expect(yield* service.undo(GROUP_ATTACHMENT)).toEqual({
+        kind: "stepped",
+        annotationKey: inGroup("MADE2345"),
+      });
+    }),
+);
 
-it("says nothing of the creator on the undo of a delete in the Personal Library", async () => {
-  await using stack = new AsyncDisposableStack();
-  const zotero = zoteroLibrary();
-  const { repository } = await writable(stack, zotero.answers);
-  repository.openHistory("RGRPDF24");
+it.effect(
+  "says nothing of the creator on the undo of a delete in the Personal Library",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const zotero = zoteroLibrary();
+      const { service } = yield* Effect.promise(() =>
+        writable(stack, zotero.answers),
+      );
+      yield* service.openHistory("RGRPDF24");
 
-  expect(await repository.deleteAnnotation("HRK7BG32")).toEqual({
-    kind: "idle",
-  });
+      expect(yield* service.deleteAnnotation("HRK7BG32")).toEqual({
+        kind: "idle",
+      });
 
-  expect(await repository.undo("RGRPDF24")).toEqual({
-    kind: "stepped",
-    annotationKey: "MADE2345",
-  });
-});
+      expect(yield* service.undo("RGRPDF24")).toEqual({
+        kind: "stepped",
+        annotationKey: "MADE2345",
+      });
+    }),
+);
 
-it("dims the edits of another user's Annotation and leaves its delete, and none of the user's own", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository } = await groupWritable(stack);
-  const controls = (key: string) => {
-    const annotation = repository
-      .peek(GROUP_ATTACHMENT)
-      ?.value.annotations.find((record) => record.key === inGroup(key));
-    if (!annotation) throw new Error(`No record ${key}`);
-    return cardControls({
-      blocks: annotationBlocks({
-        annotation,
-        capability: repository.capabilityFor(GROUP_ATTACHMENT),
-        now: NOW,
-      }),
-      mutation: repository.mutationFor(annotation.key),
-      hasTags: annotation.tags.length > 0,
-      type: annotation.type,
-    });
-  };
+it.effect(
+  "dims the edits of another user's Annotation and leaves its delete, and none of the user's own",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const { service } = yield* Effect.promise(() => groupWritable(stack));
+      const controls = (key: string) =>
+        Effect.gen(function* () {
+          const annotation = (yield* service.peek(
+            GROUP_ATTACHMENT,
+          ))?.value.annotations.find((record) => record.key === inGroup(key));
+          if (!annotation) throw new Error(`No record ${key}`);
+          return cardControls({
+            blocks: annotationBlocks({
+              annotation,
+              capability: yield* service.capabilityFor(GROUP_ATTACHMENT),
+              now: NOW,
+            }),
+            mutation: yield* service.mutationFor(annotation.key),
+            hasTags: annotation.tags.length > 0,
+            type: annotation.type,
+          });
+        });
 
-  const locked = { disabled: false, blocked: ANOTHER_USER_BLOCK };
-  const free = { disabled: false, blocked: null };
-  expect(controls("PUPR5FG5")).toMatchObject({
-    color: locked,
-    comment: locked,
-    tags: locked,
-    text: locked,
-    delete: free,
-  });
-  expect(controls("K3JRFLFQ")).toMatchObject({
-    color: free,
-    comment: free,
-    tags: free,
-    text: free,
-    delete: free,
-  });
-});
+      const locked = { disabled: false, blocked: ANOTHER_USER_BLOCK };
+      const free = { disabled: false, blocked: null };
+      expect(yield* controls("PUPR5FG5")).toMatchObject({
+        color: locked,
+        comment: locked,
+        tags: locked,
+        text: locked,
+        delete: free,
+      });
+      expect(yield* controls("K3JRFLFQ")).toMatchObject({
+        color: free,
+        comment: free,
+        tags: free,
+        text: free,
+        delete: free,
+      });
+    }),
+);
 
 // #endregion
