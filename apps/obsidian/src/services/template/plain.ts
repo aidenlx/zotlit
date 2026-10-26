@@ -17,6 +17,11 @@ export type PlainTemplate = Omit<
   | "restoreCitationTemplate"
   | "deletePartial"
   | "setJavascriptTemplatesEnabled"
+  | "renderFilename"
+  | "renderManagedContent"
+  | "renderProfileAnnotation"
+  | "getCitationTemplateStatus"
+  | "getReservedPartialFiles"
 > & {
   readonly changes: Stream.Stream<TemplateStatus>;
   readonly "compile-status-changed": Stream.Stream<void>;
@@ -73,14 +78,11 @@ export function plainTemplate(
       return read(service.loaded);
     },
     getTemplateFileStatuses: () => read(service.getTemplateFileStatuses),
-    getCitationTemplateStatus: () => read(service.getCitationTemplateStatus),
     materializeCitationTemplate: () => run(service.materializeCitationTemplate),
     getLiteratureNoteTemplate: (reference) =>
       read(service.getLiteratureNoteTemplate(reference)),
     prepareLiteratureNoteTemplateSource: (source) =>
       read(service.prepareLiteratureNoteTemplateSource(source)),
-    renderProfileAnnotation: (data, options) =>
-      read(service.renderProfileAnnotation(data, options)),
     getLiteratureNoteTemplateStatuses: () =>
       read(service.getLiteratureNoteTemplateStatuses),
     renderLiteratureNoteTemplateSource: (source, data) =>
@@ -98,7 +100,6 @@ export function plainTemplate(
     evaluateFrontmatterFields: (fields, zt) =>
       read(service.evaluateFrontmatterFields(fields, zt)),
     render: (name, data) => read(service.render(name, data)),
-    renderManagedContent: (data) => read(service.renderManagedContent(data)),
     renderCitation: (refs, variant) =>
       read(service.renderCitation(refs, variant)),
     renderCitationData: (data) => read(service.renderCitationData(data)),
@@ -109,13 +110,11 @@ export function plainTemplate(
     planPartialUnpack: (bundled) => read(service.planPartialUnpack(bundled)),
     unpackPartials: (plan, options) =>
       run(service.unpackPartials(plan, options)),
-    getReservedPartialFiles: () => read(service.getReservedPartialFiles),
     createPartial: (name, options) => run(service.createPartial(name, options)),
     renderPartialSource: (source, data, options) =>
       read(service.renderPartialSource(source, data, options)),
     renderCitationSource: (source, data) =>
       read(service.renderCitationSource(source, data)),
-    renderFilename: (data) => read(service.renderFilename(data)),
     analyzeRootVariables: (name) => read(service.analyzeRootVariables(name)),
     getTemplateSource: (name) => run(service.getTemplateSource(name)),
     getLegacyLiteratureNoteTemplateFiles: () =>
