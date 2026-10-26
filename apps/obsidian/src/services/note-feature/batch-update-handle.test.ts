@@ -15,6 +15,7 @@ import { LibraryScope } from "@/services/library-scope/service";
 import { NoteIndex } from "@/services/note-index/service";
 import { Profile } from "@/services/profile/service";
 import { PluginSettings } from "@/services/settings/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type {
@@ -53,6 +54,8 @@ function services(
     Layer.mock(PluginSettings, {}),
     Layer.mock(Profile, {}),
     Layer.mock(Workspace, {}),
+    // Only the real Profile picker reads it; the fake view does not.
+    Layer.mock(ZoteroPref, {}),
     Layer.mock(ZoteroReads, {
       current: Effect.succeed(
         stubService<ZoteroReadsState>("ZoteroReadsState", { state: "ready" }),

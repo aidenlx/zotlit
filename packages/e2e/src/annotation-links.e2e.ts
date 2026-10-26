@@ -189,12 +189,11 @@ const RESTORE_LEDGER = `
     const old=app.plugins.plugins.zotlit.services;
     await app.plugins.disablePlugin('zotlit');
     await old.pdfAnnotationEditor[Symbol.asyncDispose]();
-    await old.useLedger[Symbol.asyncDispose]();
-    await old.zoteroLocalApi[Symbol.asyncDispose]();
+    for(let i=0;i<200&&!old.bridge.closed();i++)await new Promise(r=>setTimeout(r,25));
+    if(!old.bridge.closed())throw new Error('The ZotLit services did not close');
     app.saveLocalStorage('zotlit-use-ledger',JSON.parse(savedLedger));
     await app.plugins.enablePlugin('zotlit');
     const fresh=app.plugins.plugins.zotlit.services;
-    await within(fresh.useLedger.ready,deadline(),'The Use Ledger did not load again');
     const restored=JSON.stringify(app.loadLocalStorage('zotlit-use-ledger')??null);
     if(restored!==savedLedger)throw new Error('The Use Ledger came back changed: '+restored);
     await within(fresh.bridge.runPromise(fresh.attachmentResolver.indexed),deadline(),'The Attachment index was not built again');
@@ -409,9 +408,12 @@ interface LinkSettings {
 function applyLinkSettings(changes: LinkSettings): string {
   return Object.entries(changes)
     .map(
-      ([key, value]) => `{const was=s.settings.current[${JSON.stringify(key)}];
-        cleanup.defer(()=>s.settings.update({[${JSON.stringify(key)}]:was}));
-        s.settings.update({[${JSON.stringify(key)}]:${JSON.stringify(value)}});}`,
+      ([
+        key,
+        value,
+      ]) => `{const was=s.bridge.runSync(s.settings.current)[${JSON.stringify(key)}];
+        cleanup.defer(()=>s.bridge.runSync(s.settings.update({[${JSON.stringify(key)}]:was})));
+        s.bridge.runSync(s.settings.update({[${JSON.stringify(key)}]:${JSON.stringify(value)}}));}`,
     )
     .join("\n");
 }
@@ -492,19 +494,21 @@ async function follow({
         ${RESTORE_LEDGER}
         const layout=app.workspace.getLayout();
         cleanup.defer(async()=>{for(const leaf of app.workspace.getLeavesOfType('pdf'))leaf.detach();await app.workspace.changeLayout(layout);});
-        const captureSetting=s.settings.current['reader.open-file-links'];
-        cleanup.defer(()=>s.settings.update({'reader.open-file-links':captureSetting}));
+        const captureSetting=s.bridge.runSync(s.settings.current)['reader.open-file-links'];
+        cleanup.defer(()=>s.bridge.runSync(s.settings.update({'reader.open-file-links':captureSetting})));
         window.__ztLinks.passed=[];
         for(const doc of ${WINDOW_DOCUMENTS})for(const notice of doc.querySelectorAll('.notice'))notice.remove();
         const fileUrl=require('url').pathToFileURL(app.vault.adapter.getFullPath(${JSON.stringify(PDF_PATH)})).href;
         const url=${JSON.stringify(url)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl);
-        if(${captureOff})s.settings.update({'reader.open-file-links':false});
+        if(${captureOff})s.bridge.runSync(s.settings.update({'reader.open-file-links':false}));
         ${applyLinkSettings(linkSettings)}
         ${gesture === "chip" ? "" : showNote(`${JSON.stringify(note)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl)`, gesture === "external" ? "live-preview" : gesture)}
         // The ledger records a read as the reader names its Attachment, so
         // the reader is asked which one it holds as each read lands.
         const reads=[];
-        cleanup.defer(s.useLedger.on('changed',()=>{
+        let replayed=false;
+        cleanup.defer(s.bridge.subscribe(s.useLedger.changes,()=>{
+          if(!replayed){replayed=true;return;}
           const [newest]=Object.entries(s.useLedger.uses).sort(([,a],[,b])=>b-a)[0]??[];
           if(s.useLedger.get(newest)?.kind==='read')reads.push(s.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(PDF_PATH)})?.attachment.attachmentKey??null);
         }));
@@ -694,7 +698,9 @@ async function sharedTabs(): Promise<SharedTabsOutcome> {
         // the tab's session does, so each is credited to the binding's.
         const reads=[];
         const ledger=services().useLedger;
-        cleanup.defer(ledger.on('changed',()=>{
+        let replayed=false;
+        cleanup.defer(services().bridge.subscribe(ledger.changes,()=>{
+          if(!replayed){replayed=true;return;}
           const [newest]=Object.entries(ledger.uses).sort(([,a],[,b])=>b-a)[0]??[];
           if(ledger.get(newest)?.kind==='read')reads.push(services().pdfAnnotationEditor.bindingFor(restored.view)?.attachment.attachmentKey??null);
         }));
@@ -764,7 +770,7 @@ async function reread(annotationKey: string, text: string): Promise<void> {
       ${WAITS}
       const s=app.plugins.plugins.zotlit.services;
       await s.zoteroReads.refresh();
-      const holds=async()=>(await s.annotationRepository.read(${JSON.stringify(annotationAttachment.key)}))?.annotations.find(({key})=>key===${JSON.stringify(annotationKey)})?.text===${JSON.stringify(text)};
+      const holds=async()=>(await s.bridge.runPromise(s.annotationRepository.read(${JSON.stringify(annotationAttachment.key)})))?.annotations.find(({key})=>key===${JSON.stringify(annotationKey)})?.text===${JSON.stringify(text)};
       for(const end=deadline();!(await holds());await sleep(100))if(past(end))throw new Error('The repository never read the new text of ${annotationKey}');
       return true;
     })()`,
@@ -869,13 +875,13 @@ async function hover({
         await using cleanup=new AsyncDisposableStack();
         const layout=app.workspace.getLayout();
         cleanup.defer(async()=>{await app.workspace.changeLayout(layout);});
-        const hoverAction=s.settings.current['citation.hover-action'];
-        cleanup.defer(()=>s.settings.update({'citation.hover-action':hoverAction}));
-        const pandoc=s.settings.current['citation.pandoc-citations'];
-        cleanup.defer(()=>s.settings.update({'citation.pandoc-citations':pandoc}));
+        const hoverAction=s.bridge.runSync(s.settings.current)['citation.hover-action'];
+        cleanup.defer(()=>s.bridge.runSync(s.settings.update({'citation.hover-action':hoverAction})));
+        const pandoc=s.bridge.runSync(s.settings.current)['citation.pandoc-citations'];
+        cleanup.defer(()=>s.bridge.runSync(s.settings.update({'citation.pandoc-citations':pandoc})));
         const url=${JSON.stringify(url)};
-        ${hoverAction === undefined ? "" : `s.settings.update({'citation.hover-action':${JSON.stringify(hoverAction)}});`}
-        ${pandocOff ? "s.settings.update({'citation.pandoc-citations':false});" : ""}
+        ${hoverAction === undefined ? "" : `s.bridge.runSync(s.settings.update({'citation.hover-action':${JSON.stringify(hoverAction)}}));`}
+        ${pandocOff ? "s.bridge.runSync(s.settings.update({'citation.pandoc-citations':false}));" : ""}
         ${applyLinkSettings(linkSettings)}
         ${
           pagePreviewMod === undefined
@@ -898,7 +904,7 @@ async function hover({
           // opened, one the first hover had started would have opened too.
           // The Hover Action goes back on before that delay ends; the first
           // link's mouseover has already decided whether it opens a popover.
-          s.settings.update({'citation.hover-action':'popover'});
+          s.bridge.runSync(s.settings.update({'citation.hover-action':'popover'}));
           const control=app.workspace.getLeaf('split','vertical');
           cleanup.adopt(control,(leaf)=>leaf.detach());
           await control.setViewState({type:'markdown',state:{file:file.path,mode:'preview'}});

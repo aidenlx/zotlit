@@ -35,7 +35,7 @@ import { RELEASE_ORIGIN, resourceReleaseUrl } from "@/lib/constants";
 import { bridgeLog, withLogCategory } from "@/lib/effect-log";
 import { catalog } from "@/lib/i18n/generated/catalog";
 import { runtime } from "@/lib/i18n/generated/runtime";
-import { ObsidianApp } from "@/lib/obsidian-app";
+import { DeviceStorage } from "@/lib/obsidian-device-storage";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 
 export type { LanguagePackRestartNotice, LanguagePackSituation };
@@ -171,20 +171,14 @@ const packSource = (pluginVersion: string): PackSource =>
         origin: RELEASE_ORIGIN,
       };
 
-/** Obsidian's per-device storage, failing typed where it throws. */
-const deviceStorage = (
-  app: Pick<ObsidianApp["Service"], "loadLocalStorage" | "saveLocalStorage">,
-) => ({
+/** The device storage, failing as the Language Pack where Obsidian throws. */
+const deviceStorage = (storage: DeviceStorage["Service"]) => ({
   load: (key: string) =>
-    Effect.try({
-      try: (): unknown => app.loadLocalStorage(key),
-      catch: (cause) => storageFailed(cause),
-    }),
+    Effect.mapError(storage.load(key), ({ cause }) => storageFailed(cause)),
   save: (key: string, value: unknown) =>
-    Effect.try({
-      try: () => app.saveLocalStorage(key, value),
-      catch: (cause) => storageFailed(cause),
-    }),
+    Effect.mapError(storage.save(key, value), ({ cause }) =>
+      storageFailed(cause),
+    ),
 });
 
 const storageFailed = (cause: unknown) =>
@@ -202,7 +196,7 @@ const storageFailed = (cause: unknown) =>
 export const startLanguagePack = Effect.fn("LanguagePack.start")(function* (
   pluginVersion: string,
 ) {
-  const storage = deviceStorage(yield* ObsidianApp);
+  const storage = deviceStorage(yield* DeviceStorage);
   const { language } = yield* ObsidianEnv;
   runtime.reset();
   // The message runtime is synchronous: its diagnostics log through this
@@ -314,11 +308,11 @@ const UNAVAILABLE: LanguagePackSituation = { kind: "unavailable" };
  */
 export function layerLanguagePack(
   startup: LanguagePackStartup,
-): Layer.Layer<LanguagePack, never, ObsidianApp | HttpClient.HttpClient> {
+): Layer.Layer<LanguagePack, never, DeviceStorage | HttpClient.HttpClient> {
   return Layer.effect(
     LanguagePack,
     Effect.gen(function* () {
-      const storage = deviceStorage(yield* ObsidianApp);
+      const storage = deviceStorage(yield* DeviceStorage);
       const http = yield* HttpClient.HttpClient;
       const { pluginVersion, locale, endonym, remote } = startup;
 

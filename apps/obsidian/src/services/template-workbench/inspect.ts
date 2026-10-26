@@ -32,7 +32,10 @@ import type { FileNotFound, VaultError } from "@/lib/vault-errors";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { ResolvedProfile } from "@/services/profile/bindings";
 import { Profile } from "@/services/profile/service";
-import type { ProfileDiagnostic } from "@/services/profile/service";
+import type {
+  ProfileDiagnostic,
+  ProfileOperationError,
+} from "@/services/profile/service";
 import { DEFAULT_PROFILE_DOCUMENT } from "@/services/profile/service";
 import { PluginSettings } from "@/services/settings/service";
 import { CITATION_TEMPLATE_SOURCE } from "@/services/template/defaults";
@@ -41,6 +44,7 @@ import { Template } from "@/services/template/service";
 import type {
   CompileError,
   LiteratureNoteTemplateStatus,
+  TemplateFailure,
 } from "@/services/template/service";
 import type { ZoteroPref } from "@/services/zotero-pref/service";
 
@@ -54,7 +58,6 @@ import {
   INSPECT_TIMEOUT_MS,
   TEMPLATE_INSPECT_COMMAND,
 } from "./inspect-contract";
-import { profileRead, templateRead } from "./sync-template";
 export { inspectFlags, TEMPLATE_INSPECT_COMMAND } from "./inspect-contract";
 
 type FreshnessState = "current" | "timeout" | "superseded" | "read-failed";
@@ -74,7 +77,7 @@ export interface FreshnessDeps {
   /** The text on disk at `path`; `FileNotFound` when no file is there. */
   read: (path: string) => Effect.Effect<string, FileNotFound | VaultError>;
   /** The text reconciliation loaded from `path`, when it holds one. */
-  loaded: (path: string) => Effect.Effect<string | undefined>;
+  loaded: (path: string) => Effect.Effect<string | undefined, TemplateFailure>;
   /** Each completed reconciliation. */
   changes: Stream.Stream<void>;
   /** Canonical customization paths whose confirmed absence selects built-in source. */
@@ -99,7 +102,7 @@ export const verifySavedSources = Effect.fn(
       versions: SourceVersion[];
       errors?: { path: string; message: string; code?: string }[];
     },
-    never,
+    TemplateFailure,
     Scope.Scope
   > {
     const deadline = (yield* Clock.currentTimeMillis) + timeoutMs;
@@ -244,49 +247,47 @@ export const inspectInventory = Effect.fnUntraced(function* () {
   const profileStore = yield* Profile;
   const template = yield* Template;
   const resolve = (selector: ProfileSelector) =>
-    profileRead(profileStore.resolveProfile(selector));
-  const diagnostics = yield* profileRead(profileStore.diagnostics);
+    profileStore.resolveProfile(selector);
+  const diagnostics = yield* profileStore.diagnostics;
   const profiles = [
     yield* resolve("default"),
-    ...(yield* Effect.forEach(
-      yield* profileRead(profileStore.profiles),
-      (entry) => resolve(entry.id),
+    ...(yield* Effect.forEach(yield* profileStore.profiles, (entry) =>
+      resolve(entry.id),
     )),
   ].filter((entry) => entry !== undefined);
-  const documents: InspectDocument[] = (yield* templateRead(
-    template.getLiteratureNoteTemplateStatuses,
-  )).map((entry) => {
-    const owner = profiles.find(
-      (profile) => profile.document === entry.reference,
-    );
-    const manifestId =
-      entry.validation.state === "valid"
-        ? entry.validation.manifest.id
-        : (entry.validation.manifestId ??
-          (entry.reference === DEFAULT_PROFILE_DOCUMENT
-            ? "default"
-            : undefined));
-    const label =
-      owner?.label ??
-      (entry.validation.state === "valid"
-        ? entry.validation.manifest.name
-        : undefined) ??
-      entry.reference;
-    return {
-      kind: "profile",
-      id: entry.reference,
-      label,
-      path: entry.path,
-      ...(manifestId ? { profileIdentity: { id: manifestId, label } } : {}),
-      ...(owner ? { profile: profileRow(owner) } : {}),
-      problems: [
-        ...(entry.validation.state === "invalid"
-          ? [entry.validation.error]
-          : []),
-        ...diagnostics.filter((problem) => problem.path === entry.path),
-      ],
-    };
-  });
+  const documents: InspectDocument[] =
+    (yield* template.getLiteratureNoteTemplateStatuses).map((entry) => {
+      const owner = profiles.find(
+        (profile) => profile.document === entry.reference,
+      );
+      const manifestId =
+        entry.validation.state === "valid"
+          ? entry.validation.manifest.id
+          : (entry.validation.manifestId ??
+            (entry.reference === DEFAULT_PROFILE_DOCUMENT
+              ? "default"
+              : undefined));
+      const label =
+        owner?.label ??
+        (entry.validation.state === "valid"
+          ? entry.validation.manifest.name
+          : undefined) ??
+        entry.reference;
+      return {
+        kind: "profile",
+        id: entry.reference,
+        label,
+        path: entry.path,
+        ...(manifestId ? { profileIdentity: { id: manifestId, label } } : {}),
+        ...(owner ? { profile: profileRow(owner) } : {}),
+        problems: [
+          ...(entry.validation.state === "invalid"
+            ? [entry.validation.error]
+            : []),
+          ...diagnostics.filter((problem) => problem.path === entry.path),
+        ],
+      };
+    });
   for (const profile of profiles) {
     if (documents.some((entry) => entry.profile?.id === profile.selector))
       continue;
@@ -308,8 +309,8 @@ export const inspectInventory = Effect.fnUntraced(function* () {
         : [],
     });
   }
-  const citation = yield* templateRead(template.getCitationTemplateStatus);
-  const compileErrors = yield* templateRead(template.compileErrors);
+  const citation = yield* template.getCitationTemplateStatus;
+  const compileErrors = yield* template.compileErrors;
   documents.push({
     kind: "citation",
     id: "citation",
@@ -319,7 +320,7 @@ export const inspectInventory = Effect.fnUntraced(function* () {
       ? [compileErrors.get("citation")!]
       : [],
   });
-  for (const partial of yield* templateRead(template.getPartialDocuments))
+  for (const partial of yield* template.getPartialDocuments)
     documents.push({
       kind: "partial",
       id: `partial:${partial.name}`,
@@ -329,7 +330,7 @@ export const inspectInventory = Effect.fnUntraced(function* () {
         ? [compileErrors.get(partial.name)!]
         : [],
     });
-  for (const partial of yield* templateRead(template.getReservedPartialFiles))
+  for (const partial of yield* template.getReservedPartialFiles)
     documents.push({
       kind: "partial",
       id: `partial:${partial.name}`,
@@ -426,7 +427,11 @@ export type InspectionNote =
 /** The same Literature Note selector for document inspection and field discovery. */
 export const selectInspectionNote = Effect.fnUntraced(function* (
   name: string,
-): Effect.fn.Return<InspectionNote, never, Vault | MetadataCache | Profile> {
+): Effect.fn.Return<
+  InspectionNote,
+  ProfileOperationError,
+  Vault | MetadataCache | Profile
+> {
   const files = yield* (yield* Vault).getMarkdownFiles;
   const exact = files.filter((file) => file.path === name);
   const candidates = exact.length
@@ -442,7 +447,7 @@ export const selectInspectionNote = Effect.fnUntraced(function* (
     yield* (yield* MetadataCache).fileCache(file),
   );
   if (!key) return { error: "NOT_LITERATURE_NOTE" };
-  const owner = yield* profileRead((yield* Profile).profileOf(file));
+  const owner = yield* (yield* Profile).profileOf(file);
   const profile = owner.ok
     ? owner.profile.selector
     : (owner.stamped.id ?? parseProfileSelector(owner.stamped.stamp));
@@ -460,7 +465,7 @@ export function createInspectHandler(
     const template = yield* Template;
     const vault = yield* Vault;
     const answer = (result: object) =>
-      Effect.map(profileRead(profileStore.diagnostics), (profileDiagnostics) =>
+      Effect.map(profileStore.diagnostics, (profileDiagnostics) =>
         JSON.stringify(
           {
             contractVersion: CONTRACT_VERSION,
@@ -523,7 +528,7 @@ export function createInspectHandler(
         return yield* answer({
           ok: true,
           documents: inventory,
-          problems: yield* profileRead(profileStore.diagnostics),
+          problems: yield* profileStore.diagnostics,
         });
       }
       let selection: InspectSelection = query;
@@ -577,8 +582,7 @@ export function createInspectHandler(
       const freshness = yield* verifySavedSources(
         {
           read: (path) => vault.readPath(path),
-          loaded: (path) =>
-            templateRead(template.getLoadedDocumentSource(path)),
+          loaded: (path) => template.getLoadedDocumentSource(path),
           changes: template.compileEvents,
           absent: new Set(builtinPaths),
         },
@@ -615,13 +619,11 @@ export function createInspectHandler(
           return yield* fail("EDITOR_TARGET_MISMATCH");
         source = view.editor.getValue();
       } else if (document.path)
-        source = (yield* templateRead(
-          template.getLoadedDocumentSource(document.path),
-        ))!;
+        source = (yield* template.getLoadedDocumentSource(document.path))!;
       else
         source =
           document.kind === "profile"
-            ? yield* profileRead(profileStore.getBuiltInSource())
+            ? yield* profileStore.getBuiltInSource()
             : formatPlainTemplateDocument(CITATION_TEMPLATE_SOURCE, "liquid");
       return yield* answer({
         ok: true,

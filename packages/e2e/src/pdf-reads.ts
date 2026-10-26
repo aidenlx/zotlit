@@ -26,7 +26,7 @@ export async function verifyPdfReads(
     );
   const saved = await obEval(
     vaultId,
-    `JSON.stringify({layout:app.workspace.getLayout(),settings:${services}.settings.current,ledger:app.loadLocalStorage('zotlit-use-ledger')??null})`,
+    `JSON.stringify({layout:app.workspace.getLayout(),settings:${services}.bridge.runSync(${services}.settings.current),ledger:app.loadLocalStorage('zotlit-use-ledger')??null})`,
   );
   using db = new DatabaseSync(databasePath);
   const attachment = db
@@ -38,7 +38,7 @@ export async function verifyPdfReads(
   cleanup.defer(async () => {
     const restored = await obEval(
       vaultId,
-      `(async()=>{app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();await oldServices.useLedger[Symbol.asyncDispose]();await oldServices.zoteroLocalApi[Symbol.asyncDispose]();app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');await app.plugins.plugins.zotlit.services.useLedger.ready;return JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current);})()`,
+      `(async()=>{app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();for(let i=0;i<200&&!oldServices.bridge.closed();i++)await new Promise(r=>setTimeout(r,25));if(!oldServices.bridge.closed())throw new Error('The ZotLit services did not close');app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');return JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current);})()`,
     );
     expect(JSON.parse(restored)).toEqual(JSON.parse(saved).ledger ?? {});
   });
@@ -48,11 +48,11 @@ export async function verifyPdfReads(
       attachment.itemID,
     );
     await run(
-      `app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());const saved=JSON.parse(${JSON.stringify(saved)});s.settings.update({'library.document':saved.settings['library.document']??null});await s.settings.flush();await app.workspace.changeLayout(saved.layout);await s.zoteroReads.refresh();return true;`,
+      `app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());const saved=JSON.parse(${JSON.stringify(saved)});s.bridge.runSync(s.settings.update({'library.document':saved.settings['library.document']??null}));await s.bridge.runPromise(s.settings.flush);await app.workspace.changeLayout(saved.layout);await s.zoteroReads.refresh();return true;`,
     );
   });
   await run(
-    "app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());app.workspace.getLeavesOfType('zotlit-library').forEach(l=>l.detach());s.settings.update({'library.document':null});await s.settings.flush();app.commands.executeCommandById('zotlit:open-library-view');await until('Recent',()=>app.workspace.getLeavesOfType('zotlit-library')[0]?.view.query);return true;",
+    "app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());app.workspace.getLeavesOfType('zotlit-library').forEach(l=>l.detach());s.bridge.runSync(s.settings.update({'library.document':null}));await s.bridge.runPromise(s.settings.flush);app.commands.executeCommandById('zotlit:open-library-view');await until('Recent',()=>app.workspace.getLeavesOfType('zotlit-library')[0]?.view.query);return true;",
   );
   const opened = () =>
     run(
