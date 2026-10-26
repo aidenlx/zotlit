@@ -14,7 +14,7 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
  *
  * A failed refresh rejects with {@link DbUnavailable}, also when the previous
  * database state keeps serving; the toast reports it. A refresh that was
- * interrupted (the plugin unloading mid-run) ends quietly and counts as done.
+ * interrupted (the plugin unloading mid-run) ends quietly, with no notice.
  */
 export const layerDatabaseActions: Layer.Layer<
   never,
