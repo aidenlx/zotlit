@@ -34,6 +34,7 @@ import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 import { ProfileAnnotationError } from "@/services/template/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
@@ -360,6 +361,8 @@ function layerOver(deps: ImportDeps): Layer.Layer<BatchImportServices> {
       resolveProfile: (selector) =>
         Effect.sync(() => deps.profile.resolveProfile(selector)),
     }),
+    // Only the real Profile picker reads it; the fake view does not.
+    Layer.mock(ZoteroPref, {}),
     Layer.mock(ZoteroReads, {
       current: Effect.sync(() =>
         stubService<ZoteroReadsState>("ZoteroReadsState", {
@@ -491,7 +494,7 @@ it("lets the batch chip change only orphans while existing and parent stamps rem
   );
   using chooseProfile = vi
     .spyOn(deps.view, "chooseProfile")
-    .mockResolvedValue(books);
+    .mockReturnValue(Effect.succeed(books));
   using settingsUpdate = vi.spyOn(deps.settings, "update");
   await importOver(deps).runBatchImport("note", [1, 2, 3]);
   const options = openedModals.at(-1)!;

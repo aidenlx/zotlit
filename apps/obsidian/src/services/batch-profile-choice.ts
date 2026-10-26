@@ -1,4 +1,7 @@
 // The batch confirmation delegates its optional Profile decision to the shared picker.
+import { Effect } from "effect";
+
+import { awaitModal } from "@/lib/effect-modal";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { InteractiveCreationDeps } from "@/services/note-feature";
 import type {
@@ -6,11 +9,13 @@ import type {
   ProfilePreview,
 } from "@/services/note-feature";
 import { listInstalledStyles } from "@/services/pandoc/styles";
-import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
+import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
 
 export type BatchProfilePickerDeps = Pick<
   InteractiveCreationDeps,
-  "app" | "createProfile" | "importProfile" | "zoteroPref"
+  "app" | "createProfile" | "importProfile"
 >;
 export interface BatchProfilePickerOptions {
   indexedKey?: string;
@@ -20,14 +25,20 @@ export interface BatchProfilePickerOptions {
   problem?: string;
 }
 
-export async function chooseBatchProfile(
+/**
+ * The user's Profile for the rows a batch choice governs, or `undefined` when
+ * the picker closes. An interrupt closes the picker.
+ */
+export const chooseBatchProfile = Effect.fnUntraced(function* (
   deps: BatchProfilePickerDeps,
   options: BatchProfilePickerOptions,
-): Promise<ProfileSelector | undefined> {
-  const styles = deps.zoteroPref.dataDir
-    ? await listInstalledStyles(deps.zoteroPref.dataDir)
+) {
+  const { dataDir } = yield* (yield* ZoteroPref).current;
+  // The style listing answers an empty list for a directory it cannot read.
+  const styles = dataDir
+    ? yield* Effect.promise(() => listInstalledStyles(dataDir))
     : [];
-  const choice = await chooseLiteratureNoteProfile(deps.app, {
+  const picker: Parameters<typeof openLiteratureNoteProfile>[1] = {
     preselected: options.selection.selector,
     matchContext: "batch",
     source: options.selection.source,
@@ -51,6 +62,10 @@ export async function chooseBatchProfile(
     onImport: async () => {
       await deps.importProfile({ indexedKey: options.indexedKey });
     },
-  });
-  return choice?.id;
-}
+  };
+  const choice = yield* awaitModal<LiteratureNoteProfileChoice | undefined>(
+    (resolve) => openLiteratureNoteProfile(deps.app, picker, resolve),
+  );
+  const selector: ProfileSelector | undefined = choice?.id;
+  return selector;
+});

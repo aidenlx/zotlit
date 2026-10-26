@@ -58,20 +58,28 @@ import type {
   UpdateManyRequest,
 } from "@/services/local-server/service";
 import { openCompanionNote } from "@/services/note-feature";
+import type { CompanionNoteDeps } from "@/services/note-feature";
 import {
   runBatchUpdate,
   runBatchUpdateAll,
 } from "@/services/note-feature/update-batch";
 import type {
-  BatchUpdateDeps,
+  BatchUpdatePorts,
   BatchUpdateResult,
+  BatchUpdateServices,
 } from "@/services/note-feature/update-batch";
-import { noteOperationDiagnosticNotice } from "@/services/note-feature/update-single";
+import {
+  batchUpdateNotices,
+  noteOperationDiagnosticNotice,
+} from "@/services/note-feature/update-single";
 import {
   runBatchImport,
   runBatchImportAll,
 } from "@/services/note-import/batch-import";
-import type { BatchImportServices } from "@/services/note-import/batch-import";
+import type {
+  BatchImportPorts,
+  BatchImportServices,
+} from "@/services/note-import/batch-import";
 import {
   batchImportAllToast,
   batchImportToast,
@@ -87,6 +95,7 @@ import { openTemplateWorkbench } from "@/views/template-workbench/register";
 /** The services a protocol handler reads through their tags. */
 export type ProtocolServices =
   | BatchImportServices
+  | BatchUpdateServices
   | LocalServer
   | Notifier
   | ObsidianEnv
@@ -98,12 +107,12 @@ export type ProtocolServices =
 
 /**
  * The legacy values the handlers still hold. Note Feature, the Profile
- * factories and the Attachment opener convert in later slices, and the batch
- * update runners still take the whole {@link BatchUpdateDeps} bundle, plain
- * adapters included. The bundle plans a library-wide update through the
- * `batchScope` edge handle.
+ * factories and the Attachment opener convert in later slices.
  */
-export interface ProtocolDeps extends BatchUpdateDeps {
+export interface ProtocolDeps extends CompanionNoteDeps {
+  noteFeature: CompanionNoteDeps["noteFeature"] &
+    BatchUpdatePorts["noteFeature"] &
+    BatchImportPorts["noteFeature"];
   webWorkbenchEnabled: boolean;
   /** The note import's classify, confirm and Profile modals. */
   noteImportView: NoteImportView;
@@ -127,7 +136,7 @@ export interface ProtocolDeps extends BatchUpdateDeps {
  * fails is logged. Every handler run and every run of a request the Local
  * Server pushes is a fiber of the current Scope: closing it stops the pushed
  * requests and interrupts the runs still going. A legacy Promise a run waits
- * on (Note Feature, a batch update, a view opener) still runs to its end.
+ * on (Note Feature, a view opener) still runs to its end.
  */
 export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
   function* (
@@ -231,8 +240,18 @@ export function startProtocolHandlers(
 }
 
 /** The ports a batch import takes, from the handlers' legacy values. */
-function importPorts(deps: ProtocolDeps) {
+function importPorts(deps: ProtocolDeps): BatchImportPorts {
   return {
+    view: deps.noteImportView,
+    noteFeature: deps.noteFeature,
+    bridge: deps.bridge,
+  };
+}
+
+/** The ports a note update takes, from the handlers' legacy values. */
+function updatePorts(deps: ProtocolDeps): BatchUpdatePorts {
+  return {
+    notices: batchUpdateNotices(deps.app),
     view: deps.noteImportView,
     noteFeature: deps.noteFeature,
     bridge: deps.bridge,
@@ -263,14 +282,12 @@ const updateManyRequested = Effect.fn("protocol.updateManyRequested")(
   function* (event: UpdateManyRequest, deps: ProtocolDeps) {
     const requested = yield* resolveRequestedProfile(event.profileId);
     if (!requested.ok) return;
-    yield* Effect.promise(() =>
-      toast.promise(
-        runBatchUpdate(deps, event.items, {
-          scope: event.scope,
-          profile: requested.selector,
-        }),
-        { success: batchUpdateNotice },
-      ),
+    yield* reportOutcome(
+      runBatchUpdate(updatePorts(deps), event.items, {
+        scope: event.scope,
+        profile: requested.selector,
+      }),
+      batchUpdateToast,
     );
   },
   logAndContinue("Pushed batch update failed", "protocol"),
@@ -367,19 +384,21 @@ const handleBatchProtocol = Effect.fn("protocol.handleBatchProtocol")(
     const requested = yield* resolveRequestedProfile(query.profileId);
     if (!requested.ok) return;
 
-    yield* Effect.promise(() =>
-      toast.promise(
-        runBatchUpdate(deps, query.items, {
-          scope: query.scope,
-          profile: requested.selector,
-        }),
-        {
-          success: batchUpdateNotice,
-        },
-      ),
+    yield* reportOutcome(
+      runBatchUpdate(updatePorts(deps), query.items, {
+        scope: query.scope,
+        profile: requested.selector,
+      }),
+      batchUpdateToast,
     );
   },
 );
+
+/** A batch update's notices: the early-exit outcomes; a failure shows none. */
+const batchUpdateToast = {
+  success: batchUpdateNotice,
+  error: () => undefined,
+};
 
 function batchUpdateNotice(result: BatchUpdateResult): string | undefined {
   switch (result.outcome) {
@@ -511,14 +530,12 @@ const handleUpdateAllProtocol = Effect.fn("protocol.handleUpdateAllProtocol")(
     });
     if (!query) return;
 
-    yield* Effect.promise(() =>
-      toast.promise(
-        runBatchUpdateAll(deps, {
-          groupID: query.groupID,
-          collectionKey: query.collectionKey,
-        }),
-        { success: updateAllNotice },
-      ),
+    yield* reportOutcome(
+      runBatchUpdateAll(updatePorts(deps), {
+        groupID: query.groupID,
+        collectionKey: query.collectionKey,
+      }),
+      { success: updateAllNotice, error: () => undefined },
     );
   },
 );
