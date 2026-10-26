@@ -200,11 +200,6 @@ const openBatchModal = vi.fn<NoteImportView["openBatchModal"]>();
 const noteImportView = stubService<NoteImportView>("NoteImportView", {
   openBatchModal: (options) => openBatchModal(options),
 });
-/** Note Feature, which a link-started import receives. */
-const noteFeature = stubService<ProtocolDeps["noteFeature"]>(
-  "NoteFeatureHandle",
-  {},
-);
 
 /** Protocol handlers registered by the plugin, keyed by their action id. */
 const handlers = new Map<string, (data: ObsidianProtocolData) => unknown>();
@@ -255,7 +250,6 @@ const register = Effect.fn("register")(function* (setup: Setup = {}) {
   const deps = stubService<ProtocolDeps>("ProtocolDeps", {
     webWorkbenchEnabled: true,
     noteImportView,
-    noteFeature,
     // A link import's modal callbacks would run here; no case drives them.
     bridge: stubService<ProtocolDeps["bridge"]>("EffectBridge", {}),
     app: appStub(),

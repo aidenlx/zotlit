@@ -3,19 +3,20 @@ import { Effect } from "effect";
 
 import { awaitModal } from "@/lib/effect-modal";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import type { InteractiveCreationDeps } from "@/services/note-feature";
+import type { InteractiveCreationPorts } from "@/services/note-feature";
 import type {
   CreationProfileSelection,
   ProfilePreview,
 } from "@/services/note-feature";
 import { listInstalledStyles } from "@/services/pandoc/styles";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
 
 export type BatchProfilePickerDeps = Pick<
-  InteractiveCreationDeps,
-  "app" | "createProfile" | "importProfile" | "zoteroPref"
->;
+  InteractiveCreationPorts,
+  "app" | "createProfile" | "importProfile"
+> & { zoteroPref: Pick<PlainZoteroPref, "dataDir"> };
 export interface BatchProfilePickerOptions {
   indexedKey?: string;
   selection: CreationProfileSelection;

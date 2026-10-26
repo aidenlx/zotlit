@@ -55,7 +55,7 @@ import type {
   UpdateManyRequest,
 } from "@/services/local-server/service";
 import { openCompanionNote } from "@/services/note-feature";
-import type { CompanionNoteDeps } from "@/services/note-feature";
+import type { InteractiveCreationPorts } from "@/services/note-feature";
 import {
   runBatchUpdate,
   runBatchUpdateAll,
@@ -106,7 +106,7 @@ export type ProtocolServices =
  * The legacy values the handlers still hold. The interactive creation, the
  * Profile factories and the Attachment opener convert in later slices.
  */
-export interface ProtocolDeps extends CompanionNoteDeps {
+export interface ProtocolDeps extends InteractiveCreationPorts {
   webWorkbenchEnabled: boolean;
   /** The note import's classify, confirm and Profile modals. */
   noteImportView: NoteImportView;

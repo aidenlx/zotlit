@@ -1,28 +1,50 @@
+import { it } from "@effect/vitest";
+import { Effect, Fiber, Layer, Scope } from "effect";
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
-import { expect, it, vi } from "vitest";
+import { expect, vi } from "vitest";
 
 import type { Item } from "@zotlit/db";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
-import * as toast from "@/lib/toast";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
-import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
+import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
 
-import { createdNoteNotice } from "./creation-view";
-import { createNoteInteractively } from "./index";
+import type { PlannedCreationProfile } from "./creation-planning";
+import { createdNoteNotice, createNoteInteractively } from "./creation-view";
 import type {
-  CreationProfileSelection,
-  InteractiveCreationDeps,
-  PreparedCreationProfile,
-} from "./index";
-import type { CreationPlan } from "./operations";
+  InteractiveCreationOptions,
+  InteractiveCreationPorts,
+} from "./creation-view";
+import { NotePathUnavailable } from "./note-path";
+import type { CreationProfileSelection } from "./operations";
+import { NoteFeature } from "./service";
 
 vi.mock("@/views/quick-switch/profile-picker", () => ({
-  chooseLiteratureNoteProfile: vi.fn(),
+  openLiteratureNoteProfile: vi.fn(),
 }));
+
+type PickerOptions = Parameters<typeof openLiteratureNoteProfile>[1];
+
+/** The picker answers what `answer` gives for its options, as the user would. */
+function pickerAnswers(
+  answer: (
+    options: PickerOptions,
+  ) => Promise<LiteratureNoteProfileChoice | undefined>,
+) {
+  vi.mocked(openLiteratureNoteProfile).mockImplementation(
+    (_app, options, resolve) => {
+      void answer(options).then(resolve);
+      return { close: () => {} };
+    },
+  );
+}
 
 const BOOKS = "Bk3Qn7XvT2Lp" as ProfileId;
 const MATCH_REASON = m.profile_match_selected({ profile: "Books" });
@@ -38,10 +60,12 @@ const BOOK_PROFILE = {
     tree: { and: [] },
   },
 } satisfies LiteratureNoteProfile;
+const ITEM = { indexedKey: "ABCD2345" } as Item;
 
 function booksPreview(
-  overrides: Partial<PreparedCreationProfile> = {},
-): PreparedCreationProfile {
+  overrides: Partial<PlannedCreationProfile> = {},
+): PlannedCreationProfile {
+  const file = noteAt(overrides.path ?? "Books/Paper.md");
   return {
     selector: BOOKS,
     label: "Books",
@@ -49,366 +73,386 @@ function booksPreview(
     citationStyle: null,
     document: "books.md",
     path: "Books/Paper.md",
-    create: vi.fn(async () => ({
-      outcome: "created" as const,
-      file: noteAt("Books/Paper.md"),
-    })),
+    create: vi.fn(() => Effect.succeed({ outcome: "created" as const, file })),
     ...overrides,
   };
 }
 
-function creationPlans(
-  indexedKeys: readonly string[],
+/**
+ * The interactive creation's ports and services over one fixed selection and
+ * its previews, with its notices recorded.
+ */
+function creation(
   selection: CreationProfileSelection,
-  previews: readonly PreparedCreationProfile[],
-): ReadonlyMap<string, CreationPlan> {
-  return new Map(
-    indexedKeys.map((indexedKey) => [
-      indexedKey,
-      {
-        item: { indexedKey } as Item,
-        selection,
-        previews,
-      },
-    ]),
-  );
-}
-
-/** Deps whose selection and previews are fixed; the picker stays mocked. */
-function directDeps(
-  selection: CreationProfileSelection,
-  previews: PreparedCreationProfile[],
+  previews: readonly PlannedCreationProfile[],
+  ports: Partial<InteractiveCreationPorts> = {},
 ) {
-  const deps: InteractiveCreationDeps = {
-    createProfile: vi.fn(),
-    importProfile: vi.fn(),
-    app: stubService<App>("App", {}),
-    zoteroPref: { dataDir: "" },
-    noteFeature: stubService<InteractiveCreationDeps["noteFeature"]>(
-      "NoteFeatureHandle",
-      {
-        planCreations: vi.fn(async (keys: readonly string[]) =>
-          creationPlans(keys, selection, previews),
+  const notifier = testNotifier();
+  const feature = {
+    planCreations: vi.fn<NoteFeature["Service"]["planCreations"]>((keys) =>
+      Effect.succeed(
+        new Map(keys.map((key) => [key, { item: ITEM, selection, previews }])),
+      ),
+    ),
+    createNote: vi.fn<NoteFeature["Service"]["createNote"]>(),
+  };
+  const app = stubService<App>("App", {});
+  return {
+    app,
+    feature,
+    notifier,
+    ports: {
+      app,
+      createProfile: vi.fn(),
+      importProfile: vi.fn(),
+      ...ports,
+    } satisfies InteractiveCreationPorts,
+    layer: Layer.mergeAll(
+      Layer.mock(NoteFeature, feature),
+      notifier.layer,
+      Layer.mock(ZoteroPref, {
+        current: Effect.succeed(
+          stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
+            dataDir: "",
+          }),
         ),
-        createNote: vi.fn(),
-      },
+      }),
     ),
   };
-  return deps;
 }
 
-/** The success notice the create toast shows, captured by spying on it. */
-function successNotice() {
-  const notices: unknown[] = [];
-  const spy = vi.spyOn(toast, "promise").mockImplementation((async (
-    promise,
+/**
+ * Run the creation of `item` on `harness`'s services. Its notices keep
+ * showing after it returns, as they do in the plugin, so the services stay
+ * open.
+ */
+const run = Effect.fnUntraced(function* (
+  harness: ReturnType<typeof creation>,
+  options?: InteractiveCreationOptions,
+) {
+  const scope = yield* Scope.make();
+  const context = yield* Layer.buildWithScope(harness.layer, scope);
+  const file = yield* createNoteInteractively(
+    harness.ports,
+    ITEM,
     options,
-  ) => {
-    const result = await promise;
-    if (typeof options.success === "function")
-      notices.push(options.success(result));
-    return result;
-  }) as typeof toast.promise);
-  return { notices, [Symbol.dispose]: () => spy.mockRestore() };
+  ).pipe(Effect.provideContext(context));
+  yield* Effect.yieldNow;
+  return file;
+});
+
+/** The first message of each notice. */
+function texts(harness: ReturnType<typeof creation>): unknown[] {
+  return harness.notifier.notices.map(({ messages: [message] }) => message);
 }
 
-it("creates a note from the New profile dialog's prepared callback without re-resolving its path", async () => {
-  const file = noteAt("Reading/Paper-7cx.md");
-  const create = vi.fn(async () => ({ outcome: "created" as const, file }));
-  const createProfile = vi.fn(async () => ({
-    profile: {
-      id: "Bk3Qn7XvT2Lp" as ProfileId,
-      label: "Reading",
-      document: "reading.md",
-      path: "templates/reading.md",
-      bindings: {},
-      match: {
-        state: "all",
-        summary: m.profile_match_all(),
-        tree: { and: [] },
-      },
-    } satisfies LiteratureNoteProfile,
-    preview: { path: file.path, properties: {}, body: "Body", create },
-  }));
-  const deps: InteractiveCreationDeps = {
-    app: stubService<App>("App", {}),
-    createProfile,
-    zoteroPref: { dataDir: "" },
-    noteFeature: stubService<InteractiveCreationDeps["noteFeature"]>(
-      "NoteFeatureHandle",
-      {
-        planCreations: vi.fn(async (keys: readonly string[]) =>
-          creationPlans(
-            keys,
-            {
-              selector: "default",
-              source: "bound",
-              shouldAsk: true,
-            },
-            [],
-          ),
-        ),
-        createNote: vi.fn(),
-      },
-    ),
-    importProfile: vi.fn(),
-  };
-  vi.mocked(chooseLiteratureNoteProfile).mockImplementation(
-    async (_app, options) =>
-      "onNew" in options ? options.onNew?.() : undefined,
-  );
-  const item = { indexedKey: "ABCD2345" } as Item;
-  await expect(createNoteInteractively(deps, item)).resolves.toBe(file);
-  expect(createProfile).toHaveBeenCalledWith({
-    indexedKey: "ABCD2345",
-    useForNote: true,
-  });
-  expect(create).toHaveBeenCalledOnce();
-  expect(deps.noteFeature.planCreations).toHaveBeenCalledOnce();
-  expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
-});
-
-it("opens overlap with every candidate identity, a visible reason, and frozen previews", async () => {
-  const preview = booksPreview();
-  const papers = {
-    ...BOOK_PROFILE,
-    id: "Rz9Wm4YfH6Kd" as ProfileId,
-    label: "Papers",
-  };
-  const selection: CreationProfileSelection = {
-    selector: "default",
-    source: "bound",
-    shouldAsk: true,
-    problem: { kind: "overlap", candidates: [BOOK_PROFILE, papers] },
-  };
-  const deps = directDeps(selection, [preview]);
-  const item = { indexedKey: "ABCD2345" } as Item;
-  vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce({
-    id: BOOKS,
-    label: "Books",
-  });
-  expect(await createNoteInteractively(deps, item)).toMatchObject({
-    path: "Books/Paper.md",
-  });
-  expect(deps.noteFeature.planCreations).toHaveBeenCalledExactlyOnceWith(
-    [item.indexedKey],
-    {},
-  );
-  expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
-    deps.app,
-    expect.objectContaining({
-      candidates: [BOOKS, papers.id],
-      problem: m.modal_profile_problem_overlap({ profiles: "Books, Papers" }),
-      previews: [preview],
+it.effect(
+  "creates a note from the New profile dialog's prepared callback without re-resolving its path",
+  () =>
+    Effect.gen(function* () {
+      const file = noteAt("Reading/Paper-7cx.md");
+      const create = vi.fn(async () => ({ outcome: "created" as const, file }));
+      const createProfile = vi.fn(async () => ({
+        profile: { ...BOOK_PROFILE, label: "Reading" },
+        preview: { path: file.path, properties: {}, body: "Body", create },
+      }));
+      const harness = creation(
+        { selector: "default", source: "bound", shouldAsk: true },
+        [],
+        { createProfile },
+      );
+      pickerAnswers(async (options) => options.onNew?.());
+      expect(yield* run(harness)).toBe(file);
+      expect(createProfile).toHaveBeenCalledWith({
+        indexedKey: "ABCD2345",
+        useForNote: true,
+      });
+      expect(create).toHaveBeenCalledOnce();
+      expect(harness.feature.planCreations).toHaveBeenCalledOnce();
+      expect(harness.feature.createNote).not.toHaveBeenCalled();
+      expect(texts(harness)).toEqual([
+        m.notice_created_note_under_profile({
+          profile: "Reading",
+          path: file.path,
+        }),
+      ]);
     }),
-  );
-  expect(preview.create).toHaveBeenCalledOnce();
-  expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
-});
+);
 
-it.each([false, true])(
+it.effect(
+  "opens overlap with every candidate identity, a visible reason, and frozen previews",
+  () =>
+    Effect.gen(function* () {
+      const preview = booksPreview();
+      const papers = {
+        ...BOOK_PROFILE,
+        id: "Rz9Wm4YfH6Kd" as ProfileId,
+        label: "Papers",
+      };
+      const harness = creation(
+        {
+          selector: "default",
+          source: "bound",
+          shouldAsk: true,
+          problem: { kind: "overlap", candidates: [BOOK_PROFILE, papers] },
+        },
+        [preview],
+      );
+      pickerAnswers(async () => ({ id: BOOKS, label: "Books" }));
+      expect(yield* run(harness)).toMatchObject({ path: "Books/Paper.md" });
+      expect(harness.feature.planCreations).toHaveBeenCalledExactlyOnceWith(
+        [ITEM.indexedKey],
+        {},
+      );
+      expect(openLiteratureNoteProfile).toHaveBeenLastCalledWith(
+        harness.app,
+        expect.objectContaining({
+          candidates: [BOOKS, papers.id],
+          problem: m.modal_profile_problem_overlap({
+            profiles: "Books, Papers",
+          }),
+          previews: [preview],
+        }),
+        expect.any(Function),
+      );
+      expect(preview.create).toHaveBeenCalledOnce();
+      expect(harness.feature.createNote).not.toHaveBeenCalled();
+    }),
+);
+
+it.effect.each([false, true])(
   "creates a unique match directly and reports its reason and path (direct=%s)",
-  async (direct) => {
-    using shown = successNotice();
-    vi.mocked(chooseLiteratureNoteProfile).mockClear();
-    const preview = booksPreview();
-    const deps = directDeps(
-      {
-        selector: BOOKS,
-        source: "match",
-        shouldAsk: false,
-        reason: MATCH_REASON,
-      },
-      [booksPreview({ selector: "default", label: undefined }), preview],
-    );
-    const item = { indexedKey: "ABCD2345" } as Item;
-    await expect(
-      createNoteInteractively(deps, item, { direct }),
-    ).resolves.toMatchObject({ path: "Books/Paper.md" });
-    expect(deps.noteFeature.planCreations).toHaveBeenCalledExactlyOnceWith(
-      [item.indexedKey],
-      {},
-    );
-    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
-    expect(preview.create).toHaveBeenCalledOnce();
-    expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
-    expect(shown.notices).toEqual([
-      m.notice_created_note_from_match({
-        reason: MATCH_REASON,
+  (direct) =>
+    Effect.gen(function* () {
+      vi.mocked(openLiteratureNoteProfile).mockClear();
+      const preview = booksPreview();
+      const harness = creation(
+        {
+          selector: BOOKS,
+          source: "match",
+          shouldAsk: false,
+          reason: MATCH_REASON,
+        },
+        [booksPreview({ selector: "default", label: undefined }), preview],
+      );
+      expect(yield* run(harness, { direct })).toMatchObject({
         path: "Books/Paper.md",
-      }),
-    ]);
-  },
+      });
+      expect(harness.feature.planCreations).toHaveBeenCalledExactlyOnceWith(
+        [ITEM.indexedKey],
+        {},
+      );
+      expect(openLiteratureNoteProfile).not.toHaveBeenCalled();
+      expect(preview.create).toHaveBeenCalledOnce();
+      expect(harness.feature.createNote).not.toHaveBeenCalled();
+      expect(texts(harness)).toEqual([
+        m.notice_created_note_from_match({
+          reason: MATCH_REASON,
+          path: "Books/Paper.md",
+        }),
+      ]);
+    }),
 );
 
-it("creates directly under an explicit Profile, naming Default when it is the one chosen", async () => {
-  using shown = successNotice();
-  vi.mocked(chooseLiteratureNoteProfile).mockClear();
-  const preview = booksPreview({
-    selector: "default",
-    label: undefined,
-    path: "Literature/Paper.md",
-    create: vi.fn(async () => ({
-      outcome: "created" as const,
-      file: noteAt("Literature/Paper.md"),
-    })),
-  });
-  const deps = directDeps(
-    { selector: "default", source: "headless", shouldAsk: true },
-    [preview, booksPreview()],
-  );
-  await expect(
-    createNoteInteractively(deps, { indexedKey: "ABCD2345" } as Item, {
-      headless: "default",
-      direct: true,
+it.effect(
+  "creates directly under an explicit Profile, naming Default when it is the one chosen",
+  () =>
+    Effect.gen(function* () {
+      vi.mocked(openLiteratureNoteProfile).mockClear();
+      const preview = booksPreview({
+        selector: "default",
+        label: undefined,
+        path: "Literature/Paper.md",
+      });
+      const harness = creation(
+        { selector: "default", source: "headless", shouldAsk: true },
+        [preview, booksPreview()],
+      );
+      expect(
+        yield* run(harness, { headless: "default", direct: true }),
+      ).toMatchObject({ path: "Literature/Paper.md" });
+      expect(harness.feature.planCreations).toHaveBeenCalledWith(["ABCD2345"], {
+        headless: "default",
+      });
+      expect(openLiteratureNoteProfile).not.toHaveBeenCalled();
+      expect(preview.create).toHaveBeenCalledOnce();
+      expect(texts(harness)).toEqual([
+        m.notice_created_note_under_profile({
+          profile: m.settings_profile_default_name(),
+          path: "Literature/Paper.md",
+        }),
+      ]);
     }),
-  ).resolves.toMatchObject({ path: "Literature/Paper.md" });
-  expect(deps.noteFeature.planCreations).toHaveBeenCalledWith(["ABCD2345"], {
-    headless: "default",
-  });
-  expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
-  expect(preview.create).toHaveBeenCalledOnce();
-  expect(shown.notices).toEqual([
-    m.notice_created_note_under_profile({
-      profile: m.settings_profile_default_name(),
-      path: "Literature/Paper.md",
-    }),
-  ]);
-});
+);
 
-it("asks with Default preselected when no source resolves, and writes nothing on cancel", async () => {
-  const preview = booksPreview();
-  const deps = directDeps(
-    { selector: "default", source: "bound", shouldAsk: true },
-    [booksPreview({ selector: "default", label: undefined }), preview],
-  );
-  vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce(undefined);
-  await expect(
-    createNoteInteractively(deps, { indexedKey: "ABCD2345" } as Item, {
-      direct: true,
-    }),
-  ).resolves.toBeNull();
-  expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
-    deps.app,
-    expect.objectContaining({
-      preselected: "default",
-      source: "bound",
-      reason: undefined,
-      problem: undefined,
-    }),
-  );
-  expect(preview.create).not.toHaveBeenCalled();
-  expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
-});
-
-it("keeps explicit recovery on the direct path when automatic selection stopped", async () => {
-  const deps = directDeps(
-    {
-      selector: "default",
-      source: "bound",
-      shouldAsk: true,
-      problem: {
-        kind: "overlap",
-        candidates: [BOOK_PROFILE],
-      },
-    },
-    [booksPreview({ selector: "default", label: undefined }), booksPreview()],
-  );
-  vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce(undefined);
-  await expect(
-    createNoteInteractively(deps, { indexedKey: "ABCD2345" } as Item, {
-      direct: true,
-    }),
-  ).resolves.toBeNull();
-  expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
-    deps.app,
-    expect.objectContaining({
-      preselected: "default",
-      problem: expect.stringContaining("Books"),
-    }),
-  );
-  expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
-});
-
-it.each([
-  {
-    name: "match",
-    selection: {
-      selector: BOOKS,
-      source: "match",
-      shouldAsk: true,
-      reason: MATCH_REASON,
-    } satisfies CreationProfileSelection,
-    problem: m.modal_profile_problem_unavailable_profile({ selector: BOOKS }),
-  },
-])(
-  "asks for another choice when the $name-selected Profile is unavailable at preparation",
-  async ({ selection, problem }) => {
-    const unavailable = booksPreview({
-      path: undefined,
-      unavailable: "Template missing",
-    });
-    const deps = directDeps(selection, [
-      booksPreview({ selector: "default", label: undefined }),
-      unavailable,
-    ]);
-    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce(undefined);
-    await expect(
-      createNoteInteractively(deps, { indexedKey: "ABCD2345" } as Item, {
-        direct: true,
-      }),
-    ).resolves.toBeNull();
-    expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
-      deps.app,
-      expect.objectContaining({
-        preselected: BOOKS,
-        source: selection.source,
-        problem,
-        previews: [expect.anything(), unavailable],
-      }),
+it.effect("creates under the bound Profile with no question", () =>
+  Effect.gen(function* () {
+    vi.mocked(openLiteratureNoteProfile).mockClear();
+    const file = noteAt("Literature/Paper.md");
+    const harness = creation(
+      { selector: "default", source: "bound", shouldAsk: false },
+      [booksPreview()],
     );
-    expect(unavailable.create).not.toHaveBeenCalled();
-    expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
-  },
+    harness.feature.createNote.mockReturnValue(
+      Effect.succeed({ outcome: "created", file }),
+    );
+    expect(yield* run(harness)).toBe(file);
+    expect(harness.feature.createNote).toHaveBeenCalledExactlyOnceWith(ITEM, {
+      profile: "default",
+    });
+    expect(openLiteratureNoteProfile).not.toHaveBeenCalled();
+    expect(texts(harness)).toEqual([m.notice_created_note()]);
+  }),
 );
 
-it("imports from the contextual picker without creating a note", async () => {
-  const importProfile = vi.fn(async () => undefined);
-  const deps: InteractiveCreationDeps = {
-    app: stubService<App>("App", {}),
-    createProfile: vi.fn(),
-    importProfile,
-    zoteroPref: { dataDir: "" },
-    noteFeature: stubService<InteractiveCreationDeps["noteFeature"]>(
-      "NoteFeatureHandle",
-      {
-        planCreations: vi.fn(async (keys: readonly string[]) =>
-          creationPlans(
-            keys,
-            {
-              selector: "default",
-              source: "bound",
-              shouldAsk: true,
-            },
-            [],
-          ),
-        ),
-        createNote: vi.fn(),
-      },
-    ),
-  };
-  vi.mocked(chooseLiteratureNoteProfile).mockImplementation(
-    async (_app, options) => {
-      if ("onImport" in options) await options.onImport?.();
+it.effect("answers null after the create notice reports a failed create", () =>
+  Effect.gen(function* () {
+    const harness = creation(
+      { selector: "default", source: "bound", shouldAsk: false },
+      [],
+    );
+    harness.feature.createNote.mockReturnValue(
+      Effect.fail(
+        new NotePathUnavailable({
+          message: "The filename template rendered nothing",
+          cause: new Error("The filename template rendered nothing"),
+        }),
+      ),
+    );
+    expect(yield* run(harness)).toBeNull();
+    expect(texts(harness)).toEqual([m.notice_create_note_failed()]);
+  }),
+);
+
+it.effect(
+  "asks with Default preselected when no source resolves, and writes nothing on cancel",
+  () =>
+    Effect.gen(function* () {
+      const preview = booksPreview();
+      const harness = creation(
+        { selector: "default", source: "bound", shouldAsk: true },
+        [booksPreview({ selector: "default", label: undefined }), preview],
+      );
+      pickerAnswers(async () => undefined);
+      expect(yield* run(harness, { direct: true })).toBeNull();
+      expect(openLiteratureNoteProfile).toHaveBeenLastCalledWith(
+        harness.app,
+        expect.objectContaining({
+          preselected: "default",
+          source: "bound",
+          reason: undefined,
+          problem: undefined,
+        }),
+        expect.any(Function),
+      );
+      expect(preview.create).not.toHaveBeenCalled();
+      expect(harness.feature.createNote).not.toHaveBeenCalled();
+    }),
+);
+
+it.effect(
+  "keeps explicit recovery on the direct path when automatic selection stopped",
+  () =>
+    Effect.gen(function* () {
+      const harness = creation(
+        {
+          selector: "default",
+          source: "bound",
+          shouldAsk: true,
+          problem: { kind: "overlap", candidates: [BOOK_PROFILE] },
+        },
+        [
+          booksPreview({ selector: "default", label: undefined }),
+          booksPreview(),
+        ],
+      );
+      pickerAnswers(async () => undefined);
+      expect(yield* run(harness, { direct: true })).toBeNull();
+      expect(openLiteratureNoteProfile).toHaveBeenLastCalledWith(
+        harness.app,
+        expect.objectContaining({
+          preselected: "default",
+          problem: expect.stringContaining("Books"),
+        }),
+        expect.any(Function),
+      );
+      expect(harness.feature.createNote).not.toHaveBeenCalled();
+    }),
+);
+
+it.effect(
+  "asks for another choice when the match-selected Profile is unavailable at preparation",
+  () =>
+    Effect.gen(function* () {
+      const unavailable = booksPreview({
+        path: undefined,
+        unavailable: "Template missing",
+      });
+      const harness = creation(
+        {
+          selector: BOOKS,
+          source: "match",
+          shouldAsk: true,
+          reason: MATCH_REASON,
+        },
+        [booksPreview({ selector: "default", label: undefined }), unavailable],
+      );
+      pickerAnswers(async () => undefined);
+      expect(yield* run(harness, { direct: true })).toBeNull();
+      expect(openLiteratureNoteProfile).toHaveBeenLastCalledWith(
+        harness.app,
+        expect.objectContaining({
+          preselected: BOOKS,
+          source: "match",
+          problem: m.modal_profile_problem_unavailable_profile({
+            selector: BOOKS,
+          }),
+          previews: [expect.anything(), unavailable],
+        }),
+        expect.any(Function),
+      );
+      expect(unavailable.create).not.toHaveBeenCalled();
+      expect(harness.feature.createNote).not.toHaveBeenCalled();
+    }),
+);
+
+it.effect("imports from the contextual picker without creating a note", () =>
+  Effect.gen(function* () {
+    const importProfile = vi.fn(async () => undefined);
+    const harness = creation(
+      { selector: "default", source: "bound", shouldAsk: true },
+      [],
+      { importProfile },
+    );
+    pickerAnswers(async (options) => {
+      await options.onImport?.();
       return undefined;
-    },
-  );
-  await expect(
-    createNoteInteractively(deps, { indexedKey: "ABCD2345" } as Item),
-  ).resolves.toBeNull();
-  expect(importProfile).toHaveBeenCalledWith({ indexedKey: "ABCD2345" });
-  expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
-});
+    });
+    expect(yield* run(harness)).toBeNull();
+    expect(importProfile).toHaveBeenCalledWith({ indexedKey: "ABCD2345" });
+    expect(harness.feature.createNote).not.toHaveBeenCalled();
+  }),
+);
+
+it.effect("closes the picker when the creation is interrupted", () =>
+  Effect.gen(function* () {
+    const close = vi.fn();
+    vi.mocked(openLiteratureNoteProfile).mockImplementation(() => ({
+      close,
+    }));
+    const harness = creation(
+      { selector: "default", source: "bound", shouldAsk: true },
+      [booksPreview()],
+    );
+    const fiber = yield* run(harness).pipe(
+      Effect.forkChild({ startImmediately: true }),
+    );
+    yield* Effect.yieldNow;
+    expect(openLiteratureNoteProfile).toHaveBeenCalled();
+    yield* Fiber.interrupt(fiber);
+    expect(close).toHaveBeenCalledOnce();
+  }),
+);
 
 it.each([
   [

@@ -51,10 +51,7 @@ import { layerCitekeyCandidatePicker } from "./citekey-editor/candidates";
 import { layerCitekeyEditorNotices } from "./citekey-editor/notices";
 import { layerCitekeyEditorExtension } from "./citekey-editor/register";
 import { layerCitekeyEditor } from "./citekey-editor/service";
-import type {
-  CitekeyEditor,
-  CitekeyNoteCreation,
-} from "./citekey-editor/service";
+import type { CitekeyEditor } from "./citekey-editor/service";
 import { layerCitekeyReading } from "./citekey-reading/service";
 import { layerDatabaseActions } from "./database/actions";
 import { layerExcerptDisplays } from "./excerpt-image/display";
@@ -90,6 +87,7 @@ import { layerLocalServer } from "./local-server/service";
 import type { LocalServer } from "./local-server/service";
 import { layerLogging, layerLogOutput } from "./log/service";
 import { layerManagedBinaryPlatform } from "./managed-binary/service";
+import type { InteractiveCreationPorts } from "./note-feature/creation-view";
 import { layerNoteFeature } from "./note-feature/service";
 import type { NoteFeature } from "./note-feature/service";
 import { layerNoteImporter } from "./note-import/service";
@@ -154,16 +152,16 @@ export function pluginLayer(
   plugin: Plugin & CliHost,
   migration: Pick<TemplateMigrationOptions, "openPrompt">,
   {
+    creation,
     excerpt,
     languagePack,
-    noteCreation,
   }: {
+    readonly creation: InteractiveCreationPorts;
     readonly excerpt: {
       readonly openStore: () => Promise<ExcerptStore>;
       readonly readers: ExcerptReaderDocuments;
     };
     readonly languagePack: LanguagePackStartup;
-    readonly noteCreation: CitekeyNoteCreation;
   },
 ): Layer.Layer<
   | GraphCitations
@@ -225,7 +223,6 @@ export function pluginLayer(
   const services = Layer.mergeAll(
     layerCitationPopover.pipe(startingAs("CitationPopover")),
     layerAnnotationPopover.pipe(startingAs("AnnotationPopover")),
-    layerCitekeyEditor(noteCreation).pipe(startingAs("CitekeyEditor")),
     layerItemLookup.pipe(startingAs("ItemLookup")),
     layerNoteImporter.pipe(startingAs("NoteImporter")),
     layerLocalBridge({
@@ -369,10 +366,16 @@ export function pluginLayer(
     layerWikilinkReading.pipe(startingAs("WikilinkReading")),
   ).pipe(Layer.provide(Layer.mergeAll(layerPluginHost(plugin), obsidian)));
   // The Note Feature plans creations through ZotLit Query, so it builds above
-  // the other services.
-  const noteFeature = layerNoteFeature.pipe(
-    startingAs("NoteFeature"),
-    Layer.provideMerge(services),
+  // the other services. The citekey editor creates notes through it.
+  const noteFeature = layerCitekeyEditor(creation).pipe(
+    startingAs("CitekeyEditor"),
+    Layer.provide(layerNotifier),
+    Layer.provideMerge(
+      layerNoteFeature.pipe(
+        startingAs("NoteFeature"),
+        Layer.provideMerge(services),
+      ),
+    ),
   );
   // The Node file system, once for the whole graph: the temp sweeps read it.
   // The Notifier is the one the layers share: the setting tab's Language Pack

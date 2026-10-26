@@ -24,7 +24,6 @@ import {
   propertyValues,
   vaultTags,
 } from "@/lib/obsidian-private/property-values";
-import { createNoteInteractively } from "@/services/note-feature/creation-view";
 import type { InteractiveCreationDeps } from "@/services/note-feature/creation-view";
 import type { NoteFeatureHandle } from "@/services/note-feature/operations";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
@@ -400,7 +399,7 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
         reads.ItemsByIndexedKeys({ indexedKeys: [itemKey] }),
       )
     ).get(itemKey);
-    return item ? createNoteInteractively(deps, item) : null;
+    return item ? deps.noteFeature.createNoteInteractively(item) : null;
   }
 }
 

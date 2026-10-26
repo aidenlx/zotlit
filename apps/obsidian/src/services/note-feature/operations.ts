@@ -7,6 +7,7 @@ import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 
 import type { NoteCitations } from "./citations-handle";
+import type { NoteCreation } from "./creation-handle";
 import type {
   CompanionNoteTarget,
   CreateNoteOptions,
@@ -57,7 +58,7 @@ export type {
  * The Note Feature for callers outside Effect, as `bindNoteFeature` builds it
  * over the `NoteFeature` tag.
  */
-export interface NoteFeatureHandle extends NoteCitations {
+export interface NoteFeatureHandle extends NoteCitations, NoteCreation {
   resolveCompanionNote(
     indexedKey: string,
     options?: { profile?: ProfileSelector },

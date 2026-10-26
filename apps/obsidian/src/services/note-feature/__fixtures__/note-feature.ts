@@ -40,6 +40,7 @@ import { ZoteroPref } from "@/services/zotero-pref/service";
 
 import type { NoteCitations } from "@/services/note-feature/citations-handle";
 import { bindNoteFeature } from "@/services/note-feature/handle";
+import type { NoteCreation } from "@/services/note-feature/creation-handle";
 import type { NoteFeatureHandle } from "@/services/note-feature/operations";
 import { layerNoteFeature, NoteFeature } from "@/services/note-feature/service";
 import type { NoteFeatureServices } from "@/services/note-feature/service";
@@ -235,7 +236,9 @@ export function noteFeatureHandle(
   const handle = bindNoteFeature(
     effectBridge(runtime),
     runtime.runSync(NoteFeature),
-    options.citations ?? stubService<NoteCitations>("NoteCitations", {}),
+    stubService<NoteCitations & NoteCreation>("NoteFeatureEdges", {
+      ...options.citations,
+    }),
   );
   return { handle, runtime };
 }

@@ -6,16 +6,14 @@ import type { Item, ItemRef } from "@zotlit/db";
 import type { ProtocolAction } from "@zotlit/protocol";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { portCall } from "@/lib/legacy-port";
 import { Notifier } from "@/lib/notifier";
 import { Workspace } from "@/lib/obsidian-workspace";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { UseLedger } from "@/services/use-ledger/service";
-import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import { createNoteInteractively } from "./creation-view";
-import type { InteractiveCreationDeps } from "./creation-view";
+import type { InteractiveCreationPorts } from "./creation-view";
 import type { CompanionNoteTarget, UpdateScope } from "./operations";
 import { NoteFeature } from "./service";
 import {
@@ -25,15 +23,8 @@ import {
   updateWithNotice,
 } from "./update-single";
 
-/**
- * The legacy values the Companion flow still holds: the interactive creation
- * and its Profile factories convert in a later slice. The flow reads the
- * Zotero data folder from the ZoteroPref tag.
- */
-export type CompanionNoteDeps = Omit<InteractiveCreationDeps, "zoteroPref">;
-
 export const openCompanionNote = Effect.fn("openCompanionNote")(function* (
-  deps: CompanionNoteDeps,
+  deps: InteractiveCreationPorts,
   ref: ItemRef,
   options: {
     action: ProtocolAction;
@@ -88,13 +79,10 @@ export const openCompanionNote = Effect.fn("openCompanionNote")(function* (
     indexedKeys: [ref.indexedKey],
   })).get(ref.indexedKey);
   if (!item) return;
-  const { dataDir } = yield* (yield* ZoteroPref).current;
-  const file = yield* portCall("create-note-interactively", () =>
-    createNoteInteractively({ ...deps, zoteroPref: { dataDir } }, item, {
-      headless: options.profile,
-      direct: true,
-    }),
-  );
+  const file = yield* createNoteInteractively(deps, item, {
+    headless: options.profile,
+    direct: true,
+  });
   if (file) {
     yield* open(file);
   }

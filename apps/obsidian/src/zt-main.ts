@@ -380,8 +380,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       });
     }
     registerQuickSwitch(this, {
-      createProfile: services.createProfile,
-      importProfile: services.importProfile,
       app: this.app,
       attachments: services.literatureNoteAttachments,
       lookup: services.itemLookup,
@@ -389,7 +387,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       noteFeature: services.noteFeature,
       settings: services.settings,
       bridge: services.bridge,
-      zoteroPref: services.zoteroPref,
       opener: services.targetOpener,
       showInLibrary: (indexedKey) => showInLibrary(this.app, indexedKey),
     });
@@ -400,7 +397,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         createProfile: services.createProfile,
         importProfile: services.importProfile,
         app: this.app,
-        noteFeature: services.noteFeature,
         noteImportView: services.noteImportView,
         opener: services.targetOpener,
         bridge: services.bridge,
@@ -427,13 +423,10 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       literatureNotes: literatureNotes({
         runtime: services.runtime,
         app: this.app,
-        createProfile: services.createProfile,
-        importProfile: services.importProfile,
         noteFeature: services.noteFeature,
         noteIndex: services.noteIndex,
         profile: services.profile,
         template: services.template,
-        zoteroPref: services.zoteroPref,
         zoteroReads: services.zoteroReads,
       }),
       opener: services.targetOpener,
@@ -477,12 +470,9 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       },
       items: itemActions({
         app: this.app,
-        createProfile: services.createProfile,
-        importProfile: services.importProfile,
         noteFeature: services.noteFeature,
         noteIndex: services.noteIndex,
         reads: services.zoteroReads,
-        zoteroPref: services.zoteroPref,
         citationLookup: services.citationLookup,
         useLedger: services.useLedger,
         attachments: services.literatureNoteAttachments,

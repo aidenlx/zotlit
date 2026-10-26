@@ -5,6 +5,7 @@ import type { EffectBridge } from "@/lib/effect-bridge";
 import { settleAtEdge } from "@/lib/signal-edge";
 
 import type { NoteCitations } from "./citations-handle";
+import type { NoteCreation } from "./creation-handle";
 import { plainNoteError } from "./errors";
 import type { NoteFeatureHandle } from "./operations";
 import { eventPayloads, plansRunBy } from "./service";
@@ -12,7 +13,8 @@ import type { NoteFeature } from "./service";
 
 /**
  * The Note Feature's members over `service`, run through `bridge`, with the
- * citation members of `citations` (`policies/services.md` → Edge handle). A
+ * citation members and the interactive creation of `edges`
+ * (`policies/services.md` → Edge handle). A
  * member resolves with its result and rejects with what failed, a render's
  * or a rewrite's throw as it was thrown; a plan rejects with the abort reason
  * of its `signal`, and with the interrupt when unload stops it. A Profile note
@@ -24,14 +26,14 @@ export function bindNoteFeature(
     "runSync" | "runPromise" | "runPromiseExit" | "subscribe"
   >,
   service: NoteFeature["Service"],
-  citations: NoteCitations,
+  edges: NoteCitations & NoteCreation,
 ): NoteFeatureHandle {
   const run = <A, E>(effect: Effect.Effect<A, E>) =>
     bridge.runPromise(
       Effect.mapError(effect, (error) => plainNoteError(error)),
     );
   return {
-    ...citations,
+    ...edges,
     createNote: (item, options) => run(service.createNote(item, options)),
     updateNote: (file, options) => run(service.updateNote(file, options)),
     switchNoteProfile: (file, options) =>

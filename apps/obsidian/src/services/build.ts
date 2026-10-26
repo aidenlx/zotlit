@@ -43,9 +43,7 @@ import { plainCitationParse } from "./citation-parse/plain";
 import { CitationParse } from "./citation-parse/service";
 import { CitationPopover } from "./citation-popover/service";
 import { plainCitationText } from "./citation-text/plain";
-import { citekeyNoteCreation } from "./citekey-editor/note-creation";
 import { CitekeyEditor } from "./citekey-editor/service";
-import type { CitekeyNoteCreation } from "./citekey-editor/service";
 import { ExcerptDisplays } from "./excerpt-image/display";
 import { ExcerptImages } from "./excerpt-image/layer";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
@@ -73,6 +71,9 @@ import type { NoteFeatureHandle } from "./note-feature";
 import { bindBatchUpdate } from "./note-feature/batch-update-handle";
 import { bindNoteCitations } from "./note-feature/citations-handle";
 import type { NoteCitationServices } from "./note-feature/citations-handle";
+import { bindNoteCreation } from "./note-feature/creation-handle";
+import type { NoteCreationServices } from "./note-feature/creation-handle";
+import type { InteractiveCreationPorts } from "./note-feature/creation-view";
 import type { BatchUpdateServices } from "./note-feature/update-batch";
 import { batchUpdateNotices } from "./note-feature/update-single";
 import type { BatchImportServices } from "./note-import/batch-import";
@@ -132,12 +133,23 @@ export async function buildServices(
   >((resolve) => {
     bindMigration = resolve;
   });
-  // The citekey editor opens a note it has to create through the legacy
-  // creation flow, which the container builds after the graph.
-  let bindNoteCreation!: (creation: CitekeyNoteCreation) => void;
-  const noteCreation = new Promise<CitekeyNoteCreation>((resolve) => {
-    bindNoteCreation = resolve;
+  // The note creation opens the setting tab's Profile dialogs, which the
+  // container builds after the graph (ticket 16 converts them).
+  let bindProfileDialogs!: (
+    dialogs: Pick<InteractiveCreationPorts, "createProfile" | "importProfile">,
+  ) => void;
+  const profileDialogs = new Promise<
+    Pick<InteractiveCreationPorts, "createProfile" | "importProfile">
+  >((resolve) => {
+    bindProfileDialogs = resolve;
   });
+  const creation: InteractiveCreationPorts = {
+    app: plugin.app,
+    createProfile: async (options) =>
+      (await profileDialogs).createProfile(options),
+    importProfile: async (options) =>
+      (await profileDialogs).importProfile(options),
+  };
   // The excerpt service is registered before the PDF reader, so the reader
   // hands its documents over through this one holder. A crop asks for a reader
   // document per resolution, and answers detached while the holder is empty.
@@ -152,14 +164,12 @@ export async function buildServices(
         openPrompt: async () => (await migrationActions).openPrompt(),
       },
       {
+        creation,
         excerpt: {
           openStore: () => openExcerptStore(plugin.app.appId),
           readers,
         },
         languagePack,
-        noteCreation: {
-          createNote: async (item) => (await noteCreation).createNote(item),
-        },
       },
     ),
     stack,
@@ -370,14 +380,17 @@ export async function buildServices(
     })
     .useValue({
       noteFeature: (): NoteFeatureHandle =>
-        bindNoteFeature(
-          bridge,
-          runtime.runSync(NoteFeature),
-          bindNoteCitations(
+        bindNoteFeature(bridge, runtime.runSync(NoteFeature), {
+          ...bindNoteCitations(
             bridge,
             runtime.runSync(Effect.context<NoteCitationServices>()),
           ),
-        ),
+          ...bindNoteCreation(
+            bridge,
+            runtime.runSync(Effect.context<NoteCreationServices>()),
+            creation,
+          ),
+        }),
     })
     .useValue({
       createProfile: ({
@@ -403,15 +416,19 @@ export async function buildServices(
         templateData,
         zoteroPref,
         noteFeature,
-      }) =>
-        createProfileImporter({
+        createProfile,
+      }) => {
+        const importProfile = createProfileImporter({
           app: plugin.app,
           profile,
           template,
           templateData,
           zoteroPref,
           noteFeature,
-        }),
+        });
+        bindProfileDialogs({ createProfile, importProfile });
+        return importProfile;
+      },
     })
     .useValue({
       noteImportView: ({ createProfile, importProfile, zoteroPref }) =>
@@ -458,24 +475,6 @@ export async function buildServices(
     .useValue({ citationText: () => plainCitationText(runtime) })
     .useValue({ citationPopover: () => runtime.runSync(CitationPopover) })
     .useValue({ annotationPopover: () => runtime.runSync(AnnotationPopover) })
-    .useValue({
-      citekeyEditor: ({
-        noteFeature,
-        createProfile,
-        importProfile,
-        zoteroPref,
-      }) => {
-        bindNoteCreation(
-          citekeyNoteCreation({
-            app: plugin.app,
-            noteFeature,
-            createProfile,
-            importProfile,
-            zoteroPref,
-          }),
-        );
-        return runtime.runSync(CitekeyEditor);
-      },
-    })
+    .useValue({ citekeyEditor: () => runtime.runSync(CitekeyEditor) })
     .useValue({ graphCitations: () => runtime.runSync(GraphCitations) });
 }

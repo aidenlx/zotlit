@@ -1,21 +1,17 @@
-import { Effect } from "effect";
+import { Cause, Effect } from "effect";
 import type { App, TFile } from "obsidian";
 
-import type { Item } from "@zotlit/db";
-
 import * as m from "@/lib/i18n/generated/messages";
+import { LegacyPortError } from "@/lib/legacy-port";
 import { BaseNotice } from "@/lib/notice";
 import { withProgress } from "@/lib/notifier";
 import type { NoticeMessage, ProgressCopy } from "@/lib/notifier";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
-import type { ProfileSelector } from "@/lib/profile-stamp";
-import * as toast from "@/lib/toast";
 import { missingPartialNotice } from "@/lib/workbench-recovery";
 import { plainNoteError } from "@/services/note-feature/errors";
 import { EmptyFilenameError } from "@/services/note-feature/filename";
 import type {
   CreateNoteResult,
-  NoteFeatureHandle,
   NoteOperationDiagnostic,
   UpdateResult,
   UpdateScope,
@@ -78,22 +74,6 @@ export function updateNoteToast(
 }
 
 /**
- * Create a literature note for `item` behind the standard create toast. Returns
- * the created file, or `null` when creation failed — the toast already surfaced
- * the failure, so callers only need to skip their follow-up.
- */
-export async function createNoteWithToast(
-  noteFeature: Pick<NoteFeatureHandle, "createNote">,
-  item: Item,
-  options: { profile?: ProfileSelector; app?: App } = {},
-): Promise<TFile | null> {
-  return createNoteTaskWithToast(
-    () => noteFeature.createNote(item, { profile: options.profile }),
-    { app: options.app },
-  );
-}
-
-/**
  * The notices a note update shows. The caller builds them over the `App` that
  * their recovery actions open, so the update itself holds no `App`.
  */
@@ -141,26 +121,31 @@ export const updateWithNotice = Effect.fnUntraced(function* (
 });
 
 /**
- * Start the create notice only after the user's Profile decision has settled.
- * `created` replaces the plain success notice, e.g. to name the Profile and
- * path a resolved selection wrote to.
+ * Run `create` behind the create notice, started only after the user's Profile
+ * decision has settled. `created` replaces the plain success notice, e.g. to
+ * name the Profile and path a resolved selection wrote to. Returns the created
+ * file, or `null` when the create wrote nothing or failed: the notice already
+ * told the user. An interrupt passes.
  */
-export async function createNoteTaskWithToast(
-  create: () => Promise<CreateNoteResult>,
+export const createWithNotice = Effect.fnUntraced(function* <E, R>(
+  create: Effect.Effect<CreateNoteResult, E, R>,
   options: { app?: App; created?: (file: TFile) => string } = {},
-): Promise<TFile | null> {
-  const copy = createNoteToast(options);
-  try {
-    const result = await toast.promise(create(), {
-      loading: copy.loading,
-      success: copy.success,
-      error: (_msg, e) => copy.error(e),
-      swallowError: false,
-    });
-    return result.outcome === "created" ? result.file : null;
-  } catch {
-    return null;
-  }
+) {
+  const result = yield* withProgress(
+    create,
+    createNoteToast(options, plainCreateError),
+  ).pipe(
+    Effect.catchCauseIf(
+      (cause) => !Cause.hasInterruptsOnly(cause),
+      () => Effect.void,
+    ),
+  );
+  return result?.outcome === "created" ? result.file : null;
+});
+
+/** What a create failed with, as its notice shows it: a legacy port's rejection, or a Note Feature failure, as thrown. */
+function plainCreateError(error: unknown): unknown {
+  return plainNoteError(error instanceof LegacyPortError ? error.cause : error);
 }
 
 /**
