@@ -1,5 +1,5 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
-import { DateTime, Effect, Fiber, Layer } from "effect";
+import { Cause, DateTime, Effect, Exit, Fiber, Layer } from "effect";
 import { TestClock } from "effect/testing";
 import {
   mkdir,
@@ -65,6 +65,7 @@ import {
 import * as m from "@/lib/i18n/generated/messages";
 import { parseFrontMatter } from "@/lib/live-text";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { VaultError } from "@/lib/vault-errors";
 import type {
   AttachmentSource,
   SourceOrigin,
@@ -218,6 +219,13 @@ function createNoteFeature(deps: TestDeps) {
         Effect.flatMap(NoteFeature, (service) =>
           service.writeNoteUpdate(file, options),
         ).pipe(Effect.mapError((error) => plainNoteError(error))),
+      ),
+    /** {@link writeNoteUpdate}'s Exit, its typed error kept. */
+    writeNoteUpdateExit: (file: TFile, options: WriteNoteUpdateOptions) =>
+      runtime.runPromiseExit(
+        Effect.flatMap(NoteFeature, (service) =>
+          service.writeNoteUpdate(file, options),
+        ),
       ),
   };
 }
@@ -4430,6 +4438,29 @@ describe("writeNoteUpdate", () => {
     // The caller's scope outlives the update: it still answers a repeat.
     await probe.resolve(outcomes);
     expect(probe.renders()).toBe(1);
+  });
+
+  it("fails with the excerpt preparation's typed error", async () => {
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
+    const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
+    const failure = new VaultError({
+      operation: "cachedRead",
+      path: "Literature/Root.md",
+      message: "note unreadable",
+      cause: null,
+    });
+    harness.deps.excerptImages = () => ({
+      annotationImageLink: () => null,
+      prepare: Effect.fail(failure),
+      summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
+    });
+
+    const exit = await createNoteFeature(harness.deps).writeNoteUpdateExit(
+      harness.file("Literature/Root.md"),
+      writeOptions("full"),
+    );
+
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(failure);
   });
 
   it("honors scope 'metadata' by leaving the body untouched", async () => {
