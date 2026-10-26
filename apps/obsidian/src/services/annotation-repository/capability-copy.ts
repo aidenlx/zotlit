@@ -7,6 +7,14 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "./capability";
 
 /**
+ * An instant as the copy reads it: milliseconds since the epoch. Plain code
+ * passes a `Temporal.Instant` and Effect code a `DateTime.Utc`; both carry it.
+ */
+export interface CopyInstant {
+  readonly epochMilliseconds: number;
+}
+
+/**
  * How a surface should present the state, so a renderer picks its colour and
  * its accessible role without re-deriving them from the enum.
  */
@@ -48,7 +56,7 @@ export interface CapabilityCopy {
  */
 export function editingCapabilityCopy(
   capability: EditingCapability,
-  now: Temporal.Instant,
+  now: CopyInstant,
 ): CapabilityCopy {
   switch (capability.kind) {
     case "writable":
@@ -128,7 +136,7 @@ export interface CapabilityAffordance {
  */
 export function editingCapabilityAffordance(
   capability: EditingCapability,
-  now: Temporal.Instant,
+  now: CopyInstant,
 ): CapabilityAffordance | null {
   if (capability.kind === "writable" || capability.kind === "read-only")
     return null;
@@ -160,11 +168,8 @@ export function editingCapabilityAffordance(
  * Whole seconds left of a cooldown, never negative: a deadline already past
  * reads as zero rather than counting up.
  */
-export function secondsUntil(
-  deadline: Temporal.Instant,
-  now: Temporal.Instant,
-): number {
-  const left = now.until(deadline).total("seconds");
+export function secondsUntil(deadline: CopyInstant, now: CopyInstant): number {
+  const left = (deadline.epochMilliseconds - now.epochMilliseconds) / 1000;
   return left <= 0 ? 0 : Math.ceil(left);
 }
 

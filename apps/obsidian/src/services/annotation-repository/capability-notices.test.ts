@@ -1,8 +1,9 @@
+import { DateTime } from "effect";
 import { describe, expect, it } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 
-import { cooldownFailureOf } from "./__fixtures__/capability";
+import { cooldownFailureOf, deadlineAfter } from "./__fixtures__/capability";
 import type { EditingCapability } from "./capability";
 import { editingCapabilityCopy } from "./capability-copy";
 import {
@@ -20,11 +21,11 @@ const NEEDS_AUTH = { kind: "authorization-required" } as const;
 
 /** A clock the test moves by hand, so nothing waits on real time. */
 function clock(start = "2026-09-17T10:00:00Z") {
-  let now = Temporal.Instant.from(start);
+  let now = DateTime.makeUnsafe(start);
   return {
     read: () => now,
     advance: (seconds: number) => {
-      now = now.add({ seconds });
+      now = DateTime.add(now, { seconds });
     },
     get instant() {
       return now;
@@ -33,7 +34,7 @@ function clock(start = "2026-09-17T10:00:00Z") {
 }
 
 /** What the copy table says for a capability, as the notice should read it. */
-function copyOf(capability: EditingCapability, now: Temporal.Instant) {
+function copyOf(capability: EditingCapability, now: DateTime.Utc) {
   const { label, detail } = editingCapabilityCopy(capability, now);
   return { label, detail };
 }
@@ -41,15 +42,20 @@ function copyOf(capability: EditingCapability, now: Temporal.Instant) {
 /** The lines a rollback notice carries: the state, then what to do about it. */
 function readOnlyLines(
   reason: Extract<EditingCapability, { kind: "read-only" }>["reason"],
-  now: Temporal.Instant,
+  now: DateTime.Utc,
 ): string[] {
   const { label, detail } = copyOf({ kind: "read-only", reason }, now);
   return detail === null ? [label] : [label, detail];
 }
 
 /** Answers `capability` for every Attachment the ledger re-reads. */
-function everyAttachmentIs(capability: EditingCapability) {
-  return () => capability;
+function everyAttachmentIs(
+  ledger: CapabilityNoticeLedger,
+  capability: EditingCapability,
+) {
+  return new Map(
+    ledger.openEpisodes().map((attachmentKey) => [attachmentKey, capability]),
+  );
 }
 
 describe("authorization notice lifetime", () => {
@@ -57,7 +63,7 @@ describe("authorization notice lifetime", () => {
     const notice = allowEditingNotice({ value: undefined });
 
     expect(notice).toMatchObject({ sticky: false, action: null });
-    expect(notice?.duration?.total("seconds")).toBe(3);
+    expect(notice?.durationMs).toBe(3000);
   });
 
   it.each(["not-remembered", "not-saved"] as const)(
@@ -66,7 +72,7 @@ describe("authorization notice lifetime", () => {
       const notice = allowEditingNotice({ failure: { kind } });
 
       expect(notice).toMatchObject({ sticky: false });
-      expect(notice).not.toHaveProperty("duration");
+      expect(notice).not.toHaveProperty("durationMs");
     },
   );
 });
@@ -112,7 +118,7 @@ describe("a blocked keyboard gesture", () => {
 
     // A probe that made the Attachment writable ends the episode, whether the
     // gesture finds out or a capability change announces it.
-    ledger.refresh(everyAttachmentIs(WRITABLE));
+    ledger.refresh(everyAttachmentIs(ledger, WRITABLE));
     expect(ledger.blockedGesture(ATTACHMENT, CLOSED)).not.toBeNull();
 
     // A gesture that meets a writable Attachment ends it too, and says nothing.
@@ -125,7 +131,7 @@ describe("a blocked keyboard gesture", () => {
     const ledger = new CapabilityNoticeLedger(time.read);
     const cooling = (seconds: number): EditingCapability => ({
       kind: "cooldown",
-      retryAfter: time.instant.add({ seconds }),
+      retryAfter: deadlineAfter(time.instant, seconds),
     });
 
     const notice = ledger.blockedGesture(ATTACHMENT, cooling(60));
@@ -157,8 +163,8 @@ describe("a write Zotero refused", () => {
 
     expect(invalid).toMatchObject({ sticky: true });
     expect(unsupported).toMatchObject({ sticky: true });
-    expect(invalid).not.toHaveProperty("duration");
-    expect(unsupported).not.toHaveProperty("duration");
+    expect(invalid).not.toHaveProperty("durationMs");
+    expect(unsupported).not.toHaveProperty("durationMs");
     expect(invalid?.lines).toEqual(
       readOnlyLines("invalid-response", time.instant),
     );
@@ -225,7 +231,7 @@ describe("a Zotero database swapped under the port", () => {
 
     // An unrelated capability change does not re-arm it, which is what a
     // session-state test of this would have got wrong.
-    ledger.refresh(everyAttachmentIs(WRITABLE));
+    ledger.refresh(everyAttachmentIs(ledger, WRITABLE));
     expect(ledger.serverChanged("A1B2C3D4E5F6")).toBeNull();
 
     // Another database is another change.

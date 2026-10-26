@@ -73,7 +73,11 @@ export function savedExcerptRequest(options: {
         portCall("acquire-read", () => options.zoteroReads.acquireRead()),
       ).pipe(Effect.map(({ reads }) => reads)),
       dataDir: Effect.sync(() => options.paths.dataDir),
-    }),
+    }).pipe(
+      // A caller outside Effect gets nothing for a read the runtime stopped,
+      // as for one the database could not answer.
+      Effect.catchCause(() => Effect.succeed(null)),
+    ),
   );
 }
 
@@ -104,9 +108,8 @@ export function savedExcerptRequestFor(input: {
 
 /**
  * {@link savedExcerptRequestFor} for Promise callers: the pixel-edit
- * revalidation in `zt-main.ts`, and the Annotation Repository and Annotation
- * Popover cores. Unload interrupts a pending read, which then resolves to
- * `null`.
+ * revalidation in `zt-main.ts` and the Annotation Popover core. Unload
+ * interrupts a pending read, which then resolves to `null`.
  */
 export function savedExcerptRequestOver(services: {
   readonly reads: ZoteroReads["Service"];
@@ -148,7 +151,8 @@ function readSavedExcerptRequest<E>(options: {
     return (yield* options.dataDir) === paths.dataDir ? request : null;
   }).pipe(
     Effect.scoped,
-    // Whatever stops the read, as a throw from a reader, resolves to nothing.
+    // A failed read, as a throw from a reader, resolves to nothing; an
+    // interrupt passes through.
     recover(
       (cause) =>
         Effect.logDebug("No excerpt request: the database did not answer").pipe(

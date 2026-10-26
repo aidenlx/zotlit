@@ -28,6 +28,11 @@ import { openLibraryView } from "@/views/library/register";
 import { layerAnnotationLinkReading } from "./annotation-popover/reading";
 import { layerAnnotationPopover } from "./annotation-popover/service";
 import type { AnnotationPopover } from "./annotation-popover/service";
+import { layerCapabilityNotices } from "./annotation-repository/notices";
+import type {
+  CapabilityNoticePorts,
+  CapabilityNotices,
+} from "./annotation-repository/notices";
 import { layerAnnotationRepository } from "./annotation-repository/service";
 import type { AnnotationRepository } from "./annotation-repository/service";
 import { layerAttachmentImport } from "./attachment-import/service";
@@ -154,11 +159,13 @@ export function pluginLayer(
   plugin: Plugin & CliHost,
   migration: Pick<TemplateMigrationOptions, "openPrompt">,
   {
+    capabilityNotices,
     creation,
     excerpt,
     languagePack,
     protocol,
   }: {
+    readonly capabilityNotices: CapabilityNoticePorts;
     readonly creation: InteractiveCreationPorts;
     /** The note import's modals and the Attachment opener the protocol handlers call. */
     readonly protocol: Pick<ProtocolDeps, "noteImportView" | "opener">;
@@ -174,6 +181,7 @@ export function pluginLayer(
   | LocalBridge
   | Notifier
   | AnnotationRepository
+  | CapabilityNotices
   | AnnotationPopover
   | CitekeyEditor
   | ItemLookup
@@ -228,6 +236,9 @@ export function pluginLayer(
   const services = Layer.mergeAll(
     layerCitationPopover.pipe(startingAs("CitationPopover")),
     layerAnnotationPopover.pipe(startingAs("AnnotationPopover")),
+    layerCapabilityNotices(capabilityNotices).pipe(
+      startingAs("CapabilityNotices"),
+    ),
     layerItemLookup.pipe(startingAs("ItemLookup")),
     layerNoteImporter.pipe(startingAs("NoteImporter")),
     layerLocalBridge({

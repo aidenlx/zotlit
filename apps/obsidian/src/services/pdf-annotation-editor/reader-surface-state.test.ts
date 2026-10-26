@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 import type { SelectedText } from "@zotlit/pdf-structure";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
+import { deadlineAfter } from "@/services/annotation-repository/__fixtures__/capability";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationRecord,
@@ -66,7 +67,7 @@ import {
 } from "./reader-surface-state";
 
 const NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
-const RETRY_AFTER = NOW.add({ seconds: 45 });
+const RETRY_AFTER = deadlineAfter(NOW, 45);
 
 /**
  * One store and a listener on each of its three slices, the way the reader's
@@ -99,7 +100,7 @@ function sameMeaning(capability: EditingCapability): EditingCapability {
   return capability.kind === "cooldown"
     ? {
         kind: "cooldown",
-        retryAfter: Temporal.Instant.from(RETRY_AFTER.toString()),
+        retryAfter: deadlineAfter(NOW, 45),
       }
     : { ...capability };
 }
@@ -148,7 +149,7 @@ it("fires the capability slice when a cooldown's deadline moves", () => {
 
   ingestCapability(
     store,
-    { kind: "cooldown", retryAfter: RETRY_AFTER.add({ seconds: 30 }) },
+    { kind: "cooldown", retryAfter: deadlineAfter(NOW, 75) },
     NOW,
   );
 
