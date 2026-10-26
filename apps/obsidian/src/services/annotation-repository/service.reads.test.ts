@@ -26,11 +26,12 @@ import {
   FIXTURE_ROWS,
   leaseOver,
   markExternal,
-  nextChange,
+  nextChangeOf,
+  collect,
   REMEMBERED_KEY,
   scopedStack,
   setup,
-  switchToLocalApi,
+  switchServiceToLocalApi,
   writable,
   batchReads,
   READING_ORDER,
@@ -153,7 +154,7 @@ it.effect(
 it.effect("carries each tag's type from both Annotation Sources", () =>
   Effect.gen(function* () {
     const stack = yield* scopedStack;
-    const { repository, service, client } = yield* Effect.promise(() =>
+    const { service, client } = yield* Effect.promise(() =>
       setup(stack, {
         children: () =>
           annotationPage(
@@ -179,9 +180,9 @@ it.effect("carries each tag's type from both Annotation Sources", () =>
       { name: "translator", type: 1 },
     ];
 
-    const announced = nextChange(repository);
+    const announced = yield* nextChangeOf(service);
     const fromDatabase = yield* service.read("RGRPDF24");
-    yield* Effect.promise(() => announced);
+    yield* announced;
     const fromLocalApi = yield* service.read("RGRPDF24");
 
     expect(fromDatabase?.source.kind).toBe("zotero-db");
@@ -267,12 +268,12 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service, client, dbEvents } = yield* Effect.promise(
-        () => setup(stack),
+      const { service, client, dbEvents } = yield* Effect.promise(() =>
+        setup(stack),
       );
       const changed: string[] = [];
-      stack.defer(
-        repository.listen("annotations-changed", (key) => changed.push(key)),
+      yield* collect(service.annotationsChanged, (key) =>
+        Effect.sync(() => changed.push(key)),
       );
 
       yield* service.read("RGRPDF24");
@@ -329,21 +330,22 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         setup(stack, {
           children: () => annotationPage(ROUGIER_ANNOTATIONS),
         }),
       );
 
-      const announced = nextChange(repository);
+      const announced = yield* nextChangeOf(service);
       // The first ask arms the Capability Probe and is answered meanwhile by the
       // source that is known to stand.
       const first = yield* service.read("RGRPDF24");
-      const switched = yield* Effect.promise(() => announced);
+      // The keys the switch's step announced, before the next read adds its own.
+      const switched = new Set(yield* announced);
       const second = yield* service.read("RGRPDF24");
 
       expect(first?.source).toEqual(DATABASE_SOURCE);
-      expect(switched).toEqual(["RGRPDF24"]);
+      expect(switched).toEqual(new Set(["RGRPDF24"]));
       expect(second?.source).toEqual({
         kind: "zotero-local-api",
         serverID: SERVER_ID,
@@ -359,15 +361,15 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         setup(stack, {
           children: () => annotationPage(ROUGIER_ANNOTATIONS),
         }),
       );
 
-      const announced = nextChange(repository);
+      const announced = yield* nextChangeOf(service);
       const fromDatabase = yield* service.read("RGRPDF24");
-      yield* Effect.promise(() => announced);
+      yield* announced;
       const fromLocalApi = yield* service.read("RGRPDF24");
 
       // Each source carries its own committed revision, so compare the visible
@@ -401,19 +403,18 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service, requests, serverEvents } =
-        yield* Effect.promise(() =>
-          setup(stack, {
-            children: () => annotationPage(ROUGIER_ANNOTATIONS),
-          }),
-        );
-      yield* Effect.promise(() => switchToLocalApi(repository));
+      const { service, requests, serverEvents } = yield* Effect.promise(() =>
+        setup(stack, {
+          children: () => annotationPage(ROUGIER_ANNOTATIONS),
+        }),
+      );
+      yield* switchServiceToLocalApi(service);
       yield* service.read("RGRPDF24");
       const sent = requests.length;
 
-      const announced = nextChange(repository);
+      const announced = yield* nextChangeOf(service);
       freshnessSignal(serverEvents);
-      const refreshed = yield* Effect.promise(() => announced);
+      const refreshed = yield* announced;
       yield* service.read("RGRPDF24");
 
       expect(refreshed).toEqual(["RGRPDF24"]);
@@ -432,7 +433,7 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       let answering = true;
-      const { repository, service, serverEvents } = yield* Effect.promise(() =>
+      const { service, serverEvents } = yield* Effect.promise(() =>
         setup(
           stack,
           {
@@ -442,7 +443,7 @@ it.effect(
           { key: REMEMBERED_KEY },
         ),
       );
-      yield* Effect.promise(() => switchToLocalApi(repository));
+      yield* switchServiceToLocalApi(service);
       const live = yield* service.read("RGRPDF24");
       yield* service.editTextField(
         "comment",
@@ -451,9 +452,9 @@ it.effect(
       );
 
       answering = false;
-      const announced = nextChange(repository);
+      const announced = yield* nextChangeOf(service);
       freshnessSignal(serverEvents);
-      const gone = yield* Effect.promise(() => announced);
+      const gone = yield* announced;
       const fallback = yield* service.read("RGRPDF24");
 
       expect(live?.source).toEqual({
@@ -486,21 +487,21 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       let answering = true;
-      const { repository, service, client, serverEvents, dbEvents } =
-        yield* Effect.promise(() =>
+      const { service, client, serverEvents, dbEvents } = yield* Effect.promise(
+        () =>
           writable(stack, {
             root: () => (answering ? rootOk() : unreachable()),
             write: () => writeAccepted(38),
             item: () =>
               annotationItem(afterWrite("PUPR5FG5", { color: "#ff6666" })),
           }),
-        );
+      );
 
       yield* service.patchColor("PUPR5FG5", "#ff6666");
       answering = false;
-      const lost = nextChange(repository);
+      const lost = yield* nextChangeOf(service);
       freshnessSignal(serverEvents);
-      yield* Effect.promise(() => lost);
+      yield* lost;
       const held = yield* service.read("RGRPDF24");
 
       expect(held?.source.kind).toBe("zotero-local-api");
@@ -525,7 +526,7 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       let answering = true;
-      const { repository, service, client, serverEvents, dbEvents, requests } =
+      const { service, client, serverEvents, dbEvents, requests } =
         yield* Effect.promise(() =>
           writable(stack, {
             root: () => (answering ? rootOk() : unreachable()),
@@ -537,9 +538,9 @@ it.effect(
 
       yield* service.patchColor("PUPR5FG5", "#ff6666");
       answering = false;
-      const lost = nextChange(repository);
+      const lost = yield* nextChangeOf(service);
       freshnessSignal(serverEvents);
-      yield* Effect.promise(() => lost);
+      yield* lost;
       yield* service.read("RGRPDF24");
       client.$client.exec(`
     update libraries set clientVersion = 38 where libraryID = 1;
@@ -550,9 +551,9 @@ it.effect(
       expect((yield* service.read("RGRPDF24"))?.source.kind).toBe("zotero-db");
 
       answering = true;
-      const restored = nextChange(repository);
+      const restored = yield* nextChangeOf(service);
       freshnessSignal(serverEvents);
-      yield* Effect.promise(() => restored);
+      yield* restored;
       expect((yield* service.read("RGRPDF24"))?.source.kind).toBe("zotero-db");
       const sent = requests.length;
 
@@ -574,19 +575,19 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       let answering = true;
-      const { repository, service, client, serverEvents, dbEvents } =
-        yield* Effect.promise(() =>
+      const { service, client, serverEvents, dbEvents } = yield* Effect.promise(
+        () =>
           writable(stack, {
             root: () => (answering ? rootOk() : unreachable()),
             write: () => writeAccepted(39),
           }),
-        );
+      );
 
       yield* service.deleteAnnotation("C94NJNYG");
       answering = false;
-      const lost = nextChange(repository);
+      const lost = yield* nextChangeOf(service);
       freshnessSignal(serverEvents);
-      yield* Effect.promise(() => lost);
+      yield* lost;
       const held = yield* service.read("RGRPDF24");
 
       expect(held?.source.kind).toBe("zotero-local-api");
@@ -616,7 +617,7 @@ it.effect.each([null, "", "1e2"])(
       const accepted = writeAccepted(5);
       if (header === null) accepted.headers.delete("Last-Modified-Version");
       else accepted.headers.set("Last-Modified-Version", header);
-      const { repository, service, serverEvents } = yield* Effect.promise(() =>
+      const { service, serverEvents } = yield* Effect.promise(() =>
         writable(stack, {
           root: () => (answering ? rootOk() : unreachable()),
           write: () => accepted,
@@ -627,9 +628,9 @@ it.effect.each([null, "", "1e2"])(
 
       yield* service.patchColor("PUPR5FG5", "#ff6666");
       answering = false;
-      const lost = nextChange(repository);
+      const lost = yield* nextChangeOf(service);
       freshnessSignal(serverEvents);
-      yield* Effect.promise(() => lost);
+      yield* lost;
 
       const held = yield* service.read("RGRPDF24");
       expect(held?.source.kind).toBe("zotero-local-api");
@@ -642,18 +643,18 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         setup(stack, { children: () => unreachable() }),
       );
-      yield* Effect.promise(() => switchToLocalApi(repository));
+      yield* switchServiceToLocalApi(service);
 
-      const announced = nextChange(repository);
+      const announced = yield* nextChangeOf(service);
       const failed = yield* service.read("EPUBBKS2");
       const fallback = yield* service.read("EPUBBKS2");
 
       // The failed API candidate never publishes; the verified database answers.
       expect(failed?.source).toEqual(DATABASE_SOURCE);
-      expect(yield* Effect.promise(() => announced)).toContain("EPUBBKS2");
+      expect(yield* announced).toContain("EPUBBKS2");
       expect(fallback?.source).toEqual(DATABASE_SOURCE);
       expect(fallback?.annotations.map(({ key }) => key)).toEqual(["EPUBMRK2"]);
     }),
@@ -665,7 +666,7 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       let serverID = SERVER_ID;
-      const { repository, service, prefEvents } = yield* Effect.promise(() =>
+      const { service, prefEvents } = yield* Effect.promise(() =>
         setup(stack, {
           root: () => rootOk({ "Zotero-Server-ID": serverID }),
           children: () =>
@@ -677,13 +678,13 @@ it.effect(
             ),
         }),
       );
-      yield* Effect.promise(() => switchToLocalApi(repository));
+      yield* switchServiceToLocalApi(service);
       const first = yield* service.read("RGRPDF24");
 
       serverID = "Zzzz11119999";
-      const announced = nextChange(repository);
+      const announced = yield* nextChangeOf(service);
       prefEvents.emit("resolved-changed");
-      yield* Effect.promise(() => announced);
+      yield* announced;
       const second = yield* service.read("RGRPDF24");
 
       expect(first?.annotations).toHaveLength(7);
@@ -783,17 +784,16 @@ it.effect(
       const held = Promise.withResolvers<Response>();
       const inFlight = Promise.withResolvers<void>();
       let reads = 0;
-      const { repository, service, serverEvents, requests } =
-        yield* Effect.promise(() =>
-          setup(stack, {
-            children: () => {
-              if (reads++ > 0) return annotationPage(ROUGIER_ANNOTATIONS);
-              inFlight.resolve();
-              return held.promise;
-            },
-          }),
-        );
-      yield* Effect.promise(() => switchToLocalApi(repository));
+      const { service, serverEvents, requests } = yield* Effect.promise(() =>
+        setup(stack, {
+          children: () => {
+            if (reads++ > 0) return annotationPage(ROUGIER_ANNOTATIONS);
+            inFlight.resolve();
+            return held.promise;
+          },
+        }),
+      );
+      yield* switchServiceToLocalApi(service);
 
       const reading = yield* Effect.forkChild(service.read("RGRPDF24"), {
         startImmediately: true,
@@ -877,7 +877,7 @@ it.effect(
             },
           }),
         );
-      yield* Effect.promise(() => switchToLocalApi(repository));
+      yield* switchServiceToLocalApi(service);
 
       answering = false;
       freshnessSignal(serverEvents);
@@ -1044,13 +1044,13 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         setup(stack, {
           children: () => annotationPage(ROUGIER_ANNOTATIONS),
         }),
       );
 
-      yield* Effect.promise(() => switchToLocalApi(repository));
+      yield* switchServiceToLocalApi(service);
       const list = yield* service.read("RGRPDF24");
 
       expect(yield* service.capabilityFor("RGRPDF24")).toEqual({
@@ -1065,15 +1065,14 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service, localApiService } = yield* Effect.promise(
-        () =>
-          setup(stack, {
-            children: () => annotationPage(ROUGIER_ANNOTATIONS),
-          }),
+      const { service, localApiService } = yield* Effect.promise(() =>
+        setup(stack, {
+          children: () => annotationPage(ROUGIER_ANNOTATIONS),
+        }),
       );
       let announced = 0;
-      stack.defer(
-        repository.listen("capability-changed", () => {
+      yield* collect(service.capabilityChanges, () =>
+        Effect.sync(() => {
           announced += 1;
         }),
       );
@@ -1099,18 +1098,18 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       let answering: readonly WireAnnotation[] = ROUGIER_ANNOTATIONS;
-      const { repository, service, serverEvents } = yield* Effect.promise(() =>
+      const { service, serverEvents } = yield* Effect.promise(() =>
         setup(stack, {
           children: () => annotationPage(answering),
         }),
       );
       const announced: Array<[string, string | null, string]> = [];
-      stack.defer(
-        repository.listen("excerpt-pixels-changed", (record, source) =>
+      yield* collect(service.excerptPixelsChanged, ({ record, source }) =>
+        Effect.sync(() =>
           announced.push([record.key, record.color, source.kind]),
         ),
       );
-      yield* Effect.promise(() => switchToLocalApi(repository));
+      yield* switchServiceToLocalApi(service);
       yield* service.read("RGRPDF24");
 
       // The switch to the Local API answered the same pixels as the database did,
@@ -1133,9 +1132,9 @@ it.effect(
               ? { ...record, comment: "Edited in Zotero" }
               : record,
       );
-      const changed = nextChange(repository);
+      const changed = yield* nextChangeOf(service);
       freshnessSignal(serverEvents);
-      yield* Effect.promise(() => changed);
+      yield* changed;
       const refreshed = yield* service.read("RGRPDF24");
 
       expect(colorOf(refreshed, "TYY6Z6ZF")).toBe("#2ea8e5");
@@ -1165,25 +1164,23 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       let answering: readonly WireAnnotation[] = ROUGIER_ANNOTATIONS;
-      const { repository, service, serverEvents } = yield* Effect.promise(() =>
+      const { service, serverEvents } = yield* Effect.promise(() =>
         setup(stack, {
           children: () => annotationPage(answering),
         }),
       );
       const announced: Array<[string, string | null]> = [];
-      stack.defer(
-        repository.listen("excerpt-pixels-changed", (record) =>
-          announced.push([record.key, record.color]),
-        ),
+      yield* collect(service.excerptPixelsChanged, ({ record }) =>
+        Effect.sync(() => announced.push([record.key, record.color])),
       );
-      yield* Effect.promise(() => switchToLocalApi(repository));
+      yield* switchServiceToLocalApi(service);
       yield* service.read("RGRPDF24");
 
       // A source change that answers the same pixels says nothing: what is announced
       // is movement, not the change itself.
-      const unchanged = nextChange(repository);
+      const unchanged = yield* nextChangeOf(service);
       freshnessSignal(serverEvents);
-      yield* Effect.promise(() => unchanged);
+      yield* unchanged;
       yield* service.read("RGRPDF24");
       expect(announced).toEqual([]);
 
@@ -1195,9 +1192,9 @@ it.effect(
       answering = ROUGIER_ANNOTATIONS.map((record) =>
         record.key === "TYY6Z6ZF" ? { ...record, color: "#2ea8e5" } : record,
       );
-      const moved = nextChange(repository);
+      const moved = yield* nextChangeOf(service);
       freshnessSignal(serverEvents);
-      yield* Effect.promise(() => moved);
+      yield* moved;
       yield* Effect.promise(() =>
         vi.waitFor(() => expect(announced).toEqual([["TYY6Z6ZF", "#2ea8e5"]])),
       );
@@ -1209,7 +1206,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service, client } = yield* Effect.promise(() =>
+      const { service, client } = yield* Effect.promise(() =>
         setup(stack, undefined, {
           /**
            * The pixels this device's persisted Excerpt Images were made from. The two
@@ -1232,10 +1229,8 @@ it.effect(
         }),
       );
       const announced: string[] = [];
-      stack.defer(
-        repository.listen("excerpt-pixels-changed", (record) =>
-          announced.push(record.key),
-        ),
+      yield* collect(service.excerptPixelsChanged, ({ record }) =>
+        Effect.sync(() => announced.push(record.key)),
       );
       client.$client.exec(
         "update itemAnnotations set color = '#2ea8e5' where itemID = 55",

@@ -1,6 +1,7 @@
 import {
   Context,
   DateTime,
+  Deferred,
   Effect,
   Exit,
   Layer,
@@ -588,6 +589,22 @@ function moveToGroup(
     ).run(userID);
 }
 
+/**
+ * Runs `push` on each value a repository stream announces, on a fiber of the
+ * case that starts at once and ends with the case.
+ */
+export function collect<A>(
+  stream: Stream.Stream<A>,
+  push: (value: A) => Effect.Effect<unknown>,
+) {
+  return Effect.forkChild(
+    Stream.runForEach(stream, (value) => push(value)),
+    {
+      startImmediately: true,
+    },
+  );
+}
+
 /** The next `annotations-changed` the repository emits, as a completion signal. */
 export function nextChange(
   repository: RepositoryClient,
@@ -603,6 +620,45 @@ export function nextChange(
     });
   });
 }
+
+/**
+ * The next `annotations-changed` the repository emits, as a completion signal
+ * for an `it.effect` case. It subscribes to the service stream at once; the
+ * Effect it answers waits for the first announcement and the ones the same
+ * step makes, and answers their keys.
+ */
+export function nextChangeOf(
+  service: Shape,
+): Effect.Effect<Effect.Effect<readonly string[]>> {
+  const announced: string[] = [];
+  return Effect.flatMap(Deferred.make<void>(), (first) =>
+    collect(service.annotationsChanged, (key) =>
+      Effect.sync(() => announced.push(key)).pipe(
+        Effect.andThen(Deferred.succeed(first, undefined)),
+      ),
+    ).pipe(
+      Effect.as(
+        Deferred.await(first).pipe(
+          Effect.andThen(Effect.yieldNow),
+          Effect.map((): readonly string[] => announced),
+        ),
+      ),
+    ),
+  );
+}
+
+/**
+ * Read once so the Capability Probe runs, and wait for the source it finds:
+ * the {@link switchToLocalApi} of an `it.effect` case.
+ */
+export const switchServiceToLocalApi = Effect.fnUntraced(function* (
+  service: Shape,
+  attachmentKey = "RGRPDF24",
+) {
+  const announced = yield* nextChangeOf(service);
+  yield* service.read(attachmentKey);
+  yield* announced;
+});
 
 /**
  * A Zotero that keeps everything ZotLit writes to it — a patch of any field, an
