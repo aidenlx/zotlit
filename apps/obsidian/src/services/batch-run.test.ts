@@ -30,8 +30,6 @@ import {
   executeBatchRun,
   makeStopRequest,
   runBatch,
-  runBatchWrite,
-  TaskRejected,
 } from "./batch-run";
 import type {
   BatchClassifyControls,
@@ -71,25 +69,17 @@ function task(id: number): BatchRunTask {
   return { id, label: `Item ${id}` };
 }
 
-const sentinelReads = { $sentinel: true } as unknown as ZoteroReadsApi;
-
 /** A ZoteroReads service whose Snapshot acquisition is observable. */
-function makeSnapshotReads(
-  reads: ZoteroReadsApi = sentinelReads,
-  options: { failWith?: DbUnavailable } = {},
-): {
+function makeSnapshotReads(reads: ZoteroReadsApi): {
   zoteroReads: Pick<ZoteroReads["Service"], "snapshot">;
   dispose: ReturnType<typeof vi.fn>;
 } {
   const dispose = vi.fn();
-  const snapshot = options.failWith
-    ? Effect.fail(options.failWith)
-    : Effect.acquireRelease(Effect.succeed(reads), () =>
-        Effect.sync(() => dispose()),
-      );
   return {
     zoteroReads: stubService<ZoteroReads["Service"]>("ZoteroReads", {
-      snapshot,
+      snapshot: Effect.acquireRelease(Effect.succeed(reads), () =>
+        Effect.sync(() => dispose()),
+      ),
     }),
     dispose,
   };
@@ -413,183 +403,20 @@ describe("executeBatchRun", () => {
   );
 });
 
-describe("runBatchWrite", () => {
-  it.effect("pins one Snapshot and threads its reads to each task", () =>
+describe("a task that awaits a rejected Promise", () => {
+  it.effect("reports the rejection's own error on its failure row", () =>
     Effect.gen(function* () {
-      const { zoteroReads, dispose } = makeSnapshotReads();
-      const { controls } = makeRunControls();
-      const seenReads: ZoteroReadsApi[] = [];
-
-      const result = yield* runBatchWrite({
-        zoteroReads,
-        tasks: [task(1), task(2), task(3)],
-        controls,
-        concurrency: 4,
-        run: async (_t, reads) => {
-          seenReads.push(reads);
-          return "updated";
-        },
-      });
-
-      expect(seenReads).toEqual([sentinelReads, sentinelReads, sentinelReads]);
-      expect(result).toMatchObject({ updated: 3 });
-      expect(dispose).toHaveBeenCalledTimes(1);
-    }),
-  );
-
-  it.effect(
-    "memoizes a shared fetch once per run across items sharing a key",
-    () =>
-      Effect.gen(function* () {
-        const { zoteroReads } = makeSnapshotReads();
-        const { controls } = makeRunControls();
-        const fetchSpy = vi.fn((_reads: ZoteroReadsApi, key: string) => key);
-        // A per-run cache the caller closes over, mirroring the real tagMemo /
-        // collectionCache threading.
-        const memo = new Map<string, string>();
-        const cachedFetch = (reads: ZoteroReadsApi, key: string): string => {
-          const hit = memo.get(key);
-          if (hit !== undefined) return hit;
-          const value = fetchSpy(reads, key);
-          memo.set(key, value);
-          return value;
-        };
-
-        yield* runBatchWrite({
-          zoteroReads,
-          // Three tasks, two of which resolve to the same shared "author:1" key.
-          tasks: [task(1), task(2), task(3)],
-          controls,
-          concurrency: 1,
-          run: async (t, reads) => {
-            cachedFetch(reads, t.id === 3 ? "author:2" : "author:1");
-            return "updated";
-          },
-        });
-
-        expect(fetchSpy).toHaveBeenCalledTimes(2);
-      }),
-  );
-
-  it.effect("holds the Snapshot until every task settles", () =>
-    Effect.gen(function* () {
-      const { zoteroReads, dispose } = makeSnapshotReads();
-      const { controls } = makeRunControls();
-      const release = Promise.withResolvers<void>();
-      const started = Promise.withResolvers<void>();
-
-      const pending = yield* Effect.forkChild(
-        runBatchWrite({
-          zoteroReads,
-          tasks: [task(1)],
-          controls,
-          concurrency: 4,
-          run: async () => {
-            started.resolve();
-            await release.promise;
-            return "created";
-          },
-        }),
-      );
-
-      yield* Effect.promise(() => started.promise);
-      expect(dispose).not.toHaveBeenCalled();
-      release.resolve();
-      yield* Fiber.join(pending);
-      expect(dispose).toHaveBeenCalledTimes(1);
-    }),
-  );
-
-  it.effect(
-    "closes the Snapshot when the stop is requested before any task runs",
-    () =>
-      Effect.gen(function* () {
-        const { zoteroReads, dispose } = makeSnapshotReads();
-        const { controls, requestStop } = makeRunControls();
-        requestStop();
-        const run = vi.fn(async () => "created" as const);
-
-        const result = yield* runBatchWrite({
-          zoteroReads,
-          tasks: [task(1), task(2)],
-          controls,
-          concurrency: 4,
-          run,
-        });
-
-        expect(run).not.toHaveBeenCalled();
-        expect(result.cancelled).toBe(true);
-        expect(dispose).toHaveBeenCalledTimes(1);
-      }),
-  );
-
-  it.effect("closes the Snapshot when the run fails", () =>
-    Effect.gen(function* () {
-      const { zoteroReads, dispose } = makeSnapshotReads();
-      const { controls } = makeRunControls();
-      const failure = new Error("write failed");
-
-      const exit = yield* Effect.exit(
-        runBatchWrite({
-          zoteroReads,
-          tasks: [task(1)],
-          controls,
-          concurrency: 4,
-          run: async () => {
-            throw failure;
-          },
-          haltOn: (error) => error === failure,
-        }),
-      );
-
-      const error = Exit.isFailure(exit) && Cause.squash(exit.cause);
-      expect(error).toBeInstanceOf(TaskRejected);
-      expect(error instanceof TaskRejected && error.cause).toBe(failure);
-      expect(dispose).toHaveBeenCalledTimes(1);
-    }),
-  );
-
-  it("rejects a halted run with the task's own rejection through runBatch", async () => {
-    const { zoteroReads } = makeSnapshotReads();
-    const { controls } = makeRunControls();
-    const failure = new Error("bad config");
-    const onTaskFailed = vi.fn();
-
-    await expect(
-      runBatch(
-        runBatchWrite({
-          zoteroReads,
-          tasks: [task(1)],
-          controls,
-          concurrency: 4,
-          run: async () => {
-            throw failure;
-          },
-          onTaskFailed,
-          haltOn: (error) => error === failure,
-        }),
-      ),
-    ).rejects.toBe(failure);
-    expect(onTaskFailed).not.toHaveBeenCalled();
-  });
-
-  it.effect("reports a rejected task's own error on its failure row", () =>
-    Effect.gen(function* () {
-      const { zoteroReads } = makeSnapshotReads();
       const { controls, settled } = makeRunControls();
       const failure = new NoteImportProfileError("Missing", {
         path: "Reading/Paper.md",
       });
       const onTaskFailed = vi.fn();
 
-      const result = yield* runBatchWrite({
-        zoteroReads,
+      const result = yield* executeBatchRun({
         tasks: [task(1)],
         controls,
         concurrency: 1,
-        run: async () => {
-          throw failure;
-        },
+        run: () => Effect.promise(() => Promise.reject(failure)),
         onTaskFailed,
       });
 
@@ -612,24 +439,24 @@ describe("runBatchWrite", () => {
     }),
   );
 
-  it("preserves a typed Snapshot-open failure through runBatch", async () => {
-    const error = new DbUnavailable({ message: "database degraded" });
-    const { zoteroReads } = makeSnapshotReads(sentinelReads, {
-      failWith: error,
-    });
+  it("rejects a halted run with the rejection itself through runBatch", async () => {
     const { controls } = makeRunControls();
+    const failure = new Error("bad config");
+    const onTaskFailed = vi.fn();
 
     await expect(
       runBatch(
-        runBatchWrite({
-          zoteroReads,
+        executeBatchRun({
           tasks: [task(1)],
           controls,
           concurrency: 4,
-          run: async () => "created",
+          run: () => Effect.promise(() => Promise.reject(failure)),
+          onTaskFailed,
+          haltOn: (error) => error === failure,
         }),
       ),
-    ).rejects.toBe(error);
+    ).rejects.toBe(failure);
+    expect(onTaskFailed).not.toHaveBeenCalled();
   });
 });
 
