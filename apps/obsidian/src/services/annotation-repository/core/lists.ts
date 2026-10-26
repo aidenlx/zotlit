@@ -437,15 +437,6 @@ function capability(core: CoreState): Effect.Effect<EditingCapability> {
 }
 
 /**
- * Re-check Zotero now, from a user gesture: the Editing Capability
- * affordance's click, and a keystroke that met a block. A probe that changes
- * anything announces itself through `capability-changed`.
- */
-function probe(core: CoreState): Effect.Effect<void> {
-  return core.localApi.probe;
-}
-
-/**
  * One Editing Capability, logged at debug where it differs from the last
  * value this consumer was given for the same subject — every read at trace,
  * every change at debug, so a session's capability history is in the log
@@ -1376,13 +1367,13 @@ function toRecord(
 }
 
 export {
+  inRepository,
   read,
   hold,
   refresh,
   peek,
   capabilityFor,
   capability,
-  probe,
   editingCapability,
   announceReadPixels,
   holding,

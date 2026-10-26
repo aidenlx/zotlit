@@ -392,7 +392,7 @@ type Shape = AnnotationRepository["Service"];
 type PlainMembers = {
   [K in Exclude<keyof Shape, "capability" | "probe">]: Shape[K] extends (
     ...args: infer P
-  ) => Effect.Effect<infer A>
+  ) => Effect.Effect<infer A, unknown>
     ? (...args: P) => K extends PromiseMember ? Promise<A> : A
     : never;
 } & {
