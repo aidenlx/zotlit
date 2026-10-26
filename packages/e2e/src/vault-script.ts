@@ -11,7 +11,7 @@ import { getWorktreeVaultName } from "@zotlit/scripts/dev-vault";
 import { cli } from "./obsidian-cli.ts";
 
 const execFileAsync = promisify(execFile);
-const OBSIDIAN_VERSION = "1.14.5 (installer 1.14.4)";
+const OBSIDIAN_VERSION = "1.14.5 (installer 1.14.5)";
 
 function scriptPath(workspaceRoot: string): string {
   return join(workspaceRoot, "packages/scripts/scripts/obsidian-vault.ts");
