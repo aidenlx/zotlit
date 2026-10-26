@@ -784,7 +784,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const type = (text: string) =>
       obEval(
         run.vaultId,
-        `(async()=>{${PAGE}const view=app.workspace.getLeavesOfType('zotlit-library')[0].view;const input=view.contentEl.querySelector('[data-library-search] input');input.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));input.focus();await until('Library Tree put away',()=>!view.tree.store.getState().open);input.value=${JSON.stringify(text)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+        `(async()=>{${PAGE}const view=app.workspace.getLeavesOfType('zotlit-library')[0].view;const input=view.contentEl.querySelector('[data-library-search] input');input.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));input.focus();await until('Library Tree put away',()=>!view.tree.state.open);input.value=${JSON.stringify(text)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
       );
     const indexedKey = (item: FixtureItem) => {
       const { groupID } = LIBRARIES.find(

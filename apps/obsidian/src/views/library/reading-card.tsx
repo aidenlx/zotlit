@@ -10,33 +10,31 @@
 // @see apps/obsidian/docs/adr/0074-library-view-rows-act-as-quick-switcher-results.md
 import { Component, Scope } from "obsidian";
 import type { IconName } from "obsidian";
-import { Fragment, useLayoutEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type {
   CSSProperties,
   MouseEvent as ReactMouseEvent,
   ReactNode,
 } from "react";
-import { useStore } from "zustand";
-import { createStore } from "zustand/vanilla";
 
 import { useUniqueId } from "@zotlit/ui";
 
 import { Button } from "@/components/obsidian/button";
 import { FirstLine, Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
-import {
-  ANNOTATION_COLORS,
-  annotationColorLabel,
-} from "@/lib/annotation-colors";
-import { subscribe } from "@/lib/effect-stream";
+import { annotationColorLabel } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemTypeIcon } from "@/lib/item-type-icon";
-import { getLogger } from "@/lib/log";
 import { cn, tooltipAttrs } from "@/lib/utils";
+import { ViewRegistryProvider } from "@/lib/view-atoms";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import type { TargetOpener } from "@/services/attachment-open/open-target";
-import type { QueryViewValue } from "@/services/item-query/query-view";
-import { libraryLabel } from "@/services/library-scope/label";
-import type { LibraryScope } from "@/services/library-scope/scope";
 import { AnnotList } from "@/views/annot-view/AnnotView";
 import { serializeQueryFile } from "@/views/query-view/query-file";
 import {
@@ -47,25 +45,22 @@ import {
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps, QueryViewHost } from "@/views/query-view/view";
 
+import type { CardItem, Values } from "./card-data";
+import type { CardField } from "./card-fields";
 import {
-  addedText,
-  CARD_PATHS,
-  cardHeader,
-  list,
-  otherFields,
-  record,
-  text,
-} from "./card-fields";
-import type { CardField, CardHeader } from "./card-fields";
+  makeCardModel,
+  patchCard,
+  cardLibraries,
+  CardModelProvider,
+  useCardState,
+} from "./card-model";
+import type { CardSession } from "./card-model";
 import { FILTER_CHIP_LINE_CLASS, TAG_CHIP_CLASS } from "./chip";
 import type { ReadingCardDisclosures } from "./document";
+import { libraryTargetOpener } from "./item-actions";
 import type { ItemActions } from "./item-actions";
+import { waitForRead } from "./model";
 import type { MenuItem } from "./row-menu";
-import { libraryOf, sameLibrary } from "./tree";
-
-type Values = Readonly<Record<string, QueryViewValue>>;
-
-const logger = getLogger(["library-view", "reading-card"]);
 
 /** The Query File of the card: every Annotation of the Item `this` names. */
 function readingCardQueryText(): string {
@@ -86,6 +81,7 @@ function readingCardQueryText(): string {
 }
 
 export interface ReadingCardDeps extends QueryViewDeps {
+  registry: ViewRegistryHandle;
   items: ItemActions;
 }
 
@@ -105,357 +101,112 @@ export interface ReadingCardHost {
   onEscape: NonNullable<QueryViewHost["layout"]>["onEscape"];
 }
 
-/** One file of the Item. */
-interface CardFile {
-  readonly key: string;
-  readonly title: string;
-  readonly fileType: string;
-}
-
-/** One Zotero note of the Item. */
-interface CardNote {
-  readonly key: string;
-  readonly title: string;
-}
-
-/** One colour of the Item's Annotations, and how many have it. */
-interface CardColour {
-  /** The colour as Zotero stores it, in lower case. */
-  readonly color: string;
-  readonly count: number;
-}
-
-/** One of the first Annotations, as the preview quotes it. */
-interface CardQuote {
-  readonly key: string;
-  readonly color: string;
-  /**
-   * `quote`: highlighted text; `note`: a comment alone; `image`: an area or
-   * a drawing, which has no text to quote, named "Image" or "Drawing".
-   */
-  readonly kind: "quote" | "note" | "image";
-  readonly text: string;
-  readonly page: string;
-}
-
-/** The Item as the card shows it. */
-interface CardItem extends CardHeader {
-  fields: readonly CardField[];
-  abstract: string | null;
-  /** Each place the Item sits, as Library › Collection names. */
-  where: readonly (readonly string[])[];
-  tags: readonly string[];
-  files: readonly CardFile[];
-  notes: readonly CardNote[];
-  added: string | null;
-  annotations: number;
-  colours: readonly CardColour[];
-  /** The first two Annotations, in the order the cards show them. */
-  quotes: readonly CardQuote[];
-}
-
-/**
- * What the card shows. The Item, its fields and its buttons change together,
- * so the header and the buttons never name two Items.
- */
-interface CardState {
-  /** The Item shown, by Indexed Key; `null` hides the card. */
-  key: string | null;
-  /**
-   * The Item's fields; only the header's while {@link loading}, and those
-   * of its list row, or none, where the read failed.
-   */
-  item: CardItem | null;
-  /** Whether the Item's fields are still being read. */
-  loading: boolean;
-  /** Whether the vault holds the Item's Literature Note. */
-  noted: boolean;
-  disclosures: ReadingCardDisclosures;
-}
-
-/**
- * How long the card keeps the last Item while it reads the next one, before
- * it shows the next one's header from its list row and the rest as loading.
- */
-const PREVIEW_DELAY_MS = 150;
-
 export class ReadingCard extends Component {
-  readonly store = createStore<CardState>(() => ({
-    key: null,
-    item: null,
-    loading: false,
-    noted: false,
-    disclosures: { allFields: false, annotations: false },
-  }));
-  /** The card's Annotations: a Query View bound to the Item. */
+  readonly model;
+  readonly registry;
   readonly query: QueryView;
-  readonly #deps: ReadingCardDeps;
-  readonly #host: ReadingCardHost;
+  readonly #deps;
+  readonly #host;
   readonly #scope: Scope;
-  #read: AbortController | null = null;
-  #reading: Promise<void> = Promise.resolve();
-  /** The Item asked for whose read has not landed yet. */
-  #pending: string | null = null;
-  /** The timer of the header from the list row, and the window that runs it. */
-  #previewTimer: { win: Window; id: number } | null = null;
-  /** Where the card is drawn; its window runs the card's timer. */
-  #el: HTMLElement | null = null;
-  /** The Item whose Annotations the query reads; `null` before it runs. */
+  #release: (() => void) | null;
+  readonly #waiting = new Set<() => void>();
   #annotationsOf: string | null = null;
+  #shownKey: string | null = null;
 
   constructor(deps: ReadingCardDeps, host: ReadingCardHost) {
     super();
     this.#deps = deps;
     this.#host = host;
+    this.registry = deps.registry;
+    this.model = makeCardModel(host.row);
+    this.#release = this.registry.mount(this.model.session);
     this.#scope = new Scope(deps.app.scope);
     this.query = new QueryView(deps, {
       scope: this.#scope,
       sourcePath: () => "",
       context: () => {
-        const { key } = this.store.getState();
+        const { key } = this.state;
         return key === null ? undefined : { item: key };
       },
       // The Item's own Library, which may lie outside the Library Scope.
-      libraries: () => this.#libraries(this.store.getState().key),
+      libraries: () => cardLibraries(this.state.key),
       // The card's query is fixed: nothing in it changes the text.
       save: () => {},
       layout: { onEscape: host.onEscape },
     });
   }
 
-  /** Settles once the card shows its Item and, where open, its Annotations. Never rejects. */
+  get state() {
+    return this.registry.get(this.model.state);
+  }
+  #patch(patch: Partial<CardSession>): void {
+    this.registry.update(this.model.session, patchCard(patch));
+  }
+
+  /** Settles once the card and its open Annotations have landed. */
   get settled(): Promise<void> {
-    return this.#reading.then(() => this.query.settled);
+    return waitForRead(this.registry, this.model.loaded, this.#waiting).then(
+      () => this.query.settled,
+    );
   }
 
   override onload(): void {
+    this.#release ??= this.registry.mount(this.model.session);
     this.addChild(this.query);
     this.register(
-      this.#deps.literatureNotes.on("changed", () => this.#noteChanged()),
-    );
-    // Zotero's database changed: the Item may read otherwise now.
-    this.register(
-      subscribe(this.#deps.runtime, this.#deps.reads["changed"], () =>
-        this.#reread(),
-      ),
+      this.registry.subscribe(this.model.state, ({ key, disclosures }) => {
+        if (key !== this.#shownKey) {
+          this.#shownKey = key;
+          this.query.clear();
+          this.#annotationsOf = null;
+        }
+        if (key !== null && disclosures.annotations) this.#readAnnotations();
+      }),
     );
     this.register(() => {
-      this.#read?.abort();
-      this.#cancelPreview();
+      this.#release?.();
+      this.#release = null;
     });
   }
 
-  /** Draw the card into `el`; the card's own keys act while focus is in it. */
+  override onunload(): void {
+    for (const finish of this.#waiting) finish();
+  }
+
   render(el: HTMLElement): void {
-    this.#el = el;
-    this.query.layout.render(el, <CardBody card={this} />);
+    this.query.layout.render(
+      el,
+      <ViewRegistryProvider registry={this.registry}>
+        <CardModelProvider value={this.model}>
+          <CardBody card={this} />
+        </CardModelProvider>
+      </ViewRegistryProvider>,
+    );
     const keys = this.#deps.cardFocus.hold(el, this.#scope, this.query);
     this.register(() => keys[Symbol.dispose]());
   }
 
-  /**
-   * Show the Item `key`, or nothing for `null`. The card keeps the Item it
-   * shows until the next one's fields are read, and then shows the next one
-   * whole; a read that takes a while shows the next one's header from its
-   * list row first.
-   */
   show(key: string | null): void {
-    if (key === (this.#pending ?? this.store.getState().key)) return;
-    this.#read?.abort();
-    this.#read = null;
-    this.#cancelPreview();
-    if (key === null || key === this.store.getState().key) {
-      this.#pending = null;
-      if (key === null) this.#commit(null, null, false);
-      this.#reading = Promise.resolve();
-      return;
-    }
-    this.#pending = key;
-    const preview = () => {
-      const values = this.#host.row(key);
-      this.#commit(key, values && previewItem(values), true);
-    };
-    // A card that shows no Item yet has none to keep: it opens on the
-    // header from the list row.
-    if (this.store.getState().key === null) preview();
-    else {
-      const win = this.#el?.win ?? window;
-      this.#previewTimer = {
-        win,
-        id: win.setTimeout(() => {
-          this.#previewTimer = null;
-          if (this.#pending === key) preview();
-        }, PREVIEW_DELAY_MS),
-      };
-    }
-    const controller = new AbortController();
-    this.#read = controller;
-    this.#reading = this.#readItem(key, controller.signal);
+    this.#patch({ key });
   }
 
-  /**
-   * Show the Item `key` with `item`, buttons and all, in one render. The last
-   * Item's Annotation Cards never show under this one.
-   */
-  #commit(key: string | null, item: CardItem | null, loading: boolean): void {
-    const shown = this.store.getState().key;
-    this.store.setState({
-      key,
-      item,
-      loading,
-      noted: key !== null && this.#deps.literatureNotes.find(key) !== null,
-    });
-    if (key === shown) return;
-    this.query.clear();
-    this.#annotationsOf = null;
-    if (key !== null && this.store.getState().disclosures.annotations)
-      this.#readAnnotations();
-  }
-
-  #cancelPreview(): void {
-    if (this.#previewTimer !== null)
-      this.#previewTimer.win.clearTimeout(this.#previewTimer.id);
-    this.#previewTimer = null;
-  }
-
-  /** Show the disclosures as the Library View keeps them. */
   showDisclosures(disclosures: ReadingCardDisclosures): void {
-    this.store.setState({ disclosures });
-    if (disclosures.annotations) this.#readAnnotations();
+    this.#patch({ disclosures });
   }
 
-  /** Open or close a disclosure, for every Item the card shows. */
   disclose(name: keyof ReadingCardDisclosures, open: boolean): void {
-    const { disclosures } = this.store.getState();
-    this.store.setState({ disclosures: { ...disclosures, [name]: open } });
+    const { disclosures } = this.state;
+    this.#patch({ disclosures: { ...disclosures, [name]: open } });
     this.#host.keepDisclosure(name, open);
-    // The Annotations are read the first time they open for an Item.
-    if (name === "annotations" && open) this.#readAnnotations();
   }
 
   /** Read the shown Item's Annotations, once for each Item. */
   #readAnnotations(): void {
-    const { key } = this.store.getState();
+    const { key } = this.state;
     if (key === null || this.#annotationsOf === key) return;
     this.#annotationsOf = key;
     this.query.setText(readingCardQueryText());
     this.query.contextChanged();
-  }
-
-  /** Read the Item shown again, keeping its fields on screen until the read lands. */
-  #reread(): void {
-    const key = this.#pending ?? this.store.getState().key;
-    if (key === null) return;
-    this.#read?.abort();
-    const controller = new AbortController();
-    this.#read = controller;
-    this.#reading = this.#readItem(key, controller.signal);
-  }
-
-  /** The Library of the Item `key`. */
-  #libraries(key: string | null): LibraryScope {
-    const library = key === null ? null : libraryOf(key);
-    return { mode: "selected", libraries: library ? [library] : [] };
-  }
-
-  /** The name of the Library that holds the Item `key`. */
-  #libraryName(key: string): string | null {
-    const selector = libraryOf(key);
-    if (!selector) return null;
-    const available = this.#deps.libraryScope.current?.available.find(
-      (library) => sameLibrary(library.selector, selector),
-    );
-    return libraryLabel(available ?? { selector, libraryID: 0, name: null });
-  }
-
-  /**
-   * Read the Item `key` and the first Annotations its preview quotes, and
-   * land them together, so the preview swaps with the rest of the card.
-   */
-  async #readItem(key: string, signal: AbortSignal): Promise<void> {
-    try {
-      const [outcome, quotes] = await Promise.all([
-        this.#deps.query.run(
-          {
-            from: "items",
-            filter: `${JSON.stringify([key])}.contains(indexedKey)`,
-            fields: [...CARD_PATHS],
-            limit: 1,
-            libraries: this.#libraries(key),
-          },
-          signal,
-        ),
-        this.#readQuotes(key, signal),
-      ]);
-      if (signal.aborted) return;
-      const values =
-        outcome.kind === "result" ? outcome.result.rows?.[0]?.values : null;
-      if (values)
-        this.#land(key, cardItem(values, this.#libraryName(key), quotes));
-      else this.#land(key, null);
-    } catch (error) {
-      if (signal.aborted) return;
-      logger.warn("The Reading Card could not read its Item", {
-        indexedKey: key,
-        error,
-      });
-      this.#land(key, null);
-    }
-  }
-
-  /**
-   * The first {@link QUOTED} Annotations of the Item `key`, in the order its
-   * cards show them; none where the read fails, so the card still lands.
-   */
-  async #readQuotes(key: string, signal: AbortSignal): Promise<CardQuote[]> {
-    try {
-      const outcome = await this.#deps.query.run(
-        {
-          from: "annotations",
-          filter: "item == this.item",
-          context: { item: key },
-          fields: [...QUOTE_PATHS],
-          limit: QUOTED,
-          libraries: this.#libraries(key),
-        },
-        signal,
-      );
-      if (outcome.kind !== "result") return [];
-      return (outcome.result.rows ?? []).map((row) =>
-        quoteOf(row.indexedKey, row.values),
-      );
-    } catch (error) {
-      if (!signal.aborted)
-        logger.warn("The Reading Card could not read its first Annotations", {
-          indexedKey: key,
-          error,
-        });
-      return [];
-    }
-  }
-
-  /**
-   * The read of `key` landed with `item`, or with nothing where it failed: a
-   * failed read keeps the fields shown of an Item read before, and shows a
-   * new one by its list row.
-   */
-  #land(key: string, item: CardItem | null): void {
-    const shown = this.store.getState();
-    if (this.#pending === key) {
-      this.#pending = null;
-      this.#cancelPreview();
-    } else if (shown.key !== key) return;
-    if (item === null && shown.key === key && !shown.loading) return;
-    const values = item === null ? this.#host.row(key) : null;
-    this.#commit(key, item ?? (values && previewItem(values)), false);
-  }
-
-  #noteChanged(): void {
-    const { key } = this.store.getState();
-    if (key === null) return;
-    this.store.setState({
-      noted: this.#deps.literatureNotes.find(key) !== null,
-    });
   }
 
   get items(): ItemActions {
@@ -463,127 +214,12 @@ export class ReadingCard extends Component {
   }
 
   get readers(): Pick<TargetOpener, "open"> {
-    return this.#deps.opener;
+    return libraryTargetOpener(this.registry, this.#deps.opener);
   }
 
   get host(): ReadingCardHost {
     return this.#host;
   }
-}
-
-/** How many Annotations the preview quotes. */
-const QUOTED = 2;
-
-/** The paths of an Annotation that the preview quotes. */
-const QUOTE_PATHS = ["type", "text", "comment", "color", "pageLabel"] as const;
-
-function quoteOf(key: string, values: Values): CardQuote {
-  const type = text(values.type);
-  const quoted = text(values.text);
-  const comment = text(values.comment);
-  const kind =
-    type === "image" || type === "ink"
-      ? "image"
-      : quoted === "" && comment !== ""
-        ? "note"
-        : "quote";
-  return {
-    key,
-    color: text(values.color).toLowerCase(),
-    kind,
-    text:
-      kind === "image"
-        ? type === "ink"
-          ? m.library_view_card_annotation_ink()
-          : m.library_view_card_annotation_image()
-        : kind === "note"
-          ? comment
-          : quoted,
-    page: text(values.pageLabel),
-  };
-}
-
-/** The colours of the Item's Annotations, in the order of Zotero's palette. */
-function coloursOf(values: Values): CardColour[] {
-  const counts = new Map<string, number>();
-  for (const value of list(values["annotations[].color"])) {
-    const color = text(value).toLowerCase();
-    if (color !== "") counts.set(color, (counts.get(color) ?? 0) + 1);
-  }
-  const place = (color: string) => {
-    const at = ANNOTATION_COLORS.indexOf(color);
-    return at === -1 ? ANNOTATION_COLORS.length : at;
-  };
-  return [...counts]
-    .map(([color, count]) => ({ color, count }))
-    .toSorted((a, b) => place(a.color) - place(b.color));
-}
-
-/** The header of the Item as its list row reads it, while the card reads the rest. */
-function previewItem(values: Values): CardItem {
-  return {
-    ...cardHeader(values),
-    fields: [],
-    abstract: null,
-    where: [],
-    tags: [],
-    files: [],
-    notes: [],
-    added: null,
-    annotations: 0,
-    colours: [],
-    quotes: [],
-  };
-}
-
-function cardItem(
-  values: Values,
-  library: string | null,
-  quotes: readonly CardQuote[],
-): CardItem {
-  const abstract = text(values.abstractNote);
-  const paths = list(values.collections).flatMap((path) =>
-    typeof path === "string" && path !== "" ? [path.split("/")] : [],
-  );
-  const lead = library === null ? [] : [library];
-  const keys = list(values["attachments[].indexedKey"]);
-  const titles = list(values["attachments[].title"]);
-  const kinds = list(values["attachments[].fileType"]);
-  return {
-    ...cardHeader(values),
-    fields: otherFields(values),
-    abstract: abstract === "" ? null : abstract,
-    where:
-      paths.length > 0
-        ? paths.map((path) => [...lead, ...path])
-        : lead.length > 0
-          ? [lead]
-          : [],
-    tags: list(values.tags).flatMap((tag) => {
-      const name = text(record(tag)?.name);
-      return name === "" ? [] : [name];
-    }),
-    files: keys.flatMap((key, index) =>
-      typeof key === "string"
-        ? [
-            {
-              key,
-              title: text(titles[index]) || key,
-              fileType: text(kinds[index]),
-            },
-          ]
-        : [],
-    ),
-    notes: list(values.notes).flatMap((entry) => {
-      const note = record(entry);
-      const key = text(note?.indexedKey);
-      return key === "" ? [] : [{ key, title: text(note?.title) || key }];
-    }),
-    added: addedText(values),
-    annotations: list(values["annotations[].indexedKey"]).length,
-    colours: coloursOf(values),
-    quotes,
-  };
 }
 
 /** The icon of a file, by its kind. */
@@ -807,11 +443,11 @@ function InfoLine({
 }
 
 function CardBody({ card }: { card: ReadingCard }) {
-  const key = useStore(card.store, (s) => s.key);
-  const item = useStore(card.store, (s) => s.item);
-  const loading = useStore(card.store, (s) => s.loading);
-  const noted = useStore(card.store, (s) => s.noted);
-  const disclosures = useStore(card.store, (s) => s.disclosures);
+  const key = useCardState((s) => s.key);
+  const item = useCardState((s) => s.item);
+  const loading = useCardState((s) => s.loading);
+  const noted = useCardState((s) => s.noted);
+  const disclosures = useCardState((s) => s.disclosures);
   const titleId = useUniqueId();
   const fieldsId = useUniqueId();
   // The height of what the last Item showed under its buttons, which the
@@ -1186,7 +822,10 @@ function Annotations({
   item: CardItem;
   open: boolean;
 }) {
-  const failed = useStore(card.query.state, (s) => s.phase === "failed");
+  const failed = useSyncExternalStore(
+    card.query.state.subscribe,
+    () => card.query.state.getState().phase === "failed",
+  );
   const headingId = useUniqueId();
   const coloursId = useUniqueId();
   const cardsId = useUniqueId();

@@ -1,11 +1,11 @@
-// The Library View Document as the tab holds it: one value in memory that
-// every transition changes and plugin data keeps. The document on screen is
-// the one held here; plugin data is read once, as the tab opens, and never
-// again while a write waits.
-//
-// @see apps/obsidian/docs/adr/0071-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
-import type { EffectBridge } from "@/lib/effect-bridge";
-import type { PluginSettings } from "@/services/settings/service";
+// The Library's document atom and its coalesced settings commands.
+import { Cause, Effect, Exit, Option } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Atom from "effect/reactivity/Atom";
+
+import { viewRuntime } from "@/lib/view-atoms";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import { PluginSettings } from "@/services/settings/service";
 
 import {
   DEFAULT_LIBRARY_VIEW_DOCUMENT,
@@ -14,101 +14,128 @@ import {
   withText,
 } from "./document";
 import type { LibraryViewDocument } from "./document";
+import { waitForRead } from "./model";
 
-const KEY = "library.document";
+const savedDocumentAtom = viewRuntime.atom(
+  Effect.gen(function* () {
+    return parseLibraryViewDocument(
+      (yield* (yield* PluginSettings).current)["library.document"],
+    );
+  }),
+);
+
+const updateDocumentCommand = viewRuntime.fn(
+  (doc: LibraryViewDocument) =>
+    PluginSettings.use((settings) =>
+      settings.update({
+        "library.document": serializeLibraryViewDocument(doc),
+      }),
+    ),
+  { concurrent: true },
+);
+
+const flushDocumentCommand = viewRuntime.fn(
+  (result: PromiseWithResolvers<void>) =>
+    PluginSettings.use((settings) => settings.flush).pipe(
+      Effect.onExit((exit) =>
+        Effect.sync(() => {
+          if (Exit.isFailure(exit)) result.reject(Cause.squash(exit.cause));
+          else result.resolve();
+        }),
+      ),
+    ),
+  { concurrent: true },
+);
 
 export class LibraryViewStorage {
-  readonly #settings: Pick<
-    PluginSettings["Service"],
-    "update" | "flush" | "current"
-  >;
-  readonly #bridge;
-  readonly #toolbar: () => string | null;
-  #held: LibraryViewDocument = DEFAULT_LIBRARY_VIEW_DOCUMENT;
-  /** The toolbar's text that {@link #held} has taken in. */
+  readonly model = {
+    document: Atom.make(DEFAULT_LIBRARY_VIEW_DOCUMENT),
+    save: Atom.make<{ readonly document: LibraryViewDocument } | null>(null),
+  };
+  readonly #registry;
+  readonly #toolbar;
+  #release: (() => void) | null;
   #taken: string | null = null;
-  /** The write to disk under way. */
   #writing: Promise<void> | null = null;
-  /** The write to disk that the saves since {@link #writing} began wait for. */
   #queued: Promise<void> | null = null;
 
-  /**
-   * @param toolbar the Query View's text as it stands: a toolbar change
-   * shows there at once, before the Query View asks to save it.
-   */
-  constructor(
-    settings: Pick<PluginSettings["Service"], "update" | "flush" | "current">,
-    bridge: Pick<EffectBridge, "runSync" | "runPromise">,
-    toolbar: () => string | null,
-  ) {
-    this.#settings = settings;
-    this.#bridge = bridge;
+  constructor(registry: ViewRegistryHandle, toolbar: () => string | null) {
+    this.#registry = registry;
     this.#toolbar = toolbar;
+    this.#release = this.#hold();
   }
 
-  /** Read the document plugin data holds. Call it once plugin data has loaded. */
-  load(): void {
-    this.#held = parseLibraryViewDocument(
-      this.#bridge.runSync(this.#settings.current)[KEY],
+  #hold(): () => void {
+    const releases = [
+      this.#registry.mount(this.model.document),
+      this.#registry.mount(this.model.save),
+      this.#registry.mount(savedDocumentAtom),
+      this.#registry.mount(updateDocumentCommand),
+      this.#registry.mount(flushDocumentCommand),
+      this.#registry.subscribe(this.model.save, (doc) => {
+        if (doc) this.#registry.set(updateDocumentCommand, doc.document);
+      }),
+    ];
+    return () => {
+      for (const release of releases) release();
+    };
+  }
+
+  async load(): Promise<void> {
+    this.#release ??= this.#hold();
+    this.#registry.refresh(savedDocumentAtom);
+    await waitForRead(this.#registry, savedDocumentAtom, new Set());
+    const saved = Option.getOrElse(
+      AsyncResult.value(this.#registry.get(savedDocumentAtom)),
+      () => DEFAULT_LIBRARY_VIEW_DOCUMENT,
     );
+    this.#registry.set(this.model.document, saved);
     this.#taken = this.#toolbar();
   }
 
-  /** The document on screen, with the toolbar's last change in it. */
   document(): LibraryViewDocument {
     const text = this.#toolbar();
     if (text !== null && text !== this.#taken) {
-      this.#held = withText(this.#held, text);
+      this.#registry.update(this.model.document, (doc) => withText(doc, text));
       this.#taken = text;
     }
-    return this.#held;
+    return this.#registry.get(this.model.document);
   }
 
-  /** Change the document on screen; {@link save} keeps it. */
   set(change: (doc: LibraryViewDocument) => LibraryViewDocument): void {
-    this.#held = change(this.document());
+    this.#registry.set(this.model.document, change(this.document()));
   }
 
-  /**
-   * Keep the document on screen in plugin data. Settles once `data.json`
-   * holds it; rejects where the write failed, so the toolbar says the
-   * change is not saved.
-   */
   save(): Promise<void> {
-    // Plugin data takes the document at once. The write to disk starts in
-    // the next microtask, so the changes of one task, such as a tree
-    // selection and the paper it lets go of, share it; a write asked for
-    // while one runs waits for it and then writes the latest document, so
-    // the arrow keys moving the selection never queue a write per key.
-    this.#bridge.runSync(
-      this.#settings.update({
-        [KEY]: serializeLibraryViewDocument(this.document()),
-      }),
-    );
+    this.#registry.set(this.model.save, { document: this.document() });
     if (this.#queued) return this.#queued;
-    const earlier = this.#writing ?? Promise.resolve();
-    const queued = earlier
+    const queued = (this.#writing ?? Promise.resolve())
       .catch(() => {})
       .then(() => {
         this.#queued = null;
-        const writing = this.#bridge.runPromise(this.#settings.flush);
-        this.#writing = writing;
-        writing
+        const result = Promise.withResolvers<void>();
+        this.#registry.set(flushDocumentCommand, result);
+        this.#writing = result.promise;
+        void result.promise
           .finally(() => {
-            if (this.#writing === writing) this.#writing = null;
+            if (this.#writing === result.promise) this.#writing = null;
           })
           .catch(() => {});
-        return writing;
+        return result.promise;
       });
     this.#queued = queued;
     return queued;
   }
 
-  /** {@link set}, then {@link save}. */
   change(
     change: (doc: LibraryViewDocument) => LibraryViewDocument,
   ): Promise<void> {
     this.set(change);
     return this.save();
+  }
+
+  close(): void {
+    this.#release?.();
+    this.#release = null;
   }
 }

@@ -4,6 +4,7 @@
 // failed.
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { Stream } from "effect";
+import { Layer } from "effect";
 import { Scope } from "obsidian";
 import type { App } from "obsidian";
 import { act } from "preact/test-utils";
@@ -16,11 +17,13 @@ import { effectBridge } from "@/lib/effect-bridge";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { buildSettings } from "@/services/settings/__fixtures__";
+import { PluginSettings } from "@/services/settings/service";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
 
+import { makeLibraryHost } from "./__fixtures__";
 import {
   DEFAULT_LIBRARY_VIEW_DOCUMENT,
   libraryViewQuery,
@@ -147,10 +150,14 @@ async function openLibrary() {
   });
   // The view's text is the toolbar's, which the storage takes changes from.
   const toolbar = { text: (): string | null => null };
-  const storage = new LibraryViewStorage(settings, settings.bridge, () =>
-    toolbar.text(),
+  const host = cleanup.use(
+    await makeLibraryHost({
+      services: Layer.succeed(PluginSettings, settings),
+    }),
   );
-  storage.load();
+  const storage = new LibraryViewStorage(host.registry, () => toolbar.text());
+  cleanup.defer(() => storage.close());
+  await storage.load();
   const query = new QueryView(deps, {
     scope: new Scope(),
     sourcePath: () => "",

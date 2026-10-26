@@ -423,11 +423,10 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);
     registerLibraryView(this, {
-      useLedger: services.useLedger,
+      registry: services.runtime.runSync(ViewRegistry),
       ...queryViewDeps,
       reads: services.zoteroReads,
       libraryScope: services.libraryScope,
-      settings: services.settings,
       welcome: {
         registry: services.runtime.runSync(ViewRegistry),
         setupActions: createSetupActions({
@@ -437,17 +436,12 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         }),
       },
       items: itemActions({
+        registry: services.runtime.runSync(ViewRegistry),
         app: this.app,
         noteFeature: services.noteFeature,
-        noteIndex: services.noteIndex,
-        reads: services.zoteroReads,
-        citationLookup: services.citationLookup,
-        useLedger: services.useLedger,
-        attachments: services.literatureNoteAttachments,
         opener: services.targetOpener,
         notify: (message) => new BaseNotice(message),
       }),
-      lookup: services.itemLookup,
     });
 
     // The Annotation History's own verbs. A bound PDF view and an Annotation

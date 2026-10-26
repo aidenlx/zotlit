@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // Insert citation from a Library View row goes to the note the researcher was
 // in last, which Obsidian no longer names once the Library View tab is active.
+import { Effect, Layer, DateTime } from "effect";
 import { MarkdownView } from "obsidian";
 import { TFile } from "obsidian";
 import type {
@@ -15,6 +16,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { CitationLookupAnswer } from "@/services/citation-index/lookup";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
+import { UseLedger } from "@/services/use-ledger/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   memoryOpener,
@@ -22,7 +26,8 @@ import {
 } from "@/services/zotero-reads/test-utils";
 import { stateEditor } from "@/views/annot-view/__fixtures__/editor";
 
-import { itemActions } from "./item-actions";
+import { makeLibraryHost } from "./__fixtures__";
+import { libraryItemCommand, itemActions } from "./item-actions";
 import type { ItemActionsDeps } from "./item-actions";
 
 const KEY = "ABCD2345";
@@ -129,7 +134,7 @@ function workspaceFixture() {
  * The row actions, made once `before` has set up the workspace, as a plugin
  * that loads into tabs the researcher already had open.
  */
-function setup(
+async function setup(
   before: (fixture: ReturnType<typeof workspaceFixture>) => void = () => {},
 ) {
   const fixture = workspaceFixture();
@@ -163,19 +168,38 @@ function setup(
     indexedKeys: new Map([[KEY, "vaswani2017"]]),
     annotationKeys: new Map(),
   });
-  const readyStatus: ItemActionsDeps["citationLookup"]["status"] = "fresh";
+
+  const host = cleanup.use(
+    await makeLibraryHost({
+      services: Layer.mergeAll(
+        Layer.mock(ZoteroReads, {
+          reads: reads.reads,
+          snapshot: Effect.succeed(reads.reads),
+        }),
+        Layer.mock(CitationLookup, {
+          current: Effect.succeed({
+            status: "fresh" as const,
+            revision: "test",
+            stopped: false,
+          }),
+          read: () => Effect.succeed(lookup),
+        }),
+        Layer.mock(UseLedger, {
+          record: (key, kind) =>
+            Effect.sync(() => {
+              record(key, kind);
+              return { kind, instant: DateTime.makeUnsafe("2025-01-01") };
+            }),
+        }),
+      ),
+    }),
+  );
+  cleanup.defer(host.registry.mount(libraryItemCommand));
   const actions = itemActions(
     stubService<ItemActionsDeps>("ItemActionsDeps", {
       app,
       notify,
-      reads,
-      citationLookup: stubService<ItemActionsDeps["citationLookup"]>(
-        "CitationLookup",
-        {
-          status: readyStatus,
-          read: () => Promise.resolve(lookup),
-        },
-      ),
+      registry: host.registry,
       noteFeature: stubService<ItemActionsDeps["noteFeature"]>(
         "NoteFeatureHandle",
         {
@@ -183,16 +207,13 @@ function setup(
             cites.map(({ citationKey }) => `[@${citationKey}]`).join(""),
         },
       ),
-      useLedger: stubService<ItemActionsDeps["useLedger"]>("UseLedger", {
-        record,
-      }),
     }),
   );
   return { ...fixture, actions, notify, record };
 }
 
 it("inserts a row's citation into the note active last before the Library View, and into the one before once that closes", async () => {
-  const env = setup();
+  const env = await setup();
   const first = env.note("First.md");
   const second = env.note("Second.md");
   env.activate(first);
@@ -212,7 +233,7 @@ it("inserts a row's citation into the note active last before the Library View, 
 
 it("inserts into the note that was active last before the plugin loaded", async () => {
   let draft!: Tab;
-  const env = setup((fixture) => {
+  const env = await setup((fixture) => {
     const other = fixture.note("Other.md");
     draft = fixture.note("Draft.md");
     fixture.activate(other);
@@ -225,7 +246,7 @@ it("inserts into the note that was active last before the plugin loaded", async 
 });
 
 it("inserts into a new tab that became active before it opened its note", async () => {
-  const env = setup();
+  const env = await setup();
   const earlier = env.note("Earlier.md");
   env.activate(earlier);
   // A new tab is active while it is empty, then opens the note.
@@ -248,7 +269,7 @@ it("inserts into a new tab that became active before it opened its note", async 
 });
 
 it("passes over a note in Reading view, which shows no editor, and says where it finds no note", async () => {
-  const env = setup();
+  const env = await setup();
   const editing = env.note("Editing.md");
   const reading = env.note("Reading.md", "preview");
   env.activate(editing);
@@ -267,7 +288,7 @@ it("passes over a note in Reading view, which shows no editor, and says where it
 });
 
 it("parts a dropped or inserted citation from the word before it with a space, and adds none at a line start", async () => {
-  const env = setup();
+  const env = await setup();
   const draft = env.note("Draft.md");
   env.activate(draft);
   env.activate(env.library);
@@ -296,7 +317,7 @@ it("parts a dropped or inserted citation from the word before it with a space, a
 });
 
 it("records no citation when the destination changes under an asynchronous row insert", async () => {
-  const env = setup();
+  const env = await setup();
   const draft = env.note("Draft.md");
   env.activate(draft);
   env.activate(env.library);
@@ -312,7 +333,7 @@ it("records no citation when the destination changes under an asynchronous row i
 });
 
 it("records a copied citation key only after the clipboard accepts it", async () => {
-  const env = setup();
+  const env = await setup();
   const write = vi.spyOn(navigator.clipboard, "writeText");
   write.mockResolvedValueOnce();
 
