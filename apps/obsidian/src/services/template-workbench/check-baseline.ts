@@ -2,8 +2,7 @@
 import { Effect, Result } from "effect";
 
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
-import { Vault } from "@/lib/obsidian-vault";
-import { Workspace } from "@/lib/obsidian-workspace";
+import { readLiveText } from "@/lib/effect-live-text";
 import { parseProfileStamp } from "@/lib/profile-stamp";
 import { NoteIndex } from "@/services/note-index/service";
 import { previewBaseline } from "@/views/note-preview/baseline";
@@ -71,13 +70,7 @@ export const selectCheckBaseline = Effect.fnUntraced(function* (input: {
     if (selected) {
       path = selected.path;
       kind = "real";
-      // The note's live text: its loaded view's, else the vault's.
-      const view = yield* (yield* Workspace).loadedTextView(selected);
-      const read = yield* Effect.result(
-        view === null
-          ? (yield* Vault).cachedRead(selected)
-          : Effect.succeed(view.getViewData()),
-      );
+      const read = yield* Effect.result(readLiveText(selected));
       if (Result.isFailure(read)) return failed(read.failure.cause);
       source = read.success;
     }

@@ -4,7 +4,7 @@
 //
 // The sheet itself is a port (`confirmLaunch`), so the decision this module
 // makes is testable apart from the modal that renders it.
-import { Duration, Effect, Option, Schema, Stream } from "effect";
+import { Duration, Effect, Option, Stream } from "effect";
 import type { Context } from "effect";
 import type { CachedMetadata, TFile } from "obsidian";
 
@@ -15,6 +15,7 @@ import { withLogCategory } from "@/lib/effect-log";
 import { awaitModal } from "@/lib/effect-modal";
 import type { ClosableModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
+import { portCall } from "@/lib/legacy-port";
 import { Notifier } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
@@ -103,14 +104,6 @@ export type CustomizeServices =
   | MetadataCache
   | ObsidianEnv;
 
-/** A port the shell supplies rejected; `cause` is what it rejected with. */
-export class CustomizePortError extends Schema.TaggedError<
-  CustomizePortError,
-  { readonly brand: unique symbol }
->()("CustomizePortError", {
-  cause: Schema.Defect(),
-}) {}
-
 /** Open a template in the chosen editor, with approval for web access. */
 export type CustomizeAction = (request: CustomizeRequest) => Promise<void>;
 
@@ -135,12 +128,6 @@ export function bindCustomize(
       .then((exit) => valueOr(exit, undefined));
 }
 
-const portError = (cause: unknown) => new CustomizePortError({ cause });
-
-/** A port's Promise, failing with what it rejected with. */
-const port = <A>(evaluate: () => Promise<A>) =>
-  Effect.tryPromise({ try: evaluate, catch: portError });
-
 export const customize = Effect.fn("LocalBridge.customize")(function* (
   request: CustomizeRequest,
   ports: CustomizePorts,
@@ -148,7 +135,9 @@ export const customize = Effect.fn("LocalBridge.customize")(function* (
   const item =
     request.item === undefined ? yield* activeNoteItem : request.item;
   const nativeRequest = { ...request, item };
-  const openNative = port(() => ports.openNative(nativeRequest));
+  const openNative = portCall("open-native", () =>
+    ports.openNative(nativeRequest),
+  );
   if (!ports.webWorkbenchEnabled) {
     yield* openNative;
     return;

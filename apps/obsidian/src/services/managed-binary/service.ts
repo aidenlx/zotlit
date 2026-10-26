@@ -14,6 +14,7 @@ import {
 } from "effect";
 import type { Context, Stream } from "effect";
 
+import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
 
@@ -149,7 +150,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   const platform = yield* ManagedBinaryPlatform;
   const { consent } = platform;
   const scope = yield* Effect.scope;
-  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+  const { runPromise } = yield* scopedBridge;
   const store = yield* platform.openStore(binary.id);
   const name = cachedBinaryName(binary.pin);
   const location = { directory: binary.id, name };

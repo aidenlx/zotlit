@@ -73,8 +73,10 @@ it.effect(
       unsubscribe();
       yield* Effect.promise(() => runtime.dispose());
       expect(template.render("note", {})).toBe("First");
-      expect(yield* Effect.promise(() => template.waitUntilSettled(500))).toBe(
-        "settled",
+      yield* Effect.promise(() =>
+        expect(template.waitUntilSettled(500)).rejects.toMatchObject({
+          name: "AbortError",
+        }),
       );
       const afterClose = subscribe(runtime, template.changes, () => {
         throw new Error("closed subscriber");
@@ -142,7 +144,10 @@ it.effect(
           return create(path, source);
         },
       );
-      const created = template.createPartial("authors", { source: "Authors" });
+      // Unload stops the waiting caller; the write itself finishes.
+      const created = expect(
+        template.createPartial("authors", { source: "Authors" }),
+      ).rejects.toMatchObject({ name: "AbortError" });
       yield* Queue.take(started);
       let disposed = false;
       const closing = runtime.dispose().then(() => {
@@ -151,9 +156,7 @@ it.effect(
       yield* TestClock.adjust(0);
       expect(disposed).toBe(false);
       writing.resolve();
-      expect((yield* Effect.promise(() => created)).path).toBe(
-        "templates/zotlit-partial.authors.md",
-      );
+      yield* Effect.promise(() => created);
       yield* Effect.promise(() => closing);
       expect(disposed).toBe(true);
       expect(
@@ -162,8 +165,55 @@ it.effect(
     }),
 );
 
+// The unpack writes through the engine's own runner, which must stay open
+// until the write's Scope has closed.
+it.effect("runtime disposal waits for a partial unpack that has started", () =>
+  Effect.gen(function* () {
+    const host = createTemplateHost();
+    const context = yield* Effect.context<never>();
+    const stack = yield* Effect.acquireDisposable(
+      Effect.tryPromise(async () => new AsyncDisposableStack()),
+    );
+    const runtime = buildRuntime(
+      templateOver(host).pipe(
+        Layer.provideMerge(Layer.succeedContext(context)),
+      ),
+      stack,
+    );
+    yield* Effect.promise(() => runtime.context());
+    const template = plainTemplate(runtime);
+    const plan = template.planPartialUnpack([
+      { name: "venue-line", language: "liquid", source: "{{ zt.venue }}" },
+    ]);
+    const started = yield* Queue.unbounded<void>();
+    const writing = Promise.withResolvers<void>();
+    const create = host.vault.create.bind(host.vault);
+    vi.spyOn(host.vault, "create").mockImplementation(async (path, source) => {
+      Queue.offerUnsafe(started, undefined);
+      await writing.promise;
+      return create(path, source);
+    });
+    const unpacked = expect(
+      template.unpackPartials(plan),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    yield* Queue.take(started);
+    let disposed = false;
+    const closing = runtime.dispose().then(() => {
+      disposed = true;
+    });
+    yield* TestClock.adjust(0);
+    expect(disposed).toBe(false);
+    writing.resolve();
+    yield* Effect.promise(() => unpacked);
+    yield* Effect.promise(() => closing);
+    expect(
+      host.vault.contents.has("templates/zotlit-partial.venue-line.md"),
+    ).toBe(true);
+  }),
+);
+
 it.effect(
-  "#1705: migration ignores late layout callbacks and retains its released adapter surface",
+  "#1705: migration ignores late layout callbacks and stops its calls after disposal",
   () =>
     Effect.gen(function* () {
       const host = createTemplateHost();
@@ -193,12 +243,13 @@ it.effect(
       yield* Effect.promise(() => runtime.dispose());
       host.vault.addFile("templates/zotlit-note.liquid.md", "Late inventory");
       for (const callback of callbacks) callback();
+      const aborted = { name: "AbortError" };
+      // A closed migration has nothing to settle: the answer is at once.
       yield* Effect.promise(() => migration.whenSettled());
       expect(openPrompt).not.toHaveBeenCalled();
-      expect(yield* Effect.promise(() => migration.convert())).toMatchObject({
-        outcome: "refused",
-        diagnostic: { code: "no-legacy-templates" },
-      });
+      yield* Effect.promise(() =>
+        expect(migration.convert()).rejects.toMatchObject(aborted),
+      );
       yield* Effect.promise(() =>
         expect(migration.retryCleanup()).rejects.toThrow(
           "Cleanup retry needs a completed conversion",
