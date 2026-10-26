@@ -9,11 +9,8 @@ import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope
 import type { NoteCitations } from "./citations-handle";
 import type { NoteCreation } from "./creation-handle";
 import type {
-  CompanionNoteTarget,
   CreateNoteOptions,
   CreateNoteResult,
-  CreationProfileSelection,
-  CreationProfileSources,
   NoteFeatureEvents,
   ProfileNotePreview,
   ProfileNotePreviewOptions,
@@ -56,14 +53,6 @@ export type {
  * over the `NoteFeature` tag.
  */
 export interface NoteFeatureHandle extends NoteCitations, NoteCreation {
-  resolveCompanionNote(
-    indexedKey: string,
-    options?: { profile?: ProfileSelector },
-  ): Promise<CompanionNoteTarget>;
-  /** The creation Profile when no Item decides: the given or the Default. */
-  resolveCreationProfile(
-    sources?: CreationProfileSources,
-  ): Promise<CreationProfileSelection>;
   prepareProfileNote(options: ProfileNotePreviewOptions): ProfileNotePreview;
   /** @see updateNote */
   updateNote(

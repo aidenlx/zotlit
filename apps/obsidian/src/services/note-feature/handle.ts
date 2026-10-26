@@ -34,10 +34,6 @@ export function bindNoteFeature(
     overwriteNote: (file, indexedKey, options) =>
       run(service.overwriteNote(file, indexedKey, options)),
     replacedKeys: (file) => run(service.replacedKeys(file)),
-    resolveCompanionNote: (indexedKey, options) =>
-      run(service.resolveCompanionNote(indexedKey, options)),
-    resolveCreationProfile: (sources) =>
-      run(service.resolveCreationProfile(sources)),
     prepareProfileNote: (options) => {
       const preview = bridge.runSync(service.prepareProfileNote(options));
       return { ...preview, create: () => run(preview.create) };

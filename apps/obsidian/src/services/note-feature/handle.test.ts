@@ -70,6 +70,7 @@ function harness() {
   );
   return {
     handle,
+    host,
     settings,
     /** Report `summary` on the Note Feature's changes, as a batch does. */
     report: (summary: ExcerptSummary) =>
@@ -86,24 +87,16 @@ function harness() {
 describe("bindNoteFeature", () => {
   it("resolves with the member's result", async () => {
     await using h = harness();
-    await expect(
-      h.handle.resolveCreationProfile({ headless: PAPERS }),
-    ).resolves.toEqual({
-      selector: PAPERS,
-      source: "headless",
-      shouldAsk: true,
-    });
+    const note = h.host.vault.addFile("Notes/Paper.md", "Body");
+    await expect(h.handle.replacedKeys(note)).resolves.toEqual(new Set());
   });
 
   it("settles as the bridge does once the runtime is disposed", async () => {
     const h = harness();
+    const note = h.host.vault.addFile("Notes/Paper.md", "Body");
     await h.dispose();
     // A read answers from the services the bridge captured.
-    await expect(h.handle.resolveCreationProfile()).resolves.toEqual({
-      selector: "default",
-      source: "bound",
-      shouldAsk: true,
-    });
+    await expect(h.handle.replacedKeys(note)).resolves.toEqual(new Set());
     // A write runs on the captured services too, and fails as it would before.
     await expect(h.handle.createNote(ITEM)).rejects.toBeInstanceOf(
       ItemNotFound,
