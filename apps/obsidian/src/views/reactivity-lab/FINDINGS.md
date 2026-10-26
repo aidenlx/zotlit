@@ -35,7 +35,7 @@ two leaves, plugin disable while notes switch.
 | **Two leaves, same note: live subs** | **1 (shared registry)** | 2 | 2 |
 | Per-leaf view state separate | yes (`ScopedAtom`) | yes (store per tab) | yes (store per tab) |
 | Plugin disable mid-switch: live / late / errors | 0 / 0 / none | 0 / 0 / none | 0 / 0 / none |
-| Mount churn (open, close, open) | fixed by `defaultIdleTTL: 400` | none | none |
+| Mount churn (open, close, open) | yes without `defaultIdleTTL`; gone with `defaultIdleTTL: 400` (isolated: removing only the TTL brings it back) | none | none |
 | Glue lines per view | 57 | 91 | 111 |
 | Glue paid once | `edge.ts` 44 per plugin, atoms 38 per service | — | — |
 | New dependencies | `@effect/atom-react`, `scheduler` | none (in repo) | `jotai` |
@@ -68,7 +68,7 @@ jotai         atoms · Stream→observable adapter · Exit → value · pending 
   view-local state, which is its role in the 32 files that use it today.
 - **jotai** reproduces the Atom graph but adds an adapter seam (Stream→observable)
   and a second async model. No gain over Effect Atom here.
-- **Plain baseline** (the #1710 sketch, "zustand/jotai minus the library"):
+- **Plain baseline** (the #1710 sketch, "zustand/jotai minus the library"; a sketch, not run in the lab):
 
   ```ts
   function useStream<A>(stream: Stream.Stream<A, never, R>, fallback: A): A {
@@ -94,21 +94,31 @@ for service state and commands:
 1. A deep module `lib/view-atoms.ts`: `viewRuntime` (an `Atom.runtime` over the
    plugin's services, seeded per registry), `held(stream, fallback)`, and
    `ViewRegistry`.
-2. One registry for the plugin's lifetime. Production seat: a scoped Layer in
-   `pluginLayer` that acquires the registry and disposes it with the other
-   services (the lab uses `plugin.register` instead).
+2. One registry for the plugin's lifetime, disposed after the views detach and
+   before the services stop. Tested order: the lab disposes it through
+   `plugin.register`, which Obsidian runs after `onunload` and after the view
+   leaves detach. A scoped Layer in `pluginLayer` is the tidier seat but
+   disposes earlier, during `onunload`, while views can still be mounted.
+   Untested: run the same disable walk before you choose that seat.
 3. Static atoms next to each service (`services/<name>/atoms.ts`): a state atom
    per state member, a `viewRuntime.fn` per command.
-4. Put per-leaf view state in `ScopedAtom`. Existing zustand view stores can stay
-   until a view is touched for other reasons.
+4. Keep view-local state owned by the view. The lab shows `ScopedAtom` keeps
+   per-leaf state separate, but a `ScopedAtom` instance is born inside React
+   context, so the `ItemView` class cannot reach it for `getState()` /
+   `setState()` layout persistence (Cited By's `LAYOUT_KEYS`). Untested. Two
+   ways that fit: the existing view-owned zustand store, or a writable atom
+   that the `ItemView` creates, passes down, and reads with `registry.get` /
+   `registry.set` for layout state.
 5. Start with settings (52 consumers), as #1710 already plans.
 
 Costs to accept:
 
 - `effect/reactivity` and atom-react are marked `@stability unstable`. The repo
   already pins `effect` exactly.
-- Preact needs `defaultIdleTTL`, so a subscription closes up to ~0.4 s after
-  unmount.
+- Preact needs `defaultIdleTTL` (isolated in the lab), so a subscription closes
+  up to ~0.4 s after unmount. Cause: Preact runs `useSyncExternalStore`'s
+  subscribe after paint, later than the registry's removal task for a node read
+  during render.
 - The seeded services atom must be `Atom.keepAlive`. Without it, the seed is lost
   when the node goes idle (seen in the lab: every atom fell back to the
   `Layer.die` default).

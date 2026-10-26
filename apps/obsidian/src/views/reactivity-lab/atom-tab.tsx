@@ -32,6 +32,8 @@ export function AtomTab(props: {
 
 function AtomPanel() {
   const note = useAtomValue(activeNoteAtom);
+  const snapshot = useAtomValue(citedByActiveAtom);
+  const atTrigger = useAtomValue(atTriggerAtom);
   const toggle = useAtomValue(toggleAtTriggerCommand);
   const once = useAtomValue(readCitedByOnceCommand);
   const [ui, setUi] = useAtom(LabUi.use());
@@ -42,14 +44,14 @@ function AtomPanel() {
     <Panel
       flavor="Effect Atom"
       note={note}
-      snapshot={useAtomValue(citedByActiveAtom)}
+      snapshot={snapshot}
       search={ui.search}
       onSearch={(search) => setUi((s) => ({ ...s, search }))}
       collapsed={ui.collapsed}
       onToggleGroup={(path) =>
         setUi((s) => ({ ...s, collapsed: toggled(s.collapsed, path) }))
       }
-      atTrigger={useAtomValue(atTriggerAtom)}
+      atTrigger={atTrigger}
       togglePending={toggle.waiting}
       onToggleAtTrigger={() => runToggle()}
       once={AsyncResult.match(once, {
