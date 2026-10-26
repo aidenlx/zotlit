@@ -1,5 +1,5 @@
 // The Note Feature writes: create, update, overwrite, rewrite and Profile switch.
-import { Cause, DateTime, Effect, Fiber, Option, Stream } from "effect";
+import { Cause, DateTime, Effect, Fiber, Option, Result, Stream } from "effect";
 import { getFrontMatterInfo } from "obsidian";
 import type { TFile } from "obsidian";
 
@@ -596,28 +596,34 @@ export const switchNoteProfile = Effect.fnUntraced(function* (
     imported,
   });
   const move = options.move === true && targetPath !== previousPath;
-  if (move) {
-    yield* ensureVaultParentFolder(targetPath);
-    yield* fileManager.renameFile(file, targetPath);
-  }
-  yield* stampNoteFamily(
-    [file, ...(options.importedNotes ?? [])],
-    profile.stamp,
-  ).pipe(
-    Effect.catch((error) =>
-      move
-        ? fileManager.renameFile(file, previousPath).pipe(
-            Effect.mapError(
-              (rollbackError) =>
-                new ProfileSwitchRollbackFailed({
-                  message: "Profile switch and folder move rollback failed",
-                  cause: new AggregateError([error, rollbackError]),
-                }),
-            ),
-            Effect.andThen(Effect.fail(error)),
-          )
-        : Effect.fail(error),
-    ),
+  // The move, the stamps and their rollback run to the end, so an interrupt
+  // never leaves a moved note without its stamp.
+  yield* Effect.uninterruptible(
+    Effect.gen(function* () {
+      if (move) {
+        yield* ensureVaultParentFolder(targetPath);
+        yield* fileManager.renameFile(file, targetPath);
+      }
+      yield* stampNoteFamily(
+        [file, ...(options.importedNotes ?? [])],
+        profile.stamp,
+      ).pipe(
+        Effect.catch((error) =>
+          move
+            ? fileManager.renameFile(file, previousPath).pipe(
+                Effect.mapError(
+                  (rollbackError) =>
+                    new ProfileSwitchRollbackFailed({
+                      message: "Profile switch and folder move rollback failed",
+                      cause: new AggregateError([error, rollbackError]),
+                    }),
+                ),
+                Effect.andThen(Effect.fail(error)),
+              )
+            : Effect.fail(error),
+        ),
+      );
+    }),
   );
   yield* Effect.logDebug(
     "Switched Literature Note Profile for the next update",
@@ -642,32 +648,31 @@ const stampNoteFamily = Effect.fnUntraced(function* (
   stamp: string | undefined,
 ) {
   const metadata = yield* MetadataCache;
-  const previous: (readonly [TFile, string | undefined])[] = [];
-  for (const file of files)
-    previous.push([
-      file,
-      profileStampOf(yield* metadata.fileCache(file))?.stamp,
-    ]);
-  const attempted: typeof previous = [];
+  const previous = yield* Effect.forEach(files, (file) =>
+    Effect.map(
+      metadata.fileCache(file),
+      (cache) => [file, profileStampOf(cache)?.stamp] as const,
+    ),
+  );
   yield* Effect.forEach(
     previous,
-    (entry) =>
-      Effect.suspend(() => {
-        attempted.push(entry);
-        return stampNoteProfile(entry[0], stamp);
-      }),
+    ([file], index) =>
+      stampNoteProfile(file, stamp).pipe(
+        Effect.mapError((error) => ({ error, index })),
+      ),
     { discard: true },
   ).pipe(
-    Effect.catch((error) =>
+    Effect.catch(({ error, index }) =>
       Effect.gen(function* () {
-        const rollbackErrors: unknown[] = [];
-        for (const [file, previousStamp] of attempted.toReversed()) {
-          yield* stampNoteProfile(file, previousStamp).pipe(
-            Effect.catch((rollbackError) =>
-              Effect.sync(() => rollbackErrors.push(rollbackError)),
-            ),
-          );
-        }
+        // The failed note too: its write may have landed before it failed.
+        const rollbacks = yield* Effect.forEach(
+          previous.slice(0, index + 1).toReversed(),
+          ([file, previousStamp]) =>
+            Effect.result(stampNoteProfile(file, previousStamp)),
+        );
+        const rollbackErrors = rollbacks.flatMap((rollback) =>
+          Result.isFailure(rollback) ? [rollback.failure] : [],
+        );
         if (rollbackErrors.length > 0)
           return yield* new ProfileSwitchRollbackFailed({
             message: "Note Profile switch and rollback failed",
@@ -694,25 +699,11 @@ const stampNoteProfile = (file: TFile, stamp: string | undefined) =>
  * with what was thrown.
  */
 const rewriteLiveText = (file: TFile, fn: (text: string) => string) =>
-  Effect.suspend(() => {
-    let thrown: { cause: unknown } | undefined;
-    return processLiveText(file, (text) => {
-      try {
-        return fn(text);
-      } catch (cause) {
-        thrown = { cause };
-        throw cause;
-      }
-    }).pipe(
-      Effect.catchTag("VaultError", (error) =>
-        Effect.fail(
-          thrown
-            ? new NoteWriteAborted({ path: file.path, cause: thrown.cause })
-            : error,
-        ),
-      ),
-    );
-  });
+  processLiveText(file, fn).pipe(
+    Effect.catchTag("LiveTextRewriteFailed", ({ path, cause }) =>
+      Effect.fail(new NoteWriteAborted({ path, cause })),
+    ),
+  );
 
 /**
  * Update an existing note from an already-fetched `item`. The batch runner

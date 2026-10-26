@@ -52,6 +52,31 @@ describe("processLiveText", () => {
     },
   );
 
+  it.effect.each([
+    ["no view has the note open", false],
+    ["a view has the note open", true],
+  ] as const)(
+    "fails with LiveTextRewriteFailed and leaves the note when the rewrite throws, and %s",
+    ([, open]) => {
+      const host = createObsidianHost({ [PATH]: "Saved" });
+      if (open) host.openInEditor(host.file(PATH));
+      const thrown = new Error("Template threw");
+      return Effect.gen(function* () {
+        const error = yield* Effect.flip(
+          processLiveText(host.file(PATH), () => {
+            throw thrown;
+          }),
+        );
+        expect(error).toMatchObject({
+          _tag: "LiveTextRewriteFailed",
+          path: PATH,
+          cause: thrown,
+        });
+        expect(host.text(PATH)).toBe("Saved");
+      }).pipe(Effect.provide(tagsOver(host)));
+    },
+  );
+
   it.effect("fails with VaultError when the view's save rejects", () => {
     const host = createObsidianHost({ [PATH]: "Saved" });
     const view = host.openInEditor(host.file(PATH));

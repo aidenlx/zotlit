@@ -498,7 +498,10 @@ const writeNote = Effect.fnUntraced(function* (
     }
     outcome = "created";
   } else {
-    yield* processLiveText(mode.file, () => content);
+    // The rewrite returns a fixed text, so it cannot throw.
+    yield* processLiveText(mode.file, () => content).pipe(
+      Effect.catchTag("LiveTextRewriteFailed", (error) => Effect.die(error)),
+    );
     outcome = "overwritten";
   }
 
