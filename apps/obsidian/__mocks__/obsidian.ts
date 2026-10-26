@@ -113,6 +113,7 @@ globalThis.sleep ??= (ms: number) =>
  * `BaseNotice` touches in its constructor. */
 const noticeElStub = {
   addClasses: (_classes: string[]) => {},
+  toggle: (_show: boolean) => {},
   querySelector: (_selector: string): HTMLElement | null => null,
 } as unknown as HTMLElement;
 
