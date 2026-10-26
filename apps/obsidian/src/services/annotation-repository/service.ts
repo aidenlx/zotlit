@@ -23,6 +23,7 @@ import { ZoteroPref } from "@/services/zotero-pref/service";
 import { changed } from "@/services/zotero-reads/events";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
+import type { DatabaseRowsError } from "./core/bridge";
 import {
   canRedo,
   canUndo,
@@ -36,13 +37,14 @@ import {
   capabilityFor,
   dropDatabasePartition,
   hold,
+  inRepository,
   peek,
-  probe,
   read,
   refresh,
   refreshLocks,
   sourceMoved,
 } from "./core/lists";
+import type { AnnotationLibraryUnresolved } from "./core/lists";
 import { mutationFor } from "./core/outcomes";
 import { CoreState } from "./core/state";
 import {
@@ -79,14 +81,21 @@ import type {
 } from "./repository";
 
 export * from "./repository";
+export type { DatabaseRowsError } from "./core/bridge";
 
 export type AnnotationRepositoryShape = {
   /**
    * @param attachmentKey the Attachment's Indexed Key.
    * @returns the list that stands, with the Pending Proposal of each write in
-   *   flight drawn over it, or null while no read has answered for it.
+   *   flight drawn over it, or null while no read has answered for it. It
+   *   fails where the read that rebinds the Attachment to its database fails.
    */
-  read(attachmentKey: string): Effect.Effect<AnnotationList | null>;
+  read(
+    attachmentKey: string,
+  ): Effect.Effect<
+    AnnotationList | null,
+    DatabaseRowsError | AnnotationLibraryUnresolved
+  >;
   /**
    * Keeps the lists of these Attachments published while a surface shows
    * them: a database change reads them again, and a write finds their
@@ -464,38 +473,34 @@ export function layerAnnotationRepository(options: {
         ),
       );
       yield* forkEach(api.changes, () => sourceMoved(shared));
-      // The repository's reads log under its category and read the time from
-      // the layer's Clock, whichever fiber calls them.
-      const inRepository = <A, E>(effect: Effect.Effect<A, E>) =>
-        effect.pipe(
-          Effect.provideService(Clock.Clock, clock),
-          withLogCategory("annotation-repository"),
-        );
+      // The repository's reads read the time from the layer's Clock,
+      // whichever fiber calls them.
+      const onLayerClock = Effect.provideService(Clock.Clock, clock);
       const events = Stream.fromPubSub(bus);
       const byTag = <T extends AnnotationRepositoryEvent["_tag"]>(tag: T) =>
         filterTag(events, tag);
       return AnnotationRepository.of({
-        // A read that fails is a defect, as the Promise core's rejection was.
         read: Effect.fn("AnnotationRepository.read")((attachmentKey) =>
-          read(shared, attachmentKey).pipe(Effect.orDie, inRepository),
+          read(shared, attachmentKey).pipe(inRepository, onLayerClock),
         ),
         hold: Effect.fn("AnnotationRepository.hold")((attachmentKeys) =>
           hold(shared, attachmentKeys),
         ),
         refresh: Effect.fn("AnnotationRepository.refresh")((attachmentKey) =>
-          refresh(shared, attachmentKey).pipe(inRepository),
+          refresh(shared, attachmentKey).pipe(inRepository, onLayerClock),
         ),
         peek: Effect.fn("AnnotationRepository.peek")((attachmentKey) =>
           Effect.sync(() => peek(shared, attachmentKey)),
         ),
         capabilityFor: Effect.fn("AnnotationRepository.capabilityFor")(
           (attachmentKey) =>
-            capabilityFor(shared, attachmentKey).pipe(inRepository),
+            capabilityFor(shared, attachmentKey).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
-        capability: capability(shared).pipe(inRepository),
-        probe: probe(shared).pipe(
-          Effect.withSpan("AnnotationRepository.probe"),
-        ),
+        capability: capability(shared).pipe(inRepository, onLayerClock),
+        probe: api.probe.pipe(Effect.withSpan("AnnotationRepository.probe")),
         mutationFor: Effect.fn("AnnotationRepository.mutationFor")(
           (annotationKey) =>
             Effect.sync(() => mutationFor(shared, annotationKey)),
@@ -549,49 +554,71 @@ export function layerAnnotationRepository(options: {
             createAnnotation(shared, attachmentKey, {
               draft,
               ...createOptions,
-            }).pipe(inRepository),
+            }).pipe(inRepository, onLayerClock),
         ),
         patchColor: Effect.fn("AnnotationRepository.patchColor")(
           (annotationKey, color) =>
-            patchColor(shared, annotationKey, color).pipe(inRepository),
+            patchColor(shared, annotationKey, color).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         patchColors: Effect.fn("AnnotationRepository.patchColors")(
           (annotationKeys, color) =>
-            patchColors(shared, annotationKeys, color).pipe(inRepository),
+            patchColors(shared, annotationKeys, color).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         patchComment: Effect.fn("AnnotationRepository.patchComment")(
           (annotationKey, comment) =>
-            patchComment(shared, annotationKey, comment).pipe(inRepository),
+            patchComment(shared, annotationKey, comment).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         patchGeometry: Effect.fn("AnnotationRepository.patchGeometry")(
           (annotationKey, edit, input) =>
             patchGeometry(shared, annotationKey, { edit, input }).pipe(
               inRepository,
+              onLayerClock,
             ),
         ),
         deleteAnnotation: Effect.fn("AnnotationRepository.deleteAnnotation")(
           (annotationKey) =>
-            deleteAnnotation(shared, annotationKey).pipe(inRepository),
+            deleteAnnotation(shared, annotationKey).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         deleteAnnotations: Effect.fn("AnnotationRepository.deleteAnnotations")(
           (annotationKeys) =>
-            deleteAnnotations(shared, annotationKeys).pipe(inRepository),
+            deleteAnnotations(shared, annotationKeys).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         retryWrite: Effect.fn("AnnotationRepository.retryWrite")(
           (annotationKey) =>
-            retryWrite(shared, annotationKey).pipe(inRepository),
+            retryWrite(shared, annotationKey).pipe(inRepository, onLayerClock),
         ),
         discardConflict: Effect.fn("AnnotationRepository.discardConflict")(
           (annotationKey) =>
-            discardConflict(shared, annotationKey).pipe(inRepository),
+            discardConflict(shared, annotationKey).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         openHistory: Effect.fn("AnnotationRepository.openHistory")(
           (attachmentKey) =>
-            openHistory(shared, attachmentKey).pipe(inRepository),
+            openHistory(shared, attachmentKey).pipe(inRepository, onLayerClock),
         ),
         closeHistory: Effect.fn("AnnotationRepository.closeHistory")(
           (attachmentKey) =>
-            closeHistory(shared, attachmentKey).pipe(inRepository),
+            closeHistory(shared, attachmentKey).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         canUndo: Effect.fn("AnnotationRepository.canUndo")((attachmentKey) =>
           Effect.sync(() => canUndo(shared, attachmentKey)),
@@ -600,10 +627,10 @@ export function layerAnnotationRepository(options: {
           Effect.sync(() => canRedo(shared, attachmentKey)),
         ),
         undo: Effect.fn("AnnotationRepository.undo")((attachmentKey) =>
-          undo(shared, attachmentKey).pipe(inRepository),
+          undo(shared, attachmentKey).pipe(inRepository, onLayerClock),
         ),
         redo: Effect.fn("AnnotationRepository.redo")((attachmentKey) =>
-          redo(shared, attachmentKey).pipe(inRepository),
+          redo(shared, attachmentKey).pipe(inRepository, onLayerClock),
         ),
         annotationsChanged: byTag("annotations-changed").pipe(
           Stream.map(({ attachmentKey }) => attachmentKey),

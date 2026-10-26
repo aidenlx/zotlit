@@ -25,6 +25,7 @@ import {
   afterWrite,
   FIXTURE_ROWS,
   leaseOver,
+  markExternal,
   nextChange,
   REMEMBERED_KEY,
   scopedStack,
@@ -39,6 +40,13 @@ import {
   annotationRows,
 } from "./__fixtures__";
 import type { AnnotationList } from "./service";
+
+/** Each Annotation's lock, by key. */
+function locksOf(list: AnnotationList | null) {
+  return Object.fromEntries(
+    list?.annotations.map(({ key, lock }) => [key, lock]) ?? [],
+  );
+}
 
 it.effect(
   "reads every type the Fixture carries on one attachment, in Zotero's reading order",
@@ -231,6 +239,8 @@ it.effect("shares one refresh and publishes the canonical held result", () =>
 
     const refreshed = yield* Fiber.join(overlay);
     expect(yield* Fiber.join(view)).toBe(refreshed);
+    // One revalidation for both: it refreshes the Zotero database once.
+    expect(reads.db.refresh).toHaveBeenCalledTimes(1);
     expect(batchReads(reads)).toBe(2);
     expect(refreshed).toBe(first);
     expect((yield* service.peek("RGRPDF24"))?.value).toBe(first);
@@ -805,6 +815,51 @@ it.effect(
     }),
 );
 
+it.effect("keeps the locks a cancelled Local API read would have read", () =>
+  Effect.gen(function* () {
+    const stack = yield* scopedStack;
+    const { service, client, serverEvents, acquireRead } =
+      yield* Effect.promise(() => writable(stack));
+    const readSnapshot = acquireRead.getMockImplementation()!;
+    const gate = Promise.withResolvers<void>();
+    const entered = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    // The lock read of the next Local API list waits on its lease, and
+    // reads the database as it stands once the gate opens.
+    acquireRead.mockImplementationOnce(async () => {
+      entered.resolve();
+      await gate.promise;
+      const lease = await readSnapshot();
+      return {
+        reads: lease.reads,
+        [Symbol.asyncDispose]: async () => {
+          await lease[Symbol.asyncDispose]();
+          released.resolve();
+        },
+      };
+    });
+
+    freshnessSignal(serverEvents);
+    yield* Effect.promise(() => entered.promise);
+    // The partition is dropped again under the read: its query is
+    // cancelled, and the read asked after it finds no lock.
+    freshnessSignal(serverEvents);
+    const reread = yield* service.read("RGRPDF24");
+    expect(locksOf(reread).PUPR5FG5).toBeNull();
+
+    // Zotero imports the Annotation from the PDF file, and only then does
+    // the cancelled read's lease open.
+    markExternal(client, "PUPR5FG5");
+    gate.resolve();
+    yield* Effect.promise(() => released.promise);
+    // A lock read that outlived its query would keep its locks now.
+    for (let turn = 0; turn < 5; turn++) yield* Effect.yieldNow;
+
+    const held = yield* service.peek("RGRPDF24");
+    expect(locksOf(held?.value ?? null).PUPR5FG5).toBeNull();
+  }),
+);
+
 it.effect(
   "answers a read in flight when the repository closes, leaves the Local API session standing, and answers null after",
   () =>
@@ -812,21 +867,16 @@ it.effect(
       const stack = yield* scopedStack;
       const inFlight = Promise.withResolvers<void>();
       let answering = true;
-      const {
-        repository,
-        service,
-        serverEvents,
-        localApiService,
-        localApiBridge,
-      } = yield* Effect.promise(() =>
-        setup(stack, {
-          children: () => {
-            if (answering) return annotationPage(ROUGIER_ANNOTATIONS);
-            inFlight.resolve();
-            return new Promise<Response>(() => undefined);
-          },
-        }),
-      );
+      const { repository, service, serverEvents, localApiService } =
+        yield* Effect.promise(() =>
+          setup(stack, {
+            children: () => {
+              if (answering) return annotationPage(ROUGIER_ANNOTATIONS);
+              inFlight.resolve();
+              return new Promise<Response>(() => undefined);
+            },
+          }),
+        );
       yield* Effect.promise(() => switchToLocalApi(repository));
 
       answering = false;
@@ -844,12 +894,26 @@ it.effect(
       expect(list?.annotations.map(({ key, type }) => [key, type])).toEqual(
         READING_ORDER,
       );
-      expect(
-        localApiBridge.runSync(localApiService.demandSource),
-      ).not.toBeNull();
+      expect(yield* localApiService.demandSource).not.toBeNull();
       // A read asked after the close finds no list to hold.
       expect(yield* service.read("EPUBBKS2")).toBeNull();
     }),
+);
+
+it.effect("lets a hold go after the repository closes", () =>
+  Effect.gen(function* () {
+    const stack = yield* scopedStack;
+    const { repository, service } = yield* Effect.promise(() => setup(stack));
+    const held = yield* service.hold(["RGRPDF24"]);
+    yield* service.read("RGRPDF24");
+
+    yield* Effect.promise(() => repository[Symbol.asyncDispose]());
+
+    // A surface disposes its hold after the plugin unloaded: the release
+    // runs on the closed repository and asks nothing of it.
+    expect(() => held[Symbol.dispose]()).not.toThrow();
+    expect(yield* service.peek("RGRPDF24")).toBeNull();
+  }),
 );
 
 it.effect(
@@ -911,17 +975,14 @@ it.effect(
 it.effect("answers the Editing Capability the Annotation Source leaves", () =>
   Effect.gen(function* () {
     const stack = yield* scopedStack;
-    const { service, localApiService, localApiBridge } = yield* Effect.promise(
-      () =>
-        setup(stack, {
-          root: localApiDisabled,
-        }),
+    const { service, localApiService } = yield* Effect.promise(() =>
+      setup(stack, {
+        root: localApiDisabled,
+      }),
     );
 
     const beforeProbe = yield* service.capabilityFor("RGRPDF24");
-    yield* Effect.promise(() =>
-      localApiBridge.runPromise(localApiService.probe),
-    );
+    yield* localApiService.probe;
     const disabled = yield* service.capabilityFor("RGRPDF24");
 
     expect(beforeProbe).toEqual({ kind: "read-only", reason: "probing" });
@@ -959,12 +1020,12 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service, localApiService, localApiBridge } =
-        yield* Effect.promise(() =>
+      const { repository, service, localApiService } = yield* Effect.promise(
+        () =>
           setup(stack, {
             children: () => annotationPage(ROUGIER_ANNOTATIONS),
           }),
-        );
+      );
       let announced = 0;
       stack.defer(
         repository.listen("capability-changed", () => {
@@ -976,9 +1037,7 @@ it.effect(
         kind: "read-only",
         reason: "probing",
       });
-      yield* Effect.promise(() =>
-        localApiBridge.runPromise(localApiService.probe),
-      );
+      yield* localApiService.probe;
 
       // The settings row reads this one: it names no Attachment, so no library
       // Zotero refused a write to is part of it.

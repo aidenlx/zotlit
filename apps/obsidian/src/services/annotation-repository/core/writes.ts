@@ -4,6 +4,7 @@ import { DateTime, Effect, FiberSet, Schema } from "effect";
 import { parseAnnotationPosition, parseIndexedKey } from "@zotlit/db";
 import type { AnnotationPositionRaw } from "@zotlit/db";
 
+import { recover } from "@/lib/effect-cause";
 import { fromInstant, toInstant } from "@/lib/effect-clock";
 import { contentOf } from "@/services/annotation-repository/history";
 import type {
@@ -71,7 +72,6 @@ import {
   prepareCollection,
   prepareWrite,
   read,
-  recover,
   refresh,
   rememberAcknowledgedRevision,
   sourceStillBound,

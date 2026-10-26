@@ -357,7 +357,9 @@ export async function setup(
 
 /**
  * The stack an `it.effect` case builds its harness on: {@link setup} and
- * {@link writable} add to it, and the case's Scope disposes it.
+ * {@link writable} add to it, and the case's Scope disposes it. The
+ * repository reads the TestClock of the harness's `runtime`, not the case's
+ * own: a case moves the repository's time through `runtime`.
  */
 export const scopedStack = Effect.acquireRelease(
   Effect.sync(() => new AsyncDisposableStack()),
@@ -442,7 +444,6 @@ export function repositoryClient(
   bridge: EffectBridge,
   dispose: () => Promise<void>,
 ): RepositoryClient {
-  const refreshes = new Map<string, Promise<AnnotationList | null>>();
   return new Proxy({} as RepositoryClient, {
     get(_target, property) {
       if (property === Symbol.asyncDispose) return dispose;
@@ -489,25 +490,6 @@ export function repositoryClient(
       }
       if (property === "capability") return bridge.runSync(service.capability);
       if (property === "probe") return () => bridge.runPromise(service.probe);
-      if (property === "refresh") {
-        return (attachmentKey: string): Promise<AnnotationList | null> => {
-          const running = refreshes.get(attachmentKey);
-          if (running) return running;
-          const refreshing = bridge.runPromise(service.refresh(attachmentKey));
-          refreshes.set(attachmentKey, refreshing);
-          void refreshing.then(
-            () => {
-              if (refreshes.get(attachmentKey) === refreshing)
-                refreshes.delete(attachmentKey);
-            },
-            () => {
-              if (refreshes.get(attachmentKey) === refreshing)
-                refreshes.delete(attachmentKey);
-            },
-          );
-          return refreshing;
-        };
-      }
       const member = service[property as keyof typeof service];
       if (typeof member !== "function") return member;
       return (...args: unknown[]): unknown => {
