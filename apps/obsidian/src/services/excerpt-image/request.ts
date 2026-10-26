@@ -24,10 +24,10 @@ import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
-import type { ZoteroPref } from "@/services/zotero-pref/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
-import type { ZoteroReads } from "@/services/zotero-reads/service";
 
 import type { ExcerptRequest } from "./contract";
 
@@ -75,29 +75,52 @@ export function savedExcerptRequest(options: {
   );
 }
 
-/** `savedExcerptRequest` over the Effect services, for a layer's own callbacks. */
+/**
+ * The file inputs one saved Annotation resolves through, under the paths of
+ * the active source, or `null` where nothing can: no Annotation Source, a data
+ * directory that moves during the read, or a database that cannot answer.
+ */
+export function savedExcerptRequestFor(input: {
+  annotation: AnnotationRecord;
+  source: AnnotationSource | null;
+}): Effect.Effect<ExcerptRequest | null, never, ZoteroReads | ZoteroPref> {
+  const { annotation, source } = input;
+  return Effect.gen(function* () {
+    if (!source) return null;
+    const reads = yield* ZoteroReads;
+    const pref = yield* ZoteroPref;
+    const { dataDir, baseAttachmentPath } = yield* pref.current;
+    return yield* readSavedExcerptRequest({
+      annotation,
+      source,
+      paths: { dataDir, baseAttachmentPath },
+      snapshot: reads.snapshot,
+      dataDir: Effect.map(pref.current, (current) => current.dataDir),
+    });
+  });
+}
+
+/**
+ * {@link savedExcerptRequestFor} for Promise callers: the pixel-edit
+ * revalidation in `zt-main.ts`, and the Annotation Repository and Annotation
+ * Popover cores. Unload interrupts a pending read, which then resolves to
+ * `null`.
+ */
 export function savedExcerptRequestOver(services: {
-  readonly reads: Pick<ZoteroReads["Service"], "snapshot">;
-  readonly pref: Pick<ZoteroPref["Service"], "current">;
+  readonly reads: ZoteroReads["Service"];
+  readonly pref: ZoteroPref["Service"];
   readonly bridge: Pick<EffectBridge, "runPromiseExit">;
 }): (input: {
   annotation: AnnotationRecord;
   source: AnnotationSource | null;
 }) => Promise<ExcerptRequest | null> {
-  return async ({ annotation, source }) =>
+  return async (input) =>
     valueOr(
       await services.bridge.runPromiseExit(
-        Effect.gen(function* () {
-          if (!source) return null;
-          const { dataDir, baseAttachmentPath } = yield* services.pref.current;
-          return yield* readSavedExcerptRequest({
-            annotation,
-            source,
-            paths: { dataDir, baseAttachmentPath },
-            snapshot: services.reads.snapshot,
-            dataDir: Effect.map(services.pref.current, (pref) => pref.dataDir),
-          });
-        }),
+        savedExcerptRequestFor(input).pipe(
+          Effect.provideService(ZoteroReads, services.reads),
+          Effect.provideService(ZoteroPref, services.pref),
+        ),
       ),
       null,
     );

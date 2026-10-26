@@ -14,13 +14,12 @@ import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
-import type {
-  ZoteroReads,
-  ZoteroReadsApi,
-} from "@/services/zotero-reads/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -33,6 +32,7 @@ import {
   ExcerptSourceUnavailable,
   excerptRequestForKey,
   savedExcerptRequest,
+  savedExcerptRequestFor,
   savedExcerptRequestOver,
 } from "./request";
 import { ExcerptImageService, excerptKey, excerptRequest } from "./service";
@@ -134,6 +134,39 @@ const serviceOf = (
   );
 
 describe("Saved excerpt request", () => {
+  it.effect(
+    "reads the request through the tags, and nothing without a source",
+    () =>
+      Effect.gen(function* () {
+        const db = yield* fixtureDb();
+        const read = (source: AnnotationSource | null) =>
+          savedExcerptRequestFor({ annotation, source }).pipe(
+            Effect.provideService(
+              ZoteroReads,
+              stubService<ZoteroReads["Service"]>("ZoteroReads", {
+                snapshot: Effect.succeed(db.reads),
+              }),
+            ),
+            Effect.provideService(
+              ZoteroPref,
+              stubService<ZoteroPref["Service"]>("ZoteroPref", {
+                current: Effect.succeed(
+                  stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", paths),
+                ),
+              }),
+            ),
+          );
+
+        expect(yield* read(apiSource)).toMatchObject({
+          annotation: { key: ANNOTATION },
+          source: apiSource,
+          attachmentKey: ATTACHMENT,
+          sourceScope: paths.dataDir,
+        });
+        expect(yield* read(null)).toBeNull();
+      }),
+  );
+
   it.effect("builds the same request over the Effect services", () =>
     Effect.gen(function* () {
       const db = yield* fixtureDb();
@@ -145,12 +178,12 @@ describe("Saved excerpt request", () => {
       });
       const requestOver = savedExcerptRequestOver({
         reads,
-        pref: {
+        pref: stubService<ZoteroPref["Service"]>("ZoteroPref", {
           current: Effect.succeed({
             dataDir: paths.dataDir,
             baseAttachmentPath: paths.baseAttachmentPath,
           } as ZoteroPrefSnapshot),
-        },
+        }),
         bridge,
       });
 
@@ -248,7 +281,7 @@ describe("Saved excerpt request", () => {
               return db.reads;
             }),
           }),
-          pref: {
+          pref: stubService<ZoteroPref["Service"]>("ZoteroPref", {
             current: Effect.sync(
               () =>
                 ({
@@ -256,7 +289,7 @@ describe("Saved excerpt request", () => {
                   baseAttachmentPath: paths.baseAttachmentPath,
                 }) as ZoteroPrefSnapshot,
             ),
-          },
+          }),
           bridge,
         });
 
@@ -277,12 +310,12 @@ describe("Saved excerpt request", () => {
           reads: stubService<ZoteroReads["Service"]>("ZoteroReads", {
             snapshot: Effect.never,
           }),
-          pref: {
+          pref: stubService<ZoteroPref["Service"]>("ZoteroPref", {
             current: Effect.succeed({
               dataDir: paths.dataDir,
               baseAttachmentPath: paths.baseAttachmentPath,
             } as ZoteroPrefSnapshot),
-          },
+          }),
           bridge,
         });
 
