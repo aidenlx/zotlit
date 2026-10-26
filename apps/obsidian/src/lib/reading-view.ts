@@ -4,12 +4,11 @@
 // Markdown again only when structure changes: which links it touches at all,
 // or whether it touches them.
 
+import { Effect } from "effect";
 import { MarkdownRenderChild } from "obsidian";
 import type { MarkdownPostProcessorContext, MarkdownView } from "obsidian";
 
-import { getLogger } from "@/lib/log";
-
-const logger = getLogger("reading-view");
+import { withLogCategory } from "@/lib/effect-log";
 
 /** Draft previews supply their own citations while keeping the real path for native links. */
 export function isDraftMarkdown(element: HTMLElement): boolean {
@@ -89,7 +88,7 @@ export function rerenderReadingViews(views: readonly MarkdownView[]): number {
 /** One held section: the document it shows, and the rewrite that refreshes it. */
 interface LiveSection {
   path: string;
-  show: () => void;
+  show: Effect.Effect<void>;
 }
 
 /**
@@ -111,7 +110,7 @@ export class LiveSections {
   hold(
     el: HTMLElement,
     ctx: MarkdownPostProcessorContext,
-    show: () => void,
+    show: Effect.Effect<void>,
   ): void {
     const held = this.#sections.get(el);
     if (held !== undefined) {
@@ -127,13 +126,18 @@ export class LiveSections {
   }
 
   /** Rewrites the live sections of one document, or every live section. */
-  refresh(path?: string): void {
-    let count = 0;
-    for (const section of this.#sections.values()) {
-      if (path !== undefined && section.path !== path) continue;
-      section.show();
-      count += 1;
-    }
-    logger.trace("Refreshed live sections", { path, count });
+  refresh(path?: string): Effect.Effect<void> {
+    const sections = this.#sections;
+    return Effect.gen(function* () {
+      let count = 0;
+      for (const section of sections.values()) {
+        if (path !== undefined && section.path !== path) continue;
+        yield* section.show;
+        count += 1;
+      }
+      yield* Effect.logTrace("Refreshed live sections").pipe(
+        Effect.annotateLogs({ path, count }),
+      );
+    }).pipe(withLogCategory("reading-view"));
   }
 }

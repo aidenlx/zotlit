@@ -19,7 +19,7 @@ export interface CitekeyEditorActionDeps {
     CitekeyEditor["Service"],
     "navigationEnabled" | "openCitekey"
   >;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
 }
 
 export function addCitekeyEditorActions(
@@ -69,7 +69,9 @@ function addOpenCitekeyCommand(
         command: command.id,
         pane: command.pane,
       });
-      void deps.bridge.runPromise(
+      // Unload interrupts a pending open. The open logs its own failures, so
+      // the Exit is a success or an interrupt.
+      void deps.bridge.runPromiseExit(
         deps.citekeyEditor.openCitekey(citekey, command.pane),
       );
       return true;

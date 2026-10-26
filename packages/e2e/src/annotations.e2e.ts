@@ -28,7 +28,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(annotationAttachment.path)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});app.commands.executeCommandById('zotlit:open-annot-view');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');return true;})()`,
       );
       const expected = [...annotationKeys].sort();
-      const readAnnotations = `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const list=await repository.read(${JSON.stringify(annotationAttachment.key)});return JSON.stringify({source:list?.source.kind??null,keys:(list?.annotations??[]).map(({key})=>key).sort()});})()`;
+      const readAnnotations = `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const list=await bridge.runPromise(repository.read(${JSON.stringify(annotationAttachment.key)}));return JSON.stringify({source:list?.source.kind??null,keys:(list?.annotations??[]).map(({key})=>key).sort()});})()`;
       expect(
         await obEvalUntil(run.vaultId, readAnnotations, {
           expected: JSON.stringify({ source: "zotero-db", keys: expected }),
@@ -176,7 +176,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEval(
           run.vaultId,
-          `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;const text=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.contentEl.textContent??'';const labels=['Zotero DB','Local API','database source'];return JSON.stringify({capability:repository.capabilityFor(${JSON.stringify(annotationAttachment.key)}),sourceLabels:labels.some(label=>text.toLowerCase().includes(label.toLowerCase()))});})()`,
+          `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const text=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.contentEl.textContent??'';const labels=['Zotero DB','Local API','database source'];return JSON.stringify({capability:bridge.runSync(repository.capabilityFor(${JSON.stringify(annotationAttachment.key)})),sourceLabels:labels.some(label=>text.toLowerCase().includes(label.toLowerCase()))});})()`,
         ),
       ).toBe(
         JSON.stringify({
