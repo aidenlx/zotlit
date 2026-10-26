@@ -43,6 +43,8 @@ export interface ExplorerReads {
 
 export interface ExplorerHost {
   readonly registry: AtomRegistry.AtomRegistry;
+  /** The Indexed Key of each read the Explorer interrupted, in order. */
+  readonly cancelled: readonly string[];
   /** Sends a Zotero database change to every Explorer in the registry. */
   changeZotero(): void;
   /** How many Zotero change subscriptions are live. */
@@ -64,7 +66,7 @@ export interface ExplorerSessionHandle extends Disposable {
   ): void;
   setContext(context: TemplateAuthoringContext): void;
   refresh(): void;
-  /** Settles the reads the last change started. */
+  /** Waits until the load the last change started has its last read. */
   ready(): Promise<void>;
 }
 
@@ -93,17 +95,19 @@ export async function makeExplorerHost(
 ): Promise<ExplorerHost> {
   const stack = new AsyncDisposableStack();
   const zotero = new Set<() => void>();
+  const cancelled: string[] = [];
   const runtime = buildRuntime(
     Layer.mergeAll(
       layerUnreadViewServices,
       layerHost(),
       Layer.mock(TemplateDataReads, {
         read: (indexedKey, root) =>
-          fromPromise(() =>
-            reads.read
+          fromPromise((signal) => {
+            signal.addEventListener("abort", () => cancelled.push(indexedKey));
+            return reads.read
               ? reads.read(indexedKey, root)
-              : Promise.reject(new Error(`no read for ${indexedKey}`)),
-          ),
+              : Promise.reject(new Error(`no read for ${indexedKey}`));
+          }),
         readCitation: (selector, variant) =>
           fromPromise(() =>
             reads.readCitation
@@ -135,6 +139,7 @@ export async function makeExplorerHost(
   const registry = makeViewRegistry(await runtime.context(), { idleTTL: 0 });
   return {
     registry,
+    cancelled,
     changeZotero: () => {
       for (const send of zotero) send();
     },
@@ -153,9 +158,11 @@ export async function makeExplorerHost(
           apply(setTarget(item, root, annotationId)),
         setContext: (context) => apply(setContext(context)),
         refresh: () => apply(refresh),
-        ready: async () => {
-          for (let turn = 0; turn < 10; turn += 1) await yieldToMain();
-        },
+        ready: () =>
+          waitFor(() => {
+            if (registry.get(model.loaded).waiting)
+              throw new Error("The Explorer still reads its data");
+          }),
         [Symbol.dispose]: release,
       };
     },

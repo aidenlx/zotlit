@@ -131,21 +131,20 @@ describe("independent native Explorer", () => {
     );
     const session = host.openSession();
     session.setContext(context());
-    await session.ready();
+    await waitFor(() => expect(read).toHaveBeenCalledOnce());
     session.setContext(context({ item: { id: "PAPER235", title: "Other" } }));
     await session.ready();
     resolveOld({ kind: "data", data: { title: "Obsolete" } });
     await session.ready();
     expect(session.state().data?.title).toBe("Current");
     session.setContext(context());
-    await session.ready();
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(3));
+    // The new Item interrupted the first read; the close interrupts the last.
+    expect(host.cancelled).toEqual(["PAPER234"]);
     session[Symbol.dispose]();
-    resolveOld({ kind: "data", data: { title: "Closed" } });
-    // The released model leaves the registry; a later read starts it empty.
-    await waitFor(() => {
-      expect(session.state().data).toBeNull();
-      expect(session.state().context).toBeNull();
-    });
+    await waitFor(() =>
+      expect(host.cancelled).toEqual(["PAPER234", "PAPER234"]),
+    );
   });
   it("distinguishes no Item, load failure, valid empty data, and a retry", async () => {
     using session = host.openSession();
@@ -371,7 +370,7 @@ it("discards annotation choices loaded for a superseded Item", async () => {
   session.setContext(
     context({ root: "annotation", annotationId: SAMPLE_ANNOTATIONS[0]!.id }),
   );
-  await session.ready();
+  await waitFor(() => expect(read).toHaveBeenCalledOnce());
   session.setContext(
     context({
       item: { id: "PAPER235", title: "Next paper" },

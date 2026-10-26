@@ -54,7 +54,10 @@ describe("Follow Mode transitions", () => {
 
 describe("the Annotation View model", () => {
   it("keeps its state in the registry while it is held", async () => {
-    const registry = AtomRegistry.make({ defaultIdleTTL: 0 });
+    const registry = AtomRegistry.make({
+      defaultIdleTTL: 0,
+      timeoutResolution: 1,
+    });
     const held = makeAnnotViewModel();
     const unheld = makeAnnotViewModel();
     const release = holdAnnotViewModel(registry, held);

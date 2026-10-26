@@ -15,7 +15,7 @@ import {
 } from "@/views/template-workbench/selection-data";
 import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
-import { makeExplorerHost } from "./__fixtures__";
+import { makeExplorerHost, waitFor } from "./__fixtures__";
 import type { ExplorerHost, ExplorerReads } from "./__fixtures__";
 import {
   setCollapsedSections,
@@ -181,8 +181,7 @@ describe("native Explorer sample data", () => {
       read.mockReturnValue(pending.promise);
       using session = host.openSession();
       session.setTarget(real, "annotation", "ANNA2345");
-      await session.ready();
-      expect(read).toHaveBeenCalledOnce();
+      await waitFor(() => expect(read).toHaveBeenCalledOnce());
       session.setTarget(paper, "annotation", "example:note");
       await session.ready();
       if (outcome === "resolve")
@@ -402,8 +401,8 @@ describe("when the Explorer reads its data again", () => {
     await session.ready();
     expect(session.state().data?.title).toBe("Before");
     host.changeZotero();
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
     await session.ready();
-    expect(read).toHaveBeenCalledTimes(2);
     expect(read).toHaveBeenLastCalledWith(real.id, "note");
     expect(session.state()).toMatchObject({
       item: real,

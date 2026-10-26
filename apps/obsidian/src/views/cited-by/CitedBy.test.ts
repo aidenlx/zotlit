@@ -693,6 +693,30 @@ describe("CitedBy", () => {
     await act(() => waitForState(() => expect(read).toHaveBeenCalledTimes(2)));
   });
 
+  it("marks a preview unavailable when a read again fails", async () => {
+    let reads = 0;
+    const { container, file, metadataCache } = await render({
+      read: () => {
+        reads += 1;
+        return reads === 1
+          ? Promise.resolve(body)
+          : Promise.reject(new Error("unreadable"));
+      },
+    });
+    expect(container.textContent).not.toContain("Preview unavailable");
+
+    await act(async () => {
+      metadataCache.change(file, { links: [] });
+      await Promise.resolve();
+    });
+
+    await act(() =>
+      waitForState(() =>
+        expect(container.textContent).toContain("Preview unavailable"),
+      ),
+    );
+  });
+
   it("keeps the source group when its preview is unavailable", async () => {
     const { container } = await render({
       read: () => Promise.reject(new Error("unreadable")),

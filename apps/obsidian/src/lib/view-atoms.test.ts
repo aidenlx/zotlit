@@ -4,15 +4,13 @@ import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { expect } from "vitest";
 
 import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
-import { layerUnreadViewServices } from "@/lib/__fixtures__/view-atoms";
+import {
+  layerUnreadViewServices,
+  scopedViewRegistry,
+} from "@/lib/__fixtures__/view-atoms";
 import { CitationIndex } from "@/services/citation-index/service";
 
-import {
-  held,
-  layerViewRegistry,
-  makeViewRegistry,
-  ViewRegistry,
-} from "./view-atoms";
+import { held, layerViewRegistry, ViewRegistry } from "./view-atoms";
 
 const layerServices = Layer.mergeAll(
   layerUnreadViewServices,
@@ -23,12 +21,11 @@ const layerServices = Layer.mergeAll(
 it.effect("held shows the fallback until the service Stream has a value", () =>
   Effect.gen(function* () {
     const context = yield* Layer.build(layerServices);
-    const registry = makeViewRegistry(context, { idleTTL: 0 });
+    const registry = yield* scopedViewRegistry(context);
     expect(registry.get(held(Stream.never, 0))).toBe(0);
     const atom = held(Stream.concat(Stream.make(1), Stream.never), 0);
     registry.mount(atom);
     expect(registry.get(atom)).toBe(1);
-    registry.dispose();
   }).pipe(Effect.scoped),
 );
 

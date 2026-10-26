@@ -8,8 +8,10 @@ import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
-import { layerUnreadViewServices } from "@/lib/__fixtures__/view-atoms";
-import { makeViewRegistry } from "@/lib/view-atoms";
+import {
+  layerUnreadViewServices,
+  scopedViewRegistry,
+} from "@/lib/__fixtures__/view-atoms";
 
 import { activeNoteAtom } from "./atoms";
 import type { ActiveNote } from "./atoms";
@@ -22,14 +24,14 @@ function host() {
     vault,
     metadataCache,
     workspace,
-    registry: Effect.map(
+    registry: Effect.flatMap(
       Layer.build(
         Layer.merge(
           layerUnreadViewServices,
           layerHost({ vault, metadataCache, workspace }),
         ),
       ),
-      (context) => makeViewRegistry(context, { idleTTL: 0 }),
+      (context) => scopedViewRegistry(context),
     ),
   };
 }
@@ -79,7 +81,6 @@ it.effect("follows the active note and the key in its frontmatter", () =>
     pdf.extension = "pdf";
     workspace.open(pdf);
     yield* until(registry, activeNoteAtom, note("paper.pdf", null));
-    registry.dispose();
   }).pipe(Effect.scoped),
 );
 
@@ -99,6 +100,5 @@ it.effect("a deleted active note leaves no note to follow", () =>
     // Obsidian keeps the file active until its leaf closes.
     vault.remove("paper.md");
     yield* until(registry, activeNoteAtom, note(null, null));
-    registry.dispose();
   }).pipe(Effect.scoped),
 );

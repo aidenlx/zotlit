@@ -74,6 +74,8 @@ export type ExplorerState = Omit<ExplorerSession, "revision"> &
 
 export interface ExplorerModel {
   readonly session: Atom.Writable<ExplorerSession>;
+  /** The target's data load: `waiting` until its last read lands. */
+  readonly loaded: Atom.Atom<AsyncResult.AsyncResult<ExplorerLoad, unknown>>;
   readonly state: Atom.Atom<ExplorerState>;
 }
 
@@ -133,7 +135,7 @@ export function makeExplorerModel(): ExplorerModel {
     );
     return { ...current, ...load };
   });
-  return { session, state };
+  return { session, loaded, state };
 }
 
 /**

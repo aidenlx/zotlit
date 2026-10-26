@@ -19,6 +19,7 @@ import { activeNoteAtom } from "@/services/note-index/atoms";
 
 import { makeCitedByHost } from "./__fixtures__";
 import type { CitedByHost } from "./__fixtures__";
+import { activePreviewsAtom } from "./atoms";
 import { SEARCH_DEBOUNCE } from "./CitedBy";
 import { CitedByView } from "./view";
 
@@ -472,8 +473,14 @@ function citingGroup(path: string): CitedByGroup {
 }
 
 /** Settles the preview reads one published snapshot starts. */
-async function settle(): Promise<void> {
-  for (let turn = 0; turn < 5; turn += 1) await yieldToMain();
+/** Waits until the followed note's Cited By shows, every preview read. */
+function settle(): Promise<void> {
+  return waitFor(() => {
+    const registry = host!.registry;
+    expect(registry.get(activeCitedByAtom)).not.toBeNull();
+    const previews = Object.values(registry.get(activePreviewsAtom));
+    expect(previews.filter(({ status }) => status === "loading")).toEqual([]);
+  });
 }
 
 function click(root: HTMLElement, selector: string): void {

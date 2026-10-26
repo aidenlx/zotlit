@@ -8,8 +8,10 @@ import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
-import { layerUnreadViewServices } from "@/lib/__fixtures__/view-atoms";
-import { makeViewRegistry } from "@/lib/view-atoms";
+import {
+  layerUnreadViewServices,
+  scopedViewRegistry,
+} from "@/lib/__fixtures__/view-atoms";
 
 import { activeCitedByAtom, citedByAtom } from "./atoms";
 import { CitationIndex } from "./service";
@@ -55,7 +57,7 @@ const host = Effect.gen(function* () {
       }),
     ),
   );
-  const registry = makeViewRegistry(context, { idleTTL: 0 });
+  const registry = yield* scopedViewRegistry(context);
   /** Opens `path` as a note of `key`. */
   const openNote = (path: string, key: string) => {
     const file = vault.add(path);
@@ -102,7 +104,6 @@ it.effect("leaves that read one key share one observer", () =>
       citedByAtom("ABCD2345"),
       (value) => value === complete,
     );
-    registry.dispose();
   }).pipe(Effect.scoped),
 );
 
@@ -137,6 +138,5 @@ it.effect(
       workspace.open(plain);
       expect(yield* Queue.take(stopped)).toBe("ZZZ99999g7");
       expect(registry.get(activeCitedByAtom)).toBeNull();
-      registry.dispose();
     }).pipe(Effect.scoped),
 );

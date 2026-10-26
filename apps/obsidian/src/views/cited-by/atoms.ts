@@ -18,6 +18,7 @@ import type {
   CitationOccurrence,
   CitedByGroup,
 } from "@/services/citation-index/service";
+import { flashOccurrence } from "@/views/reveal-occurrence";
 
 import { sourceOutline } from "./store";
 import type { CitedByPreview, SourceFileFacts } from "./store";
@@ -89,7 +90,8 @@ const readPreview = (path: string) =>
 /**
  * The preview of one citing note: loading, then its source and parse. A new
  * revision of the note reads it again and interrupts a read in progress; the
- * last preview shows until the new one lands.
+ * last preview shows until the new one lands, and a failed read shows the note
+ * as unavailable.
  */
 export const previewAtom = Atom.family(
   (path: string): Atom.Atom<CitedByPreview> =>
@@ -99,9 +101,9 @@ export const previewAtom = Atom.family(
         return readPreview(path);
       }),
       (result) =>
-        Option.getOrElse(AsyncResult.value(result), () =>
-          AsyncResult.isFailure(result) ? UNAVAILABLE : LOADING,
-        ),
+        AsyncResult.isFailure(result)
+          ? UNAVAILABLE
+          : Option.getOrElse(AsyncResult.value(result), () => LOADING),
     ),
 );
 
@@ -198,15 +200,7 @@ export const openOccurrenceCommand = viewRuntime.fn(
             );
       if (!view) return;
       yield* workspace.setActiveLeaf(view.leaf, { focus: true });
-      const { start, end } = current.position;
-      // The same reveal as `revealMarkdownOccurrence` (views/reveal-occurrence.ts).
-      yield* Effect.sync(() =>
-        view.setEphemeralState({
-          startLoc: start,
-          endLoc: end,
-          line: start.line,
-        }),
-      );
+      yield* Effect.sync(() => flashOccurrence(view, current));
     }).pipe(
       Effect.tapError((error) =>
         Effect.logWarning("Could not open the citing note", error),

@@ -9,7 +9,7 @@
 // (`services/<name>/atoms.ts`), over `viewRuntime`. Every view root shares the
 // registry, so a service Stream runs once however many leaves read it, and it
 // stops once no leaf reads it.
-import { RegistryContext, scheduleTask } from "@effect/atom-react";
+import { RegistryContext } from "@effect/atom-react";
 import { Context, Effect, Layer, Option } from "effect";
 import type { Stream } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
@@ -18,6 +18,7 @@ import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { createElement } from "react";
 import type { ReactNode } from "react";
 
+import { scheduleBrowserTask } from "@/lib/browser-scheduler";
 import type { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
@@ -83,7 +84,9 @@ export function makeViewRegistry(
 ): AtomRegistry.AtomRegistry {
   return AtomRegistry.make({
     initialValues: [[servicesLayer, Layer.succeedContext(context)]],
-    scheduleTask,
+    // Every atom Effect runs on this scheduler, so it takes the renderer's
+    // task queue, as the plugin's runtime does.
+    scheduleTask: scheduleBrowserTask,
     defaultIdleTTL: idleTTL,
     // The registry's default, half the idle delay, with a floor: a zero
     // resolution turns every node timeout into NaN.

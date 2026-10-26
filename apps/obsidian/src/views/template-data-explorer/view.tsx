@@ -55,7 +55,7 @@ import type {
 
 import { createExplorerActions, ExplorerActionsContext } from "./actions";
 import type { ExplorerActions } from "./actions";
-import { exportTemplateDataCommand } from "./atoms";
+import { makeExportTemplateDataCommand } from "./atoms";
 import { Explorer } from "./Explorer";
 import { rememberTemplateItem } from "./item-memory";
 import {
@@ -87,6 +87,7 @@ export interface ExplorerViewDeps {
 }
 export class TemplateDataExplorerView extends ItemView {
   readonly #model = makeExplorerModel();
+  readonly #exportCommand = makeExportTemplateDataCommand();
   readonly #deps: ExplorerViewDeps;
   #release: (() => void) | null;
   #root: Root | null = null;
@@ -325,7 +326,7 @@ export class TemplateDataExplorerView extends ItemView {
     cleanup.defer(registerCompanionHistory(this));
     this.#release ??= holdExplorerModel(registry, this.#model);
     // A command runs while its atom is held; the view holds the export's.
-    cleanup.defer(registry.mount(exportTemplateDataCommand));
+    cleanup.defer(registry.mount(this.#exportCommand));
     // Swaps icon and label like the file explorer's collapse action: each
     // names what the next press does.
     const sectionsAction = this.addAction(
@@ -568,7 +569,7 @@ export class TemplateDataExplorerView extends ItemView {
   async #export(): Promise<void> {
     const target = this.#exportTarget();
     if (target)
-      this.#deps.registry.set(exportTemplateDataCommand, {
+      this.#deps.registry.set(this.#exportCommand, {
         ...target,
         pluginVersion: this.#deps.pluginVersion,
       });
