@@ -365,12 +365,13 @@ it.effect(
 
 it.effect.each(["signal", "target"])(
   "cancels during the temporary write (%s)",
-  (mode) =>
-    Effect.gen(function* () {
+  (mode) => {
+    // The view's signal, which the caller aborts.
+    const controller = new AbortController();
+    return Effect.gen(function* () {
       const f = yield* fixture("success");
       const started = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
-      const controller = new AbortController();
       f.options.signal = controller.signal;
       const fs = yield* read(() =>
         vi.importActual<typeof import("node:fs/promises")>("node:fs/promises"),
@@ -409,7 +410,8 @@ it.effect.each(["signal", "target"])(
       expect(yield* Fiber.join(pending)).toBeNull();
       expect(yield* read(() => readdir(join(f.root, "Images")))).toEqual([]);
       expect(f.render).not.toHaveBeenCalled();
-    }).pipe(Effect.scoped),
+    }).pipe(Effect.scoped);
+  },
 );
 
 it.effect.each([false, true])(
