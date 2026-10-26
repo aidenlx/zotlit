@@ -107,8 +107,8 @@ export function savedExcerptRequestFor(input: {
 }
 
 /**
- * {@link savedExcerptRequestFor} for Promise callers: the pixel-edit
- * revalidation in `zt-main.ts` and the Annotation Popover core. Unload
+ * {@link savedExcerptRequestFor} for Promise callers: the Annotation
+ * Popover core. Unload
  * interrupts a pending read, which then resolves to `null`.
  */
 export function savedExcerptRequestOver(services: {

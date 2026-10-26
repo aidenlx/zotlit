@@ -4,6 +4,7 @@ import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
 import { effectTestParse } from "@/lib/__fixtures__/parse-client";
+import { effectBridge } from "@/lib/effect-bridge";
 import { subscribe } from "@/lib/effect-stream";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
@@ -242,25 +243,29 @@ it.effect("continues host event intake after a failed handler (#1705)", () =>
 );
 
 it.effect(
-  "settles parked readers and preserves the released adapter after whole-runtime disposal (#1705)",
+  "stops parked and later reads with an AbortError at whole-runtime disposal",
   () =>
     Effect.promise(async () => {
       await using h = await createCitationIndexHarness({
         "draft.md": "@doe2024",
       });
       const service = h.runtime.runSync(CitationIndex);
-      const waiting = h.index.whenIndexed();
+      const aborted = { name: "AbortError" };
+      const waiting = expect(h.index.whenIndexed()).rejects.toMatchObject(
+        aborted,
+      );
       const release = h.vault.hold("draft.md");
-      const scan = h.index.getFileScan(h.draft);
+      const scan = expect(h.index.getFileScan(h.draft)).rejects.toMatchObject(
+        aborted,
+      );
       await h.runtime.dispose();
       release();
       await waiting;
-      expect(await scan).toBeNull();
-      await expect(h.index.whenIndexed()).resolves.toBeUndefined();
-      await expect(h.index.reset()).resolves.toBeUndefined();
+      await scan;
+      await expect(h.index.whenIndexed()).rejects.toMatchObject(aborted);
       await expect(
         h.index.getDocumentCitationSet(h.draft),
-      ).rejects.toMatchObject({ name: "AbortError" });
+      ).rejects.toMatchObject(aborted);
       expect(h.index.current.stopped).toBe(true);
       const delivered: string[] = [];
       subscribe(h.index.runtime, h.index["changed"], (path) =>
@@ -366,7 +371,12 @@ it.effect(
         ),
       );
       await started.promise;
-      const reset = h.index.reset();
+      // Unload stops the waiting caller; the reset itself runs on.
+      const reset = expect(
+        effectBridge(h.runtime).runPromise(
+          h.runtime.runSync(CitationIndex).reset(),
+        ),
+      ).rejects.toMatchObject({ name: "AbortError" });
       await clearing.promise;
       const closing = h.runtime.dispose();
       await stopping.promise;

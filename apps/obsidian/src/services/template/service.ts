@@ -63,6 +63,7 @@ import {
 } from "@zotlit/templates/obsidian";
 
 import { RESERVED_KEYS } from "@/lib/constants";
+import { forkedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { forkEach } from "@/lib/effect-stream";
@@ -2887,6 +2888,8 @@ export const layerTemplate = Layer.effect(
     const app = yield* ObsidianApp;
     const vault = yield* Vault;
     const settings = yield* PluginSettings;
+    // Forked before `scope`: a close waits for a write already started.
+    const bridge = yield* forkedBridge;
     const scope = yield* Scope.fork(yield* Scope.Scope);
     const context = yield* Effect.context<never>();
     const runSync = Effect.runSyncWith(context);
@@ -2903,7 +2906,7 @@ export const layerTemplate = Layer.effect(
     const engine = new TemplateEngine({
       app,
       vault,
-      runPromise: Effect.runPromiseWith(context),
+      runPromise: bridge.runPromise,
       settings: {
         get current() {
           return runSync(settings.current);

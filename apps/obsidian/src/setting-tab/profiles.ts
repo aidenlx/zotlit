@@ -1,4 +1,5 @@
 // The default Profile's main-page rows and the Literature note profiles page.
+import { Effect, Schema } from "effect";
 import { Menu } from "obsidian";
 import type {
   SettingDefinitionItem,
@@ -6,14 +7,19 @@ import type {
   SettingDefinitionPage,
 } from "obsidian";
 
-import { confirm } from "@/lib/confirm";
+import { awaitConfirm } from "@/lib/confirm";
+import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
-import { BaseNotice } from "@/lib/notice";
+import { FileManager } from "@/lib/obsidian-file-manager";
+import { Vault } from "@/lib/obsidian-vault";
+import { leaveSettingsFor } from "@/lib/plugin-host";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
-import { listInstalledStyles } from "@/services/pandoc/styles";
+import { Customize } from "@/services/local-bridge/customize";
+import { installedStyles } from "@/services/note-feature/creation-view";
+import { Profile } from "@/services/profile/service";
+import { PluginSettings } from "@/services/settings/service";
 import { openNativeProfile } from "@/views/template-workbench/register";
 
 import { referencesStyleDefinition } from "./citations";
@@ -22,53 +28,71 @@ import type {
   SettingsControlKey,
   SettingTabContext,
 } from "./context";
-export {
-  createProfileCreator,
-  loadProfilePreviewData,
-  type ProfileDialogServices,
-  createProfileDialog,
-  CreateProfileModal,
-  type CreateProfile,
-  type CreateProfileOptions,
-  type CreatedProfile,
-  type ProfileCreationDeps,
-  type ProfileCreationData,
-} from "./create-profile-modal";
-export {
-  createProfileImporter,
-  importProfileDialog,
-  ImportProfileModal,
-  profileImportNotice,
-  type ImportProfile,
-  type ImportProfileDeps,
-} from "./import-profile-modal";
 import type { ProfileControlField } from "./controls";
+import { openProfileDeletion } from "./delete-profile-modal";
+import type { ProfileDeletionConsent } from "./delete-profile-modal";
 import { duplicateProfileToWorkbench } from "./duplicate-profile";
-import { addProfileDestination } from "./profile-destination-modal";
-export { duplicateProfileToWorkbench } from "./duplicate-profile";
-import { confirmProfileDeletion } from "./delete-profile-modal";
-export {
-  confirmProfileDeletion,
-  type ProfileDeletionConsent,
-} from "./delete-profile-modal";
+import { SettingTab } from "./effect-tab";
+import type { SettingTabEnv } from "./effect-tab";
 import { defaultProfileBindingPlaceholder } from "./placeholder";
-import { shareProfile } from "./share-profile-modal";
+import {
+  addProfileDestination,
+  importProfileDialog,
+  shareProfile,
+} from "./profile-dialogs";
 import { partialItems } from "./templates";
-export { shareProfile, ShareProfileModal } from "./share-profile-modal";
 
-const logger = getLogger(["setting-tab", "profiles"]);
-
-/** One glyph for Customize wherever a Profile row offers it. */
+/** The excluded document left the excluded list before its delete. */
+export class ExcludedDocumentChanged extends Schema.TaggedError<
+  ExcludedDocumentChanged,
+  { readonly brand: unique symbol }
+>()("ExcludedDocumentChanged", { path: Schema.String }) {
+  override get message(): string {
+    return m.profile_import_changed();
+  }
+}
 
 /**
  * Profile file actions wait for the registry to load and stay locked while the
  * legacy template conversion is pending, so no document is written mid-flight.
  */
 function profileActionsLocked(ctx: SettingTabContext): boolean {
-  return (
-    !ctx.profile.loaded ||
-    !!ctx.tab.sync(ctx.settings.current)["note.template-conversion-pending"]
+  return ctx.tab.sync(
+    Effect.gen(function* () {
+      const loaded = yield* (yield* Profile).loaded;
+      const settings = yield* (yield* PluginSettings).current;
+      return !loaded || !!settings["note.template-conversion-pending"];
+    }),
   );
+}
+
+/** Whether the vault holds the saved Default document. */
+function defaultDocumentEjected(ctx: SettingTabContext): boolean {
+  return ctx.tab.sync(
+    Effect.gen(function* () {
+      const path = yield* (yield* Profile).defaultDocumentPath;
+      return (yield* (yield* Vault).getFileByPath(path)) !== null;
+    }),
+  );
+}
+
+/**
+ * Start a Profile row's action. A failure shows the failure notice; the tab
+ * rebuilds once the action ends, since it may have changed the Profiles.
+ */
+function runAction<A, E>(
+  ctx: SettingTabContext,
+  action: Effect.Effect<A, E, SettingTabEnv>,
+): void {
+  void ctx.tab.run(
+    action.pipe(Effect.andThen(SettingTab.use((tab) => tab.update))),
+    m.settings_failed_profile(),
+  );
+}
+
+/** Open a Profile in the configured workbench. */
+function customize(profileId: ProfileId | typeof DEFAULT_PROFILE) {
+  return Customize.use((flow) => flow.open({ profileId }));
 }
 
 /**
@@ -137,7 +161,7 @@ export function profilesPage(
 function profilesList(
   ctx: SettingTabContext,
 ): SettingDefinitionList<SettingsControlKey> {
-  const profiles = ctx.profile.profiles;
+  const profiles = ctx.tab.sync(Profile.use((profile) => profile.profiles));
   const locked = profileActionsLocked(ctx);
   return {
     type: "list",
@@ -150,7 +174,7 @@ function profilesList(
       ? undefined
       : {
           name: m.settings_profile_add(),
-          action: () => void runAction(() => addProfileDestination(ctx), ctx),
+          action: () => runAction(ctx, addProfileDestination(ctx.app)),
         },
     extraButtons: locked
       ? undefined
@@ -159,12 +183,7 @@ function profilesList(
             button
               .setIcon("import")
               .setTooltip(m.command_import_profile_name())
-              .onClick(
-                () =>
-                  void runAction(async () => {
-                    await ctx.importProfile();
-                  }, ctx),
-              ),
+              .onClick(() => runAction(ctx, importProfileDialog(ctx.app))),
         ],
     items: profiles.map((profile) => ({
       id: `settings_profile_entry:${profile.id}`,
@@ -177,13 +196,7 @@ function profilesList(
             .setIcon("pencil")
             .setTooltip(m.settings_profile_edit())
             .setDisabled(locked)
-            .onClick(
-              () =>
-                void runAction(
-                  () => ctx.customize({ profileId: profile.id }),
-                  ctx,
-                ),
-            ),
+            .onClick(() => runAction(ctx, customize(profile.id))),
         );
         setting.addExtraButton((button) =>
           button
@@ -196,12 +209,8 @@ function profilesList(
                   .setTitle(m.settings_profile_duplicate())
                   .setIcon("copy")
                   .setDisabled(locked)
-                  .onClick(
-                    () =>
-                      void runAction(
-                        () => duplicateProfileToWorkbench(ctx, profile.id),
-                        ctx,
-                      ),
+                  .onClick(() =>
+                    runAction(ctx, duplicateProfileToWorkbench(profile.id)),
                   ),
               );
               menu.addItem((item) =>
@@ -209,9 +218,8 @@ function profilesList(
                   .setTitle(m.settings_profile_share())
                   .setIcon("share")
                   .setDisabled(locked)
-                  .onClick(
-                    () =>
-                      void runAction(() => shareProfile(ctx, profile.id), ctx),
+                  .onClick(() =>
+                    runAction(ctx, shareProfile(ctx.app, profile.id)),
                   ),
               );
               menu.addSeparator();
@@ -221,7 +229,9 @@ function profilesList(
                   .setIcon("trash-2")
                   .setWarning(true)
                   .setDisabled(locked)
-                  .onClick(() => void deleteProfile(ctx, profile.id)),
+                  .onClick(() =>
+                    runAction(ctx, deleteProfile(ctx, profile.id)),
+                  ),
               );
               showMenuAtButton(menu, button.extraSettingsEl);
             }),
@@ -242,7 +252,10 @@ function excludedDocumentItems(
   // One row per document: a repeated ID is the reason worth naming when a
   // document carries more than one complaint.
   const diagnostics = [
-    ...Map.groupBy(ctx.profile.diagnostics, ({ path }) => path).values(),
+    ...Map.groupBy(
+      ctx.tab.sync(Profile.use((profile) => profile.diagnostics)),
+      ({ path }) => path,
+    ).values(),
   ].map(
     (group) =>
       group.find(({ code }) => code === "duplicate-profile-id") ?? group[0]!,
@@ -265,7 +278,7 @@ function excludedDocumentItems(
       onDelete: (index) => {
         const diagnostic = diagnostics[index];
         if (diagnostic)
-          void deleteExcludedProfileDocument(ctx, diagnostic.path);
+          runAction(ctx, deleteExcludedProfileDocument(ctx, diagnostic.path));
       },
       items: diagnostics.map((diagnostic) => ({
         id: `settings_profile_excluded_entry:${diagnostic.path}`,
@@ -285,9 +298,8 @@ function excludedDocumentItems(
             button
               .setIcon("pencil")
               .setTooltip(m.settings_template_open())
-              .onClick(
-                () =>
-                  void runAction(() => openDocument(ctx, diagnostic.path), ctx),
+              .onClick(() =>
+                runAction(ctx, openDocument(ctx, diagnostic.path)),
               ),
           );
         },
@@ -303,87 +315,68 @@ function warning(text: string): DocumentFragment {
   return desc;
 }
 
-async function deleteExcludedProfileDocument(
-  ctx: SettingTabContext,
-  path: string,
-): Promise<void> {
-  const accepted = await confirm(
-    {
-      title: m.settings_profile_excluded_delete(),
-      content: m.settings_profile_delete_confirm_body(),
-      action: m.settings_profile_delete(),
-      destructive: true,
-    },
-    ctx.app,
-  );
-  if (!accepted) return;
-  await runAction(async () => {
-    if (!ctx.profile.diagnostics.some((diagnostic) => diagnostic.path === path))
-      throw new Error(m.profile_import_changed());
-    const file = ctx.app.vault.getFileByPath(path);
-    if (file) await ctx.app.fileManager.trashFile(file);
-  }, ctx);
+function deleteExcludedProfileDocument(ctx: SettingTabContext, path: string) {
+  return Effect.gen(function* () {
+    const accepted = yield* awaitConfirm(
+      {
+        title: m.settings_profile_excluded_delete(),
+        content: m.settings_profile_delete_confirm_body(),
+        action: m.settings_profile_delete(),
+        destructive: true,
+      },
+      ctx.app,
+    );
+    if (!accepted) return;
+    const diagnostics = yield* (yield* Profile).diagnostics;
+    if (!diagnostics.some((diagnostic) => diagnostic.path === path))
+      return yield* new ExcludedDocumentChanged({ path });
+    const file = yield* (yield* Vault).getFileByPath(path);
+    if (file) yield* (yield* FileManager).trashFile(file);
+  });
 }
 
-async function openDocument(
-  ctx: SettingTabContext,
-  path: string,
-): Promise<void> {
-  const file = ctx.app.vault.getFileByPath(path);
-  if (file) {
-    ctx.app.setting.close();
-    await openNativeProfile(ctx.app, file, { customize: true });
-  }
+function openDocument(ctx: SettingTabContext, path: string) {
+  return Effect.gen(function* () {
+    const file = yield* (yield* Vault).getFileByPath(path);
+    if (!file) return;
+    yield* leaveSettingsFor("open-native-profile", () =>
+      openNativeProfile(ctx.app, file, { customize: true }),
+    );
+  });
 }
 
-async function runAction(
-  action: () => Promise<void>,
-  ctx: SettingTabContext,
-): Promise<void> {
-  try {
-    await action();
-    ctx.requestUpdate();
-  } catch (error) {
-    logger.error("Profile action failed", { error });
-    new BaseNotice(m.notice_profile_action_failed());
-  }
-}
-
-async function deleteProfile(
-  ctx: SettingTabContext,
-  id: ProfileId,
-): Promise<void> {
-  await runAction(async () => {
-    const plan = await ctx.profile.prepareDelete(id);
+function deleteProfile(ctx: SettingTabContext, id: ProfileId) {
+  return Effect.gen(function* () {
+    const profile = yield* Profile;
+    const plan = yield* profile.prepareDelete(id);
     const styles =
-      plan.literatureNotes.length + plan.importedNotes.length &&
-      ctx.zoteroPref.dataDir
-        ? await listInstalledStyles(ctx.zoteroPref.dataDir)
+      plan.literatureNotes.length + plan.importedNotes.length
+        ? yield* installedStyles
         : [];
-    const consent = await confirmProfileDeletion(ctx.app, { plan, styles });
+    const consent = yield* awaitModal<ProfileDeletionConsent | undefined>(
+      (resolve) => openProfileDeletion(ctx.app, { plan, styles }, resolve),
+    );
     if (consent)
-      await ctx.profile.delete(id, consent.target, { move: consent.move });
-  }, ctx);
+      yield* profile.delete(id, consent.target, { move: consent.move });
+  });
 }
 
 /** Confirm before replacing the saved Default with the built-in template. */
-async function restoreDefaultProfile(ctx: SettingTabContext): Promise<void> {
-  await runAction(async () => {
-    if (
-      await confirm(
-        {
-          title: m.settings_profile_document_restore_title(),
-          content: m.settings_profile_document_restore_desc({
-            path: ctx.profile.defaultDocumentPath,
-          }),
-          action: m.settings_profile_document_restore_action(),
-          destructive: true,
-        },
-        ctx.app,
-      )
-    )
-      await ctx.profile.restoreDefault();
-  }, ctx);
+function restoreDefaultProfile(ctx: SettingTabContext) {
+  return Effect.gen(function* () {
+    const profile = yield* Profile;
+    const path = yield* profile.defaultDocumentPath;
+    const confirmed = yield* awaitConfirm(
+      {
+        title: m.settings_profile_document_restore_title(),
+        content: m.settings_profile_document_restore_desc({ path }),
+        action: m.settings_profile_document_restore_action(),
+        destructive: true,
+      },
+      ctx.app,
+    );
+    if (confirmed) yield* profile.restoreDefault();
+  });
 }
 
 /**
@@ -393,8 +386,7 @@ async function restoreDefaultProfile(ctx: SettingTabContext): Promise<void> {
 function defaultDocumentItem(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsControlKey> {
-  const path = ctx.profile.defaultDocumentPath;
-  const ejected = ctx.app.vault.getFileByPath(path) !== null;
+  const ejected = defaultDocumentEjected(ctx);
   return {
     id: "settings_profile_document",
     name: m.settings_profile_document_name(),
@@ -407,20 +399,14 @@ function defaultDocumentItem(
             .setTooltip(m.settings_profile_document_restore())
             .setDisabled(profileActionsLocked(ctx))
             .setDestructive()
-            .onClick(() => void restoreDefaultProfile(ctx)),
+            .onClick(() => runAction(ctx, restoreDefaultProfile(ctx))),
         );
       setting.addButton((button) =>
         button
           .setIcon("pencil")
           .setTooltip(m.settings_profile_edit())
           .setDisabled(profileActionsLocked(ctx))
-          .onClick(
-            () =>
-              void runAction(
-                () => ctx.customize({ profileId: DEFAULT_PROFILE }),
-                ctx,
-              ),
-          ),
+          .onClick(() => runAction(ctx, customize(DEFAULT_PROFILE))),
       );
     },
   };
@@ -445,13 +431,7 @@ function defaultProfileItem(
           .setIcon("pencil")
           .setTooltip(m.settings_profile_edit())
           .setDisabled(profileActionsLocked(ctx))
-          .onClick(
-            () =>
-              void runAction(
-                () => ctx.customize({ profileId: DEFAULT_PROFILE }),
-                ctx,
-              ),
-          ),
+          .onClick(() => runAction(ctx, customize(DEFAULT_PROFILE))),
       );
 
       setting.addExtraButton((button) =>
@@ -465,18 +445,18 @@ function defaultProfileItem(
               item
                 .setTitle(m.settings_profile_share())
                 .setIcon("share")
-                .onClick(
-                  () => void runAction(() => shareProfile(ctx, "default"), ctx),
+                .onClick(() =>
+                  runAction(ctx, shareProfile(ctx.app, "default")),
                 ),
             );
-            if (ctx.app.vault.getFileByPath(ctx.profile.defaultDocumentPath)) {
+            if (defaultDocumentEjected(ctx)) {
               menu.addSeparator();
               menu.addItem((item) =>
                 item
                   .setTitle(m.settings_profile_document_restore())
                   .setIcon("rotate-ccw")
                   .setWarning(true)
-                  .onClick(() => void restoreDefaultProfile(ctx)),
+                  .onClick(() => runAction(ctx, restoreDefaultProfile(ctx))),
               );
             }
             showMenuAtButton(menu, button.extraSettingsEl);

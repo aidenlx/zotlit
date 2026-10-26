@@ -362,6 +362,58 @@ describe("LiteratureNoteTemplateMigrationService", () => {
       }),
   );
 
+  it.effect(
+    "finishes a conversion that unload reaches during its document write",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* Effect.promise(() =>
+          makeHarness({ pending: true }, context),
+        );
+        const write = harness.create.getMockImplementation()!;
+        const started = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        harness.create.mockImplementationOnce(async (path, source) => {
+          started.resolve();
+          await held.promise;
+          return write(path, source);
+        });
+
+        // A flush that yields runs past unload's start, as a real save does.
+        harness.flushRuns.mockImplementation(() => Effect.yieldNow);
+
+        // Unload stops the waiting caller; the conversion itself finishes.
+        const converting = expect(
+          harness.service.convert(),
+        ).rejects.toMatchObject({ name: "AbortError" });
+        yield* Effect.promise(() => started.promise);
+        const unloading = harness.service[Symbol.asyncDispose]();
+        held.resolve();
+        yield* Effect.promise(() => unloading);
+        yield* Effect.promise(() => converting);
+
+        // The document stands, the legacy files are gone, and the result is
+        // recorded, so no retry meets a half-done conversion.
+        expect(harness.files.has("templates/zotlit-profile.default.md")).toBe(
+          true,
+        );
+        expect(harness.trashFile).toHaveBeenCalledTimes(3);
+        expect(
+          harness.bridge.runSync(harness.settings.current)[
+            "note.template-conversion-result"
+          ],
+        ).toEqual({
+          document: "templates/zotlit-profile.default.md",
+          trashed: 3,
+          pendingCleanup: [],
+        });
+        // The settings flush is the conversion's last step; unload waits for it.
+        expect(
+          harness.flushRuns.mock.invocationCallOrder.at(-1),
+        ).toBeGreaterThan(harness.trashFile.mock.invocationCallOrder.at(-1)!);
+      }),
+  );
+
   it.effect("records only files actually trashed", () =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();

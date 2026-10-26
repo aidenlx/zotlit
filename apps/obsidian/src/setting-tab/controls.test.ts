@@ -8,7 +8,7 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { settingsRuntimeOf } from "@/services/settings/__fixtures__";
 import { PluginSettings } from "@/services/settings/service";
 
-import { testSettingTab } from "./__fixtures__";
+import { scopedSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
 import { ZotLitSettingTab } from "./index";
 
@@ -26,7 +26,9 @@ it.effect(
         },
       });
       yield* settings.loaded;
-      const { tab } = testSettingTab(Context.make(PluginSettings, settings));
+      const { tab } = yield* scopedSettingTab(
+        Context.make(PluginSettings, settings),
+      );
       const settingTab = new ZotLitSettingTab(
         stubService<Plugin>("Plugin", {
           app: stubService("App", {}),

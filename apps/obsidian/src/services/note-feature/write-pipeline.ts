@@ -13,12 +13,13 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
+import { recover } from "@/lib/effect-cause";
 import { toInstant } from "@/lib/effect-clock";
 import { processLiveText } from "@/lib/effect-live-text";
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag } from "@/lib/effect-stream";
 import { parseFrontMatter, spliceFrontMatter } from "@/lib/live-text";
-import { FileManager } from "@/lib/obsidian-file-manager";
+import { FileManager, markdownLinker } from "@/lib/obsidian-file-manager";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
@@ -53,6 +54,7 @@ import { Profile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 import { syncTemplate } from "@/services/template-workbench/sync-template";
+import { InertTemplateError } from "@/services/template/errors";
 import { Template } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
@@ -64,6 +66,7 @@ import type { ComposeFrontmatterInput, ComposeNoteDeps } from "./compose";
 import { buildNoteResolvers, itemFacets } from "./context";
 import type { NoteResolverServices } from "./context";
 import {
+  composeWarn,
   frontmatterRefusal,
   NO_BODY_UPDATE,
   refusedCreate,
@@ -160,21 +163,35 @@ const withReads = <A, E, R>(
  * Zotero data directory as it stands now.
  */
 const noteResolvers = Effect.fnUntraced(function* (
-  options: Omit<Parameters<typeof buildNoteResolvers>[1], "zoteroPref">,
+  options: Omit<
+    Parameters<typeof buildNoteResolvers>[1],
+    "zoteroPref" | "link"
+  >,
 ) {
   const { dataDir, baseAttachmentPath } = yield* (yield* ZoteroPref).current;
   return buildNoteResolvers(
     Effect.runSyncWith(yield* Effect.context<NoteResolverServices>()),
-    { ...options, zoteroPref: { dataDir, baseAttachmentPath } },
+    {
+      ...options,
+      zoteroPref: { dataDir, baseAttachmentPath },
+      link: yield* markdownLinker,
+    },
   );
 });
 
-/** A render for the note at `path`; a throw fails as {@link NoteWriteAborted}. */
+/**
+ * What a note write at `path` fails with for `cause`, a throw that stopped it:
+ * an inert Template's refusal as itself, so it stays a typed failure, and
+ * anything else as {@link NoteWriteAborted}.
+ */
+const aborted = (path: string, cause: unknown) =>
+  cause instanceof InertTemplateError
+    ? cause
+    : new NoteWriteAborted({ path, cause });
+
+/** A render for the note at `path`; a throw fails as {@link aborted} gives it. */
 const renderFor = (path: string, render: () => string) =>
-  Effect.try({
-    try: render,
-    catch: (cause) => new NoteWriteAborted({ path, cause }),
-  });
+  Effect.try({ try: render, catch: (cause) => aborted(path, cause) });
 
 /**
  * The bound feature serializes calls by Indexed Key before this operation.
@@ -320,11 +337,12 @@ const writeNewNote = Effect.fnUntraced(function* <E>(
       const context = buildNoteContextFromSource(options.source, resolvers);
       yield* excerptImages.prepare;
       const template = yield* syncTemplate;
+      const warn = yield* composeWarn;
       const now = toInstant(yield* DateTime.now);
       const composed = yield* Effect.try({
         try: () =>
           composeLiteratureNote(
-            { template, events: composeEvents(ctx) },
+            { template, warn, events: composeEvents(ctx) },
             {
               context,
               itemKey: item.indexedKey,
@@ -333,12 +351,12 @@ const writeNewNote = Effect.fnUntraced(function* <E>(
               now,
             },
           ),
-        catch: (cause) => new NoteWriteAborted({ path, cause }),
+        catch: (cause) => aborted(path, cause),
       });
       if (composed.outcome === "refused") {
         const refused: CreateNoteResult = {
           outcome: "refused",
-          diagnostic: frontmatterRefusal(composed.failures, {
+          diagnostic: yield* frontmatterRefusal(composed.failures, {
             itemKey: item.indexedKey,
             diagnosticContext: { indexedKey: item.indexedKey },
           }),
@@ -474,19 +492,15 @@ const NO_KEYS: ReadonlySet<string> = new Set();
  */
 export const replacedKeys = (ctx: NoteWriteContext, file: TFile) =>
   readReplacedKeys(ctx, file).pipe(
-    Effect.catchCause((cause) =>
-      Cause.hasInterruptsOnly(cause)
-        ? Effect.interrupt
-        : Effect.logDebug(
-            "Could not read the keys a note's Profile replaces",
-          ).pipe(
-            Effect.annotateLogs({
-              path: file.path,
-              error: Cause.squash(cause),
-            }),
-            logged,
-            Effect.as(NO_KEYS),
-          ),
+    recover(
+      (cause) =>
+        Effect.logDebug(
+          "Could not read the keys a note's Profile replaces",
+        ).pipe(
+          Effect.annotateLogs({ path: file.path, error: Cause.squash(cause) }),
+          logged,
+        ),
+      Effect.succeed(NO_KEYS),
     ),
   );
 
@@ -678,7 +692,7 @@ const stampNoteFamily = Effect.fnUntraced(function* (
             message: "Note Profile switch and rollback failed",
             cause: new AggregateError([error, ...rollbackErrors]),
           });
-        return yield* error;
+        return yield* Effect.fail(error);
       }),
     ),
   );
@@ -695,13 +709,12 @@ const stampNoteProfile = (file: TFile, stamp: string | undefined) =>
 
 /**
  * Rewrite `file`'s live text with `fn`, as `processLiveText` does. A throw
- * from `fn` leaves the note as it was and fails as {@link NoteWriteAborted}
- * with what was thrown.
+ * from `fn` leaves the note as it was and fails as {@link aborted} gives it.
  */
 const rewriteLiveText = (file: TFile, fn: (text: string) => string) =>
   processLiveText(file, fn).pipe(
     Effect.catchTag("LiveTextRewriteFailed", ({ path, cause }) =>
-      Effect.fail(new NoteWriteAborted({ path, cause })),
+      Effect.fail(aborted(path, cause)),
     ),
   );
 
@@ -1102,6 +1115,7 @@ const rewriteNote = Effect.fnUntraced(function* (
   },
 ) {
   const template = yield* syncTemplate;
+  const warn = yield* composeWarn;
   let changed: "key" | "profile" | undefined;
   yield* rewriteLiveText(file, (content) => {
     const fm = parseFrontMatter(content);
@@ -1112,7 +1126,7 @@ const rewriteNote = Effect.fnUntraced(function* (
     if (changed) return content;
     input.beforeWrite?.();
     applyComposedFrontmatter(
-      { template, events: composeEvents(ctx) },
+      { template, warn, events: composeEvents(ctx) },
       fm,
       input,
     );
@@ -1164,7 +1178,7 @@ const prepareFrontmatter = Effect.fnUntraced(function* (input: {
     toInstant(yield* DateTime.now),
   );
   if ("prepared" in result) return result.prepared;
-  return { diagnostic: frontmatterRefusal(result.failures, input) };
+  return { diagnostic: yield* frontmatterRefusal(result.failures, input) };
 });
 
 /** A type guard: when conversion is pending, a non-default selector is a real Profile ID. */

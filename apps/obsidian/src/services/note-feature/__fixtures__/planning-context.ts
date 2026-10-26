@@ -13,8 +13,8 @@ import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { NoteIndex } from "@/services/note-index/service";
 import type { PlainProfile } from "@/services/profile/plain";
 import { Profile } from "@/services/profile/service";
-import type { PlainTemplate } from "@/services/template/plain";
 import { Template, templateFailure } from "@/services/template/service";
+import type { TemplateOperations } from "@/services/template/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
@@ -29,7 +29,7 @@ export interface PlanningSources {
   >;
   zoteroReads: Pick<PlainZoteroReads, "reads" | "snapshot">;
   template: Pick<
-    PlainTemplate,
+    TemplateOperations,
     "renderFilename" | "getLiteratureNoteTemplate" | "frontmatterFields"
   >;
   app: {

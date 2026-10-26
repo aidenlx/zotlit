@@ -5,10 +5,10 @@ import { expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import type { ResolvedProfile } from "@/services/profile/bindings";
 import type { PreparedProfileCreation } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 
-import type { SettingTabContext } from "./context";
 import { ProfileDestinationModal } from "./profile-destination-modal";
 
 it("asks for a name with a neutral hint, reports an edited invalid name, and accepts a name with an empty folder", async () => {
@@ -21,9 +21,6 @@ it("asks for a name with a neutral hint, reports an edited invalid name, and acc
         button.text === m.settings_profile_add()
       );
     })?.[0];
-  type ResolvedProfile = NonNullable<
-    ReturnType<SettingTabContext["profile"]["resolveProfile"]>
-  >;
   const resolvedProfile = stubService<ResolvedProfile>("ResolvedProfile", {
     bindings: {
       ...defaults["note.default-profile"].bindings,
@@ -50,10 +47,8 @@ it("asks for a name with a neutral hint, reports an edited invalid name, and acc
   );
   const modal = new ProfileDestinationModal({
     app: stubService<App>("App", {}),
-    profile: stubService<SettingTabContext["profile"]>("Profile", {
-      resolveProfile: () => resolvedProfile,
-      prepareCreate,
-    }),
+    defaultFolder: "Literature",
+    prepareCreate,
   });
   modal.onOpen();
   const status = () => modal.contentEl.querySelector('[role="status"]')!;

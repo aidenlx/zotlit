@@ -3,6 +3,7 @@ import { Effect, Exit, Fiber, Logger, References, Scope, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import {
+  chmod,
   mkdir,
   mkdtemp,
   realpath,
@@ -275,13 +276,13 @@ describe("AttachmentImport", () => {
         const batch = yield* service.prepare("Notes/A.md");
 
         expect(batch.decide(stored, "storage").approved).toBe(false);
+        const rebuilt = yield* Stream.runCollect(
+          service.rootsChanges.pipe(Stream.drop(1), Stream.take(1)),
+        ).pipe(Effect.forkChild({ startImmediately: true }));
 
         yield* moveZotero({ dataDir: movedDataDir, baseAttachmentPath: null });
-        yield* Effect.promise(() =>
-          vi.waitFor(() =>
-            expect(batch.decide(stored, "storage").approved).toBe(true),
-          ),
-        );
+        yield* Fiber.join(rebuilt);
+        expect(batch.decide(stored, "storage").approved).toBe(true);
       }),
   );
 
@@ -696,6 +697,49 @@ describe("AttachmentImport approved folders", () => {
           folder,
         );
         expect(yield* service.approvedFolders).toEqual([folder]);
+      }),
+  );
+
+  it.effect.skipIf(process.getuid?.() === 0)(
+    "drops a root it may not read, and logs why",
+    () =>
+      Effect.gen(function* () {
+        const locked = join(dataDir, "locked");
+        yield* Effect.promise(() =>
+          mkdir(join(locked, "base"), { recursive: true }),
+        );
+        // A folder whose parent the user may not search answers EACCES.
+        yield* Effect.acquireRelease(
+          Effect.promise(() => chmod(locked, 0o000)),
+          () => Effect.promise(() => chmod(locked, 0o755)),
+        );
+        const records: {
+          message: unknown;
+          annotations: Record<string, unknown>;
+        }[] = [];
+        const capture = Logger.make(({ message, fiber }) => {
+          records.push({
+            message,
+            annotations: fiber.getRef(References.CurrentLogAnnotations),
+          });
+        });
+
+        const { service } = yield* makeService({
+          baseAttachmentPath: join(locked, "base"),
+        }).pipe(Effect.provide(Logger.layer([capture])));
+        const linked = join(locked, "base", "paper.pdf");
+
+        expect(
+          (yield* service.prepare("Notes/A.md")).decide(linked, "linked-base")
+            .approved,
+        ).toBe(false);
+        expect(records).toContainEqual(
+          expect.objectContaining({
+            annotations: expect.objectContaining({
+              reason: "PermissionDenied",
+            }),
+          }),
+        );
       }),
   );
 

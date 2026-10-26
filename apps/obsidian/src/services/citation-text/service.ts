@@ -22,6 +22,7 @@ import {
 } from "@zotlit/templates/pandoc-citation";
 import type { ScannedPandocCitation } from "@zotlit/templates/pandoc-citation";
 
+import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { filterTag, forkEach } from "@/lib/effect-stream";
@@ -153,9 +154,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
       const profiles = yield* Profile;
       const queries = yield* QueryClients;
       const scope = yield* Scope.fork(yield* Scope.Scope);
-      const context = yield* Effect.context<never>();
-      const run = Effect.runSyncWith(context);
-      const runExit = Effect.runPromiseExitWith(context);
+      const { runSync: run, runPromiseExit: runExit } = yield* scopedBridge;
       /**
        * Runs a sibling service's read from the Promise code TanStack queries
        * call. `signal` interrupts the read and rejects with its reason. Any

@@ -19,6 +19,16 @@ export class LiveTextRewriteFailed extends Schema.TaggedError<
 }) {}
 
 /**
+ * `file`'s live text: its loaded view's text, else the vault's cached read.
+ * Fails with `VaultError` when the vault read rejects.
+ */
+export const readLiveText = Effect.fnUntraced(function* (file: TFile) {
+  const view = yield* (yield* Workspace).loadedTextView(file);
+  if (view !== null) return view.getViewData();
+  return yield* (yield* Vault).cachedRead(file);
+});
+
+/**
  * Rewrite `file`'s live text with `fn`, as `processLiveText` does: a loaded
  * view that edits the note takes the new text and saves it; else one
  * `Vault.process` writes it. An output equal to its input writes nothing. A

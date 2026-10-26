@@ -109,23 +109,24 @@ async function realCreate(
     attachmentImport: stubService<NoteFeatureSources["attachmentImport"]>(
       "AttachmentImport",
       {
-        prepare: async (_notePath: string) => ({
-          decide: (path: string, origin: SourceOrigin) => ({
-            approved: false,
-            path,
-            origin,
-            reason: "no-trusted-root",
+        prepare: () =>
+          Effect.succeed({
+            decide: (path: string, origin: SourceOrigin) => ({
+              approved: false,
+              path,
+              origin,
+              reason: "no-trusted-root",
+            }),
+            resolveLink: () => () => "",
+            flush: Effect.succeed({
+              copied: 0,
+              skipped: 0,
+              missing: 0,
+              blocked: 0,
+              refused: 0,
+            }),
+            discard: Effect.void,
           }),
-          resolveLink: () => () => "",
-          flush: async () => ({
-            copied: 0,
-            skipped: 0,
-            missing: 0,
-            blocked: 0,
-            refused: 0,
-          }),
-          discard: () => undefined,
-        }),
       },
     ),
   });

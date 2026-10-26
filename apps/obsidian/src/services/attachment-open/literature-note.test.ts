@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect, Exit, Layer, Scope } from "effect";
+import { Deferred, Effect, Exit, Layer, Scope } from "effect";
 import { describe, expect } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
@@ -33,19 +33,20 @@ const ITEM_WITH_PDF = `
  * gives a database that cannot open), Zotero's data directory at /data, and
  * a vault at /vault.
  */
-function services(seed: string | null = ITEM_WITH_PDF) {
+function services(
+  seed: string | null = ITEM_WITH_PDF,
+  zoteroPref: Effect.Effect<ZoteroPrefSnapshot> = Effect.succeed(
+    stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
+      dataDir: "/data",
+      baseAttachmentPath: null,
+    }),
+  ),
+) {
   return Layer.mergeAll(
     layerZoteroReads(
       inProcessClient(layerRcRef(memoryOpener(() => seed).open)),
     ),
-    Layer.mock(ZoteroPref, {
-      current: Effect.succeed(
-        stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
-          dataDir: "/data",
-          baseAttachmentPath: null,
-        }),
-      ),
-    }),
+    Layer.mock(ZoteroPref, { current: zoteroPref }),
     layerTestObsidianEnv({ basePath: "/vault" }),
   );
 }
@@ -122,12 +123,14 @@ describe("bindLiteratureNoteAttachments", () => {
    * The handle over a test bridge and the services of {@link services};
    * `unload` closes both, as unloading the plugin does.
    */
-  const handleOver = Effect.gen(function* () {
+  const handleOver = Effect.fnUntraced(function* (
+    layer: ReturnType<typeof services> = services(),
+  ) {
     const bridge = yield* Effect.acquireDisposable(
       Effect.sync(() => openTestBridge()),
     );
     const scope = yield* Scope.fork(yield* Scope.Scope);
-    const context = yield* Layer.buildWithScope(services(), scope);
+    const context = yield* Layer.buildWithScope(layer, scope);
     return {
       handle: bindLiteratureNoteAttachments(bridge, context),
       unload: Effect.andThen(
@@ -139,7 +142,7 @@ describe("bindLiteratureNoteAttachments", () => {
 
   it.effect("resolves with the Item's Attachments", () =>
     Effect.gen(function* () {
-      const { handle } = yield* handleOver;
+      const { handle } = yield* handleOver();
       expect(
         yield* Effect.promise(() =>
           handle.literatureNoteAttachments("ABCD2345"),
@@ -148,9 +151,31 @@ describe("bindLiteratureNoteAttachments", () => {
     }),
   );
 
+  it.effect(
+    "answers undefined, apart from an Item with no Attachments, when unload stops the lookup",
+    () =>
+      Effect.gen(function* () {
+        const reading = yield* Deferred.make<void>();
+        const { handle, unload } = yield* handleOver(
+          services(
+            ITEM_WITH_PDF,
+            Deferred.succeed(reading, undefined).pipe(
+              Effect.andThen(Effect.never),
+            ),
+          ),
+        );
+
+        const lookup = handle.literatureNoteAttachments("ABCD2345");
+        yield* Deferred.await(reading);
+        yield* unload;
+
+        expect(yield* Effect.promise(() => lookup)).toBeUndefined();
+      }),
+  );
+
   it.effect("answers no Attachments once the plugin unloads", () =>
     Effect.gen(function* () {
-      const { handle, unload } = yield* handleOver;
+      const { handle, unload } = yield* handleOver();
       yield* unload;
       expect(
         yield* Effect.promise(() =>

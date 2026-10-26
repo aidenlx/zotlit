@@ -577,12 +577,7 @@ describe("CitationText", () => {
                   "db-file-missing": Stream.empty,
                   "refresh-requested": Stream.empty,
                 },
-                zoteroPref: {
-                  dataDir: "/unused",
-                  changed: Stream.empty,
-                  "data-dir-changed": Stream.empty,
-                  "resolved-changed": Stream.empty,
-                },
+                zoteroPref: { dataDir: "/unused", moves: Stream.empty },
                 settings: {
                   current: Effect.succeed(defaults),
                   changes: Stream.empty,
