@@ -4,7 +4,6 @@ import { around } from "monkey-around";
 import { Keymap, PopoverState } from "obsidian";
 import type { GraphData, MetadataCache, Workspace } from "obsidian";
 
-import { passAborted } from "@/lib/abort-error";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { getLogger } from "@/lib/log";
 import type {
@@ -29,9 +28,7 @@ const logger = getLogger("graph-citations");
 
 /** The popover runners this hover boundary uses, without making the file an Effect owner. */
 interface PopoverBridge {
-  runPromise(
-    effect: ReturnType<CitationPopover["Service"]["showWork"]>,
-  ): PromiseLike<void>;
+  runAndForget: EffectBridge["runAndForget"];
   runSync: EffectBridge["runSync"];
 }
 
@@ -167,17 +164,16 @@ function hoverNode(
     return true;
   }
   logger.debug("Graph node shows its entry", { id, work: node.work });
-  void deps.bridge
-    .runPromise(
-      deps.citationPopover.showWork({
-        event: evt,
-        hoverParent: members.engine,
-        targetEl: stand.take(position, id),
-        work: node.work,
-        open: deps.open,
-      }),
-    )
-    .then(undefined, passAborted);
+  // Unload interrupts a pending popover.
+  deps.bridge.runAndForget(
+    deps.citationPopover.showWork({
+      event: evt,
+      hoverParent: members.engine,
+      targetEl: stand.take(position, id),
+      work: node.work,
+      open: deps.open,
+    }),
+  );
   return true;
 }
 

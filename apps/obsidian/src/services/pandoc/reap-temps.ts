@@ -3,7 +3,7 @@
 import { Duration, Effect } from "effect";
 import { tmpdir } from "node:os";
 
-import { isOlderThan, sweepTempDirectoryEffect } from "@/lib/temp-sweep";
+import { isOlderThan, sweepTempDirectory } from "@/lib/temp-sweep";
 import type { ReapTempsOptions } from "@/lib/temp-sweep";
 
 import { CSL_STAGING_EXT, cslStoreDirectory } from "./csl";
@@ -38,7 +38,7 @@ const STAGING_MAX_AGE = Duration.hours(1);
 export const reapCslStore = Effect.fnUntraced(function* ({
   parent = tmpdir(),
 }: ReapTempsOptions = {}) {
-  yield* sweepTempDirectoryEffect({
+  yield* sweepTempDirectory({
     directory: cslStoreDirectory(parent),
     kind: "materialized CSL style",
     isResidue: (name, path) =>

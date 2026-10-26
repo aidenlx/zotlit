@@ -10,9 +10,8 @@ import type {
   WorkspaceLeaf,
 } from "obsidian";
 
-import { passAborted } from "@/lib/abort-error";
 import { disposable } from "@/lib/disposables";
-import { scopedBridge, valueOr } from "@/lib/effect-bridge";
+import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag, forkEach } from "@/lib/effect-stream";
 import { workLabel } from "@/lib/item-summary";
@@ -264,9 +263,7 @@ export const layerGraphCitations = Layer.effect(
      * Unload interrupts a pending open.
      */
     const open = (citekey: string, pane: NavigationPane): void => {
-      void bridge
-        .runPromiseExit(citekeyEditor.openCitekey(citekey, pane))
-        .then((exit) => valueOr(exit, undefined));
+      bridge.runAndForget(citekeyEditor.openCitekey(citekey, pane));
     };
 
     /** Lets go of the lookup once no installation reads it. */
@@ -550,9 +547,7 @@ export const layerGraphCitations = Layer.effect(
       bridge,
       // Unload interrupts a pending open.
       open: (indexedKey, pane) => {
-        void bridge
-          .runPromiseExit(citekeyEditor.openIndexedKey(indexedKey, pane))
-          .then((exit) => valueOr(exit, undefined));
+        bridge.runAndForget(citekeyEditor.openIndexedKey(indexedKey, pane));
       },
     });
 
@@ -684,8 +679,9 @@ export const layerGraphCitations = Layer.effect(
       const { engine, renderer, viewType } = members;
       // Every yield comes before `attach`: an interrupt between the wrappers
       // and `installations.set` would leave wrappers no uninstall can find.
+      // Unload interrupts a pending invalidation.
       lookup ??= yield* citationLookup.observe(() => {
-        void bridge.runPromise(invalidateLabels).catch(passAborted);
+        bridge.runAndForget(invalidateLabels);
       });
       const wikilinks = yield* Ref.get(wikilinkCitations);
       const installation = attach(members, { saved, view, wikilinks });
