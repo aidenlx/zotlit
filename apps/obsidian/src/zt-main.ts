@@ -37,7 +37,6 @@ import {
 } from "./services/note-feature/actions";
 import { addProfileActions } from "./services/profile/actions";
 import { ServiceStartupFailed } from "./services/startup-failure";
-import { startSettingTab } from "./setting-tab/layer";
 import { createCommentRenderer } from "./views/annot-view/comment-render";
 import { registerAnnotView } from "./views/annot-view/register";
 import { AnnotationView } from "./views/annot-view/view";
@@ -236,14 +235,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     // One Customize flow shared by every entry action.
     const customize = services.customize;
-
-    // The tab reads graph services through its layer's context and the rest
-    // from the container, so it closes on the stack ahead of those services.
-    stack.defer(
-      startSettingTab(services.runtime, this, {
-        webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-      }),
-    );
 
     const customizeDeps = {
       settings: services.settings,

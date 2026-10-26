@@ -25,6 +25,7 @@ import { openSettingsTab } from "@/lib/open-settings";
 import { layerPluginHost } from "@/lib/plugin-host";
 import type { ZoteroHttp } from "@/lib/zotero-http";
 import { layerZoteroHttpNode } from "@/lib/zotero-http-node";
+import { layerSettingTab } from "@/setting-tab/layer";
 import { openLibraryView } from "@/views/library/register";
 
 import { layerAnnotationLinkReading } from "./annotation-popover/reading";
@@ -404,10 +405,17 @@ export function pluginLayer(
       ? layerQueryMeasureCli.pipe(startingAs("QueryMeasureCli"))
       : Layer.empty,
     layerReleaseActions.pipe(startingAs("ReleaseActions")),
+    layerSettingTab({ webWorkbenchEnabled: WEB_WORKBENCH_ENABLED }).pipe(
+      startingAs("SettingTab"),
+    ),
     layerTemplateWorkbenchCli.pipe(startingAs("TemplateWorkbenchCli")),
     layerWikilinkEditor.pipe(startingAs("WikilinkEditor")),
     layerWikilinkReading.pipe(startingAs("WikilinkReading")),
-  ).pipe(Layer.provide(Layer.mergeAll(layerPluginHost(plugin), obsidian)));
+  ).pipe(
+    Layer.provide(
+      Layer.mergeAll(layerPluginHost(plugin), obsidian, layerNotifier),
+    ),
+  );
   // The Note Feature plans creations through ZotLit Query, so it builds above
   // the other services. The citekey editor creates notes through it.
   // Customize launches over the Local Bridge.
