@@ -1,12 +1,4 @@
-import {
-  Context,
-  Deferred,
-  Effect,
-  Fiber,
-  FiberSet,
-  Layer,
-  Scope,
-} from "effect";
+import { Context, Deferred, Effect, Fiber, Layer, Scope } from "effect";
 import { join } from "node:path/posix";
 import type {
   FileManager,
@@ -510,7 +502,7 @@ export function layerTemplateMigration<R = never>(
       const context = yield* Effect.context<R>();
       const scope = yield* Scope.fork(yield* Scope.Scope);
       const run = Effect.runSyncWith(context);
-      const runPromise = yield* FiberSet.makeRuntimePromise<R>();
+      const runPromise = Effect.runPromiseWith(context);
       const intake = yield* obsidianEvents<{
         detect: [];
         prompt: [];
