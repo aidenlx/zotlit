@@ -5,7 +5,7 @@ import {
   ExtraButtonComponent,
   Setting,
 } from "@mock/obsidian";
-import { Effect, Layer, PubSub, Stream, SubscriptionRef } from "effect";
+import { Effect, Layer, PubSub, Queue, Stream, SubscriptionRef } from "effect";
 import { TestClock } from "effect/testing";
 import type { Setting as ObsidianSetting, SettingGroup } from "obsidian";
 
@@ -171,6 +171,47 @@ it.effect(
       }));
       yield* settle;
       expect(row.text()).toContain(m.settings_db_status_loading());
+    }),
+);
+
+it.effect(
+  "keeps the profile the user chose over a snapshot queued before the choice",
+  () =>
+    Effect.gen(function* () {
+      // Snapshots wait in a queue until the row's fiber takes them, as they do
+      // while the renderer is busy.
+      let current = SNAPSHOT;
+      const changes = yield* Queue.unbounded<ZoteroPrefSnapshot>();
+      const publish = (next: ZoteroPrefSnapshot) => {
+        current = next;
+        Queue.offerUnsafe(changes, next);
+      };
+      publish(SNAPSHOT);
+      const services = yield* Layer.build(
+        Layer.mock(ZoteroPref, {
+          current: Effect.sync(() => current),
+          changes: Stream.fromQueue(changes),
+          listProfiles: Effect.succeed(PROFILES),
+          setProfileDir: (dir) =>
+            Effect.sync(() => publish({ ...current, profileDirOverride: dir })),
+        }),
+      );
+      const ctx = stubService<SettingTabContext>("SettingTabContext", {
+        tab: (yield* scopedSettingTab(services)).tab,
+      });
+      const row = yield* render(ctx, "settings_db_profile_dir");
+
+      // Profile A's preferences finish reading, then the user picks B before
+      // the row paints A. B moves the override and keeps A's preferences.
+      publish({
+        ...current,
+        prefs: new Map(),
+        profileDirOverride: PROFILES[0]!.dir,
+      });
+      row.dropdown!.choose(PROFILES[1]!.dir);
+      yield* settle;
+
+      expect(row.dropdown?.getValue()).toBe(PROFILES[1]!.dir);
     }),
 );
 

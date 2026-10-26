@@ -478,9 +478,14 @@ function renderProfileDirRow(
         profiles = yield* pref.listProfiles;
         repopulate(selectedValue(yield* pref.current));
       });
-      // The current snapshot, then each one whose preferences were read again.
+      // The current snapshot, then the snapshot current when the preferences
+      // were read again. A queued snapshot can name a profile the user has
+      // since replaced, and the override alone moves no `prefs`.
       const prefsChanges = paintEach(
-        pref.changes.pipe(Stream.changesWith((a, b) => a.prefs === b.prefs)),
+        pref.changes.pipe(
+          Stream.changesWith((a, b) => a.prefs === b.prefs),
+          Stream.mapEffect(() => pref.current),
+        ),
         (snapshot) => {
           applyStatus(snapshot);
           const current = selectedValue(snapshot);
