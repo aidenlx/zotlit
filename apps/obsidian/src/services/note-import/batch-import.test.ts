@@ -491,7 +491,7 @@ it("lets the batch chip change only orphans while existing and parent stamps rem
   );
   using chooseProfile = vi
     .spyOn(deps.view, "chooseProfile")
-    .mockResolvedValue(books);
+    .mockReturnValue(Effect.succeed(books));
   using settingsUpdate = vi.spyOn(deps.settings, "update");
   await importOver(deps).runBatchImport("note", [1, 2, 3]);
   const options = openedModals.at(-1)!;

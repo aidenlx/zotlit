@@ -439,9 +439,11 @@ const prepareImportProfiles = Effect.fnUntraced(function* (
         path: plan.path,
       });
     }
-    const chosen = yield* Effect.promise(() =>
-      ports.view.chooseProfile({ selection, previews, indexedKey }),
-    );
+    const chosen = yield* ports.view.chooseProfile({
+      selection,
+      previews,
+      indexedKey,
+    });
     if (chosen === undefined) return;
     const plans = yield* plansFor(chosen);
     for (const action of orphans) {

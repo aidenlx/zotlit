@@ -22,9 +22,10 @@ export interface NoteImportView {
   openBatchModal(options: BatchModalOptions): void;
   /** The user's answer; an interrupt closes the modal. */
   confirm(options: ConfirmOptions): Effect.Effect<boolean>;
+  /** The user's Profile, or `undefined`; an interrupt closes the picker. */
   chooseProfile(
     options: BatchProfilePickerOptions,
-  ): Promise<ProfileSelector | undefined>;
+  ): Effect.Effect<ProfileSelector | undefined>;
 }
 
 export function createNoteImportView(

@@ -424,23 +424,21 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
       first.indexedKey,
       (yield* profileRead(profiles.profiles)).map(({ id }) => id),
     );
-    const chosen = yield* Effect.promise(() =>
-      ports.view.chooseProfile({
-        indexedKey: first.indexedKey,
-        selection: fallbackSelection(rows()),
-        problem:
-          [
-            ...new Set(
-              rows().flatMap(({ selection }) =>
-                selection?.problem
-                  ? [describeSelectionProblem(selection.problem)]
-                  : [],
-              ),
+    const chosen = yield* ports.view.chooseProfile({
+      indexedKey: first.indexedKey,
+      selection: fallbackSelection(rows()),
+      problem:
+        [
+          ...new Set(
+            rows().flatMap(({ selection }) =>
+              selection?.problem
+                ? [describeSelectionProblem(selection.problem)]
+                : [],
             ),
-          ].join(" ") || undefined,
-        previews: plans.get(first.indexedKey)?.previews ?? [],
-      }),
-    );
+          ),
+        ].join(" ") || undefined,
+      previews: plans.get(first.indexedKey)?.previews ?? [],
+    });
     if (chosen === undefined) return;
     yield* ensurePlans(first.indexedKey, [chosen]);
     for (const row of rows())

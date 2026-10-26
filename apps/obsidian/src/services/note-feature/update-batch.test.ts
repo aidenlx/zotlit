@@ -7,6 +7,7 @@ import {
   Fiber,
   Layer,
   Option,
+  Scope,
   Stream,
 } from "effect";
 import { TestClock } from "effect/testing";
@@ -24,6 +25,7 @@ import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { scopedBridge } from "@/lib/effect-bridge";
+import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -85,6 +87,9 @@ import type {
 
 /** Captured options of every batch modal the runner opened via its view port. */
 const openedModals: BatchModalOptions[] = [];
+/** The Profile picker's answer when the user closes it. */
+const noProfile: ProfileSelector | undefined = undefined;
+const pickerClosed = Effect.succeed(noProfile);
 /** The view port's Profile picker; controlled per Profile-choice test. */
 const chooseProfile = vi.fn<NoteImportView["chooseProfile"]>();
 
@@ -1073,8 +1078,8 @@ it.effect(
         count: 1,
       });
       chooseProfile
-        .mockResolvedValueOnce(undefined)
-        .mockResolvedValueOnce("default");
+        .mockReturnValueOnce(pickerClosed)
+        .mockReturnValueOnce(Effect.succeed("default"));
       yield* Effect.promise(() => choice.choose());
       expect(manifest.options.tasks[0].path).toBe("Books/New.md");
       yield* Effect.promise(() => choice.choose());
@@ -1287,8 +1292,11 @@ function mixedBatch() {
   return { deps, planCreations, created, updated, selections };
 }
 
-const classifyMixedBatch = Effect.fnUntraced(function* (deps: UpdateDeps) {
-  yield* runBatchUpdate(deps, [1, 2, 3, 4, 5, 6, 7, 8]);
+const classifyMixedBatch = Effect.fnUntraced(function* (
+  deps: UpdateDeps,
+  bridge?: BatchUpdatePorts["bridge"],
+) {
+  yield* runBatchUpdate(deps, [1, 2, 3, 4, 5, 6, 7, 8], { bridge });
   const modal = openedModals.at(-1)!;
   const manifest = (yield* Effect.promise(() =>
     modal.onClassify({
@@ -1321,6 +1329,32 @@ function noteAt(path: string): TFile {
 const DEFAULT_LABEL = () => m.settings_profile_default_name();
 
 describe("mixed batch", () => {
+  it.effect(
+    "closes the Profile picker when unload interrupts the choice, which resolves undefined",
+    () =>
+      Effect.gen(function* () {
+        const { deps } = mixedBatch();
+        const unload = yield* Scope.make();
+        const bridge = yield* scopedBridge.pipe(Scope.provide(unload));
+        const opened = yield* Deferred.make<void>();
+        const close = vi.fn();
+        chooseProfile.mockImplementationOnce(() =>
+          awaitModal<ProfileSelector | undefined>(() => {
+            Deferred.doneUnsafe(opened, Exit.void);
+            return { close };
+          }),
+        );
+        const { choice } = yield* classifyMixedBatch(deps, bridge);
+
+        const choosing = choice("unresolved").choose();
+        yield* Deferred.await(opened);
+        yield* Scope.close(unload, Exit.void);
+
+        expect(yield* Effect.promise(() => choosing)).toBeUndefined();
+        expect(close).toHaveBeenCalledOnce();
+      }),
+  );
+
   it.effect(
     "prepares each new row from its own selection and keeps the fallback to unmatched rows",
     () =>
@@ -1381,7 +1415,7 @@ describe("mixed batch", () => {
         expect(choice("all-new")).toMatchObject({ count: 5, label: undefined });
 
         // The fallback moves the two unmatched rows only.
-        chooseProfile.mockResolvedValueOnce(BOOKS);
+        chooseProfile.mockReturnValueOnce(Effect.succeed(BOOKS));
         yield* Effect.promise(() => choice("unresolved").choose());
         expect(chooseProfile).toHaveBeenLastCalledWith(
           expect.objectContaining({
@@ -1421,7 +1455,7 @@ describe("mixed batch", () => {
         });
 
         // Cancelling the recovery leaves the affected row without a destination.
-        chooseProfile.mockResolvedValueOnce(undefined);
+        chooseProfile.mockReturnValueOnce(pickerClosed);
         yield* Effect.promise(() => choice("affected").choose());
         expect(chooseProfile).toHaveBeenLastCalledWith(
           expect.objectContaining({
@@ -1487,7 +1521,7 @@ describe("mixed batch", () => {
         const { deps, created, updated } = mixedBatch();
         const { modal, tasks, choice, run } = yield* classifyMixedBatch(deps);
 
-        chooseProfile.mockResolvedValueOnce(ARTICLES);
+        chooseProfile.mockReturnValueOnce(Effect.succeed(ARTICLES));
         yield* Effect.promise(() => choice("all-new").choose());
         expect(tasks).toMatchObject([
           { id: 1, profile: "Articles", path: "Articles/Item 1.md" },
@@ -1868,7 +1902,7 @@ it.effect(
         count: 3,
         label: undefined,
       });
-      chooseProfile.mockResolvedValueOnce(BOOKS);
+      chooseProfile.mockReturnValueOnce(Effect.succeed(BOOKS));
       yield* Effect.promise(() => choice("unresolved").choose());
       expect(chooseProfile).toHaveBeenLastCalledWith(
         expect.objectContaining({
