@@ -1228,6 +1228,51 @@ it.effect(
     }),
 );
 
+it.effect(
+  "keeps the answer of a send Zotero refused before repository unload",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const freshRead = Promise.withResolvers<Response>();
+      const reading = Promise.withResolvers<void>();
+      let holdFreshRead = false;
+      const { repository, service } = yield* Effect.promise(() =>
+        writable(stack, {
+          write: () => {
+            holdFreshRead = true;
+            return staleVersion();
+          },
+          item: () => {
+            if (!holdFreshRead) {
+              return annotationItem(
+                afterWrite("PUPR5FG5", { color: "#5fb236" }),
+              );
+            }
+            reading.resolve();
+            return freshRead.promise;
+          },
+        }),
+      );
+
+      const color = yield* Effect.forkChild(
+        service.patchColor("PUPR5FG5", "#ff6666"),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(() => reading.promise);
+      yield* Effect.promise(() => repository[Symbol.asyncDispose]());
+      freshRead.resolve(
+        annotationItem(afterWrite("PUPR5FG5", { color: "#5fb236" })),
+      );
+
+      // Zotero refused the write before the unload and saved nothing; only the
+      // read of its fresh record stops, so the write keeps the refusal.
+      expect(yield* Fiber.join(color)).toEqual({
+        kind: "failed",
+        failure: { kind: "conflict" },
+      });
+    }),
+);
+
 it.effect("accepts a write completion after the same database refreshes", () =>
   Effect.gen(function* () {
     const stack = yield* scopedStack;
