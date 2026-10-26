@@ -1,5 +1,15 @@
 // Writes and conflicts: every command to Zotero, run one at a time per Annotation, and what its answer leaves behind.
-import { Cause, DateTime, Effect, Exit, Fiber, FiberSet, Schema } from "effect";
+import {
+  Cause,
+  DateTime,
+  Effect,
+  Exit,
+  Fiber,
+  FiberSet,
+  Option,
+  Result,
+  Schema,
+} from "effect";
 
 import { parseAnnotationPosition, parseIndexedKey } from "@zotlit/db";
 import type { AnnotationPositionRaw } from "@zotlit/db";
@@ -12,7 +22,7 @@ import type {
   HistoryJoin,
   HistoryStep,
 } from "@/services/annotation-repository/history";
-import { firstLockRefusal } from "@/services/annotation-repository/lock";
+import { lockRefuses } from "@/services/annotation-repository/lock";
 import type {
   AnnotationLock,
   LockedVerb,
@@ -1011,13 +1021,16 @@ const firstHeldLockRefusal = Effect.fnUntraced(function* (
   failure: LockedFailure;
 } | null> {
   const verb: LockedVerb = kind === "existence" ? "delete" : kind;
-  const locks = new Map<string, AnnotationLock | null>();
-  for (const annotationKey of annotationKeys)
-    locks.set(annotationKey, yield* writeLock(core, annotationKey));
-  const refused = firstLockRefusal(
-    annotationKeys,
-    verb,
-    (annotationKey) => locks.get(annotationKey) ?? null,
+  const refused = Option.getOrNull(
+    yield* Effect.findFirstFilter(annotationKeys, (annotationKey) =>
+      writeLock(core, annotationKey).pipe(
+        Effect.map((lock) =>
+          lock && lockRefuses(lock, verb)
+            ? Result.succeed({ annotationKey, lock })
+            : Result.fail(undefined),
+        ),
+      ),
+    ),
   );
   if (!refused) return null;
   const { annotationKey, lock } = refused;
