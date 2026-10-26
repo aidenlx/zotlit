@@ -121,9 +121,8 @@ it.effect(
 it.effect("keeps Share open until it closes, and an interrupt closes it", () =>
   Effect.gen(function* () {
     const opened = yield* spy(() => vi.spyOn(Modal.prototype, "open"));
-    const f = yield* Effect.acquireRelease(
+    const f = yield* Effect.acquireDisposable(
       Effect.promise(() => profileServiceFixture()),
-      (f) => Effect.promise(() => f[Symbol.asyncDispose]()),
     );
     const services = yield* Effect.promise(() => f.runtime.context());
     const pending = yield* shareProfile(f.app, "default").pipe(

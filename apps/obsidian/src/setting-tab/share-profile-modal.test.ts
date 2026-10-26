@@ -379,14 +379,13 @@ const sharing = Effect.fnUntraced(function* (
     filePath: "",
   }),
 ) {
-  const f = yield* Effect.acquireRelease(
+  const f = yield* Effect.acquireDisposable(
     Effect.promise(() =>
       profileServiceFixture({
         "templates/zotlit-profile.books.md": source,
         "templates/zotlit-partial.summary.md": "Shared summary",
       }),
     ),
-    (f) => Effect.promise(() => f[Symbol.asyncDispose]()),
   );
   const folder = yield* Effect.acquireRelease(
     Effect.promise(() => mkdtemp(join(tmpdir(), "zotlit-share-"))),
