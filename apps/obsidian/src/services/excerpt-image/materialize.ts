@@ -414,7 +414,10 @@ export const materializeExcerpt = Effect.fnUntraced(function* (options: {
     const takeBack = (exit: Exit.Exit<unknown, unknown>) =>
       Effect.gen(function* () {
         if (!created || !Exit.isFailure(exit)) return;
-        if (!Cause.hasInterruptsOnly(exit.cause) && (yield* valid)) return;
+        // A rollback, not a failure boundary: any interrupt means the insert
+        // did not happen, also when a failure came with it.
+        // oxlint-disable-next-line zotlit-services/interrupt-predicate
+        if (!Cause.hasInterrupts(exit.cause) && (yield* valid)) return;
         yield* removeIgnoringAbsent(destination).pipe(
           cleanupFailed("Excerpt rollback cleanup failed"),
         );
