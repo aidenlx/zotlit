@@ -4,6 +4,7 @@ import { around } from "monkey-around";
 import { Keymap, PopoverState } from "obsidian";
 import type { GraphData, MetadataCache, Workspace } from "obsidian";
 
+import { passAborted } from "@/lib/abort-error";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { getLogger } from "@/lib/log";
 import type {
@@ -166,15 +167,17 @@ function hoverNode(
     return true;
   }
   logger.debug("Graph node shows its entry", { id, work: node.work });
-  void deps.bridge.runPromise(
-    deps.citationPopover.showWork({
-      event: evt,
-      hoverParent: members.engine,
-      targetEl: stand.take(position, id),
-      work: node.work,
-      open: deps.open,
-    }),
-  );
+  void deps.bridge
+    .runPromise(
+      deps.citationPopover.showWork({
+        event: evt,
+        hoverParent: members.engine,
+        targetEl: stand.take(position, id),
+        work: node.work,
+        open: deps.open,
+      }),
+    )
+    .then(undefined, passAborted);
   return true;
 }
 

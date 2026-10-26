@@ -5,6 +5,7 @@ import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 
 import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 
+import { AbortError, passAborted } from "@/lib/abort-error";
 import { buildColorMenu } from "@/lib/annotation-colors";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
@@ -348,10 +349,12 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
    * @see apps/obsidian/policies/ui-seams.md
    */
   const report = (outcome: Promise<MutationState>): void => {
-    void outcome.then((state) => {
-      if (state.kind !== "failed") return;
-      new BaseNotice(writeFailureMessage(state.failure, now()));
-    });
+    void outcome
+      .then((state) => {
+        if (state.kind !== "failed") return;
+        new BaseNotice(writeFailureMessage(state.failure, now()));
+      })
+      .catch(passAborted);
   };
 
   /**
@@ -599,6 +602,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
               annot.key,
             );
           } catch (e) {
+            if (AbortError.test(e)) return;
             if (e instanceof InertTemplateError) {
               new BaseNotice(e.message);
               return;

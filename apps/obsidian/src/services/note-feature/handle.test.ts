@@ -8,6 +8,7 @@ import type { Item, NoteTemplateContext } from "@zotlit/db";
 import { MemoryFileManager } from "@/lib/__fixtures__/obsidian-file-manager";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { AbortError } from "@/lib/abort-error";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { AttachmentImport } from "@/services/attachment-import/service";
 import {
@@ -88,10 +89,8 @@ describe("bindNoteFeature", () => {
     await h.dispose();
     // A read answers from the services the bridge captured.
     await expect(h.handle.replacedKeys(note)).resolves.toEqual(new Set());
-    // A write runs on the captured services too, and fails as it would before.
-    await expect(h.handle.createNote(ITEM)).rejects.toBeInstanceOf(
-      ItemNotFound,
-    );
+    // Unload interrupts a write, which rejects with an AbortError.
+    await expect(h.handle.createNote(ITEM)).rejects.toBeInstanceOf(AbortError);
   });
 
   it("rejects a Profile note's create with what the create failed with", async () => {

@@ -92,13 +92,19 @@ export function plainCitationIndex(
 ) {
   const bridge = effectBridge(runtime);
   const service = runtime.runSync(CitationIndex);
+  // Unload interrupts every bridge run. A read of the released service's
+  // terminal state runs outside the runtime's scope, so it answers after
+  // unload (#1705).
+  const runReleased = Effect.runPromiseWith(
+    runtime.runSync(Effect.context<CitationIndex>()),
+  );
   /** Runs one call; the caller's signal interrupts it and rejects with its reason. */
   async function invoke<A, E>(
     effect: Effect.Effect<A, E>,
     signal?: AbortSignal,
   ): Promise<A> {
     let exit = bridge.closed()
-      ? await bridge.runPromise(Effect.exit(effect))
+      ? await runReleased(Effect.exit(effect))
       : await bridge.runPromiseExit(
           effect,
           signal === undefined ? undefined : { signal },
@@ -109,12 +115,12 @@ export function plainCitationIndex(
       Exit.isFailure(exit) &&
       Cause.hasInterruptsOnly(exit.cause)
     ) {
-      await bridge.runPromise(
+      await runReleased(
         Stream.runHead(
           service.changes.pipe(Stream.filter((state) => state.stopped)),
         ),
       );
-      exit = await bridge.runPromise(Effect.exit(effect));
+      exit = await runReleased(Effect.exit(effect));
     }
     return settleAtEdge(
       Exit.mapError(exit, (error) =>

@@ -10,6 +10,7 @@ import type {
   WorkspaceLeaf,
 } from "obsidian";
 
+import { passAborted } from "@/lib/abort-error";
 import { disposable } from "@/lib/disposables";
 import { scopedBridge, valueOr } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
@@ -684,7 +685,7 @@ export const layerGraphCitations = Layer.effect(
       // Every yield comes before `attach`: an interrupt between the wrappers
       // and `installations.set` would leave wrappers no uninstall can find.
       lookup ??= yield* citationLookup.observe(() => {
-        void bridge.runPromise(invalidateLabels);
+        void bridge.runPromise(invalidateLabels).catch(passAborted);
       });
       const wikilinks = yield* Ref.get(wikilinkCitations);
       const installation = attach(members, { saved, view, wikilinks });

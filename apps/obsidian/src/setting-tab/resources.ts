@@ -7,6 +7,7 @@ import type {
   SettingDefinitionGroup,
 } from "obsidian";
 
+import { passAborted } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import { languagePackSettingCopy } from "@/lib/i18n/settings-copy";
 import {
@@ -129,7 +130,10 @@ function resourcesItems(
           btn
             .setButtonText(m.settings_resources_whats_new_button())
             .onClick(
-              () => void ctx.bridge.runPromise(ctx.release.openReleaseNote),
+              () =>
+                void ctx.bridge
+                  .runPromise(ctx.release.openReleaseNote)
+                  .catch(passAborted),
             ),
         );
       },

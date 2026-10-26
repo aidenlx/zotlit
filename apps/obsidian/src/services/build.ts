@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import type { FileSystemAdapter } from "obsidian";
 
+import { passAborted } from "@/lib/abort-error";
 import { cliRunner } from "@/lib/cli-command";
 import { DisposableAbortController } from "@/lib/disposables";
 import { effectBridge } from "@/lib/effect-bridge";
@@ -346,7 +347,8 @@ export async function buildServices(
           capabilityGestures: {
             reportBlockedGesture: (attachmentKey) =>
               capabilityNotices.reportBlockedGesture(attachmentKey),
-            allowEditing: () => void capabilityNotices.showEditingCapability(),
+            allowEditing: () =>
+              void capabilityNotices.showEditingCapability().catch(passAborted),
           },
           markGestures: {
             revealAnnotation: (annotationKey) =>
@@ -356,7 +358,10 @@ export async function buildServices(
             blockedPress: (block) =>
               blockedNotice(
                 block,
-                () => void capabilityNotices.showEditingCapability(),
+                () =>
+                  void capabilityNotices
+                    .showEditingCapability()
+                    .catch(passAborted),
               ),
           },
         });

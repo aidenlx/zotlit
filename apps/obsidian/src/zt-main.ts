@@ -10,6 +10,7 @@ import {
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 
+import { passAborted } from "./lib/abort-error";
 import { startI18n } from "./lib/i18n";
 import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
@@ -394,7 +395,8 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       annotations: services.annotationRepository,
       bridge: services.bridge,
       excerptDisplay: services.excerptDisplay,
-      allowEditing: () => void services.capabilityNotices.allowEditing(),
+      allowEditing: () =>
+        void services.capabilityNotices.allowEditing().catch(passAborted),
       reportBlockedGesture: (attachmentKey) =>
         services.capabilityNotices.reportBlockedGesture(attachmentKey),
       libraryTagNames: services.libraryTagNames,

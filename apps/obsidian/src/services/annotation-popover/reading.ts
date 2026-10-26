@@ -7,6 +7,7 @@ import type { MarkdownPostProcessorContext, MarkdownView } from "obsidian";
 import { parseAnnotationOpenUri } from "@zotlit/db";
 import type { AnnotationOpenUriOptions } from "@zotlit/db";
 
+import { passAborted } from "@/lib/abort-error";
 import { scopedBridge } from "@/lib/effect-bridge";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
@@ -120,7 +121,8 @@ export const layerAnnotationLinkReading = Layer.effectDiscard(
           new AnnotationLinkReadingCore({
             host,
             markdownViews: () => bridge.runSync(workspace.markdownViews),
-            show: (request) => void bridge.runPromise(popover.show(request)),
+            show: (request) =>
+              void bridge.runPromise(popover.show(request)).catch(passAborted),
           }),
       ),
     );

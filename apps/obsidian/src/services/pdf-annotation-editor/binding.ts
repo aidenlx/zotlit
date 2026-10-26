@@ -18,6 +18,7 @@ import type {
   SelectedText,
 } from "@zotlit/pdf-structure";
 
+import { AbortError, passAborted } from "@/lib/abort-error";
 import {
   registerDomEvent,
   registerMigratingWindowEvent,
@@ -536,9 +537,9 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   /** Revalidates this PDF surface when Obsidian activates its leaf. */
   activate(): void {
     if (this.#attachment.kind === "resolved") {
-      void this.#bridge.runPromise(
-        this.#annotations.refresh(this.#attachment.attachmentKey),
-      );
+      void this.#bridge
+        .runPromise(this.#annotations.refresh(this.#attachment.attachmentKey))
+        .catch(passAborted);
     }
   }
 
@@ -681,12 +682,16 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
         // The Text Draft focuses itself as it opens; a read started then would
         // race the create its finish sends.
         if (event.target === this.#draftArea) return;
-        void this.#bridge.runPromise(this.#annotations.refresh(attachmentKey));
+        void this.#bridge
+          .runPromise(this.#annotations.refresh(attachmentKey))
+          .catch(passAborted);
       }),
     );
     this.#surfaces.use(
       registerMigratingWindowEvent(this.#view.containerEl, "focus", () => {
-        void this.#bridge.runPromise(this.#annotations.refresh(attachmentKey));
+        void this.#bridge
+          .runPromise(this.#annotations.refresh(attachmentKey))
+          .catch(passAborted);
       }),
     );
     this.#surfaces.defer(() => this.#unpaint());
@@ -1297,7 +1302,8 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
         if (this.#surfaces.disposed) return;
         if (this.#attachment.kind !== "resolved") return;
         this.#gestures.reportBlockedGesture(this.#attachment.attachmentKey);
-      });
+      })
+      .catch(passAborted);
   }
 
   /**
@@ -1506,6 +1512,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
         this.#draw(list);
       })
       .catch((error: unknown) => {
+        if (AbortError.test(error)) return;
         logger.warn("Failed to read the annotations of an open PDF", {
           error,
           path: this.filePath,

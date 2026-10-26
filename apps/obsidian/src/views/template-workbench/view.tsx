@@ -97,6 +97,7 @@ import type {
 } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
+import { AbortError } from "@/lib/abort-error";
 import { AppContext } from "@/lib/app-context";
 import { confirm } from "@/lib/confirm";
 import { subscribe } from "@/lib/effect-stream";
@@ -458,10 +459,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         return { outcome: "unavailable", name: origin.file.basename };
       if (error === changed)
         return { outcome: "not-ready", name: origin.file.basename };
-      logger.error("Failed to update originating note at {path}", {
-        path: origin.file.path,
-        error,
-      });
+      if (!AbortError.test(error))
+        logger.error("Failed to update originating note at {path}", {
+          path: origin.file.path,
+          error,
+        });
       return { outcome: "failed", name: origin.file.basename, error };
     }
   }
