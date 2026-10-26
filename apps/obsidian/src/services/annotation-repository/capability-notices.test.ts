@@ -48,8 +48,13 @@ function readOnlyLines(
 }
 
 /** Answers `capability` for every Attachment the ledger re-reads. */
-function everyAttachmentIs(capability: EditingCapability) {
-  return () => capability;
+function everyAttachmentIs(
+  ledger: CapabilityNoticeLedger,
+  capability: EditingCapability,
+) {
+  return new Map(
+    ledger.openEpisodes().map((attachmentKey) => [attachmentKey, capability]),
+  );
 }
 
 describe("authorization notice lifetime", () => {
@@ -57,7 +62,7 @@ describe("authorization notice lifetime", () => {
     const notice = allowEditingNotice({ value: undefined });
 
     expect(notice).toMatchObject({ sticky: false, action: null });
-    expect(notice?.duration?.total("seconds")).toBe(3);
+    expect(notice?.durationMs).toBe(3000);
   });
 
   it.each(["not-remembered", "not-saved"] as const)(
@@ -66,7 +71,7 @@ describe("authorization notice lifetime", () => {
       const notice = allowEditingNotice({ failure: { kind } });
 
       expect(notice).toMatchObject({ sticky: false });
-      expect(notice).not.toHaveProperty("duration");
+      expect(notice).not.toHaveProperty("durationMs");
     },
   );
 });
@@ -112,7 +117,7 @@ describe("a blocked keyboard gesture", () => {
 
     // A probe that made the Attachment writable ends the episode, whether the
     // gesture finds out or a capability change announces it.
-    ledger.refresh(everyAttachmentIs(WRITABLE));
+    ledger.refresh(everyAttachmentIs(ledger, WRITABLE));
     expect(ledger.blockedGesture(ATTACHMENT, CLOSED)).not.toBeNull();
 
     // A gesture that meets a writable Attachment ends it too, and says nothing.
@@ -157,8 +162,8 @@ describe("a write Zotero refused", () => {
 
     expect(invalid).toMatchObject({ sticky: true });
     expect(unsupported).toMatchObject({ sticky: true });
-    expect(invalid).not.toHaveProperty("duration");
-    expect(unsupported).not.toHaveProperty("duration");
+    expect(invalid).not.toHaveProperty("durationMs");
+    expect(unsupported).not.toHaveProperty("durationMs");
     expect(invalid?.lines).toEqual(
       readOnlyLines("invalid-response", time.instant),
     );
@@ -225,7 +230,7 @@ describe("a Zotero database swapped under the port", () => {
 
     // An unrelated capability change does not re-arm it, which is what a
     // session-state test of this would have got wrong.
-    ledger.refresh(everyAttachmentIs(WRITABLE));
+    ledger.refresh(everyAttachmentIs(ledger, WRITABLE));
     expect(ledger.serverChanged("A1B2C3D4E5F6")).toBeNull();
 
     // Another database is another change.

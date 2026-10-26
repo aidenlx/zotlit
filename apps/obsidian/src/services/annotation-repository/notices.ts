@@ -1,256 +1,216 @@
-// The one place the user is told why editing is blocked: the imperative shell
-// over `capability-notices.ts`, which decides what is said and how often.
+// The one place the user is told why editing is blocked: the layer over
+// `capability-notices.ts`, which decides what is said and how often.
 //
 // @see apps/obsidian/policies/ui-seams.md
-import type { EffectBridge } from "@/lib/effect-bridge";
-import { getLogger } from "@/lib/log";
+import { Clock, Context, Duration, Effect, FiberSet, Layer } from "effect";
+
+import { instantClock } from "@/lib/effect-clock";
+import { withLogCategory } from "@/lib/effect-log";
+import { forkEach } from "@/lib/effect-stream";
 import { BaseNotice } from "@/lib/notice";
-import { Service } from "@/services/service-base";
-import type { ZoteroLocalApi } from "@/services/zotero-local-api/service";
+import { Notifier } from "@/lib/notifier";
+import type { NoticeHandle } from "@/lib/notifier";
+import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
 
 import {
   allowEditingNotice,
   CapabilityNoticeLedger,
 } from "./capability-notices";
 import type { CapabilityNotice } from "./capability-notices";
-import type { AnnotationRepository } from "./service";
-
-const logger = getLogger("annotation-repository");
+import { AnnotationRepository } from "./service";
 
 /** Default reading time for problems and actions that are not sticky. */
-const NOTICE_DURATION = Temporal.Duration.from({ seconds: 10 });
+const NOTICE_DURATION = Duration.seconds(10);
 
 /**
- * Renders one {@link CapabilityNotice}. Separate from the triggers above it so
- * `/obsidian-debug` can put any of them on screen without first arranging the
- * state that would raise it.
+ * One {@link CapabilityNotice} as the notice draws it. Separate from the
+ * triggers so `/obsidian-debug` can put any of them on screen without first
+ * arranging the state that would raise it: pass this message and
+ * {@link noticeDuration} to `Notifier.show`.
  *
  * @param runAction what the notice's one action runs — the "Zotero editing"
  *   settings row for a capability notice, the card itself for a conflict.
  */
-export function showCapabilityNotice(
-  {
-    title,
-    lines,
-    sticky,
-    action,
-    duration = NOTICE_DURATION,
-  }: CapabilityNotice,
+export function capabilityNoticeMessage(
+  { title, lines, action }: CapabilityNotice,
   runAction: () => void,
-): BaseNotice {
-  const notice = new BaseNotice(
-    BaseNotice.render((renderer) => {
-      renderer.setTitle(title);
-      for (const line of lines) renderer.addText(line);
-      if (action === null) return;
-      renderer.addAction((button) => {
-        button
-          .setButtonText(action)
-          .setCta()
-          .onClick(() => {
-            notice.hide();
-            runAction();
-          });
-      });
-    }),
-    sticky ? 0 : duration.total("milliseconds"),
-  );
-  return notice;
+): DocumentFragment {
+  return BaseNotice.render((renderer) => {
+    renderer.setTitle(title);
+    for (const line of lines) renderer.addText(line);
+    if (action === null) return;
+    renderer.addAction((button) => {
+      button.setButtonText(action).setCta().onClick(runAction);
+    });
+  });
 }
 
-export interface CapabilityNoticesDeps {
-  /**
-   * The Editing Capability, per Attachment, the probe a gesture runs, and what
-   * a write left on one Annotation — which is where a Write Conflict is heard.
-   */
-  capabilities: Pick<
-    AnnotationRepository["Service"],
-    | "annotationChanged"
-    | "capabilityChanges"
-    | "capabilityFor"
-    | "mutationFor"
-    | "probe"
-    | "writeConflicts"
-  >;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
-  /**
-   * What a refused write, a swapped database and a retired mark are heard on,
-   * and the one request Allow editing sends.
-   */
-  writes: Pick<
-    ZoteroLocalApi["Service"],
-    "authorize" | "writeRefusals" | "serverChanges" | "writeRefusalsRetired"
-  >;
-  /** Reveals the "Zotero editing" settings row. */
-  openEditingSettings: () => void;
-  /** Whether an Annotation View on screen already shows this card. */
-  cardShown: (annotationKey: string) => boolean;
-  /** Opens the Annotation View and brings one Annotation's card forward. */
-  revealAnnotation: (annotationKey: string) => void;
-  now?: () => Temporal.Instant;
-  /**
-   * Puts one notice on screen.
-   *
-   * @default showCapabilityNotice
-   */
-  showNotice?: (notice: CapabilityNotice, runAction: () => void) => void;
+/** How long one {@link CapabilityNotice} stays, in ms; `0` keeps it until dismissed. */
+export function noticeDuration({
+  sticky,
+  durationMs,
+}: CapabilityNotice): number {
+  if (sticky) return 0;
+  return durationMs ?? Duration.toMillis(NOTICE_DURATION);
 }
 
 /**
- * The Editing Capability's UI seam: the two gestures both of its renderers
- * hand over, and the notices a blocked gesture or a refused write earns. Every
- * "once per …" rule lives in the ledger, so this holds no state of its own
- * beyond the ledger it renders.
+ * The Editing Capability's UI seam: the gestures its renderers hand over, and
+ * the notices a blocked gesture or a refused write earns. Every "once per …"
+ * rule lives in the ledger, so this holds no state of its own beyond the
+ * ledger it renders.
  *
  * @see https://github.com/aidenlx/zotlit/issues/1147
  */
-export class CapabilityNotices extends Service<void> {
-  readonly #capabilities;
-  readonly #bridge;
-  readonly #writes;
-  readonly #openEditingSettings;
-  readonly #cardShown;
-  readonly #revealAnnotation;
-  readonly #ledger;
-  readonly #showNotice;
-
-  ready: Promise<void>;
-
-  constructor({
-    capabilities,
-    bridge,
-    writes,
-    openEditingSettings,
-    cardShown,
-    revealAnnotation,
-    now = () => Temporal.Now.instant(),
-    showNotice = showCapabilityNotice,
-  }: CapabilityNoticesDeps) {
-    super();
-    this.#capabilities = capabilities;
-    this.#bridge = bridge;
-    this.#writes = writes;
-    this.#openEditingSettings = openEditingSettings;
-    this.#cardShown = cardShown;
-    this.#revealAnnotation = revealAnnotation;
-    this.#ledger = new CapabilityNoticeLedger(now);
-    this.#showNotice = showNotice;
-    this.ready = this.#load();
+export class CapabilityNotices extends Context.Service<
+  CapabilityNotices,
+  {
+    /**
+     * Allow editing, from every entry that offers it: ask Zotero once, then
+     * say what its answer left. An Allow's notice offers this same gesture
+     * again; nothing here asks a second time on its own.
+     *
+     * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
+     */
+    readonly allowEditing: Effect.Effect<void>;
+    /**
+     * The reader's held-draft Allow editing: re-check Zotero, then open the
+     * "Zotero editing" settings row, which both explains the state and offers
+     * the gestures that change it — rendering the same enum from the same copy
+     * table.
+     */
+    readonly showEditingCapability: Effect.Effect<void>;
+    /**
+     * An edit gesture met a block on this Attachment, with a fresh Capability
+     * Probe already behind it.
+     *
+     * @param attachmentKey the Attachment's Indexed Key.
+     */
+    reportBlockedGesture(attachmentKey: string): Effect.Effect<void>;
   }
+>()("zotlit/annotation-repository/CapabilityNotices") {}
 
-  /**
-   * Allow editing, from every entry that offers it: ask Zotero once, then say
-   * what its answer left. An Allow's notice offers this same gesture again;
-   * nothing here asks a second time on its own.
-   *
-   * @returns when Zotero has answered and its notice, if any, is on screen.
-   * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
-   */
-  async allowEditing(): Promise<void> {
-    const result = await this.#bridge.runPromise(this.#writes.authorize);
-    const notice = allowEditingNotice(result);
-    if (!notice) return;
-    this.#showNotice(notice, () => void this.allowEditing());
-  }
+/** What the notices open in Obsidian. */
+export interface CapabilityNoticePorts {
+  /** Reveals the "Zotero editing" settings row. */
+  readonly openEditingSettings: () => void;
+  /** Whether an Annotation View on screen already shows this card. */
+  readonly cardShown: (annotationKey: string) => boolean;
+  /** Opens the Annotation View and brings one Annotation's card forward. */
+  readonly revealAnnotation: (annotationKey: string) => void;
+}
 
-  /**
-   * The reader's held-draft Allow editing: re-check Zotero, then open the
-   * "Zotero editing" settings row, which both explains the state and offers the
-   * gestures that change it — rendering the same enum from the same copy table.
-   *
-   * @returns when the row is open, so a caller need not count microtasks to
-   *   know the gesture is done. The reader ignores it.
-   */
-  async showEditingCapability(): Promise<void> {
-    await this.#bridge.runPromise(this.#capabilities.probe);
-    this.#openEditingSettings();
-  }
+export function layerCapabilityNotices(
+  ports: CapabilityNoticePorts,
+): Layer.Layer<
+  CapabilityNotices,
+  never,
+  AnnotationRepository | ZoteroLocalApi | Notifier
+> {
+  return Layer.effect(
+    CapabilityNotices,
+    Effect.gen(function* () {
+      const repository = yield* AnnotationRepository;
+      const api = yield* ZoteroLocalApi;
+      const notifier = yield* Notifier;
+      const ledger = new CapabilityNoticeLedger(
+        instantClock(yield* Clock.Clock),
+      );
+      // A notice's button is a DOM callback: its action runs on the layer's
+      // Scope, so unload interrupts it.
+      const run = yield* FiberSet.makeRuntime<never>();
 
-  /**
-   * An edit gesture met a block on this Attachment, with a fresh Capability
-   * Probe already behind it.
-   *
-   * @param attachmentKey the Attachment's Indexed Key.
-   */
-  reportBlockedGesture(attachmentKey: string): void {
-    const capability = this.#bridge.runSync(
-      this.#capabilities.capabilityFor(attachmentKey),
-    );
-    const notice = this.#ledger.blockedGesture(attachmentKey, capability);
-    if (!notice) return;
-    logger.debug("An edit gesture met a block", { attachmentKey, capability });
-    this.#showNotice(notice, this.#openEditingSettings);
-  }
-
-  async #load(): Promise<void> {
-    await using stack = new AsyncDisposableStack();
-    stack.defer(
-      this.#bridge.subscribe(this.#capabilities.capabilityChanges, () => {
-        this.#ledger.refresh((attachmentKey) =>
-          this.#bridge.runSync(this.#capabilities.capabilityFor(attachmentKey)),
+      const show = Effect.fnUntraced(function* (
+        notice: CapabilityNotice,
+        action: Effect.Effect<void>,
+      ) {
+        const handle: NoticeHandle = yield* notifier.show(
+          capabilityNoticeMessage(notice, () => {
+            run(Effect.andThen(handle.hide, action));
+          }),
+          { duration: noticeDuration(notice) },
         );
-      }),
-    );
-    // A conflict the user cannot see is a change lost in silence, so the one
-    // notice that answers it is the way to the card.
-    stack.defer(
-      this.#bridge.subscribe(this.#capabilities.writeConflicts, (conflict) => {
-        this.#conflicted(conflict.annotationKey);
-      }),
-    );
-    // A card that settled back to any other state has no conflict standing on
-    // it, so the next one is news rather than the same one twice.
-    stack.defer(
-      this.#bridge.subscribe(
-        this.#capabilities.annotationChanged,
-        (annotationKey) => {
-          if (
-            this.#bridge.runSync(this.#capabilities.mutationFor(annotationKey))
-              .kind === "conflict"
-          ) {
-            return;
-          }
-          this.#ledger.conflictResolved(annotationKey);
-        },
-      ),
-    );
-    stack.defer(
-      this.#bridge.subscribe(
-        this.#writes.writeRefusals,
-        ({ failure, library }) => {
-          this.#show(this.#ledger.writeRefused(failure, library));
-        },
-      ),
-    );
-    stack.defer(
-      this.#bridge.subscribe(this.#writes.serverChanges, (serverID) => {
-        this.#show(this.#ledger.serverChanged(serverID));
-      }),
-    );
-    stack.defer(
-      this.#bridge.subscribe(this.#writes.writeRefusalsRetired, () => {
-        this.#ledger.writeRefusalsRetired();
-      }),
-    );
-    this.commit(stack.move());
-  }
+      });
+      const openEditingSettings = Effect.sync(() =>
+        ports.openEditingSettings(),
+      );
+      const showProblem = (notice: CapabilityNotice | null) =>
+        notice ? show(notice, openEditingSettings) : Effect.void;
 
-  /**
-   * One Write Conflict, where no Annotation View is showing its card. A view
-   * that already shows it says everything this notice would, in the place the
-   * user resolves it.
-   */
-  #conflicted(annotationKey: string): void {
-    if (this.#cardShown(annotationKey)) return;
-    const notice = this.#ledger.conflictOffScreen(annotationKey);
-    if (!notice) return;
-    logger.debug("A write conflict stands on a card no view shows", {
-      annotationKey,
-    });
-    this.#showNotice(notice, () => this.#revealAnnotation(annotationKey));
-  }
+      const allowEditing: Effect.Effect<void> = Effect.gen(function* () {
+        const notice = allowEditingNotice(yield* api.authorize);
+        if (notice) yield* show(notice, allowEditing);
+      }).pipe(Effect.withSpan("CapabilityNotices.allowEditing"));
 
-  #show(notice: CapabilityNotice | null): void {
-    if (notice) this.#showNotice(notice, this.#openEditingSettings);
-  }
+      yield* forkEach(repository.capabilityChanges, () =>
+        Effect.gen(function* () {
+          const entries = yield* Effect.forEach(
+            ledger.openEpisodes(),
+            (attachmentKey) =>
+              Effect.map(
+                repository.capabilityFor(attachmentKey),
+                (capability) => [attachmentKey, capability] as const,
+              ),
+          );
+          ledger.refresh(new Map(entries));
+        }),
+      );
+      // A conflict the user cannot see is a change lost in silence, so the
+      // one notice that answers it is the way to the card. A view that
+      // already shows the card says everything this notice would, in the
+      // place the user resolves it.
+      yield* forkEach(repository.writeConflicts, ({ annotationKey }) =>
+        Effect.gen(function* () {
+          if (ports.cardShown(annotationKey)) return;
+          const notice = ledger.conflictOffScreen(annotationKey);
+          if (!notice) return;
+          yield* Effect.logDebug(
+            "A write conflict stands on a card no view shows",
+          ).pipe(Effect.annotateLogs({ annotationKey }));
+          yield* show(
+            notice,
+            Effect.sync(() => ports.revealAnnotation(annotationKey)),
+          );
+        }),
+      );
+      // A card that settled back to any other state has no conflict standing
+      // on it, so the next one is news rather than the same one twice.
+      yield* forkEach(repository.annotationChanged, (annotationKey) =>
+        Effect.gen(function* () {
+          const mutation = yield* repository.mutationFor(annotationKey);
+          if (mutation.kind !== "conflict")
+            ledger.conflictResolved(annotationKey);
+        }),
+      );
+      yield* forkEach(api.writeRefusals, ({ failure, library }) =>
+        showProblem(ledger.writeRefused(failure, library)),
+      );
+      yield* forkEach(api.serverChanges, (serverID) =>
+        showProblem(ledger.serverChanged(serverID)),
+      );
+      yield* forkEach(api.writeRefusalsRetired, () => {
+        ledger.writeRefusalsRetired();
+      });
+
+      return CapabilityNotices.of({
+        allowEditing,
+        showEditingCapability: Effect.andThen(
+          repository.probe,
+          openEditingSettings,
+        ).pipe(Effect.withSpan("CapabilityNotices.showEditingCapability")),
+        reportBlockedGesture: Effect.fn(
+          "CapabilityNotices.reportBlockedGesture",
+        )(function* (attachmentKey) {
+          const capability = yield* repository.capabilityFor(attachmentKey);
+          const notice = ledger.blockedGesture(attachmentKey, capability);
+          if (!notice) return;
+          yield* Effect.logDebug("An edit gesture met a block").pipe(
+            Effect.annotateLogs({ attachmentKey, capability }),
+            withLogCategory("annotation-repository"),
+          );
+          yield* show(notice, openEditingSettings);
+        }),
+      });
+    }).pipe(withLogCategory("annotation-repository")),
+  );
 }
