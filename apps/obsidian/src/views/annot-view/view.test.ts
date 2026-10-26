@@ -9,6 +9,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { AnnotViewAttachment } from "@zotlit/db";
 
 import { testEvents, testEvent } from "@/lib/__fixtures__/event-stream";
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -29,7 +30,7 @@ import { libraryScopeStateAtom } from "@/services/library-scope/atoms";
 import { DEFAULT_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 import { LibraryScope } from "@/services/library-scope/service";
 import type { LibraryScopeState } from "@/services/library-scope/service";
-import { activeKeyAtom } from "@/services/note-index/atoms";
+import { activeNoteAtom } from "@/services/note-index/atoms";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { zoteroRevisionAtom } from "@/services/zotero-reads/atoms";
 import { stubbedReads } from "@/services/zotero-reads/test-utils";
@@ -224,6 +225,7 @@ async function openSidebar(
     listOf,
     listRead,
     activeNoteKey,
+    deferNoteKey = false,
   }: {
     readsState?: "ready" | "degraded";
     query?: string;
@@ -234,6 +236,7 @@ async function openSidebar(
     /** Settles when the repository answers a read of the Attachment's list. */
     listRead?: (attachmentKey: string) => Promise<void>;
     activeNoteKey?: string;
+    deferNoteKey?: boolean;
   } = {},
 ) {
   setMockPlatform({ isMacOS: true });
@@ -254,6 +257,7 @@ async function openSidebar(
     );
   const app = editorApp();
   const workspace = new MemoryWorkspace({ layoutReady: true });
+  const metadata = new MemoryMetadataCache();
   if (activeNoteKey)
     workspace.open(
       Object.assign(new TFile(), {
@@ -261,6 +265,10 @@ async function openSidebar(
         extension: "md",
       }),
     );
+  if (activeNoteKey && !deferNoteKey)
+    metadata.setCache("literatures/paper.md", {
+      frontmatter: { "zotero-key": activeNoteKey },
+    });
   app.loadLocalStorage = () => null;
   app.saveLocalStorage = () => {};
   app.workspace = stubService<App["workspace"]>("Workspace", {
@@ -274,9 +282,10 @@ async function openSidebar(
     getMostRecentLeaf: () => null,
   });
   app.metadataCache = stubService<App["metadataCache"]>("MetadataCache", {
-    on: () => ({}),
-    getFileCache: () =>
-      activeNoteKey ? { frontmatter: { "zotero-key": activeNoteKey } } : null,
+    on: (name: string, callback: (...args: never[]) => unknown) =>
+      metadata.on(name, (...args) => callback(...(args as never[]))),
+    offref: (ref) => metadata.offref(ref),
+    getFileCache: (file) => metadata.getFileCache(file),
   });
   const events = annotationReads();
   const repository = {
@@ -401,7 +410,9 @@ async function openSidebar(
     });
   await act(() =>
     waitFor(() =>
-      expect(deps.registry.get(activeKeyAtom)).toBe(activeNoteKey ?? null),
+      expect(deps.registry.get(activeNoteAtom).key).toBe(
+        deferNoteKey ? null : (activeNoteKey ?? null),
+      ),
     ),
   );
   await settle();
@@ -412,6 +423,7 @@ async function openSidebar(
     run,
     attachmentReads,
     workspace,
+    metadata,
     registry: deps.registry,
     scopeChanges,
     scopeState,
@@ -486,6 +498,29 @@ it("shows the annotation cards when the Literature Note becomes active again", a
     followMode: "active-tab",
     previousMode: "active-tab",
   });
+  expect(cards(view.contentEl)).toEqual(["ANNOTAAA", "ANNOTBBB"]);
+});
+
+it("shows the annotation cards when the active note key arrives after the view opens", async () => {
+  const { view, workspace, metadata, registry, settle } = await openSidebar(
+    [PDF],
+    undefined,
+    { activeNoteKey: "ITEMAAAA", deferNoteKey: true },
+  );
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => act(() => view.close()));
+  expect(cards(view.contentEl)).toEqual([]);
+
+  await act(() =>
+    metadata.change(workspace.activeFile!, {
+      frontmatter: { "zotero-key": "ITEMAAAA" },
+    }),
+  );
+  await act(() =>
+    waitFor(() => expect(registry.get(activeNoteAtom).key).toBe("ITEMAAAA")),
+  );
+  await settle();
+
   expect(cards(view.contentEl)).toEqual(["ANNOTAAA", "ANNOTBBB"]);
 });
 

@@ -506,10 +506,15 @@ export class AnnotationView extends ItemView implements HistorySurface {
     opened.defer(registry.subscribe(zoteroRevisionAtom, () => this.#reload()));
     opened.defer(registry.subscribe(zoteroStateAtom, () => this.#reload()));
     opened.defer(registry.subscribe(libraryRowsAtom, () => this.#reload()));
+    // Evaluating the derived key starts its dependency on the active note.
     opened.defer(
-      registry.subscribe(activeKeyAtom, () => {
-        if (this.#followMode === "active-tab") this.#reload();
-      }),
+      registry.subscribe(
+        activeKeyAtom,
+        () => {
+          if (this.#followMode === "active-tab") this.#reload();
+        },
+        { immediate: true },
+      ),
     );
     this.registerEvent(
       this.#deps.app.workspace.on("active-leaf-change", () => {
