@@ -1,5 +1,7 @@
 // The Annotation Repository's Locked Annotations: External Annotations and another user's Annotations in a group library.
-import { expect, it, vi } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
+import { expect, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import {
@@ -30,6 +32,7 @@ import {
   NOW,
   nextChange,
   REMEMBERED_KEY,
+  scopedStack,
   setup,
   useFakeTimers,
   writable,
@@ -121,73 +124,93 @@ async function importFromPdf(
   });
 }
 
-it("locks an External Annotation under the Zotero DB source", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository } = await setup(stack, undefined, {
-    external: ["PUPR5FG5"],
-  });
+it.effect("locks an External Annotation under the Zotero DB source", () =>
+  Effect.gen(function* () {
+    const stack = yield* scopedStack;
+    const { service } = yield* Effect.promise(() =>
+      setup(stack, undefined, {
+        external: ["PUPR5FG5"],
+      }),
+    );
 
-  const list = await repository.read("RGRPDF24");
+    const list = yield* service.read("RGRPDF24");
 
-  expect(list?.source).toEqual(DATABASE_SOURCE);
-  expect(locksOf(list)).toEqual(expectedLocks({ PUPR5FG5: "external" }));
-});
+    expect(list?.source).toEqual(DATABASE_SOURCE);
+    expect(locksOf(list)).toEqual(expectedLocks({ PUPR5FG5: "external" }));
+  }),
+);
 
-it("locks an External Annotation under the Local API source, from the Zotero database", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository } = await writable(stack, {}, { external: ["PUPR5FG5"] });
+it.effect(
+  "locks an External Annotation under the Local API source, from the Zotero database",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const { service } = yield* Effect.promise(() =>
+        writable(stack, {}, { external: ["PUPR5FG5"] }),
+      );
 
-  const list = await repository.read("RGRPDF24");
+      const list = yield* service.read("RGRPDF24");
 
-  expect(list?.source).toEqual({
-    kind: "zotero-local-api",
-    serverID: SERVER_ID,
-  });
-  expect(locksOf(list)).toEqual(expectedLocks({ PUPR5FG5: "external" }));
-});
+      expect(list?.source).toEqual({
+        kind: "zotero-local-api",
+        serverID: SERVER_ID,
+      });
+      expect(locksOf(list)).toEqual(expectedLocks({ PUPR5FG5: "external" }));
+    }),
+);
 
-it("locks nothing the Zotero database holds no fact for, and keeps a lock it cannot read again", async () => {
-  await using stack = new AsyncDisposableStack();
-  // Zotero holds an Annotation the database copy ZotLit reads does not have yet.
-  const unread = {
-    ...afterWrite("PUPR5FG5", {}),
-    key: "UNREAD23",
-    sortIndex: "00000|002050|00170",
-  };
-  const { repository, acquireRead } = await writable(
-    stack,
-    { children: () => annotationPage([...ROUGIER_ANNOTATIONS, unread]) },
-    { external: ["PUPR5FG5"] },
-  );
+it.effect(
+  "locks nothing the Zotero database holds no fact for, and keeps a lock it cannot read again",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      // Zotero holds an Annotation the database copy ZotLit reads does not have yet.
+      const unread = {
+        ...afterWrite("PUPR5FG5", {}),
+        key: "UNREAD23",
+        sortIndex: "00000|002050|00170",
+      };
+      const { service, acquireRead } = yield* Effect.promise(() =>
+        writable(
+          stack,
+          { children: () => annotationPage([...ROUGIER_ANNOTATIONS, unread]) },
+          { external: ["PUPR5FG5"] },
+        ),
+      );
 
-  const read = locksOf(await repository.read("RGRPDF24"));
-  expect(read.UNREAD23).toBeNull();
-  expect(read.PUPR5FG5).toEqual({ reason: "external" });
+      const read = locksOf(yield* service.read("RGRPDF24"));
+      expect(read.UNREAD23).toBeNull();
+      expect(read.PUPR5FG5).toEqual({ reason: "external" });
 
-  // The database cannot be read, and the list still can. The lock the last
-  // read gave stands.
-  acquireRead.mockRejectedValue(new Error("database is locked"));
-  const refreshed = await repository.refresh("RGRPDF24");
-  expect(refreshed?.source.kind).toBe("zotero-local-api");
-  expect(locksOf(refreshed)).toEqual({
-    ...expectedLocks({ PUPR5FG5: "external" }),
-    UNREAD23: null,
-  });
-});
+      // The database cannot be read, and the list still can. The lock the last
+      // read gave stands.
+      acquireRead.mockRejectedValue(new Error("database is locked"));
+      const refreshed = yield* service.refresh("RGRPDF24");
+      expect(refreshed?.source.kind).toBe("zotero-local-api");
+      expect(locksOf(refreshed)).toEqual({
+        ...expectedLocks({ PUPR5FG5: "external" }),
+        UNREAD23: null,
+      });
+    }),
+);
 
-it("locks an Annotation Zotero imports from the PDF file while the Local API is the source", async () => {
-  await using stack = new AsyncDisposableStack();
-  const harness = await writable(stack);
-  expect(locksOf(await harness.repository.read("RGRPDF24"))).toEqual(
-    expectedLocks(),
-  );
+it.effect(
+  "locks an Annotation Zotero imports from the PDF file while the Local API is the source",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const harness = yield* Effect.promise(() => writable(stack));
+      expect(locksOf(yield* harness.service.read("RGRPDF24"))).toEqual(
+        expectedLocks(),
+      );
 
-  await importFromPdf(harness, "PUPR5FG5");
+      yield* Effect.promise(() => importFromPdf(harness, "PUPR5FG5"));
 
-  expect(locksOf(harness.repository.peek("RGRPDF24")?.value ?? null)).toEqual(
-    expectedLocks({ PUPR5FG5: "external" }),
-  );
-});
+      expect(
+        locksOf((yield* harness.service.peek("RGRPDF24"))?.value ?? null),
+      ).toEqual(expectedLocks({ PUPR5FG5: "external" }));
+    }),
+);
 
 it("refuses every verb on an External Annotation before any request", async () => {
   await using stack = new AsyncDisposableStack();
@@ -311,32 +334,44 @@ it("keeps a Write Conflict that stands when the lock appears, and sends no Apply
   );
 });
 
-it("draws a lock the database moved while the list it gave is not published", async () => {
-  await using stack = new AsyncDisposableStack();
-  let answering = true;
-  const { repository, client, serverEvents, dbEvents } = await writable(stack, {
-    root: () => (answering ? rootOk() : unreachable()),
-    write: () => writeAccepted(38),
-    item: () => annotationItem(afterWrite("PUPR5FG5", { color: "#ff6666" })),
-  });
-  await repository.patchColor("PUPR5FG5", "#ff6666");
-  answering = false;
-  const lost = nextChange(repository);
-  freshnessSignal(serverEvents);
-  await lost;
+it.effect(
+  "draws a lock the database moved while the list it gave is not published",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      let answering = true;
+      const { repository, service, client, serverEvents, dbEvents } =
+        yield* Effect.promise(() =>
+          writable(stack, {
+            root: () => (answering ? rootOk() : unreachable()),
+            write: () => writeAccepted(38),
+            item: () =>
+              annotationItem(afterWrite("PUPR5FG5", { color: "#ff6666" })),
+          }),
+        );
+      yield* service.patchColor("PUPR5FG5", "#ff6666");
+      answering = false;
+      const lost = nextChange(repository);
+      freshnessSignal(serverEvents);
+      yield* Effect.promise(() => lost);
 
-  // The database is behind the colour Zotero confirmed, so the Local API
-  // list stays published over each list the database gives.
-  markExternal(client, "K3JRFLFQ");
-  dbEvents.emit("changed");
+      // The database is behind the colour Zotero confirmed, so the Local API
+      // list stays published over each list the database gives.
+      markExternal(client, "K3JRFLFQ");
+      dbEvents.emit("changed");
 
-  await vi.waitFor(async () => {
-    const held = await repository.read("RGRPDF24");
-    expect(held?.source.kind).toBe("zotero-local-api");
-    expect(colorOf(held, "PUPR5FG5")).toBe("#ff6666");
-    expect(locksOf(held)).toEqual(expectedLocks({ K3JRFLFQ: "external" }));
-  });
-});
+      yield* Effect.promise(() =>
+        vi.waitFor(async () => {
+          const held = await repository.read("RGRPDF24");
+          expect(held?.source.kind).toBe("zotero-local-api");
+          expect(colorOf(held, "PUPR5FG5")).toBe("#ff6666");
+          expect(locksOf(held)).toEqual(
+            expectedLocks({ K3JRFLFQ: "external" }),
+          );
+        }),
+      );
+    }),
+);
 
 it("keeps the History Steps of an Annotation the lock refuses where they stand", async () => {
   await using stack = new AsyncDisposableStack();
@@ -606,98 +641,130 @@ async function groupWritable(
   return harness;
 }
 
-it("locks another user's Annotation in a group library under the Zotero DB source", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository } = await setup(stack, undefined, { group: SYNCED });
+it.effect(
+  "locks another user's Annotation in a group library under the Zotero DB source",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const { service } = yield* Effect.promise(() =>
+        setup(stack, undefined, { group: SYNCED }),
+      );
 
-  const list = await repository.read(GROUP_ATTACHMENT);
+      const list = yield* service.read(GROUP_ATTACHMENT);
 
-  expect(list?.source.kind).toBe("zotero-db");
-  expect(groupLocks(list)).toEqual(expectedLocks(BY_COLLEAGUE));
-});
+      expect(list?.source.kind).toBe("zotero-db");
+      expect(groupLocks(list)).toEqual(expectedLocks(BY_COLLEAGUE));
+    }),
+);
 
-it("locks another user's Annotation under the Local API source, from the Zotero database", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository } = await groupWritable(stack);
+it.effect(
+  "locks another user's Annotation under the Local API source, from the Zotero database",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const { service } = yield* Effect.promise(() => groupWritable(stack));
 
-  const list = await repository.read(GROUP_ATTACHMENT);
+      const list = yield* service.read(GROUP_ATTACHMENT);
 
-  expect(groupLocks(list)).toEqual(expectedLocks(BY_COLLEAGUE));
-});
+      expect(groupLocks(list)).toEqual(expectedLocks(BY_COLLEAGUE));
+    }),
+);
 
-it("locks nothing where the group item names no creator: no row, null, or 0", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository } = await setup(stack, undefined, { group: SYNCED });
+it.effect(
+  "locks nothing where the group item names no creator: no row, null, or 0",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const { service } = yield* Effect.promise(() =>
+        setup(stack, undefined, { group: SYNCED }),
+      );
 
-  const locks = groupLocks(await repository.read(GROUP_ATTACHMENT));
+      const locks = groupLocks(yield* service.read(GROUP_ATTACHMENT));
 
-  expect([locks["4PE492KU"], locks.HRK7BG32, locks.TYY6Z6ZF]).toEqual([
-    null,
-    null,
-    null,
-  ]);
-  expect(locks.PUPR5FG5).toEqual({ reason: "another-user" });
-});
+      expect([locks["4PE492KU"], locks.HRK7BG32, locks.TYY6Z6ZF]).toEqual([
+        null,
+        null,
+        null,
+      ]);
+      expect(locks.PUPR5FG5).toEqual({ reason: "another-user" });
+    }),
+);
 
-it("locks nothing by creator for an Annotation the Zotero database does not hold yet", async () => {
-  await using stack = new AsyncDisposableStack();
-  const unread = {
-    ...afterWrite("PUPR5FG5", {}),
-    key: "UNREAD23",
-    sortIndex: "00000|002050|00170",
-  };
-  const { repository } = await setup(
-    stack,
-    {
-      children: () =>
-        annotationPage(
-          [...ROUGIER_ANNOTATIONS, unread].map((annotation) => ({
-            ...annotation,
-            groupID: GROUP_ID,
-          })),
+it.effect(
+  "locks nothing by creator for an Annotation the Zotero database does not hold yet",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const unread = {
+        ...afterWrite("PUPR5FG5", {}),
+        key: "UNREAD23",
+        sortIndex: "00000|002050|00170",
+      };
+      const { repository, service } = yield* Effect.promise(() =>
+        setup(
+          stack,
+          {
+            children: () =>
+              annotationPage(
+                [...ROUGIER_ANNOTATIONS, unread].map((annotation) => ({
+                  ...annotation,
+                  groupID: GROUP_ID,
+                })),
+              ),
+          },
+          { key: REMEMBERED_KEY, group: SYNCED },
         ),
-    },
-    { key: REMEMBERED_KEY, group: SYNCED },
-  );
-  const announced = nextChange(repository);
-  await repository.read(GROUP_ATTACHMENT);
-  await announced;
+      );
+      const announced = nextChange(repository);
+      yield* service.read(GROUP_ATTACHMENT);
+      yield* Effect.promise(() => announced);
 
-  const list = await repository.read(GROUP_ATTACHMENT);
+      const list = yield* service.read(GROUP_ATTACHMENT);
 
-  expect(list?.source.kind).toBe("zotero-local-api");
-  expect(groupLocks(list)).toEqual({
-    ...expectedLocks(BY_COLLEAGUE),
-    UNREAD23: null,
-  });
-});
+      expect(list?.source.kind).toBe("zotero-local-api");
+      expect(groupLocks(list)).toEqual({
+        ...expectedLocks(BY_COLLEAGUE),
+        UNREAD23: null,
+      });
+    }),
+);
 
-it("locks nothing where the database names no account user ID", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository } = await setup(stack, undefined, {
-    group: { createdBy: CREATED_BY },
-  });
+it.effect("locks nothing where the database names no account user ID", () =>
+  Effect.gen(function* () {
+    const stack = yield* scopedStack;
+    const { service } = yield* Effect.promise(() =>
+      setup(stack, undefined, {
+        group: { createdBy: CREATED_BY },
+      }),
+    );
 
-  expect(groupLocks(await repository.read(GROUP_ATTACHMENT))).toEqual(
-    expectedLocks(),
-  );
-});
+    expect(groupLocks(yield* service.read(GROUP_ATTACHMENT))).toEqual(
+      expectedLocks(),
+    );
+  }),
+);
 
-it("keeps the known creator locks where the database cannot be read again", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository, requests, acquireRead } = await groupWritable(stack);
+it.effect(
+  "keeps the known creator locks where the database cannot be read again",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const { service, requests, acquireRead } = yield* Effect.promise(() =>
+        groupWritable(stack),
+      );
 
-  acquireRead.mockRejectedValue(new Error("database is locked"));
-  const refreshed = await repository.refresh(GROUP_ATTACHMENT);
+      acquireRead.mockRejectedValue(new Error("database is locked"));
+      const refreshed = yield* service.refresh(GROUP_ATTACHMENT);
 
-  expect(refreshed?.source.kind).toBe("zotero-local-api");
-  expect(groupLocks(refreshed)).toEqual(expectedLocks(BY_COLLEAGUE));
-  const sent = requests.length;
-  expect(await repository.patchColor(inGroup("PUPR5FG5"), "#ff6666")).toEqual(
-    ANOTHER_USER_LOCKED,
-  );
-  expect(requests.slice(sent)).toEqual([]);
-});
+      expect(refreshed?.source.kind).toBe("zotero-local-api");
+      expect(groupLocks(refreshed)).toEqual(expectedLocks(BY_COLLEAGUE));
+      const sent = requests.length;
+      expect(yield* service.patchColor(inGroup("PUPR5FG5"), "#ff6666")).toEqual(
+        ANOTHER_USER_LOCKED,
+      );
+      expect(requests.slice(sent)).toEqual([]);
+    }),
+);
 
 it("refuses every edit of another user's Annotation before any request, and sends its delete", async () => {
   await using stack = new AsyncDisposableStack();
