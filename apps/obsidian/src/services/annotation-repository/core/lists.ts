@@ -189,7 +189,7 @@ const readUnasked = Effect.fnUntraced(function* (
     (yield* canPublish(core, attachmentKey, candidate))
   ) {
     if (candidate.source.kind === "zotero-db") {
-      adoptDatabaseSource(core, attachmentKey, candidate.source);
+      yield* adoptDatabaseSource(core, attachmentKey, candidate.source);
       coverDatabaseDeletions(core, attachmentKey, candidate);
     } else if (
       coversConfirmations(candidate, core.confirmedWrites.get(attachmentKey))
@@ -832,11 +832,11 @@ const readFromDatabase = Effect.fnUntraced(function* (
   return { source, annotations };
 });
 
-function adoptDatabaseSource(
+const adoptDatabaseSource = Effect.fnUntraced(function* (
   core: CoreState,
   attachmentKey: string,
   source: DatabaseAnnotationSource,
-): void {
+) {
   const binding = core.databaseBindings.get(attachmentKey);
   const previous = binding?.source;
   const previousServerID = previous?.database.serverID;
@@ -879,16 +879,23 @@ function adoptDatabaseSource(
     core.confirmedWrites.delete(attachmentKey);
   }
   if (revalidated || !databaseSourcesEqual(previous, source)) {
-    // A microtask callback is a plain edge: it reads the source on the
-    // layer's bridge once the read that adopted the source has published.
-    queueMicrotask(() => {
-      core.publish({ _tag: "capability-changed" });
-      if (core.bridge.runSync(compatibleApiSource(core, attachmentKey))) {
-        core.publish({ _tag: "annotations-changed", attachmentKey });
-      }
-    });
+    // Announced once the read that adopted the source has published: the
+    // fiber yields first, so the caller runs on to its own yield.
+    yield* FiberSet.run(
+      core.fibers,
+      Effect.yieldNow.pipe(
+        Effect.andThen(
+          Effect.gen(function* () {
+            core.publish({ _tag: "capability-changed" });
+            if (yield* compatibleApiSource(core, attachmentKey)) {
+              core.publish({ _tag: "annotations-changed", attachmentKey });
+            }
+          }),
+        ),
+      ),
+    );
   }
-}
+});
 
 /**
  * What the Zotero Local API answers has moved: another capability, another
@@ -1136,7 +1143,7 @@ const sourceStillBound = Effect.fnUntraced(function* (
     if (generation !== core.databaseGeneration) continue;
     const { source } = snapshot;
     if (source.kind !== "zotero-db") return false;
-    adoptDatabaseSource(core, attachmentKey, source);
+    yield* adoptDatabaseSource(core, attachmentKey, source);
     coverDatabaseDeletions(core, attachmentKey, snapshot);
     if (source.database.serverID !== expected.serverID) return false;
   }
