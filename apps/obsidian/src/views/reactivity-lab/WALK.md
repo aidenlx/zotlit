@@ -346,3 +346,140 @@ Self-contained; opens its own lab leaf on the Atom tab.
   return JSON.stringify(out, null, 1);
 })()
 ```
+
+## disable-seat.js
+
+Select the seat first: `app.saveLocalStorage("zotlit-lab-registry-seat", "layer")` (or `null`), then disable and enable the plugin.
+
+```js
+// Registry seat walk: disable the plugin while the lab's Atom tab is open and
+// notes switch. Records the order of view close, plugin.register callbacks and
+// registry dispose, plus errors and subscriptions left after dispose.
+(async () => {
+  const wait = (ms) => new Promise((r) => window.setTimeout(r, ms));
+  const T = "zotlit-reactivity-lab";
+  const notes = [
+    "literatures/wangMutationalClinicalSpectrum2020a.md",
+    "literatures/yinClinicopathologicalFeaturesMutational2021.md",
+    "literatures/wittNebulinRegulatesThin2006.md",
+  ];
+  const seat = app.loadLocalStorage("zotlit-lab-registry-seat") ?? "register";
+  let main = app.workspace.getLeavesOfType("markdown")[0];
+  if (!main) main = app.workspace.getLeaf(true);
+  await main.openFile(app.vault.getAbstractFileByPath(notes[0]));
+  let leaf = app.workspace.getLeavesOfType(T)[0];
+  if (!leaf) {
+    leaf = app.workspace.getRightLeaf(false);
+    await leaf.setViewState({ type: T, active: false });
+  }
+  await leaf.loadIfDeferred();
+  await wait(800);
+  const probe = globalThis.__zotlitLabProbe;
+  const t0 = performance.now();
+  const order = [];
+  const at = (line) => order.push(`${Math.round(performance.now() - t0)}ms ${line}`);
+  const note = probe.note;
+  probe.note = (line) => { at(line); note(line); };
+  const errors = [];
+  const consoleError = console.error;
+  console.error = (...args) => { errors.push(args.map(String).join(" ").slice(0, 200)); consoleError(...args); };
+  const onUnload = app.plugins.plugins.zotlit.onunload;
+  app.plugins.plugins.zotlit.onunload = function (...args) { at("onunload start"); const r = onUnload.apply(this, args); at("onunload end"); return r; };
+
+  const before = probe.get();
+  let stop = false;
+  const switching = (async () => {
+    for (let i = 0; !stop; i++) {
+      await main.openFile(app.vault.getAbstractFileByPath(notes[i % 3]));
+      await wait(40);
+    }
+  })();
+  await wait(700);
+  at("disablePlugin call");
+  await app.plugins.disablePlugin("zotlit");
+  at("disablePlugin settled");
+  const atDisable = probe.get();
+  await wait(150);
+  stop = true;
+  await switching;
+  await wait(2000);
+  const after = probe.get();
+  probe.note = note;
+  console.error = consoleError;
+  await app.plugins.enablePlugin("zotlit");
+  await wait(2500);
+  return JSON.stringify({
+    seat,
+    order,
+    liveAtDisableSettled: atDisable.live,
+    liveAfter: after.live,
+    lateCallbacks: after.lateCallbacks - before.lateCallbacks,
+    openedAfterDisable: after.opened - atDisable.opened,
+    errors,
+    reenabled: !!app.plugins.plugins.zotlit?.services,
+  }, null, 1);
+})()
+```
+
+## scope-focus.js
+
+Needs real OS focus on the Obsidian window.
+
+```js
+// View Scope walk with real OS focus: does Obsidian push view.scope when the
+// lab leaf is active, and does a trusted Mod+Shift+S reach its handler?
+(async () => {
+  const wait = (ms) => new Promise((r) => window.setTimeout(r, ms));
+  const T = "zotlit-reactivity-lab";
+  const remote = require("@electron/remote");
+  const win = remote.getCurrentWindow();
+  const wc = remote.getCurrentWebContents();
+  const press = async () => {
+    const modifiers = ["meta", "shift"];
+    wc.sendInputEvent({ type: "keyDown", keyCode: "S", modifiers });
+    wc.sendInputEvent({ type: "keyUp", keyCode: "S", modifiers });
+    await wait(300);
+  };
+  win.focus();
+  await wait(500);
+  const out = { hasFocus: document.hasFocus() };
+
+  const main = app.workspace.getLeavesOfType("markdown")[0];
+  let leaf = app.workspace.getLeavesOfType(T)[0];
+  if (!leaf) {
+    leaf = app.workspace.getRightLeaf(false);
+    await leaf.setViewState({ type: T, active: false });
+  }
+  await leaf.loadIfDeferred();
+  await wait(500);
+  const view = leaf.view;
+  const registry = view.deps.registry;
+  const sort = () => registry.get(view.model.layout).sort;
+
+  // Lab leaf active: its Scope should be the current keymap scope.
+  app.workspace.setActiveLeaf(leaf, { focus: true });
+  await wait(400);
+  out.labActive = {
+    activeIsLab: app.workspace.activeLeaf === leaf,
+    // The window's base scope hands each key to cb(): the active leaf's view.scope.
+    scopeIsView: app.keymap.getWindowStack(window).scope.cb?.() === view.scope,
+    sortBefore: sort(),
+  };
+  await press();
+  out.labActive.sortAfterKey = sort();
+  await press();
+  out.labActive.sortAfterSecondKey = sort();
+
+  // Note leaf active: cb() returns the note's scope; the key must not reach the lab.
+  app.workspace.setActiveLeaf(main, { focus: true });
+  await wait(400);
+  out.noteActive = {
+    scopeIsView: app.keymap.getWindowStack(window).scope.cb?.() === view.scope,
+    sortBefore: sort(),
+  };
+  await press();
+  out.noteActive.sortAfterKey = sort();
+  out.hasFocusAtEnd = document.hasFocus();
+  return JSON.stringify(out, null, 1);
+})()
+```

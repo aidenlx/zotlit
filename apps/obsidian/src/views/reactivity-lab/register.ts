@@ -2,21 +2,37 @@
 // Reactivity Lab view and its command.
 import type { Plugin } from "obsidian";
 
-import { makeViewRegistry } from "./edge";
+import { makeViewRegistry, seatedViewRegistry } from "./edge";
+import type { ViewRegistryHandle } from "./edge";
+import { labProbe } from "./source";
 import { REACTIVITY_LAB_VIEW_TYPE, ReactivityLabView } from "./view";
 import type { ReactivityLabDeps } from "./view";
 import type { LabRuntime } from "./zustand-tab";
+
+/** Local-storage key: "layer" seats the registry in pluginLayer, else plugin.register. */
+const SEAT_KEY = "zotlit-lab-registry-seat";
 
 export function registerReactivityLab(
   plugin: Pick<Plugin, "registerView" | "addCommand" | "app" | "register">,
   {
     runtime,
-  }: { readonly runtime: LabRuntime & Parameters<typeof makeViewRegistry>[0] },
+  }: {
+    readonly runtime: LabRuntime & Parameters<typeof makeViewRegistry>[0];
+  },
 ): void {
-  // Production seat: a scoped Layer in pluginLayer that acquires the registry
-  // and disposes it with the other services.
-  const registry = makeViewRegistry(runtime);
-  plugin.register(() => registry.dispose());
+  plugin.register(() => labProbe.note("plugin.register callbacks"));
+  const layerSeat = plugin.app.loadLocalStorage(SEAT_KEY) === "layer";
+  labProbe.note(`registry seat: ${layerSeat ? "layer" : "register"}`);
+  let registry: ViewRegistryHandle;
+  if (layerSeat) {
+    registry = seatedViewRegistry(runtime);
+  } else {
+    registry = makeViewRegistry(runtime);
+    plugin.register(() => {
+      labProbe.note("registry dispose (register seat)");
+      registry.dispose();
+    });
+  }
   const deps: ReactivityLabDeps = { runtime, registry };
   plugin.registerView(
     REACTIVITY_LAB_VIEW_TYPE,

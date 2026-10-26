@@ -24,6 +24,8 @@ import { layerPluginHost } from "@/lib/plugin-host";
 import type { ZoteroHttp } from "@/lib/zotero-http";
 import { layerZoteroHttpNode } from "@/lib/zotero-http-node";
 import { openLibraryView } from "@/views/library/register";
+// PROTOTYPE (proto/view-reactivity): registry seat test.
+import { layerLabViewRegistry } from "@/views/reactivity-lab/edge";
 
 import { layerAnnotationLinkReading } from "./annotation-popover/reading";
 import { layerAnnotationPopover } from "./annotation-popover/service";
@@ -361,6 +363,9 @@ export function pluginLayer(
     __DEV__
       ? layerQueryMeasureCli.pipe(startingAs("QueryMeasureCli"))
       : Layer.empty,
+    // PROTOTYPE (proto/view-reactivity): the Reactivity Lab registry, seated
+    // in the graph so the disable walk can compare it with plugin.register.
+    __DEV__ ? layerLabViewRegistry : Layer.empty,
     layerReleaseActions.pipe(startingAs("ReleaseActions")),
     layerTemplateWorkbenchCli.pipe(startingAs("TemplateWorkbenchCli")),
     layerWikilinkEditor.pipe(startingAs("WikilinkEditor")),

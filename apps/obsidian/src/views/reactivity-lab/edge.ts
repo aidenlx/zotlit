@@ -9,7 +9,7 @@
 // `viewRuntime`. The plugin owns one registry for its lifetime; every view
 // root shares it, so a service Stream runs once however many leaves read it.
 import { RegistryContext, scheduleTask } from "@effect/atom-react";
-import { Effect, Layer, Option } from "effect";
+import { Context, Effect, Layer, Option } from "effect";
 import type { ManagedRuntime, Stream } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
@@ -17,6 +17,7 @@ import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { createElement } from "react";
 import type { ReactNode } from "react";
 
+import { labProbe } from "./source";
 import type { LabServices } from "./source";
 
 /**
@@ -57,12 +58,50 @@ export function held<A>(
 export function makeViewRegistry(
   runtime: Pick<ManagedRuntime.ManagedRuntime<LabServices, never>, "runSync">,
 ): AtomRegistry.AtomRegistry {
-  const context = runtime.runSync(Effect.context<LabServices>());
+  return seededRegistry(runtime.runSync(Effect.context<LabServices>()));
+}
+
+function seededRegistry(
+  context: Context.Context<LabServices>,
+): AtomRegistry.AtomRegistry {
   return AtomRegistry.make({
     initialValues: [[servicesLayer, Layer.succeedContext(context)]],
     scheduleTask,
     defaultIdleTTL: 400,
   });
+}
+
+/** The registry seated in the plugin's Layer graph (seat test). */
+export class LabViewRegistry extends Context.Service<
+  LabViewRegistry,
+  AtomRegistry.AtomRegistry
+>()("zotlit/obsidian/LabViewRegistry") {}
+
+/** Acquires the registry with the services; disposes it when the graph closes. */
+export const layerLabViewRegistry = Layer.effect(
+  LabViewRegistry,
+  Effect.acquireRelease(
+    Effect.map(Effect.context<LabServices>(), (context) =>
+      seededRegistry(context),
+    ),
+    (registry) =>
+      Effect.sync(() => {
+        labProbe.note("registry dispose (layer seat)");
+        registry.dispose();
+      }),
+  ),
+);
+
+/** The Layer-seated registry from the plugin runtime. */
+export function seatedViewRegistry(
+  runtime: unknown,
+): AtomRegistry.AtomRegistry {
+  // The dev-only Layer is outside the runtime's declared type.
+  const seated = runtime as Pick<
+    ManagedRuntime.ManagedRuntime<LabViewRegistry, never>,
+    "runSync"
+  >;
+  return seated.runSync(LabViewRegistry);
 }
 
 /** The registry type, so Obsidian adapter files need no Effect import. */

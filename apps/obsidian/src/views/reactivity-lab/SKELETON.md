@@ -25,7 +25,7 @@ PROTOTYPE (proto/view-reactivity). Pseudocode, not compiled. "Current" is
  ├── lib/
 +│   └── view-atoms.ts            # viewRuntime, held, ViewRegistry, makeViewRegistry
  ├── services/
- │   ├── plugin-layer.ts          # (later) registry as a scoped Layer, after the disable walk
+ │   ├── plugin-layer.ts          # + the registry as a scoped Layer (disable walk passed)
  │   └── citation-index/
  │       ├── service.ts           # + citedBy(key): Stream, beside observeCitedBy
 -│       ├── plain.ts             # adapter retires
@@ -161,7 +161,7 @@ class CitedByView extends ItemView {
   #release = holdModel(registry, this.model)          // constructor: setState may come first
 
   constructor(leaf, registry):
-    this.scope = new Scope(app.scope)                 // view keys; Obsidian pushes on focus
+    this.scope = new Scope(app.scope)                 // view keys; get keys while the leaf is active
     this.scope.register(["Mod"], "f", () => (this.toggleSearch(), false))
 
   getState()  = { ...super.getState(), ...registry.get(model.layout) }
@@ -236,9 +236,12 @@ function GroupPreview({ path }) {                     // was: loadPreviews queue
 
 ## 9. Open before you build
 
-- Registry seat: a scoped Layer in `pluginLayer` disposes the registry during
-  `onunload`, before the views detach. The lab disposes it after. Run the
-  disable walk before you move it.
-- `view.scope` push on focus: not seen (no OS focus during the walk). Prove it
-  with trusted input in an E2E case.
 - `previewAtom` family and `Atom.family` keys: sketched, not walked.
+
+Resolved by walk (FINDINGS.md):
+
+- Registry seat: a scoped Layer in `pluginLayer` is safe. Obsidian closes the
+  views before `onunload`, and the Layer disposes the registry after that.
+- `view.scope`: with real focus, a trusted key reaches the handler only while
+  the leaf is active. Obsidian looks up the active leaf's `view.scope` at
+  each key press.

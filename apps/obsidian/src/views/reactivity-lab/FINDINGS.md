@@ -94,12 +94,18 @@ for service state and commands:
 1. A deep module `lib/view-atoms.ts`: `viewRuntime` (an `Atom.runtime` over the
    plugin's services, seeded per registry), `held(stream, fallback)`, and
    `ViewRegistry`.
-2. One registry for the plugin's lifetime, disposed after the views detach and
-   before the services stop. Tested order: the lab disposes it through
-   `plugin.register`, which Obsidian runs after `onunload` and after the view
-   leaves detach. A scoped Layer in `pluginLayer` is the tidier seat but
-   disposes earlier, during `onunload`, while views can still be mounted.
-   Untested: run the same disable walk before you choose that seat.
+2. One registry for the plugin's lifetime, seated as a scoped Layer in
+   `pluginLayer` (`layerLabViewRegistry` in the lab). Measured order on
+   disable, the same in three runs: the views close, then the
+   `plugin.register` callbacks run, then `onunload` starts service disposal,
+   and the Layer disposes the registry 2 ms after `disablePlugin` settles.
+   The views are closed before `onunload`, so no view is mounted when the
+   registry goes. Both seats gave 0 live subscriptions, 0 late callbacks and
+   no errors. The registry sits in `registrations`, which depend on the
+   services, so Layer release order closes it before the services it reads
+   (inferred from Layer semantics, not probed). The lab keeps both seats:
+   `app.saveLocalStorage("zotlit-lab-registry-seat", "layer")` selects the
+   Layer, and the walk is `disable-seat.js` in `WALK.md`.
 3. Static atoms next to each service (`services/<name>/atoms.ts`): a state atom
    per state member, a `viewRuntime.fn` per command.
 4. The `ItemView` owns a per-leaf view model (`view-model.ts`): atoms it
@@ -139,7 +145,7 @@ synchronous, so each one maps to one call:
 | Ephemeral state | DOM-owned (`scrollTop`), read from the DOM; not an atom | `getEphemeralState()` returns it |
 | Header action (`addAction`) | click: `registry.update(model.layout)`; icon and label follow `registry.subscribe(..., { immediate: true })` | "Sort: path" → "Sort: count" |
 | Pane menu (`onPaneMenu`) | builds items from `registry.get`; items write the model | "Sort by citations" checked; "Clear filter" cleared the input |
-| View hotkey (`view.scope`) | `new Scope(app.scope)` + handler writing the model | Handler flips the sort. Obsidian's push on focus not seen: the window had no OS focus |
+| View hotkey (`view.scope`) | `new Scope(app.scope)` + handler writing the model | With real OS focus, a trusted Cmd+Shift+S flips the sort while the lab leaf is active, and does nothing while a note leaf is active. Obsidian pushes nothing: the window's base scope asks `workspace.activeLeaf.view.scope` at each key press and hands the key to it |
 | Per-leaf state | one model per `ItemView` | second leaf starts empty |
 | Release | model atoms mounted from the constructor, released in `onClose` | closed leaf's model leaves the registry |
 

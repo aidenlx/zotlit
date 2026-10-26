@@ -81,7 +81,7 @@ export class ReactivityLabView extends ItemView {
     super(leaf);
     this.#registry = deps.registry;
     this.#releaseModel = holdViewModel(this.#registry, this.model);
-    // View-level keys: Obsidian pushes this Scope while the leaf is active.
+    // View-level keys: Obsidian hands each key to the active leaf's Scope.
     this.scope = new Scope(this.app.scope);
     this.scope.register(["Mod", "Shift"], "s", () => {
       this.#toggleSort();
