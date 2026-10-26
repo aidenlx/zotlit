@@ -1,5 +1,6 @@
 // The renderer-side answer of the local Annotation image command.
 import { Data, Effect, Result, Schema } from "effect";
+import type { PlatformError } from "effect";
 import type { CliData } from "obsidian";
 
 import { renderDiagnostic } from "@zotlit/item-query";
@@ -41,8 +42,13 @@ export interface AnnotationImagePorts {
     request: ExcerptRequest,
     signal?: AbortSignal,
   ): Promise<ExcerptOutcome>;
-  publish(fingerprint: string, bytes: Uint8Array): Promise<string>;
-  exists(path: string): Promise<boolean>;
+  /** The path the PNG store publishes `bytes` at. */
+  publish(
+    fingerprint: string,
+    bytes: Uint8Array,
+  ): Effect.Effect<string, PlatformError.PlatformError>;
+  /** Whether a file stands at `path` on this device. */
+  exists(path: string): Effect.Effect<boolean>;
 }
 
 /** A step of the image answer failed; `cause` is what it threw. */
@@ -133,7 +139,11 @@ const imageAnswer = Effect.fn("AnnotationImageCli.image")(function* ({
         ? request.zoteroPngPath
         : yield* pngBytes(outcome).pipe(
             Effect.flatMap((bytes) =>
-              attempt(() => ports.publish(outcome.identity.key, bytes)),
+              ports
+                .publish(outcome.identity.key, bytes)
+                .pipe(
+                  Effect.mapError((cause) => new ImageAnswerError({ cause })),
+                ),
             ),
           );
     if (!path)
@@ -150,11 +160,10 @@ const imageAnswer = Effect.fn("AnnotationImageCli.image")(function* ({
     });
   }
   const pdfExists =
-    request.pdfPath !== null &&
-    (yield* attempt(() => ports.exists(request.pdfPath!)));
+    request.pdfPath !== null && (yield* ports.exists(request.pdfPath));
   const cacheExists =
     request.zoteroPngPath !== null &&
-    (yield* attempt(() => ports.exists(request.zoteroPngPath!)));
+    (yield* ports.exists(request.zoteroPngPath));
   return !pdfExists && !cacheExists
     ? imageFailure(
         "file-unavailable",

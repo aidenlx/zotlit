@@ -6,7 +6,7 @@ import { MENU_SECTION } from "@/lib/menu-section";
 import type { FileMenuSegment } from "@/services/file-menu";
 
 import type { AttachmentOpenDeps } from "./actions";
-import { pdfPickerReader, resolveLiteratureNoteAttachments } from "./actions";
+import { pdfPickerReader } from "./actions";
 
 /**
  * The `open-pdf` entry on a Literature Note's file menu. A pointer click shows
@@ -30,10 +30,8 @@ export function attachmentOpenFileMenu(
             ? { rect: target.getBoundingClientRect(), doc: target.doc }
             : undefined;
           void (async () => {
-            const attachments = await resolveLiteratureNoteAttachments(
-              deps,
-              itemKey,
-            );
+            const attachments =
+              await deps.attachments.literatureNoteAttachments(itemKey);
             openAttachments(attachments, {
               reader: pdfPickerReader(deps.opener),
               host: deps.app,

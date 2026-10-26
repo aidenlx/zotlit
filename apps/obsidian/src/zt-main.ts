@@ -23,8 +23,6 @@ import { registerFileLinkCapture } from "./services/attachment-open/capture";
 import { attachmentOpenFileMenu } from "./services/attachment-open/menu";
 import { buildServices } from "./services/build";
 import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
-import { registerAnnotationImageCli } from "./services/excerpt-image/register-cli";
-import { savedExcerptRequest } from "./services/excerpt-image/request";
 import { registerFileMenu } from "./services/file-menu";
 import { addGraphCitationsActions } from "./services/graph-citations/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
@@ -39,7 +37,6 @@ import {
   addNoteFeatureActions,
   noteFeatureFileMenu,
 } from "./services/note-feature/actions";
-import { runBatchUpdateAll } from "./services/note-feature/update-batch";
 import { addProfileActions } from "./services/profile/actions";
 import { startProtocolHandlers } from "./services/protocol/register";
 import { ServiceStartupFailed } from "./services/startup-failure";
@@ -324,10 +321,8 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
     const attachmentOpenDeps = {
       app: this.app,
-      reads: services.zoteroReads,
-      zoteroPref: services.zoteroPref,
+      attachments: services.literatureNoteAttachments,
       opener: services.targetOpener,
-      bridge: services.bridge,
     };
     addAttachmentOpenActions(this, attachmentOpenDeps);
     void stack.use(
@@ -338,20 +333,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         bridge: services.bridge,
       }),
     );
-    const updateAll = () =>
-      runBatchUpdateAll({
-        createProfile: services.createProfile,
-        importProfile: services.importProfile,
-        zoteroPref: services.zoteroPref,
-        profile: services.profile,
-        app: this.app,
-        zoteroReads: services.zoteroReads,
-        settings: services.settings,
-        bridge: services.bridge,
-        batchScope: services.batchScope,
-        noteFeature: services.noteFeature,
-        noteIndex: services.noteIndex,
-      });
+    const updateAll = () => services.batchUpdate.runBatchUpdateAll();
     const noteFeatureDeps = {
       createProfile: services.createProfile,
       importProfile: services.importProfile,
@@ -401,7 +383,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       createProfile: services.createProfile,
       importProfile: services.importProfile,
       app: this.app,
-      reads: services.zoteroReads,
+      attachments: services.literatureNoteAttachments,
       lookup: services.itemLookup,
       noteIndex: services.noteIndex,
       noteFeature: services.noteFeature,
@@ -417,17 +399,11 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
         createProfile: services.createProfile,
         importProfile: services.importProfile,
-        profile: services.profile,
         app: this.app,
-        settings: services.settings,
-        zoteroReads: services.zoteroReads,
-        batchScope: services.batchScope,
-        zoteroPref: services.zoteroPref,
         noteFeature: services.noteFeature,
-        noteIndex: services.noteIndex,
         noteImportView: services.noteImportView,
-        bridge: services.bridge,
         opener: services.targetOpener,
+        bridge: services.bridge,
       }),
     );
 
@@ -509,6 +485,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         zoteroPref: services.zoteroPref,
         citationLookup: services.citationLookup,
         useLedger: services.useLedger,
+        attachments: services.literatureNoteAttachments,
         opener: services.targetOpener,
         notify: (message) => new BaseNotice(message),
       }),
@@ -620,8 +597,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       citationIndex: services.citationIndex,
     });
 
-    registerAnnotationImageCli(this, services);
-
     registerPandocExport(this, {
       citationParse: services.citationParseService,
       profile: services.profile,
@@ -712,18 +687,13 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         ({ record, source }) => {
           const edit = Symbol(record.key);
           latestEdit.set(record.key, edit);
-          void savedExcerptRequest({
-            annotation: record,
-            source,
-            sourceScope: services.zoteroPref.dataDir,
-            zoteroReads: services.zoteroReads,
-            paths: services.zoteroPref,
-            bridge: services.bridge,
-          }).then((request) => {
-            if (latestEdit.get(record.key) !== edit) return;
-            latestEdit.delete(record.key);
-            if (request) services.excerptDisplay.revalidate(request);
-          });
+          void services
+            .excerptRequest({ annotation: record, source })
+            .then((request) => {
+              if (latestEdit.get(record.key) !== edit) return;
+              latestEdit.delete(record.key);
+              if (request) services.excerptDisplay.revalidate(request);
+            });
         },
       ),
     );

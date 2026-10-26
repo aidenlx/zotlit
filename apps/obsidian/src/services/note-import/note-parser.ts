@@ -36,7 +36,7 @@ import type {
   HighlightOptions,
 } from "@/lib/turndown/color-mark";
 import type {
-  AttachmentImport,
+  AttachmentImportBatch,
   SourceOrigin,
 } from "@/services/attachment-import/service";
 
@@ -82,7 +82,7 @@ export interface NoteParserDeps extends HighlightOptions {
    * Decides each resolved image against the canonical roots, copies an
    * approved one into the vault, and returns its embed link.
    */
-  attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
+  attachmentImport: Pick<AttachmentImportBatch, "decide" | "resolveLink">;
 }
 
 /** Render cited items through the user's `cite` template. */

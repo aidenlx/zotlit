@@ -28,15 +28,13 @@ import { syntheticFile } from "@/lib/markdown-link";
 import type { FileManager as FileManagerTag } from "@/lib/obsidian-file-manager";
 import type { Vault as VaultTag } from "@/lib/obsidian-vault";
 import type {
-  AttachmentImport,
-  AttachmentImportService,
-} from "@/services/attachment-import/service";
+  AttachmentImportBatchHandle,
+  AttachmentImportHandle,
+} from "@/services/attachment-import/handle";
 import type {
   ExcerptPreparation,
   PreparedExcerpts,
 } from "@/services/excerpt-image/prepare";
-import type { prepareSingleExcerpt } from "@/services/excerpt-image/prepare-single";
-import type { QueryHandle } from "@/services/item-query/handle";
 import { childNoteLink } from "@/services/note-import/child-note-link";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { getProfileBinding } from "@/services/profile/bindings";
@@ -49,6 +47,8 @@ import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
+import type { NoteCitations } from "./citations-handle";
+import type { CreationPlanningContext } from "./creation-planning";
 import { resolveFreeNotePath } from "./filename";
 
 const logger = getLogger("note-feature");
@@ -78,18 +78,12 @@ interface NoteVaultApp {
  * template artifacts live in {@link PlainTemplate}.
  */
 export interface NoteFeatureDeps {
-  profile: Pick<
-    PlainProfile,
-    "loaded" | "profiles" | "resolveProfile" | "profileOf"
-  >;
+  profile: Pick<PlainProfile, "resolveProfile" | "profileOf">;
   app: NoteVaultApp;
   template: Pick<
     PlainTemplate,
-    | "loaded"
     | "render"
     | "renderManagedContent"
-    | "renderCitation"
-    | "renderProfileAnnotation"
     | "renderFilename"
     | "frontmatterFields"
     | "getLiteratureNoteTemplate"
@@ -99,27 +93,23 @@ export interface NoteFeatureDeps {
    * read of one write sees one database state.
    */
   zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "reads">;
-  /** ZotLit Query, which tests the Profile Matches of an Item. */
-  query: Pick<QueryHandle, "run">;
   noteIndex: Pick<
     PlainNoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   settings: Pick<PluginSettings["Service"], "current" | "update">;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "runPromiseExit">;
+  /** The services creation planning and Profile selection read. */
+  context: CreationPlanningContext;
   /** Creates each note; a taken path fails as `FileExists`. */
   vault: Pick<VaultTag["Service"], "create">;
   /** Moves a note to its Profile's folder; a taken path fails as `FileExists`. */
   fileManager: Pick<FileManagerTag["Service"], "renameFile">;
-  attachmentImport: Pick<AttachmentImportService, "prepare">;
+  attachmentImport: Pick<AttachmentImportHandle, "prepare">;
   excerptImages?: ExcerptPreparation;
-  singleExcerpt?: (
-    options: Omit<
-      Parameters<typeof prepareSingleExcerpt>[0],
-      "app" | "resolver"
-    >,
-  ) => ReturnType<typeof prepareSingleExcerpt>;
+  /** The citation renders and the annotation insert, over the bridge. */
+  citations: NoteCitations;
 }
 
 interface NoteTarget {
@@ -193,7 +183,10 @@ export function resolveNotePath(
 export function buildNoteResolvers(
   ctx: Omit<NoteFeatureDeps, "db">,
   options: {
-    attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
+    attachmentImport: Pick<
+      AttachmentImportBatchHandle,
+      "decide" | "resolveLink"
+    >;
     settings: ProfileBindingSettings | null;
     sourcePath: string;
     excerptImages?: PreparedExcerpts;
@@ -247,7 +240,7 @@ export function buildNoteResolvers(
   };
 }
 
-export function resolveRenderedNotePath(
+function resolveRenderedNotePath(
   folder: string,
   rendered: string,
   options: { exists: (path: string) => boolean },

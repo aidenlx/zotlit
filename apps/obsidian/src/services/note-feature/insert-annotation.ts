@@ -1,67 +1,92 @@
 // Renders the captured card once, after its final image outcome is durable.
+import { Effect, Ref, Stream } from "effect";
+
 import {
-  annotationColorToName,
   annotationOpenUri,
   buildAnnotationParents,
   parseIndexedKey,
 } from "@zotlit/db";
-import { TemplateError } from "@zotlit/templates/facade";
 
 import {
   annotationCitation,
   buildAnnotationResolvers,
 } from "@/lib/annotation-render";
+import { portCall } from "@/lib/legacy-port";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
+import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
+import type { prepareSingleExcerpt } from "@/services/excerpt-image/prepare-single";
 import {
+  excerptInputs,
   excerptRequestFrom,
-  readExcerptInputs,
 } from "@/services/excerpt-image/request";
-import { ProfileAnnotationError } from "@/services/template/service";
+import { NoteIndex } from "@/services/note-index/service";
+import { Profile } from "@/services/profile/service";
+import { PluginSettings } from "@/services/settings/service";
+import { syncTemplate } from "@/services/template-workbench/sync-template";
+import { ProfileAnnotationError, Template } from "@/services/template/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 
-import type { NoteFeatureDeps } from "./context";
+import { annotationInsertData } from "./insert-annotation-data";
 
 export interface AnnotationInsertOptions {
   annotation: AnnotationRecord;
   source: AnnotationSource;
   sourceScope: string;
   notePath: string;
-  signal: AbortSignal;
+  /** Whether the editor still takes the insert; the legacy excerpt port reads it. */
   valid: () => boolean;
 }
 
-export async function prepareAnnotationInsert(
-  ctx: Pick<
-    NoteFeatureDeps,
-    | "template"
-    | "profile"
-    | "zoteroReads"
-    | "zoteroPref"
-    | "settings"
-    | "bridge"
-    | "singleExcerpt"
-    | "noteIndex"
-  >,
-  options: AnnotationInsertOptions,
-) {
-  await using lease = await ctx.zoteroReads.acquireRead();
-  const { annotation: a, source, signal } = options;
+/** The captured card's rendered text and its Excerpt Image summary. */
+export interface AnnotationInsert {
+  text: string;
+  summary: ExcerptSummary;
+}
+
+/**
+ * The single-excerpt preparation, a legacy port until the excerpt area
+ * converts: the plugin binds `app` and the excerpt resolver.
+ */
+export type SingleExcerpt = (
+  options: Omit<Parameters<typeof prepareSingleExcerpt>[0], "app" | "resolver">,
+) => ReturnType<typeof prepareSingleExcerpt>;
+
+/**
+ * Render the captured card through the annotation template of its parent
+ * item's Literature Note Profile, after its Excerpt Image is prepared. `null`
+ * where the insert went stale (the caller's `valid`, or a moved Zotero data
+ * directory) or the database cannot place the card. An interrupt cancels it,
+ * and aborts the excerpt preparation.
+ *
+ * Fails with {@link ProfileAnnotationError} when the parent's note names an
+ * unknown Profile.
+ */
+export const prepareAnnotationInsert = Effect.fn(
+  "NoteFeature.prepareAnnotationInsert",
+)(function* (singleExcerpt: SingleExcerpt, options: AnnotationInsertOptions) {
+  const { annotation: a, source } = options;
+  const pref = yield* ZoteroPref;
+  const reads = yield* (yield* ZoteroReads).snapshot;
+  const { dataDir: startDataDir, baseAttachmentPath } = yield* pref.current;
+  // The data directory as the preparation reads it on each `valid()`.
+  const liveDataDir = yield* Ref.make(startDataDir);
+  yield* pref.changes.pipe(
+    Stream.runForEach((snapshot) => Ref.set(liveDataDir, snapshot.dataDir)),
+    Effect.forkScoped({ startImmediately: true }),
+  );
   const valid = () =>
-    !signal.aborted &&
-    options.valid() &&
-    options.sourceScope === ctx.zoteroPref.dataDir;
-  if (!valid() || !ctx.singleExcerpt) return null;
-  const paths = {
-    dataDir: ctx.zoteroPref.dataDir,
-    baseAttachmentPath: ctx.zoteroPref.baseAttachmentPath,
-  };
+    options.valid() && options.sourceScope === Ref.getUnsafe(liveDataDir);
+  if (!valid()) return null;
+  const paths = { dataDir: startDataDir, baseAttachmentPath };
   // The parent context, not the Annotation's own row: a card the Local API
   // answered can precede its SQLite row.
-  const { identity, sources, attachment } = await readExcerptInputs(
-    lease.reads,
+  const { identity, sources, attachment } = yield* excerptInputs(
+    reads,
     a.parentKey,
   );
   const request = excerptRequestFrom({
@@ -71,7 +96,7 @@ export async function prepareAnnotationInsert(
     attachment,
     paths,
   });
-  // This also validates the captured source against the lease's database identity.
+  // This also validates the captured source against the Snapshot's database identity.
   const key = parseIndexedKey(a.key);
   if (!request || !attachment || !key) return null;
   const unusedImport = () => {
@@ -88,16 +113,18 @@ export async function prepareAnnotationInsert(
     sources,
     resolvers,
   ).get(attachment.itemID)!;
-  const file = parentItem
-    ? ctx.noteIndex.getNotesByItemKey(parentItem.indexedKey)[0]
-    : undefined;
-  const profile = file ? ctx.profile.profileOf(file) : ctx.profile.profileOf();
+  const [file] = parentItem
+    ? yield* (yield* NoteIndex).getNotesByItemKey(parentItem.indexedKey)
+    : [];
+  const profile = yield* (yield* Profile).profileOf(file);
   if (!profile.ok)
-    throw new ProfileAnnotationError(
-      unknownProfileDiagnostic(profile.stamped.stamp, {
-        path: file?.path,
-        indexedKey: parentItem?.indexedKey,
-      }),
+    return yield* Effect.fail(
+      new ProfileAnnotationError(
+        unknownProfileDiagnostic(profile.stamped.stamp, {
+          path: file?.path,
+          indexedKey: parentItem?.indexedKey,
+        }),
+      ),
     );
   const page = "pageIndex" in a.position ? a.position.pageIndex + 1 : null;
   const fileLink = resolvers.fileLink(attachment, { annotation: a.key, page });
@@ -109,73 +136,34 @@ export async function prepareAnnotationInsert(
     groupID: key.groupID,
     pageLabel: a.pageLabel,
   });
-  const prepared = await ctx.singleExcerpt({
-    annotation: a,
-    request,
-    settings: ctx.bridge.runSync(ctx.settings.current),
-    notePath: options.notePath,
-    sourceLink: `[Zotero](${backlink})`,
-    signal,
-    valid,
-  });
+  const settings = yield* (yield* PluginSettings).current;
+  const prepared = yield* portCall("single-excerpt", (signal) =>
+    singleExcerpt({
+      annotation: a,
+      request,
+      settings,
+      notePath: options.notePath,
+      sourceLink: `[Zotero](${backlink})`,
+      signal,
+      valid,
+    }),
+  );
   if (!valid()) return null;
-  const metadata = a.templateMetadata;
-  const data = {
+  const templates = yield* syncTemplate;
+  const data = annotationInsertData({
+    annotation: a,
     key: key.key,
-    indexedKey: a.key,
     libraryID: request.libraryID,
-    type: a.type,
-    text: a.text,
-    commentHtml: a.comment,
-    get comment() {
-      return a.comment ? resolvers.commentToMarkdown(a.comment) : null;
-    },
-    colorHex: a.color,
-    colorName: annotationColorToName(a.color),
-    pageLabel: a.pageLabel,
     page,
-    authorName: metadata?.authorName ?? null,
-    get isExternal() {
-      return requireFact(metadata?.isExternal, "isExternal");
-    },
-    get dateAdded() {
-      return Temporal.Instant.from(
-        requireFact(metadata?.dateAdded, "dateAdded"),
-      );
-    },
-    get dateModified() {
-      return Temporal.Instant.from(
-        requireFact(metadata?.dateModified, "dateModified"),
-      );
-    },
-    tags: a.tags.map((name) => ({
-      name,
-      type: metadata?.tags?.find((tag) => tag.name === name)?.type ?? "unknown",
-      toString: () => name,
-    })),
+    resolvers,
     imgLink: prepared.helper,
     fileLink,
     backlink,
-    parentItem,
-    parentAttachment: tplAttachment,
-    get citation() {
-      return annotationCitation(parentItem, a.pageLabel, ctx.template);
-    },
-    toString: () => a.text ?? a.comment ?? a.type,
-  };
-  return {
-    text: ctx.template.renderProfileAnnotation(data, {
-      profile: profile.profile,
-    }),
-    summary: prepared.summary(),
-  };
-}
-
-function requireFact<T>(value: T | null | undefined, field: string): T {
-  if (value == null)
-    throw new TemplateError(
-      `Annotation source did not supply ${field}`,
-      "annotation",
-    );
-  return value;
-}
+    parent: { parentItem, tplAttachment },
+    citation: () => annotationCitation(parentItem, a.pageLabel, templates),
+  });
+  const text = yield* (yield* Template).renderProfileAnnotation(data, {
+    profile: profile.profile,
+  });
+  return { text, summary: prepared.summary() } satisfies AnnotationInsert;
+}, Effect.scoped);
