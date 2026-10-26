@@ -1209,3 +1209,40 @@ it.effect(
       expect(announced).toEqual(["TYY6Z6ZF"]);
     }),
 );
+
+it.effect(
+  "reads a persisted image this device cannot open as no baseline",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const { repository, service, client } = yield* Effect.promise(() =>
+        setup(stack, undefined, {
+          persistedExcerpt: async (annotation) => {
+            switch (annotation.key) {
+              // The store cannot open this image: the stroke stays on demand.
+              case "TYY6Z6ZF":
+                throw new Error("excerpt store unreadable");
+              case "HRK7BG32":
+                return excerptFingerprint(annotation);
+              default:
+                return null;
+            }
+          },
+        }),
+      );
+      const announced: string[] = [];
+      stack.defer(
+        repository.listen("excerpt-pixels-changed", (record) =>
+          announced.push(record.key),
+        ),
+      );
+      client.$client.exec(
+        "update itemAnnotations set color = '#2ea8e5' where itemID = 55",
+      );
+
+      const list = yield* service.read("RGRPDF24");
+
+      expect(colorOf(list, "TYY6Z6ZF")).toBe("#2ea8e5");
+      expect(announced).toEqual([]);
+    }),
+);

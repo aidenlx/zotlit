@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { DateTime, Effect, Layer } from "effect";
+import { DateTime, Effect, Exit, Layer } from "effect";
 import { TestClock } from "effect/testing";
 import { expect, vi } from "vitest";
 
@@ -463,5 +463,17 @@ it.effect("contains a write-back that fails", () =>
       run({ attachmentKey: ATTACHMENT_KEY, instant: NOW, serverID: SERVER_ID }),
     );
     expect(exit._tag).toBe("Success");
+  }),
+);
+
+it.effect("lets an interrupt of the write-back through", () =>
+  Effect.gen(function* () {
+    const { run } = readUseServices({
+      writeLastRead: () => Effect.interrupt,
+    });
+    const exit = yield* Effect.exit(
+      run({ attachmentKey: ATTACHMENT_KEY, instant: NOW, serverID: SERVER_ID }),
+    );
+    expect(Exit.hasInterrupts(exit)).toBe(true);
   }),
 );
