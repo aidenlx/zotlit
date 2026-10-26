@@ -400,7 +400,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     run.booksNotePath = `books/books-${booksProfileTargetItem.citationKey}.md`;
     await obEval(
       run.vaultId,
-      `(async function(){var plugin=app.plugins.plugins.zotlit;plugin.services.settings.update({'citation.pandoc-citations':true,'citation.open-as-links':true});var file=await app.vault.create('Profile flow source.md',${JSON.stringify(`[@${booksProfileTargetItem.citationKey}]\n`)});var leaf=app.workspace.getLeaf(false);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.setCursor({line:0,ch:5});return true;})()`,
+      `(async function(){var plugin=app.plugins.plugins.zotlit;plugin.services.bridge.runSync(plugin.services.settings.update({'citation.pandoc-citations':true,'citation.open-as-links':true}));var file=await app.vault.create('Profile flow source.md',${JSON.stringify(`[@${booksProfileTargetItem.citationKey}]\n`)});var leaf=app.workspace.getLeaf(false);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.setCursor({line:0,ch:5});return true;})()`,
     );
     expect(
       await obEvalUntil(
@@ -717,7 +717,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(await hasIndexedNotes(run.vaultId, bookItem.key, 0)).toBe(true);
     await obEval(
       run.vaultId,
-      `(async function(){var plugin=app.plugins.plugins.zotlit;plugin.services.settings.update({'citation.pandoc-citations':true,'citation.open-as-links':true});var file=await app.vault.create('Match flow source.md',${JSON.stringify(`[@${bookItem.citationKey}]\n`)});var leaf=app.workspace.getLeaf(false);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.setCursor({line:0,ch:5});return true;})()`,
+      `(async function(){var plugin=app.plugins.plugins.zotlit;plugin.services.bridge.runSync(plugin.services.settings.update({'citation.pandoc-citations':true,'citation.open-as-links':true}));var file=await app.vault.create('Match flow source.md',${JSON.stringify(`[@${bookItem.citationKey}]\n`)});var leaf=app.workspace.getLeaf(false);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.setCursor({line:0,ch:5});return true;})()`,
     );
     expect(
       await obEvalUntil(
@@ -892,7 +892,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const server = JSON.parse(
       await obEval(
         run.vaultId,
-        "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.settings.current;return JSON.stringify({hostname:settings['server.hostname'],port:services.localServer.effectivePort,sourceId:services.zoteroPref.sourceId});})()",
+        "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.bridge.runSync(services.settings.current);return JSON.stringify({hostname:settings['server.hostname'],port:services.bridge.runSync(services.localServer.effectivePort),sourceId:services.zoteroPref.sourceId});})()",
       ),
     ) as { hostname: string; port: number; sourceId: string };
     const pushed = await fetch(
@@ -1309,19 +1309,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       });
       await obEval(
         run.vaultId,
-        "app.saveLocalStorage('zotlit-workbench-launch-approved','1');app.saveLocalStorage('zotlit-profile-customization','web');app.plugins.plugins.zotlit.services.settings.update({'server.enabled':true,'server.live-update':true,'server.workbench':true});true",
+        "app.saveLocalStorage('zotlit-workbench-launch-approved','1');app.saveLocalStorage('zotlit-profile-customization','web');app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'server.enabled':true,'server.live-update':true,'server.workbench':true}));true",
       );
       expect(
         await obEvalUntil(
           run.vaultId,
-          "String(app.plugins.plugins.zotlit.services.localServer.effectivePort!==null)",
+          "String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.localServer.effectivePort)!==null)",
           { expected: "true" },
         ),
       ).toBe(true);
       const server = JSON.parse(
         await obEval(
           run.vaultId,
-          "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.settings.current;return JSON.stringify({port:services.localServer.effectivePort,sourceId:services.zoteroPref.sourceId,workbench:settings['server.workbench']});})()",
+          "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.bridge.runSync(services.settings.current);return JSON.stringify({port:services.bridge.runSync(services.localServer.effectivePort),sourceId:services.zoteroPref.sourceId,workbench:settings['server.workbench']});})()",
         ),
       ) as { port: number; sourceId: string; workbench: boolean };
       expect(server.workbench).toBe(true);
@@ -1370,7 +1370,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ).toBe(true);
       await obEval(
         run.vaultId,
-        "app.saveLocalStorage('zotlit-workbench-launch-approved',null);app.saveLocalStorage('zotlit-profile-customization','ask');app.plugins.plugins.zotlit.services.settings.update({'server.workbench':false});true",
+        "app.saveLocalStorage('zotlit-workbench-launch-approved',null);app.saveLocalStorage('zotlit-profile-customization','ask');app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'server.workbench':false}));true",
       );
     },
   );
