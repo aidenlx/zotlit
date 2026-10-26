@@ -8,7 +8,7 @@ import type { Item } from "@zotlit/db";
 
 import { logAndContinue, withLogCategory } from "@/lib/effect-log";
 import { Workspace } from "@/lib/obsidian-workspace";
-import { describeCandidates } from "@/services/citation-index/ambiguity";
+import { describeCandidatesEffect } from "@/services/citation-index/ambiguity";
 import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
 import { heldResolution } from "@/services/citation-index/lookup";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
@@ -313,11 +313,9 @@ export const layerCitekeyEditor = (
                 }),
               );
               const current = yield* libraryScope.current;
-              const candidates = yield* Effect.promise(() =>
-                describeCandidates(
-                  { db: reads, libraryScope: { current } },
-                  resolved.candidates,
-                ),
+              const candidates = yield* describeCandidatesEffect(
+                { db: reads, libraryScope: { current } },
+                resolved.candidates,
               );
               yield* report({
                 _tag: "citekey-ambiguous",
