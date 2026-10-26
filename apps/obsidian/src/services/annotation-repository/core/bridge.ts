@@ -1,6 +1,13 @@
 // The bridge reads that each part of the Annotation Repository core shares: the demanded Local API source, its state, and the query client.
 import type { QueryFunction, QueryKey } from "@tanstack/query-core";
-import { Effect, Exit, Request, RequestResolver } from "effect";
+import {
+  Effect,
+  Exit,
+  Fiber,
+  FiberSet,
+  Request,
+  RequestResolver,
+} from "effect";
 
 import type { Held } from "@/services/query-client/service";
 import type {
@@ -31,9 +38,13 @@ class DatabaseRows extends Request.Class<
  * generation: one Snapshot and one query for all of them, whatever number of
  * Attachments a view shows. A read asked after a database change asks in the
  * new generation, so it reads the database that stands now.
+ *
+ * A batch that has started runs on `fibers`, the layer's, so the layer's
+ * close interrupts it and lets its Snapshot go.
  */
 function databaseRowsResolver(
   db: Pick<ZoteroReads["Service"], "snapshot">,
+  fibers: FiberSet.FiberSet,
 ): RequestResolver.RequestResolver<DatabaseRows> {
   return RequestResolver.makeGrouped<DatabaseRows, number>({
     key: ({ request }) => request.generation,
@@ -62,7 +73,11 @@ function databaseRowsResolver(
               Exit.succeed({ found: rows, libraries, database }),
             );
         }
-      }).pipe(Effect.scoped),
+      }).pipe(
+        Effect.scoped,
+        (batch) => FiberSet.run(fibers, batch),
+        Effect.flatMap((fiber) => Fiber.join(fiber)),
+      ),
   });
 }
 

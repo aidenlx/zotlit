@@ -17,7 +17,10 @@ import { parseInstant, toInstant } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag, forkEach } from "@/lib/effect-stream";
 import { DeviceStorage } from "@/lib/obsidian-device-storage";
-import type { DeviceStorageShape } from "@/lib/obsidian-device-storage";
+import type {
+  DeviceStorageError,
+  DeviceStorageShape,
+} from "@/lib/obsidian-device-storage";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
@@ -48,13 +51,15 @@ export class UseLedger extends Context.Service<
     readonly uses: Effect.Effect<Readonly<Record<string, number>>>;
     /**
      * Keeps the newest Use and returns this action for live read write-back.
-     * Without `instant`, the Use happens now, by the Effect Clock.
+     * Without `instant`, the Use happens now, by the Effect Clock. A save
+     * that throws fails with its {@link DeviceStorageError} and keeps the
+     * ledger as it was.
      */
     record(
       itemKey: string,
       kind: UseKind,
       instant?: DateTime.Utc,
-    ): Effect.Effect<Use>;
+    ): Effect.Effect<Use, DeviceStorageError>;
     /** Keep a Companion update's own navigation outside the Use timeline. */
     withoutNoteUse<A, E, R>(
       file: TFile,
@@ -90,19 +95,16 @@ const makeUseLedger = Effect.gen(function* () {
     if (previous && DateTime.isGreaterThan(previous.instant, use.instant))
       return use;
     const next = newest({ ...before, [itemKey]: use });
-    // A failed save stays a defect of `record`, as Obsidian's throw was.
-    yield* storage
-      .save(
-        STORAGE_KEY,
-        Object.fromEntries(
-          Object.entries(next).map(([key, entry]) => [
-            key,
-            // Temporal's ISO form, the bytes the ledger has always saved.
-            { instant: toInstant(entry.instant).toString(), kind: entry.kind },
-          ]),
-        ),
-      )
-      .pipe(Effect.orDie);
+    yield* storage.save(
+      STORAGE_KEY,
+      Object.fromEntries(
+        Object.entries(next).map(([key, entry]) => [
+          key,
+          // Temporal's ISO form, the bytes the ledger has always saved.
+          { instant: toInstant(entry.instant).toString(), kind: entry.kind },
+        ]),
+      ),
+    );
     yield* SubscriptionRef.set(ledger, next);
     return use;
   });
