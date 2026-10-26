@@ -71,6 +71,7 @@ import {
 import { literatureNotes } from "./views/query-view/table-notes";
 import type { QueryViewDeps } from "./views/query-view/view";
 import { registerQuickSwitch } from "./views/quick-switch/register";
+import { registerReactivityLab } from "./views/reactivity-lab/register";
 import { registerReferencesView } from "./views/references/register";
 import {
   explorerFileMenu,
@@ -618,6 +619,9 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       app: this.app,
       citationIndex: services.citationIndex,
     });
+
+    // PROTOTYPE (proto/view-reactivity): dev-only Reactivity Lab.
+    if (__DEV__) registerReactivityLab(this, { runtime: services.runtime });
 
     registerAnnotationImageCli(this, services);
 
