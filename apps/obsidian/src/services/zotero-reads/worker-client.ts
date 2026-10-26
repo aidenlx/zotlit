@@ -6,7 +6,7 @@ import { sameSegmenterBinary } from "@zotlit/item-lookup";
 
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
-import { reapReadClonesEffect } from "@/services/database/reap-temps";
+import { reapReadClones } from "@/services/database/reap-temps";
 import { PluginSettings } from "@/services/settings/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 
@@ -33,7 +33,7 @@ export const workerClient = Effect.fn("ZoteroReads.workerClient")(function* () {
   // Clear the read clones of crashed runs from the system temp folder once a
   // launch. Forked on the layer's Scope: the launch never waits on it, and
   // unload interrupts it.
-  yield* reapReadClonesEffect().pipe(Effect.forkScoped);
+  yield* reapReadClones().pipe(Effect.forkScoped);
   const configuration = Effect.gen(function* () {
     const current = yield* settings.current;
     const status = yield* segmenter.getStatus;
