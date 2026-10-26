@@ -1,8 +1,9 @@
 // The "Zotero editing" row under Zotero → Connection: what the session may do
 // to Zotero's annotations, and the two actions that change it.
-import { Cause, DateTime, Effect, FiberHandle, Queue, Stream } from "effect";
+import { DateTime, Effect, FiberHandle, Queue, Stream } from "effect";
 import type { ButtonComponent, Setting, SettingGroupItem } from "obsidian";
 
+import { recover } from "@/lib/effect-cause";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
@@ -164,16 +165,17 @@ function renderEditingRow(
           Stream.fromQueue(rereads),
         ),
       ).pipe(
+        // A failed read keeps the last answer, so the row stays live.
         Stream.switchMap(() =>
           Stream.fromEffect(
             localApi.remembered.pipe(
-              Effect.tapCause((cause) =>
-                Cause.hasInterruptsOnly(cause)
-                  ? Effect.void
-                  : Effect.logWarning(
-                      "Cannot read the Remembered Write Authorization",
-                      cause,
-                    ),
+              recover(
+                (cause) =>
+                  Effect.logWarning(
+                    "Cannot read the Remembered Write Authorization",
+                    cause,
+                  ),
+                Effect.sync(() => remembered),
               ),
             ),
           ),

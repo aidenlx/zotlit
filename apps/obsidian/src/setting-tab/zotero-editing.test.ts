@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { expect, it } from "@effect/vitest";
 import { renderRow } from "@mock/obsidian";
-import { Context, DateTime, Effect, Stream } from "effect";
+import { Context, DateTime, Effect, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -124,6 +124,54 @@ it.effect(
       const settled = reads;
       yield* TestClock.adjust("5 seconds");
       expect(reads).toBe(settled);
+    }),
+);
+
+it.effect(
+  "keeps reading the remembered key after one keystore read fails",
+  () =>
+    Effect.gen(function* () {
+      const changes = yield* Queue.unbounded<void>();
+      let reads = 0;
+      const { tab } = yield* scopedSettingTab(
+        Context.make(
+          AnnotationRepository,
+          stubService<AnnotationRepository["Service"]>("AnnotationRepository", {
+            capability: Effect.succeed({ kind: "writable" }),
+            probe: Effect.void,
+            capabilityChanges: Stream.fromQueue(changes),
+          }),
+        ).pipe(
+          Context.add(
+            ZoteroLocalApi,
+            stubService<ZoteroLocalApi["Service"]>("ZoteroLocalApi", {
+              remembered: Effect.suspend(() =>
+                reads++ === 0
+                  ? Effect.die(new Error("The keychain is locked"))
+                  : Effect.succeed(true),
+              ),
+            }),
+          ),
+          Context.add(
+            CapabilityNotices,
+            stubService<CapabilityNotices["Service"]>("CapabilityNotices", {}),
+          ),
+        ),
+      );
+      const setting = renderRow(
+        zoteroEditingRow(
+          stubService<SettingTabContext>("SettingTabContext", { tab }),
+        ),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(() => setting.cleanup?.()));
+      yield* TestClock.adjust("0 millis");
+      expect(reads).toBe(1);
+
+      // An Allow editing from a notice moves the capability after the failed
+      // read; the row reads the keystore again.
+      yield* Queue.offer(changes, undefined);
+      yield* TestClock.adjust("0 millis");
+      expect(reads).toBe(2);
     }),
 );
 
