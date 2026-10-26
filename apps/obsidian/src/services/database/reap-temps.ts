@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 
 import { ZOTERO_DB_READ_TEMP_PREFIX } from "@/lib/constants";
 import { isErrno } from "@/lib/errno";
-import { sweepTempDirectoryEffect } from "@/lib/temp-sweep";
+import { sweepTempDirectory } from "@/lib/temp-sweep";
 import type { ReapTempsOptions } from "@/lib/temp-sweep";
 
 /**
@@ -15,10 +15,10 @@ import type { ReapTempsOptions } from "@/lib/temp-sweep";
  * owned by this process or by any still-live process are kept, so a
  * concurrently-running Obsidian never has its active clones reaped.
  */
-export const reapReadClonesEffect = Effect.fnUntraced(function* ({
+export const reapReadClones = Effect.fnUntraced(function* ({
   parent = tmpdir(),
 }: ReapTempsOptions = {}) {
-  yield* sweepTempDirectoryEffect({
+  yield* sweepTempDirectory({
     directory: parent,
     kind: "database read clone",
     isResidue: (name) => {
@@ -35,7 +35,7 @@ export const reapReadClonesEffect = Effect.fnUntraced(function* ({
  * is gone. A dir carries its worker's owner tag after the PID (see
  * `prepareRead`), and every worker of this process shares the PID, so the tag
  * alone tells a dead worker's residue from the clone a live worker reads.
- * Dirs without that tag are kept for {@link reapReadClonesEffect} at the next launch.
+ * Dirs without that tag are kept for {@link reapReadClones} at the next launch.
  */
 export const reapWorkerClones = Effect.fnUntraced(function* ({
   owner,
@@ -49,7 +49,7 @@ export const reapWorkerClones = Effect.fnUntraced(function* ({
   yield* Effect.forEach(
     parents,
     (directory) =>
-      sweepTempDirectoryEffect({
+      sweepTempDirectory({
         directory,
         kind: "database read clone",
         isResidue: (name) => Effect.succeed(parseTempOwner(name) === owner),
