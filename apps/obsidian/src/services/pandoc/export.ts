@@ -5,11 +5,17 @@
 // Citation or an incomplete bibliography stops export before citeproc runs,
 // so an exported document never carries a silently incomplete bibliography.
 
+import { Effect, Result } from "effect";
+
 import type { CslItemData } from "@zotlit/db";
 
 import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import { ParsedNote } from "@/services/citation-index/parsed-note";
-import type { PlainCitationParse } from "@/services/citation-parse/plain";
+import type {
+  ParseFailed,
+  ParseWorkerDied,
+} from "@/services/citation-parse/client";
+import { CitationParse } from "@/services/citation-parse/service";
 
 import type {
   BibliographyFailure,
@@ -17,11 +23,7 @@ import type {
   BibliographyResult,
   BibliographySource,
 } from "./bibliography";
-import type {
-  CitationEngine,
-  DocumentFormat,
-  PreparedDocument,
-} from "./engine";
+import type { CitationEngine, DocumentFormat } from "./engine";
 import { PANDOC_RESOLVE_MAP_FILENAME, pandocSandboxFilter } from "./filter";
 import { collectCitationLinks } from "./resolve";
 import type { ResolveDocument } from "./resolve";
@@ -45,7 +47,6 @@ export interface ExportRequest {
 }
 
 export interface ExportPorts {
-  citationParse: Pick<PlainCitationParse, "parse">;
   /**
    * Indexed Key of the Literature Note `linkpath` names, resolved from
    * `sourcePath`; `null` for a missing target or an ordinary note.
@@ -119,18 +120,20 @@ export type ExportResult = { output: Uint8Array } | { error: ExportFailure };
  * Item cited both ways collects one bibliography entry rather than two, and no
  * Citation depends on which source answered for its data.
  */
-export async function exportCitedDocument(
+export const exportCitedDocument = Effect.fn("exportCitedDocument")(function* (
   request: ExportRequest,
   ports: ExportPorts,
-): Promise<ExportResult> {
-  const { record } = await ports.citationParse.parse(
-    {
-      path: request.document.sourcePath,
-      generation: 0,
-      text: request.markdown,
-    },
-    new AbortController().signal,
-  );
+): Effect.fn.Return<
+  ExportResult,
+  ParseWorkerDied | ParseFailed,
+  CitationParse
+> {
+  const parser = yield* CitationParse;
+  const { record } = yield* parser.parse({
+    path: request.document.sourcePath,
+    generation: 0,
+    text: request.markdown,
+  });
   const { links, errors } = collectCitationLinks(
     {
       sourcePath: request.document.sourcePath,
@@ -163,9 +166,8 @@ export async function exportCitedDocument(
   );
 
   const input = new ParsedNote(request.markdown, record).exportInput();
-  let prepared: PreparedDocument;
-  try {
-    prepared = await ports.engine.prepareDocument({
+  const preparing = yield* engineCall(() =>
+    ports.engine.prepareDocument({
       markdown: input.markdown,
       luaFilters: [pandocSandboxFilter],
       files: {
@@ -175,17 +177,16 @@ export async function exportCitedDocument(
           literalMarker: input.literalMarker,
         }),
       },
-    });
-  } catch (error) {
-    return { error: { kind: "engine", detail: describeError(error) } };
-  }
+    }),
+  );
+  if (Result.isFailure(preparing)) return { error: preparing.failure };
 
-  prepared = prepared.withCitedIds(input.literalKeys);
+  const prepared = preparing.success.withCitedIds(input.literalKeys);
 
-  const spelled = await readCitations(prepared.citedIds, wikilinked, ports);
+  const spelled = yield* readCitations(prepared.citedIds, wikilinked, ports);
   if ("error" in spelled) return spelled;
 
-  const cited = await citeItems(spelled.itemsByKey(), spelled.describe, ports);
+  const cited = yield* citeItems(spelled.itemsByKey(), spelled.describe, ports);
   if ("error" in cited) return cited;
 
   const canonical = spelled.canonicalIds(cited.items);
@@ -210,18 +211,31 @@ export async function exportCitedDocument(
     };
   }
 
-  try {
-    const output = await ports.engine.renderPrepared({
+  const rendering = yield* engineCall(() =>
+    ports.engine.renderPrepared({
       document,
       format: request.format,
       bibliography,
       styleXml: request.styleXml,
       locale: request.locale,
-    });
-    return { output };
-  } catch (error) {
-    return { error: { kind: "engine", detail: describeError(error) } };
-  }
+    }),
+  );
+  return Result.isFailure(rendering)
+    ? { error: rendering.failure }
+    : { output: rendering.success };
+});
+
+/** One engine call; a refusal is the `engine` failure arm. */
+function engineCall<A>(
+  call: () => Promise<A>,
+): Effect.Effect<Result.Result<A, ExportFailure>> {
+  return Effect.tryPromise({
+    try: call,
+    catch: (error): ExportFailure => ({
+      kind: "engine",
+      detail: describeError(error),
+    }),
+  }).pipe(Effect.result);
 }
 
 /** One document's Citations, each placed on the Zotero Item it names. */
@@ -258,11 +272,11 @@ function injectedId(indexedKey: string): string {
  * is Pandoc's own undefined-citation output — a bold key and a missing entry —
  * inside a document the user is about to send somewhere.
  */
-async function readCitations(
+const readCitations = Effect.fn("readCitations")(function* (
   citedIds: readonly string[],
   wikilinked: ReadonlyMap<string, string>,
   ports: ExportPorts,
-): Promise<SpelledCitations | { error: ExportFailure }> {
+): Effect.fn.Return<SpelledCitations | { error: ExportFailure }> {
   /** Injected Id → the Indexed Key it names. */
   const injected = new Map(
     [...wikilinked.values()].map((id) => [id, id.slice(1)]),
@@ -275,14 +289,17 @@ async function readCitations(
   const ambiguous: string[] = [];
 
   const citekeys = citedIds.filter((id) => !injected.has(id));
-  let lookup: Awaited<ReturnType<ExportPorts["readLookup"]>> | null;
-  try {
-    lookup = citekeys.length > 0 ? await ports.readLookup({ citekeys }) : null;
-  } catch {
+  const reading = yield* Effect.tryPromise(() =>
+    citekeys.length > 0
+      ? ports.readLookup({ citekeys })
+      : Promise.resolve(null),
+  ).pipe(Effect.result);
+  if (Result.isFailure(reading)) {
     return {
       error: { kind: "database-unavailable", dataDir: ports.dataDir() },
     };
   }
+  const lookup = reading.success;
   for (const id of citedIds) {
     const wikilinkedKey = injected.get(id);
     if (wikilinkedKey !== undefined) {
@@ -346,23 +363,23 @@ async function readCitations(
       return { byIndexedKey, bySpelling };
     },
   };
-}
+});
 
 /**
  * The cited Items as CSL-JSON, keyed by Indexed Key. The database places each
  * Indexed Key in its Zotero library, which is the address Better BibTeX reads;
  * Zotero itself supplies the data.
  */
-async function citeItems(
+const citeItems = Effect.fn("citeItems")(function* (
   indexedKeys: readonly string[],
   describe: (indexedKey: string) => string,
   ports: ExportPorts,
-): Promise<
+): Effect.fn.Return<
   { items: ReadonlyMap<string, CslItemData> } | { error: ExportFailure }
 > {
   if (indexedKeys.length === 0) return { items: new Map() };
 
-  const placed = await ports.readItemRefs(indexedKeys);
+  const placed = yield* Effect.promise(() => ports.readItemRefs(indexedKeys));
   if (!placed) {
     return {
       error: { kind: "database-unavailable", dataDir: ports.dataDir() },
@@ -380,11 +397,13 @@ async function citeItems(
     return { error: { kind: "items-missing", sources: unplaced } };
   }
 
-  const bibliography = await ports.fetchBibliography(refs);
+  const bibliography = yield* Effect.promise(() =>
+    ports.fetchBibliography(refs),
+  );
   return "error" in bibliography
     ? { error: toExportFailure(bibliography.error, describe) }
     : { items: bibliography.items };
-}
+});
 
 /** Restates a source-chain failure in the export's own terms. */
 function toExportFailure(

@@ -28,7 +28,6 @@ import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import type { VaultEvent } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
-import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import { CitationParse } from "@/services/citation-parse/service";
 import { LibraryScope } from "@/services/library-scope/service";
 import { NoteIndex, resolveIndexedKey } from "@/services/note-index/service";
@@ -252,9 +251,6 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       );
     };
     const runPromiseExit = Effect.runPromiseExitWith(context);
-    const parseClient: Pick<PlainCitationParse, "parse"> = {
-      parse: (request, signal) => runPromise(parser.parse(request), { signal }),
-    };
     const lookupReleased = () =>
       new DOMException("Citation Lookup released", "AbortError");
     const lookupAdapter = {
@@ -540,22 +536,17 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       };
     }
 
-    function getParsedNote(
-      file: TFile,
-      signal = lifetimeSignal,
-    ): Promise<ParsedNote> {
-      return readParsedNote(file, {
-        vault: app.vault,
-        parser: parseClient,
-        signal,
-      });
-    }
+    const parsedNote = (file: TFile) =>
+      readParsedNote(file).pipe(
+        Effect.provideService(Vault, vault),
+        Effect.provideService(CitationParse, parser),
+      );
 
     async function getParsedDocument(file: TFile, signal = lifetimeSignal) {
       for (;;) {
         const generation = generations.get(file.path);
         const { mtime, size } = file.stat;
-        const facts = await getParsedNote(file, signal);
+        const facts = await runPromise(parsedNote(file), { signal });
         const set = await getDocumentCitationSet(file, {
           signal,
           parsed: facts,
@@ -1109,7 +1100,9 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         generation,
         stop,
         promise: abortable(
-          parseClient.parse({ path, generation, text: body }, signal),
+          runPromise(parser.parse({ path, generation, text: body }), {
+            signal,
+          }),
           signal,
         )
           .then(({ record, path: replyPath, generation: replyGeneration }) => {
@@ -1700,9 +1693,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       getParsedNote: Effect.fn("CitationIndex.getParsedNote")(function* (
         file: TFile,
       ) {
-        return yield* Effect.tryPromise((signal) =>
-          getParsedNote(file, AbortSignal.any([signal, lifetimeSignal])),
-        );
+        return yield* parsedNote(file);
       }),
       getParsedDocument: Effect.fn("CitationIndex.getParsedDocument")(
         function* (file: TFile) {

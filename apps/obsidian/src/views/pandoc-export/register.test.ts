@@ -6,7 +6,7 @@ import {
   settingsOf,
 } from "@mock/obsidian";
 import { Effect } from "effect";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TFile } from "obsidian";
@@ -16,6 +16,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { yieldToMain } from "@/lib/yield-to-main";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import type { CitationEngine } from "@/services/pandoc/engine";
@@ -34,6 +35,11 @@ const notices = vi.hoisted(() => ({
   showExportFailure: vi.fn(),
   /** Every message a finished export showed. */
   shown: [] as string[],
+}));
+/** How the stubbed export run ends. */
+const exportRun = vi.hoisted(() => ({
+  /** Interrupt the run, as unloading the plugin does. */
+  unload: false,
 }));
 
 vi.mock("@/services/pandoc/styles", async (importOriginal) => {
@@ -62,7 +68,10 @@ vi.mock("@/services/pandoc/styles", async (importOriginal) => {
 });
 vi.mock("@/services/pandoc/export", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/services/pandoc/export")>()),
-  exportCitedDocument: () => Promise.resolve({ output: new Uint8Array() }),
+  exportCitedDocument: () =>
+    exportRun.unload
+      ? Effect.interrupt
+      : Effect.succeed({ output: new Uint8Array() }),
 }));
 vi.mock("@/lib/notice", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/notice")>();
@@ -276,6 +285,7 @@ beforeEach(() => {
   zotero.styles = [NOTE_STYLE, VAULT_STYLE];
   notices.showExportFailure.mockClear();
   notices.shown.length = 0;
+  exportRun.unload = false;
 });
 
 describe("the Export note with citations command", () => {
@@ -419,6 +429,26 @@ describe("the Export note with citations command", () => {
       ),
     );
     expect(await readFile(join(basePath, "draft.docx"))).toHaveLength(0);
+  });
+
+  it("ends without a notice or a file where the export run is interrupted", async () => {
+    exportRun.unload = true;
+    await using stack = new AsyncDisposableStack();
+    const basePath = stack.adopt(
+      await mkdtemp(join(tmpdir(), "zotlit-export-")),
+      (dir) => rm(dir, { recursive: true, force: true }),
+    );
+    const vault = openVault({ note: {}, basePath });
+
+    const dialog = await vault.openDialog();
+    dialog.confirm();
+    await vi.waitFor(() => expect(vault.converted()).toBe(true));
+    // The interrupted run settles in microtasks, before this macrotask yield.
+    await yieldToMain();
+
+    expect(notices.showExportFailure).not.toHaveBeenCalled();
+    expect(notices.shown).toEqual([]);
+    expect(await readdir(basePath)).toEqual([]);
   });
 
   it("stops rather than exporting in another style where Zotero lacks the vault style", async () => {
