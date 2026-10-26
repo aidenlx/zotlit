@@ -178,6 +178,7 @@ effectIt.effect(
       const writing = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
       const written = Promise.withResolvers<void>();
+      let cleanupStarted = false;
       // As a native write does, the write goes on after an interrupt stops
       // waiting for it, and creates the staged file later.
       const lateWrite = Layer.effect(
@@ -192,6 +193,10 @@ effectIt.effect(
                 await writeFile(path, data, { flag: "wx" });
                 written.resolve();
               }),
+            remove: (path, options) =>
+              Effect.sync(() => {
+                cleanupStarted = true;
+              }).pipe(Effect.andThen(fs.remove(path, options))),
           }),
         ),
       ).pipe(Layer.provide(NodeFileSystem.layer));
@@ -203,10 +208,13 @@ effectIt.effect(
       );
       yield* Effect.promise(() => writing.promise);
 
+      // The interrupt reaches the publish before the fork returns, so a
+      // write that the interrupt can stop has started its cleanup here.
       const interrupting = yield* Effect.forkChild(
         Fiber.interrupt(publishing),
         { startImmediately: true },
       );
+      expect(cleanupStarted).toBe(false);
       release.resolve();
       yield* Effect.promise(() => written.promise);
       yield* Fiber.join(interrupting);
