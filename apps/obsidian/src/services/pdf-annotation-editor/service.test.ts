@@ -1105,7 +1105,7 @@ it("counts a cooldown down on the toolbar's window, under the binding's disposer
   const cooling = (): void =>
     annotations.setCapability({
       kind: "cooldown",
-      retryAfter: toInstant(RETRY_AFTER),
+      retryAfter: RETRY_AFTER,
     });
 
   const service = new PdfAnnotationEditor({

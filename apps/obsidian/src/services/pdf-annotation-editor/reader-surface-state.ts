@@ -11,7 +11,10 @@ import type { SelectedText } from "@zotlit/pdf-structure";
 
 import { offeredSwatches } from "@/lib/annotation-colors";
 import type { EffectBridge } from "@/lib/effect-bridge";
-import { capabilityReason } from "@/services/annotation-repository/capability";
+import {
+  capabilityReason,
+  sameDeadline,
+} from "@/services/annotation-repository/capability";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityAffordance } from "@/services/annotation-repository/capability-copy";
 import type { CapabilityAffordance } from "@/services/annotation-repository/capability-copy";
@@ -1374,7 +1377,7 @@ export function sameCapability(
 ): boolean {
   if (capabilityReason(a) !== capabilityReason(b)) return false;
   return a.kind === "cooldown" && b.kind === "cooldown"
-    ? a.retryAfter.equals(b.retryAfter)
+    ? sameDeadline(a.retryAfter, b.retryAfter)
     : true;
 }
 

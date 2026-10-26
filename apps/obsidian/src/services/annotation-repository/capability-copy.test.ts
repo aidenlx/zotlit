@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 
+import { deadlineAfter } from "./__fixtures__/capability";
 import type { EditingCapability } from "./capability";
 import {
   editingCapabilityAffordance,
@@ -108,7 +109,7 @@ it.each<[EditingCapability, { icon: string; tone: string; label: string }]>([
 it("counts a cooldown down in whole seconds, and never past zero", () => {
   const copy = (seconds: number) =>
     editingCapabilityCopy(
-      { kind: "cooldown", retryAfter: NOW.add({ seconds }) },
+      { kind: "cooldown", retryAfter: deadlineAfter(NOW, seconds) },
       NOW,
     );
 
@@ -146,7 +147,7 @@ it("keeps reading quiet until authorization can be requested", () => {
 });
 
 it("counts down the enable-editing action until the capability changes", () => {
-  const retryAfter = NOW.add({ seconds: 3 });
+  const retryAfter = deadlineAfter(NOW, 3);
   expect(
     [0, 1, 2, 3].map(
       (elapsed) =>
