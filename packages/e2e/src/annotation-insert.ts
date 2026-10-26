@@ -22,8 +22,8 @@ export async function verifyAnnotationInsert(
     s.services=services;s.original=services.noteFeature.prepareAnnotationInsert;
     s.link=app.fileManager.generateMarkdownLink;
     app.fileManager.generateMarkdownLink=function(file,...args){if(file.name?.startsWith('zotlit-excerpt-')&&!app.vault.getFileByPath(file.path))throw new Error('Excerpt link rendered before vault registration');return s.link.call(this,file,...args);};
-    s.importEnabled=services.settings.current['attachment.import'];
-    services.settings.update({'attachment.import':true});
+    s.importEnabled=services.bridge.runSync(services.settings.current)['attachment.import'];
+    services.bridge.runSync(services.settings.update({'attachment.import':true}));
     for(const leaf of app.workspace.getLeavesOfType('pdf'))leaf.detach();
     const file=app.vault.getFileByPath('Insert-${host}.md')??await app.vault.create('Insert-${host}.md','before TARGET after');
     s.file=file;s.otherFile=app.vault.getFileByPath('Insert-other-${host}.md')??await app.vault.create('Insert-other-${host}.md','other editor');
@@ -86,7 +86,7 @@ export async function verifyAnnotationInsert(
         const s=${state};s.editor=s.leaf.view.editor;s.editor.setValue('before TARGET after');s.editor.setSelection({line:0,ch:7},{line:0,ch:13});
         await app.workspace.revealLeaf(s.viewLeaf);await app.workspace.revealLeaf(s.leaf);s.leaf.getContainer().focus();
         app.workspace.setActiveLeaf(s.leaf,{focus:true});s.started=false;s.finished=0;s.error=null;
-        s.services.settings.update({'attachment.import':${mode !== "disabled"}});
+        s.services.bridge.runSync(s.services.settings.update({'attachment.import':${mode !== "disabled"}}));
         s.gate=new Promise(resolve=>s.release=resolve);
         s.services.noteFeature.prepareAnnotationInsert=async options=>{s.started=true;s.options=options;await s.gate;try{return await s.original(options);}catch(e){s.error=String(e);throw e;}finally{s.finished++;}};
         const a=s.view.snapshot.annotations.find(a=>a.key==='${mode === "ink" ? "TYY6Z6ZF" : "FDRFQ7C2"}');
@@ -192,7 +192,7 @@ export async function verifyAnnotationInsert(
   } finally {
     await obEval(
       vaultId,
-      `(async()=>{const s=${state};if(!s)return true;try{s.release?.();if(s.original)s.services.noteFeature.prepareAnnotationInsert=s.original;if(s.link)app.fileManager.generateMarkdownLink=s.link;if(s.importEnabled!==undefined)s.services.settings.update({'attachment.import':s.importEnabled});}finally{try{if(s.layout)await app.workspace.changeLayout(s.layout);}finally{delete window.__zotlitInsertTrial;}}return true;})()`,
+      `(async()=>{const s=${state};if(!s)return true;try{s.release?.();if(s.original)s.services.noteFeature.prepareAnnotationInsert=s.original;if(s.link)app.fileManager.generateMarkdownLink=s.link;if(s.importEnabled!==undefined)s.services.bridge.runSync(s.services.settings.update({'attachment.import':s.importEnabled}));}finally{try{if(s.layout)await app.workspace.changeLayout(s.layout);}finally{delete window.__zotlitInsertTrial;}}return true;})()`,
     );
   }
 }

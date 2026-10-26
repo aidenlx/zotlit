@@ -3,7 +3,7 @@
 // the shape of ./obsidian-metadata-cache; policies/events.md (Capability tags)
 // describes it. Views, leaves, `Component`s and React handlers stay edges and
 // keep `app.workspace`.
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
 import type { Scope, Stream } from "effect";
 import { MarkdownView } from "obsidian";
 import type {
@@ -25,6 +25,17 @@ import {
   obsidianListener,
 } from "@/lib/obsidian-event-source";
 import type { ObsidianEventEmitter } from "@/lib/obsidian-event-source";
+
+/** Obsidian rejected an `openLinkText` call. `cause` holds what it threw. */
+export class OpenLinkFailed extends Schema.TaggedError<
+  OpenLinkFailed,
+  { readonly brand: unique symbol }
+>()("OpenLinkFailed", {
+  /** The link text the call opened. */
+  linktext: Schema.String,
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
 /** The Obsidian object the tag reads: what `app.workspace` gives. */
 export type WorkspaceSource = Pick<
@@ -87,7 +98,7 @@ export interface WorkspaceShape {
       readonly newLeaf?: PaneType | boolean;
       readonly state?: OpenViewState;
     },
-  ): Effect.Effect<void>;
+  ): Effect.Effect<void, OpenLinkFailed>;
   /** Obsidian's `trigger`: raise the workspace event `name` with `data`. */
   trigger(name: string, ...data: unknown[]): Effect.Effect<void>;
   /**
@@ -170,14 +181,21 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     ),
     openLinkText: Effect.fn("Workspace.openLinkText")(
       (linktext, sourcePath, options = {}) =>
-        Effect.promise(() =>
-          source.openLinkText(
-            linktext,
-            sourcePath,
-            options.newLeaf,
-            options.state,
-          ),
-        ),
+        Effect.tryPromise({
+          try: () =>
+            source.openLinkText(
+              linktext,
+              sourcePath,
+              options.newLeaf,
+              options.state,
+            ),
+          catch: (cause) =>
+            new OpenLinkFailed({
+              linktext,
+              message: cause instanceof Error ? cause.message : String(cause),
+              cause,
+            }),
+        }),
     ),
     // Untraced: a citation raises its menus from a pointer handler.
     trigger: Effect.fnUntraced(function* (name, ...data) {
