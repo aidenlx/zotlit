@@ -55,8 +55,9 @@ export function savedExcerptRequest(options: {
   /** Runs the read on the plugin's runtime, so its log reaches the plugin logger. */
   bridge: Pick<EffectBridge, "runPromise">;
 }): Promise<ExcerptRequest | null> {
-  // The paths as they stand now: a request belongs to the data directory its
-  // source was read from, whatever the settings become during the read.
+  // The paths as they stand each time the request reads them: before the read
+  // and again after it, so a data directory that moves during the read
+  // resolves to nothing.
   const paths = Effect.sync((): AttachmentPathContext => ({
     dataDir: options.paths.dataDir,
     baseAttachmentPath: options.paths.baseAttachmentPath,
