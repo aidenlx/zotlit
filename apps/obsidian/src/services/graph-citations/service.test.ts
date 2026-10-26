@@ -1281,6 +1281,34 @@ describe("GraphCitations installation", () => {
 });
 
 describe("GraphCitations clicks", () => {
+  it.effect("interrupts a pending open when the plugin unloads", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makePresentationFixture();
+      let interrupted = false;
+      fixture.openCitekey.mockImplementation(() =>
+        Effect.never.pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              interrupted = true;
+            }),
+          ),
+        ),
+      );
+      const engine = fixture.addLeaf("graph");
+      yield* fixture.layoutReady;
+
+      engine.renderer.onNodeClick(
+        new MouseEvent("click"),
+        "@typo2024",
+        "unresolved",
+      );
+      expect(fixture.openCitekey).toHaveBeenCalledOnce();
+      yield* fixture.unload;
+
+      expect(interrupted).toBe(true);
+    }),
+  );
+
   it.effect(
     "opens a Cited Work Node through the citekey action and never natively",
     () =>

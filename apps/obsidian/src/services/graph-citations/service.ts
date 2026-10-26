@@ -11,7 +11,7 @@ import type {
 } from "obsidian";
 
 import { disposable } from "@/lib/disposables";
-import { scopedBridge } from "@/lib/effect-bridge";
+import { scopedBridge, valueOr } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag, forkEach } from "@/lib/effect-stream";
 import { workLabel } from "@/lib/item-summary";
@@ -258,9 +258,14 @@ export const layerGraphCitations = Layer.effect(
     const cacheOf = (path: string) => run(metadata.cache(path));
     const resolveCitekey = (citekey: string) =>
       heldResolution(lookup?.current?.value ?? null, citekey);
-    /** The Citekey Navigation open action, which every node surface runs. */
+    /**
+     * The Citekey Navigation open action, which every node surface runs.
+     * Unload interrupts a pending open.
+     */
     const open = (citekey: string, pane: NavigationPane): void => {
-      void bridge.runPromise(citekeyEditor.openCitekey(citekey, pane));
+      void bridge
+        .runPromiseExit(citekeyEditor.openCitekey(citekey, pane))
+        .then((exit) => valueOr(exit, undefined));
     };
 
     /** Lets go of the lookup once no installation reads it. */
@@ -542,8 +547,11 @@ export const layerGraphCitations = Layer.effect(
       settings,
       citationPopover,
       bridge,
+      // Unload interrupts a pending open.
       open: (indexedKey, pane) => {
-        void bridge.runPromise(citekeyEditor.openIndexedKey(indexedKey, pane));
+        void bridge
+          .runPromiseExit(citekeyEditor.openIndexedKey(indexedKey, pane))
+          .then((exit) => valueOr(exit, undefined));
       },
     });
 
