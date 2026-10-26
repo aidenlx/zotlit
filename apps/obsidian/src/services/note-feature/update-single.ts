@@ -1,6 +1,7 @@
-import { Cause, Effect } from "effect";
+import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
 
+import { recover } from "@/lib/effect-cause";
 import * as m from "@/lib/i18n/generated/messages";
 import { LegacyPortError } from "@/lib/legacy-port";
 import { BaseNotice } from "@/lib/notice";
@@ -134,12 +135,7 @@ export const createWithNotice = Effect.fnUntraced(function* <E, R>(
   const result = yield* withProgress(
     create,
     createNoteToast(options, plainCreateError),
-  ).pipe(
-    Effect.catchCauseIf(
-      (cause) => !Cause.hasInterruptsOnly(cause),
-      () => Effect.void,
-    ),
-  );
+  ).pipe(recover(() => Effect.void, Effect.void));
   return result?.outcome === "created" ? result.file : null;
 });
 

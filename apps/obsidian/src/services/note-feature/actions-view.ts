@@ -1,9 +1,10 @@
 // The note commands and menu entries as Effect code: each asks what it must,
 // runs, and reports on a notice.
-import { Cause, Effect } from "effect";
+import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
 
 import { awaitConfirm } from "@/lib/confirm";
+import { recover } from "@/lib/effect-cause";
 import * as m from "@/lib/i18n/generated/messages";
 import type { Notifier, ProgressCopy } from "@/lib/notifier";
 import { reportOutcome, withProgress } from "@/lib/notifier";
@@ -50,13 +51,7 @@ export interface NoteActionPorts extends InteractiveCreationPorts {
 }
 
 /** The notice tells the user how the task went, so a failure ends here; an interrupt passes. */
-const reported = <A, E, R>(task: Effect.Effect<A, E, R>) =>
-  task.pipe(
-    Effect.catchCauseIf(
-      (cause) => !Cause.hasInterruptsOnly(cause),
-      () => Effect.void,
-    ),
-  );
+const reported = recover(() => Effect.void, Effect.void);
 
 /** Change `file`'s Profile after the user picks one and consents. */
 export const switchProfile = Effect.fn("NoteActions.switchProfile")(function* (

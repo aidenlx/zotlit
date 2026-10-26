@@ -4,6 +4,7 @@ import { dirname } from "node:path/posix";
 import { ConfirmationModal } from "obsidian";
 import type { App, TFile } from "obsidian";
 
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import { awaitModal } from "@/lib/effect-modal";
 import { normalizeFolderPath } from "@/lib/ensure-folder";
@@ -123,23 +124,17 @@ export const switchNoteProfileInteractively = Effect.fn(
             : m.notice_profile_switched({ label: choice.label }),
         error: m.notice_profile_switch_failed(),
       },
-    ).pipe(
-      Effect.catchCauseIf(
-        (cause) => !Cause.hasInterruptsOnly(cause),
-        () => Effect.void,
-      ),
-    );
+    ).pipe(recover(() => Effect.void, Effect.void));
   }).pipe(
-    Effect.catchCauseIf(
-      (cause) => !Cause.hasInterruptsOnly(cause),
+    recover(
       (cause) =>
         Effect.logError(
           "Failed to prepare Literature Note Profile switch",
         ).pipe(
           Effect.annotateLogs({ path: file.path, error: Cause.squash(cause) }),
           logged,
-          Effect.andThen(notifier.show(m.notice_profile_switch_failed())),
         ),
+      notifier.show(m.notice_profile_switch_failed()).pipe(Effect.asVoid),
     ),
   );
 });
