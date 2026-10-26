@@ -1,17 +1,100 @@
 // The bridge reads that each part of the Annotation Repository core shares: the demanded Local API source, its state, and the query client.
 import type { QueryFunction, QueryKey } from "@tanstack/query-core";
-import type { Effect } from "effect";
+import { Effect, Exit, Request, RequestResolver } from "effect";
 
+import { valueOr } from "@/lib/effect-bridge";
 import type { Held } from "@/services/query-client/service";
 import type {
   LocalApiSource,
   LocalApiState,
 } from "@/services/zotero-local-api/service";
+import type { ZoteroReads } from "@/services/zotero-reads/service";
 
+import type { DatabaseAnswer } from "./model";
 import type { CoreState } from "./state";
+
+/** Why the Zotero database answered no rows: no Snapshot, or a failed read. */
+type DatabaseRowsError =
+  | Effect.Error<ZoteroReads["Service"]["snapshot"]>
+  | Effect.Error<
+      ReturnType<ZoteroReads["Service"]["reads"]["AnnotationsOfAttachments"]>
+    >;
+
+/** One Attachment's rows, asked in the batch of one database generation. */
+class DatabaseRows extends Request.Class<
+  { readonly attachmentKey: string; readonly generation: number },
+  DatabaseAnswer,
+  DatabaseRowsError
+> {}
+
+/**
+ * The batch every database read asked in one task joins, by database
+ * generation: one Snapshot and one query for all of them, whatever number of
+ * Attachments a view shows. A read asked after a database change asks in the
+ * new generation, so it reads the database that stands now.
+ */
+function databaseRowsResolver(
+  db: Pick<ZoteroReads["Service"], "snapshot">,
+): RequestResolver.RequestResolver<DatabaseRows> {
+  return RequestResolver.makeGrouped<DatabaseRows, number>({
+    key: ({ request }) => request.generation,
+    resolver: (entries) =>
+      Effect.gen(function* () {
+        const attachmentKeys = [
+          ...new Set(entries.map(({ request }) => request.attachmentKey)),
+        ];
+        const reads = yield* db.snapshot;
+        const [found, libraries, database] = yield* Effect.all(
+          [
+            reads.AnnotationsOfAttachments({ attachmentKeys }),
+            reads.Libraries({}),
+            reads.DatabaseIdentity({}),
+          ],
+          { concurrency: "unbounded" },
+        );
+        yield* Effect.logDebug(
+          "Annotations batch read from the Zotero database",
+        ).pipe(Effect.annotateLogs({ attachments: attachmentKeys.length }));
+        const byKey = new Map(found.map((rows) => [rows.attachmentKey, rows]));
+        for (const entry of entries) {
+          const rows = byKey.get(entry.request.attachmentKey);
+          if (rows)
+            entry.completeUnsafe(
+              Exit.succeed({ found: rows, libraries, database }),
+            );
+        }
+      }).pipe(Effect.scoped),
+  });
+}
+
+/** One Attachment's rows from the Zotero database, in this task's batch. */
+function databaseRows(
+  core: CoreState,
+  attachmentKey: string,
+): Effect.Effect<DatabaseAnswer, DatabaseRowsError> {
+  return Effect.request(
+    new DatabaseRows({ attachmentKey, generation: core.databaseGeneration }),
+    core.databaseRows,
+  );
+}
 
 // A plain part of the core runs these through `core.bridge`, the layer's
 // `scopedBridge`, until its own slice converts it.
+
+/**
+ * A converted read, for a plain part of the core that waits on it: it runs on
+ * the layer's bridge, in the layer's Scope, and answers `released` where the
+ * layer closed under it.
+ */
+function awaitRead<A, E>(
+  core: CoreState,
+  read: Effect.Effect<A, E>,
+  released: A,
+): Promise<A> {
+  return core.bridge
+    .runPromiseExit(read)
+    .then((exit) => valueOr(exit, released));
+}
 
 function demandedSource(core: CoreState): Effect.Effect<LocalApiSource | null> {
   return core.localApi.demandSource;
@@ -57,6 +140,7 @@ function readHeldQuery<T>(
 }
 
 export {
+  awaitRead,
   demandedSource,
   apiState,
   refreshZoteroDatabase,
@@ -64,4 +148,7 @@ export {
   keysUnder,
   peekQuery,
   readHeldQuery,
+  databaseRowsResolver,
+  databaseRows,
 };
+export type { DatabaseRowsError };

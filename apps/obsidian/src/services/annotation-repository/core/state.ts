@@ -1,4 +1,6 @@
 // The dependencies and the state that every part of the Annotation Repository core reads and changes.
+import type { DateTime, FiberMap, FiberSet } from "effect";
+
 import type { AnnotationHistory } from "@/services/annotation-repository/history";
 import type { AnnotationLock } from "@/services/annotation-repository/lock";
 import {
@@ -11,6 +13,7 @@ import type {
 } from "@/services/annotation-repository/write";
 import type { Held } from "@/services/query-client/service";
 
+import { databaseRowsResolver } from "./bridge";
 import { DRAFT_FIELDS, fieldMaps } from "./model";
 import type {
   AnnotationConfirmation,
@@ -18,12 +21,17 @@ import type {
   AnnotationMutation,
   AnnotationRepositoryCoreDeps,
   DatabaseAnnotationSource,
-  DatabaseBatch,
   DraftField,
   DraftFields,
   OutcomeWrite,
   TextSave,
 } from "./model";
+
+/** The fibers the layer's Scope owns for the core. */
+interface CoreFibers {
+  readonly fibers: FiberSet.FiberSet;
+  readonly refreshes: FiberMap.FiberMap<string, AnnotationList | null, never>;
+}
 
 /**
  * The dependencies and the state that the core's functions share.
@@ -100,8 +108,8 @@ class CoreState {
    */
   readonly writesInFlight = new Map<string, number>();
   commandGeneration = 0;
-  /** One explicit revalidation per visible Attachment. */
-  readonly refreshes = new Map<string, Promise<AnnotationList | null>>();
+  /** One explicit revalidation per visible Attachment, on the layer's Scope. */
+  readonly refreshes;
   /** Verified database identity and revision for each Attachment read. */
   readonly databaseBindings = new Map<
     string,
@@ -138,7 +146,7 @@ class CoreState {
    */
   readonly holds = new Map<string, number>();
   /** When a caller last asked for each Attachment's list, by Indexed Key. */
-  readonly lastAsked = new Map<string, Temporal.Instant>();
+  readonly lastAsked = new Map<string, DateTime.Utc>();
   readonly publishedStatuses = new Map<
     string,
     Held<AnnotationList>["status"]
@@ -150,11 +158,13 @@ class CoreState {
   /** Gives each database acquisition a separate query-cache generation. */
   databaseGeneration = 0;
   /**
-   * The database read now gathering: every database read asked in one task,
-   * and in one database generation, joins it, and it reads all of them under
-   * one lease.
+   * Gathers the database reads: every database read asked in one task, and
+   * in one database generation, joins one batch, which reads all of them
+   * under one Snapshot.
    */
-  databaseBatch: DatabaseBatch | null = null;
+  readonly databaseRows;
+  /** The core's own background reads, which end when the layer's Scope closes. */
+  readonly fibers;
   readonly writeToken;
   /**
    * The pixels this device's persisted Excerpt Image of one Annotation was made
@@ -162,16 +172,19 @@ class CoreState {
    */
   readonly persistedExcerpt;
 
-  constructor({
-    bridge,
-    db,
-    queryClient,
-    localApi,
-    now = () => Temporal.Now.instant(),
-    writeToken = newWriteToken,
-    persistedExcerpt,
-    publish,
-  }: AnnotationRepositoryCoreDeps) {
+  constructor(
+    {
+      bridge,
+      db,
+      queryClient,
+      localApi,
+      now,
+      writeToken = newWriteToken,
+      persistedExcerpt,
+      publish,
+    }: AnnotationRepositoryCoreDeps,
+    { fibers, refreshes }: CoreFibers,
+  ) {
     this.bridge = bridge;
     this.db = db;
     this.queries = queryClient;
@@ -180,9 +193,13 @@ class CoreState {
     this.writeToken = writeToken;
     this.persistedExcerpt = persistedExcerpt;
     this.publish = publish;
+    this.fibers = fibers;
+    this.refreshes = refreshes;
+    this.databaseRows = databaseRowsResolver(db);
   }
 
   readonly publish;
 }
 
 export { CoreState };
+export type { CoreFibers };

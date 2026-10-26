@@ -51,7 +51,7 @@ import {
   readCreateResult,
 } from "@/services/zotero-local-api/wire";
 
-import { demandedSource, invalidate } from "./bridge";
+import { awaitRead, demandedSource, invalidate } from "./bridge";
 import {
   cancelTextSave,
   draftFor,
@@ -160,11 +160,19 @@ async function sendCreate(
   if (!parsed) {
     return { kind: "failed", failure: { kind: "unknown-annotation" } };
   }
-  const expectedSource = compatibleApiSource(core, attachmentKey);
+  const expectedSource = core.bridge.runSync(
+    compatibleApiSource(core, attachmentKey),
+  );
   if (!expectedSource) {
     return { kind: "failed", failure: { kind: "db-source" } };
   }
-  if (!(await prepareCollection(core, attachmentKey, expectedSource))) {
+  if (
+    !(await awaitRead(
+      core,
+      prepareCollection(core, attachmentKey, expectedSource),
+      false,
+    ))
+  ) {
     return { kind: "failed", failure: { kind: "server-changed" } };
   }
   const whole = { ...draft, parentKey: parsed.key };
@@ -180,7 +188,7 @@ async function sendCreate(
 
   const library = libraryPath(parsed);
   const request = createRequest(library, whole, core.writeToken());
-  const source = compatibleApiSource(core, attachmentKey);
+  const source = core.bridge.runSync(compatibleApiSource(core, attachmentKey));
   const reply = await core.bridge.runPromise(
     core.localApi.authorizedSend(request.path, {
       library,
@@ -189,7 +197,14 @@ async function sendCreate(
       body: request.body,
     }),
   );
-  if (!source || !(await sourceStillBound(core, attachmentKey, source))) {
+  if (
+    !source ||
+    !(await awaitRead(
+      core,
+      sourceStillBound(core, attachmentKey, source),
+      false,
+    ))
+  ) {
     return { kind: "failed", failure: { kind: "server-changed" } };
   }
   if ("failure" in reply) {
@@ -197,7 +212,7 @@ async function sendCreate(
       attachmentKey,
       failure: reply.failure,
     });
-    await refresh(core, attachmentKey);
+    await awaitRead(core, refresh(core, attachmentKey), null);
     return { kind: "failed", failure: reply.failure };
   }
 
@@ -206,7 +221,7 @@ async function sendCreate(
     type: whole.type,
   });
   if ("failure" in created) {
-    await refresh(core, attachmentKey);
+    await awaitRead(core, refresh(core, attachmentKey), null);
     return { kind: "failed", failure: created.failure };
   }
 
@@ -220,7 +235,7 @@ async function sendCreate(
     }))
   )
     return { kind: "failed", failure: { kind: "server-changed" } };
-  await refresh(core, attachmentKey);
+  await awaitRead(core, refresh(core, attachmentKey), null);
   logger.debug("Zotero created an annotation", {
     attachmentKey,
     annotationKey,
@@ -567,7 +582,7 @@ async function command(
   const expectedServerID =
     core.bridge.runSync(demandedSource(core))?.serverID ?? null;
   const generation = core.commandGeneration;
-  const held = holding(core, annotationKey);
+  const held = core.bridge.runSync(holding(core, annotationKey));
   const proposal: PendingProposal | null =
     held && command.propose
       ? {
@@ -640,7 +655,7 @@ async function runCommand(
     reapplied?: true;
   },
 ): Promise<MutationState> {
-  const held = await prepareWrite(core, annotationKey);
+  const held = await awaitRead(core, prepareWrite(core, annotationKey), null);
   if (held === "server-changed") {
     return leave(core, annotationKey, command.write, {
       kind: "failed",
@@ -663,7 +678,7 @@ async function runCommand(
       failure: { kind: "unknown-annotation" },
     });
   }
-  if (!compatibleApiSource(core, held.attachmentKey)) {
+  if (!core.bridge.runSync(compatibleApiSource(core, held.attachmentKey))) {
     return leave(core, annotationKey, command.write, {
       kind: "failed",
       failure: { kind: "db-source" },
@@ -696,7 +711,9 @@ async function runCommand(
     { library, key: parsed.key, version },
     held.record,
   );
-  const source = compatibleApiSource(core, held.attachmentKey);
+  const source = core.bridge.runSync(
+    compatibleApiSource(core, held.attachmentKey),
+  );
   const reply = await core.bridge.runPromise(
     core.localApi.authorizedSend(path, {
       library,
@@ -705,7 +722,14 @@ async function runCommand(
       body,
     }),
   );
-  if (!source || !(await sourceStillBound(core, held.attachmentKey, source))) {
+  if (
+    !source ||
+    !(await awaitRead(
+      core,
+      sourceStillBound(core, held.attachmentKey, source),
+      false,
+    ))
+  ) {
     if (
       core.databaseBindings.get(held.attachmentKey)?.source.database
         .serverID !== source?.serverID
@@ -745,7 +769,8 @@ async function runCommand(
       refused.kind === "re-apply"
         ? { kind: "failed", failure: reply.failure }
         : refused;
-    if (state.kind === "failed") await refresh(core, held.attachmentKey);
+    if (state.kind === "failed")
+      await awaitRead(core, refresh(core, held.attachmentKey), null);
     leave(core, annotationKey, command.write, state);
     if (state.kind === "conflict") {
       core.publish({
@@ -765,7 +790,7 @@ async function runCommand(
     lock,
   });
   if ("failure" in applied) {
-    await refresh(core, held.attachmentKey);
+    await awaitRead(core, refresh(core, held.attachmentKey), null);
     return leave(core, annotationKey, command.write, {
       kind: "failed",
       failure: applied.failure,
@@ -775,7 +800,11 @@ async function runCommand(
     dropDrafts(core, annotationKey);
   }
   if (
-    !(await sourceStillBound(core, held.attachmentKey, source)) ||
+    !(await awaitRead(
+      core,
+      sourceStillBound(core, held.attachmentKey, source),
+      false,
+    )) ||
     !(await publishApiChange(core, held.attachmentKey, source, applied.value))
   ) {
     return leave(core, annotationKey, command.write, {
@@ -783,7 +812,7 @@ async function runCommand(
       failure: { kind: "server-changed" },
     });
   }
-  await refresh(core, held.attachmentKey);
+  await awaitRead(core, refresh(core, held.attachmentKey), null);
   if (command.gather) {
     command.gather.writes.push({
       attachmentKey: held.attachmentKey,
@@ -828,12 +857,14 @@ async function counted<T>(
     else {
       core.writesInFlight.delete(attachmentKey);
       if (!core.bridge.runSync(demandedSource(core))) {
-        void read(core, attachmentKey).catch((error: unknown) => {
-          logger.debug(
-            "The database fallback after a write could not be read",
-            { attachmentKey, error },
-          );
-        });
+        void awaitRead(core, read(core, attachmentKey), null).catch(
+          (error: unknown) => {
+            logger.debug(
+              "The database fallback after a write could not be read",
+              { attachmentKey, error },
+            );
+          },
+        );
       }
     }
   }
@@ -903,7 +934,9 @@ function writeBlocked(
   core: CoreState,
   attachmentKey: string,
 ): WriteFailure | null {
-  const capability = editingCapability(core, attachmentKey);
+  const capability = core.bridge.runSync(
+    editingCapability(core, attachmentKey),
+  );
   switch (capability.kind) {
     case "writable":
       return null;
@@ -955,7 +988,9 @@ async function writeRefused(
   const { failure } = refusal;
   const annotationKey = held.record.key;
   if (failure.kind === "not-found") {
-    dropAttachment(core, held.attachmentKey, held.queryKey);
+    core.bridge.runSync(
+      dropAttachment(core, held.attachmentKey, held.queryKey),
+    );
     return { kind: "failed", failure };
   }
   if (failure.kind !== "conflict") return { kind: "failed", failure };
@@ -968,7 +1003,9 @@ async function writeRefused(
       annotationKey,
       failure: fresh.failure,
     });
-    dropAttachment(core, held.attachmentKey, held.queryKey);
+    core.bridge.runSync(
+      dropAttachment(core, held.attachmentKey, held.queryKey),
+    );
     return {
       kind: "failed",
       failure: fresh.failure.kind === "not-found" ? fresh.failure : failure,
@@ -977,7 +1014,11 @@ async function writeRefused(
 
   const record = fromLocalApi(fresh.value);
   if (
-    !(await sourceStillBound(core, held.attachmentKey, source)) ||
+    !(await awaitRead(
+      core,
+      sourceStillBound(core, held.attachmentKey, source),
+      false,
+    )) ||
     !(await publishApiChange(core, held.attachmentKey, source, {
       kind: "observed",
       record,
@@ -985,7 +1026,7 @@ async function writeRefused(
   ) {
     return { kind: "failed", failure: { kind: "server-changed" } };
   }
-  dropAttachment(core, held.attachmentKey, held.queryKey);
+  core.bridge.runSync(dropAttachment(core, held.attachmentKey, held.queryKey));
 
   if (refusal.write === "tags") return { kind: "re-apply" };
   const conflict = conflictOf(refusal, record);
@@ -1089,7 +1130,7 @@ async function publishApiChange(
   if (confirmation.kind === "deleted") {
     reconcileDrafts(core, source.serverID, attachmentKey, annotations);
   }
-  await announceReadPixels(core, previous, next);
+  await awaitRead(core, announceReadPixels(core, previous, next), undefined);
   return true;
 }
 

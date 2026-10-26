@@ -69,7 +69,6 @@ import {
 import type {
   AnnotationList,
   AnnotationRecord,
-  AnnotationRepositoryCore,
   AnnotationRepositoryCoreDeps,
   AnnotationSource,
 } from "./repository";
@@ -358,7 +357,41 @@ type FixtureEvents = {
   "write-conflict": (annotationKey: string, attachmentKey: string) => void;
 };
 
-export type RepositoryClient = AnnotationRepositoryCore & {
+type PromiseMember =
+  | "createAnnotation"
+  | "deleteAnnotation"
+  | "deleteAnnotations"
+  | "patchColor"
+  | "patchColors"
+  | "patchComment"
+  | "patchGeometry"
+  | "read"
+  | "redo"
+  | "refresh"
+  | "retryTextDraft"
+  | "retryWrite"
+  | "submitTags"
+  | "submitTextField"
+  | "undo";
+
+type Shape = AnnotationRepository["Service"];
+
+/**
+ * The tag's members as plain calls: a member that waits answers a Promise,
+ * the others their value; `capability` reads as a value and `probe` is a call.
+ */
+type PlainMembers = {
+  [K in Exclude<keyof Shape, "capability" | "probe">]: Shape[K] extends (
+    ...args: infer P
+  ) => Effect.Effect<infer A>
+    ? (...args: P) => K extends PromiseMember ? Promise<A> : A
+    : never;
+} & {
+  readonly capability: Effect.Success<Shape["capability"]>;
+  probe(): Promise<void>;
+};
+
+export type RepositoryClient = PlainMembers & {
   listen<K extends keyof FixtureEvents>(
     event: K,
     callback: FixtureEvents[K],

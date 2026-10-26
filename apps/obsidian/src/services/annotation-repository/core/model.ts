@@ -388,7 +388,7 @@ export interface AnnotationRepositoryCoreDeps {
     | "writeStateFor"
   >;
   /** The clock a cooldown deadline in the Editing Capability is read against. */
-  now?: () => Temporal.Instant;
+  now: () => Temporal.Instant;
   /**
    * The write token each create carries.
    *
@@ -577,12 +577,6 @@ interface DatabaseAnswer {
   readonly database: ZoteroDatabaseIdentity;
 }
 
-/** The database reads one task gathered, by Attachment, in one generation. */
-interface DatabaseBatch {
-  readonly generation: number;
-  readonly readers: Map<string, PromiseWithResolvers<DatabaseAnswer>[]>;
-}
-
 /** Tags with their types named, as a template reads them from either source. */
 function templateTags(tags: readonly AnnotationTag[] | undefined) {
   return tags?.map(({ name, type }) => ({ name, type: tagTypeToName(type) }));
@@ -664,5 +658,4 @@ export type {
   PendingProposal,
   AnnotationMutation,
   DatabaseAnswer,
-  DatabaseBatch,
 };

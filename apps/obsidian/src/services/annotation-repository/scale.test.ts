@@ -179,7 +179,7 @@ it("reads again on a database change only the lists that surfaces hold", async (
 it("lets go at a database change a list read with no hold and not asked for a while", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository, acquireRead, dbEvents, runtime } = await setup(stack);
-  const retention = Duration.millis(UNHELD_RETENTION.total("milliseconds"));
+  const retention = UNHELD_RETENTION;
   const tick = Duration.millis(1);
 
   await repository.read("RGRPDF24");
