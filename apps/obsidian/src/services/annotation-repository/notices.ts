@@ -12,7 +12,6 @@ import { Notifier } from "@/lib/notifier";
 import type { NoticeHandle } from "@/lib/notifier";
 import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
 
-import type { EditingCapability } from "./capability";
 import {
   allowEditingNotice,
   CapabilityNoticeLedger,
@@ -26,7 +25,8 @@ const NOTICE_DURATION = Duration.seconds(10);
 /**
  * One {@link CapabilityNotice} as the notice draws it. Separate from the
  * triggers so `/obsidian-debug` can put any of them on screen without first
- * arranging the state that would raise it.
+ * arranging the state that would raise it: pass this message and
+ * {@link noticeDuration} to `Notifier.show`.
  *
  * @param runAction what the notice's one action runs — the "Zotero editing"
  *   settings row for a capability notice, the card itself for a conflict.
@@ -46,7 +46,10 @@ export function capabilityNoticeMessage(
 }
 
 /** How long one {@link CapabilityNotice} stays, in ms; `0` keeps it until dismissed. */
-function noticeDuration({ sticky, durationMs }: CapabilityNotice): number {
+export function noticeDuration({
+  sticky,
+  durationMs,
+}: CapabilityNotice): number {
   if (sticky) return 0;
   return durationMs ?? Duration.toMillis(NOTICE_DURATION);
 }
@@ -121,10 +124,9 @@ export function layerCapabilityNotices(
         notice: CapabilityNotice,
         action: Effect.Effect<void>,
       ) {
-        let handle: NoticeHandle | null = null;
-        handle = yield* notifier.show(
+        const handle: NoticeHandle = yield* notifier.show(
           capabilityNoticeMessage(notice, () => {
-            run(Effect.andThen(handle?.hide ?? Effect.void, action));
+            run(Effect.andThen(handle.hide, action));
           }),
           { duration: noticeDuration(notice) },
         );
@@ -142,14 +144,15 @@ export function layerCapabilityNotices(
 
       yield* forkEach(repository.capabilityChanges, () =>
         Effect.gen(function* () {
-          const capabilities = new Map<string, EditingCapability>();
-          for (const attachmentKey of ledger.openEpisodes()) {
-            capabilities.set(
-              attachmentKey,
-              yield* repository.capabilityFor(attachmentKey),
-            );
-          }
-          ledger.refresh(capabilities);
+          const entries = yield* Effect.forEach(
+            ledger.openEpisodes(),
+            (attachmentKey) =>
+              Effect.map(
+                repository.capabilityFor(attachmentKey),
+                (capability) => [attachmentKey, capability] as const,
+              ),
+          );
+          ledger.refresh(new Map(entries));
         }),
       );
       // A conflict the user cannot see is a change lost in silence, so the

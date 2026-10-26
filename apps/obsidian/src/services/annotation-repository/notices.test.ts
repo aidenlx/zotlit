@@ -41,9 +41,6 @@ function actionOf(notice: RecordedNotice): ButtonComponent | null {
   return button instanceof ButtonComponent ? button : null;
 }
 
-/** Lets an event's handler, or the forked action of a pressed notice, run. */
-const settle = Effect.yieldNow.pipe(Effect.repeat({ times: 3 }));
-
 /** One recorded notice as the screen shows it. */
 function drawn(notice: RecordedNotice) {
   const fragment = notice.messages[0] as DocumentFragment;
@@ -142,8 +139,9 @@ it.effect("re-checks Zotero before it opens the editing settings row", () =>
       ),
     });
 
-    const gesture = yield* Effect.forkChild(notices.showEditingCapability);
-    yield* Effect.yieldNow;
+    const gesture = yield* Effect.forkChild(notices.showEditingCapability, {
+      startImmediately: true,
+    });
     // The row waits for the probe: it renders the capability, and a stale one
     // would name a state Zotero has already left.
     expect(ran).toEqual(["probe"]);
@@ -206,7 +204,6 @@ it.effect(
       expect(asked.count).toBe(1);
 
       press(notifier.notices[0]!);
-      yield* settle;
       expect(notifier.notices).toHaveLength(2);
       expect(notifier.notices[0]!.hidden).toBe(true);
       expect(asked.count).toBe(2);
@@ -256,13 +253,11 @@ it.effect(
       ]);
 
       press(notifier.notices[0]!);
-      yield* settle;
       expect(built.ran).toEqual(["open"]);
 
       // Editing works again, which closes the episode: the next block speaks.
       built.setCapability({ kind: "writable" });
       built.events.capabilityChanges.emit();
-      yield* settle;
       built.setCapability(CLOSED);
       yield* notices.reportBlockedGesture(ATTACHMENT);
       expect(notifier.notices).toHaveLength(2);
@@ -280,18 +275,15 @@ it.effect(
       built.setMutation(CONFLICT);
       built.events.annotationChanged.emit(ANNOTATION);
       built.events.writeConflicts.emit(conflict);
-      yield* settle;
       expect(built.titles()).toEqual([m.notice_write_conflict()]);
 
       press(built.notifier.notices[0]!);
-      yield* settle;
       expect(built.ran).toEqual([`reveal ${ANNOTATION}`]);
 
       // The card settled, so the next conflict on it is news.
       built.setMutation(IDLE);
       built.events.annotationChanged.emit(ANNOTATION);
       built.events.writeConflicts.emit(conflict);
-      yield* settle;
       expect(built.titles()).toEqual([
         m.notice_write_conflict(),
         m.notice_write_conflict(),
@@ -307,7 +299,6 @@ it.effect("leaves a write conflict to the view that shows its card", () =>
       annotationKey: ANNOTATION,
       attachmentKey: ATTACHMENT,
     });
-    yield* settle;
 
     expect(built.shown()).toEqual([]);
   }).pipe(Effect.scoped),
@@ -325,15 +316,12 @@ it.effect(
 
       built.events.writeRefusals.emit(refusal);
       built.events.writeRefusals.emit(refusal);
-      yield* settle;
       expect(built.titles()).toEqual([m.notice_write_not_saved()]);
       press(built.notifier.notices[0]!);
-      yield* settle;
       expect(built.ran).toEqual(["open"]);
 
       built.events.writeRefusalsRetired.emit();
       built.events.writeRefusals.emit(refusal);
-      yield* settle;
       expect(built.notifier.notices).toHaveLength(2);
     }).pipe(Effect.scoped),
 );
@@ -345,7 +333,6 @@ it.effect("says a changed Zotero database once per database", () =>
     built.events.serverChanges.emit("server-a");
     built.events.serverChanges.emit("server-a");
     built.events.serverChanges.emit("server-b");
-    yield* settle;
 
     expect(built.titles()).toEqual([
       m.notice_write_not_saved(),
