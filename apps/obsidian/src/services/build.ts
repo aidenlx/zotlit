@@ -32,6 +32,8 @@ import { bindAttachmentImport } from "./attachment-import/handle";
 import { AttachmentImport } from "./attachment-import/service";
 import { createPdfReader } from "./attachment-open/actions";
 import { openWithSystem } from "./attachment-open/capture";
+import { bindLiteratureNoteAttachments } from "./attachment-open/handle";
+import type { LiteratureNoteServices } from "./attachment-open/literature-note";
 import { createTargetOpener } from "./attachment-open/open-target";
 import { AttachmentResolver } from "./attachment-resolver/service";
 import { ChineseSegmenter } from "./chinese-segmenter/service";
@@ -51,6 +53,7 @@ import { ExcerptImages } from "./excerpt-image/layer";
 import { createExcerptPreparation } from "./excerpt-image/prepare";
 import { prepareSingleExcerpt } from "./excerpt-image/prepare-single";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
+import { savedExcerptRequestOver } from "./excerpt-image/request";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
 import { bindItemLookup } from "./item-lookup/handle";
@@ -100,6 +103,7 @@ import { plainUseLedger } from "./use-ledger/plain";
 import { writeReadUse } from "./zotero-local-api/last-read";
 import { ZoteroLocalApi } from "./zotero-local-api/service";
 import { plainZoteroPref } from "./zotero-pref/plain";
+import { ZoteroPref } from "./zotero-pref/service";
 import { plainZoteroReads } from "./zotero-reads/plain";
 import { ZoteroReads } from "./zotero-reads/service";
 
@@ -241,6 +245,14 @@ export async function buildServices(
     .useValue({ excerptImage: () => runtime.runSync(ExcerptImages) })
     .useValue({ excerptDisplay: () => runtime.runSync(ExcerptDisplays) })
     .useValue({
+      excerptRequest: () =>
+        savedExcerptRequestOver({
+          reads: zoteroReadsService,
+          pref: runtime.runSync(ZoteroPref),
+          bridge,
+        }),
+    })
+    .useValue({
       attachmentResolver: () => runtime.runSync(AttachmentResolver),
     })
     .useValue({
@@ -258,6 +270,13 @@ export async function buildServices(
             plugin.app.vault.adapter as FileSystemAdapter
           ).getBasePath(),
         }),
+    })
+    .useValue({
+      literatureNoteAttachments: () =>
+        bindLiteratureNoteAttachments(
+          bridge,
+          runtime.runSync(Effect.context<LiteratureNoteServices>()),
+        ),
     })
     .useValue({ zoteroLocalApi: () => zoteroLocalApiService })
     .useValue({
