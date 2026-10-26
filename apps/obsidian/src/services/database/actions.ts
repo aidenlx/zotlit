@@ -1,9 +1,8 @@
-import { Cause, Deferred, Effect, Exit, Layer } from "effect";
-import type { Scope } from "effect";
+import { Cause, Effect, Exit, Layer } from "effect";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { Notifier } from "@/lib/notifier";
-import { reportProgress } from "@/lib/notifier";
+import { withProgress } from "@/lib/notifier";
 import { PluginHost } from "@/lib/plugin-host";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
@@ -24,23 +23,13 @@ export const layerDatabaseActions: Layer.Layer<
   Effect.gen(function* () {
     const host = yield* PluginHost;
     const reads = yield* ZoteroReads;
-    const layerScope: Scope.Scope = yield* Effect.scope;
     const run = Effect.runPromiseExitWith(yield* Effect.context<Notifier>());
     // The toast outlives the command, as `toast.promise` did, until the
-    // layer closes.
-    const refresh = Effect.gen(function* () {
-      const outcome = yield* Deferred.make<Exit.Exit<void, unknown>>();
-      yield* Effect.forkIn(
-        reportProgress(Deferred.await(outcome), {
-          loading: m.notice_db_refreshing(),
-          success: m.notice_db_refreshed(),
-          error: m.notice_db_refresh_failed(),
-        }),
-        layerScope,
-      );
-      yield* reads.refresh.pipe(
-        Effect.onExit((exit) => Deferred.succeed(outcome, exit)),
-      );
+    // Notifier's layer closes.
+    const refresh = withProgress(reads.refresh, {
+      loading: m.notice_db_refreshing(),
+      success: m.notice_db_refreshed(),
+      error: m.notice_db_refresh_failed(),
     });
     yield* host.addCommand({
       id: "refresh-zotero-data",
