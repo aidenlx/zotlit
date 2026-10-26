@@ -69,6 +69,7 @@ import { layerExcerptPreparation } from "./excerpt-image/prepare";
 import type { ExcerptPreparation } from "./excerpt-image/prepare";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
 import { layerAnnotationImageCli } from "./excerpt-image/register-cli";
+import { layerExcerptRevalidation } from "./excerpt-image/revalidation";
 import type { ExcerptStore } from "./excerpt-image/store";
 import { layerGraphCitations } from "./graph-citations/service";
 import type { GraphCitations } from "./graph-citations/service";
@@ -375,6 +376,7 @@ export function pluginLayer(
     layerCitekeyEditorNotices.pipe(startingAs("CitekeyEditorNotices")),
     layerCitekeyReading.pipe(startingAs("CitekeyReading")),
     layerDatabaseActions.pipe(startingAs("DatabaseActions")),
+    layerExcerptRevalidation.pipe(startingAs("ExcerptRevalidation")),
     layerGraphCitations.pipe(startingAs("GraphCitations")),
     layerLanguagePackNotices.pipe(startingAs("LanguagePackNotices")),
     layerLibraryScopeCli.pipe(startingAs("LibraryScopeCli")),

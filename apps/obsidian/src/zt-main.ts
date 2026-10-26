@@ -632,30 +632,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       }),
     );
 
-    // A saved pixel edit revalidates its Excerpt Image wherever the image
-    // stands: the card that shows the Annotation, and — with no card on screen —
-    // the device-local image the store already holds for it. One subscriber
-    // covers every surface that can save an edit. Each request reads the
-    // database first, so only the newest edit of an Annotation is revalidated:
-    // an older read that lands late would cancel the newer replacement.
-    const latestEdit = new Map<string, symbol>();
-    stack.defer(
-      services.bridge.subscribe(
-        services.annotationRepository.excerptPixelsChanged,
-        ({ record, source }) => {
-          const edit = Symbol(record.key);
-          latestEdit.set(record.key, edit);
-          void services
-            .excerptRequest({ annotation: record, source })
-            .then((request) => {
-              if (latestEdit.get(record.key) !== edit) return;
-              latestEdit.delete(record.key);
-              if (request) services.excerptDisplay.revalidate(request);
-            });
-        },
-      ),
-    );
-
     this.#services = services;
     this.#stack = stack.move();
   }

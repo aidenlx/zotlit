@@ -48,7 +48,6 @@ import { CitekeyEditor } from "./citekey-editor/service";
 import { ExcerptDisplays } from "./excerpt-image/display";
 import { ExcerptImages } from "./excerpt-image/layer";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
-import { savedExcerptRequestOver } from "./excerpt-image/request";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
 import { bindItemLookup } from "./item-lookup/handle";
@@ -100,7 +99,6 @@ import { plainUseLedger } from "./use-ledger/plain";
 import { writeReadUse } from "./zotero-local-api/last-read";
 import { ZoteroLocalApi } from "./zotero-local-api/service";
 import { plainZoteroPref } from "./zotero-pref/plain";
-import { ZoteroPref } from "./zotero-pref/service";
 import { plainZoteroReads } from "./zotero-reads/plain";
 import { ZoteroReads } from "./zotero-reads/service";
 
@@ -279,14 +277,6 @@ export async function buildServices(
     })
     .useValue({ excerptImage: () => runtime.runSync(ExcerptImages) })
     .useValue({ excerptDisplay: () => runtime.runSync(ExcerptDisplays) })
-    .useValue({
-      excerptRequest: () =>
-        savedExcerptRequestOver({
-          reads: zoteroReadsService,
-          pref: runtime.runSync(ZoteroPref),
-          bridge,
-        }),
-    })
     .useValue({
       attachmentResolver: () => runtime.runSync(AttachmentResolver),
     })
