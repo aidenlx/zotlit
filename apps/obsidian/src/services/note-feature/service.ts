@@ -209,11 +209,14 @@ export const layerNoteFeature = (ports: NoteWritePorts) =>
         provide(createAtGate(item, options));
       return NoteFeature.of({
         changes: Stream.fromPubSub(events),
-        reportExcerptImages: (summary) =>
-          PubSub.publish(events, {
-            _tag: "excerpt-images-reported",
-            summary,
-          }).pipe(Effect.asVoid),
+        reportExcerptImages: Effect.fn("NoteFeature.reportExcerptImages")(
+          function* (summary) {
+            yield* PubSub.publish(events, {
+              _tag: "excerpt-images-reported",
+              summary,
+            });
+          },
+        ),
         createNote: Effect.fn("NoteFeature.createNote")((item, options = {}) =>
           create(item, options),
         ),
