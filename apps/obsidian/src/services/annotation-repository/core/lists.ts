@@ -1,7 +1,6 @@
 // Reads and holds: the Annotation lists of each Attachment from its active source, the database partition, locks, and the Editing Capability.
 import type { QueryFunction, QueryKey } from "@tanstack/query-core";
 import {
-  Cause,
   DateTime,
   Duration,
   Effect,
@@ -24,6 +23,7 @@ import type {
   ZoteroDatabaseIdentity,
 } from "@zotlit/db";
 
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import { settleAtEdge } from "@/lib/signal-edge";
 import {
@@ -129,24 +129,6 @@ class PersistedExcerptUnreadable extends Schema.TaggedError<
   PersistedExcerptUnreadable,
   { readonly brand: unique symbol }
 >()("PersistedExcerptUnreadable", { cause: Schema.Defect() }) {}
-
-/**
- * A failure boundary: interrupts pass through, and any other cause is logged
- * by `logged` and answered by `fallback`.
- */
-function recover<B>(
-  logged: (cause: Cause.Cause<unknown>) => Effect.Effect<void>,
-  fallback: Effect.Effect<B>,
-) {
-  return <A, E, R>(
-    effect: Effect.Effect<A, E, R>,
-  ): Effect.Effect<A | B, never, R> =>
-    Effect.catchCause(effect, (cause) =>
-      Cause.hasInterruptsOnly(cause)
-        ? Effect.interrupt
-        : Effect.andThen(logged(cause), fallback),
-    );
-}
 
 /**
  * @param attachmentKey the Attachment's Indexed Key.
