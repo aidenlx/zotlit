@@ -503,6 +503,7 @@ export default defineConfig({
         "src/views/cited-by/**",
         "src/views/note-preview/**",
         "src/views/template-data-explorer/**",
+        "src/views/template-workbench/**",
         "src/views/annot-view/model.ts",
       ],
       rules: {
@@ -518,7 +519,11 @@ export default defineConfig({
     {
       // Views on view atoms with no Plain dependency left. The Template Data
       // Explorer joins when the Template service converts.
-      files: ["src/views/cited-by/**", "src/views/note-preview/**"],
+      files: [
+        "src/views/cited-by/**",
+        "src/views/note-preview/**",
+        "src/views/template-workbench/**",
+      ],
       rules: {
         "no-restricted-imports": [
           "error",

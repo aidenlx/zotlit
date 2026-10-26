@@ -23,3 +23,12 @@ export const zoteroRevisionAtom: Atom.Atom<number> = held(
   ),
   0,
 );
+
+export const zoteroStateAtom = held(
+  Stream.unwrap(
+    Effect.map(ZoteroReads, (service) =>
+      Stream.map(service.changes, (state) => state.state),
+    ),
+  ),
+  "loading" as "loading" | "ready" | "degraded",
+);

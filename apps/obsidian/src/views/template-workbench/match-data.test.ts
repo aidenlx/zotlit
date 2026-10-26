@@ -4,12 +4,16 @@ import { expect, it, vi } from "vitest";
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildQueryService } from "@/services/item-query/__fixtures__";
 import {
   inProcessReadsService,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
+import { waitFor } from "@/views/template-data-explorer/__fixtures__";
 
+import { makeWorkbenchHost } from "./__fixtures__";
+import type { WorkbenchHostDeps } from "./__fixtures__";
 import { createMatchData } from "./match-data";
 
 it("includes Libraries outside the chosen paper and keeps automatic Tags and direct Collection paths", async () => {
@@ -56,7 +60,14 @@ it("includes Libraries outside the chosen paper and keeps automatic Tags and dir
     },
     stack,
   );
-  const data = createMatchData(db, query);
+  const host = makeWorkbenchHost({
+    zoteroReads: stubService<WorkbenchHostDeps["zoteroReads"]>(
+      "ZoteroReads",
+      db,
+    ),
+    query,
+  });
+  using data = createMatchData(host.registry);
   await expect(data.tags()).resolves.toEqual([
     "Automatic",
     "Manual",
@@ -96,4 +107,26 @@ it("includes Libraries outside the chosen paper and keeps automatic Tags and dir
     span: { from: 5, to: 12 },
   });
   expect(dispose).toHaveBeenCalledTimes(3);
+});
+
+it("stops reading custom fields when the Match editor stops reading", async () => {
+  const started = Promise.withResolvers<AbortSignal>();
+  const customFieldNames = vi.fn((signal: AbortSignal) => {
+    started.resolve(signal);
+    return new Promise<never>(() => {});
+  });
+  const host = makeWorkbenchHost({
+    query: stubService<NonNullable<WorkbenchHostDeps["query"]>>("Query", {
+      customFieldNames,
+    }),
+  });
+  using data = createMatchData(host.registry);
+  const controller = new AbortController();
+  const result = data.customFields(controller.signal);
+  const running = await started.promise;
+  controller.abort();
+  await expect(result).resolves.toEqual([]);
+  await waitFor(() => expect(running.aborted).toBe(true));
+  await expect(data.customFields(controller.signal)).resolves.toEqual([]);
+  expect(customFieldNames).toHaveBeenCalledOnce();
 });

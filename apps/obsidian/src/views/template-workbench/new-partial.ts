@@ -17,7 +17,7 @@ import {
   partialNameRefusal,
 } from "@/services/template/defaults";
 import type { PartialNameRefusal } from "@/services/template/defaults";
-import type { PlainTemplate } from "@/services/template/plain";
+import type { TemplateOperations } from "@/services/template/service";
 import {
   dialogFooter,
   field,
@@ -32,7 +32,7 @@ const logger = getLogger(["views", "template-workbench"]);
 
 /** The template surface every Shared Partial entry point reads. */
 export type SharedPartialActions = Pick<
-  PlainTemplate,
+  TemplateOperations,
   "getPartialNames" | "createPartial"
 >;
 
@@ -105,7 +105,7 @@ function refusalText(refusal: PartialNameRefusal, name: string): string {
  * The name prompt: one field, the resulting filename under it, and a Create
  * button that stays disabled until the rule accepts what is typed.
  */
-class NewPartialModal extends Modal {
+export class NewPartialModal extends Modal {
   readonly #taken: readonly string[];
   readonly #seed: string;
   readonly #decision = Promise.withResolvers<string | null>();

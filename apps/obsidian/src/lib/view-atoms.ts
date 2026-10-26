@@ -26,6 +26,7 @@ import type { Workspace } from "@/lib/obsidian-workspace";
 import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { CitationParse } from "@/services/citation-parse/service";
+import type { QueryService } from "@/services/item-query/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { BibliographyRender } from "@/services/pandoc/render-cache";
 import type { Profile } from "@/services/profile/service";
@@ -41,6 +42,7 @@ import type { ZoteroReads } from "@/services/zotero-reads/service";
  * here when a view atom first reads it.
  */
 export type ViewServices =
+  | QueryService
   | CitationLookup
   | CitationParse
   | BibliographyRender

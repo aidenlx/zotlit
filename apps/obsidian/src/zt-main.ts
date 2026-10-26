@@ -256,7 +256,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         );
         const target =
           profileId === "default"
-            ? services.profile
+            ? services.runtime.runSync(ViewRegistry)
             : entry && this.app.vault.getFileByPath(entry.path);
         if (target)
           await openNativeProfile(this.app, target, {
@@ -478,21 +478,13 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     const templateWorkbenchDeps = {
-      runtime: services.runtime,
+      registry: services.runtime.runSync(ViewRegistry),
       bridge: services.bridge,
       noteFeature: services.noteFeature,
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
-      app: this.app,
-      zoteroReads: services.zoteroReads,
-      query: services.query,
-      noteIndex: services.noteIndex,
-      zoteroPref: services.zoteroPref,
       itemLookup: services.itemLookup,
       settings: services.settings,
-      templates: services.template,
-      templateData: services.templateData,
-      profile: services.profile,
       nativePreview: {
         app: this.app,
         registry: services.runtime.runSync(ViewRegistry),

@@ -10,6 +10,7 @@ import type { ViewServices } from "@/lib/view-atoms";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
 import { CitationIndex } from "@/services/citation-index/service";
 import { CitationParse } from "@/services/citation-parse/service";
+import { QueryService } from "@/services/item-query/service";
 import { NoteIndex } from "@/services/note-index/service";
 import { BibliographyRender } from "@/services/pandoc/render-cache";
 import { Profile } from "@/services/profile/service";
@@ -24,6 +25,7 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
  * it first: a service the test reads, merged after it, takes its place.
  */
 export const layerUnreadViewServices = Layer.mergeAll(
+  Layer.mock(QueryService, {}),
   Layer.mock(CitationLookup, {}),
   Layer.mock(CitationParse, {}),
   Layer.mock(BibliographyRender, {}),

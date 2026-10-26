@@ -7,33 +7,30 @@ import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { BaseNotice } from "@/lib/notice";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
 import type { FileMenuSegment } from "@/services/file-menu";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import type { PlainProfile } from "@/services/profile/plain";
+import {
+  profileStateAtom,
+  fileProfileValueAtom,
+} from "@/services/profile/atoms";
+import { templateFolderAtom } from "@/services/settings/atoms";
 import {
   findWorkbenchLayout,
   openWorkbenchLayout,
 } from "@/views/note-preview/register";
 
 import { runTemplateWorkbenchAction } from "./actions";
-import { templateDocumentKind, templateFolderOf } from "./document-kind";
+import { makeDefaultSourceCommand } from "./atoms";
+import { templateDocumentKind } from "./document-kind";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 import type { TemplateWorkbenchDeps } from "./view";
 
 type RegistrationDeps = TemplateWorkbenchDeps & {
   webWorkbenchEnabled: boolean;
   customize: CustomizeAction;
-  profile: Pick<
-    PlainProfile,
-    | "profiles"
-    | "defaultDocumentPath"
-    | "getSource"
-    | "profileOf"
-    | "materializeDefault"
-    | "restoreDefault"
-  >;
 };
 /**
  * What the Workbench's commands, header action, and file-menu entries ask of a
@@ -41,39 +38,40 @@ type RegistrationDeps = TemplateWorkbenchDeps & {
  * the Customize launch for that Profile.
  */
 function workbenchTargets(app: App, deps: RegistrationDeps) {
+  const state = () => deps.registry.get(profileStateAtom);
   /** A plain document — the Citation Template or a Shared Partial — which the
    *  view opens on its own tab without any Profile flow. */
   const isPlainDocument = (file: TFile | null): file is TFile =>
     file !== null &&
-    templateDocumentKind(file, templateFolderOf(deps.settings, deps.bridge)) !==
+    templateDocumentKind(file, deps.registry.get(templateFolderAtom)) !==
       "profile";
   const isProfile = (file: TFile | null): file is TFile =>
     file !== null &&
     file.extension === "md" &&
-    (file.path === deps.profile.defaultDocumentPath ||
-      deps.profile.profiles.some((profile) => profile.path === file.path) ||
+    (file.path === state()?.defaultDocumentPath ||
+      (state()?.profiles ?? []).some((profile) => profile.path === file.path) ||
       file.basename.startsWith("zotlit-profile."));
   const targetOf = (file: TFile | null) => {
     if (isProfile(file)) return file;
     if (!file || !itemKeyFromFrontmatter(app.metadataCache.getFileCache(file)))
       return null;
-    const resolved = deps.profile.profileOf(file);
-    if (!resolved.ok) return null;
-    if (resolved.profile.selector === "default") return deps.profile;
-    const profile = deps.profile.profiles.find(
+    const resolved = deps.registry.get(fileProfileValueAtom(file));
+    if (!resolved?.ok) return null;
+    if (resolved.profile.selector === "default") return deps.registry;
+    const profile = (state()?.profiles ?? []).find(
       (entry) => entry.id === resolved.profile.selector,
     );
     return profile ? app.vault.getFileByPath(profile.path) : null;
   };
   const customizeTarget = (
-    target: TFile | RegistrationDeps["profile"],
+    target: TFile | ViewRegistryHandle,
     options: { itemIndexedKey?: string; destination?: "web" | "native" } = {},
   ) => {
     const profileId =
       target instanceof TFile
-        ? target.path === deps.profile.defaultDocumentPath
+        ? target.path === state()?.defaultDocumentPath
           ? "default"
-          : deps.profile.profiles.find(
+          : (state()?.profiles ?? []).find(
               (profile) => profile.path === target.path,
             )?.id
         : "default";
@@ -185,7 +183,7 @@ export function registerTemplateWorkbenchView(
       void runTemplateWorkbenchAction("open-workbench", () =>
         file
           ? openTemplateWorkbench(plugin.app, file, options)
-          : openNativeProfile(plugin.app, deps.profile, options),
+          : openNativeProfile(plugin.app, deps.registry, options),
       );
     }),
   );
@@ -331,7 +329,7 @@ function activeLeafFor(
 /** Open a Profile file or the built-in Default draft in the native editor. */
 export async function openNativeProfile(
   app: App,
-  target: TFile | Pick<PlainProfile, "defaultDocumentPath" | "getSource">,
+  target: TFile | ViewRegistryHandle,
   options: {
     leaf?: WorkspaceLeaf;
     itemIndexedKey?: string;
@@ -342,13 +340,23 @@ export async function openNativeProfile(
     problem?: ArrivingProblem;
   } = {},
 ): Promise<void> {
+  const path =
+    target instanceof TFile
+      ? target.path
+      : target.get(profileStateAtom)?.defaultDocumentPath;
   const file =
     target instanceof TFile
       ? target
-      : app.vault.getFileByPath(target.defaultDocumentPath);
-  const source = file
-    ? await app.vault.cachedRead(file)
-    : await (target as Pick<PlainProfile, "getSource">).getSource("default");
+      : path
+        ? app.vault.getFileByPath(path)
+        : null;
+  let source: string;
+  if (file) source = await app.vault.cachedRead(file);
+  else if (target instanceof TFile) return;
+  else {
+    using command = makeDefaultSourceCommand(target);
+    source = await command.run();
+  }
   if (file) {
     await openTemplateWorkbench(app, file, {
       ...options,
@@ -397,7 +405,7 @@ export async function openNativeProfile(
   if (leaf.view instanceof TemplateWorkbenchView) {
     if (options.problem) leaf.view.explainArrival(options.problem);
     if (options.customize) await leaf.view.customizeDefault();
-    leaf.view.setOriginatingNote(options.originatingNote ?? null);
+    await leaf.view.setOriginatingNote(options.originatingNote ?? null);
   }
 }
 
@@ -468,6 +476,6 @@ export async function openTemplateWorkbench(
   if (leaf.view instanceof TemplateWorkbenchView) {
     if (options.problem) leaf.view.explainArrival(options.problem);
     if (options.customize) await openWorkbenchLayout(app, leaf.view);
-    leaf.view.setOriginatingNote(options.originatingNote ?? null);
+    await leaf.view.setOriginatingNote(options.originatingNote ?? null);
   }
 }
