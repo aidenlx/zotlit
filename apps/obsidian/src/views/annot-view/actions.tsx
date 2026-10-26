@@ -766,17 +766,19 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   return {
     getBacklink,
     onOpenPage(annot, pane) {
-      void deps.opener.open(
-        {
-          kind: "annotation",
-          attachmentKey: annot.parentKey,
-          annotationKey: annot.key,
-          pageIndex:
-            "pageIndex" in annot.position ? annot.position.pageIndex : null,
-          pageLabel: annot.pageLabel,
-        },
-        pane,
-      );
+      void deps.opener
+        .open(
+          {
+            kind: "annotation",
+            attachmentKey: annot.parentKey,
+            annotationKey: annot.key,
+            pageIndex:
+              "pageIndex" in annot.position ? annot.position.pageIndex : null,
+            pageLabel: annot.pageLabel,
+          },
+          pane,
+        )
+        .catch(passAborted);
     },
     openExcerptImage: () => deps.excerptDisplay.open(),
     excerptImageRequest: deps.excerptImageRequest,
