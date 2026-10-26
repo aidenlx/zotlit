@@ -39,9 +39,11 @@ function setup() {
         return Object.assign(current, next);
       }),
   });
+  const rebuild = vi.fn<() => void>();
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    tab: testSettingTab(Context.make(PluginSettings, settings)).tab,
-    requestUpdate: vi.fn(),
+    tab: testSettingTab(Context.make(PluginSettings, settings), {
+      update: rebuild,
+    }).tab,
   });
   const rows = highlightMappingItems(ctx);
   const row = (name: string) => {
@@ -49,7 +51,7 @@ function setup() {
     if (!item) throw new Error(`Mapping row missing: ${name}`);
     return item;
   };
-  return { ctx, row, update, settings };
+  return { ctx, row, update, settings, rebuild };
 }
 
 function visible(item: SettingDefinitionItem) {
@@ -60,7 +62,7 @@ function visible(item: SettingDefinitionItem) {
 
 describe("highlight mapping page", () => {
   it("retains the selected output when the default Profile toggle changes", () => {
-    const { ctx, row, update } = setup();
+    const { row, update, rebuild } = setup();
     const setEnabled = (enabled: boolean) =>
       update({
         "note.default-profile": {
@@ -94,7 +96,7 @@ describe("highlight mapping page", () => {
           .components[0] as DropdownComponent
       ).getValue(),
     ).toBe("mark");
-    expect(ctx.requestUpdate).toHaveBeenCalledOnce();
+    expect(rebuild).toHaveBeenCalledOnce();
   });
 
   it("shows custom input, validates it, and preserves it across output changes", () => {
@@ -149,14 +151,12 @@ effectIt.effect("shows a failed mapping save in a notice", () =>
           }),
         ),
     });
+    const rebuild = vi.fn<() => void>();
     const { tab, notices } = yield* scopedSettingTab(
       Context.make(PluginSettings, settings),
+      { update: rebuild },
     );
-    const requestUpdate = vi.fn<() => void>();
-    const ctx = stubService<SettingTabContext>("SettingTabContext", {
-      tab,
-      requestUpdate,
-    });
+    const ctx = stubService<SettingTabContext>("SettingTabContext", { tab });
     const blue = highlightMappingItems(ctx).find(
       (entry) => "name" in entry && entry.name === m.annot_view_color_blue(),
     )!;
@@ -168,6 +168,6 @@ effectIt.effect("shows a failed mapping save in a notice", () =>
         `${m.settings_failed_save()}: Settings are read-only`,
       ]),
     );
-    expect(requestUpdate).not.toHaveBeenCalled();
+    expect(rebuild).not.toHaveBeenCalled();
   }),
 );

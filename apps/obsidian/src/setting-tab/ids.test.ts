@@ -131,7 +131,6 @@ function ctx(): SettingTabContext {
       changes: Stream.empty,
     }),
     customize: async () => {},
-    requestUpdate: () => {},
   });
 }
 

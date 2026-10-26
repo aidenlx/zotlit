@@ -101,9 +101,7 @@ export function highlightMappingItems(
                   void ctx.tab.run(
                     updateMapping(color, {
                       output: output as HighlightMapping["output"],
-                    }).pipe(
-                      Effect.andThen(Effect.sync(() => ctx.requestUpdate())),
-                    ),
+                    }).pipe(Effect.andThen(ctx.tab.update)),
                     m.settings_failed_save(),
                   );
                 });

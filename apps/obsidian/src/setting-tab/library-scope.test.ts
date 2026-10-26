@@ -51,7 +51,9 @@ const setup = Effect.fn("setup")(function* (
       libraries: Effect.succeed(state.libraries ?? []),
     }),
   );
-  const { tab, notices } = yield* scopedSettingTab(services);
+  const { tab, notices } = yield* scopedSettingTab(services, {
+    update: () => void (updates += 1),
+  });
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
     tab,
     settings: stubService<SettingTabContext["settings"]>("Settings", {
@@ -63,7 +65,6 @@ const setup = Effect.fn("setup")(function* (
               return defaults;
             }),
     }),
-    requestUpdate: () => void (updates += 1),
   });
   return { ctx, saved, updates: () => updates, notices };
 });

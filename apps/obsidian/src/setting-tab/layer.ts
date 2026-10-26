@@ -33,7 +33,7 @@ import { ZotLitSettingTab } from "./index";
  */
 export type SettingTabLegacy = Omit<
   SettingTabContext,
-  "tab" | "app" | "manifest" | "settings" | "requestUpdate"
+  "tab" | "app" | "manifest" | "settings"
 >;
 
 /**
@@ -60,15 +60,13 @@ export function layerSettingTab(legacy: SettingTabLegacy) {
       const host = yield* PluginHost;
       const settings = yield* PluginSettings;
       let tab: ZotLitSettingTab | undefined;
-      const requestUpdate = () => tab?.update();
-      const service = yield* makeSettingTab(requestUpdate);
+      const service = yield* makeSettingTab(() => tab?.update());
       tab = yield* host.addSettingTab(
         (plugin) =>
           new ZotLitSettingTab(plugin, {
             ...legacy,
             settings,
             tab: service,
-            requestUpdate,
           }),
       );
 

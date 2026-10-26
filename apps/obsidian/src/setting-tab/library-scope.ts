@@ -234,7 +234,7 @@ function saveScope(ctx: SettingTabContext, scope: LibraryScope): void {
   void ctx.tab.run(
     ctx.settings
       .update({ "zotero.library-scope": scope })
-      .pipe(Effect.andThen(Effect.sync(() => ctx.requestUpdate()))),
+      .pipe(Effect.andThen(ctx.tab.update)),
     m.settings_failed_save(),
   );
 }

@@ -39,6 +39,4 @@ export interface SettingTabContext {
   >;
   /** The shared Customize flow the Template document row opens. */
   customize: CustomizeAction;
-  /** Rebuild the tab's definitions (e.g. after a list mutation or eject). */
-  requestUpdate: () => void;
 }
