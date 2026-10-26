@@ -4,7 +4,7 @@ import { Effect, Layer } from "effect";
 import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 
-import { scopedBridge, valueOr } from "@/lib/effect-bridge";
+import { scopedBridge } from "@/lib/effect-bridge";
 import { filterTag, forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { PluginHost } from "@/lib/plugin-host";
@@ -98,9 +98,7 @@ export const layerCitekeyCandidatePicker = Layer.effectDiscard(
       ({ ambiguous }) => {
         new AmbiguousCitekeyModal(host.app, ambiguous, (candidate) => {
           // Unload interrupts a pending open.
-          void bridge
-            .runPromiseExit(editor.openCandidate(candidate, ambiguous.pane))
-            .then((exit) => valueOr(exit, undefined));
+          bridge.runAndForget(editor.openCandidate(candidate, ambiguous.pane));
         }).open();
       },
     );
