@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer } from "effect";
+import { Deferred, Effect, Exit, Fiber, Layer } from "effect";
 import { ButtonComponent, ConfirmationModal } from "obsidian";
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
@@ -25,20 +25,30 @@ vi.mock("@/views/quick-switch/profile-picker", () => ({
   openLiteratureNoteProfile: vi.fn(),
 }));
 
+/**
+ * Record the consent dialog's calls. `shown` completes when the dialog
+ * opens.
+ */
 function observeDialog() {
   using stack = new DisposableStack();
+  const shown = Deferred.makeUnsafe<void>();
   const observed = {
     title: stack.use(vi.spyOn(ConfirmationModal.prototype, "setTitle")),
     content: stack.use(vi.spyOn(ConfirmationModal.prototype, "setContent")),
     checkbox: stack.use(vi.spyOn(ConfirmationModal.prototype, "addCheckbox")),
     action: stack.use(vi.spyOn(ButtonComponent.prototype, "setButtonText")),
     click: stack.use(vi.spyOn(ButtonComponent.prototype, "onClick")),
-    opened: stack.use(vi.spyOn(ConfirmationModal.prototype, "open")),
+    opened: stack.use(
+      vi.spyOn(ConfirmationModal.prototype, "open").mockImplementation(() => {
+        Deferred.doneUnsafe(shown, Exit.void);
+      }),
+    ),
     closed: stack.use(vi.spyOn(ConfirmationModal.prototype, "close")),
   };
   const resources = stack.move();
   return {
     ...observed,
+    shown,
     [Symbol.dispose]() {
       resources.dispose();
     },
@@ -224,7 +234,7 @@ function pickRequested() {
   );
 }
 
-it.live(
+it.effect(
   "marks the current Profile, names the destination folder, and applies the single dialog's move and Imported Note consent",
   () =>
     Effect.gen(function* () {
@@ -240,9 +250,8 @@ it.live(
         Effect.provide(harness.layer),
         Effect.forkChild({ startImmediately: true }),
       );
-      yield* Effect.promise(() =>
-        vi.waitFor(() => expect(dialog.opened).toHaveBeenCalledOnce()),
-      );
+      yield* Deferred.await(dialog.shown);
+      expect(dialog.opened).toHaveBeenCalledOnce();
       expect(openLiteratureNoteProfile).toHaveBeenCalledWith(
         PORTS.app,
         {
@@ -270,7 +279,7 @@ it.live(
     }),
 );
 
-it.live(
+it.effect(
   "lets a switch that has started finish before an interrupt ends the flow",
   () =>
     Effect.gen(function* () {
@@ -299,9 +308,8 @@ it.live(
         Effect.provide(harness.layer),
         Effect.forkChild({ startImmediately: true }),
       );
-      yield* Effect.promise(() =>
-        vi.waitFor(() => expect(dialog.opened).toHaveBeenCalledOnce()),
-      );
+      yield* Deferred.await(dialog.shown);
+      expect(dialog.opened).toHaveBeenCalledOnce();
       dialog.click.mock.calls[0]![0]({} as MouseEvent);
       yield* Deferred.await(started);
 
