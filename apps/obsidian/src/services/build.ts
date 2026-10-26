@@ -6,6 +6,8 @@ import { DisposableAbortController } from "@/lib/disposables";
 import { effectBridge } from "@/lib/effect-bridge";
 import { fromInstant } from "@/lib/effect-clock";
 import { buildRuntime } from "@/lib/effect-layer";
+import { languagePackEdge } from "@/lib/i18n";
+import { Notifier } from "@/lib/notifier";
 import { FileManager } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
 import { revealSetting } from "@/lib/open-settings";
@@ -50,6 +52,8 @@ import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
 import { ItemLookup } from "./item-lookup/service";
 import { QueryService } from "./item-query/service";
+import { LanguagePack } from "./language-pack/service";
+import type { LanguagePackStartup } from "./language-pack/service";
 import { plainLibraryScope } from "./library-scope/plain";
 import { LocalBridgeService } from "./local-bridge/service";
 import { LocalServer } from "./local-server/service";
@@ -104,6 +108,7 @@ import { ZoteroReads } from "./zotero-reads/service";
 export async function buildServices(
   plugin: ZotLitPlugin,
   stack: AsyncDisposableStack,
+  languagePack: LanguagePackStartup,
 ) {
   let bindMigration!: (actions: TemplateMigrationOptions) => void;
   const migrationActions = new Promise<TemplateMigrationOptions>((resolve) => {
@@ -125,8 +130,11 @@ export async function buildServices(
         openPrompt: async () => (await migrationActions).openPrompt(),
       },
       {
-        openStore: () => openExcerptStore(plugin.app.appId),
-        readers,
+        excerpt: {
+          openStore: () => openExcerptStore(plugin.app.appId),
+          readers,
+        },
+        languagePack,
       },
     ),
     stack,
@@ -160,6 +168,16 @@ export async function buildServices(
       queryClient: () => plainQueryClients(runtime),
     })
     .useValue({ release: () => runtime.runSync(Release) })
+    .useValue({
+      languagePack: () =>
+        languagePackEdge(
+          {
+            pack: runtime.runSync(LanguagePack),
+            notifier: runtime.runSync(Notifier),
+          },
+          bridge,
+        ),
+    })
     .useValue({
       template: () => plainTemplate(runtime),
     })

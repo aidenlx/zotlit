@@ -1,7 +1,9 @@
 # Obsidian i18n
 
-The reusable, eval-free Message compiler, JSON Language Pack runtime, and
-headless Obsidian lifecycle consumed by ZotLit and other Obsidian plugins.
+The reusable, eval-free Message compiler, JSON Language Pack runtime, and the
+vocabulary of the Language Pack Lifecycle (locale resolution and its
+Situation), consumed by ZotLit and other Obsidian plugins. Each host runs the
+lifecycle itself: ZotLit's is the `LanguagePack` service in the plugin.
 
 ## Language
 

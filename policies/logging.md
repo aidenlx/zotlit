@@ -10,7 +10,7 @@ An app-agnostic library without Effect in a file can call `logLibrary` from `@zo
 
 Only an app configures sinks: a library logs and leaves LogTape's configuration to the app that hosts it (in `apps/obsidian`, `layerLogging`).
 
-Packages designed as a third-party contract instead accept a structured-logger port and default it to a no-op, so a consumer keeps its own logging stack. `@zotlit/obsidian-i18n` is the one such package today; see [ADR 0013](../docs/adr/0013-obsidian-i18n-is-one-package-behind-injected-ports.md).
+Packages designed as a third-party contract instead accept a structured-logger port and default it to a no-op, so a consumer keeps its own logging stack. `@zotlit/obsidian-i18n` is the one such package today: its generated message runtime takes the logger through `setLogger`, and ZotLit passes one that writes through `Effect.log*` under `i18n`; see [ADR 0013](../docs/adr/0013-obsidian-i18n-is-one-package-behind-injected-ports.md).
 
 A package that ships into a browser page and into Obsidian carries no logger of its own, and names every decision a host acts on in the value it returns instead — a Problem, a render diagnostic, a connection state — so a page that configures no sink pays no bundle for one. `@zotlit/workbench` is the one such package today; see [its README](../packages/workbench/README.md).
 

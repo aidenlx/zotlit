@@ -1,211 +1,131 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
-import type { Mock } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect, Exit, Layer, ManagedRuntime, Scope, Stream } from "effect";
+import { describe, expect } from "vitest";
 
-import type { LanguagePackLifecyclePorts } from "@zotlit/obsidian-i18n";
+import { testNotifier } from "@/lib/__fixtures__/notifier";
+import { effectBridge } from "@/lib/effect-bridge";
+import * as m from "@/lib/i18n/generated/messages";
+import {
+  eventually,
+  fakeDevice,
+  startOn,
+} from "@/services/language-pack/__fixtures__";
+import { LanguagePack } from "@/services/language-pack/service";
 
-import { initI18n } from "./i18n.js";
-import * as m from "./i18n/generated/messages.js";
-import { languagePackSettingCopy } from "./i18n/settings-copy.js";
+import { languagePackEdge } from "./i18n";
+import { languagePackSettingCopy } from "./i18n/settings-copy";
 
-/** Overrides a real Message, so an applied pack is observable through the facade. */
-const PACK_MESSAGE = "世界（测试）";
-const CHINESE_PACK = JSON.stringify({
-  schemaVersion: 1,
-  locale: "zh-CN",
-  messages: { hello: PACK_MESSAGE, workbench_tab_match: "匹配（测试包）" },
+/** The setting tab's edge over a runtime that holds `pack`, as `build.ts` makes it. */
+const edgeOver = Effect.fn("test.edgeOver")(function* (
+  pack: LanguagePack["Service"],
+) {
+  const notifier = testNotifier();
+  const runtime = yield* Effect.acquireRelease(
+    Effect.sync(() =>
+      ManagedRuntime.make(
+        Layer.merge(Layer.succeed(LanguagePack, pack), notifier.layer),
+      ),
+    ),
+    (runtime) => runtime.disposeEffect,
+  );
+  const edge = languagePackEdge(
+    { pack, notifier: notifier.service },
+    effectBridge(runtime),
+  );
+  return { edge, notices: notifier.notices, runtime };
 });
-/** Bundled with the plugin, so lifecycle copy reads in Chinese with no pack installed. */
-const BUNDLED_SETTING_NAME = "语言包";
-const BUNDLED_ENDONYM_DESC =
-  "以 简体中文 显示 ZotLit 界面。安装时将下载语言包。";
 
-describe("ZotLit Language Pack setting integration", () => {
-  beforeEach(() => {
-    initI18n({
-      pluginVersion: "2.0.0",
-      ports: makePorts({ language: "en" }).ports,
-    });
-  });
+describe("the setting tab's Language Pack edge", () => {
+  it.effect("reads the situation and calls back on each change after it", () =>
+    Effect.gen(function* () {
+      const pack = yield* startOn(fakeDevice(), { language: "zh" });
+      const { edge } = yield* edgeOver(pack);
+      const seen: string[] = [];
 
-  test.each(["zh", "zh-CN"])(
-    "keeps shared editor labels in English before installing the native %s pack",
-    (language) => {
-      const lifecycle = initI18n({
-        pluginVersion: "2.0.0",
-        ports: makePorts({ language }).ports,
-      });
-      expect(lifecycle.locale).toBe("zh-CN");
-      expect(m.workbench_tab_match()).toBe("Match");
-      expect(m.workbench_explorer_section_common()).toBe("Common fields");
-      expect(m.workbench_explorer_menu_copy_value()).toBe("Copy value");
-    },
+      edge.subscribe(() => seen.push(edge.getSituation().kind));
+      expect(edge.getSituation().kind).toBe("offered");
+      expect(seen).toEqual([]);
+
+      yield* pack.decline;
+      yield* pack.changes.pipe(Stream.take(1), Stream.runDrain);
+      expect(seen).toEqual(["installable"]);
+    }),
   );
 
-  test("uses English shared labels when the native locale has no translation", () => {
-    initI18n({
-      pluginVersion: "2.0.0",
-      ports: makePorts({ language: "fr" }).ports,
-    });
-    expect(m.workbench_tab_match()).toBe("Match");
-    expect(m.workbench_explorer_section_common()).toBe("Common fields");
-  });
+  it.effect(
+    "installs from the setting row behind the toast, and resets in place",
+    () =>
+      Effect.gen(function* () {
+        const device = fakeDevice();
+        const pack = yield* startOn(device, { language: "zh" });
+        const { edge, notices } = yield* edgeOver(pack);
 
-  test("stays hidden when ZotLit has no pack for the resolved locale", () => {
-    const { ports } = makePorts({ language: "fr" });
+        languagePackSettingCopy(edge)?.install?.run();
+        yield* pack.changes.pipe(
+          Stream.filter((situation) => situation.kind === "restart-pending"),
+          Stream.runHead,
+        );
+        yield* eventually(() => expect(notices).toHaveLength(1));
 
-    const lifecycle = initI18n({ pluginVersion: "2.0.0", ports });
+        expect(notices[0]?.messages).toEqual([
+          m.notice_language_pack_restart(),
+        ]);
+        expect(languagePackSettingCopy(edge)?.desc).toBe(
+          m.notice_language_pack_restart(),
+        );
 
-    expect(languagePackSettingCopy(lifecycle)).toBeUndefined();
-  });
+        edge.reset();
+        expect(edge.getSituation().kind).toBe("installable");
+        expect([...device.storage.keys()]).toEqual([]);
+      }),
+  );
 
-  test("stays hidden on the base locale, which has no remote pack", () => {
-    const { ports } = makePorts({ language: "en" });
+  it.effect("resets in place while a download is in flight", () =>
+    Effect.gen(function* () {
+      const device = fakeDevice();
+      device.held = new Promise<void>(() => {});
+      const pack = yield* startOn(device, { language: "zh" });
+      const { edge } = yield* edgeOver(pack);
 
-    const lifecycle = initI18n({ pluginVersion: "2.0.0", ports });
+      edge.install();
+      yield* eventually(() => expect(device.requests).toHaveLength(1));
+      expect(edge.getSituation().kind).toBe("downloading");
 
-    expect(lifecycle.getSituation()).toMatchObject({ kind: "unavailable" });
-    expect(languagePackSettingCopy(lifecycle)).toBeUndefined();
-  });
+      edge.reset();
+      expect(edge.getSituation().kind).toBe("installable");
+      expect([...device.storage.keys()]).toEqual([]);
+    }),
+  );
 
-  test("renders the startup consent notice in the target language, naming the Endonym", () => {
-    const { ports } = makePorts({ language: "zh" });
+  it.effect(
+    "after unload, reads the last situation and starts nothing new",
+    () =>
+      Effect.gen(function* () {
+        const device = fakeDevice();
+        device.held = new Promise<void>(() => {});
+        // The pack's layer closes with the runtime, as at plugin unload.
+        const layerScope = yield* Scope.make();
+        const pack = yield* startOn(device, { language: "zh" }).pipe(
+          Scope.provide(layerScope),
+        );
+        const { edge, notices, runtime } = yield* edgeOver(pack);
+        edge.install();
+        yield* eventually(() => expect(device.requests).toHaveLength(1));
+        yield* runtime.disposeEffect;
+        yield* Scope.close(layerScope, Exit.void);
+        const seen: string[] = [];
 
-    const lifecycle = initI18n({ pluginVersion: "2.0.0", ports });
+        expect(edge.getSituation().kind).toBe("downloading");
+        edge.subscribe(() => seen.push(edge.getSituation().kind));
+        edge.install();
+        yield* Effect.yieldNow;
+        expect(device.requests).toHaveLength(1);
+        expect(notices).toEqual([]);
 
-    expect(lifecycle.getSituation().kind).toBe("offered");
-    expect(lifecycle.endonym).toBe("简体中文");
-    expect(
-      m.notice_language_pack_install({ language: lifecycle.endonym }),
-    ).toBe("ZotLit 简体中文 语言包可用。");
-    expect(m.notice_language_pack_decline_action()).toBe("不再询问");
-    expect(m.notice_language_pack_downloading()).toBe(
-      "正在下载 ZotLit 语言包…",
-    );
-    expect(m.notice_language_pack_restart()).toBe(
-      "重启 Obsidian 以应用 ZotLit 语言包。",
-    );
-  });
-
-  test("applies and resets the pack through the disclosed install and restart flow", async () => {
-    const harness = makePorts({ language: "zh", response: CHINESE_PACK });
-    const lifecycle = initI18n({
-      pluginVersion: "2.0.0",
-      ports: harness.ports,
-    });
-
-    const offered = languagePackSettingCopy(lifecycle);
-    // Chinese before any download: the row reads from the bundled subset and
-    // names the language by its Endonym.
-    expect(offered?.name).toBe(BUNDLED_SETTING_NAME);
-    expect(offered?.desc).toBe(BUNDLED_ENDONYM_DESC);
-    expect(offered?.install?.label).toBe("安装");
-    expect(offered?.install?.disabled).toBe(false);
-    // Every other Message still reads the bundled base pack until a pack applies.
-    expect(m.hello()).toBe("world");
-    expect(m.workbench_tab_match()).toBe("Match");
-
-    await lifecycle.install();
-
-    const downloaded = languagePackSettingCopy(lifecycle);
-    expect(downloaded?.desc).toBe(m.notice_language_pack_restart());
-    expect(downloaded?.install).toBeUndefined();
-    // Cached, not applied: the facade still reads the bundled base pack.
-    expect(m.hello()).toBe("world");
-    expect(m.workbench_tab_match()).toBe("Match");
-
-    const restarted = initI18n({
-      pluginVersion: "2.0.0",
-      ports: harness.ports,
-    });
-    expect(restarted.getSituation()).toMatchObject({ kind: "active" });
-    expect(languagePackSettingCopy(restarted)).toBeUndefined();
-    // The lifecycle installed the pack into the very runtime the facade reads.
-    expect(m.hello()).toBe(PACK_MESSAGE);
-    expect(m.workbench_tab_match()).toBe("匹配（测试包）");
-    expect(m.workbench_explorer_section_common()).toBe("Common fields");
-
-    restarted.reset();
-    expect(m.workbench_tab_match()).toBe("匹配（测试包）");
-    initI18n({ pluginVersion: "2.0.0", ports: harness.ports });
-    expect(m.workbench_tab_match()).toBe("Match");
-    expect(m.workbench_explorer_section_common()).toBe("Common fields");
-  });
-
-  test("downloads the pack from the Resource Release of the running plugin version", async () => {
-    const harness = makePorts({ language: "zh", response: CHINESE_PACK });
-    const lifecycle = initI18n({
-      pluginVersion: "2.0.0-beta.4",
-      ports: harness.ports,
-    });
-
-    await lifecycle.install();
-
-    expect(harness.requestUrl).toHaveBeenCalledWith({
-      url: "https://github.com/aidenlx/zotlit/releases/download/res-2.0.0-beta.4/zh-CN.json",
-    });
-  });
-
-  test("disables the install button while ZotLit's consented refresh is in flight", async () => {
-    const harness = makePorts({ language: "zh", response: CHINESE_PACK });
-    await initI18n({
-      pluginVersion: "1.0.0",
-      ports: harness.ports,
-    }).install();
-
-    const updated = initI18n({
-      pluginVersion: "2.0.0",
-      ports: harness.ports,
-    });
-
-    const situation = updated.getSituation();
-    expect(situation.kind).toBe("downloading");
-    // Labelled but inert: dropping the button collapses the row's control slot.
-    expect(languagePackSettingCopy(updated)?.install).toMatchObject({
-      label: m.notice_language_pack_install_action(),
-      disabled: true,
-    });
-    if (situation.kind !== "downloading") throw new Error("unreachable");
-    await situation.done;
-  });
-
-  test("disables the install button while a settings-initiated install is in flight", () => {
-    const harness = makePorts({ language: "zh", response: CHINESE_PACK });
-    const lifecycle = initI18n({
-      pluginVersion: "2.0.0",
-      ports: harness.ports,
-    });
-
-    const install = lifecycle.install();
-
-    expect(languagePackSettingCopy(lifecycle)?.install).toMatchObject({
-      disabled: true,
-    });
-    expect(languagePackSettingCopy(lifecycle)?.desc).toBe(
-      m.notice_language_pack_downloading(),
-    );
-    return install;
-  });
+        edge.reset();
+        expect(edge.getSituation().kind).toBe("installable");
+        expect([...device.storage.keys()]).toEqual([]);
+        expect(seen).toEqual([]);
+      }),
+  );
 });
-
-function makePorts(options: { language: string; response?: string }): {
-  ports: LanguagePackLifecyclePorts;
-  requestUrl: Mock<LanguagePackLifecyclePorts["requestUrl"]>;
-} {
-  const storage = new Map<string, unknown>();
-  const requestUrl = vi.fn(async () => ({
-    status: 200,
-    text: options.response ?? CHINESE_PACK,
-  }));
-  return {
-    requestUrl,
-    ports: {
-      getLanguage: () => options.language,
-      loadLocalStorage: (key) => storage.get(key) ?? null,
-      saveLocalStorage: (key, value) => {
-        if (value === null) storage.delete(key);
-        else storage.set(key, value);
-      },
-      requestUrl,
-    },
-  };
-}
