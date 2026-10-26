@@ -12,7 +12,7 @@ import type {
 import { LibraryScope } from "@/services/library-scope/service";
 import { defaults } from "@/services/settings/schema";
 
-import { testSettingTab } from "./__fixtures__";
+import { scopedSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
 import { libraryScopeRow, selectedLibrariesList } from "./library-scope";
 
@@ -47,7 +47,7 @@ const setup = Effect.fn("setup")(function* (state: ScopeState) {
     }),
   );
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    tab: testSettingTab(services).tab,
+    tab: (yield* scopedSettingTab(services)).tab,
     settings: stubService<SettingTabContext["settings"]>("Settings", {
       update: (patch) =>
         Effect.sync(() => {

@@ -6,8 +6,8 @@ import {
   Setting,
 } from "@mock/obsidian";
 import { Effect, Layer, PubSub, Stream, SubscriptionRef } from "effect";
+import { TestClock } from "effect/testing";
 import type { Setting as ObsidianSetting, SettingGroup } from "obsidian";
-import { vi } from "vitest";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -26,7 +26,7 @@ import type {
 } from "@/services/zotero-reads/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
-import { testSettingTab } from "./__fixtures__";
+import { scopedSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
 import { databaseFileItem, databaseLocationItems } from "./database";
 
@@ -58,7 +58,8 @@ const READS: ZoteroReadsState = {
 
 /**
  * The Zotero location rows over a preference store and reads the test drives.
- * A folder write re-reads the preferences, as the real service does.
+ * A folder write moves the override and keeps the preferences until they are
+ * read again, as the real service does.
  */
 const setup = Effect.fn("setup")(function* (
   refresh: ZoteroReads["Service"]["refresh"] = Effect.void,
@@ -76,7 +77,6 @@ const setup = Effect.fn("setup")(function* (
       Effect.andThen(
         SubscriptionRef.update(pref, (current) => ({
           ...current,
-          prefs: new Map(),
           [field]: dir,
         })),
       ),
@@ -101,7 +101,7 @@ const setup = Effect.fn("setup")(function* (
     ),
   );
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    tab: testSettingTab(services).tab,
+    tab: (yield* scopedSettingTab(services)).tab,
     settings: stubService<SettingTabContext["settings"]>("Settings", {
       current: Effect.succeed(defaults),
       changes: Stream.empty,
@@ -110,18 +110,25 @@ const setup = Effect.fn("setup")(function* (
   return { ctx, pref, reads, events, writes, notices: notifier.notices };
 });
 
-/** The rendered row with the given id, so a test reads what the user gets. */
-function render(ctx: SettingTabContext, id: string) {
+/**
+ * The rendered row with the given id, so a test reads what the user gets. The
+ * row's cleanup runs when the case ends.
+ */
+const render = Effect.fnUntraced(function* (
+  ctx: SettingTabContext,
+  id: string,
+) {
   const row = [databaseFileItem(ctx), ...databaseLocationItems(ctx)].find(
     (item) => item.id === id,
   );
   if (!row || !("render" in row) || !row.render)
     throw new Error(`Expected a render row: ${id}`);
   const setting = new Setting(document.createElement("div"));
-  row.render(
+  const cleanup = row.render(
     setting as unknown as ObsidianSetting,
     stubService<SettingGroup>("SettingGroup", {}),
   );
+  yield* Effect.addFinalizer(() => Effect.sync(() => cleanup?.()));
   const dropdown = setting.components.find(
     (control) => control instanceof DropdownComponent,
   );
@@ -133,41 +140,37 @@ function render(ctx: SettingTabContext, id: string) {
     button,
     text: () => (setting.desc as unknown as DocumentFragment).textContent,
   };
-}
+});
 
-/** Wait for the row's fiber to paint what `assertion` checks. */
-const eventually = (assertion: () => void) =>
-  Effect.promise(() => vi.waitFor(assertion));
+/** Let the row fibers take what is queued for them; no time passes. */
+const settle = TestClock.adjust("0 millis");
 
 it.effect(
   "lists the profiles and writes a chosen profile folder through ZoteroPref",
   () =>
     Effect.gen(function* () {
       const { ctx, pref, writes } = yield* setup();
-      const row = render(ctx, "settings_db_profile_dir");
+      const row = yield* render(ctx, "settings_db_profile_dir");
 
-      yield* eventually(() =>
-        expect(row.dropdown?.options.map((option) => option.value)).toEqual([
-          "",
-          ...PROFILES.map((profile) => profile.dir),
-          "\0browse",
-        ]),
-      );
+      yield* settle;
+      expect(row.dropdown?.options.map((option) => option.value)).toEqual([
+        "",
+        ...PROFILES.map((profile) => profile.dir),
+        "\0browse",
+      ]);
       expect(row.text()).toContain("/home/ada/.zotero/abc.default/prefs.js");
 
       row.dropdown!.choose(PROFILES[1]!.dir);
-      yield* eventually(() =>
-        expect(writes).toEqual([`profileDirOverride=${PROFILES[1]!.dir}`]),
-      );
+      yield* settle;
+      expect(writes).toEqual([`profileDirOverride=${PROFILES[1]!.dir}`]);
 
       yield* SubscriptionRef.update(pref, (current) => ({
         ...current,
         state: "loading" as const,
         prefs: new Map(),
       }));
-      yield* eventually(() =>
-        expect(row.text()).toContain(m.settings_db_status_loading()),
-      );
+      yield* settle;
+      expect(row.text()).toContain(m.settings_db_status_loading());
     }),
 );
 
@@ -176,8 +179,9 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const { ctx, pref, writes } = yield* setup();
-      const row = render(ctx, "settings_db_data_dir");
-      yield* eventually(() => expect(row.text()).toContain("/home/ada/Zotero"));
+      const row = yield* render(ctx, "settings_db_data_dir");
+      yield* settle;
+      expect(row.text()).toContain("/home/ada/Zotero");
 
       // A folder chosen elsewhere joins the dropdown as the selected entry.
       yield* SubscriptionRef.update(pref, (current) => ({
@@ -185,49 +189,49 @@ it.effect(
         dataDirOverride: "/mnt/library",
         dataDir: "/mnt/library",
       }));
-      yield* eventually(() => {
-        expect(row.text()).toContain("/mnt/library");
-        expect(row.dropdown?.getValue()).toBe("/mnt/library");
-      });
+      yield* settle;
+      expect(row.text()).toContain("/mnt/library");
+      expect(row.dropdown?.getValue()).toBe("/mnt/library");
 
       row.dropdown!.choose("");
-      yield* eventually(() => expect(writes).toEqual(["dataDirOverride=null"]));
+      yield* settle;
+      expect(writes).toEqual(["dataDirOverride=null"]);
     }),
 );
 
 it.effect("echoes the profile, data folder and Source ID as they move", () =>
   Effect.gen(function* () {
     const { ctx, pref } = yield* setup();
-    const row = render(ctx, "settings_db_source_id");
-    yield* eventually(() => expect(row.text()).toContain("source-1"));
+    const row = yield* render(ctx, "settings_db_source_id");
+    yield* settle;
+    expect(row.text()).toContain("source-1");
 
     yield* SubscriptionRef.update(pref, (current) => ({
       ...current,
       prefs: new Map(),
       sourceId: "source-2",
     }));
-    yield* eventually(() => expect(row.text()).toContain("source-2"));
+    yield* settle;
+    expect(row.text()).toContain("source-2");
   }),
 );
 
 it.effect("names the read mode again after the reads change", () =>
   Effect.gen(function* () {
     const { ctx, reads, events } = yield* setup();
-    const row = render(ctx, "settings_db_read_mode");
+    const row = yield* render(ctx, "settings_db_read_mode");
     const named = (mode: () => string) =>
       m.settings_db_active_read_mode({ mode: mode() });
-    yield* eventually(() =>
-      expect(row.text()).toContain(named(m.settings_db_read_mode_copy)),
-    );
+    yield* settle;
+    expect(row.text()).toContain(named(m.settings_db_read_mode_copy));
 
     yield* SubscriptionRef.update(reads, (current) => ({
       ...current,
       activeReadMode: "reflink" as const,
     }));
     yield* PubSub.publish(events, { _tag: "changed" });
-    yield* eventually(() =>
-      expect(row.text()).toContain(named(m.settings_db_read_mode_reflink)),
-    );
+    yield* settle;
+    expect(row.text()).toContain(named(m.settings_db_read_mode_reflink));
   }),
 );
 
@@ -238,16 +242,14 @@ const messages = (notices: readonly { messages: readonly unknown[] }[]) =>
 it.effect("reports a refresh from the database row as it ends", () =>
   Effect.gen(function* () {
     const { ctx, notices } = yield* setup();
-    const row = render(ctx, "settings_db_file");
+    const row = yield* render(ctx, "settings_db_file");
     // The path paints once the row's fiber has wired the button.
-    yield* eventually(() =>
-      expect(row.text()).toContain("/home/ada/Zotero/zotero.sqlite"),
-    );
+    yield* settle;
+    expect(row.text()).toContain("/home/ada/Zotero/zotero.sqlite");
 
     row.button!.click();
-    yield* eventually(() =>
-      expect(messages(notices)).toEqual([m.notice_db_refreshed()]),
-    );
+    yield* settle;
+    expect(messages(notices)).toEqual([m.notice_db_refreshed()]);
   }),
 );
 
@@ -256,14 +258,12 @@ it.effect("shows a failed refresh in one notice", () =>
     const { ctx, notices } = yield* setup(
       Effect.fail(new DbUnavailable({ message: "zotero.sqlite is locked" })),
     );
-    const row = render(ctx, "settings_db_file");
-    yield* eventually(() =>
-      expect(row.text()).toContain("/home/ada/Zotero/zotero.sqlite"),
-    );
+    const row = yield* render(ctx, "settings_db_file");
+    yield* settle;
+    expect(row.text()).toContain("/home/ada/Zotero/zotero.sqlite");
 
     row.button!.click();
-    yield* eventually(() =>
-      expect(messages(notices)).toEqual([m.notice_db_refresh_failed()]),
-    );
+    yield* settle;
+    expect(messages(notices)).toEqual([m.notice_db_refresh_failed()]);
   }),
 );
