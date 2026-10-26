@@ -1,6 +1,6 @@
 // The Annotation Repository's reads and holds: both Annotation Sources, the database partition, source moves, and the Editing Capability.
 import { it } from "@effect/vitest";
-import { Effect, Fiber } from "effect";
+import { Deferred, Effect, Fiber } from "effect";
 import { expect, vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
@@ -897,6 +897,51 @@ it.effect(
       expect(yield* localApiService.demandSource).not.toBeNull();
       // A read asked after the close finds no list to hold.
       expect(yield* service.read("EPUBBKS2")).toBeNull();
+    }),
+);
+
+it.effect(
+  "interrupts a database batch that has started when the repository closes, and lets its Snapshot go",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const { repository, service, acquireRead } = yield* Effect.promise(() =>
+        setup(stack),
+      );
+      const readSnapshot = acquireRead.getMockImplementation()!;
+      const started = yield* Deferred.make<void>();
+      let released = false;
+      // The batch's query starts under its Snapshot and never answers.
+      acquireRead.mockImplementation(async () => {
+        const lease = await readSnapshot();
+        return {
+          reads: new Proxy(lease.reads, {
+            get(target, key, receiver) {
+              return key === "AnnotationsOfAttachments"
+                ? () =>
+                    Deferred.succeed(started, undefined).pipe(
+                      Effect.andThen(Effect.never),
+                    )
+                : Reflect.get(target, key, receiver);
+            },
+          }),
+          [Symbol.asyncDispose]: async () => {
+            await lease[Symbol.asyncDispose]();
+            released = true;
+          },
+        };
+      });
+
+      const reading = yield* Effect.forkChild(service.read("RGRPDF24"), {
+        startImmediately: true,
+      });
+      yield* Deferred.await(started);
+      yield* Effect.promise(() => repository[Symbol.asyncDispose]());
+
+      // The close ends the batch on the repository's Scope: its Snapshot is
+      // let go, and the read it served answers no list.
+      expect(released).toBe(true);
+      expect(yield* Fiber.join(reading)).toBeNull();
     }),
 );
 
