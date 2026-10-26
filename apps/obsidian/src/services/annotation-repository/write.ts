@@ -3,14 +3,13 @@
 //
 // @see https://github.com/aidenlx/zotlit/issues/1145
 
-import { DateTime } from "effect";
-
 import type {
   AnnotationPosition,
   ResolvedAnnotationTypeName,
   TagType,
 } from "@zotlit/db";
 
+import { fromInstant } from "@/lib/effect-clock";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ZoteroMethod } from "@/lib/zotero-http";
 import type { LocalApiFailure } from "@/services/zotero-local-api/service";
@@ -672,13 +671,7 @@ export function writeFailureReason(
     case "locked":
       return lockReasonText(failure.reason);
     default:
-      return blockedReason(
-        capabilityOfFailure(
-          failure,
-          DateTime.makeUnsafe(now.epochMilliseconds),
-        ),
-        now,
-      );
+      return blockedReason(capabilityOfFailure(failure, fromInstant(now)), now);
   }
 }
 

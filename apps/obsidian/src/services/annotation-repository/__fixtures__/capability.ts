@@ -2,6 +2,8 @@
 // a Duration and a DateTime.Utc, built from the plain values a test holds.
 import { DateTime, Duration } from "effect";
 
+import { fromInstant } from "@/lib/effect-clock";
+
 /** A cooldown failure that names `seconds`, as the Local API returns it. */
 export function cooldownFailureOf(seconds: number) {
   return { kind: "cooldown", retryAfter: Duration.seconds(seconds) } as const;
@@ -15,5 +17,5 @@ export function deadlineAfter(
   instant: { readonly epochMilliseconds: number },
   seconds: number,
 ): DateTime.Utc {
-  return DateTime.makeUnsafe(instant.epochMilliseconds + seconds * 1000);
+  return DateTime.addDuration(fromInstant(instant), Duration.seconds(seconds));
 }

@@ -2,16 +2,9 @@
 // `capability-notices.ts`, which decides what is said and how often.
 //
 // @see apps/obsidian/policies/ui-seams.md
-import {
-  Clock,
-  Context,
-  DateTime,
-  Duration,
-  Effect,
-  FiberSet,
-  Layer,
-} from "effect";
+import { Clock, Context, Duration, Effect, FiberSet, Layer } from "effect";
 
+import { dateTimeClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import { BaseNotice } from "@/lib/notice";
@@ -122,9 +115,7 @@ export function layerCapabilityNotices(
       const notifier = yield* Notifier;
       const clock = yield* Clock.Clock;
       // The ledger reads the layer's Clock: TestClock in a test.
-      const ledger = new CapabilityNoticeLedger(() =>
-        DateTime.makeUnsafe(clock.currentTimeMillisUnsafe()),
-      );
+      const ledger = new CapabilityNoticeLedger(dateTimeClock(clock));
       // A notice's button is a DOM callback: its action runs on the layer's
       // Scope, so unload interrupts it.
       const run = yield* FiberSet.makeRuntime<never>();
