@@ -7,7 +7,7 @@ import type {
   Workspace as ObsidianWorkspace,
 } from "obsidian";
 
-import type { CiteRef, Library } from "@zotlit/db";
+import type { CiteRef } from "@zotlit/db";
 import {
   CONVERTED_DEFAULT_PROFILE_DOCUMENT,
   LegacyTemplateConversionError,
@@ -17,7 +17,7 @@ import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { Workspace } from "@/lib/obsidian-workspace";
-import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
+import type { LibraryScope } from "@/services/library-scope/service";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 import { loadTemplateData } from "@/services/template-workbench/data";
@@ -99,9 +99,7 @@ export interface MigrationVerificationData {
 export interface LiteratureNoteTemplateMigrationDataDeps {
   app: Parameters<typeof loadTemplateData>[0]["app"];
   zoteroReads: { acquireRead(): Promise<ZoteroReadLease> };
-  libraryScope: {
-    resolveLibraries(libraries: readonly Library[]): ResolvedLibraryScope;
-  };
+  libraryScope: Pick<LibraryScope["Service"], "resolveLibraries">;
   noteIndex: {
     whenIndexed(): Promise<void>;
     getNotesByItemKey(indexedKey: string): TFile[];
@@ -118,8 +116,14 @@ export async function loadLiteratureNoteTemplateMigrationData(
   options: { annotation: boolean },
 ): Promise<MigrationVerificationData | null> {
   await using lease = await deps.zoteroReads.acquireRead();
-  const scope = deps.libraryScope.resolveLibraries(
-    await Effect.runPromise(lease.reads.Libraries({})),
+  const scope = await Effect.runPromise(
+    lease.reads
+      .Libraries({})
+      .pipe(
+        Effect.flatMap((libraries) =>
+          deps.libraryScope.resolveLibraries(libraries),
+        ),
+      ),
   );
   const candidates: string[] = [];
   for (const library of scope.available) {

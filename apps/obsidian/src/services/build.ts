@@ -33,6 +33,7 @@ import { createPdfReader } from "./attachment-open/actions";
 import { openWithSystem } from "./attachment-open/capture";
 import { createTargetOpener } from "./attachment-open/open-target";
 import { AttachmentResolver } from "./attachment-resolver/service";
+import { bindBatchScope } from "./batch-scope-handle";
 import { ChineseSegmenter } from "./chinese-segmenter/service";
 import {
   plainCitationIndex,
@@ -59,6 +60,7 @@ import { QueryService } from "./item-query/service";
 import { LanguagePack } from "./language-pack/service";
 import type { LanguagePackStartup } from "./language-pack/service";
 import { plainLibraryScope } from "./library-scope/plain";
+import { LibraryScope } from "./library-scope/service";
 import { LocalBridgeService } from "./local-bridge/service";
 import { LocalServer } from "./local-server/service";
 import { bindManagedBinary } from "./managed-binary/handle";
@@ -153,6 +155,7 @@ export async function buildServices(
   await runtime.context();
   const bridge = effectBridge(runtime);
   const zoteroReadsService = runtime.runSync(ZoteroReads);
+  const libraryScopeService = runtime.runSync(LibraryScope);
   const zoteroLocalApiService = runtime.runSync(ZoteroLocalApi);
   const vault = runtime.runSync(Vault);
   const fileManager = runtime.runSync(FileManager);
@@ -314,6 +317,13 @@ export async function buildServices(
     })
     .useValue({ libraryScope: () => plainLibraryScope(runtime) })
     .useValue({
+      batchScope: () =>
+        bindBatchScope(bridge, {
+          libraryScope: libraryScopeService,
+          zoteroReads: zoteroReadsService,
+        }),
+    })
+    .useValue({
       query: () => bindQuery(bridge, runtime.runSync(QueryService)),
     })
     .useValue({ profile: () => plainProfile(runtime) })
@@ -373,7 +383,6 @@ export async function buildServices(
     .useValue({
       templateMigration: ({
         zoteroReads,
-        libraryScope,
         noteIndex,
         settings,
         template,
@@ -385,7 +394,7 @@ export async function buildServices(
               {
                 app: plugin.app,
                 zoteroReads,
-                libraryScope,
+                libraryScope: libraryScopeService,
                 noteIndex,
                 settings,
                 templates: template,
@@ -451,7 +460,6 @@ export async function buildServices(
         noteIndex,
         zoteroPref,
         settings,
-        libraryScope,
         noteFeature,
       }) =>
         createProfileCreator({
@@ -462,7 +470,7 @@ export async function buildServices(
           noteIndex,
           zoteroPref,
           settings,
-          libraryScope,
+          libraryScope: libraryScopeService,
           noteFeature,
         }),
     })
@@ -474,7 +482,6 @@ export async function buildServices(
         noteIndex,
         zoteroPref,
         settings,
-        libraryScope,
         noteFeature,
       }) =>
         createProfileImporter({
@@ -485,7 +492,7 @@ export async function buildServices(
           noteIndex,
           zoteroPref,
           settings,
-          libraryScope,
+          libraryScope: libraryScopeService,
           noteFeature,
         }),
     })
@@ -498,7 +505,7 @@ export async function buildServices(
         zoteroPref,
         zoteroReads,
         settings,
-        libraryScope,
+        batchScope,
         noteImport,
         noteIndex,
       }): BatchImport =>
@@ -513,7 +520,7 @@ export async function buildServices(
           zoteroReads,
           settings,
           bridge,
-          libraryScope,
+          batchScope,
           noteImport,
           noteIndex,
           metadataCache: plugin.app.metadataCache,

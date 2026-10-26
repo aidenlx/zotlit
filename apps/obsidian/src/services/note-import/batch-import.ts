@@ -24,14 +24,12 @@ import {
   batchGroupKey,
   batchGroups,
   batchLibraries,
-  effectLibraryScope,
-  planBatchScope,
   withUnavailableLibraries,
 } from "@/services/batch-scope";
 import type { BatchLibrary, BatchTarget } from "@/services/batch-scope";
+import type { BatchScopeHandle } from "@/services/batch-scope-handle";
 import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
-import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type {
   NoteFeature,
   CreationProfileSelection,
@@ -78,8 +76,8 @@ export interface NoteImportDeps {
   zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "snapshot" | "state">;
   settings: Pick<PluginSettings["Service"], "current" | "update">;
   bridge: Pick<EffectBridge, "runSync">;
-  /** Which Libraries an unqualified library-wide import covers. */
-  libraryScope: Pick<PlainLibraryScope, "resolveLibraries">;
+  /** Plans a library-wide import: which Libraries and notes it covers. */
+  batchScope: BatchScopeHandle;
   noteImport: Pick<NoteImporter, "importNote" | "prepareExplicitImport">;
   noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getImportedNoteByNoteKey">;
   metadataCache: Pick<MetadataCache, "getFileCache">;
@@ -224,16 +222,7 @@ async function runBatchImportAll(
     return { outcome: "db-unavailable" };
   }
 
-  const plan = await runBatch(
-    planBatchScope(
-      {
-        zoteroReads: deps.zoteroReads,
-        libraryScope: effectLibraryScope(deps.libraryScope),
-      },
-      "notes",
-      target,
-    ),
-  );
+  const plan = await deps.batchScope.plan("notes", target);
   if (plan.outcome !== "resolved") {
     return { outcome: plan.outcome };
   }

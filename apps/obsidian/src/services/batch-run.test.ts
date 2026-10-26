@@ -4,6 +4,7 @@ import {
   Effect,
   Exit,
   Fiber,
+  Layer,
   Logger,
   References,
   Schema,
@@ -16,13 +17,13 @@ import type { Library } from "@zotlit/db";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { LogCategory } from "@/lib/effect-log";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
+import { LibraryScope } from "@/services/library-scope/service";
 import { BatchUpdateRefusedError } from "@/services/note-feature/update-batch";
 import { NoteImportProfileError } from "@/services/note-import/service";
+import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
-import type {
-  ZoteroReads,
-  ZoteroReadsApi,
-} from "@/services/zotero-reads/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 import {
   classifyStream,
@@ -936,6 +937,21 @@ describe("planBatchScope", () => {
     return { ...makeSnapshotReads(reads), libraries, scopeItemIDs };
   }
 
+  /** The tags planBatchScope reads: the Snapshot and Library Scope. */
+  function planningServices(
+    zoteroReads: Pick<ZoteroReads["Service"], "snapshot">,
+    resolveLibraries: LibraryScope["Service"]["resolveLibraries"],
+  ) {
+    return Layer.mergeAll(
+      Layer.mock(ZoteroReads, {
+        // The plan reads only through its Snapshot.
+        reads: readsAnswering({}),
+        snapshot: zoteroReads.snapshot,
+      }),
+      Layer.mock(LibraryScope, { resolveLibraries }),
+    );
+  }
+
   it.effect("does not resolve Library Scope for an exact target", () =>
     Effect.gen(function* () {
       const { zoteroReads, dispose, scopeItemIDs } = planningReads();
@@ -943,11 +959,9 @@ describe("planBatchScope", () => {
         Effect.die(new Error("Library Scope read")),
       );
 
-      const plan = yield* planBatchScope(
-        { zoteroReads, libraryScope: { resolveLibraries } },
-        "literature-items",
-        { groupID: 7 },
-      );
+      const plan = yield* planBatchScope("literature-items", {
+        groupID: 7,
+      }).pipe(Effect.provide(planningServices(zoteroReads, resolveLibraries)));
 
       expect(plan).toEqual({
         outcome: "resolved",
@@ -969,18 +983,14 @@ describe("planBatchScope", () => {
       Effect.gen(function* () {
         const { zoteroReads, dispose, scopeItemIDs } = planningReads();
 
-        const plan = yield* planBatchScope(
-          {
-            zoteroReads,
-            libraryScope: {
-              resolveLibraries: (libraries) =>
-                Effect.sync(() =>
-                  resolveLibraryScope(libraries, { mode: "all" }),
-                ),
-            },
-          },
-          "notes",
-          {},
+        const plan = yield* planBatchScope("notes", {}).pipe(
+          Effect.provide(
+            planningServices(zoteroReads, (libraries) =>
+              Effect.sync(() =>
+                resolveLibraryScope(libraries, { mode: "all" }),
+              ),
+            ),
+          ),
         );
 
         expect(plan).toEqual({
@@ -1032,22 +1042,21 @@ describe("planBatchScope", () => {
       }).pipe(Effect.provide(logger));
 
       const { zoteroReads } = planningReads();
-      yield* planBatchScope(
-        {
-          zoteroReads,
-          libraryScope: {
-            resolveLibraries: () =>
+      yield* planBatchScope("notes", {}).pipe(
+        Effect.provide(
+          Layer.merge(
+            planningServices(zoteroReads, () =>
               Effect.succeed({
                 mode: "selected",
                 invalid: false,
                 available: [],
                 unavailable: [{ type: "group", groupID: 99 }],
               }),
-          },
-        },
-        "notes",
-        {},
-      ).pipe(Effect.provide(logger));
+            ),
+            logger,
+          ),
+        ),
+      );
 
       expect(logs).toHaveLength(3);
       expect(logs[0]).toMatchObject({

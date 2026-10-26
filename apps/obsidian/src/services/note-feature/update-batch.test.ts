@@ -13,6 +13,7 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
+import { batchScopeOver } from "@/services/__fixtures__/batch-scope";
 import { chooseBatchProfile } from "@/services/batch-profile-choice";
 import { excerptReuseProbe } from "@/services/excerpt-image/__fixtures__/reuse";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
@@ -226,23 +227,24 @@ function makeDeps(
   wrap: (client: ZoteroReadsClient) => ZoteroReadsClient = (client) => client,
 ): BatchUpdateDeps {
   const client = db;
+  const zoteroReads = withState(
+    caseResources.use(
+      inProcessReadsService(sharedClientOpener(client), {
+        wrap: (reads) => wrap(itemsAtInterface(reads)),
+      }),
+    ),
+    dbState,
+  );
   return {
     profile: profileReader(),
     app: stubService<App>("App", {}),
-    zoteroReads: withState(
-      caseResources.use(
-        inProcessReadsService(sharedClientOpener(client), {
-          wrap: (reads) => wrap(itemsAtInterface(reads)),
-        }),
-      ),
-      dbState,
-    ),
+    zoteroReads,
     settings: stubService<SingleUpdateDeps["settings"]>("PluginSettings", {
       current: Effect.succeed(defaults),
       update: () => Effect.succeed(defaults),
     }),
     bridge: { runSync: Effect.runSync },
-    libraryScope: { resolveLibraries: () => currentScope },
+    batchScope: batchScopeOver(zoteroReads, () => currentScope, caseResources),
     noteFeature: stubService<SingleUpdateDeps["noteFeature"]>("NoteFeature", {
       ready: Promise.resolve(),
       reportExcerptImages: vi.fn(),

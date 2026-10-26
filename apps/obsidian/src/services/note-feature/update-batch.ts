@@ -23,11 +23,10 @@ import {
   batchGroupKey,
   batchGroups,
   batchLibraries,
-  effectLibraryScope,
-  planBatchScope,
   withUnavailableLibraries,
 } from "@/services/batch-scope";
 import type { BatchLibrary, BatchTarget } from "@/services/batch-scope";
+import type { BatchScopeHandle } from "@/services/batch-scope-handle";
 import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
@@ -72,7 +71,10 @@ function profileLabel(profile: ResolvedProfile): string {
 }
 
 export interface BatchUpdateDeps
-  extends SingleUpdateDeps, BatchProfilePickerDeps {}
+  extends SingleUpdateDeps, BatchProfilePickerDeps {
+  /** Plans a library-wide update: which Libraries and items it covers. */
+  batchScope: BatchScopeHandle;
+}
 
 /**
  * Selection origin keeps the unresolved fallback and explicit recovery scoped
@@ -793,16 +795,7 @@ export async function runBatchUpdateAll(
     return { outcome: "db-unavailable" };
   }
 
-  const plan = await runBatch(
-    planBatchScope(
-      {
-        zoteroReads: deps.zoteroReads,
-        libraryScope: effectLibraryScope(deps.libraryScope),
-      },
-      "literature-items",
-      target,
-    ),
-  );
+  const plan = await deps.batchScope.plan("literature-items", target);
   if (plan.outcome !== "resolved") {
     return { outcome: plan.outcome };
   }
