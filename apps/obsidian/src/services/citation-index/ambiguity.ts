@@ -7,7 +7,6 @@ import type { Item } from "@zotlit/db";
 
 import { withLogCategory } from "@/lib/effect-log";
 import { itemSummary } from "@/lib/item-summary";
-import { getLogger } from "@/lib/log";
 import { libraryLabel } from "@/services/library-scope/label";
 import type {
   AvailableLibrary,
@@ -16,8 +15,6 @@ import type {
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 import type { SnapshotItem } from "./snapshot";
-
-const logger = getLogger("citation-index");
 
 /**
  * One Item an Ambiguous Citation Key names, as a candidate row shows it: the
@@ -71,27 +68,12 @@ export interface CandidateDeps {
 
 /**
  * Reads each candidate's summary from the database and pairs it with the
- * Library it lives in. A read the database cannot answer leaves the summary as
- * the bare Zotero item key, so a surface still tells the candidates apart.
+ * Library it lives in, in the caller's fiber. A failed read logs and leaves
+ * the summaries as the bare Zotero item keys, so a surface still tells the
+ * candidates apart; an interrupt stays an interrupt.
  *
  * @param candidates the Items of one Ambiguous Citation Key, in the canonical
  *   order the resolution snapshot reports them.
- */
-export async function describeCandidates(
-  deps: CandidateDeps,
-  candidates: readonly SnapshotItem[],
-): Promise<AmbiguousCandidate[]> {
-  return describeWith(
-    deps,
-    await readCandidateItems(deps, candidates),
-    candidates,
-  );
-}
-
-/**
- * {@link describeCandidates} for Effect code: the same description, read in
- * the caller's fiber. A failed read logs and leaves the summaries as the bare
- * Zotero item keys; an interrupt stays an interrupt.
  */
 export const describeCandidatesEffect = Effect.fnUntraced(function* (
   deps: CandidateDeps,
@@ -116,26 +98,6 @@ export const describeCandidatesEffect = Effect.fnUntraced(function* (
     );
   return describeWith(deps, items, candidates);
 });
-
-/** The candidates' Items by Indexed Key; a failed read answers none. */
-async function readCandidateItems(
-  { db }: CandidateDeps,
-  candidates: readonly SnapshotItem[],
-): Promise<ReadonlyMap<string, Item>> {
-  try {
-    const { reads } = db;
-    return await Effect.runPromise(
-      reads.ItemsByIndexedKeys({
-        indexedKeys: candidates.map((candidate) => candidate.indexedKey),
-      }),
-    );
-  } catch (error) {
-    logger.warn("Ambiguous citekey candidates read without summaries", {
-      error,
-    });
-    return new Map();
-  }
-}
 
 function describeWith(
   { libraryScope }: CandidateDeps,

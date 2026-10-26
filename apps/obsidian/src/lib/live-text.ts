@@ -95,7 +95,10 @@ export async function processLiveText(
 }
 
 /** Native text replacement keeps persistence and history; a mapped snapshot keeps the viewport. */
-function setViewDataKeepingScroll(view: TextFileView, text: string): void {
+export function setViewDataKeepingScroll(
+  view: TextFileView,
+  text: string,
+): void {
   const editor =
     view instanceof MarkdownView && view.getMode() === "source"
       ? view.editor.cm

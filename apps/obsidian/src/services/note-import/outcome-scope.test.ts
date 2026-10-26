@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 // One initiating import batch reusing one retention, through the real writer.
+import { it } from "@effect/vitest";
 import { Effect, Stream } from "effect";
 import {
   mkdir,
@@ -19,7 +20,7 @@ import type {
   Workspace,
 } from "obsidian";
 import Turndown from "turndown";
-import { expect, it, vi } from "vitest";
+import { expect, vi } from "vitest";
 
 import { getNoteByKey } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
@@ -28,7 +29,6 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
-import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
@@ -50,7 +50,8 @@ import {
 } from "@/services/zotero-reads/test-utils";
 
 import { diskImageHost } from "./__fixtures__/disk-image-host";
-import { createNoteImporter } from "./service";
+import { noteImporterOver } from "./__fixtures__/importer";
+import type { ImporterFakes } from "./__fixtures__/importer";
 
 /** One paragraph naming the Shared Annotation both Child Notes quote. */
 const paragraph = `<p><img data-attachment-key="SNAP2345" data-annotation="${encodeURIComponent(
@@ -61,7 +62,7 @@ const paragraph = `<p><img data-attachment-key="SNAP2345" data-annotation="${enc
 )}"></p>`;
 const childNoteHtml = `<div data-schema-version="9">${paragraph}<p>Keep this prose.</p></div>`;
 
-async function fixture(
+async function setupFixture(
   options: { failWrites?: boolean; unreadablePdf?: boolean } = {},
 ) {
   await using stack = new AsyncDisposableStack();
@@ -181,10 +182,9 @@ async function fixture(
     paths,
     resolver: service,
   });
-  const importer = createNoteImporter({
-    app,
-    vault: vaultOver(app.vault as unknown as VaultSource),
-    bridge: effectBridge(runtime),
+  const fakes: ImporterFakes = {
+    vault: host.app.vault as unknown as VaultSource,
+    workspace: host.app.workspace,
     profile: profileReader(settings),
     noteIndex: {
       getImportedNoteByNoteKey: () => [],
@@ -201,7 +201,7 @@ async function fixture(
       scopes.push(options.outcomes);
       return preparation(options);
     },
-  });
+  };
   const { reads } = await stack.use(
     inProcessReadsService(sharedClientOpener(client)),
   ).ready;
@@ -219,33 +219,19 @@ async function fixture(
     else Reflect.deleteProperty(globalThis, "TurndownService");
   });
   const reports: ExcerptSummary[][] = [];
-  const importNote = (noteKey: string, outcomes?: ExcerptOutcomeScope) => {
-    const report: ExcerptSummary[] = [];
-    reports.push(report);
-    return importer.importNote(
-      getNoteByKey(client, noteKey, { libraryID: 1 })!,
-      {
-        reads,
-        settings,
-        outcomes,
-        reportExcerpts: (summary) => report.push(summary),
-      },
-    );
-  };
   const cleanup = stack.move();
   return {
     app,
     client,
     reads,
     settings,
-    importer,
+    fakes,
     vaultRoot,
     render,
     renderAnnotation,
     scopes,
     reports,
     entries,
-    importNote,
     /** The imported-note files the run created, keyed by their note key. */
     notes: () =>
       host.vault
@@ -258,75 +244,131 @@ async function fixture(
   };
 }
 
-it("reuses one resolution across the notes of one initiating import batch", async () => {
-  await using f = await fixture({ unreadablePdf: true });
-  await using outcomes = new ExcerptOutcomeScope();
-  await f.importNote("NTES2345", outcomes);
-  await f.importNote("NTES3456", outcomes);
-  // Both notes quote the same Annotation, so the batch renders it once and the
-  // second note reaches the bytes the first one produced.
-  expect(f.render).toHaveBeenCalledTimes(1);
-  expect(f.entries.size).toBe(0);
-  const [asset] = await f.imageNames();
-  expect(await f.imageNames()).toHaveLength(1);
-  const files = f.notes();
-  expect(files).toHaveLength(2);
-  for (const path of files) {
-    const markdown = f.content(path);
-    expect(markdown).toContain("Keep this prose.");
-    expect(markdown).toContain(`![[Images/${asset}]]`);
-    expect(markdown).not.toContain("Images/SNAP2345-snapshot.png");
-  }
-  expect(await readFile(join(f.vaultRoot, "Images", asset!))).toEqual(bluePng);
-  // The template still runs once per note, and each note accounts its own use.
-  expect(f.renderAnnotation).toHaveBeenCalledTimes(2);
-  expect(f.reports.map((report) => report.at(-1))).toEqual([
-    { zotero: 0, unchecked: 1, unavailable: 0 },
-    { zotero: 0, unchecked: 1, unavailable: 0 },
-  ]);
-  expect(outcomes.diagnostics).toMatchObject({
-    hits: 1,
-    retained: 1,
-    consumers: 0,
-    released: false,
-  });
+/** {@link setupFixture} for the case's Scope, with the real importer over its fakes. */
+const fixture = Effect.fnUntraced(function* (
+  options: Parameters<typeof setupFixture>[0] = {},
+) {
+  const f = yield* Effect.acquireDisposable(
+    Effect.promise(() => setupFixture(options)),
+  );
+  const importer = yield* noteImporterOver(f.fakes);
+  return {
+    ...f,
+    importNote: (noteKey: string, outcomes?: ExcerptOutcomeScope) => {
+      const report: ExcerptSummary[] = [];
+      f.reports.push(report);
+      return importer.importNote(
+        getNoteByKey(f.client, noteKey, { libraryID: 1 })!,
+        {
+          reads: f.reads,
+          settings: f.settings,
+          outcomes,
+          reportExcerpts: (summary) => report.push(summary),
+        },
+      );
+    },
+  };
 });
 
-it("reuses the bytes a store whose write failed never kept", async () => {
-  await using f = await fixture({ failWrites: true });
-  await using outcomes = new ExcerptOutcomeScope();
-  await f.importNote("NTES2345", outcomes);
-  await f.importNote("NTES3456", outcomes);
-  expect(f.notes()).toHaveLength(2);
-  // The store kept nothing, and the batch still rendered the excerpt once.
-  expect(f.entries.size).toBe(0);
-  expect(f.render).toHaveBeenCalledTimes(1);
-  expect(await f.imageNames()).toHaveLength(1);
-});
+it.effect(
+  "reuses one resolution across the notes of one initiating import batch",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture({ unreadablePdf: true });
+      const outcomes = yield* Effect.acquireDisposable(
+        Effect.sync(() => new ExcerptOutcomeScope()),
+      );
+      yield* f.importNote("NTES2345", outcomes);
+      yield* f.importNote("NTES3456", outcomes);
+      // Both notes quote the same Annotation, so the batch renders it once and the
+      // second note reaches the bytes the first one produced.
+      expect(f.render).toHaveBeenCalledTimes(1);
+      expect(f.entries.size).toBe(0);
+      const [asset] = yield* Effect.promise(() => f.imageNames());
+      expect(yield* Effect.promise(() => f.imageNames())).toHaveLength(1);
+      const files = f.notes();
+      expect(files).toHaveLength(2);
+      for (const path of files) {
+        const markdown = f.content(path);
+        expect(markdown).toContain("Keep this prose.");
+        expect(markdown).toContain(`![[Images/${asset}]]`);
+        expect(markdown).not.toContain("Images/SNAP2345-snapshot.png");
+      }
+      expect(
+        yield* Effect.promise(() =>
+          readFile(join(f.vaultRoot, "Images", asset!)),
+        ),
+      ).toEqual(bluePng);
+      // The template still runs once per note, and each note accounts its own use.
+      expect(f.renderAnnotation).toHaveBeenCalledTimes(2);
+      expect(f.reports.map((report) => report.at(-1))).toEqual([
+        { zotero: 0, unchecked: 1, unavailable: 0 },
+        { zotero: 0, unchecked: 1, unavailable: 0 },
+      ]);
+      expect(outcomes.diagnostics).toMatchObject({
+        hits: 1,
+        retained: 1,
+        consumers: 0,
+        released: false,
+      });
+    }),
+);
 
-it("keeps two simultaneous batches isolated and releases each batch's retention", async () => {
-  await using f = await fixture({ unreadablePdf: true });
-  await Promise.all([f.importNote("NTES2345"), f.importNote("NTES3456")]);
-  // Separate imports are separate batches: each resolves its own excerpt.
-  expect(f.render).toHaveBeenCalledTimes(2);
-  expect(f.scopes).toHaveLength(2);
-  expect(f.scopes[0]).not.toBe(f.scopes[1]);
-  for (const scope of f.scopes) {
-    expect(scope?.diagnostics).toMatchObject({
-      released: true,
-      retained: 0,
-      consumers: 0,
-      hits: 0,
-    });
-  }
-});
+it.effect("reuses the bytes a store whose write failed never kept", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture({ failWrites: true });
+    const outcomes = yield* Effect.acquireDisposable(
+      Effect.sync(() => new ExcerptOutcomeScope()),
+    );
+    yield* f.importNote("NTES2345", outcomes);
+    yield* f.importNote("NTES3456", outcomes);
+    expect(f.notes()).toHaveLength(2);
+    // The store kept nothing, and the batch still rendered the excerpt once.
+    expect(f.entries.size).toBe(0);
+    expect(f.render).toHaveBeenCalledTimes(1);
+    expect(yield* Effect.promise(() => f.imageNames())).toHaveLength(1);
+  }),
+);
 
-it("keeps a caller's batch scope open until the caller releases it", async () => {
-  await using f = await fixture();
-  const outcomes = new ExcerptOutcomeScope();
-  await f.importNote("NTES2345", outcomes);
-  expect(f.scopes[0]).toBe(outcomes);
-  expect(outcomes.diagnostics).toMatchObject({ released: false, retained: 1 });
-  await outcomes[Symbol.asyncDispose]();
-  expect(outcomes.diagnostics).toMatchObject({ released: true, retained: 0 });
-});
+it.effect(
+  "keeps two simultaneous batches isolated and releases each batch's retention",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture({ unreadablePdf: true });
+      yield* Effect.all([f.importNote("NTES2345"), f.importNote("NTES3456")], {
+        concurrency: "unbounded",
+      });
+      // Separate imports are separate batches: each resolves its own excerpt.
+      expect(f.render).toHaveBeenCalledTimes(2);
+      expect(f.scopes).toHaveLength(2);
+      expect(f.scopes[0]).not.toBe(f.scopes[1]);
+      for (const scope of f.scopes) {
+        expect(scope?.diagnostics).toMatchObject({
+          released: true,
+          retained: 0,
+          consumers: 0,
+          hits: 0,
+        });
+      }
+    }),
+);
+
+it.effect(
+  "keeps a caller's batch scope open until the caller releases it",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture();
+      const outcomes = new ExcerptOutcomeScope();
+      yield* f.importNote("NTES2345", outcomes);
+      expect(f.scopes[0]).toBe(outcomes);
+      expect(outcomes.diagnostics).toMatchObject({
+        released: false,
+        retained: 1,
+      });
+      yield* Effect.promise(() => outcomes[Symbol.asyncDispose]());
+      expect(outcomes.diagnostics).toMatchObject({
+        released: true,
+        retained: 0,
+      });
+    }),
+);

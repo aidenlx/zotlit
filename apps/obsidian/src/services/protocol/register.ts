@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Fiber, FiberSet, Scope } from "effect";
+import { Cause, Effect, Fiber, FiberSet, Schema, Scope } from "effect";
 import type { ManagedRuntime } from "effect";
 import type { ObsidianProtocolData, PaneType, Plugin } from "obsidian";
 
@@ -29,12 +29,14 @@ import type { ProtocolAction } from "@zotlit/protocol";
 
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import type { AttachmentReader } from "@/lib/attachment-open";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { logAndContinue, withLogCategory } from "@/lib/effect-log";
 import { openScope } from "@/lib/effect-scope";
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { portCall } from "@/lib/legacy-port";
-import { Notifier } from "@/lib/notifier";
+import { Notifier, reportOutcome } from "@/lib/notifier";
+import type { NoticeMessage, OutcomeCopy } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -65,11 +67,16 @@ import type {
   BatchUpdateResult,
 } from "@/services/note-feature/update-batch";
 import { noteOperationDiagnosticNotice } from "@/services/note-feature/update-single";
-import type { BatchImport } from "@/services/note-import/batch-import";
+import {
+  runBatchImport,
+  runBatchImportAll,
+} from "@/services/note-import/batch-import";
+import type { BatchImportServices } from "@/services/note-import/batch-import";
 import {
   batchImportAllToast,
   batchImportToast,
 } from "@/services/note-import/batch-import-notices";
+import type { NoteImportView } from "@/services/note-import/view";
 import type { UseLedger } from "@/services/use-ledger/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
@@ -79,6 +86,7 @@ import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 /** The services a protocol handler reads through their tags. */
 export type ProtocolServices =
+  | BatchImportServices
   | LocalServer
   | Notifier
   | ObsidianEnv
@@ -89,15 +97,18 @@ export type ProtocolServices =
   | ZoteroReads;
 
 /**
- * The legacy values the handlers still hold. Note Feature, batch import, the
- * Profile factories and the Attachment opener convert in later slices, and the
- * batch runners still take the whole {@link BatchUpdateDeps} bundle, plain
- * adapters included. The bundle plans a library-wide run through the
+ * The legacy values the handlers still hold. Note Feature, the Profile
+ * factories and the Attachment opener convert in later slices, and the batch
+ * update runners still take the whole {@link BatchUpdateDeps} bundle, plain
+ * adapters included. The bundle plans a library-wide update through the
  * `batchScope` edge handle.
  */
 export interface ProtocolDeps extends BatchUpdateDeps {
   webWorkbenchEnabled: boolean;
-  batchImport: Pick<BatchImport, "runBatchImport" | "runBatchImportAll">;
+  /** The note import's classify, confirm and Profile modals. */
+  noteImportView: NoteImportView;
+  /** Also runs the note import modal's callbacks, which unload interrupts. */
+  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
   /** Opens the Attachment `open-attachment` names. */
   opener: Pick<TargetOpener, "open">;
 }
@@ -116,7 +127,7 @@ export interface ProtocolDeps extends BatchUpdateDeps {
  * fails is logged. Every handler run and every run of a request the Local
  * Server pushes is a fiber of the current Scope: closing it stops the pushed
  * requests and interrupts the runs still going. A legacy Promise a run waits
- * on (Note Feature, batch import, a view opener) still runs to its end.
+ * on (Note Feature, a batch update, a view opener) still runs to its end.
  */
 export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
   function* (
@@ -219,6 +230,26 @@ export function startProtocolHandlers(
   return { [Symbol.asyncDispose]: close };
 }
 
+/** The ports a batch import takes, from the handlers' legacy values. */
+function importPorts(deps: ProtocolDeps) {
+  return {
+    view: deps.noteImportView,
+    noteFeature: deps.noteFeature,
+    bridge: deps.bridge,
+  };
+}
+
+/** The outcome notice of a note import, from its toast copy. */
+function importNotices<A>(copy: {
+  success: (result: A) => NoticeMessage | undefined;
+  error: (message: string, error: unknown) => NoticeMessage | undefined;
+}): OutcomeCopy<A> {
+  return {
+    success: copy.success,
+    error: (error) => copy.error(toast.formatErrorMessage(error), error),
+  };
+}
+
 /** The registered handlers, while their Scope holds them. */
 export interface ProtocolRegistration {
   /**
@@ -247,11 +278,12 @@ const updateManyRequested = Effect.fn("protocol.updateManyRequested")(
 
 const importNotesRequested = Effect.fn("protocol.importNotesRequested")(
   function* (event: ImportNotesRequest, deps: ProtocolDeps) {
-    yield* Effect.promise(() =>
-      toast.promise(
-        deps.batchImport.runBatchImport(event.mode, event.items),
-        batchImportToast({ app: deps.app }),
-      ),
+    yield* reportOutcome(
+      runBatchImport(importPorts(deps), {
+        mode: event.mode,
+        itemIDs: event.items,
+      }),
+      importNotices(batchImportToast({ app: deps.app })),
     );
   },
   logAndContinue("Pushed batch import failed", "protocol"),
@@ -371,11 +403,12 @@ const handleImportProtocol = Effect.fn("protocol.handleImportProtocol")(
     });
     if (!query) return;
 
-    yield* Effect.promise(() =>
-      toast.promise(
-        deps.batchImport.runBatchImport(query.mode, [query.item]),
-        batchImportToast({ app: deps.app }),
-      ),
+    yield* reportOutcome(
+      runBatchImport(importPorts(deps), {
+        mode: query.mode,
+        itemIDs: [query.item],
+      }),
+      importNotices(batchImportToast({ app: deps.app })),
     );
   },
 );
@@ -390,11 +423,12 @@ const handleImportManyProtocol = Effect.fn("protocol.handleImportManyProtocol")(
     });
     if (!query) return;
 
-    yield* Effect.promise(() =>
-      toast.promise(
-        deps.batchImport.runBatchImport(query.mode, query.items),
-        batchImportToast({ app: deps.app }),
-      ),
+    yield* reportOutcome(
+      runBatchImport(importPorts(deps), {
+        mode: query.mode,
+        itemIDs: query.items,
+      }),
+      importNotices(batchImportToast({ app: deps.app })),
     );
   },
 );
@@ -499,14 +533,12 @@ const handleImportAllNotesProtocol = Effect.fn(
   });
   if (!query) return;
 
-  yield* Effect.promise(() =>
-    toast.promise(
-      deps.batchImport.runBatchImportAll({
-        groupID: query.groupID,
-        collectionKey: query.collectionKey,
-      }),
-      batchImportAllToast({ app: deps.app }),
-    ),
+  yield* reportOutcome(
+    runBatchImportAll(importPorts(deps), {
+      groupID: query.groupID,
+      collectionKey: query.collectionKey,
+    }),
+    importNotices(batchImportAllToast({ app: deps.app })),
   );
 });
 
@@ -632,9 +664,12 @@ const handleProfileImportProtocol = Effect.fn(
 }, withLogCategory("protocol"));
 
 /** The Profile document the import wrote is not in the vault. */
-class ImportedProfileMissing extends Data.TaggedError(
-  "ImportedProfileMissing",
-)<{ readonly path: string }> {
+class ImportedProfileMissing extends Schema.TaggedError<
+  ImportedProfileMissing,
+  { readonly brand: unique symbol }
+>()("ImportedProfileMissing", {
+  path: Schema.String,
+}) {
   override get message() {
     return `Imported Profile document is unavailable: ${this.path}`;
   }
@@ -644,7 +679,7 @@ class ImportedProfileMissing extends Data.TaggedError(
 const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
   function* (deps: ProtocolDeps, paneType: PaneType | undefined) {
     yield* Effect.logDebug("Opening clipboard Profile import");
-    const profile = yield* Effect.tryPromise(() =>
+    const profile = yield* portCall("import-profile", () =>
       deps.importProfile({ source: "clipboard" }),
     );
     if (!profile) {
@@ -659,7 +694,7 @@ const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
     const options = paneType
       ? { leaf: yield* (yield* Workspace).getLeaf(paneType) }
       : {};
-    yield* Effect.tryPromise(() =>
+    yield* portCall("open-template-workbench", () =>
       openTemplateWorkbench(deps.app, file, options),
     );
     yield* Effect.logDebug("Opened imported Profile in editor").pipe(

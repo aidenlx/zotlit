@@ -72,10 +72,9 @@ import { LocalServer } from "./local-server/service";
 import { bindManagedBinary } from "./managed-binary/handle";
 import { createNoteFeature } from "./note-feature";
 import type { NoteFeature } from "./note-feature";
-import { createBatchImport } from "./note-import/batch-import";
-import type { BatchImport } from "./note-import/batch-import";
-import { createNoteImporter } from "./note-import/service";
-import type { NoteImporter } from "./note-import/service";
+import type { BatchImportServices } from "./note-import/batch-import";
+import { bindBatchImport } from "./note-import/batch-import-handle";
+import type { NoteImportPorts } from "./note-import/service";
 import { createNoteImportView } from "./note-import/view";
 import { plainNoteIndex } from "./note-index/plain";
 import { plainBibliographyRender } from "./pandoc/render-cache/plain";
@@ -136,6 +135,14 @@ export async function buildServices(
   const noteCreation = new Promise<CitekeyNoteCreation>((resolve) => {
     bindNoteCreation = resolve;
   });
+  // A note write calls Attachment Import and the excerpt preparation, which
+  // the container builds after the graph, through this one holder. Nothing
+  // writes a note before the container has filled it.
+  let noteImportPorts: Required<NoteImportPorts> | undefined;
+  const boundNoteImportPorts = (): Required<NoteImportPorts> => {
+    if (!noteImportPorts) throw new Error("Note import is not bound yet");
+    return noteImportPorts;
+  };
   // The excerpt service is registered before the PDF reader, so the reader
   // hands its documents over through this one holder. A crop asks for a reader
   // document per resolution, and answers detached while the holder is empty.
@@ -157,6 +164,17 @@ export async function buildServices(
         languagePack,
         noteCreation: {
           createNote: async (item) => (await noteCreation).createNote(item),
+        },
+        noteImport: {
+          attachmentImport: {
+            prepare: (notePath, options) =>
+              boundNoteImportPorts().attachmentImport.prepare(
+                notePath,
+                options,
+              ),
+          },
+          excerptImages: (options) =>
+            boundNoteImportPorts().excerptImages(options),
         },
       },
     ),
@@ -349,22 +367,8 @@ export async function buildServices(
       },
     })
     .useValue({
-      noteImport: ({
-        profile,
-        noteIndex,
-        template,
-        zoteroPref,
-        attachmentImport,
-        excerptImage,
-      }): NoteImporter =>
-        createNoteImporter({
-          profile,
-          app: plugin.app,
-          vault,
-          bridge,
-          noteIndex,
-          template,
-          zoteroPref,
+      noteImportPorts: ({ zoteroPref, attachmentImport, excerptImage }) => {
+        noteImportPorts = {
           attachmentImport,
           excerptImages: (options) =>
             createExcerptPreparation({
@@ -375,7 +379,9 @@ export async function buildServices(
                 baseAttachmentPath: zoteroPref.baseAttachmentPath,
               },
             })(options),
-        }),
+        };
+        return noteImportPorts;
+      },
     })
     .useValue({
       templateData: () =>
@@ -472,34 +478,20 @@ export async function buildServices(
         }),
     })
     .useValue({
-      batchImport: ({
-        profile,
-        noteFeature,
-        createProfile,
-        importProfile,
-        zoteroPref,
-        zoteroReads,
-        settings,
-        batchScope,
-        noteImport,
-        noteIndex,
-      }): BatchImport =>
-        createBatchImport({
-          view: createNoteImportView(plugin.app, {
-            createProfile,
-            importProfile,
-            zoteroPref,
-          }),
-          profile,
-          noteFeature,
-          zoteroReads,
-          settings,
-          bridge,
-          batchScope,
-          noteImport,
-          noteIndex,
-          metadataCache: plugin.app.metadataCache,
+      noteImportView: ({ createProfile, importProfile, zoteroPref }) =>
+        createNoteImportView(plugin.app, {
+          createProfile,
+          importProfile,
+          zoteroPref,
         }),
+    })
+    .useValue({
+      batchImport: ({ noteFeature, noteImportView }) =>
+        bindBatchImport(
+          bridge,
+          runtime.runSync(Effect.context<BatchImportServices>()),
+          { view: noteImportView, noteFeature },
+        ),
     })
     .useValue({
       citationLookup: () => plainCitationLookup(runtime),

@@ -100,17 +100,65 @@ export const reportProgress = Effect.fn("Notifier.reportProgress")(function* <
     yield* Effect.sleep(copy.successDuration ?? "2 seconds");
     return;
   }
-  const error = Cause.squash(exit.cause);
-  if (AbortError.test(error)) return;
-  const message =
-    typeof copy.error === "function" ? copy.error(error) : copy.error;
+  const { error } = copy;
+  const message = yield* failureMessage(
+    exit.cause,
+    typeof error === "function" ? error : () => error,
+  );
+  if (message === undefined) return;
+  yield* notice.setMessage(message);
+  yield* Effect.sleep("4 seconds");
+}, Effect.scoped);
+
+/**
+ * The error message for a task that failed with `cause`: none for an abort,
+ * else the message `copy` gives for the error, logged with the error.
+ */
+const failureMessage = Effect.fnUntraced(function* (
+  cause: Cause.Cause<unknown>,
+  copy: (error: unknown) => NoticeMessage | undefined,
+) {
+  const error = Cause.squash(cause);
+  if (AbortError.test(error)) return undefined;
+  const message = copy(error);
   yield* Effect.logError("Toast reported error").pipe(
     Effect.annotateLogs({
-      message: typeof message === "string" ? message : message.textContent,
+      message: typeof message === "string" ? message : message?.textContent,
       error,
     }),
     withLogCategory("toast"),
   );
-  yield* notice.setMessage(message);
-  yield* Effect.sleep("4 seconds");
-}, Effect.scoped);
+  return message;
+});
+
+/** The messages of a task's outcome notice; see {@link reportOutcome}. */
+export interface OutcomeCopy<A> {
+  /** The success message for the result, or none. */
+  readonly success: (result: A) => NoticeMessage | undefined;
+  /** The error message for the error the task failed with, or none. */
+  readonly error: (error: unknown) => NoticeMessage | undefined;
+}
+
+/**
+ * Run `task` and report its outcome as {@link reportProgress} does, without a
+ * loading message: the success message for 2 s, or the error message for 4 s
+ * with the error logged. An abort shows nothing. The notice does not hold the
+ * run, and an interrupt passes on without a notice.
+ */
+export const reportOutcome = Effect.fn("Notifier.reportOutcome")(function* <
+  A,
+  E,
+  R,
+>(task: Effect.Effect<A, E, R>, copy: OutcomeCopy<A>) {
+  const notifier = yield* Notifier;
+  const exit = yield* Effect.exit(task);
+  if (Exit.isSuccess(exit)) {
+    const message = copy.success(exit.value);
+    if (message) yield* notifier.show(message, { duration: 2000 });
+    return;
+  }
+  if (Cause.hasInterruptsOnly(exit.cause))
+    return yield* Effect.failCause(exit.cause);
+  const message = yield* failureMessage(exit.cause, copy.error);
+  if (message) yield* notifier.show(message, { duration: 4000 });
+});

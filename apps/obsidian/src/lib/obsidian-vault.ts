@@ -43,6 +43,7 @@ export type VaultSource = Pick<
   | "cachedRead"
   | "process"
   | "create"
+  | "createFolder"
   | "trash"
   | "getFileByPath"
   | "getFolderByPath"
@@ -80,6 +81,8 @@ export interface VaultShape {
     data: string,
     options?: DataWriteOptions,
   ): Effect.Effect<TFile, FileExists | VaultError>;
+  /** Create a folder at `path`; its parent folders must exist. */
+  createFolder(path: string): Effect.Effect<TFolder, VaultError>;
   /** Move the file to the system trash, or to the vault's `.trash` when `system` is false. */
   trash(file: TAbstractFile, system: boolean): Effect.Effect<void, VaultError>;
   /** The file at `path` now, `null` when there is none. */
@@ -155,6 +158,9 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
         source.getAbstractFileByPath(path) === null
           ? call("create", path, () => source.create(path, data, options))
           : Effect.fail(new FileExists({ path })),
+    ),
+    createFolder: Effect.fn("Vault.createFolder")((path) =>
+      call("createFolder", path, () => source.createFolder(path)),
     ),
     trash: Effect.fn("Vault.trash")((file, system) =>
       call("trash", file.path, () => source.trash(file, system)),

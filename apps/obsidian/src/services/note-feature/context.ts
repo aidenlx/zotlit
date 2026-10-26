@@ -37,7 +37,7 @@ import type {
 } from "@/services/excerpt-image/prepare";
 import type { prepareSingleExcerpt } from "@/services/excerpt-image/prepare-single";
 import type { QueryHandle } from "@/services/item-query/handle";
-import { childNoteLink } from "@/services/note-import/service";
+import { childNoteLink } from "@/services/note-import/child-note-link";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { getProfileBinding } from "@/services/profile/bindings";
 import type { ProfileBindingSettings } from "@/services/profile/bindings";

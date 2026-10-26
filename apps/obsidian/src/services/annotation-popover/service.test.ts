@@ -4,9 +4,10 @@
 // End-to-end Run cannot time or observe: a popover held open across a change
 // in the repository, two reads that land out of order, the Excerpt Image read
 // a hidden popover lets go, and image bytes that fail to decode.
-import { Effect, Layer, Stream } from "effect";
+import { it } from "@effect/vitest";
+import { Context, Deferred, Effect, Exit, Layer, Scope, Stream } from "effect";
 import type { App, HoverParent } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
@@ -58,6 +59,7 @@ async function harness(stack: AsyncDisposableStack) {
   const popover = stack.use(
     new AnnotationPopoverCore({
       annotations,
+      read: (key) => bridge.runPromise(annotations.read(key)),
       bridge,
       excerptDisplay: {
         open: () => {
@@ -198,6 +200,69 @@ describe("AnnotationPopover", () => {
       "Shown through the layer",
     );
   });
+
+  it.effect("interrupts a pending read when the plugin unloads", () =>
+    Effect.gen(function* () {
+      let interrupted = false;
+      const started = yield* Deferred.make<void>();
+      const scope = yield* Scope.fork(yield* Scope.Scope);
+      const context = yield* Layer.buildWithScope(
+        layerAnnotationPopover.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.mock(AnnotationRepository, {
+                read: () =>
+                  Deferred.succeed(started, undefined).pipe(
+                    Effect.andThen(Effect.never),
+                    Effect.onInterrupt(() =>
+                      Effect.sync(() => {
+                        interrupted = true;
+                      }),
+                    ),
+                  ),
+                hold: () => Effect.succeed({ [Symbol.dispose]: () => {} }),
+                annotationsChanged: Stream.never,
+              }),
+              Layer.succeed(
+                ExcerptDisplays,
+                stubService<ExcerptDisplayService>("ExcerptDisplays", {}),
+              ),
+              Layer.succeed(
+                ZoteroReads,
+                stubService<ZoteroReads["Service"]>("ZoteroReads", {}),
+              ),
+              Layer.mock(ZoteroPref, {}),
+              Layer.succeed(ObsidianApp, stubService<App>("App", {})),
+            ),
+          ),
+        ),
+        scope,
+      );
+      const targetEl = document.body.appendChild(
+        document.createElement("span"),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(() => targetEl.remove()));
+
+      yield* Context.get(context, AnnotationPopover)
+        .show({
+          event: new MouseEvent("mouseover"),
+          hoverParent: { hoverPopover: null },
+          targetEl,
+          sourcePath: "note.md",
+          link: {
+            attachmentKey: "PDFLAYER",
+            annotationKey: "LAYER003",
+            pageLabel: null,
+            groupID: null,
+          },
+        })
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(started);
+      yield* Scope.close(scope, Exit.void);
+
+      expect(interrupted).toBe(true);
+    }),
+  );
 
   it("keeps a hover hidden before its layer read answers", async () => {
     await using stack = new AsyncDisposableStack();
@@ -350,15 +415,14 @@ describe("AnnotationPopover", () => {
     const service = stack.use(
       new AnnotationPopoverCore({
         annotations: {
-          read: (key) =>
-            Effect.promise(async () => {
-              const held = Promise.withResolvers<void>();
-              reads.push({ key, held });
-              await held.promise;
-              return lists[key as keyof typeof lists];
-            }),
           hold: () => Effect.succeed({ [Symbol.dispose]: () => {} }),
           annotationsChanged: Stream.never,
+        },
+        read: async (key) => {
+          const held = Promise.withResolvers<void>();
+          reads.push({ key, held });
+          await held.promise;
+          return lists[key as keyof typeof lists];
         },
         bridge,
         excerptDisplay: {
@@ -442,6 +506,7 @@ describe("AnnotationPopover with an Excerpt Image", () => {
     const service = stack.use(
       new AnnotationPopoverCore({
         annotations,
+        read: (key) => bridge.runPromise(annotations.read(key)),
         bridge,
         excerptDisplay: display,
         excerptRequest: ({ annotation, source }) =>

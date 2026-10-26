@@ -158,13 +158,10 @@ export default defineConfig({
       files: [
         "src/services/attachment-import/service.ts",
         "src/services/attachment-open/actions.ts",
-        "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
         "src/services/excerpt-image/prepare.ts",
         "src/services/note-feature/operations.ts",
         "src/services/note-feature/update-batch.ts",
-        "src/services/note-import/batch-import.ts",
-        "src/services/note-import/service.ts",
         "src/services/pandoc/document-presentation.ts",
         "src/services/template/actions.ts",
         "src/views/annot-view/view.tsx",
@@ -333,7 +330,6 @@ export default defineConfig({
       // `deps.app`: the deps must carry the tag first.
       files: [
         "src/services/note-feature/update-single.ts",
-        "src/services/note-import/service.ts",
         "src/views/note-preview/render.ts",
         "src/views/note-preview/session.ts",
       ],
@@ -368,20 +364,15 @@ export default defineConfig({
       // Default-runtime backlog: run the Effect through the bridge, a layer context runner or a runtime, then remove the file from the list.
       files: [
         "src/lib/effect-scope.ts",
-        "src/lib/temp-sweep.ts",
         "src/services/attachment-open/actions.ts",
         "src/services/batch-run.ts",
-        "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
-        "src/services/database/reap-temps.ts",
         "src/services/excerpt-image/prepare.ts",
         "src/services/excerpt-image/request.ts",
         "src/services/note-feature/annotation-citation.ts",
         "src/services/note-feature/operations.ts",
         "src/services/note-feature/update-batch.ts",
         "src/services/note-feature/update-single.ts",
-        "src/services/note-import/batch-import.ts",
-        "src/services/note-import/service.ts",
         "src/services/profile/service.ts",
         "src/views/annot-view/view.tsx",
         "src/views/library/item-actions.ts",

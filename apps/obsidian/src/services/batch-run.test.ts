@@ -277,7 +277,7 @@ describe("executeBatchRun", () => {
     new BatchUpdateRefusedError(
       unknownProfileDiagnostic("Missing", { path: "Reading/Paper.md" }),
     ),
-    new NoteImportProfileError("Missing", { path: "Reading/Paper.md" }),
+    NoteImportProfileError.unknown("Missing", { path: "Reading/Paper.md" }),
   ])("keeps note recovery on a per-item Profile failure: $name", (error) =>
     Effect.gen(function* () {
       const { controls, settled } = makeRunControls();
@@ -577,7 +577,7 @@ describe("runBatchWrite", () => {
     Effect.gen(function* () {
       const { zoteroReads } = makeSnapshotReads();
       const { controls, settled } = makeRunControls();
-      const failure = new NoteImportProfileError("Missing", {
+      const failure = NoteImportProfileError.unknown("Missing", {
         path: "Reading/Paper.md",
       });
       const onTaskFailed = vi.fn();

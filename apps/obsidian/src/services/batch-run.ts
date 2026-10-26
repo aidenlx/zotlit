@@ -322,18 +322,40 @@ export function runBatchWrite<T extends BatchRunTask>(opts: {
  * {@link TaskRejected} rejects with the task's own rejection, and an aborted
  * signal rejects with the signal's own abort reason.
  */
-export async function runBatch<A, E>(
+export function runBatch<A, E>(
   effect: Effect.Effect<A, E>,
   signal?: AbortSignal,
 ): Promise<A> {
-  signal?.throwIfAborted();
   // Every Effect here has R = never, so the default Effect runtime is enough.
-  const exit = await Effect.runPromiseExit(
+  return runBatchWith((run, options) => Effect.runPromiseExit(run, options))(
     effect,
-    signal === undefined ? undefined : { signal },
-  );
-  return settleAtEdge(
-    Exit.mapError(exit, (error) => taskFailure(error)),
     signal,
   );
+}
+
+/**
+ * {@link runBatch} through `runExit`, such as the bridge's `runPromiseExit`:
+ * a modal callback runs a batch operation that unload interrupts. It settles
+ * as {@link runBatch} settles; an unload rejects with the interrupt.
+ */
+export function runBatchWith(
+  runExit: <A, E>(
+    effect: Effect.Effect<A, E>,
+    options?: { readonly signal?: AbortSignal },
+  ) => Promise<Exit.Exit<A, E>>,
+) {
+  return async <A, E>(
+    effect: Effect.Effect<A, E>,
+    signal?: AbortSignal,
+  ): Promise<A> => {
+    signal?.throwIfAborted();
+    const exit = await runExit(
+      effect,
+      signal === undefined ? undefined : { signal },
+    );
+    return settleAtEdge(
+      Exit.mapError(exit, (error) => taskFailure(error)),
+      signal,
+    );
+  };
 }
