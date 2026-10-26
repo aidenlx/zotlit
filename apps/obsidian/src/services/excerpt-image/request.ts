@@ -19,6 +19,7 @@ import type { AttachmentPathContext } from "@zotlit/db/path";
 
 import { valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import { portCall } from "@/lib/legacy-port";
 import type {
@@ -148,18 +149,16 @@ function readSavedExcerptRequest<E>(options: {
   }).pipe(
     Effect.scoped,
     // Whatever stops the read, as a throw from a reader, resolves to nothing.
-    Effect.catchCause((cause) => {
-      if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
-      return Effect.logDebug(
-        "No excerpt request: the database did not answer",
-      ).pipe(
-        Effect.annotateLogs({
-          annotationKey: annotation.key,
-          error: Cause.squash(cause),
-        }),
-        Effect.as(null),
-      );
-    }),
+    recover(
+      (cause) =>
+        Effect.logDebug("No excerpt request: the database did not answer").pipe(
+          Effect.annotateLogs({
+            annotationKey: annotation.key,
+            error: Cause.squash(cause),
+          }),
+        ),
+      Effect.succeed(null),
+    ),
     withLogCategory("excerpt-image"),
   );
 }

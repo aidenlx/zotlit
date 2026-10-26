@@ -38,7 +38,6 @@ import type {
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import { joinFolderPath, normalizeFolderPath } from "@/lib/ensure-folder";
-import type { SystemCallError } from "@/lib/errno";
 import { fileUrlLink, syntheticFile } from "@/lib/markdown-link";
 import { DeviceStorage } from "@/lib/obsidian-device-storage";
 import type { DeviceStorageError } from "@/lib/obsidian-device-storage";
@@ -107,7 +106,7 @@ export interface ResolveLinkOptions {
 export interface AttachmentImportResult
   extends AttachmentCopyResult, AttachmentSkipCounts {}
 
-/** The copy of confirmed sources failed; `cause` holds what it threw. */
+/** The copy of confirmed sources failed; `cause` holds the copy's failure. */
 export class AttachmentCopyError extends Schema.TaggedError<
   AttachmentCopyError,
   { readonly brand: unique symbol }
@@ -119,7 +118,6 @@ export class AttachmentCopyError extends Schema.TaggedError<
 /** What a flush fails with: a source check, the folder, or the copy. */
 export type AttachmentFlushError =
   | PlatformError.PlatformError
-  | SystemCallError
   | VaultFolderBlockedError
   | AttachmentCopyError
   | VaultError;
@@ -254,8 +252,8 @@ export const layerAttachmentImport = (
         saveApprovedFolders(folders).pipe(
           Effect.provideService(DeviceStorage, storage),
         );
-      // A render decides and links synchronously, so it reads the snapshot and
-      // the file manager through this runner.
+      // A render links synchronously, so it reads the file manager through
+      // this runner: the template-render edge.
       const runSync = Effect.runSyncWith(yield* Effect.context<never>());
 
       // Obsidian's device store catches its own errors, so a failure here is
@@ -354,13 +352,16 @@ export const layerAttachmentImport = (
         const items: PendingCopy[] = [];
         let blocked = 0;
         const blockedFolders = new Set<string>();
+        /** Blocked sources rendered since the previous flush, which logs them. */
+        const blockedLogs: Pick<BlockedSource, "origin" | "reason">[] = [];
 
         /**
-         * Render a blocked source's `file://` fallback, counting and logging it
-         * once rendered. The log carries the origin and the reason only —
-         * never the location — so a maintainer can support a user whose source
-         * never reached the queue. With import switched off nothing is
-         * written, so nothing is judged, counted, or logged.
+         * Render a blocked source's `file://` fallback, counting it once
+         * rendered and queuing its log for the flush. The log carries the
+         * origin and the reason only — never the location — so a maintainer
+         * can support a user whose source never reached the queue. With import
+         * switched off nothing is written, so nothing is judged, counted, or
+         * logged.
          */
         const blockedLink = (
           source: BlockedSource,
@@ -376,15 +377,10 @@ export const layerAttachmentImport = (
               if (source.origin === "linked-absolute") {
                 blockedFolders.add(sourceDirname(source.path));
               }
-              runSync(
-                Effect.logWarning("Blocked attachment source").pipe(
-                  Effect.annotateLogs({
-                    origin: source.origin,
-                    reason: source.reason,
-                  }),
-                  logged,
-                ),
-              );
+              blockedLogs.push({
+                origin: source.origin,
+                reason: source.reason,
+              });
             }
             return link(alias, subpath);
           };
@@ -434,7 +430,11 @@ export const layerAttachmentImport = (
 
         return {
           decide: (path, origin) =>
-            decideSource(path, origin, runSync(rootsNow)),
+            decideSource(
+              path,
+              origin,
+              importEnabled ? SynchronizedRef.getUnsafe(roots) : NO_ROOTS,
+            ),
           resolveLink: ({ source, vaultName }) => {
             if (!source.approved) return blockedLink(source, vaultName);
             const sourcePath = source.path;
@@ -478,6 +478,12 @@ export const layerAttachmentImport = (
             // Drain the queue, so a second flush confirms and counts only what
             // was queued since the first one.
             const queued = items.splice(0);
+            for (const { origin, reason } of blockedLogs.splice(0)) {
+              yield* Effect.logWarning("Blocked attachment source").pipe(
+                Effect.annotateLogs({ origin, reason }),
+                logged,
+              );
+            }
             // A linked-file source is confirmed by opening it, and the copy
             // reads that descriptor; this scope owns every one of them until
             // the copy is done.
@@ -492,15 +498,17 @@ export const layerAttachmentImport = (
                     Effect.provideService(Vault, vault),
                   );
                 }
-                const copies = yield* Effect.tryPromise({
-                  try: () => copyAttachments(confirmation.confirmed),
-                  catch: (cause) =>
-                    new AttachmentCopyError({
-                      message:
-                        cause instanceof Error ? cause.message : String(cause),
-                      cause,
-                    }),
-                });
+                const copies = yield* copyAttachments(
+                  confirmation.confirmed,
+                ).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new AttachmentCopyError({
+                        message: cause.message,
+                        cause,
+                      }),
+                  ),
+                );
                 return { ...confirmation, copied: copies };
               }),
             );

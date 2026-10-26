@@ -14,7 +14,7 @@ import { NoteIndex } from "@/services/note-index/service";
 import type { PlainProfile } from "@/services/profile/plain";
 import { Profile } from "@/services/profile/service";
 import type { PlainTemplate } from "@/services/template/plain";
-import { Template } from "@/services/template/service";
+import { Template, templateFailure } from "@/services/template/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
@@ -77,16 +77,22 @@ export function planningContext(
     ),
     Context.add(
       Template,
+      // A throwing plain dep fails typed, as the real tag's members do.
       stubService<Template["Service"]>("Template", {
         renderFilename: (data) =>
-          Effect.sync(() => sources.template.renderFilename(data)),
+          Effect.try({
+            try: () => sources.template.renderFilename(data),
+            catch: templateFailure,
+          }),
         getLiteratureNoteTemplate: (reference) =>
-          Effect.sync(() =>
-            sources.template.getLiteratureNoteTemplate(reference),
-          ),
-        frontmatterFields: Effect.sync(
-          () => sources.template.frontmatterFields,
-        ),
+          Effect.try({
+            try: () => sources.template.getLiteratureNoteTemplate(reference),
+            catch: templateFailure,
+          }),
+        frontmatterFields: Effect.try({
+          try: () => sources.template.frontmatterFields,
+          catch: templateFailure,
+        }),
       }),
     ),
     Context.add(

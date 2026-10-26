@@ -66,7 +66,7 @@ import type {
   SourceParam,
 } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
-import { profileRead, templateCall, templateRead } from "./sync-template";
+import { templateCall } from "./sync-template";
 import { choices } from "./vocabulary";
 
 /** What the Workbench commands read: the Template, Profile, Note Index,
@@ -345,7 +345,7 @@ export function registerTemplateWorkbench(
     literatureNotes: {
       readProfiles: Effect.gen(function* () {
         const resolve = (selector: ProfileSelector) =>
-          profileRead(profile.resolveProfile(selector));
+          profile.resolveProfile(selector);
         return {
           defaultProfile: yield* resolve("default"),
           profiles: yield* Effect.forEach(yield* profile.profiles, (entry) =>
@@ -357,8 +357,8 @@ export function registerTemplateWorkbench(
           diagnostics: yield* profile.diagnostics,
         };
       }),
-      getDocumentStatuses: Effect.suspend(() =>
-        templateRead(template.getLiteratureNoteTemplateStatuses),
+      getDocumentStatuses: Effect.suspend(
+        () => template.getLiteratureNoteTemplateStatuses,
       ),
       getDocument: (reference) =>
         templateCall(template.getLiteratureNoteTemplate(reference)),

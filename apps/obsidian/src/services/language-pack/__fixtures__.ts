@@ -5,7 +5,7 @@ import type { App } from "obsidian";
 
 import { layerFakeFetch } from "@/lib/__fixtures__/fake-fetch";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { ObsidianApp } from "@/lib/obsidian-app";
+import { layerDeviceStorageFrom } from "@/lib/obsidian-device-storage";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 
 import { LanguagePack, layerLanguagePack, startLanguagePack } from "./service";
@@ -62,17 +62,11 @@ export const startOn = Effect.fn("test.startOn")(function* (
     pluginVersion?: string;
   },
 ) {
-  const app = Layer.succeed(
-    ObsidianApp,
-    stubService<App>("App", {
-      loadLocalStorage: (key) => device.loadLocalStorage(key),
-      saveLocalStorage: (key, value) => device.saveLocalStorage(key, value),
-    }),
-  );
+  const storage = layerDeviceStorageFrom(device);
   const startup = yield* startLanguagePack(pluginVersion).pipe(
     Effect.provide(
       Layer.merge(
-        app,
+        storage,
         Layer.succeed(
           ObsidianEnv,
           stubService<ObsidianEnv["Service"]>("ObsidianEnv", { language }),
@@ -82,7 +76,7 @@ export const startOn = Effect.fn("test.startOn")(function* (
   );
   const context = yield* Layer.build(
     layerLanguagePack(startup).pipe(
-      Layer.provide(app),
+      Layer.provide(storage),
       Layer.provide(
         layerFakeFetch(async (input) => {
           device.requests.push(

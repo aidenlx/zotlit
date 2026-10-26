@@ -14,6 +14,7 @@ import type {
   AnnotationSources,
   AnnotationTemplateContext,
   Attachment,
+  CiteRef,
   FallibleTemplateLink,
   TemplateAnnotation,
   TemplateParentItemData,
@@ -164,16 +165,26 @@ export function annotationCitation(
   pageLabel: string | null,
   template: Pick<PlainTemplate, "renderCitation">,
 ): string | null {
+  const refs = annotationCiteRefs(parentItem, pageLabel);
+  return refs && template.renderCitation(refs, "main");
+}
+
+/**
+ * The Citation Template input for {@link annotationCitation}: the parent item
+ * with the page label as locator. `null` when there is no parent item or it
+ * carries no citation key.
+ */
+export function annotationCiteRefs(
+  parentItem: TemplateParentItemData | null,
+  pageLabel: string | null,
+): readonly CiteRef[] | null {
   if (!parentItem?.citekey) return null;
-  return template.renderCitation(
-    [
-      {
-        citationKey: parentItem.citekey,
-        item: narrowBaseDataToCiteItemData(parentItem, parentItem.citekey),
-        label: "page",
-        locator: pageLabel,
-      },
-    ],
-    "main",
-  );
+  return [
+    {
+      citationKey: parentItem.citekey,
+      item: narrowBaseDataToCiteItemData(parentItem, parentItem.citekey),
+      label: "page",
+      locator: pageLabel,
+    },
+  ];
 }

@@ -7,11 +7,10 @@ import {
 } from "@zotlit/db";
 
 import {
-  annotationCitation,
+  annotationCiteRefs,
   buildAnnotationResolvers,
 } from "@/lib/annotation-render";
-import { syncTemplate } from "@/services/template-workbench/sync-template";
-import { templateFailure } from "@/services/template/service";
+import { Template } from "@/services/template/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
@@ -25,7 +24,7 @@ export type AnnotationCitation =
 
 /**
  * Render an Annotation's page-pinned citation: the same Citation Template path
- * the `zt.citation` field uses ({@link annotationCitation}), from one
+ * the `zt.citation` field uses ({@link annotationCiteRefs}), from one
  * `AnnotationSources` read in one Snapshot. A citation string imports no file,
  * so the resolvers' `attachmentImport` port blocks every source.
  *
@@ -64,12 +63,8 @@ export const renderAnnotationCitation = Effect.fn(
     ? buildAnnotationsTemplateData(sources, resolvers).values()
     : [];
   if (!data) return { kind: "not-in-database" } satisfies AnnotationCitation;
-  const template = yield* syncTemplate;
-  const text = yield* Effect.try({
-    try: () => annotationCitation(data.parentItem, data.pageLabel, template),
-    catch: templateFailure,
-  });
-  return (
-    text === null ? { kind: "no-citation-key" } : { kind: "citation", text }
-  ) satisfies AnnotationCitation;
+  const refs = annotationCiteRefs(data.parentItem, data.pageLabel);
+  if (!refs) return { kind: "no-citation-key" } satisfies AnnotationCitation;
+  const text = yield* (yield* Template).renderCitation(refs, "main");
+  return { kind: "citation", text } satisfies AnnotationCitation;
 });

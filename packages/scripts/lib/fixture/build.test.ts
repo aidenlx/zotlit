@@ -2164,7 +2164,10 @@ describe("the generated Obsidian vault", () => {
 
   it("resolves every generated Literature Note through the database", async () => {
     const items = ITEMS.filter(
-      (item) => item.libraryID === 1 && !DEMO_ITEMS.includes(item),
+      (item) =>
+        item.libraryID === 1 &&
+        !DEMO_ITEMS.includes(item) &&
+        item.literatureNotePage === undefined,
     );
     expect(await readdir(join(layout.vaultDir, "literatures"))).toEqual(
       items

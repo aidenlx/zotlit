@@ -5,7 +5,7 @@
 // Every answer is built from what a template renders. Absolute paths, note
 // bodies, attachment contents, and image bytes are kept out by the shared
 // exporter and by the vault-target module, and none is assembled here.
-import { Effect, Schema } from "effect";
+import { Effect, FiberSet, Schema } from "effect";
 
 import annotationSchema from "@zotlit/db/contract/annotation.schema.json" with { type: "json" };
 import filenameSchema from "@zotlit/db/contract/filename.schema.json" with { type: "json" };
@@ -99,14 +99,14 @@ export interface LocalBridgeReads {
 
 /**
  * The reads for the HTTP routes, each run over the services of the layer that
- * makes them: a route handler is the edge where a request enters Effect.
+ * makes them: a route handler is the edge where a request enters Effect. Each
+ * read runs on a `FiberSet` of the caller's Scope, so a layer close ends a
+ * pending read.
  */
 export const makeLocalBridgeReads = Effect.fnUntraced(function* (
   provenance: BridgeProvenance,
 ) {
-  const run = Effect.runPromiseWith(
-    yield* Effect.context<BridgeReadServices>(),
-  );
+  const run = yield* FiberSet.makeRuntimePromise<BridgeReadServices>();
   const reads: LocalBridgeReads = {
     templateSchema,
     selectedItem: (item) => run(readSelectedItem(item, provenance)),
