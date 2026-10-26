@@ -10,7 +10,7 @@ import type { AttachmentImportHandle } from "./handle";
 const ATTACHMENT_SKIP_NOTICE_DURATION_MS = 30_000;
 
 export interface AttachmentSkipNoticeDeps {
-  attachmentImport: Pick<AttachmentImportHandle, "on">;
+  attachmentImport: Pick<AttachmentImportHandle, "onSkipped">;
   /** Open the plugin's settings tab, which holds the approved folders list. */
   openSettings: () => void;
 }
@@ -24,8 +24,7 @@ export interface AttachmentSkipNoticeDeps {
 export function registerAttachmentSkipNotice(
   deps: AttachmentSkipNoticeDeps,
 ): () => void {
-  return deps.attachmentImport.on(
-    "sources-skipped",
+  return deps.attachmentImport.onSkipped(
     ({ blocked, refused, blockedFolders }) => {
       const notice = new BaseNotice(
         BaseNotice.render((renderer) => {

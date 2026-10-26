@@ -27,10 +27,7 @@ export interface AttachmentImportHandle {
   approveFolder(folder: string): Promise<string | null>;
   revokeFolder(folder: string): Promise<void>;
   /** Follow each pooled skip summary until the returned function stops it, or the runtime closes. */
-  on(
-    event: "sources-skipped",
-    callback: (summary: AttachmentSkipSummary) => void,
-  ): () => void;
+  onSkipped(callback: (summary: AttachmentSkipSummary) => void): () => void;
   /** The import batch for the note at `notePath`. */
   prepare(
     notePath: string,
@@ -38,7 +35,10 @@ export interface AttachmentImportHandle {
   ): Promise<AttachmentImportBatchHandle>;
 }
 
-/** Attachment Import over `bridge`, which unload interrupts. */
+/**
+ * Attachment Import over `bridge`. Unload does not interrupt a pending run; a
+ * run after release fails as the bridge does.
+ */
 export function bindAttachmentImport(
   bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">,
   service: AttachmentImport["Service"],
@@ -49,7 +49,7 @@ export function bindAttachmentImport(
     },
     approveFolder: (folder) => bridge.runPromise(service.approveFolder(folder)),
     revokeFolder: (folder) => bridge.runPromise(service.revokeFolder(folder)),
-    on: (_event, callback) => bridge.subscribe(service.skipped, callback),
+    onSkipped: (callback) => bridge.subscribe(service.skipped, callback),
     prepare: async (notePath, options) => {
       const batch = await bridge.runPromise(service.prepare(notePath, options));
       return {

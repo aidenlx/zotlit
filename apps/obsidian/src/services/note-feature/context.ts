@@ -28,8 +28,8 @@ import { syntheticFile } from "@/lib/markdown-link";
 import type { FileManager as FileManagerTag } from "@/lib/obsidian-file-manager";
 import type { Vault as VaultTag } from "@/lib/obsidian-vault";
 import type {
-  AttachmentImportBatchHandle as AttachmentImport,
-  AttachmentImportHandle as AttachmentImportService,
+  AttachmentImportBatchHandle,
+  AttachmentImportHandle,
 } from "@/services/attachment-import/handle";
 import type {
   ExcerptPreparation,
@@ -106,7 +106,7 @@ export interface NoteFeatureDeps {
   vault: Pick<VaultTag["Service"], "create">;
   /** Moves a note to its Profile's folder; a taken path fails as `FileExists`. */
   fileManager: Pick<FileManagerTag["Service"], "renameFile">;
-  attachmentImport: Pick<AttachmentImportService, "prepare">;
+  attachmentImport: Pick<AttachmentImportHandle, "prepare">;
   excerptImages?: ExcerptPreparation;
   /** The citation renders and the annotation insert, over the bridge. */
   citations: NoteCitations;
@@ -183,7 +183,10 @@ export function resolveNotePath(
 export function buildNoteResolvers(
   ctx: Omit<NoteFeatureDeps, "db">,
   options: {
-    attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
+    attachmentImport: Pick<
+      AttachmentImportBatchHandle,
+      "decide" | "resolveLink"
+    >;
     settings: ProfileBindingSettings | null;
     sourcePath: string;
     excerptImages?: PreparedExcerpts;
