@@ -11,6 +11,7 @@ import {
 import { vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 // The Annotation Repository over a real query client and a real Zotero Local
 // API client, with a fake transport under it: the seam every surface reads and
 // writes through. The repository's own suite and the reader suites build on it,
@@ -39,6 +40,8 @@ import {
   ROUGIER_ANNOTATIONS,
   SERVER_ID,
   testClockAtNow,
+  staleVersion,
+  staleVersionPatch,
   unreachable,
   writeAccepted,
 } from "@/services/zotero-local-api/__fixtures__";
@@ -71,6 +74,7 @@ import type {
   AnnotationSource,
 } from "./repository";
 import { layerAnnotationRepository, AnnotationRepository } from "./service";
+import type { GeometryEdit } from "./write";
 
 export const NOW = toInstant(DateTime.makeUnsafe("2026-09-16T15:52:21Z"));
 
@@ -755,3 +759,290 @@ export function batchReads(counters: ReadCounters): number {
     counters.excerptBaselines.mock.calls.length
   );
 }
+
+/** Every Annotation of `RGRPDF24`, in the reading order its sort indexes give. */
+const READING_ORDER = [
+  ["TYY6Z6ZF", "ink"],
+  ["4PE492KU", "ink"],
+  ["HRK7BG32", "text"],
+  ["K3JRFLFQ", "underline"],
+  ["PUPR5FG5", "highlight"],
+  ["C94NJNYG", "note"],
+  ["FDRFQ7C2", "image"],
+];
+
+const DATABASE_SOURCE = {
+  kind: "zotero-db",
+  database: { userID: null, localUserKey: null, serverID: SERVER_ID },
+  libraryID: 1,
+  libraryRevision: 37,
+} as const;
+
+/** The Annotation one create asks Zotero for, in the reader's own words. */
+const DRAFT = {
+  type: "highlight",
+  color: "#FFD400",
+  comment: "",
+  text: "Identify Your Message",
+  pageLabel: "1",
+  sortIndex: "00000|002041|00170",
+  position: {
+    pageIndex: 0,
+    rects: [[265.833_4, 611.202_4, 374.503_4, 620.019_4]],
+  },
+} as const;
+
+/** The Annotation Zotero answers a create with, and reads back afterwards. */
+const MADE: WireAnnotation = {
+  key: "MADE2345",
+  version: 42,
+  type: "highlight",
+  text: "Identify Your Message",
+  color: "#ffd400",
+  pageLabel: "1",
+  sortIndex: "00000|002041|00170",
+  position: { pageIndex: 0, rects: [[265.833, 611.202, 374.503, 620.019]] },
+};
+
+function colorOf(list: AnnotationList | null, key: string): string | null {
+  return list?.annotations.find((record) => record.key === key)?.color ?? null;
+}
+
+/** Every stored Annotation row, as an oracle for "nothing was written". */
+function annotationRows(client: NodeDatabaseClient): unknown[] {
+  return client.$client
+    .prepare("select * from itemAnnotations order by itemID")
+    .all();
+}
+
+/**
+ * A Zotero that keeps what a patch sends, Annotation by Annotation, so every
+ * later read answers the colour and comment the last accepted write asked for.
+ * What the Local API holds is the oracle an undo is read through; nothing here
+ * asks the history what it thinks.
+ */
+function zoteroHolding(annotationKey: string) {
+  const held = new Map<string, WireAnnotation>(
+    ROUGIER_ANNOTATIONS.map((entry) => [entry.key, { ...entry }]),
+  );
+  if (!held.has(annotationKey)) {
+    throw new Error(`No fixture annotation ${annotationKey}`);
+  }
+  let refuseOnce = false;
+  const list = () =>
+    ROUGIER_ANNOTATIONS.flatMap((entry) => {
+      const stored = held.get(entry.key);
+      return stored ? [stored] : [];
+    });
+  /** The item key a route names, which is its last segment. */
+  const keyOf = ({ url }: ZoteroRequest) =>
+    url.pathname.slice(url.pathname.lastIndexOf("/") + 1);
+  return {
+    answers: {
+      children: () => annotationPage(list()),
+      item: (request) => {
+        const stored = held.get(keyOf(request));
+        return stored ? annotationItem(stored) : notFound();
+      },
+      write: (request) => {
+        if (refuseOnce) {
+          refuseOnce = false;
+          return staleVersion();
+        }
+        const key = keyOf(request);
+        const stored = held.get(key);
+        const { annotationColor, annotationComment, annotationText } =
+          JSON.parse(request.body ?? "{}") as {
+            annotationColor?: string;
+            annotationComment?: string;
+            annotationText?: string;
+          };
+        const patched =
+          typeof annotationColor === "string" ||
+          typeof annotationComment === "string" ||
+          typeof annotationText === "string";
+        if (stored && patched) {
+          held.set(key, {
+            ...stored,
+            ...(typeof annotationColor === "string" && {
+              color: annotationColor,
+            }),
+            ...(typeof annotationComment === "string" && {
+              comment: annotationComment,
+            }),
+            ...(typeof annotationText === "string" && {
+              text: annotationText,
+            }),
+            version: stored.version + 1,
+          });
+        }
+        return writeAccepted();
+      },
+    } satisfies ZoteroAnswers,
+    /** What the Local API holds for the Annotation, or `null` once erased. */
+    get held(): WireAnnotation | null {
+      return held.get(annotationKey) ?? null;
+    },
+    /** What it holds for any other Annotation of the same Attachment. */
+    heldOf(key: string): WireAnnotation | null {
+      return held.get(key) ?? null;
+    },
+    /** An edit made in Zotero itself, beside ZotLit. */
+    changeInZotero(patch: Partial<WireAnnotation>): void {
+      const stored = held.get(annotationKey);
+      if (stored) {
+        held.set(annotationKey, {
+          ...stored,
+          ...patch,
+          version: stored.version + 1,
+        });
+      }
+    },
+    /** An erase in Zotero itself. */
+    eraseInZotero(): void {
+      held.delete(annotationKey);
+    },
+    /** Refuse the next write with the `412` a moved object answers. */
+    refuseNextWrite(): void {
+      refuseOnce = true;
+    },
+  };
+}
+
+/**
+ * Where a Geometry Edit puts each seeded mark, one step at a time: the whole
+ * rectangle a nudge or a drag moved down the page, and the Sort Index the new
+ * place gives it. Written out rather than computed, so the values a write
+ * rounds are the values the Local API is read back for.
+ */
+const MOVES: Readonly<Record<string, readonly GeometryEdit[]>> = {
+  PUPR5FG5: [
+    {
+      position: { pageIndex: 0, rects: [[265.833, 610.202, 374.503, 619.019]] },
+      sortIndex: "00000|002042|00170",
+    },
+    {
+      position: { pageIndex: 0, rects: [[265.833, 609.202, 374.503, 618.019]] },
+      sortIndex: "00000|002043|00170",
+    },
+  ],
+  K3JRFLFQ: [
+    {
+      position: {
+        pageIndex: 0,
+        rects: [
+          [67.011, 611.638, 211.485, 619.77],
+          [58.054, 600.98, 211.489, 609.112],
+          [58.054, 590.321, 153.781, 598.454],
+        ],
+      },
+      sortIndex: "00000|000435|00180",
+    },
+  ],
+};
+
+/** One step of {@link MOVES}, as a Geometry Edit the reader would have made. */
+function moved(annotationKey: string, step = 0): GeometryEdit {
+  const edit = MOVES[annotationKey]?.[step];
+  if (!edit) throw new Error(`No move ${step} for ${annotationKey}`);
+  return edit;
+}
+
+/** A tag as a tag `PATCH` sends it: always with its type. */
+type SentTag = Required<WireTag>;
+
+/**
+ * A Zotero holding one Annotation's tags and comment. It keeps the whole list a
+ * tag `PATCH` names and answers `412` to a body version it does not hold, as the paired
+ * probe recorded (aidenlx/zotlit#1231): what Zotero received and holds is the
+ * oracle, never the draft.
+ */
+function zoteroTagging(
+  annotationKey: string,
+  tags: NonNullable<WireAnnotation["tags"]>,
+) {
+  let stored: WireAnnotation = { ...afterWrite(annotationKey, {}), tags };
+  const patches: { version: number; tags: SentTag[] }[] = [];
+  let hold: Promise<void> | null = null;
+  return {
+    answers: {
+      children: () =>
+        annotationPage(
+          ROUGIER_ANNOTATIONS.map((entry) =>
+            entry.key === annotationKey ? stored : entry,
+          ),
+        ),
+      item: () => annotationItem(stored),
+      write: async (request) => {
+        const body = JSON.parse(request.body ?? "{}") as {
+          version: number;
+          tags?: SentTag[];
+          annotationComment?: string;
+          annotationText?: string;
+        };
+        const { tags: sent, annotationComment, annotationText } = body;
+        if (sent) patches.push({ version: body.version, tags: sent });
+        if (hold) await hold;
+        if (body.version !== stored.version) return staleVersionPatch();
+        stored = {
+          ...stored,
+          // Zotero writes a type for an automatic tag only.
+          ...(sent && {
+            tags: sent.map(({ tag, type }) =>
+              type === 0 ? tag : { tag, type },
+            ),
+          }),
+          ...(annotationComment !== undefined && {
+            comment: annotationComment,
+          }),
+          ...(annotationText !== undefined && { text: annotationText }),
+          version: stored.version + 1,
+        };
+        return writeAccepted();
+      },
+    } satisfies ZoteroAnswers,
+    /** Every tag `PATCH` body Zotero received. */
+    patches,
+    /** The tags Zotero holds, as the wire writes them. */
+    get tags() {
+      return stored.tags;
+    },
+    get comment() {
+      return stored.comment;
+    },
+    get text() {
+      return stored.text;
+    },
+    /** An edit made in Zotero itself, beside ZotLit. */
+    changeInZotero(patch: Partial<WireAnnotation>): void {
+      stored = { ...stored, ...patch, version: stored.version + 1 };
+    },
+    /** Hold every write until `release` is called. */
+    holdWrites(): () => void {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      hold = promise;
+      return () => {
+        hold = null;
+        resolve();
+      };
+    },
+  };
+}
+
+/** The Fixture's highlight with a manual, an automatic, and a manual tag. */
+const TAGGED = ["review", { tag: "nlp", type: 1 }, "todo"] as const;
+
+export {
+  READING_ORDER,
+  DATABASE_SOURCE,
+  DRAFT,
+  MADE,
+  colorOf,
+  annotationRows,
+  zoteroHolding,
+  MOVES,
+  moved,
+  zoteroTagging,
+  TAGGED,
+};
+export type { SentTag };
