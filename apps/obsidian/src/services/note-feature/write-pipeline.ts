@@ -1005,25 +1005,21 @@ const flushNoteAttachments = (
     reportExcerpts?: (summary: ExcerptSummary) => void;
   },
 ) =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const reports = yield* Effect.acquireDisposable(
-        Effect.sync(() =>
-          collectExcerptSummary(
-            input.reportExcerpts ??
-              ((summary) =>
-                ctx.emit({
-                  _tag: "excerpt-images-reported",
-                  payload: summary,
-                })),
-          ),
-        ),
-      );
-      const summary = input.excerptImages?.summary();
-      if (summary) reports.add(summary);
-      yield* input.attachmentImport.flush;
-    }),
-  );
+  Effect.suspend(() => {
+    const reports = collectExcerptSummary();
+    const summary = input.excerptImages?.summary();
+    if (summary) reports.add(summary);
+    return input.attachmentImport.flush.pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          const total = reports.total();
+          if (!total) return;
+          if (input.reportExcerpts) input.reportExcerpts(total);
+          else ctx.emit({ _tag: "excerpt-images-reported", payload: total });
+        }),
+      ),
+    );
+  });
 
 /**
  * Assumes the caller has settled note-index and template readiness (and

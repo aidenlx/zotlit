@@ -42,11 +42,10 @@ export type { ExcerptSummary } from "./helper";
 const logged = withLogCategory("excerpt-prepare");
 
 /** One collector belongs to one user operation, including partial or cancelled batches. */
-export function collectExcerptSummary(
-  report: (summary: ExcerptSummary) => void,
-): {
+export function collectExcerptSummary(): {
   add: (summary: ExcerptSummary) => void;
-  [Symbol.dispose](): void;
+  /** The sum, or `undefined` while it counts no excerpt. */
+  total: () => ExcerptSummary | undefined;
 } {
   const total: ExcerptSummary = { zotero: 0, unchecked: 0, unavailable: 0 };
   return {
@@ -57,15 +56,10 @@ export function collectExcerptSummary(
       if (summary.notRefreshed)
         total.notRefreshed = (total.notRefreshed ?? 0) + summary.notRefreshed;
     },
-    [Symbol.dispose]() {
-      if (
-        total.zotero ||
-        total.unchecked ||
-        total.unavailable ||
-        total.notRefreshed
-      )
-        report(total);
-    },
+    total: () =>
+      total.zotero || total.unchecked || total.unavailable || total.notRefreshed
+        ? total
+        : undefined,
   };
 }
 

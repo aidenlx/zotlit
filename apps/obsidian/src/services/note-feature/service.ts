@@ -315,16 +315,11 @@ export const plansRunBy = (
 
 export const collectExcerptReports = Effect.gen(function* () {
   const feature = yield* NoteFeature;
-  let total: ExcerptSummary | undefined;
   const collector = yield* Effect.acquireRelease(
-    Effect.sync(() =>
-      collectExcerptSummary((summary) => {
-        total = summary;
-      }),
-    ),
+    Effect.sync(() => collectExcerptSummary()),
     (reports) =>
       Effect.suspend(() => {
-        reports[Symbol.dispose]();
+        const total = reports.total();
         return total ? feature.reportExcerptImages(total) : Effect.void;
       }),
   );
