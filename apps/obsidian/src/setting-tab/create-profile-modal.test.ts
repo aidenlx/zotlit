@@ -7,6 +7,7 @@ import { expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { ProfileNoteDraft } from "@/services/note-feature/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
@@ -15,6 +16,7 @@ import { defaults } from "@/services/settings/schema";
 
 import { CreateProfileModal } from "./create-profile-modal";
 import type { ProfileCreationDeps } from "./create-profile-modal";
+import { DialogClosed } from "./profile-dialog";
 
 const id = "Bk3Qn7XvT2Lp" as ProfileId;
 function fixture() {
@@ -174,3 +176,34 @@ it.each([false, true])(
     ).toEqual([m.modal_cancel()]);
   },
 );
+
+it("says nothing when the dialog's Scope stops the save", async () => {
+  using label = vi.spyOn(ButtonComponent.prototype, "setButtonText");
+  using disabled = vi.spyOn(ButtonComponent.prototype, "setDisabled");
+  using failed = vi.spyOn(getLogger(["setting-tab", "profiles"]), "error");
+  const saveDisabled = () =>
+    disabled.mock.calls.findLast((_, index) => {
+      const button = disabled.mock.instances[index];
+      return (
+        button instanceof ButtonComponent &&
+        button.text === m.settings_profile_add()
+      );
+    })?.[0];
+  const f = fixture();
+  f.create.mockRejectedValueOnce(new DialogClosed());
+  const modal = new CreateProfileModal(f.deps, { styles: [] });
+  modal.contentEl = document.createElement("div");
+  modal.onOpen();
+  await vi.waitFor(() => expect(saveDisabled()).toBe(false));
+  label.mock.instances
+    .filter((button) => button instanceof ButtonComponent)
+    .find((button) => button.text === m.settings_profile_add())!
+    .click();
+  await vi.waitFor(() => expect(f.create).toHaveBeenCalledOnce());
+  // A macrotask: the rejected save has run its catch.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(failed).not.toHaveBeenCalled();
+  expect(modal.contentEl.querySelector('[role="status"]')!.textContent).toBe(
+    "",
+  );
+});

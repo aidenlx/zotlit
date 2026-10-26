@@ -1648,6 +1648,11 @@ export class TextComponent {
     return this;
   }
 
+  setDisabled(disabled: boolean): this {
+    this.inputEl.disabled = disabled;
+    return this;
+  }
+
   onChange(cb: (value: string) => unknown): this {
     this.#changed = cb;
     return this;

@@ -10,6 +10,7 @@ import type {
 } from "@/services/profile/service";
 
 import {
+  DialogClosed,
   dialogFooter,
   field,
   footerButton,
@@ -76,6 +77,7 @@ export class ProfileDestinationModal extends Modal {
         this.#decision.resolve(profile);
         this.close();
       } catch (error) {
+        if (error instanceof DialogClosed) return;
         reason.set(
           Error.isError(error)
             ? error.message
@@ -130,8 +132,14 @@ export class ProfileDestinationModal extends Modal {
     void update();
   }
 
+  /** The user's close, which waits while the Profile document is written. */
   override close(): void {
     if (!this.#saving) super.close();
+  }
+
+  /** The dialog Scope's close, which takes the dialog away during a write too. */
+  teardown(): void {
+    super.close();
   }
 
   override onClose(): void {

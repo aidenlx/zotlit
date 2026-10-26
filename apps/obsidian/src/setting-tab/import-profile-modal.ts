@@ -1,5 +1,4 @@
 // Source selection opens one consent sheet for a fresh or held Profile ID.
-import { readFile } from "node:fs/promises";
 import {
   DropdownComponent,
   Modal,
@@ -13,7 +12,6 @@ import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import { requireDialog } from "@/lib/require";
 import type { ProfileNoteDraft } from "@/services/note-feature/service";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { describeMatch } from "@/services/profile-selection";
@@ -25,6 +23,7 @@ import type {
 } from "@/services/profile/service";
 
 import {
+  DialogClosed,
   NOTE_CLASS,
   dialogFooter,
   field,
@@ -62,50 +61,15 @@ export interface ImportProfileDeps {
 }
 
 /**
- * The Profile document text to import: from `source`, or from the one the
- * user picks. `undefined` when the user cancels, or the source cannot be read
- * or is empty; a notice then tells the user.
+ * The source picker: it answers the source the user picks, or `undefined`
+ * when the user dismisses it.
  */
-export async function readImportSource(
-  app: App,
-  source?: ImportSource,
-): Promise<string | undefined> {
-  const sourceKind = source ?? (await chooseImportSource(app));
-  if (sourceKind === undefined) return undefined;
-  let text: string | null;
-  try {
-    text =
-      sourceKind === "clipboard"
-        ? await navigator.clipboard.readText()
-        : await readProfileFile();
-  } catch (error) {
-    logger.error("Failed to read Profile import source", {
-      source: sourceKind,
-      error,
-    });
-    new BaseNotice(m.profile_import_read_failed());
-    return undefined;
-  }
-  if (text === null) return undefined;
-  if (!text.trim()) {
-    new BaseNotice(m.profile_import_empty());
-    return undefined;
-  }
-  return text;
-}
-
-function chooseImportSource(app: App): Promise<ImportSource | undefined> {
-  const picker = new ImportSourceModal(app);
-  picker.setPlaceholder(m.command_import_profile_name());
-  picker.open();
-  return picker.result;
-}
-
-class ImportSourceModal extends SuggestModal<ImportSource> {
+export class ImportSourceModal extends SuggestModal<ImportSource> {
   readonly #decision = Promise.withResolvers<ImportSource | undefined>();
   readonly result = this.#decision.promise;
   constructor(app: App) {
     super(app);
+    this.setPlaceholder(m.command_import_profile_name());
     this.setInstructions([
       { command: "↑↓", purpose: m.instruction_navigate() },
       { command: "↵", purpose: m.instruction_select() },
@@ -135,17 +99,6 @@ class ImportSourceModal extends SuggestModal<ImportSource> {
       ? m.profile_import_clipboard()
       : m.profile_import_file();
   }
-}
-
-async function readProfileFile(): Promise<string | null> {
-  const selection = await requireDialog().showOpenDialog({
-    title: m.profile_import_file(),
-    properties: ["openFile"],
-    filters: [{ name: "Markdown", extensions: ["md"] }],
-  });
-  return selection.canceled || !selection.filePaths[0]
-    ? null
-    : readFile(selection.filePaths[0], "utf8");
 }
 
 export class ImportProfileModal extends Modal {
@@ -441,6 +394,7 @@ export class ImportProfileModal extends Modal {
       this.close();
       new BaseNotice(profileImportNotice(profile));
     } catch (cause) {
+      if (cause instanceof DialogClosed) return;
       logger.error("Failed to write imported Profile", { cause });
       error.set(
         Error.isError(cause) ? cause.message : m.notice_profile_action_failed(),

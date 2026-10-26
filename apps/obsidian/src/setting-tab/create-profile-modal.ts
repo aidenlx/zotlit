@@ -19,6 +19,7 @@ import type {
 } from "@/services/profile/service";
 
 import {
+  DialogClosed,
   dialogFooter,
   field,
   footerButton,
@@ -192,6 +193,7 @@ export class CreateProfileModal extends Modal {
           this.#decision.resolve({ profile, preview: selectedPreview });
           this.close();
         } catch (error) {
+          if (error instanceof DialogClosed) return;
           logger.error("Failed to create Profile from dialog", { error });
           reason.set(
             Error.isError(error)

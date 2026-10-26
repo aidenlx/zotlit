@@ -1,20 +1,16 @@
 // One Profile snapshot supplies both Share destinations without changing the vault.
-import { writeFile } from "node:fs/promises";
-import { basename } from "node:path";
 import { Modal, Setting } from "obsidian";
 import type { App, ButtonComponent, TextComponent } from "obsidian";
 import inc from "semver/functions/inc";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
-import { BaseNotice } from "@/lib/notice";
-import { requireDialog } from "@/lib/require";
 import type {
   PreparedProfileShare,
   ProfileShareOptions,
 } from "@/services/profile/service";
 
 import {
+  DialogClosed,
   dialogFooter,
   footerButton,
   frameDialog,
@@ -22,10 +18,24 @@ import {
   note,
 } from "./profile-dialog";
 
-const logger = getLogger(["setting-tab", "profile-share"]);
+/** Where Share puts the bundle. */
+export type ShareDestination = "clipboard" | "file";
+
+/**
+ * Put `source` at `destination`. It settles once the output is done or has
+ * told the user why not.
+ */
+export type ShareOutput = (
+  destination: ShareDestination,
+  source: string,
+) => Promise<void>;
 
 export class ShareProfileModal extends Modal {
   readonly #plan: PreparedProfileShare;
+  readonly #share: ShareOutput;
+  readonly #decision = Promise.withResolvers<void>();
+  /** Settles when the dialog closes. */
+  readonly result = this.#decision.promise;
   /** Every share choice but the checked partials, which {@link #partials} holds. */
   readonly #options: Omit<ProfileShareOptions, "partials">;
   /** The checked partials, which the bundle carries and nothing else. */
@@ -37,9 +47,10 @@ export class ShareProfileModal extends Modal {
   #busy = false;
   #closed = false;
 
-  constructor(app: App, plan: PreparedProfileShare) {
+  constructor(app: App, plan: PreparedProfileShare, share: ShareOutput) {
     super(app);
     this.#plan = plan;
+    this.#share = share;
     this.#partials = new Set(plan.reachable);
     this.#options = {
       version: plan.manifest.version,
@@ -129,6 +140,7 @@ export class ShareProfileModal extends Modal {
 
   override onClose(): void {
     this.#closed = true;
+    this.#decision.resolve();
     this.contentEl.empty();
   }
 
@@ -179,34 +191,15 @@ export class ShareProfileModal extends Modal {
       button.setDisabled(this.#busy || this.#source === undefined);
   }
 
-  async #output(destination: "clipboard" | "file"): Promise<void> {
+  async #output(destination: ShareDestination): Promise<void> {
     if (this.#busy || this.#closed || this.#source === undefined) return;
     const source = this.#source;
     this.#busy = true;
     this.#refresh();
     try {
-      if (destination === "clipboard") {
-        await navigator.clipboard.writeText(source);
-        new BaseNotice(m.profile_share_copied());
-      } else {
-        const selection = await requireDialog().showSaveDialog({
-          title: m.profile_share_save(),
-          defaultPath: this.#plan.filename,
-          filters: [{ name: "Markdown", extensions: ["md"] }],
-        });
-        if (selection.canceled || !selection.filePath || this.#closed) return;
-        await writeFile(selection.filePath, source);
-        new BaseNotice(
-          m.profile_share_saved({ file: basename(selection.filePath) }),
-        );
-      }
-      logger.debug("Shared Profile", {
-        id: this.#plan.manifest.id,
-        destination,
-      });
+      await this.#share(destination, source);
     } catch (error) {
-      logger.error("Failed to share Profile", { destination, error });
-      new BaseNotice(m.profile_share_failed());
+      if (!(error instanceof DialogClosed)) throw error;
     } finally {
       this.#busy = false;
       if (!this.#closed) this.#refresh();

@@ -1,5 +1,9 @@
 import { it } from "@effect/vitest";
-import { ToggleComponent, controlsOf } from "@mock/obsidian";
+import {
+  ButtonComponent as MockButton,
+  ToggleComponent,
+  controlsOf,
+} from "@mock/obsidian";
 import { Context, Effect, Fiber, Layer } from "effect";
 // @vitest-environment happy-dom
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -12,6 +16,7 @@ import { expect, vi } from "vitest";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
 import type { ProfileId } from "@/lib/profile-stamp";
 import * as nativeDialog from "@/lib/require";
 import {
@@ -500,6 +505,56 @@ it.effect(
       expect(f.showOpenDialog).not.toHaveBeenCalled();
       expect(f.resolveLibraries).not.toHaveBeenCalled();
       expect(f.opened).not.toHaveBeenCalled();
+    }),
+);
+
+it.effect(
+  "closes the source suggester when the import is interrupted, before any read",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* importerFixture();
+      const closed = yield* Effect.acquireDisposable(
+        Effect.sync(() => vi.spyOn(SuggestModal.prototype, "close")),
+      );
+      const pending = yield* f.run();
+      yield* until(() => f.suggestions.mock.calls.length === 1);
+      yield* Fiber.interrupt(pending);
+      expect(closed).toHaveBeenCalledOnce();
+      expect(f.clipboard).not.toHaveBeenCalled();
+      expect(f.showOpenDialog).not.toHaveBeenCalled();
+    }),
+);
+
+it.effect(
+  "logs no failure when the import is interrupted during its write",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* importerFixture("replace");
+      const failed = yield* Effect.acquireDisposable(
+        Effect.sync(() =>
+          vi.spyOn(getLogger(["setting-tab", "profile-import"]), "error"),
+        ),
+      );
+      f.save.mockImplementationOnce(() => new Promise(() => {}));
+      const pending = yield* f.run({ source: "clipboard" });
+      yield* until(() => f.opened.mock.calls.length === 1);
+      const modal = f.opened.mock.instances[0] as ImportProfileModal;
+      modal.onOpen();
+      const footer = modal.modalEl.querySelector<HTMLElement>(
+        ".modal-button-container",
+      )!;
+      controlsOf(footer)
+        .find(
+          (control): control is MockButton =>
+            control instanceof MockButton &&
+            control.text === m.profile_import_replace(),
+        )!
+        .click();
+      yield* until(() => f.save.mock.calls.length === 1);
+      yield* Fiber.interrupt(pending);
+      // Turns enough for the rejected save to run its catch.
+      for (let turn = 0; turn < 100; turn++) yield* Effect.yieldNow;
+      expect(failed).not.toHaveBeenCalled();
     }),
 );
 
