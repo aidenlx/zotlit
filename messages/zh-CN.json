@@ -216,6 +216,8 @@
   "notice_db_refreshing": "正在刷新 Zotero 数据库…",
   "notice_db_refreshed": "Zotero 数据库已刷新。",
   "notice_db_refresh_failed": "刷新 Zotero 数据库失败。",
+  "notice_db_profile_dir_failed": "设置 Zotero 配置文件文件夹失败。",
+  "notice_db_data_dir_failed": "设置 Zotero 数据目录失败。",
   "notice_db_not_found_on_device": "在此设备上未找到 Zotero。",
   "notice_db_not_found_action": "设置连接",
   "notice_library_scope_invalid": "文库范围无效",
