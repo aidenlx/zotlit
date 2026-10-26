@@ -678,7 +678,7 @@ describe("Profile document matches at creation preparation", () => {
           entry.match.state === "unevaluable" ? entry.match.problem : "";
         expect(problem).not.toBe("");
         expect(entry.match.summary).toBe(m.profile_match_problem({ problem }));
-        expect(f.profile.diagnostics).toEqual([]);
+        expect(yield* f.profileService.diagnostics).toEqual([]);
         expect(yield* f.select(personalBook)).toEqual({
           selector: "default",
           source: "bound",
@@ -773,7 +773,7 @@ describe("Profile document matches at creation preparation", () => {
         );
         expect(f.profile.profiles).toEqual([]);
         expect(f.profile.resolveProfile("default")).toBeUndefined();
-        expect(f.profile.diagnostics).toEqual(
+        expect(yield* f.profileService.diagnostics).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
               path: "templates/zotlit-profile.default.md",

@@ -16,6 +16,7 @@ export type PlainProfile = Omit<
   | "prepareCreate"
   | "prepareShare"
   | "prepareImport"
+  | "diagnostics"
 > & {
   readonly changes: Stream.Stream<ProfileState>;
   readonly changed: Stream.Stream<void>;
@@ -53,9 +54,6 @@ export function plainProfile(
     },
     get profiles() {
       return read(service.profiles);
-    },
-    get diagnostics() {
-      return read(service.diagnostics);
     },
     get defaultDocumentPath() {
       return read(service.defaultDocumentPath);

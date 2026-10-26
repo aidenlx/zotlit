@@ -265,7 +265,7 @@ describe("PlainProfile", () => {
         yield* TestClock.adjust(500);
         expect(profile.resolveProfile(BOOKS)).toBeUndefined();
         expect(update).not.toHaveBeenCalled();
-        expect(profile.diagnostics).toEqual([
+        expect(yield* fixture.profileService.diagnostics).toEqual([
           expect.objectContaining({
             code: "duplicate-profile-id",
             path: "templates/zotlit-profile.copy.md",
@@ -1077,7 +1077,7 @@ describe("PlainProfile", () => {
           BOOKS,
           "Rz9Wm4YfH6Kd",
         ]);
-        expect(profile.diagnostics).toEqual([
+        expect(yield* fixture.profileService.diagnostics).toEqual([
           expect.objectContaining({
             code: "invalid-profile-document",
             path: "templates/zotlit-profile.broken.md",
@@ -1276,7 +1276,7 @@ describe("PlainProfile", () => {
         expect((yield* Fiber.join(eject)).path).toBe(
           "templates/zotlit-profile.custom.md",
         );
-        expect(profile.diagnostics).toEqual([]);
+        expect(yield* fixture.profileService.diagnostics).toEqual([]);
         const restore = profile.restoreDefault();
         yield* TestClock.adjust(500);
         yield* Effect.promise(() => restore);
@@ -1308,7 +1308,7 @@ describe("PlainProfile", () => {
       expect(fixture.profile.defaultDocumentPath).toBe(
         "templates/zotlit-profile.custom.md",
       );
-      expect(fixture.profile.diagnostics).toEqual([
+      expect(yield* fixture.profileService.diagnostics).toEqual([
         expect.objectContaining({
           code: "invalid-profile-document",
           path: "templates/zotlit-profile.custom.md",
@@ -1334,10 +1334,9 @@ describe("PlainProfile", () => {
       );
       const { profile } = fixture;
       expect(profile.resolveProfile("default")).toBeUndefined();
-      expect(profile.diagnostics.map(({ code }) => code)).toEqual([
-        "duplicate-profile-id",
-        "duplicate-profile-id",
-      ]);
+      expect(
+        (yield* fixture.profileService.diagnostics).map(({ code }) => code),
+      ).toEqual(["duplicate-profile-id", "duplicate-profile-id"]);
     }),
   );
 
