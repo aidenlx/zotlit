@@ -28,7 +28,7 @@ import {
   readProfileStamp,
 } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
-import type { AttachmentImport } from "@/services/attachment-import/service";
+import type { AttachmentImportBatchHandle } from "@/services/attachment-import/handle";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { resolveOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
@@ -626,7 +626,7 @@ async function applyManagedUpdate(
   file: TFile,
   input: {
     context: NoteTemplateContext;
-    attachmentImport: Pick<AttachmentImport, "flush">;
+    attachmentImport: Pick<AttachmentImportBatchHandle, "flush">;
     itemKey: string;
     scope: UpdateScope;
     profile: ResolvedProfile;
@@ -799,7 +799,7 @@ function collectNoteExcerpts(
 async function flushNoteAttachments(
   ctx: OpsContext,
   input: {
-    attachmentImport: Pick<AttachmentImport, "flush">;
+    attachmentImport: Pick<AttachmentImportBatchHandle, "flush">;
     excerptImages?: PreparedExcerpts;
     reportExcerpts?: (summary: ExcerptSummary) => void;
   },
@@ -820,7 +820,10 @@ async function contextForIndexedKey(
   options: {
     /** Bound to the operation's Snapshot. */
     reads: ZoteroReadsApi;
-    attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
+    attachmentImport: Pick<
+      AttachmentImportBatchHandle,
+      "decide" | "resolveLink"
+    >;
     sourcePath: string;
     settings: Readonly<Settings>;
     previousNote?: TFile;

@@ -156,7 +156,6 @@ export default defineConfig({
     {
       // Logging backlog: rework the file to log through Effect, then remove it from the list.
       files: [
-        "src/services/attachment-import/service.ts",
         "src/services/attachment-open/actions.ts",
         "src/services/citation-index/sources.ts",
         "src/services/excerpt-image/prepare.ts",
@@ -448,7 +447,6 @@ export default defineConfig({
       // Legacy emitters, written before no-nanoevents. A file moves off this
       // list when its service converts to Effect.
       files: [
-        "src/services/attachment-import/service.ts",
         "src/services/note-feature/operations.ts",
         "src/services/note-feature/types.ts",
         "src/services/pdf-annotation-editor/service.ts",
@@ -614,7 +612,6 @@ export default defineConfig({
       // when its service converts to Effect (/obsidian-services).
       files: [
         "src/services/annotation-repository/notices.ts",
-        "src/services/attachment-import/service.ts",
         "src/services/excerpt-image/display.ts",
         "src/services/excerpt-image/service.ts",
         "src/services/pdf-annotation-editor/service.ts",

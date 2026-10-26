@@ -28,7 +28,7 @@ import {
   commentToMarkdown,
   createCommentTurndown,
 } from "@/lib/turndown/comment";
-import type { AttachmentImport } from "@/services/attachment-import/service";
+import type { AttachmentImportBatch } from "@/services/attachment-import/service";
 import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
@@ -63,7 +63,7 @@ export function attachmentFileLink(
  */
 export function buildAnnotationResolvers(options: {
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
-  attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
+  attachmentImport: Pick<AttachmentImportBatch, "decide" | "resolveLink">;
   annotationImageLink?: AnnotationResolvers["annotationImageLink"];
 }): AnnotationResolvers {
   const dataDir = options.zoteroPref.dataDir;
@@ -100,7 +100,7 @@ export function buildAnnotationResolvers(options: {
 interface RenderAnnotationsOptions {
   template: Pick<PlainTemplate, "render" | "renderCitation">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
-  attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
+  attachmentImport: Pick<AttachmentImportBatch, "decide" | "resolveLink">;
   renderAnnotation?: (data: AnnotationTemplateContext) => string;
   annotationImageLink?: AnnotationResolvers["annotationImageLink"];
 }
