@@ -37,7 +37,7 @@ export interface AnnotationInsertOptions {
   source: AnnotationSource;
   sourceScope: string;
   notePath: string;
-  signal: AbortSignal;
+  /** Whether the editor still takes the insert; the legacy excerpt port reads it. */
   valid: () => boolean;
 }
 
@@ -75,7 +75,7 @@ export class LegacyPortError extends Schema.TaggedError<
 }
 
 /** A legacy port's Promise, its rejection a {@link LegacyPortError}. */
-const portCall = <A>(step: string, call: () => Promise<A>) =>
+const portCall = <A>(step: string, call: (signal: AbortSignal) => Promise<A>) =>
   Effect.tryPromise({
     try: call,
     catch: (cause) => new LegacyPortError({ step, cause }),
@@ -84,8 +84,9 @@ const portCall = <A>(step: string, call: () => Promise<A>) =>
 /**
  * Render the captured card through the annotation template of its parent
  * item's Literature Note Profile, after its Excerpt Image is prepared. `null`
- * where the insert went stale (the signal, the caller's `valid`, or a moved
- * Zotero data directory) or the database cannot place the card.
+ * where the insert went stale (the caller's `valid`, or a moved Zotero data
+ * directory) or the database cannot place the card. An interrupt cancels it,
+ * and aborts the excerpt preparation.
  *
  * Fails with {@link ProfileAnnotationError} when the parent's note names an
  * unknown Profile.
@@ -93,22 +94,20 @@ const portCall = <A>(step: string, call: () => Promise<A>) =>
 export const prepareAnnotationInsert = Effect.fn(
   "NoteFeature.prepareAnnotationInsert",
 )(function* (singleExcerpt: SingleExcerpt, options: AnnotationInsertOptions) {
-  const { annotation: a, source, signal } = options;
+  const { annotation: a, source } = options;
   const pref = yield* ZoteroPref;
   const reads = yield* (yield* ZoteroReads).snapshot;
-  const { dataDir, baseAttachmentPath } = yield* pref.current;
+  const { dataDir: startDataDir, baseAttachmentPath } = yield* pref.current;
   // The data directory as the preparation reads it on each `valid()`.
-  const scope = yield* Ref.make(dataDir);
+  const liveDataDir = yield* Ref.make(startDataDir);
   yield* pref.changes.pipe(
-    Stream.runForEach((snapshot) => Ref.set(scope, snapshot.dataDir)),
+    Stream.runForEach((snapshot) => Ref.set(liveDataDir, snapshot.dataDir)),
     Effect.forkScoped({ startImmediately: true }),
   );
   const valid = () =>
-    !signal.aborted &&
-    options.valid() &&
-    options.sourceScope === Ref.getUnsafe(scope);
+    options.valid() && options.sourceScope === Ref.getUnsafe(liveDataDir);
   if (!valid()) return null;
-  const paths = { dataDir, baseAttachmentPath };
+  const paths = { dataDir: startDataDir, baseAttachmentPath };
   // The parent context, not the Annotation's own row: a card the Local API
   // answered can precede its SQLite row.
   const { identity, sources, attachment } = yield* excerptInputs(
@@ -163,7 +162,7 @@ export const prepareAnnotationInsert = Effect.fn(
     pageLabel: a.pageLabel,
   });
   const settings = yield* (yield* PluginSettings).current;
-  const prepared = yield* portCall("single-excerpt", () =>
+  const prepared = yield* portCall("single-excerpt", (signal) =>
     singleExcerpt({
       annotation: a,
       request,

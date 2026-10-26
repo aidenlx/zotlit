@@ -182,7 +182,6 @@ async function openFixture(mode: string) {
     source: { kind: "zotero-local-api", serverID: "SERVER000001" },
     sourceScope: "/zotero",
     notePath: "Target.md",
-    signal: new AbortController().signal,
     valid: () => valid,
   };
   if (mode === "write-failure")
@@ -363,16 +362,13 @@ it.effect(
     }).pipe(Effect.scoped),
 );
 
-it.effect.each(["signal", "target"])(
+it.effect.each(["interrupt", "target"])(
   "cancels during the temporary write (%s)",
-  (mode) => {
-    // The view's signal, which the caller aborts.
-    const controller = new AbortController();
-    return Effect.gen(function* () {
+  (mode) =>
+    Effect.gen(function* () {
       const f = yield* fixture("success");
       const started = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
-      f.options.signal = controller.signal;
       const fs = yield* read(() =>
         vi.importActual<typeof import("node:fs/promises")>("node:fs/promises"),
       );
@@ -388,10 +384,20 @@ it.effect.each(["signal", "target"])(
         );
         return file;
       });
-      const pending = yield* f.insert().pipe(
-        Effect.catchCause(() => Effect.succeed(null)),
-        Effect.forkChild({ startImmediately: true }),
-      );
+      // An interrupt does not wait for the legacy port: the test waits for it
+      // to clean up its temporary file.
+      let preparation: Promise<unknown> = Promise.resolve();
+      const pending = yield* f
+        .insert((excerpt) => {
+          const prepared = prepareSingleExcerpt({
+            ...excerpt,
+            app: f.app,
+            resolver: f.resolver,
+          });
+          preparation = prepared.catch(() => undefined);
+          return prepared;
+        })
+        .pipe(Effect.forkChild({ startImmediately: true }));
       yield* read(() => started.promise).pipe(
         Effect.andThen(
           read(() => readdir(join(f.root, "Images"))).pipe(
@@ -399,19 +405,20 @@ it.effect.each(["signal", "target"])(
           ),
         ),
         Effect.tap((temporary) =>
-          Effect.sync(() => {
-            expect(temporary).toBe(true);
-            if (mode === "signal") controller.abort();
-            else f.invalidate();
-          }),
+          Effect.sync(() => expect(temporary).toBe(true)),
+        ),
+        Effect.andThen(
+          mode === "interrupt"
+            ? Fiber.interrupt(pending)
+            : Effect.sync(() => f.invalidate()),
         ),
         Effect.ensuring(Effect.sync(() => release.resolve())),
       );
-      expect(yield* Fiber.join(pending)).toBeNull();
+      if (mode === "target") expect(yield* Fiber.join(pending)).toBeNull();
+      yield* read(() => preparation);
       expect(yield* read(() => readdir(join(f.root, "Images")))).toEqual([]);
       expect(f.render).not.toHaveBeenCalled();
-    }).pipe(Effect.scoped);
-  },
+    }).pipe(Effect.scoped),
 );
 
 it.effect.each([false, true])(

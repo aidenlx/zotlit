@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import type { Context } from "effect";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
+import { settleAtEdge } from "@/lib/signal-edge";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { Profile } from "@/services/profile/service";
 import type { PluginSettings } from "@/services/settings/service";
@@ -30,6 +31,11 @@ export type NoteCitationServices =
   | PluginSettings
   | NoteIndex;
 
+/** An annotation insert as a view asks for it: the signal it cancels the insert with. */
+export type AnnotationInsertRequest = AnnotationInsertOptions & {
+  signal: AbortSignal;
+};
+
 export interface NoteCitations {
   /** @see renderCitation */
   renderCitation(...args: Parameters<typeof renderCitation>): string | null;
@@ -37,17 +43,18 @@ export interface NoteCitations {
   renderAnnotationCitation(annotationKey: string): Promise<AnnotationCitation>;
   /** @see prepareAnnotationInsert */
   prepareAnnotationInsert(
-    options: AnnotationInsertOptions,
+    request: AnnotationInsertRequest,
   ): Promise<AnnotationInsert | null>;
 }
 
 /**
  * The citation renders and the annotation insert over `context`, run through
  * `bridge`. A failure throws what the Template threw, as the Template's plain
- * callers saw it.
+ * callers saw it. An insert's signal interrupts it, and so does unload: the
+ * insert rejects with the signal's reason, or with the interrupt.
  */
 export function bindNoteCitations(
-  bridge: Pick<EffectBridge, "runSync" | "runPromise">,
+  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "runPromiseExit">,
   context: Context.Context<NoteCitationServices>,
   ports: { singleExcerpt: SingleExcerpt },
 ): NoteCitations {
@@ -61,9 +68,13 @@ export function bindNoteCitations(
       bridge.runSync(provide(renderCitation(items, variant))),
     renderAnnotationCitation: (annotationKey) =>
       bridge.runPromise(provide(renderAnnotationCitation(annotationKey))),
-    prepareAnnotationInsert: (options) =>
-      bridge.runPromise(
-        provide(prepareAnnotationInsert(ports.singleExcerpt, options)),
+    prepareAnnotationInsert: async ({ signal, ...options }) =>
+      settleAtEdge(
+        await bridge.runPromiseExit(
+          provide(prepareAnnotationInsert(ports.singleExcerpt, options)),
+          { signal },
+        ),
+        signal,
       ),
   };
 }
