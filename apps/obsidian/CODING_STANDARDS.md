@@ -15,6 +15,7 @@ or a direct edit. State the expected behavior and what the reviewer must check.
 - [Local storage](policies/local-storage.md)
 - [Pop-out windows](policies/popout-windows.md)
 - [Services](policies/services.md)
+- [Unload](policies/unload.md)
 - [Tailwind-first](policies/tailwind-first.md)
 - [Theme hooks](policies/theme-hooks.md)
 - [Tooltips](policies/tooltips.md)
