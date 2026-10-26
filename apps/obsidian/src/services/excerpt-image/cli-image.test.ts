@@ -217,3 +217,37 @@ it.effect("aborts the render when the answer is interrupted", () =>
     expect(signal?.aborted).toBe(true);
   }),
 );
+
+it.effect("reports a PNG the store cannot publish as a failed render", () =>
+  Effect.gen(function* () {
+    const answer = JSON.parse(
+      yield* answerAnnotationImage(
+        { key: "ABCDEFGH" },
+        {
+          read: () => Effect.succeed(request),
+          resolve: async () => ({
+            kind: "available",
+            provenance: "rendered",
+            freshness: "checked",
+            bytes: redPng,
+            format: PNG_FORMAT,
+            identity: { key: "a".repeat(64), fingerprint: "image", pdf: null },
+          }),
+          publish: async () => {
+            throw new Error("EACCES: permission denied");
+          },
+          exists: () => Effect.succeed(true),
+        },
+      ),
+    );
+    expect(answer).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "render-failed",
+        message: expect.stringMatching(
+          /^The Excerpt Image could not be prepared: .*permission denied/i,
+        ),
+      },
+    });
+  }),
+);
