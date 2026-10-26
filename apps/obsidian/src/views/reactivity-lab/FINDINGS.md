@@ -216,6 +216,42 @@ gives a new atom, and a new subscription, on every render.
 `true` and only L3's sort flips. `executeCommandById` returned `true` in
 both cases, so it does not report availability; `checkCallback(true)` does.
 
+## One-shot reads per key: previewAtom (fourth walk)
+
+```ts
+previewAtom = Atom.family((key: string) => viewRuntime.atom(readPreview(key)))
+// readPreview: a 1.5 s Effect; logs start, done, interrupt; key "fail" fails
+```
+
+Walk `preview.js` (in `WALK.md`) mounts and releases readers on the plugin
+registry directly:
+
+| Case | Events | Result |
+|---|---|---|
+| Only reader leaves during the read | start 2 ms · release 303 ms · interrupted 857 ms | no "done": the read stops after the idle TTL |
+| Two readers, one leaves | one start · done | the other reader keeps the read; a later get returns the cached `Success`, no new read |
+| Release, new reader 200 ms later | one start · done | the new reader inside the TTL reuses the running read |
+| Key "fail" | start | `Failure`, `cause.reasons[0]` is `Fail` with `{ _tag: "PreviewUnavailable", key }` |
+| Same key after release + TTL | new start | the cached value went with the node |
+
+`previewAtom("P1") === previewAtom("P1")`: one atom per key.
+
+## Found during the walks: a disable during onload leaks registrations
+
+Not part of the view seam; it made several walks fail. Reproduced on demand
+with `overlap.js` (in `WALK.md`): disable ZotLit 150 ms after
+`enablePlugin` starts. `onload` keeps running after the unload, finishes at
+424 ms, and registers 45 commands, 31 CLI handlers, 9 protocol handlers and 8
+view types on the unloaded plugin. Obsidian runs a plugin's cleanups once, at
+unload, so they stay. The next enable fails: `CitationsCli failed to start`
+(`app.cli.registerHandler` throws "already registered"). A normal disable
+leaves 0 of each. Only a window reload clears it. In the walks the overlap
+came from the vault's `hot-reload` plugin reloading ZotLit after a build while
+a manual disable/enable ran.
+
+Cause: `ZotLitPlugin.onload` awaits `buildServices` and never checks whether
+the plugin was unloaded meanwhile. Not fixed here (see the report).
+
 ## A Layer or Service per ItemView?
 
 Not by default. The lab view needed none for any feature above:

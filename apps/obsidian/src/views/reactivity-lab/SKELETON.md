@@ -238,11 +238,12 @@ function GroupPreview({ path }) {                     // was: loadPreviews queue
 
 ## 9. Open before you build
 
-- `previewAtom` itself (an Effect read per group, not a Stream): sketched.
-  The family mechanics under it are walked (below).
+Nothing from the lab list is open. Resolved by walk (FINDINGS.md):
 
-Resolved by walk (FINDINGS.md):
-
+- `previewAtom`: an Effect read per key. A read whose last reader leaves is
+  interrupted after the idle TTL; a reader inside the TTL reuses the running
+  read; the value is cached while read; a typed failure arrives in
+  `AsyncResult.Failure`.
 - `Atom.family` keyed by leaf input: one subscription per key across leaves;
   a pinned key is saved state; a key with no reader closes after the idle TTL.
   Use a string key (or `Data.struct`): the family compares keys with `Equal`.

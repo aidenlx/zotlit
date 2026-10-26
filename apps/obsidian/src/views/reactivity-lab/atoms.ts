@@ -15,6 +15,7 @@ import {
   citedBy,
   openNote,
   readCitedByOnce,
+  readPreview,
   toggleAtTrigger,
 } from "./source";
 import type { ActiveNote } from "./source";
@@ -45,6 +46,14 @@ export const citedByActiveAtom: Atom.Atom<CitedBySnapshot | null> = Atom.make(
     return key ? get(citedByKeyAtom(key)) : EMPTY_SNAPSHOT;
   },
 );
+
+/** One preview read per key: AsyncResult while it runs; stops when unread. */
+export const previewAtom = Atom.family((key: string) =>
+  viewRuntime.atom(readPreview(key)),
+);
+
+// The preview walk mounts these on the registry directly.
+Object.assign(globalThis, { __zotlitLabAtoms: { previewAtom } });
 
 /** What a leaf shows: the active note's Cited By, or its pinned key's. */
 export const citedByForPin = (pin: string | null) =>

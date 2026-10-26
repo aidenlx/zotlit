@@ -179,6 +179,35 @@ export const toggleAtTrigger = Effect.gen(function* () {
   yield* settings.update((current) => ({ [AT_TRIGGER]: !current[AT_TRIGGER] }));
 });
 
+/** Why a preview read gave no preview. */
+export interface PreviewUnavailable {
+  readonly _tag: "PreviewUnavailable";
+  readonly key: string;
+}
+
+/**
+ * A slow one-shot read per key, the shape of a group preview. The probe logs
+ * its start, its end and an interrupt, so the walk sees whether a read stops
+ * when its last reader leaves. The key "fail" fails with a typed error.
+ */
+export const readPreview = (key: string) =>
+  Effect.gen(function* () {
+    probe(() => ({}), `read start(${key})`);
+    yield* Effect.sleep("1500 millis");
+    if (key === "fail") {
+      return yield* Effect.fail<PreviewUnavailable>({
+        _tag: "PreviewUnavailable",
+        key,
+      });
+    }
+    probe(() => ({}), `read done(${key})`);
+    return `preview of ${key}`;
+  }).pipe(
+    Effect.onInterrupt(() =>
+      Effect.sync(() => probe(() => ({}), `read interrupted(${key})`)),
+    ),
+  );
+
 /** A one-shot async read with a loading and an error state. */
 export const readCitedByOnce = (key: string) =>
   Effect.gen(function* () {

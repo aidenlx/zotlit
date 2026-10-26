@@ -615,3 +615,154 @@ Three lab leaves: one follows the active note, two are pinned. Needs a fresh plu
   return JSON.stringify(out, null, 1);
 })()
 ```
+
+## preview.js
+
+Needs a lab leaf; mounts `previewAtom` readers on its registry.
+
+```js
+// previewAtom: a one-shot Effect read per key behind Atom.family. Mounts and
+// releases readers on the plugin registry directly and records, with times,
+// when each read starts, ends or is interrupted.
+(async () => {
+  const wait = (ms) => new Promise((r) => window.setTimeout(r, ms));
+  const T = "zotlit-reactivity-lab";
+  let leaf = app.workspace.getLeavesOfType(T)[0];
+  if (!leaf) {
+    leaf = app.workspace.getLeaf("split");
+    await leaf.setViewState({ type: T, active: false });
+  }
+  await leaf.loadIfDeferred();
+  await wait(500);
+  const registry = leaf.view.deps.registry;
+  const { previewAtom } = globalThis.__zotlitLabAtoms;
+  const probe = globalThis.__zotlitLabProbe;
+  const t0 = performance.now();
+  const ms = () => Math.round(performance.now() - t0);
+  const events = [];
+  let lastSeq = Number(/^#(\d+)/.exec(probe.get().log[0] ?? "")?.[1] ?? 0);
+  const unsubscribe = probe.subscribe(() => {
+    for (const line of [...probe.get().log].reverse()) {
+      const seq = Number(/^#(\d+)/.exec(line)?.[1]);
+      if (seq > lastSeq && /read /.test(line)) { lastSeq = seq; events.push(`${ms()}ms ${line.replace(/^#\d+ /, "")}`); }
+      else if (seq > lastSeq) lastSeq = seq;
+    }
+  });
+  const mark = (line) => events.push(`${ms()}ms -- ${line}`);
+  const result = (key) => {
+    const r = registry.get(previewAtom(key));
+    return { tag: r._tag, waiting: r.waiting, value: r.value, error: r.cause?.reasons?.[0]?.error };
+  };
+  const out = {};
+
+  // 1. One reader leaves during the read.
+  mark("P1 mount");
+  let release = registry.mount(previewAtom("P1"));
+  await wait(300);
+  out.P1_whileReading = result("P1");
+  mark("P1 release");
+  release();
+  await wait(1800);
+
+  // 2. Two readers; one leaves during the read; the other keeps it.
+  mark("P2 mount a, b");
+  const a = registry.mount(previewAtom("P2"));
+  const b = registry.mount(previewAtom("P2"));
+  await wait(300);
+  mark("P2 release a");
+  a();
+  await wait(1500);
+  out.P2_afterRead = result("P2");
+  mark("P2 get again while b holds it");
+  out.P2_cached = result("P2");
+  mark("P2 release b");
+  b();
+  await wait(800);
+
+  // 3. Release, then a new reader inside the idle TTL.
+  mark("P3 mount");
+  release = registry.mount(previewAtom("P3"));
+  await wait(300);
+  mark("P3 release");
+  release();
+  await wait(200);
+  mark("P3 mount again (200ms later)");
+  release = registry.mount(previewAtom("P3"));
+  await wait(1500);
+  out.P3_afterRead = result("P3");
+  release();
+  await wait(800);
+
+  // 4. A typed failure.
+  mark("fail mount");
+  release = registry.mount(previewAtom("fail"));
+  await wait(1700);
+  out.fail = result("fail");
+  release();
+  await wait(800);
+
+  // 5. After the TTL the cached value is gone: a new reader reads again.
+  mark("P2 mount after release + TTL");
+  release = registry.mount(previewAtom("P2"));
+  await wait(200);
+  out.P2_afterTtl = result("P2");
+  release();
+  await wait(800);
+
+  out.sameAtomForSameKey = previewAtom("P1") === previewAtom("P1");
+  out.events = events;
+  unsubscribe();
+  return JSON.stringify(out, null, 1);
+})()
+```
+
+## overlap.js
+
+Reproduces the restart failure: leaves ZotLit broken until a window reload.
+
+```js
+// Disable ZotLit while its onload still runs (window.__overlapMs after the
+// enable starts), let onload finish, and count what stays registered. Then
+// try the next enable. No cleanup: reload the window afterwards.
+(async () => {
+  const wait = (ms) => new Promise((r) => window.setTimeout(r, ms));
+  const started = () => { try { return !!app.plugins.plugins.zotlit?.services; } catch { return false; } };
+  const census = () => ({
+    commands: Object.keys(app.commands.commands).filter((k) => k.startsWith("zotlit:")).length,
+    cli: [...app.cli.handlers.keys()].filter((k) => k.startsWith("zotlit:")).length,
+    protocol: [...app.workspace.protocolHandler.handlers.keys()].filter((k) => k.startsWith("zotlit")).length,
+    views: Object.keys(app.viewRegistry.viewByType).filter((k) => k.startsWith("zotlit")).length,
+  });
+  const gap = Number(window.__overlapMs ?? 150);
+  await app.plugins.disablePlugin("zotlit");
+  await wait(1500);
+  const out = { gap, afterNormalDisable: census() };
+  const t0 = performance.now();
+  let onloadSettledAt = null;
+  const enabling = app.plugins.enablePlugin("zotlit").then(
+    () => { onloadSettledAt = Math.round(performance.now() - t0); return "resolved"; },
+    (e) => `rejected: ${e}`,
+  );
+  await wait(gap);
+  out.atOverlapDisable = census();
+  await app.plugins.disablePlugin("zotlit");
+  out.rightAfterDisable = census();
+  out.enable = await enabling;
+  out.onloadSettledAtMs = onloadSettledAt;
+  await wait(8000);
+  out.afterOnloadFinishes = census();
+  out.pluginEnabledFlag = app.plugins.enabledPlugins.has("zotlit");
+
+  const messages = [];
+  const original = console.error;
+  console.error = (...a) => {
+    for (const x of a) if (x && typeof x === "object" && x.message) messages.push(String(x.message).slice(0, 160));
+    original(...a);
+  };
+  await app.plugins.enablePlugin("zotlit").catch(() => {});
+  await wait(6000);
+  console.error = original;
+  out.nextEnable = { started: started(), messages: messages.slice(0, 3) };
+  return JSON.stringify(out, null, 1);
+})()
+```
