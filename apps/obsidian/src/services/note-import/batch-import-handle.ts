@@ -19,22 +19,23 @@ import type {
 /**
  * The note import commands over `context`, run through `bridge`. A command
  * resolves with its outcome and rejects with what failed, as a read or a
- * write does.
+ * write does. The batch modal's callbacks run through `bridge` too.
  */
 export function bindBatchImport(
-  bridge: Pick<EffectBridge, "runPromise">,
+  bridge: Pick<EffectBridge, "runPromise" | "runSync" | "runPromiseExit">,
   context: Context.Context<BatchImportServices>,
-  ports: BatchImportPorts,
+  ports: Omit<BatchImportPorts, "bridge">,
 ): BatchImport {
   const run = <A, E>(effect: Effect.Effect<A, E, BatchImportServices>) =>
     bridge.runPromise(Effect.provideContext(effect, context));
+  const importPorts: BatchImportPorts = { ...ports, bridge };
   return {
     runBatchImport: (mode, itemIDs) =>
-      run(runBatchImport(ports, { mode, itemIDs })),
-    runBatchImportAll: (target) => run(runBatchImportAll(ports, target)),
+      run(runBatchImport(importPorts, { mode, itemIDs })),
+    runBatchImportAll: (target) => run(runBatchImportAll(importPorts, target)),
     runChildImportByKey: (indexedKey) =>
-      run(runChildImportByKey(ports, indexedKey)),
+      run(runChildImportByKey(importPorts, indexedKey)),
     reimportNoteByKey: (noteKey, targetFile) =>
-      run(reimportNoteByKey(ports, noteKey, targetFile)),
+      run(reimportNoteByKey(importPorts, noteKey, targetFile)),
   };
 }

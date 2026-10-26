@@ -29,6 +29,7 @@ import type { ProtocolAction } from "@zotlit/protocol";
 
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import type { AttachmentReader } from "@/lib/attachment-open";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { logAndContinue, withLogCategory } from "@/lib/effect-log";
 import { openScope } from "@/lib/effect-scope";
 import { forkEach } from "@/lib/effect-stream";
@@ -105,6 +106,8 @@ export interface ProtocolDeps extends BatchUpdateDeps {
   webWorkbenchEnabled: boolean;
   /** The note import's classify, confirm and Profile modals. */
   noteImportView: NoteImportView;
+  /** Also runs the note import modal's callbacks, which unload interrupts. */
+  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
   /** Opens the Attachment `open-attachment` names. */
   opener: Pick<TargetOpener, "open">;
 }
@@ -228,7 +231,11 @@ export function startProtocolHandlers(
 
 /** The ports a batch import takes, from the handlers' legacy values. */
 function importPorts(deps: ProtocolDeps) {
-  return { view: deps.noteImportView, noteFeature: deps.noteFeature };
+  return {
+    view: deps.noteImportView,
+    noteFeature: deps.noteFeature,
+    bridge: deps.bridge,
+  };
 }
 
 /** The outcome notice of a note import, from its toast copy. */

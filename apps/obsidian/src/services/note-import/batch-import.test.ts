@@ -319,7 +319,7 @@ function importOver(deps: ImportDeps): BatchImport {
 }
 
 /** The ports a batch import takes, from the case's `deps`. */
-function portsOf(deps: ImportDeps): BatchImportPorts {
+function portsOf(deps: ImportDeps): Omit<BatchImportPorts, "bridge"> {
   return { view: deps.view, noteFeature: deps.noteFeature };
 }
 
@@ -724,6 +724,54 @@ describe("classify through the NoteRefs stream", () => {
     await expect(classified).rejects.toThrow();
     expect(interrupted).toBe(true);
   });
+
+  it("interrupts a classify still running when the plugin unloads", async () => {
+    let interrupted = false;
+    const { deps } = makeDeps(
+      {},
+      {
+        wrap: (client) => ({
+          ...client,
+          NoteRefs: ((payload: object, options?: object) =>
+            Stream.concat(
+              (
+                client.NoteRefs as unknown as (
+                  payload: object,
+                  options?: object,
+                ) => Stream.Stream<unknown>
+              )(payload, options),
+              Stream.never,
+            ).pipe(
+              Stream.onExit((exit) =>
+                Effect.sync(() => {
+                  interrupted = Exit.hasInterrupts(exit);
+                }),
+              ),
+            )) as unknown as ZoteroReadsClient["NoteRefs"],
+        }),
+      },
+    );
+    seedNotes([1]);
+    // The plugin's runtime: unloading disposes it.
+    const plugin = new AsyncDisposableStack();
+    const runtime = buildRuntime(layerOver(deps), plugin);
+    await bindBatchImport(
+      effectBridge(runtime),
+      runtime.runSync(Effect.context<BatchImportServices>()),
+      portsOf(deps),
+    ).runBatchImport("note", [1, 2]);
+    const firstSlice = Promise.withResolvers<void>();
+
+    const classified = openedModals.at(-1)!.onClassify({
+      onProgress: () => firstSlice.resolve(),
+      signal: new AbortController().signal,
+    });
+    await firstSlice.promise;
+    await plugin.disposeAsync();
+
+    await expect(classified).rejects.toThrow();
+    expect(interrupted).toBe(true);
+  });
 });
 
 describe("runBatchImportAll", () => {
@@ -1025,10 +1073,15 @@ describe("single note import (mode=note, 1 id)", () => {
           return { close };
         });
 
-      const importing = yield* runBatchImport(portsOf(deps), {
-        mode: "note",
-        itemIDs: [50],
-      }).pipe(Effect.provide(layerOver(deps)), Effect.forkChild);
+      // The single-note path opens no batch modal, so it runs nothing on the bridge.
+      const bridge = stubService<BatchImportPorts["bridge"]>(
+        "EffectBridge",
+        {},
+      );
+      const importing = yield* runBatchImport(
+        { ...portsOf(deps), bridge },
+        { mode: "note", itemIDs: [50] },
+      ).pipe(Effect.provide(layerOver(deps)), Effect.forkChild);
       yield* Deferred.await(opened);
       yield* Fiber.interrupt(importing);
 
