@@ -11,7 +11,6 @@ import type {
 } from "@/services/annotation-repository/write";
 import type { Held } from "@/services/query-client/service";
 
-import { demandedSource } from "./bridge";
 import {
   DRAFT_FIELDS,
   TEXT_FIELD_SPECS,
@@ -37,7 +36,7 @@ const draftFor = Effect.fnUntraced(function* <F extends DraftField>(
   annotationKey: string,
 ): Effect.fn.Return<DraftFields[F] | null> {
   const serverID =
-    (yield* demandedSource(core))?.serverID ??
+    (yield* core.localApi.demandSource)?.serverID ??
     core.draftSources[field].get(annotationKey);
   return serverID
     ? (core.drafts[field].get(indexedID(serverID, annotationKey)) ?? null)
