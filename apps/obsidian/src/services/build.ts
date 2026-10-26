@@ -453,12 +453,8 @@ export async function buildServices(
         }),
     })
     .useValue({
-      noteImportView: ({ createProfile, importProfile, zoteroPref }) =>
-        createNoteImportView(plugin.app, {
-          createProfile,
-          importProfile,
-          zoteroPref,
-        }),
+      noteImportView: ({ createProfile, importProfile }) =>
+        createNoteImportView(plugin.app, { createProfile, importProfile }),
     })
     .useValue({
       batchImport: ({ noteImportView }) =>

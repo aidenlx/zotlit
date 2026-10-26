@@ -9,7 +9,7 @@ import type { Item } from "@zotlit/db";
 import { logAndContinue, withLogCategory } from "@/lib/effect-log";
 import { portCall } from "@/lib/legacy-port";
 import { Workspace } from "@/lib/obsidian-workspace";
-import { describeCandidates } from "@/services/citation-index/ambiguity";
+import { describeCandidatesEffect } from "@/services/citation-index/ambiguity";
 import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
 import { heldResolution } from "@/services/citation-index/lookup";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
@@ -170,8 +170,8 @@ function reportFailure<A, E, R, B, R2>(
 
 const log = withLogCategory("citekey-editor");
 /**
- * An open ends in a defect when a read, the creation flow or Obsidian rejects:
- * it is logged here, and the caller runs the open fire-and-forget.
+ * An open ends when a read, the creation flow or Obsidian fails: the failure
+ * or defect is logged here, and the caller runs the open fire-and-forget.
  */
 const contained = logAndContinue("Cannot open the note", "citekey-editor");
 
@@ -239,8 +239,8 @@ export const layerCitekeyEditor = (
           return;
         }
 
-        // A failed read ends the open unreported, as the rejection did.
-        const zoteroItem = yield* Effect.orDie(readItem(item.indexedKey));
+        // A failed read ends the open: the open's boundary logs it.
+        const zoteroItem = yield* readItem(item.indexedKey);
         if (!zoteroItem) {
           yield* Effect.logDebug("Citekey open blocked").pipe(
             Effect.annotateLogs({
@@ -324,11 +324,9 @@ export const layerCitekeyEditor = (
                 }),
               );
               const current = yield* libraryScope.current;
-              const candidates = yield* Effect.promise(() =>
-                describeCandidates(
-                  { db: reads, libraryScope: { current } },
-                  resolved.candidates,
-                ),
+              const candidates = yield* describeCandidatesEffect(
+                { db: reads, libraryScope: { current } },
+                resolved.candidates,
               );
               yield* report({
                 _tag: "citekey-ambiguous",

@@ -34,12 +34,10 @@ vi.mock("@/lib/copy-attachments", async (importOriginal) => {
     await importOriginal<typeof import("@/lib/copy-attachments")>();
   return {
     ...actual,
-    copyAttachments: async (
-      items: Parameters<typeof actual.copyAttachments>[0],
-    ) => {
-      await hooks.beforeCopy?.();
-      return actual.copyAttachments(items);
-    },
+    copyAttachments: (items: Parameters<typeof actual.copyAttachments>[0]) =>
+      Effect.promise(async () => hooks.beforeCopy?.()).pipe(
+        Effect.andThen(actual.copyAttachments(items)),
+      ),
   };
 });
 

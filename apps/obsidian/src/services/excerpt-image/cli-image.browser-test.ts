@@ -51,25 +51,29 @@ export async function run(): Promise<string[]> {
       ...image,
       identity: { key: "a".repeat(64), fingerprint: "image", pdf: null },
     }),
-    publish: async (_fingerprint, bytes) => {
-      check(bytes[0] === 137 && bytes[1] === 80, "Published bytes must be PNG");
-      const bitmap = await createImageBitmap(
-        new Blob([bytes as BlobPart], { type: "image/png" }),
-      );
-      check(
-        bitmap.width === 3 && bitmap.height === 2,
-        "PNG dimensions survive conversion",
-      );
-      context.clearRect(0, 0, 3, 2);
-      context.drawImage(bitmap, 0, 0);
-      bitmap.close();
-      const pixel = context.getImageData(0, 0, 1, 1).data;
-      check(
-        pixel[0] === 255 && pixel[1] === 0 && pixel[3] === 255,
-        "PNG pixels survive conversion",
-      );
-      return "/temp/zotlit-excerpts/image.png";
-    },
+    publish: (_fingerprint, bytes) =>
+      Effect.promise(async () => {
+        check(
+          bytes[0] === 137 && bytes[1] === 80,
+          "Published bytes must be PNG",
+        );
+        const bitmap = await createImageBitmap(
+          new Blob([bytes as BlobPart], { type: "image/png" }),
+        );
+        check(
+          bitmap.width === 3 && bitmap.height === 2,
+          "PNG dimensions survive conversion",
+        );
+        context.clearRect(0, 0, 3, 2);
+        context.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        const pixel = context.getImageData(0, 0, 1, 1).data;
+        check(
+          pixel[0] === 255 && pixel[1] === 0 && pixel[3] === 255,
+          "PNG pixels survive conversion",
+        );
+        return "/temp/zotlit-excerpts/image.png";
+      }),
     exists: () => Effect.succeed(true),
   };
   for (const provenance of ["rendered", "cache", "zotero"] as const) {
