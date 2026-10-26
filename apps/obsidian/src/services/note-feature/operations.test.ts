@@ -1,4 +1,5 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { it } from "@effect/vitest";
 import { Cause, DateTime, Effect, Exit, Fiber, Layer } from "effect";
 import { TestClock } from "effect/testing";
 import {
@@ -18,7 +19,7 @@ import {
   TFolder,
 } from "obsidian";
 import type { App } from "obsidian";
-import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, vi } from "vitest";
 
 import {
   buildNoteContextFromSource,
@@ -141,7 +142,7 @@ function createNoteFeature(deps: TestDeps) {
       () => Effect.runSync(deps.settings.current) ?? settingsDefaults,
       deps.app.metadataCache,
     );
-  const { handle, runtime, calls } = noteFeatureHandle(
+  const { handle, runtime, service } = noteFeatureHandle(
     {
       ...deps,
       // These Profiles name no Match, so creation runs no query.
@@ -176,7 +177,8 @@ function createNoteFeature(deps: TestDeps) {
   const know = (item: Item) => seedItem(deps.db.client, item);
   return {
     ...handle,
-    ...calls,
+    /** The Note Feature service, for the operations no edge handle serves. */
+    service,
     createNote: (...args: Parameters<NoteFeatureHandle["createNote"]>) => {
       know(args[0]);
       return handle.createNote(...args);
@@ -311,65 +313,69 @@ function stubNoteContext(
 }
 
 describe("Profile source selection", () => {
-  it("reserves batch filename suffixes before creation so two rows have distinct exact paths", async () => {
-    const id = "Bk3Qn7XvT2Lp" as ProfileId;
-    const { deps } = makeUpdateHarness({
-      content: "",
-      settings: {
-        profiles: [
-          {
-            id,
-            label: "Reading",
-            document: "reading.md",
-            bindings: { "note.literature-folder": "Reading" },
+  it.effect(
+    "reserves batch filename suffixes before creation so two rows have distinct exact paths",
+    () =>
+      Effect.gen(function* () {
+        const id = "Bk3Qn7XvT2Lp" as ProfileId;
+        const { deps } = makeUpdateHarness({
+          content: "",
+          settings: {
+            profiles: [
+              {
+                id,
+                label: "Reading",
+                document: "reading.md",
+                bindings: { "note.literature-folder": "Reading" },
+              },
+            ],
           },
-        ],
-      },
-    });
-    const app = makeApp();
-    deps.app = app;
-    deps.template = {
-      ...makeTemplate(),
-      getLiteratureNoteTemplate: () =>
-        makeDocumentTemplate({
-          filename: `Paper${filenameSuffix()}`,
-          createBody: "Body",
-        }),
-    };
-    stubIndexedKeyUpdate(updateContext());
-    const feature = createNoteFeature(deps);
-    const items = [
-      makeItem({
-        itemID: 1,
-        key: "ABCD2345",
-        indexedKey: "ABCD2345",
-        title: "One",
-        citationKey: null,
+        });
+        const app = makeApp();
+        deps.app = app;
+        deps.template = {
+          ...makeTemplate(),
+          getLiteratureNoteTemplate: () =>
+            makeDocumentTemplate({
+              filename: `Paper${filenameSuffix()}`,
+              createBody: "Body",
+            }),
+        };
+        stubIndexedKeyUpdate(updateContext());
+        const feature = createNoteFeature(deps);
+        const items = [
+          makeItem({
+            itemID: 1,
+            key: "ABCD2345",
+            indexedKey: "ABCD2345",
+            title: "One",
+            citationKey: null,
+          }),
+          makeItem({
+            itemID: 2,
+            key: "EFGH6789",
+            indexedKey: "EFGH6789",
+            title: "Two",
+            citationKey: null,
+          }),
+        ];
+        items.forEach((item) => seedItem(deps.db.client, item));
+        const plans = yield* feature.service.planCreations(
+          items.map((item) => item.indexedKey),
+        );
+        const first = plans
+          .get(items[0]!.indexedKey)!
+          .previews.find((plan) => plan.selector === id)!;
+        const second = plans
+          .get(items[1]!.indexedKey)!
+          .previews.find((plan) => plan.selector === id)!;
+        expect(first.path).toBe("Reading/Paper.md");
+        expect(second.path).not.toBe(first.path);
+        expect(app.vault.create).not.toHaveBeenCalled();
+        expect(createdFile(yield* first.create()).path).toBe(first.path);
+        expect(createdFile(yield* second.create()).path).toBe(second.path);
       }),
-      makeItem({
-        itemID: 2,
-        key: "EFGH6789",
-        indexedKey: "EFGH6789",
-        title: "Two",
-        citationKey: null,
-      }),
-    ];
-    items.forEach((item) => seedItem(deps.db.client, item));
-    const plans = await feature.planCreations(
-      items.map((item) => item.indexedKey),
-    );
-    const first = plans
-      .get(items[0]!.indexedKey)!
-      .previews.find((plan) => plan.selector === id)!;
-    const second = plans
-      .get(items[1]!.indexedKey)!
-      .previews.find((plan) => plan.selector === id)!;
-    expect(first.path).toBe("Reading/Paper.md");
-    expect(second.path).not.toBe(first.path);
-    expect(app.vault.create).not.toHaveBeenCalled();
-    expect(createdFile(await first.create()).path).toBe(first.path);
-    expect(createdFile(await second.create()).path).toBe(second.path);
-  });
+  );
 
   it("previews the draft stamp and document Properties, then creates at the same suffixed path", async () => {
     const id = "Bk3Qn7XvT2Lp" as ProfileId;
@@ -478,152 +484,175 @@ describe("Profile source selection", () => {
     });
   });
 
-  it("keeps the preview's random suffix and refuses when another file takes that path", async () => {
-    const { deps } = makeUpdateHarness({ content: "" });
-    const app = makeApp();
-    deps.app = app;
-    deps.template = {
-      ...makeTemplate(),
-      renderFilename: () => `Root${filenameSuffix()}`,
-    };
-    vi.mocked(buildNoteContextFromSource).mockImplementation(
-      ({ item: current }, resolvers) => stubNoteContext(current, [], resolvers),
-    );
-    await app.vault.create("Literature/Root.md", "Occupied");
-    const feature = createNoteFeature(deps);
-    const item = makeCreateGateItem();
-    seedItem(deps.db.client, item);
-    const [preview] = (await feature.planCreations([item.indexedKey])).get(
-      item.indexedKey,
-    )!.previews;
-    expect(preview!.path).not.toBe("Literature/Root.md");
-    const created = createdFile(await preview!.create());
-    expect(created.path).toBe(preview!.path);
-    expect(app.vault.contents.get("Literature/Root.md")).toBe("Occupied");
+  it.effect(
+    "keeps the preview's random suffix and refuses when another file takes that path",
+    () =>
+      Effect.gen(function* () {
+        const { deps } = makeUpdateHarness({ content: "" });
+        const app = makeApp();
+        deps.app = app;
+        deps.template = {
+          ...makeTemplate(),
+          renderFilename: () => `Root${filenameSuffix()}`,
+        };
+        vi.mocked(buildNoteContextFromSource).mockImplementation(
+          ({ item: current }, resolvers) =>
+            stubNoteContext(current, [], resolvers),
+        );
+        yield* Effect.promise(() =>
+          app.vault.create("Literature/Root.md", "Occupied"),
+        );
+        const feature = createNoteFeature(deps);
+        const item = makeCreateGateItem();
+        seedItem(deps.db.client, item);
+        const [preview] = (yield* feature.service.planCreations([
+          item.indexedKey,
+        ])).get(item.indexedKey)!.previews;
+        expect(preview!.path).not.toBe("Literature/Root.md");
+        const created = createdFile(yield* preview!.create());
+        expect(created.path).toBe(preview!.path);
+        expect(app.vault.contents.get("Literature/Root.md")).toBe("Occupied");
 
-    const otherItem = {
-      ...makeCreateGateItem(),
-      key: "PAPER234",
-      indexedKey: "PAPER234",
-    };
-    seedItem(deps.db.client, otherItem);
-    const [second] = (await feature.planCreations([otherItem.indexedKey])).get(
-      otherItem.indexedKey,
-    )!.previews;
-    await app.vault.create(second!.path!, "Arrived after preview");
-    await expect(second!.create()).rejects.toMatchObject({
-      _tag: "FileExists",
-      path: second!.path,
-    });
-    expect(app.vault.contents.get(second!.path!)).toBe("Arrived after preview");
-  });
+        const otherItem = {
+          ...makeCreateGateItem(),
+          key: "PAPER234",
+          indexedKey: "PAPER234",
+        };
+        seedItem(deps.db.client, otherItem);
+        const [second] = (yield* feature.service.planCreations([
+          otherItem.indexedKey,
+        ])).get(otherItem.indexedKey)!.previews;
+        yield* Effect.promise(() =>
+          app.vault.create(second!.path!, "Arrived after preview"),
+        );
+        expect(yield* Effect.flip(second!.create())).toMatchObject({
+          _tag: "FileExists",
+          path: second!.path,
+        });
+        expect(app.vault.contents.get(second!.path!)).toBe(
+          "Arrived after preview",
+        );
+      }),
+  );
 
-  it("keeps usable Profiles available when another Profile's filename cannot render", async () => {
-    const books = "Bk3Qn7XvT2Lp" as ProfileId;
-    const { deps } = makeUpdateHarness({
-      content: "",
-      settings: {
-        profiles: [{ id: books, label: "Books", document: "books.md" }],
-      },
-    });
-    deps.template = {
-      ...makeTemplate(),
-      getLiteratureNoteTemplate: () => makeDocumentTemplate({ filename: "" }),
-    };
-    const item = makeCreateGateItem();
-    seedItem(deps.db.client, item);
-    const profiles = (
-      await createNoteFeature(deps).planCreations([item.indexedKey])
-    ).get(item.indexedKey)!.previews;
-    expect(profiles).toMatchObject([
-      { selector: "default", path: "Literature/Root.md" },
-      {
-        selector: books,
-        path: undefined,
-        unavailable: m.notice_empty_filename(),
-      },
-    ]);
-  });
-  it("prepares each Profile's effective folder and filename and creates at the displayed path", async () => {
-    const books = "Bk3Qn7XvT2Lp" as ProfileId;
-    const item = makeCreateGateItem();
-    const { deps } = makeUpdateHarness({
-      content: "",
-      settings: {
-        profiles: [
-          {
-            id: books,
-            label: "Books",
-            document: "books.md",
-            bindings: {
-              "note.literature-folder": "Reading",
-              "citation.references-style": "apa",
-            },
+  it.effect(
+    "keeps usable Profiles available when another Profile's filename cannot render",
+    () =>
+      Effect.gen(function* () {
+        const books = "Bk3Qn7XvT2Lp" as ProfileId;
+        const { deps } = makeUpdateHarness({
+          content: "",
+          settings: {
+            profiles: [{ id: books, label: "Books", document: "books.md" }],
           },
-        ],
-      },
-    });
-    const app = makeApp();
-    app.metadataCache.hold();
-    deps.app = app;
-    const document = makeDocumentTemplate({ filename: "Shelf/Root" });
-    deps.template = {
-      ...makeTemplate(),
-      getLiteratureNoteTemplate: (reference) =>
-        reference === "books.md" ? document : undefined,
-    };
-    vi.mocked(buildNoteContextFromSource).mockImplementation(
-      ({ item: current }, resolvers) => stubNoteContext(current, [], resolvers),
-    );
-    const feature = createNoteFeature(deps);
-    using update = vi.spyOn(deps.settings, "update");
-    seedItem(deps.db.client, item);
-    const profiles = (await feature.planCreations([item.indexedKey])).get(
-      item.indexedKey,
-    )!.previews;
-    expect(
-      profiles.map(({ selector, folder, citationStyle, document, path }) => ({
-        selector,
-        folder,
-        citationStyle,
-        document,
-        path,
-      })),
-    ).toEqual([
-      {
-        selector: "default",
-        folder: "Literature",
-        citationStyle: null,
-        document: undefined,
-        path: "Literature/Root.md",
-      },
-      {
-        selector: books,
-        folder: "Reading",
-        citationStyle: "apa",
-        document: "books.md",
-        path: "Reading/Shelf/Root.md",
-      },
-    ]);
-    const result = await profiles[1]!.create();
-    expect(result).toMatchObject({
-      outcome: "created",
-      file: { path: "Reading/Shelf/Root.md" },
-    });
-    expect(update).not.toHaveBeenCalled();
-    expect(await profiles[1]!.create()).toMatchObject({
-      outcome: "refused",
-      diagnostic: { code: "literature-note-exists" },
-    });
-    // The next operation starts from Default again: the Books choice above
-    // belonged to its own operation only.
-    expect(await feature.resolveCreationProfile()).toEqual({
-      selector: "default",
-      source: "bound",
-      shouldAsk: true,
-    });
-    expect(update).not.toHaveBeenCalled();
-  });
+        });
+        deps.template = {
+          ...makeTemplate(),
+          getLiteratureNoteTemplate: () =>
+            makeDocumentTemplate({ filename: "" }),
+        };
+        const item = makeCreateGateItem();
+        seedItem(deps.db.client, item);
+        const profiles = (yield* createNoteFeature(deps).service.planCreations([
+          item.indexedKey,
+        ])).get(item.indexedKey)!.previews;
+        expect(profiles).toMatchObject([
+          { selector: "default", path: "Literature/Root.md" },
+          {
+            selector: books,
+            path: undefined,
+            unavailable: m.notice_empty_filename(),
+          },
+        ]);
+      }),
+  );
+  it.effect(
+    "prepares each Profile's effective folder and filename and creates at the displayed path",
+    () =>
+      Effect.gen(function* () {
+        const books = "Bk3Qn7XvT2Lp" as ProfileId;
+        const item = makeCreateGateItem();
+        const { deps } = makeUpdateHarness({
+          content: "",
+          settings: {
+            profiles: [
+              {
+                id: books,
+                label: "Books",
+                document: "books.md",
+                bindings: {
+                  "note.literature-folder": "Reading",
+                  "citation.references-style": "apa",
+                },
+              },
+            ],
+          },
+        });
+        const app = makeApp();
+        app.metadataCache.hold();
+        deps.app = app;
+        const document = makeDocumentTemplate({ filename: "Shelf/Root" });
+        deps.template = {
+          ...makeTemplate(),
+          getLiteratureNoteTemplate: (reference) =>
+            reference === "books.md" ? document : undefined,
+        };
+        vi.mocked(buildNoteContextFromSource).mockImplementation(
+          ({ item: current }, resolvers) =>
+            stubNoteContext(current, [], resolvers),
+        );
+        const feature = createNoteFeature(deps);
+        using update = vi.spyOn(deps.settings, "update");
+        seedItem(deps.db.client, item);
+        const profiles = (yield* feature.service.planCreations([
+          item.indexedKey,
+        ])).get(item.indexedKey)!.previews;
+        expect(
+          profiles.map(
+            ({ selector, folder, citationStyle, document, path }) => ({
+              selector,
+              folder,
+              citationStyle,
+              document,
+              path,
+            }),
+          ),
+        ).toEqual([
+          {
+            selector: "default",
+            folder: "Literature",
+            citationStyle: null,
+            document: undefined,
+            path: "Literature/Root.md",
+          },
+          {
+            selector: books,
+            folder: "Reading",
+            citationStyle: "apa",
+            document: "books.md",
+            path: "Reading/Shelf/Root.md",
+          },
+        ]);
+        const result = yield* profiles[1]!.create();
+        expect(result).toMatchObject({
+          outcome: "created",
+          file: { path: "Reading/Shelf/Root.md" },
+        });
+        expect(update).not.toHaveBeenCalled();
+        expect(yield* profiles[1]!.create()).toMatchObject({
+          outcome: "refused",
+          diagnostic: { code: "literature-note-exists" },
+        });
+        // The next operation starts from Default again: the Books choice above
+        // belonged to its own operation only.
+        expect(yield* feature.service.resolveCreationProfile()).toEqual({
+          selector: "default",
+          source: "bound",
+          shouldAsk: true,
+        });
+        expect(update).not.toHaveBeenCalled();
+      }),
+  );
 });
 
 describe("createNote", () => {
@@ -3407,109 +3436,125 @@ describe("updateNote", () => {
     expect(harness.processMock).not.toHaveBeenCalled();
   });
 
-  it("switches the stamp after consent and leaves managed content for the next update", async () => {
-    const oldProfileId = "Bk3Qn7XvT2Lp" as ProfileId;
-    const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
-    stubIndexedKeyUpdate(updateContext());
-    const harness = makeUpdateHarness({
-      content: `My notes\n${formatManagedRegion("OLD")}\nMy conclusion`,
-      frontmatter: {
-        [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId,
-        [FIELD_CITATION_STYLE]: "apa",
-      },
-      settings: {
-        profiles: [
-          { id: oldProfileId, label: "Books" },
-          {
-            id: newProfileId,
-            label: "Papers",
-            bindings: { "citation.references-style": "ieee" },
+  it.effect(
+    "switches the stamp after consent and leaves managed content for the next update",
+    () =>
+      Effect.gen(function* () {
+        const oldProfileId = "Bk3Qn7XvT2Lp" as ProfileId;
+        const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
+        stubIndexedKeyUpdate(updateContext());
+        const harness = makeUpdateHarness({
+          content: `My notes\n${formatManagedRegion("OLD")}\nMy conclusion`,
+          frontmatter: {
+            [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId,
+            [FIELD_CITATION_STYLE]: "apa",
           },
-        ],
-      },
-    });
-
-    const result = await createNoteFeature(harness.deps).switchNoteProfile(
-      harness.file("Books/Root.md"),
-      { profile: newProfileId },
-    );
-
-    expect(result.diagnostic).toBeUndefined();
-    expect(harness.frontmatter()).toMatchObject({
-      [FIELD_LITERATURE_NOTE_PROFILE]: "Papers (Rz9Wm4YfH6Kd)",
-      [FIELD_CITATION_STYLE]: "apa",
-    });
-    expect(harness.content()).toBe(
-      `My notes\n${formatManagedRegion("OLD")}\nMy conclusion`,
-    );
-  });
-
-  it("moves the existing basename through the file manager only with consent", async () => {
-    const target = "Rz9Wm4YfH6Kd" as ProfileId;
-    const harness = makeUpdateHarness({
-      content: "My notes",
-      settings: {
-        profiles: [
-          {
-            id: target,
-            label: "Papers",
-            bindings: { "note.literature-folder": "Research/Papers" },
+          settings: {
+            profiles: [
+              { id: oldProfileId, label: "Books" },
+              {
+                id: newProfileId,
+                label: "Papers",
+                bindings: { "citation.references-style": "ieee" },
+              },
+            ],
           },
-        ],
-      },
-    });
-    const file = harness.file("Books/My chosen name.md");
-    const rename = vi.fn(async (_file: TFile, path: string) => {
-      harness.host.vault.renameFile(file.path, path);
-    });
-    harness.deps.app.fileManager.renameFile = rename;
-    const feature = createNoteFeature(harness.deps);
-    await feature.switchNoteProfile(file, {
-      profile: target,
-    });
-    expect(rename).not.toHaveBeenCalled();
-    await feature.switchNoteProfile(file, {
-      profile: target,
-      move: true,
-    });
-    expect(rename).toHaveBeenCalledWith(
-      file,
-      "Research/Papers/My chosen name.md",
-    );
-    expect(file.path).toBe("Research/Papers/My chosen name.md");
-    expect(harness.content()).toBe("My notes");
-  });
+        });
 
-  it("keeps the note's subfolders under the target Profile's folder in the preview and the move", async () => {
-    const target = "Rz9Wm4YfH6Kd" as ProfileId;
-    const harness = makeUpdateHarness({
-      content: "My notes",
-      frontmatter: { "zotero-key": "ABCD2345" },
-      settings: {
-        profiles: [
-          {
-            id: target,
-            label: "Books",
-            bindings: { "note.literature-folder": "books" },
+        const result = yield* createNoteFeature(
+          harness.deps,
+        ).service.switchNoteProfile(harness.file("Books/Root.md"), {
+          profile: newProfileId,
+        });
+
+        expect(result.diagnostic).toBeUndefined();
+        expect(harness.frontmatter()).toMatchObject({
+          [FIELD_LITERATURE_NOTE_PROFILE]: "Papers (Rz9Wm4YfH6Kd)",
+          [FIELD_CITATION_STYLE]: "apa",
+        });
+        expect(harness.content()).toBe(
+          `My notes\n${formatManagedRegion("OLD")}\nMy conclusion`,
+        );
+      }),
+  );
+
+  it.effect(
+    "moves the existing basename through the file manager only with consent",
+    () =>
+      Effect.gen(function* () {
+        const target = "Rz9Wm4YfH6Kd" as ProfileId;
+        const harness = makeUpdateHarness({
+          content: "My notes",
+          settings: {
+            profiles: [
+              {
+                id: target,
+                label: "Papers",
+                bindings: { "note.literature-folder": "Research/Papers" },
+              },
+            ],
           },
-        ],
-      },
-    });
-    const file = harness.file("Literature/2024/smith2024.md");
-    harness.deps.app.fileManager.renameFile = async (_file, path) => {
-      harness.host.vault.renameFile(file.path, path);
-    };
-    const feature = createNoteFeature(harness.deps);
-    const plan = await feature.prepareProfileSwitch(file);
-    expect(
-      plan.profiles.find(({ selector }) => selector === target)?.path,
-    ).toBe("books/2024/smith2024.md");
-    await feature.switchNoteProfile(file, { profile: target, move: true });
-    expect(file.path).toBe("books/2024/smith2024.md");
-    expect(harness.content()).toBe("My notes");
-  });
+        });
+        const file = harness.file("Books/My chosen name.md");
+        const rename = vi.fn(async (_file: TFile, path: string) => {
+          harness.host.vault.renameFile(file.path, path);
+        });
+        harness.deps.app.fileManager.renameFile = rename;
+        const feature = createNoteFeature(harness.deps);
+        yield* feature.service.switchNoteProfile(file, {
+          profile: target,
+        });
+        expect(rename).not.toHaveBeenCalled();
+        yield* feature.service.switchNoteProfile(file, {
+          profile: target,
+          move: true,
+        });
+        expect(rename).toHaveBeenCalledWith(
+          file,
+          "Research/Papers/My chosen name.md",
+        );
+        expect(file.path).toBe("Research/Papers/My chosen name.md");
+        expect(harness.content()).toBe("My notes");
+      }),
+  );
 
-  it.each([
+  it.effect(
+    "keeps the note's subfolders under the target Profile's folder in the preview and the move",
+    () =>
+      Effect.gen(function* () {
+        const target = "Rz9Wm4YfH6Kd" as ProfileId;
+        const harness = makeUpdateHarness({
+          content: "My notes",
+          frontmatter: { "zotero-key": "ABCD2345" },
+          settings: {
+            profiles: [
+              {
+                id: target,
+                label: "Books",
+                bindings: { "note.literature-folder": "books" },
+              },
+            ],
+          },
+        });
+        const file = harness.file("Literature/2024/smith2024.md");
+        harness.deps.app.fileManager.renameFile = async (_file, path) => {
+          harness.host.vault.renameFile(file.path, path);
+        };
+        const feature = createNoteFeature(harness.deps);
+        const plan = yield* feature.service.prepareProfileSwitch(file);
+        expect(
+          plan.profiles.find(({ selector }) => selector === target)?.path,
+        ).toBe("books/2024/smith2024.md");
+        yield* feature.service.switchNoteProfile(file, {
+          profile: target,
+          move: true,
+        });
+        expect(file.path).toBe("books/2024/smith2024.md");
+        expect(harness.content()).toBe("My notes");
+      }),
+  );
+
+  it.effect.each([
     {
       name: "a note outside its Profile's folder by file name",
       stamp: undefined,
@@ -3535,77 +3580,87 @@ describe("updateNote", () => {
       path: "Imported/2024/Child.md",
       expected: "imports/2024/Child.md",
     },
-  ])("moves $name", async ({ stamp, noteKey, path, expected }) => {
-    const target = "Rz9Wm4YfH6Kd" as ProfileId;
-    const harness = makeUpdateHarness({
-      content: "My notes",
-      frontmatter: {
-        ...(noteKey
-          ? { "zotero-note-key": noteKey }
-          : { "zotero-key": "ABCD2345" }),
-        ...(stamp && { [FIELD_LITERATURE_NOTE_PROFILE]: stamp }),
-      },
-      settings: {
-        profiles: [
-          {
-            id: "Bk3Qn7XvT2Lp" as ProfileId,
-            label: "Root",
-            bindings: {
-              "note.literature-folder": "/",
-              "note.import-folder": "Imported",
+  ])("moves $name", ({ stamp, noteKey, path, expected }) =>
+    Effect.gen(function* () {
+      const target = "Rz9Wm4YfH6Kd" as ProfileId;
+      const harness = makeUpdateHarness({
+        content: "My notes",
+        frontmatter: {
+          ...(noteKey
+            ? { "zotero-note-key": noteKey }
+            : { "zotero-key": "ABCD2345" }),
+          ...(stamp && { [FIELD_LITERATURE_NOTE_PROFILE]: stamp }),
+        },
+        settings: {
+          profiles: [
+            {
+              id: "Bk3Qn7XvT2Lp" as ProfileId,
+              label: "Root",
+              bindings: {
+                "note.literature-folder": "/",
+                "note.import-folder": "Imported",
+              },
             },
-          },
-          {
-            id: target,
-            label: "Books",
-            bindings: {
-              "note.literature-folder": "books",
-              "note.import-folder": "imports",
+            {
+              id: target,
+              label: "Books",
+              bindings: {
+                "note.literature-folder": "books",
+                "note.import-folder": "imports",
+              },
             },
-          },
-        ],
-      },
-    });
-    const file = harness.file(path);
-    harness.deps.app.fileManager.renameFile = async (_file, path) => {
-      harness.host.vault.renameFile(file.path, path);
-    };
-    const feature = createNoteFeature(harness.deps);
-    const plan = await feature.prepareProfileSwitch(file);
-    expect(
-      plan.profiles.find(({ selector }) => selector === target)?.path,
-    ).toBe(expected);
-    await feature.switchNoteProfile(file, { profile: target, move: true });
-    expect(file.path).toBe(expected);
-  });
+          ],
+        },
+      });
+      const file = harness.file(path);
+      harness.deps.app.fileManager.renameFile = async (_file, path) => {
+        harness.host.vault.renameFile(file.path, path);
+      };
+      const feature = createNoteFeature(harness.deps);
+      const plan = yield* feature.service.prepareProfileSwitch(file);
+      expect(
+        plan.profiles.find(({ selector }) => selector === target)?.path,
+      ).toBe(expected);
+      yield* feature.service.switchNoteProfile(file, {
+        profile: target,
+        move: true,
+      });
+      expect(file.path).toBe(expected);
+    }),
+  );
 
-  it("offers no move when the target path equals the current path", async () => {
-    const target = "Rz9Wm4YfH6Kd" as ProfileId;
-    const harness = makeUpdateHarness({
-      content: "My notes",
-      frontmatter: { "zotero-key": "ABCD2345" },
-      settings: {
-        profiles: [
-          {
-            id: target,
-            label: "Papers",
-            bindings: { "note.literature-folder": "Literature" },
-          },
-        ],
-      },
-    });
-    const file = harness.file("Literature/2024/smith2024.md");
-    const rename = vi.fn();
-    harness.deps.app.fileManager.renameFile = rename;
-    const feature = createNoteFeature(harness.deps);
-    const plan = await feature.prepareProfileSwitch(file);
-    expect(
-      plan.profiles.find(({ selector }) => selector === target)?.path,
-    ).toBe(file.path);
-    await feature.switchNoteProfile(file, { profile: target, move: true });
-    expect(rename).not.toHaveBeenCalled();
-    expect(file.path).toBe("Literature/2024/smith2024.md");
-  });
+  it.effect("offers no move when the target path equals the current path", () =>
+    Effect.gen(function* () {
+      const target = "Rz9Wm4YfH6Kd" as ProfileId;
+      const harness = makeUpdateHarness({
+        content: "My notes",
+        frontmatter: { "zotero-key": "ABCD2345" },
+        settings: {
+          profiles: [
+            {
+              id: target,
+              label: "Papers",
+              bindings: { "note.literature-folder": "Literature" },
+            },
+          ],
+        },
+      });
+      const file = harness.file("Literature/2024/smith2024.md");
+      const rename = vi.fn();
+      harness.deps.app.fileManager.renameFile = rename;
+      const feature = createNoteFeature(harness.deps);
+      const plan = yield* feature.service.prepareProfileSwitch(file);
+      expect(
+        plan.profiles.find(({ selector }) => selector === target)?.path,
+      ).toBe(file.path);
+      yield* feature.service.switchNoteProfile(file, {
+        profile: target,
+        move: true,
+      });
+      expect(rename).not.toHaveBeenCalled();
+      expect(file.path).toBe("Literature/2024/smith2024.md");
+    }),
+  );
 
   it("lists the Imported Notes that belong to one Zotero item", async () => {
     const first = makeFile("Imported/First.md");
@@ -3625,299 +3680,336 @@ describe("updateNote", () => {
     ).resolves.toEqual([first, second]);
   });
 
-  it("prepares current Profile, real Imported Notes and switch paths that keep the existing name", async () => {
-    const books = "Bk3Qn7XvT2Lp" as ProfileId;
-    const papers = "Rz9Wm4YfH6Kd" as ProfileId;
-    const imported = makeFile("Imported/First.md");
-    stubIndexedKeyUpdate(updateContext());
-    const harness = makeUpdateHarness({
-      content: "My content",
-      frontmatter: {
-        [FIELD_LITERATURE_NOTE_PROFILE]: books,
-        "zotero-key": "ABCD2345",
-      },
-      settings: {
-        profiles: [
-          {
-            id: books,
-            label: "Books",
-            bindings: { "note.literature-folder": "Books" },
+  it.effect(
+    "prepares current Profile, real Imported Notes and switch paths that keep the existing name",
+    () =>
+      Effect.gen(function* () {
+        const books = "Bk3Qn7XvT2Lp" as ProfileId;
+        const papers = "Rz9Wm4YfH6Kd" as ProfileId;
+        const imported = makeFile("Imported/First.md");
+        stubIndexedKeyUpdate(updateContext());
+        const harness = makeUpdateHarness({
+          content: "My content",
+          frontmatter: {
+            [FIELD_LITERATURE_NOTE_PROFILE]: books,
+            "zotero-key": "ABCD2345",
           },
-          {
-            id: papers,
-            label: "Papers",
-            bindings: {
-              "note.literature-folder": "Research/Papers",
-              "citation.references-style": "ieee",
-            },
+          settings: {
+            profiles: [
+              {
+                id: books,
+                label: "Books",
+                bindings: { "note.literature-folder": "Books" },
+              },
+              {
+                id: papers,
+                label: "Papers",
+                bindings: {
+                  "note.literature-folder": "Research/Papers",
+                  "citation.references-style": "ieee",
+                },
+              },
+            ],
           },
-        ],
-      },
-    });
-    seedChildNotes(harness.deps.db.client, 1, ["NTEB2345", "NTEGNE23"]);
-    harness.deps.noteIndex.getImportedNoteByNoteKey = (key) =>
-      key === "NTEB2345" ? [imported] : [];
-    const plan = await createNoteFeature(harness.deps).prepareProfileSwitch(
-      harness.file("Books/My title.md"),
-    );
-    expect(plan.current).toMatchObject({ selector: books, label: "Books" });
-    expect(plan.importedNotes).toEqual([imported]);
-    expect(plan.profiles).toMatchObject([
-      {
-        selector: "default",
-        folder: "Literature",
-        path: "Literature/My title.md",
-      },
-      { selector: books, folder: "Books", path: "Books/My title.md" },
-      {
-        selector: papers,
-        folder: "Research/Papers",
-        citationStyle: "ieee",
-        path: "Research/Papers/My title.md",
-      },
-    ]);
-    expect(harness.processMock).not.toHaveBeenCalled();
-  });
-
-  it.each(["missing item", "unavailable database"])(
-    "recovers the existing Literature Note with %s",
-    async (failure) => {
-      const target = "Rz9Wm4YfH6Kd" as ProfileId;
-      stubIndexedKeyUpdate(updateContext());
-      const harness = makeUpdateHarness({
-        content: "My preserved reading notes",
-        frontmatter: {
-          "zotero-key": "ABCD2345",
-          [FIELD_LITERATURE_NOTE_PROFILE]: "Missing profile (Qw8Er5Ty2Ui9)",
-        },
-        settings: { profiles: [{ id: target, label: "Papers" }] },
-      });
-      if (failure === "missing item")
-        forgetItem(harness.deps.db.client, "ABCD2345");
-      else
-        harness.deps.zoteroReads = {
-          ...harness.deps.zoteroReads,
-          snapshot: Effect.fail(
-            new DbUnavailable({ message: "Database unavailable" }),
-          ),
-        };
-      const file = harness.file("Literature/Paper.md");
-      const feature = createNoteFeature(harness.deps);
-      const plan = await feature.prepareProfileSwitch(file);
-      expect(plan.importedNotes).toBeNull();
-      expect(plan.current.selector).toBeUndefined();
-      expect(plan.profiles.map(({ selector }) => selector)).toEqual([
-        "default",
-        target,
-      ]);
-      const result = await feature.switchNoteProfile(file, { profile: target });
-      expect(result.diagnostic).toBeUndefined();
-      expect(harness.frontmatter()[FIELD_LITERATURE_NOTE_PROFILE]).toBe(
-        "Papers (Rz9Wm4YfH6Kd)",
-      );
-      expect(harness.content()).toBe("My preserved reading notes");
-    },
+        });
+        seedChildNotes(harness.deps.db.client, 1, ["NTEB2345", "NTEGNE23"]);
+        harness.deps.noteIndex.getImportedNoteByNoteKey = (key) =>
+          key === "NTEB2345" ? [imported] : [];
+        const plan = yield* createNoteFeature(
+          harness.deps,
+        ).service.prepareProfileSwitch(harness.file("Books/My title.md"));
+        expect(plan.current).toMatchObject({ selector: books, label: "Books" });
+        expect(plan.importedNotes).toEqual([imported]);
+        expect(plan.profiles).toMatchObject([
+          {
+            selector: "default",
+            folder: "Literature",
+            path: "Literature/My title.md",
+          },
+          { selector: books, folder: "Books", path: "Books/My title.md" },
+          {
+            selector: papers,
+            folder: "Research/Papers",
+            citationStyle: "ieee",
+            path: "Research/Papers/My title.md",
+          },
+        ]);
+        expect(harness.processMock).not.toHaveBeenCalled();
+      }),
   );
 
-  it("re-stamps an opted-in Imported Note family after the Literature Note switch", async () => {
-    const oldProfileId = "Bk3Qn7XvT2Lp" as ProfileId;
-    const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
-    stubIndexedKeyUpdate(updateContext());
-    const harness = makeUpdateHarness({
-      content: formatManagedRegion("OLD"),
-      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId },
-      settings: {
-        profiles: [
-          { id: oldProfileId, label: "Books" },
-          { id: newProfileId, label: "Papers" },
-        ],
-      },
-    });
-    const file = harness.file("Books/Root.md");
-    const imported = [
-      harness.file("Imported/First.md"),
-      harness.file("Imported/Second.md"),
-    ];
-    const result = await createNoteFeature(harness.deps).switchNoteProfile(
-      file,
-      {
-        profile: newProfileId,
-        importedNotes: imported,
-      },
-    );
-
-    expect(result.diagnostic).toBeUndefined();
-    expect(harness.processMock.mock.calls.map(([file]) => file)).toEqual(
-      expect.arrayContaining(imported),
-    );
-  });
-
-  it("recovers an Imported Note directly with its import folder and no parent Literature Note", async () => {
-    const target = "Rz9Wm4YfH6Kd" as ProfileId;
-    const harness = makeUpdateHarness({
-      content: "Imported body",
-      frontmatter: {
-        "zotero-note-key": "NTE23456",
-        [FIELD_LITERATURE_NOTE_PROFILE]: "Missing profile (Qw8Er5Ty2Ui9)",
-      },
-      settings: {
-        profiles: [
-          {
-            id: target,
-            label: "Papers",
-            bindings: {
-              "note.import-folder": "Imported/Papers",
-              "note.literature-folder": "Literature/Papers",
-            },
+  it.effect.each(["missing item", "unavailable database"])(
+    "recovers the existing Literature Note with %s",
+    (failure) =>
+      Effect.gen(function* () {
+        const target = "Rz9Wm4YfH6Kd" as ProfileId;
+        stubIndexedKeyUpdate(updateContext());
+        const harness = makeUpdateHarness({
+          content: "My preserved reading notes",
+          frontmatter: {
+            "zotero-key": "ABCD2345",
+            [FIELD_LITERATURE_NOTE_PROFILE]: "Missing profile (Qw8Er5Ty2Ui9)",
           },
-        ],
-      },
-    });
-    harness.deps.zoteroReads = {
-      ...harness.deps.zoteroReads,
-      snapshot: Effect.die(new Error("Recovery must not need a parent lookup")),
-    };
-    const file = harness.file("Imports/Child.md");
-    harness.deps.app.fileManager.renameFile = async (_file, path) => {
-      harness.host.vault.renameFile(file.path, path);
-    };
-    const feature = createNoteFeature(harness.deps);
-    const plan = await feature.prepareProfileSwitch(file);
-    expect(plan.imported).toBe(true);
-    expect(plan.importedNotes).toEqual([]);
-    expect(
-      plan.profiles.find(({ selector }) => selector === target),
-    ).toMatchObject({
-      folder: "Imported/Papers",
-      path: "Imported/Papers/Child.md",
-    });
-    await feature.switchNoteProfile(file, { profile: target, move: true });
-    expect(file.path).toBe("Imported/Papers/Child.md");
-    expect(harness.frontmatter()[FIELD_LITERATURE_NOTE_PROFILE]).toBe(
-      "Papers (Rz9Wm4YfH6Kd)",
-    );
-    expect(harness.content()).toBe("Imported body");
-  });
-
-  it("does not re-stamp the Imported Note family when the Literature Note switch is refused", async () => {
-    const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
-    const imported = makeFile("Imported/First.md");
-    const harness = makeUpdateHarness({
-      content: formatManagedRegion("OLD"),
-      settings: {
-        profiles: [{ id: newProfileId, label: "Papers" }],
-        "note.template-conversion-pending": true,
-      },
-    });
-
-    const result = await createNoteFeature(harness.deps).switchNoteProfile(
-      harness.file("Literature/Root.md"),
-      {
-        profile: newProfileId,
-        importedNotes: [imported],
-      },
-    );
-
-    expect(result.diagnostic?.code).toBe(
-      "literature-note-template-conversion-required",
-    );
-    expect(harness.processMock).not.toHaveBeenCalled();
-  });
-
-  it("restores all note stamps and the original path when one family write fails", async () => {
-    const oldProfileId = "Bk3Qn7XvT2Lp" as ProfileId;
-    const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
-    stubIndexedKeyUpdate(updateContext());
-    const harness = makeUpdateHarness({
-      content: formatManagedRegion("OLD"),
-      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId },
-      settings: {
-        profiles: [
-          { id: oldProfileId, label: "Books" },
-          {
-            id: newProfileId,
-            label: "Papers",
-            bindings: { "note.literature-folder": "Papers" },
-          },
-        ],
-      },
-    });
-    const literature = harness.file("Literature/2024/Root.md");
-    const imported = [
-      harness.file("Imported/First.md"),
-      harness.file("Imported/Second.md"),
-    ];
-    const { vault } = harness.host;
-    const properties = (file: TFile) =>
-      parseFrontMatter(vault.contents.get(file.path)!);
-    // The first write to the second Imported Note lands, then fails.
-    const write = vault.modifyFile.bind(vault);
-    let failed = false;
-    vi.spyOn(vault, "modifyFile").mockImplementation((path, content) => {
-      write(path, content);
-      if (path === imported[1]!.path && !failed) {
-        failed = true;
-        throw new Error("frontmatter write failed");
-      }
-    });
-    const rename = vi.fn(async (file: TFile, path: string) => {
-      vault.renameFile(file.path, path);
-    });
-    harness.deps.app.fileManager.renameFile = rename;
-
-    await expect(
-      createNoteFeature(harness.deps).switchNoteProfile(literature, {
-        profile: newProfileId,
-        importedNotes: imported,
-        move: true,
+          settings: { profiles: [{ id: target, label: "Papers" }] },
+        });
+        if (failure === "missing item")
+          forgetItem(harness.deps.db.client, "ABCD2345");
+        else
+          harness.deps.zoteroReads = {
+            ...harness.deps.zoteroReads,
+            snapshot: Effect.fail(
+              new DbUnavailable({ message: "Database unavailable" }),
+            ),
+          };
+        const file = harness.file("Literature/Paper.md");
+        const feature = createNoteFeature(harness.deps);
+        const plan = yield* feature.service.prepareProfileSwitch(file);
+        expect(plan.importedNotes).toBeNull();
+        expect(plan.current.selector).toBeUndefined();
+        expect(plan.profiles.map(({ selector }) => selector)).toEqual([
+          "default",
+          target,
+        ]);
+        const result = yield* feature.service.switchNoteProfile(file, {
+          profile: target,
+        });
+        expect(result.diagnostic).toBeUndefined();
+        expect(harness.frontmatter()[FIELD_LITERATURE_NOTE_PROFILE]).toBe(
+          "Papers (Rz9Wm4YfH6Kd)",
+        );
+        expect(harness.content()).toBe("My preserved reading notes");
       }),
-    ).rejects.toThrow("frontmatter write failed");
+  );
 
-    expect(literature.path).toBe("Literature/2024/Root.md");
-    expect(rename.mock.calls.map(([, path]) => path)).toEqual([
-      "Papers/2024/Root.md",
-      "Literature/2024/Root.md",
-    ]);
-    expect(properties(literature)).toMatchObject({
-      [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId,
-    });
-    for (const file of imported) {
-      expect(properties(file)).toMatchObject({
-        [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId,
+  it.effect(
+    "re-stamps an opted-in Imported Note family after the Literature Note switch",
+    () =>
+      Effect.gen(function* () {
+        const oldProfileId = "Bk3Qn7XvT2Lp" as ProfileId;
+        const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
+        stubIndexedKeyUpdate(updateContext());
+        const harness = makeUpdateHarness({
+          content: formatManagedRegion("OLD"),
+          frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId },
+          settings: {
+            profiles: [
+              { id: oldProfileId, label: "Books" },
+              { id: newProfileId, label: "Papers" },
+            ],
+          },
+        });
+        const file = harness.file("Books/Root.md");
+        const imported = [
+          harness.file("Imported/First.md"),
+          harness.file("Imported/Second.md"),
+        ];
+        const result = yield* createNoteFeature(
+          harness.deps,
+        ).service.switchNoteProfile(file, {
+          profile: newProfileId,
+          importedNotes: imported,
+        });
+
+        expect(result.diagnostic).toBeUndefined();
+        expect(harness.processMock.mock.calls.map(([file]) => file)).toEqual(
+          expect.arrayContaining(imported),
+        );
+      }),
+  );
+
+  it.effect(
+    "recovers an Imported Note directly with its import folder and no parent Literature Note",
+    () =>
+      Effect.gen(function* () {
+        const target = "Rz9Wm4YfH6Kd" as ProfileId;
+        const harness = makeUpdateHarness({
+          content: "Imported body",
+          frontmatter: {
+            "zotero-note-key": "NTE23456",
+            [FIELD_LITERATURE_NOTE_PROFILE]: "Missing profile (Qw8Er5Ty2Ui9)",
+          },
+          settings: {
+            profiles: [
+              {
+                id: target,
+                label: "Papers",
+                bindings: {
+                  "note.import-folder": "Imported/Papers",
+                  "note.literature-folder": "Literature/Papers",
+                },
+              },
+            ],
+          },
+        });
+        harness.deps.zoteroReads = {
+          ...harness.deps.zoteroReads,
+          snapshot: Effect.die(
+            new Error("Recovery must not need a parent lookup"),
+          ),
+        };
+        const file = harness.file("Imports/Child.md");
+        harness.deps.app.fileManager.renameFile = async (_file, path) => {
+          harness.host.vault.renameFile(file.path, path);
+        };
+        const feature = createNoteFeature(harness.deps);
+        const plan = yield* feature.service.prepareProfileSwitch(file);
+        expect(plan.imported).toBe(true);
+        expect(plan.importedNotes).toEqual([]);
+        expect(
+          plan.profiles.find(({ selector }) => selector === target),
+        ).toMatchObject({
+          folder: "Imported/Papers",
+          path: "Imported/Papers/Child.md",
+        });
+        yield* feature.service.switchNoteProfile(file, {
+          profile: target,
+          move: true,
+        });
+        expect(file.path).toBe("Imported/Papers/Child.md");
+        expect(harness.frontmatter()[FIELD_LITERATURE_NOTE_PROFILE]).toBe(
+          "Papers (Rz9Wm4YfH6Kd)",
+        );
+        expect(harness.content()).toBe("Imported body");
+      }),
+  );
+
+  it.effect(
+    "does not re-stamp the Imported Note family when the Literature Note switch is refused",
+    () =>
+      Effect.gen(function* () {
+        const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
+        const imported = makeFile("Imported/First.md");
+        const harness = makeUpdateHarness({
+          content: formatManagedRegion("OLD"),
+          settings: {
+            profiles: [{ id: newProfileId, label: "Papers" }],
+            "note.template-conversion-pending": true,
+          },
+        });
+
+        const result = yield* createNoteFeature(
+          harness.deps,
+        ).service.switchNoteProfile(harness.file("Literature/Root.md"), {
+          profile: newProfileId,
+          importedNotes: [imported],
+        });
+
+        expect(result.diagnostic?.code).toBe(
+          "literature-note-template-conversion-required",
+        );
+        expect(harness.processMock).not.toHaveBeenCalled();
+      }),
+  );
+
+  it.effect(
+    "restores all note stamps and the original path when one family write fails",
+    () =>
+      Effect.gen(function* () {
+        const oldProfileId = "Bk3Qn7XvT2Lp" as ProfileId;
+        const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
+        stubIndexedKeyUpdate(updateContext());
+        const harness = makeUpdateHarness({
+          content: formatManagedRegion("OLD"),
+          frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId },
+          settings: {
+            profiles: [
+              { id: oldProfileId, label: "Books" },
+              {
+                id: newProfileId,
+                label: "Papers",
+                bindings: { "note.literature-folder": "Papers" },
+              },
+            ],
+          },
+        });
+        const literature = harness.file("Literature/2024/Root.md");
+        const imported = [
+          harness.file("Imported/First.md"),
+          harness.file("Imported/Second.md"),
+        ];
+        const { vault } = harness.host;
+        const properties = (file: TFile) =>
+          parseFrontMatter(vault.contents.get(file.path)!);
+        // The first write to the second Imported Note lands, then fails.
+        const write = vault.modifyFile.bind(vault);
+        let failed = false;
+        vi.spyOn(vault, "modifyFile").mockImplementation((path, content) => {
+          write(path, content);
+          if (path === imported[1]!.path && !failed) {
+            failed = true;
+            throw new Error("frontmatter write failed");
+          }
+        });
+        const rename = vi.fn(async (file: TFile, path: string) => {
+          vault.renameFile(file.path, path);
+        });
+        harness.deps.app.fileManager.renameFile = rename;
+
+        const error = yield* Effect.flip(
+          createNoteFeature(harness.deps).service.switchNoteProfile(
+            literature,
+            {
+              profile: newProfileId,
+              importedNotes: imported,
+              move: true,
+            },
+          ),
+        );
+        expect(plainNoteError(error)).toMatchObject({
+          message: "frontmatter write failed",
+        });
+
+        expect(literature.path).toBe("Literature/2024/Root.md");
+        expect(rename.mock.calls.map(([, path]) => path)).toEqual([
+          "Papers/2024/Root.md",
+          "Literature/2024/Root.md",
+        ]);
+        expect(properties(literature)).toMatchObject({
+          [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId,
+        });
+        for (const file of imported) {
+          expect(properties(file)).toMatchObject({
+            [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId,
+          });
+        }
+      }),
+  );
+
+  it.effect("keeps the previous stamp when a requested folder move fails", () =>
+    Effect.gen(function* () {
+      const oldProfileId = "Bk3Qn7XvT2Lp" as ProfileId;
+      const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
+      stubIndexedKeyUpdate(updateContext());
+      const harness = makeUpdateHarness({
+        content: formatManagedRegion("OLD"),
+        frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId },
+        settings: {
+          profiles: [
+            { id: oldProfileId, label: "Books" },
+            { id: newProfileId, label: "Papers" },
+          ],
+        },
       });
-    }
-  });
+      harness.deps.app.fileManager.renameFile = vi.fn(async () => {
+        throw new Error("destination exists");
+      });
 
-  it("keeps the previous stamp when a requested folder move fails", async () => {
-    const oldProfileId = "Bk3Qn7XvT2Lp" as ProfileId;
-    const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
-    stubIndexedKeyUpdate(updateContext());
-    const harness = makeUpdateHarness({
-      content: formatManagedRegion("OLD"),
-      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId },
-      settings: {
-        profiles: [
-          { id: oldProfileId, label: "Books" },
-          { id: newProfileId, label: "Papers" },
-        ],
-      },
-    });
-    harness.deps.app.fileManager.renameFile = vi.fn(async () => {
-      throw new Error("destination exists");
-    });
+      const error = yield* Effect.flip(
+        createNoteFeature(harness.deps).service.switchNoteProfile(
+          harness.file("Books/Root.md"),
+          { profile: newProfileId, move: true },
+        ),
+      );
+      expect(plainNoteError(error)).toMatchObject({
+        message: "destination exists",
+      });
 
-    await expect(
-      createNoteFeature(harness.deps).switchNoteProfile(
-        harness.file("Books/Root.md"),
-        { profile: newProfileId, move: true },
-      ),
-    ).rejects.toThrow("destination exists");
-
-    expect(harness.frontmatter()[FIELD_LITERATURE_NOTE_PROFILE]).toBe(
-      oldProfileId,
-    );
-    expect(harness.processMock).not.toHaveBeenCalled();
-  });
+      expect(harness.frontmatter()[FIELD_LITERATURE_NOTE_PROFILE]).toBe(
+        oldProfileId,
+      );
+      expect(harness.processMock).not.toHaveBeenCalled();
+    }),
+  );
 
   it("preserves user content outside the managed region, replacing only the region body", async () => {
     const context = updateContext();

@@ -41,7 +41,6 @@ import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { NoteCitations } from "@/services/note-feature/citations-handle";
 import { bindNoteFeature } from "@/services/note-feature/handle";
 import type { NoteCreation } from "@/services/note-feature/creation-handle";
-import { plainNoteError } from "@/services/note-feature/errors";
 import type { NoteFeatureHandle } from "@/services/note-feature/operations";
 import { layerNoteFeature, NoteFeature } from "@/services/note-feature/service";
 import type { NoteFeatureServices } from "@/services/note-feature/service";
@@ -213,8 +212,8 @@ export function noteFeatureServices(
 
 /**
  * The Note Feature's edge handle over its layer, built on `sources` and held
- * by `stack`, the runtime the layer runs on, and the operations no edge
- * handle serves as Promises over it (`calls`). Its note writes read
+ * by `stack`, the runtime the layer runs on, and the service itself for the
+ * operations no edge handle serves. Its note writes read
  * `sources.excerptImages` as it is when they run. The citation members fail
  * the test unless `citations` gives them.
  */
@@ -228,7 +227,7 @@ export function noteFeatureHandle(
  ): {
   handle: NoteFeatureHandle;
   runtime: ManagedRuntime.ManagedRuntime<NoteFeature, never>;
-  calls: NoteFeatureCalls;
+  service: NoteFeature["Service"];
 } {
   const runtime = buildRuntime(
     layerNoteFeature.pipe(
@@ -236,68 +235,13 @@ export function noteFeatureHandle(
     ),
     stack,
   );
+  const service = runtime.runSync(NoteFeature);
   const handle = bindNoteFeature(
     effectBridge(runtime),
-    runtime.runSync(NoteFeature),
+    service,
     stubService<NoteCitations & NoteCreation>("NoteFeatureEdges", {
       ...options.citations,
     }),
   );
-  return { handle, runtime, calls: noteFeatureCalls(runtime) };
-}
-
-type Service = NoteFeature["Service"];
-
-/** The Note Feature's operations a case drives from outside Effect; see {@link noteFeatureCalls}. */
-export type NoteFeatureCalls = ReturnType<typeof noteFeatureCalls>;
-
-/**
- * The Note Feature's operations as Promises over `runtime`: a failure rejects
- * with what the render or the rewrite threw, as the edge handle's members do.
- * A plan rejects with its `signal`'s abort reason before it reads, and each
- * of its previews creates as a Promise too.
- */
-function noteFeatureCalls(
-  runtime: ManagedRuntime.ManagedRuntime<NoteFeature, never>,
-) {
-  const run = <A, E>(effect: Effect.Effect<A, E, NoteFeature>) =>
-    runtime.runPromise(
-      Effect.mapError(effect, (error) => plainNoteError(error)),
-    );
-  const call = <A, E>(operation: (service: Service) => Effect.Effect<A, E>) =>
-    run(Effect.flatMap(NoteFeature, (service) => operation(service)));
-  return {
-    switchNoteProfile: (...args: Parameters<Service["switchNoteProfile"]>) =>
-      call((service) => service.switchNoteProfile(...args)),
-    prepareProfileSwitch: (file: Parameters<Service["prepareProfileSwitch"]>[0]) =>
-      call((service) => service.prepareProfileSwitch(file)),
-    planCreations: async (
-      indexedKeys: readonly string[],
-      {
-        signal,
-        ...sources
-      }: NonNullable<Parameters<Service["planCreations"]>[1]> & {
-        signal?: AbortSignal;
-      } = {},
-    ) => {
-      signal?.throwIfAborted();
-      const plans = await call((service) =>
-        service.planCreations(indexedKeys, sources),
-      );
-      return new Map(
-        Array.from(plans, ([key, plan]) => [
-          key,
-          {
-            ...plan,
-            previews: plan.previews.map((preview) => ({
-              ...preview,
-              create: (
-                ...args: Parameters<(typeof preview)["create"]>
-              ) => run(preview.create(...args)),
-            })),
-          },
-        ]),
-      );
-    },
-  };
+  return { handle, runtime, service };
 }
