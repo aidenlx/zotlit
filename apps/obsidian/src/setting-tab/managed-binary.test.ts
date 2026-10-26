@@ -1,20 +1,16 @@
 // @vitest-environment happy-dom
 import { expect, it } from "@effect/vitest";
-import { ButtonComponent, Setting } from "@mock/obsidian";
+import { ButtonComponent, renderRow } from "@mock/obsidian";
+import type { Setting } from "@mock/obsidian";
 import { Context, Effect, Layer, Stream } from "effect";
 import { TestClock } from "effect/testing";
-import type {
-  Setting as ObsidianSetting,
-  SettingDefinition,
-  SettingGroup,
-} from "obsidian";
 import { describe, vi } from "vitest";
 
+import { eventually } from "@/lib/__fixtures__/eventually";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
-import { eventually } from "@/services/language-pack/__fixtures__";
 import { ManagedBinaryError } from "@/services/managed-binary/platform";
 import type {
   ManagedBinaryApi,
@@ -24,7 +20,7 @@ import { PandocEngine } from "@/services/pandoc/service";
 
 import { scopedSettingTab, testSettingTab } from "./__fixtures__";
 import { chineseSegmenterDefinition } from "./chinese-segmenter";
-import type { SettingsKey, SettingTabContext } from "./context";
+import type { SettingTabContext } from "./context";
 import { managedBinaryDefinition } from "./managed-binary";
 import type { ManagedBinaryCopy } from "./managed-binary";
 import { pandocEngineDefinition } from "./pandoc-engine";
@@ -84,18 +80,6 @@ const notifiedTab = Effect.gen(function* () {
   return { tab, notices: notifier.notices };
 });
 
-/** The rendered row, so a test reads the controls the user gets. */
-function render(row: SettingDefinition<SettingsKey>): Setting {
-  if (!("render" in row) || !row.render)
-    throw new Error("Expected a render row");
-  const setting = new Setting(document.createElement("div"));
-  row.render(
-    setting as unknown as ObsidianSetting,
-    stubService<SettingGroup>("SettingGroup", {}),
-  );
-  return setting;
-}
-
 function button(setting: Setting): ButtonComponent {
   const found = setting.components.find(
     (control) => control instanceof ButtonComponent,
@@ -127,7 +111,7 @@ describe("managedBinaryDefinition", () => {
           name: "Segmenter",
           desc: "Cuts words. Not installed.",
         });
-        const install = button(render(row));
+        const install = button(renderRow(row));
         expect(install.text).toBe("Install");
 
         install.click();
@@ -156,7 +140,7 @@ describe("managedBinaryDefinition", () => {
           COPY,
         );
 
-        button(render(row)).click();
+        button(renderRow(row)).click();
         yield* eventually(() =>
           expect(shown(notices)).toEqual(["Segmenter install failed"]),
         );
@@ -183,7 +167,7 @@ describe("managedBinaryDefinition", () => {
         );
 
         expect(row).toMatchObject({ desc: "Cuts words. Version 2.4.0." });
-        const uninstall = button(render(row));
+        const uninstall = button(renderRow(row));
         expect(uninstall.text).toBe("Uninstall");
 
         uninstall.click();
@@ -210,7 +194,7 @@ describe("managedBinaryDefinition", () => {
     expect(row).toMatchObject({
       desc: "Cuts words. Download failed: offline.",
     });
-    expect(button(render(row)).text).toBe("Retry");
+    expect(button(renderRow(row)).text).toBe("Retry");
   });
 });
 
@@ -238,7 +222,7 @@ describe("pandocEngineDefinition", () => {
       name: m.settings_citation_engine_name(),
       desc: `${m.settings_citation_engine_desc()} ${m.settings_citation_engine_status_installed({ version: "3.10" })}`,
     });
-    expect(button(render(row)).text).toBe(
+    expect(button(renderRow(row)).text).toBe(
       m.settings_citation_engine_uninstall(),
     );
   });
@@ -264,7 +248,7 @@ describe("chineseSegmenterDefinition", () => {
       name: m.settings_chinese_segmenter_name(),
       desc: `${m.settings_chinese_segmenter_desc()} ${m.settings_chinese_segmenter_status_absent()}`,
     });
-    expect(button(render(row)).text).toBe(
+    expect(button(renderRow(row)).text).toBe(
       m.settings_chinese_segmenter_install(),
     );
   });

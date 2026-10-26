@@ -13,6 +13,7 @@ import { ButtonComponent, Modal, SuggestModal, TextComponent } from "obsidian";
 import type { App } from "obsidian";
 import { expect, vi } from "vitest";
 
+import { until } from "@/lib/__fixtures__/eventually";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
@@ -447,12 +448,6 @@ const importerFixture = Effect.fnUntraced(function* (
     opened,
     suggestions,
   };
-});
-
-/** Let the dialog's fiber and the Promises it waits on run until `done`. */
-const until = Effect.fnUntraced(function* (done: () => boolean) {
-  for (let turn = 0; turn < 1000 && !done(); turn++) yield* Effect.yieldNow;
-  expect(done()).toBe(true);
 });
 
 it.effect(

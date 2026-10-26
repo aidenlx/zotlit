@@ -1,12 +1,8 @@
 // @vitest-environment happy-dom
-import { Setting } from "@mock/obsidian";
+import { renderRow } from "@mock/obsidian";
 import type { DropdownComponent, TextComponent } from "@mock/obsidian";
 import { Context, Effect } from "effect";
-import type {
-  Setting as ObsidianSetting,
-  SettingDefinitionItem,
-  SettingGroup,
-} from "obsidian";
+import type { SettingDefinitionItem } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -51,17 +47,6 @@ function setup() {
   return { ctx, row, update, settings };
 }
 
-function render(item: SettingDefinitionItem) {
-  if (!("render" in item) || !item.render)
-    throw new Error("Custom renderer missing");
-  const setting = new Setting(document.createElement("div"));
-  item.render(
-    setting as unknown as ObsidianSetting,
-    stubService<SettingGroup>("SettingGroup", {}),
-  );
-  return setting;
-}
-
 function visible(item: SettingDefinitionItem) {
   return typeof item.visible === "function"
     ? item.visible()
@@ -82,7 +67,7 @@ describe("highlight mapping page", () => {
       });
     setEnabled(true);
 
-    const dropdown = render(row(m.annot_view_color_blue()))
+    const dropdown = renderRow(row(m.annot_view_color_blue()))
       .components[0] as DropdownComponent;
     expect(dropdown.getValue()).toBe("🔵");
     expect(dropdown.options.map(({ value }) => value)).toEqual([
@@ -100,7 +85,7 @@ describe("highlight mapping page", () => {
     setEnabled(true);
     expect(
       (
-        render(row(m.annot_view_color_blue()))
+        renderRow(row(m.annot_view_color_blue()))
           .components[0] as DropdownComponent
       ).getValue(),
     ).toBe("mark");
@@ -109,7 +94,7 @@ describe("highlight mapping page", () => {
 
   it("shows custom input, validates it, and preserves it across output changes", () => {
     const { ctx, row, settings } = setup();
-    const dropdown = render(row(m.annot_view_color_blue()))
+    const dropdown = renderRow(row(m.annot_view_color_blue()))
       .components[0] as DropdownComponent;
     const inputRow = row(
       m.settings_note_import_custom_emoji_name({
@@ -120,7 +105,7 @@ describe("highlight mapping page", () => {
     dropdown.choose("custom");
     expect(visible(inputRow)).toBe(true);
 
-    const setting = render(inputRow);
+    const setting = renderRow(inputRow);
     const input = setting.components[0] as TextComponent;
     const emoji = () =>
       highlightEmoji(
@@ -140,9 +125,9 @@ describe("highlight mapping page", () => {
     expect(visible(inputRow)).toBe(false);
     expect(emoji()).toBe("🟠");
     dropdown.choose("custom");
-    expect((render(inputRow).components[0] as TextComponent).getValue()).toBe(
-      "👩‍🔬",
-    );
+    expect(
+      (renderRow(inputRow).components[0] as TextComponent).getValue(),
+    ).toBe("👩‍🔬");
     expect(emoji()).toBe("👩‍🔬");
   });
 });

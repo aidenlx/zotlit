@@ -3,11 +3,10 @@ import { expect, it } from "@effect/vitest";
 import {
   DropdownComponent,
   ExtraButtonComponent,
-  Setting,
+  renderRow,
 } from "@mock/obsidian";
 import { Effect, Layer, PubSub, Queue, Stream, SubscriptionRef } from "effect";
 import { TestClock } from "effect/testing";
-import type { Setting as ObsidianSetting, SettingGroup } from "obsidian";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -121,14 +120,9 @@ const render = Effect.fnUntraced(function* (
   const row = [databaseFileItem(ctx), ...databaseLocationItems(ctx)].find(
     (item) => item.id === id,
   );
-  if (!row || !("render" in row) || !row.render)
-    throw new Error(`Expected a render row: ${id}`);
-  const setting = new Setting(document.createElement("div"));
-  const cleanup = row.render(
-    setting as unknown as ObsidianSetting,
-    stubService<SettingGroup>("SettingGroup", {}),
-  );
-  yield* Effect.addFinalizer(() => Effect.sync(() => cleanup?.()));
+  if (!row) throw new Error(`Expected a render row: ${id}`);
+  const setting = renderRow(row);
+  yield* Effect.addFinalizer(() => Effect.sync(() => setting.cleanup?.()));
   const dropdown = setting.components.find(
     (control) => control instanceof DropdownComponent,
   );

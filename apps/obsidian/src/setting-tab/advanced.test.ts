@@ -1,11 +1,7 @@
 // @vitest-environment happy-dom
-import { DropdownComponent, Setting } from "@mock/obsidian";
+import { DropdownComponent, renderRow } from "@mock/obsidian";
 import { Context, Effect, Stream } from "effect";
-import type {
-  Setting as ObsidianSetting,
-  SettingDefinitionItem,
-  SettingGroup,
-} from "obsidian";
+import type { SettingDefinitionItem } from "obsidian";
 import { expect, it } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -63,14 +59,7 @@ it("offers each editor choice in web-enabled builds", () => {
     (item): item is SettingDefinitionItem<SettingsKey> =>
       "name" in item && item.name === preferenceName,
   )!;
-  if (!("render" in row) || !row.render)
-    throw new Error("Expected a render row");
-  const setting = new Setting(document.createElement("div"));
-  row.render(
-    setting as unknown as ObsidianSetting,
-    stubService<SettingGroup>("SettingGroup", {}),
-  );
-  const dropdown = setting.components.find(
+  const dropdown = renderRow(row).components.find(
     (control) => control instanceof DropdownComponent,
   ) as DropdownComponent;
   expect(dropdown.options).toEqual([

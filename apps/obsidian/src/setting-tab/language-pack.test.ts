@@ -1,21 +1,14 @@
 // @vitest-environment happy-dom
 import { expect, it } from "@effect/vitest";
-import { ButtonComponent, Setting } from "@mock/obsidian";
+import { ButtonComponent, renderRow } from "@mock/obsidian";
 import { Context, Effect, Layer, Stream } from "effect";
-import type {
-  Setting as ObsidianSetting,
-  SettingDefinition,
-  SettingGroup,
-} from "obsidian";
+import type { SettingDefinition } from "obsidian";
 
+import { eventually } from "@/lib/__fixtures__/eventually";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
-import {
-  eventually,
-  fakeDevice,
-  startOn,
-} from "@/services/language-pack/__fixtures__";
+import { fakeDevice, startOn } from "@/services/language-pack/__fixtures__";
 import { LanguagePack } from "@/services/language-pack/service";
 import { defaults } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -56,13 +49,9 @@ it.effect(
         });
 
         const row = languagePackRow(ctx);
-        if (!row || !("render" in row) || !row.render)
+        if (!row)
           throw new Error("Expected the Language Pack row to offer an install");
-        const setting = new Setting(document.createElement("div"));
-        row.render(
-          setting as unknown as ObsidianSetting,
-          stubService<SettingGroup>("SettingGroup", {}),
-        );
+        const setting = renderRow(row);
         const install = setting.components.find(
           (control) => control instanceof ButtonComponent,
         );

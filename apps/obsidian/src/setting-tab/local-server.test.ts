@@ -1,14 +1,11 @@
 // @vitest-environment happy-dom
-import { ButtonComponent, Setting } from "@mock/obsidian";
+import { expect, it } from "@effect/vitest";
+import { ButtonComponent, renderRow } from "@mock/obsidian";
 import { Context, Effect, Stream } from "effect";
-import type {
-  Setting as ObsidianSetting,
-  SettingDefinitionItem,
-  SettingGroup,
-  SettingGroupItem,
-} from "obsidian";
-import { expect, it, vi } from "vitest";
+import type { SettingDefinitionItem, SettingGroupItem } from "obsidian";
+import { vi } from "vitest";
 
+import { eventually } from "@/lib/__fixtures__/eventually";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { LocalBridge } from "@/services/local-bridge/service";
@@ -18,7 +15,7 @@ import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 
-import { testSettingTab } from "./__fixtures__";
+import { scopedSettingTab } from "./__fixtures__";
 import type { SettingsKey, SettingTabContext } from "./context";
 import { localServerItems } from "./local-server";
 
@@ -28,7 +25,7 @@ interface Options {
   disconnect?: () => void;
 }
 
-function setup({
+const setup = Effect.fnUntraced(function* ({
   settings = {},
   connection = null,
   disconnect = () => {},
@@ -56,23 +53,11 @@ function setup({
     ),
   );
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    tab: testSettingTab(services).tab,
+    tab: (yield* scopedSettingTab(services)).tab,
     webWorkbenchEnabled: true,
   });
   return localServerItems(ctx);
-}
-
-/** The rendered row, so a test reads the controls the user gets. */
-function render(row: SettingDefinitionItem): Setting {
-  if (!("render" in row) || !row.render)
-    throw new Error("Expected a render row");
-  const setting = new Setting(document.createElement("div"));
-  row.render(
-    setting as unknown as ObsidianSetting,
-    stubService<SettingGroup>("SettingGroup", {}),
-  );
-  return setting;
-}
+});
 
 function visible(item: SettingDefinitionItem): boolean {
   return typeof item.visible === "function"
@@ -86,13 +71,17 @@ function row(items: SettingGroupItem<SettingsKey>[], name: string) {
   return item;
 }
 
-it("hides everything but the listener toggle while the server is off", () => {
-  const items = setup({ settings: { "server.enabled": false } });
+it.effect(
+  "hides everything but the listener toggle while the server is off",
+  () =>
+    Effect.gen(function* () {
+      const items = yield* setup({ settings: { "server.enabled": false } });
 
-  const [listener, ...hosted] = items;
-  expect(visible(listener!)).toBe(true);
-  expect(hosted.map(visible)).toEqual(hosted.map(() => false));
-});
+      const [listener, ...hosted] = items;
+      expect(visible(listener!)).toBe(true);
+      expect(hosted.map(visible)).toEqual(hosted.map(() => false));
+    }),
+);
 
 const CONNECTION: WorkbenchConnection = {
   origin: "https://zotlit.aidenlx.site",
@@ -101,19 +90,24 @@ const CONNECTION: WorkbenchConnection = {
   item: { key: "IANNP5A2", title: "Why research findings are false" },
 };
 
-it("ends the connected workbench session", async () => {
-  const disconnect = vi.fn();
-  const items = setup({
-    settings: { "server.enabled": true },
-    connection: CONNECTION,
-    disconnect,
-  });
+it.effect("ends the connected workbench session", () =>
+  Effect.gen(function* () {
+    const disconnect = vi.fn();
+    const items = yield* setup({
+      settings: { "server.enabled": true },
+      connection: CONNECTION,
+      disconnect,
+    });
 
-  const item = row(items, m.settings_local_server_workbench_connection_name());
-  const button = render(item).components.find(
-    (control) => control instanceof ButtonComponent,
-  )!;
-  expect(button.text).toBe(m.settings_local_server_workbench_disconnect());
-  button.click();
-  await vi.waitFor(() => expect(disconnect).toHaveBeenCalledTimes(1));
-});
+    const item = row(
+      items,
+      m.settings_local_server_workbench_connection_name(),
+    );
+    const button = renderRow(item).components.find(
+      (control) => control instanceof ButtonComponent,
+    )!;
+    expect(button.text).toBe(m.settings_local_server_workbench_disconnect());
+    button.click();
+    yield* eventually(() => expect(disconnect).toHaveBeenCalledTimes(1));
+  }),
+);

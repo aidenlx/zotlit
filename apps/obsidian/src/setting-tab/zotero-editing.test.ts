@@ -1,9 +1,8 @@
 // @vitest-environment happy-dom
 import { expect, it } from "@effect/vitest";
-import { Setting } from "@mock/obsidian";
+import { renderRow } from "@mock/obsidian";
 import { Context, DateTime, Effect, Stream } from "effect";
 import { TestClock } from "effect/testing";
-import type { Setting as ObsidianSetting, SettingGroup } from "obsidian";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
@@ -109,14 +108,8 @@ it.effect(
       const item = zoteroEditingRow(
         stubService<SettingTabContext>("SettingTabContext", { tab }),
       );
-      if (!("render" in item) || !item.render)
-        throw new Error("Expected a render row");
-      const setting = new Setting(document.createElement("div"));
-      const cleanup = item.render(
-        setting as unknown as ObsidianSetting,
-        stubService<SettingGroup>("SettingGroup", {}),
-      );
-      yield* Effect.addFinalizer(() => Effect.sync(() => cleanup?.()));
+      const setting = renderRow(item);
+      yield* Effect.addFinalizer(() => Effect.sync(() => setting.cleanup?.()));
       const desc = () =>
         (setting.desc as unknown as DocumentFragment).textContent;
 

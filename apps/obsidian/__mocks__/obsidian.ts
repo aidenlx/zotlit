@@ -28,6 +28,9 @@ import type {
   Point,
   SearchMatchPart,
   SearchResult,
+  Setting as ObsidianSetting,
+  SettingDefinitionItem,
+  SettingGroup as ObsidianSettingGroup,
   UserEvent,
 } from "obsidian";
 import {
@@ -1547,6 +1550,26 @@ export class Setting {
     cb(component);
     return this;
   }
+}
+
+/**
+ * `row` rendered into a fresh {@link Setting}, as Obsidian renders a `render`
+ * row, so a test reads the controls the user gets. `cleanup` is what `render`
+ * returned.
+ */
+export function renderRow<K extends string>(
+  row: SettingDefinitionItem<K>,
+): Setting & { readonly cleanup: (() => void) | undefined } {
+  if (!("render" in row) || !row.render)
+    throw new Error("Expected a render row");
+  const setting = new Setting(document.createElement("div"));
+  const cleanup = row.render(
+    setting as unknown as ObsidianSetting,
+    {} as ObsidianSettingGroup,
+  );
+  return Object.assign(setting, {
+    cleanup: typeof cleanup === "function" ? cleanup : undefined,
+  });
 }
 
 export class DropdownComponent {

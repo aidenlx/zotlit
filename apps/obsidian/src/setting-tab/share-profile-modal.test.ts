@@ -4,21 +4,21 @@ import {
   ExtraButtonComponent,
   Menu,
   Modal,
-  Setting,
   TextComponent,
   ToggleComponent,
   settingsOf,
+  renderRow,
 } from "@mock/obsidian";
 import { Effect, Fiber } from "effect";
 // @vitest-environment happy-dom
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Setting as ObsidianSetting, SettingGroup } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { TemplateFacade } from "@zotlit/templates/facade";
 
+import { eventually, until } from "@/lib/__fixtures__/eventually";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
@@ -26,7 +26,7 @@ import type { ProfileId } from "@/lib/profile-stamp";
 import * as nativeDialog from "@/lib/require";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 
-import { testSettingTab } from "./__fixtures__";
+import { scopedSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
 import { shareProfile } from "./profile-dialogs";
 import { profilesPage } from "./profiles";
@@ -175,55 +175,58 @@ it("keeps an empty version inline and hands nothing over until it is valid", asy
   modal.onClose();
 });
 
-it.each(["default", id] as const)(
+effectIt.effect.each(["default", id] as const)(
   "opens Share from the %s settings row",
-  async (selector) => {
-    await using f = await profileServiceFixture({
-      "templates/zotlit-profile.books.md": source,
-      "templates/zotlit-partial.summary.md": "Shared summary",
-    });
-    using opened = vi.spyOn(Modal.prototype, "open");
-    const container = document.createElement("div");
-    const page = profilesPage(
-      stubService<SettingTabContext>("SettingTabContext", {
-        tab: testSettingTab(await f.runtime.context()).tab,
-        app: f.app,
-        settings: stubService<SettingTabContext["settings"]>("Settings", {
-          current: f.settings.current,
+  (selector) =>
+    Effect.gen(function* () {
+      const f = yield* Effect.acquireDisposable(
+        Effect.promise(() =>
+          profileServiceFixture({
+            "templates/zotlit-profile.books.md": source,
+            "templates/zotlit-partial.summary.md": "Shared summary",
+          }),
+        ),
+      );
+      const opened = yield* Effect.acquireDisposable(
+        Effect.sync(() => vi.spyOn(Modal.prototype, "open")),
+      );
+      const services = yield* Effect.promise(() => f.runtime.context());
+      const page = profilesPage(
+        stubService<SettingTabContext>("SettingTabContext", {
+          tab: (yield* scopedSettingTab(services)).tab,
+          app: f.app,
+          settings: stubService<SettingTabContext["settings"]>("Settings", {
+            current: f.settings.current,
+          }),
         }),
-      }),
-    );
-    const label =
-      selector === "default" ? m.settings_profile_default_name() : "Books";
-    // Default sits on the page itself; every other Profile is a list row.
-    const rows = page.items!.flatMap((item) =>
-      "type" in item && item.type === "list" ? (item.items ?? []) : [item],
-    );
-    const row = rows.find((item) => "name" in item && item.name === label);
-    if (!row || !("render" in row)) throw new Error("Profile row missing");
-    const setting = new Setting(container);
-    row.render?.(
-      setting as unknown as ObsidianSetting,
-      stubService<SettingGroup>("SettingGroup", {}),
-    );
-    const more = setting.components
-      .filter((control) => control instanceof ExtraButtonComponent)
-      .find((button) => button.tooltip === m.workbench_more_actions())!;
-    Object.assign(more, { extraSettingsEl: document.createElement("button") });
-    more.click();
-    Menu.instances
-      .at(-1)!
-      .items.find((item) => item.title === m.settings_profile_share())!
-      .click();
-    await vi.waitFor(() => expect(opened).toHaveBeenCalledOnce());
-    const modal = opened.mock.instances[0] as unknown as ShareProfileModal;
-    modal.contentEl = document.createElement("div");
-    modal.onOpen();
-    expect((modal as unknown as Modal).title).toBe(
-      m.profile_share_title({ label }),
-    );
-    modal.onClose();
-  },
+      );
+      const label =
+        selector === "default" ? m.settings_profile_default_name() : "Books";
+      // Default sits on the page itself; every other Profile is a list row.
+      const rows = page.items!.flatMap((item) =>
+        "type" in item && item.type === "list" ? (item.items ?? []) : [item],
+      );
+      const row = rows.find((item) => "name" in item && item.name === label);
+      if (!row) throw new Error("Profile row missing");
+      const setting = renderRow(row);
+      const more = setting.components
+        .filter((control) => control instanceof ExtraButtonComponent)
+        .find((button) => button.tooltip === m.workbench_more_actions())!;
+      Object.assign(more, {
+        extraSettingsEl: document.createElement("button"),
+      });
+      more.click();
+      Menu.instances
+        .at(-1)!
+        .items.find((item) => item.title === m.settings_profile_share())!
+        .click();
+      yield* eventually(() => expect(opened).toHaveBeenCalledOnce());
+      const modal = Modal.instances.at(-1)!;
+      expect(modal).toBeInstanceOf(ShareProfileModal);
+      modal.onOpen();
+      expect(modal.title).toBe(m.profile_share_title({ label }));
+      modal.onClose();
+    }),
 );
 
 it.each([true, false])(
@@ -425,12 +428,6 @@ const sharing = Effect.fnUntraced(function* (
     folder,
     notices: () => notifier.notices.map(({ messages }) => messages[0]),
   };
-});
-
-/** Let the dialog's fiber and the Promises it waits on run until `done`. */
-const until = Effect.fnUntraced(function* (done: () => boolean) {
-  for (let turn = 0; turn < 1000 && !done(); turn++) yield* Effect.yieldNow;
-  expect(done()).toBe(true);
 });
 
 /** Press `label`, as the user does; the output it starts runs on. */
