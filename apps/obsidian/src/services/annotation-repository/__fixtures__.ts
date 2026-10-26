@@ -1040,9 +1040,7 @@ export {
   colorOf,
   annotationRows,
   zoteroHolding,
-  MOVES,
   moved,
   zoteroTagging,
   TAGGED,
 };
-export type { SentTag };

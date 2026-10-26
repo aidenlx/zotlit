@@ -126,8 +126,12 @@ export default defineConfig({
       // where the methods they replace took `this`. Remove the entry when the
       // core is gone (slice 15f of #1710).
       files: [
-        "src/services/annotation-repository/repository.ts",
-        "src/services/annotation-repository/core/**",
+        "src/services/annotation-repository/core/draft-store.ts",
+        "src/services/annotation-repository/core/drafts.ts",
+        "src/services/annotation-repository/core/history-record.ts",
+        "src/services/annotation-repository/core/lists.ts",
+        "src/services/annotation-repository/core/outcomes.ts",
+        "src/services/annotation-repository/core/writes.ts",
       ],
       rules: { "max-params": ["error", { max: 4 }] },
     },

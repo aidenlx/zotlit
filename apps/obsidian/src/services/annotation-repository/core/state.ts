@@ -25,7 +25,10 @@ import type {
   TextSave,
 } from "./model";
 
-/** The dependencies and the state that the core's functions share. */
+/**
+ * The dependencies and the state that the core's functions share.
+ * Shared by the core's files until slice 15f removes the core.
+ */
 class CoreState {
   readonly bridge;
   readonly db;

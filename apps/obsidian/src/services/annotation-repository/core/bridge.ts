@@ -1,4 +1,4 @@
-// The bridge reads every part of the Annotation Repository core makes: the demanded Local API source, its state, and the query client.
+// The bridge reads that each part of the Annotation Repository core shares: the demanded Local API source, its state, and the query client.
 import type { QueryFunction, QueryKey } from "@tanstack/query-core";
 import type { Effect } from "effect";
 
