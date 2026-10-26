@@ -1,7 +1,6 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { it } from "@effect/vitest";
-import { Effect, Exit, Fiber, Layer } from "effect";
-import type { FileSystem } from "effect";
+import { Cause, Effect, Exit, Fiber, FileSystem, Layer } from "effect";
 import { createHash } from "node:crypto";
 import {
   mkdir,
@@ -104,80 +103,103 @@ const read = <A>(evaluate: () => Promise<A>) =>
 
 type Services = FileManager | FileSystem.FileSystem | Vault;
 
-/** A vault on disk under a temp folder, removed with the case's Scope. */
-const fixture = Effect.gen(function* () {
-  const parent = join(
-    yield* read(() => getWorkspaceRoot(import.meta.dirname)),
-    ".scratch/excerpt-tests",
-  );
-  yield* read(() => mkdir(parent, { recursive: true }));
-  const root = yield* read(() => mkdtemp(`${parent}/vault-`));
-  yield* Effect.addFinalizer(() =>
-    read(() => rm(root, { recursive: true, force: true })),
-  );
-  const source = new MemoryVault();
-  const reconcileInternalFile = vi.fn(async (path: string) => {
-    await readFile(`${root}/${path}`);
-    source.add(path);
-  });
-  Object.assign(source, {
-    adapter: Object.assign(new FileSystemAdapter(), {
-      getFullPath: (path: string) => `${root}/${path}`,
-      reconcileInternalFile,
-    }),
-  });
-  const createFolder = vi.spyOn(source, "createFolder");
-  const vault = layerVaultFrom(source);
-  const context = yield* Layer.build(
-    Layer.mergeAll(
-      vault,
-      layerFileManagerFrom(
-        stubService<FileManagerSource>("FileManagerSource", {}),
-      ).pipe(Layer.provide(vault)),
-      NodeFileSystem.layer,
+/** The Node file system with the members `decorate` gives in place of its own. */
+const decoratedFileSystem = (
+  decorate: (fs: FileSystem.FileSystem) => Partial<FileSystem.FileSystem>,
+) =>
+  Layer.effect(
+    FileSystem.FileSystem,
+    Effect.map(FileSystem.FileSystem, (fs) =>
+      FileSystem.FileSystem.of({ ...fs, ...decorate(fs) }),
     ),
-  );
-  const gate = yield* makePublicationGate;
-  const provide = <A, E>(effect: Effect.Effect<A, E, Services>) =>
-    Effect.provideContext(effect, context);
-  const settings = {
-    ...defaults,
-    "attachment.import": true,
-    "attachment.folder-path": "Images",
-  };
-  const publish = (
-    outcome: ExcerptOutcome,
-    options: { input?: ExcerptRequest; publishSettings?: typeof settings } = {},
-  ) =>
-    provide(
-      materializeExcerpt({
-        gate,
-        notePath: "Paper.md",
-        settings: options.publishSettings ?? settings,
-        request: options.input ?? request,
-        outcome,
-      }),
+  ).pipe(Layer.provide(NodeFileSystem.layer));
+
+/**
+ * A vault on disk under a temp folder, removed with the case's Scope, over
+ * `fileSystem`.
+ */
+const fixtureOver = (
+  fileSystem: Layer.Layer<FileSystem.FileSystem> = NodeFileSystem.layer,
+) =>
+  Effect.gen(function* () {
+    const parent = join(
+      yield* read(() => getWorkspaceRoot(import.meta.dirname)),
+      ".scratch/excerpt-tests",
     );
-  return {
-    root,
-    source,
-    createFolder,
-    reconcileInternalFile,
-    settings,
-    publish,
-    save: (input = request, image = pngImage) =>
-      publish(
-        availableOutcome({
-          ...image,
-          provenance: "rendered",
-          freshness: "checked",
-        }),
-        { input },
+    yield* read(() => mkdir(parent, { recursive: true }));
+    const root = yield* read(() => mkdtemp(`${parent}/vault-`));
+    yield* Effect.addFinalizer(() =>
+      read(() => rm(root, { recursive: true, force: true })),
+    );
+    const source = new MemoryVault();
+    const reconcileInternalFile = vi.fn(async (path: string) => {
+      await readFile(`${root}/${path}`);
+      source.add(path);
+    });
+    Object.assign(source, {
+      adapter: Object.assign(new FileSystemAdapter(), {
+        getFullPath: (path: string) => `${root}/${path}`,
+        reconcileInternalFile,
+      }),
+    });
+    const createFolder = vi.spyOn(source, "createFolder");
+    const vault = layerVaultFrom(source);
+    const context = yield* Layer.build(
+      Layer.mergeAll(
+        vault,
+        layerFileManagerFrom(
+          stubService<FileManagerSource>("FileManagerSource", {}),
+        ).pipe(Layer.provide(vault)),
+        fileSystem,
       ),
-    retain: (input: ExcerptRequest, paths: readonly string[]) =>
-      provide(retainExcerpt({ request: input, paths })),
-  };
-});
+    );
+    const gate = yield* makePublicationGate;
+    const provide = <A, E>(effect: Effect.Effect<A, E, Services>) =>
+      Effect.provideContext(effect, context);
+    const settings = {
+      ...defaults,
+      "attachment.import": true,
+      "attachment.folder-path": "Images",
+    };
+    const publish = (
+      outcome: ExcerptOutcome,
+      options: {
+        input?: ExcerptRequest;
+        publishSettings?: typeof settings;
+      } = {},
+    ) =>
+      provide(
+        materializeExcerpt({
+          gate,
+          notePath: "Paper.md",
+          settings: options.publishSettings ?? settings,
+          request: options.input ?? request,
+          outcome,
+        }),
+      );
+    return {
+      root,
+      source,
+      createFolder,
+      reconcileInternalFile,
+      settings,
+      publish,
+      save: (input = request, image = pngImage) =>
+        publish(
+          availableOutcome({
+            ...image,
+            provenance: "rendered",
+            freshness: "checked",
+          }),
+          { input },
+        ),
+      retain: (input: ExcerptRequest, paths: readonly string[]) =>
+        provide(retainExcerpt({ request: input, paths })),
+    };
+  });
+
+/** A vault on disk under a temp folder, removed with the case's Scope. */
+const fixture = fixtureOver();
 
 const savedPath = (result: MaterializedExcerpt) => {
   if (result.kind !== "saved") throw new Error("Fixture image was not saved");
@@ -247,6 +269,63 @@ it.effect(
         1,
       );
       expect(f.source.getFileByPath(path)).not.toBeNull();
+    }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "takes back the bytes of a save interrupted while it links them",
+  () =>
+    Effect.gen(function* () {
+      const linked = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const f = yield* fixtureOver(
+        decoratedFileSystem((fs) => ({
+          // The link is on disk; the save is interrupted before it goes on.
+          link: (from, to) =>
+            fs.link(from, to).pipe(
+              Effect.andThen(
+                Effect.promise(() => {
+                  linked.resolve();
+                  return release.promise;
+                }),
+              ),
+            ),
+        })),
+      );
+      const save = yield* f
+        .save()
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* read(() => linked.promise);
+      const interrupting = yield* Fiber.interrupt(save).pipe(
+        Effect.forkChild({ startImmediately: true }),
+      );
+      release.resolve();
+      yield* Fiber.join(interrupting);
+      expect(Exit.hasInterrupts(yield* Fiber.await(save))).toBe(true);
+      expect(yield* read(() => readdir(join(f.root, "Images")))).toEqual([]);
+    }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "takes back the bytes of a save whose cause holds an interrupt and a failure",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixtureOver(
+        decoratedFileSystem((fs) => ({
+          // The check of the published bytes ends in an interrupt and a defect.
+          readFile: (path) =>
+            path.endsWith(".png")
+              ? Effect.failCause(
+                  Cause.combine(
+                    Cause.interrupt(),
+                    Cause.die(new Error("read failed")),
+                  ),
+                )
+              : fs.readFile(path),
+        })),
+      );
+      yield* Effect.exit(f.save());
+      expect(yield* read(() => readdir(join(f.root, "Images")))).toEqual([]);
     }).pipe(Effect.scoped),
 );
 
