@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect, Exit, Fiber, Scope, Stream } from "effect";
+import { Effect, Exit, Fiber, Logger, References, Scope, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import {
@@ -127,6 +127,45 @@ describe("AttachmentImport", () => {
         ).toBe(`[elsewhere.pdf](file://${outside})`);
         expect(yield* batch.flush).toEqual({ ...NOTHING, blocked: 1 });
         expect(copyAttachments).toHaveBeenCalledWith([]);
+      }),
+  );
+
+  it.effect(
+    "logs a rendered blocked source at the flush, with its origin and reason only",
+    () =>
+      Effect.gen(function* () {
+        const { service } = yield* makeService();
+        const batch = yield* service.prepare("Notes/A.md");
+        const outside = yield* makeFile(outsideDir, "elsewhere.pdf");
+        batch.resolveLink({
+          source: batch.decide(outside, "linked-absolute"),
+          vaultName: "elsewhere.pdf",
+        })();
+        const records: {
+          message: unknown;
+          annotations: Record<string, unknown>;
+        }[] = [];
+        const capture = Logger.make(({ message, fiber }) => {
+          records.push({
+            message,
+            annotations: fiber.getRef(References.CurrentLogAnnotations),
+          });
+        });
+
+        yield* batch.flush.pipe(Effect.provide(Logger.layer([capture])));
+
+        const blocked = records.filter((record) =>
+          JSON.stringify(record.message).includes("Blocked attachment source"),
+        );
+        expect(blocked).toEqual([
+          expect.objectContaining({
+            annotations: expect.objectContaining({
+              origin: "linked-absolute",
+              reason: "no-trusted-root",
+            }),
+          }),
+        ]);
+        expect(JSON.stringify(blocked)).not.toContain(outside);
       }),
   );
 
