@@ -2,6 +2,7 @@
 import { Effect } from "effect";
 import type { Context } from "effect";
 
+import { exitOver } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { settleAtEdge } from "@/lib/signal-edge";
 import type { ExcerptPreparation } from "@/services/excerpt-image/prepare";
@@ -58,11 +59,11 @@ export function bindNoteCitations(
   bridge: Pick<EffectBridge, "runSync" | "runPromise" | "runPromiseExit">,
   context: Context.Context<NoteCitationServices>,
 ): NoteCitations {
+  const plain = <A, E>(effect: Effect.Effect<A, E, NoteCitationServices>) =>
+    Effect.mapError(effect, (error) => plainTemplateError(error));
   const provide = <A, E>(effect: Effect.Effect<A, E, NoteCitationServices>) =>
-    effect.pipe(
-      Effect.mapError((error) => plainTemplateError(error)),
-      Effect.provideContext(context),
-    );
+    Effect.provideContext(plain(effect), context);
+  const runExit = exitOver(bridge, context);
   return {
     renderCitation: (items, variant) =>
       bridge.runSync(provide(renderCitation(items, variant))),
@@ -70,9 +71,7 @@ export function bindNoteCitations(
       bridge.runPromise(provide(renderAnnotationCitation(annotationKey))),
     prepareAnnotationInsert: async ({ signal, ...options }) =>
       settleAtEdge(
-        await bridge.runPromiseExit(provide(prepareAnnotationInsert(options)), {
-          signal,
-        }),
+        await runExit(plain(prepareAnnotationInsert(options)), { signal }),
         signal,
       ),
   };

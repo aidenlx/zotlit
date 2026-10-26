@@ -43,6 +43,23 @@ export function valueOr<A, E>(exit: Exit.Exit<A, E>, released: A): A {
   throw Cause.squash(exit.cause);
 }
 
+/**
+ * The Exit runner an edge handle runs its Effects through: `bridge`'s
+ * `runPromiseExit` over `context`. The handle maps the Exit to its caller's
+ * answer, with {@link valueOr} or, where a signal cancels the run,
+ * `settleAtEdge`.
+ */
+export function exitOver<R>(
+  bridge: Pick<EffectBridge, "runPromiseExit">,
+  context: Context.Context<R>,
+) {
+  return <A, E>(
+    effect: Effect.Effect<A, E, R>,
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<Exit.Exit<A, E>> =>
+    bridge.runPromiseExit(Effect.provideContext(effect, context), options);
+}
+
 /** The runners over `context`, with pending Exit runs and subscriptions kept in `scope`. */
 function bridgeOver(
   context: Context.Context<never>,
