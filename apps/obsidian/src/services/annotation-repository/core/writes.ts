@@ -1,5 +1,15 @@
 // Writes and conflicts: every command to Zotero, run one at a time per Annotation, and what its answer leaves behind.
-import { DateTime, Effect, FiberSet, Schema } from "effect";
+import {
+  Cause,
+  DateTime,
+  Effect,
+  Exit,
+  Fiber,
+  FiberSet,
+  Option,
+  Result,
+  Schema,
+} from "effect";
 
 import { parseAnnotationPosition, parseIndexedKey } from "@zotlit/db";
 import type { AnnotationPositionRaw } from "@zotlit/db";
@@ -12,7 +22,7 @@ import type {
   HistoryJoin,
   HistoryStep,
 } from "@/services/annotation-repository/history";
-import { firstLockRefusal } from "@/services/annotation-repository/lock";
+import { lockRefuses } from "@/services/annotation-repository/lock";
 import type {
   AnnotationLock,
   LockedVerb,
@@ -102,7 +112,10 @@ import type { CoreState } from "./state";
 /** The write failure a lock gives, with its Lock Reason. */
 type LockedFailure = Extract<WriteFailure, { kind: "locked" }>;
 
-/** Why a write's run answered no outcome: a read under it failed, or it threw. */
+/**
+ * Why a write's run answered no outcome: a read under it failed, or it threw.
+ * Its `cause` is a `WriteReadError` or a defect from the run.
+ */
 export class WriteRunFailed extends Schema.TaggedError<
   WriteRunFailed,
   { readonly brand: unique symbol }
@@ -155,10 +168,11 @@ type QueuedCommand = WriteAttempt & {
   /** Set on the second send of a tag write, after its `412` re-read. */
   reapplied?: true;
   /**
-   * Set once Zotero took the send. A close of the layer after that interrupts
-   * only the read-back, so the write keeps its answer.
+   * What Zotero answered the send, or `null` while no answer is read. A close
+   * of the layer after the answer interrupts only the reads that follow, so
+   * the write keeps it. Read only by the `mutationFn` edge.
    */
-  progress?: { accepted: boolean };
+  progress?: { answer: MutationState | null };
 };
 
 /** Why a write's reads failed under it. */
@@ -196,12 +210,29 @@ const createAnnotation = Effect.fnUntraced(function* (
   core: CoreState,
   attachmentKey: string,
   create: { draft: Omit<AnnotationDraft, "parentKey">; group?: string },
-) {
-  return yield* counted(
-    core,
-    attachmentKey,
-    sendCreate(core, attachmentKey, create),
+): Effect.fn.Return<CreateOutcome, WriteReadError> {
+  // The create runs on the layer's Scope, as a command does. A close of the
+  // layer interrupts it: before Zotero answered the send, its outcome is
+  // unknown; after, the create keeps that answer.
+  const progress: { answer: CreateOutcome | null } = { answer: null };
+  const fiber = yield* FiberSet.run(
+    core.fibers,
+    counted(
+      core,
+      attachmentKey,
+      sendCreate(core, attachmentKey, { ...create, progress }),
+    ),
   );
+  const exit = yield* Fiber.await(fiber);
+  if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) {
+    return (
+      progress.answer ?? {
+        kind: "failed",
+        failure: { kind: "unknown-outcome" },
+      }
+    );
+  }
+  return yield* exit;
 });
 
 const sendCreate = Effect.fnUntraced(function* (
@@ -210,7 +241,16 @@ const sendCreate = Effect.fnUntraced(function* (
   {
     draft,
     group,
-  }: { draft: Omit<AnnotationDraft, "parentKey">; group?: string },
+    progress,
+  }: {
+    draft: Omit<AnnotationDraft, "parentKey">;
+    group?: string;
+    /**
+     * What Zotero answered the create, or `null` while no answer is read.
+     * Read only by {@link createAnnotation}.
+     */
+    progress: { answer: CreateOutcome | null };
+  },
 ): Effect.fn.Return<CreateOutcome, WriteReadError> {
   const parsed = parseIndexedKey(attachmentKey);
   if (!parsed) {
@@ -243,6 +283,17 @@ const sendCreate = Effect.fnUntraced(function* (
     headers: request.headers,
     body: request.body,
   });
+  const created =
+    "failure" in reply
+      ? reply
+      : readCreateResult(reply.value.text, {
+          parentKey: attachmentKey,
+          type: whole.type,
+        });
+  progress.answer =
+    "failure" in created
+      ? { kind: "failed", failure: created.failure }
+      : { kind: "created", annotationKey: created.value.key };
   if (!source || !(yield* sourceStillBound(core, attachmentKey, source))) {
     return { kind: "failed", failure: { kind: "server-changed" } };
   }
@@ -254,10 +305,6 @@ const sendCreate = Effect.fnUntraced(function* (
     return { kind: "failed", failure: reply.failure };
   }
 
-  const created = readCreateResult(reply.value.text, {
-    parentKey: attachmentKey,
-    type: whole.type,
-  });
   if ("failure" in created) {
     yield* refresh(core, attachmentKey);
     return { kind: "failed", failure: created.failure };
@@ -655,14 +702,14 @@ const command = Effect.fnUntraced(function* (
     // Zotero runs on this device, so no write waits for an online event.
     networkMode: "always",
     mutationFn: async () => {
-      // A close of the layer interrupts the write: before Zotero took the
-      // send, its outcome is unknown; after, the write was saved.
-      const progress = { accepted: false };
+      // A close of the layer interrupts the write: before Zotero answered the
+      // send, its outcome is unknown; after, the write keeps that answer.
+      const progress: { answer: MutationState | null } = { answer: null };
       const send = runCommand(core, annotationKey, { ...queued, progress });
       const exit = await core.bridge.runPromiseExit(
         command.run ? command.run(send, mutation) : send,
       );
-      return valueOr(exit, progress.accepted ? IDLE : UNKNOWN_OUTCOME);
+      return valueOr(exit, progress.answer ?? UNKNOWN_OUTCOME);
     },
   });
   // The mutation holds its proposal from here on, so a surface redrawing on
@@ -782,14 +829,17 @@ const runCommand: (
       held.record,
     );
     const source = yield* compatibleApiSource(core, held.attachmentKey);
+    // A second send (a tag write applied again) starts with no answer.
+    if (command.progress) command.progress.answer = null;
     const reply = yield* core.localApi.authorizedSend(path, {
       library,
       method,
       headers,
       body,
     });
-    if (command.progress && !("failure" in reply)) {
-      command.progress.accepted = true;
+    if (command.progress) {
+      command.progress.answer =
+        "failure" in reply ? { kind: "failed", failure: reply.failure } : IDLE;
     }
     if (
       !source ||
@@ -996,13 +1046,16 @@ const firstHeldLockRefusal = Effect.fnUntraced(function* (
   failure: LockedFailure;
 } | null> {
   const verb: LockedVerb = kind === "existence" ? "delete" : kind;
-  const locks = new Map<string, AnnotationLock | null>();
-  for (const annotationKey of annotationKeys)
-    locks.set(annotationKey, yield* writeLock(core, annotationKey));
-  const refused = firstLockRefusal(
-    annotationKeys,
-    verb,
-    (annotationKey) => locks.get(annotationKey) ?? null,
+  const refused = Option.getOrNull(
+    yield* Effect.findFirstFilter(annotationKeys, (annotationKey) =>
+      writeLock(core, annotationKey).pipe(
+        Effect.map((lock) =>
+          lock && lockRefuses(lock, verb)
+            ? Result.succeed({ annotationKey, lock })
+            : Result.fail(undefined),
+        ),
+      ),
+    ),
   );
   if (!refused) return null;
   const { annotationKey, lock } = refused;

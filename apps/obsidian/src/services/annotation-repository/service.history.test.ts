@@ -24,6 +24,7 @@ import {
 } from "@/views/annot-view/card-controls";
 
 import {
+  collect,
   NOW,
   eventually,
   scopedStack,
@@ -421,12 +422,12 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       const zotero = zoteroHolding("PUPR5FG5");
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, zotero.answers),
       );
       const changed: string[] = [];
-      stack.defer(
-        repository.listen("history-changed", (key) => changed.push(key)),
+      yield* collect(service.historyChanged, (key) =>
+        Effect.sync(() => changed.push(key)),
       );
 
       yield* service.openHistory("RGRPDF24");
@@ -1824,11 +1825,13 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, zotero.answers),
       );
       let conflicts = 0;
-      stack.defer(repository.listen("write-conflict", () => (conflicts += 1)));
+      yield* collect(service.writeConflicts, () =>
+        Effect.sync(() => (conflicts += 1)),
+      );
       yield* service.openHistory("RGRPDF24");
       yield* saveTags(service, ["review", "nlp", "figure"]);
       const sent = zotero.patches.length;

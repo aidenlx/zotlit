@@ -181,18 +181,14 @@ const stepHistory = Effect.fnUntraced(function* (
   );
   if (locked) return { kind: "locked", reason: locked.failure.reason };
 
-  core.steppingAttachments.add(attachmentKey);
-  return yield* takeStep(core, step, {
-    attachmentKey,
-    direction,
-    history,
-  }).pipe(
-    Effect.ensuring(
+  return yield* Effect.acquireUseRelease(
+    Effect.sync(() => core.steppingAttachments.add(attachmentKey)),
+    () => takeStep(core, step, { attachmentKey, direction, history }),
+    () =>
       Effect.sync(() => {
         core.steppingAttachments.delete(attachmentKey);
         core.publish({ _tag: "history-changed", attachmentKey });
       }),
-    ),
   );
 });
 
@@ -337,13 +333,10 @@ function stepWrite(
   annotationKey: string,
   fields: HistoryFields,
 ): Effect.Effect<MutationState, WriteRunFailed> {
-  return Effect.suspend(() => {
-    core.steppingWrites.add(annotationKey);
-    return fieldWrite(core, annotationKey, fields);
-  }).pipe(
-    Effect.ensuring(
-      Effect.sync(() => core.steppingWrites.delete(annotationKey)),
-    ),
+  return Effect.acquireUseRelease(
+    Effect.sync(() => core.steppingWrites.add(annotationKey)),
+    () => fieldWrite(core, annotationKey, fields),
+    () => Effect.sync(() => core.steppingWrites.delete(annotationKey)),
   );
 }
 
@@ -424,19 +417,19 @@ const takeTagStep = Effect.fnUntraced(function* (
   }
 
   let sent = record;
-  core.steppingWrites.add(annotationKey);
-  const outcome = yield* command(core, annotationKey, {
-    write: "tags",
-    request: (target, against) => {
-      sent = against;
-      return tagsPatch(target, mergeTags(annotationTags(against), reverse));
-    },
-    propose: (against) =>
-      proposedTags(mergeTags(annotationTags(against), reverse)),
-  }).pipe(
-    Effect.ensuring(
-      Effect.sync(() => core.steppingWrites.delete(annotationKey)),
-    ),
+  const outcome = yield* Effect.acquireUseRelease(
+    Effect.sync(() => core.steppingWrites.add(annotationKey)),
+    () =>
+      command(core, annotationKey, {
+        write: "tags",
+        request: (target, against) => {
+          sent = against;
+          return tagsPatch(target, mergeTags(annotationTags(against), reverse));
+        },
+        propose: (against) =>
+          proposedTags(mergeTags(annotationTags(against), reverse)),
+      }),
+    () => Effect.sync(() => core.steppingWrites.delete(annotationKey)),
   );
   history.drop(direction, step);
   if (outcome.kind === "failed") {

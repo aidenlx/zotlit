@@ -25,6 +25,7 @@ import {
 import type { ZoteroReadLease } from "@/services/zotero-reads/service";
 
 import {
+  collect,
   afterWrite,
   FIXTURE_ROWS,
   leaseOver,
@@ -285,7 +286,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, {
           item: () =>
             annotationItem(
@@ -294,10 +295,8 @@ it.effect(
         }),
       );
       const announced: Array<[string, string | null]> = [];
-      stack.defer(
-        repository.listen("excerpt-pixels-changed", (record) =>
-          announced.push([record.key, record.color]),
-        ),
+      yield* collect(service.excerptPixelsChanged, ({ record }) =>
+        Effect.sync(() => announced.push([record.key, record.color])),
       );
 
       yield* service.patchColor("TYY6Z6ZF", "#2EA8E5");
@@ -309,7 +308,7 @@ it.effect(
 it.effect("says nothing for a saved write that left the pixels alone", () =>
   Effect.gen(function* () {
     const stack = yield* scopedStack;
-    const { repository, service } = yield* Effect.promise(() =>
+    const { service } = yield* Effect.promise(() =>
       writable(stack, {
         item: ({ url }) =>
           annotationItem(
@@ -322,10 +321,8 @@ it.effect("says nothing for a saved write that left the pixels alone", () =>
       }),
     );
     const announced: string[] = [];
-    stack.defer(
-      repository.listen("excerpt-pixels-changed", (record) =>
-        announced.push(record.key),
-      ),
+    yield* collect(service.excerptPixelsChanged, ({ record }) =>
+      Effect.sync(() => announced.push(record.key)),
     );
 
     yield* service.patchComment("TYY6Z6ZF", "Saved");
@@ -340,7 +337,7 @@ it.effect("announces nothing while a write is still in flight", () =>
     const stack = yield* scopedStack;
     const reread = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
-    const { repository, service } = yield* Effect.promise(() =>
+    const { service } = yield* Effect.promise(() =>
       writable(stack, {
         item: async () => {
           reread.resolve();
@@ -350,10 +347,8 @@ it.effect("announces nothing while a write is still in flight", () =>
       }),
     );
     const announced: string[] = [];
-    stack.defer(
-      repository.listen("excerpt-pixels-changed", (record) =>
-        announced.push(record.key),
-      ),
+    yield* collect(service.excerptPixelsChanged, ({ record }) =>
+      Effect.sync(() => announced.push(record.key)),
     );
 
     const saved = yield* Effect.forkChild(
@@ -508,7 +503,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, {
           write: () => staleVersion(),
           item: () =>
@@ -516,10 +511,12 @@ it.effect(
         }),
       );
       const conflicted: string[] = [];
-      stack.defer(
-        repository.listen("write-conflict", (annotationKey, attachmentKey) => {
-          conflicted.push(`${annotationKey} on ${attachmentKey}`);
-        }),
+      yield* collect(
+        service.writeConflicts,
+        ({ annotationKey, attachmentKey }) =>
+          Effect.sync(() =>
+            conflicted.push(`${annotationKey} on ${attachmentKey}`),
+          ),
       );
 
       const outcome = yield* service.patchColor("PUPR5FG5", "#ff6666");
@@ -538,7 +535,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, {
           write: () => staleVersion(),
           // The Annotation moved to the very colour this write asks for — another
@@ -548,8 +545,8 @@ it.effect(
         }),
       );
       const conflicted: string[] = [];
-      stack.defer(
-        repository.listen("write-conflict", (key) => conflicted.push(key)),
+      yield* collect(service.writeConflicts, ({ annotationKey }) =>
+        Effect.sync(() => conflicted.push(annotationKey)),
       );
 
       const outcome = yield* service.patchColor("PUPR5FG5", "#FF6666");
@@ -803,7 +800,7 @@ it.effect(
       const inFlight = new Promise<Response>((resolve) => {
         answer = resolve;
       });
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, {
           write: () => inFlight,
           item: () =>
@@ -813,19 +810,21 @@ it.effect(
         }),
       );
       const states: string[] = [];
-      stack.defer(
-        repository.listen("annotation-changed", (key) => {
-          states.push(repository.mutationFor(key).kind);
-        }),
+      yield* collect(service.annotationChanged, (key) =>
+        service
+          .mutationFor(key)
+          .pipe(Effect.map(({ kind }) => states.push(kind))),
       );
       // What a surface redrawing on the announcement reads, in the same task.
       const announced: (string | null)[] = [];
-      stack.defer(
-        repository.listen("annotations-changed", (key) => {
-          announced.push(
-            colorOf(repository.peek(key)?.value ?? null, "PUPR5FG5"),
-          );
-        }),
+      yield* collect(service.annotationsChanged, (key) =>
+        service
+          .peek(key)
+          .pipe(
+            Effect.map((held) =>
+              announced.push(colorOf(held?.value ?? null, "PUPR5FG5")),
+            ),
+          ),
       );
 
       // Zotero stores lower case, so the proposal is drawn as Zotero will answer.
@@ -862,14 +861,14 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       const zotero = zoteroLibrary();
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, zotero.answers),
       );
       const states: string[] = [];
-      stack.defer(
-        repository.listen("annotation-changed", (key) => {
-          states.push(repository.mutationFor(key).kind);
-        }),
+      yield* collect(service.annotationChanged, (key) =>
+        service
+          .mutationFor(key)
+          .pipe(Effect.map(({ kind }) => states.push(kind))),
       );
       const release = zotero.holdWrites();
 
@@ -905,7 +904,7 @@ it.effect.each([
   ([, write]) =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, {
           write,
           // Zotero's own copy, which a conflict re-reads.
@@ -914,10 +913,14 @@ it.effect.each([
         }),
       );
       const drawn: (string | null)[] = [];
-      stack.defer(
-        repository.listen("annotations-changed", (key) => {
-          drawn.push(colorOf(repository.peek(key)?.value ?? null, "PUPR5FG5"));
-        }),
+      yield* collect(service.annotationsChanged, (key) =>
+        service
+          .peek(key)
+          .pipe(
+            Effect.map((held) =>
+              drawn.push(colorOf(held?.value ?? null, "PUPR5FG5")),
+            ),
+          ),
       );
 
       const outcome = yield* service.patchColor("PUPR5FG5", "#ff6666");
@@ -1225,6 +1228,233 @@ it.effect(
       // Zotero took the write before the unload; only the read-back after it
       // stops, so the write keeps its answer.
       expect(yield* Fiber.join(color)).toEqual({ kind: "idle" });
+    }),
+);
+
+it.effect(
+  "keeps the answer of a send Zotero refused before repository unload",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const freshRead = Promise.withResolvers<Response>();
+      const reading = Promise.withResolvers<void>();
+      let holdFreshRead = false;
+      const { repository, service } = yield* Effect.promise(() =>
+        writable(stack, {
+          write: () => {
+            holdFreshRead = true;
+            return staleVersion();
+          },
+          item: () => {
+            if (!holdFreshRead) {
+              return annotationItem(
+                afterWrite("PUPR5FG5", { color: "#5fb236" }),
+              );
+            }
+            reading.resolve();
+            return freshRead.promise;
+          },
+        }),
+      );
+
+      const color = yield* Effect.forkChild(
+        service.patchColor("PUPR5FG5", "#ff6666"),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(() => reading.promise);
+      yield* Effect.promise(() => repository[Symbol.asyncDispose]());
+      freshRead.resolve(
+        annotationItem(afterWrite("PUPR5FG5", { color: "#5fb236" })),
+      );
+
+      // Zotero refused the write before the unload and saved nothing; only the
+      // read of its fresh record stops, so the write keeps the refusal.
+      expect(yield* Fiber.join(color)).toEqual({
+        kind: "failed",
+        failure: { kind: "conflict" },
+      });
+    }),
+);
+
+it.effect(
+  "keeps the answer of an accepted send when the unload lands on its database check",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const reply = Promise.withResolvers<Response>();
+      const sent = Promise.withResolvers<void>();
+      const verifying = Promise.withResolvers<void>();
+      const lease = Promise.withResolvers<ZoteroReadLease>();
+      const { repository, service, client, acquireRead, dbEvents } =
+        yield* Effect.promise(() =>
+          writable(stack, {
+            write: () => {
+              sent.resolve();
+              return reply.promise;
+            },
+            item: () =>
+              annotationItem(
+                afterWrite("PUPR5FG5", { color: "#5fb236", version: 20 }),
+              ),
+          }),
+        );
+
+      const color = yield* Effect.forkChild(
+        service.patchColor("PUPR5FG5", "#5fb236"),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(() => sent.promise);
+      // The database changes under the send, so the write checks its binding
+      // against a new read of the Zotero database once Zotero answers.
+      dbEvents.emit("changed");
+      acquireRead.mockImplementationOnce(() => {
+        verifying.resolve();
+        return lease.promise;
+      });
+      reply.resolve(writeAccepted(20));
+      yield* Effect.promise(() => verifying.promise);
+      yield* Effect.promise(() => repository[Symbol.asyncDispose]());
+      lease.resolve(yield* Effect.promise(() => leaseOver(stack, client)));
+
+      expect(yield* Fiber.join(color)).toEqual({ kind: "idle" });
+    }),
+);
+
+it.effect(
+  "answers a create Zotero accepted before repository unload with the created key",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const reply = Promise.withResolvers<Response>();
+      const sent = Promise.withResolvers<void>();
+      const verifying = Promise.withResolvers<void>();
+      const lease = Promise.withResolvers<ZoteroReadLease>();
+      const { repository, service, client, acquireRead, dbEvents } =
+        yield* Effect.promise(() =>
+          writable(stack, {
+            write: () => {
+              sent.resolve();
+              return reply.promise;
+            },
+          }),
+        );
+
+      const creating = yield* Effect.forkChild(
+        service.createAnnotation("RGRPDF24", DRAFT),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(() => sent.promise);
+      // The database changes under the send, so the create checks its binding
+      // against a new read of the Zotero database once Zotero answers.
+      dbEvents.emit("changed");
+      acquireRead.mockImplementationOnce(() => {
+        verifying.resolve();
+        return lease.promise;
+      });
+      reply.resolve(createAccepted(MADE));
+      yield* Effect.promise(() => verifying.promise);
+      yield* Effect.promise(() => repository[Symbol.asyncDispose]());
+      lease.resolve(yield* Effect.promise(() => leaseOver(stack, client)));
+
+      // Zotero created the Annotation before the unload, so the create keeps
+      // the key Zotero answered.
+      expect(yield* Fiber.join(creating)).toEqual({
+        kind: "created",
+        annotationKey: "MADE2345",
+      });
+    }),
+);
+
+it.effect(
+  "answers a create in flight at repository unload with an unknown outcome",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const reply = Promise.withResolvers<Response>();
+      const sent = Promise.withResolvers<void>();
+      const { repository, service } = yield* Effect.promise(() =>
+        writable(stack, {
+          write: () => {
+            sent.resolve();
+            return reply.promise;
+          },
+        }),
+      );
+
+      const creating = yield* Effect.forkChild(
+        service.createAnnotation("RGRPDF24", DRAFT),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(() => sent.promise);
+      yield* Effect.promise(() => repository[Symbol.asyncDispose]());
+      reply.resolve(createAccepted(MADE));
+
+      expect(yield* Fiber.join(creating)).toEqual({
+        kind: "failed",
+        failure: { kind: "unknown-outcome" },
+      });
+    }),
+);
+
+it.effect(
+  "fails a write with WriteRunFailed, carrying the read failure, where its database check cannot read",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const reply = Promise.withResolvers<Response>();
+      const sent = Promise.withResolvers<void>();
+      const { service, acquireRead, dbEvents } = yield* Effect.promise(() =>
+        writable(stack, {
+          write: () => {
+            sent.resolve();
+            return reply.promise;
+          },
+        }),
+      );
+
+      const color = yield* Effect.forkChild(
+        Effect.flip(service.patchColor("PUPR5FG5", "#ff6666")),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(() => sent.promise);
+      // The database changes under the send, and its new read fails.
+      dbEvents.emit("changed");
+      acquireRead.mockRejectedValueOnce(new Error("database gone"));
+      reply.resolve(writeAccepted(20));
+
+      const failure = yield* Fiber.join(color);
+      expect(failure._tag).toBe("WriteRunFailed");
+      expect(failure.cause).toMatchObject({ _tag: "DbUnavailable" });
+    }),
+);
+
+it.effect(
+  "fails a create with the read failure where its database check cannot read",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const reply = Promise.withResolvers<Response>();
+      const sent = Promise.withResolvers<void>();
+      const { service, acquireRead, dbEvents } = yield* Effect.promise(() =>
+        writable(stack, {
+          write: () => {
+            sent.resolve();
+            return reply.promise;
+          },
+        }),
+      );
+
+      const creating = yield* Effect.forkChild(
+        Effect.flip(service.createAnnotation("RGRPDF24", DRAFT)),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(() => sent.promise);
+      // The database changes under the send, and its new read fails.
+      dbEvents.emit("changed");
+      acquireRead.mockRejectedValueOnce(new Error("database gone"));
+      reply.resolve(createAccepted(MADE));
+
+      expect((yield* Fiber.join(creating))._tag).toBe("DbUnavailable");
     }),
 );
 
@@ -1675,7 +1905,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service, requests } = yield* Effect.promise(() =>
+      const { service, requests } = yield* Effect.promise(() =>
         writable(stack, {
           item: () =>
             annotationItem(
@@ -1684,10 +1914,8 @@ it.effect(
         }),
       );
       const announced: unknown[] = [];
-      stack.defer(
-        repository.listen("excerpt-pixels-changed", (record) =>
-          announced.push([record.key, record.position]),
-        ),
+      yield* collect(service.excerptPixelsChanged, ({ record }) =>
+        Effect.sync(() => announced.push([record.key, record.position])),
       );
       const sent = requests.length;
 
@@ -1725,7 +1953,7 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       const answer = Promise.withResolvers<Response>();
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, {
           write: () => answer.promise,
           item: () =>
@@ -1742,10 +1970,8 @@ it.effect(
           ),
         );
       const pixels: string[] = [];
-      stack.defer(
-        repository.listen("excerpt-pixels-changed", ({ key }) =>
-          pixels.push(key),
-        ),
+      yield* collect(service.excerptPixelsChanged, ({ record }) =>
+        Effect.sync(() => pixels.push(record.key)),
       );
 
       // The reader's own edge, before Zotero's three decimals.
@@ -1812,7 +2038,7 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       const moved = { pageIndex: 1, rects: [[60, 400, 570, 743.723]] };
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, {
           write: () => staleVersion(),
           item: () =>
@@ -1822,8 +2048,8 @@ it.effect(
         }),
       );
       const conflicted: string[] = [];
-      stack.defer(
-        repository.listen("write-conflict", (key) => conflicted.push(key)),
+      yield* collect(service.writeConflicts, ({ annotationKey }) =>
+        Effect.sync(() => conflicted.push(annotationKey)),
       );
 
       const outcome = yield* service.patchGeometry(

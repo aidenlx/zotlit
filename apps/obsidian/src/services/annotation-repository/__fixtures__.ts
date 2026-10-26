@@ -625,6 +625,22 @@ function moveToGroup(
     ).run(userID);
 }
 
+/**
+ * Runs `push` on each value a repository stream announces, on a fiber of the
+ * case that starts at once and ends with the case.
+ */
+export function collect<A>(
+  stream: Stream.Stream<A>,
+  push: (value: A) => Effect.Effect<unknown>,
+) {
+  return Effect.forkChild(
+    Stream.runForEach(stream, (value) => push(value)),
+    {
+      startImmediately: true,
+    },
+  );
+}
+
 /** The next `annotations-changed` the repository emits, as a completion signal. */
 export function nextChange(
   repository: RepositoryClient,
