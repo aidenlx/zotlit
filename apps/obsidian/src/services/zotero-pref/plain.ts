@@ -1,5 +1,5 @@
 /** Zotero preferences for settings, views, and legacy services. */
-import { Effect, Stream } from "effect";
+import { Effect } from "effect";
 import type { ManagedRuntime } from "effect";
 
 import { effectBridge } from "@/lib/effect-bridge";
@@ -15,8 +15,6 @@ export interface PlainZoteroPref extends Omit<
   get(name: string): PrefValue | undefined;
   setProfileDir(dir: string | null): void;
   setDataDir(dir: string | null): void;
-  readonly changes: Stream.Stream<ZoteroPrefSnapshot>;
-  readonly changed: Stream.Stream<void>;
 }
 
 export function plainZoteroPref(
@@ -56,11 +54,5 @@ export function plainZoteroPref(
     get: (name) => bridge.runSync(pref.get(name)),
     setProfileDir: (dir) => bridge.runSync(pref.setProfileDir(dir)),
     setDataDir: (dir) => bridge.runSync(pref.setDataDir(dir)),
-    changes: pref.changes,
-    changed: pref.changes.pipe(
-      Stream.changesWith((a, b) => a.prefs === b.prefs),
-      Stream.drop(1),
-      Stream.map(() => undefined),
-    ),
   };
 }
