@@ -1,0 +1,993 @@
+// The Note Feature writes: create, update, overwrite, rewrite and Profile switch.
+import { DateTime, Effect } from "effect";
+import { getFrontMatterInfo } from "obsidian";
+import type { CachedMetadata, TFile } from "obsidian";
+
+import { buildNoteContextFromSource } from "@zotlit/db";
+import type { Item, NoteSource, NoteTemplateContext } from "@zotlit/db";
+import type { UpdateScope } from "@zotlit/protocol";
+import { evalManagedFrontmatterEntries } from "@zotlit/templates/frontmatter";
+import { replaceManagedRegion } from "@zotlit/templates/obsidian";
+
+import {
+  FIELD_LITERATURE_NOTE_PROFILE,
+  FIELD_ZOTERO_KEY,
+} from "@/lib/constants";
+import { toInstant } from "@/lib/effect-clock";
+import { ensureParentFolder } from "@/lib/ensure-folder";
+import {
+  parseFrontMatter,
+  processLiveFrontMatter,
+  processLiveText,
+  spliceFrontMatter,
+} from "@/lib/live-text";
+import { getLogger } from "@/lib/log";
+import {
+  DEFAULT_PROFILE,
+  parseProfileStamp,
+  readProfileStamp,
+} from "@/lib/profile-stamp";
+import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
+import type { AttachmentImport } from "@/services/attachment-import/service";
+import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
+import { resolveOutcomeScope } from "@/services/excerpt-image/outcome-scope";
+import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
+import type {
+  ExcerptSummary,
+  PreparedExcerpts,
+} from "@/services/excerpt-image/prepare";
+import {
+  itemKeyFromFrontmatter,
+  noteKeyFromFrontmatter,
+} from "@/services/note-index/service";
+import { noteProfileSelector } from "@/services/profile/bindings";
+import type { ResolvedProfile } from "@/services/profile/bindings";
+import { relocatedNotePath } from "@/services/profile/relocation";
+import type { Settings } from "@/services/settings/schema";
+import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
+
+import { applyComposedFrontmatter, composeLiteratureNote } from "./compose";
+import type { ComposeFrontmatterInput } from "./compose";
+import { buildNoteResolvers, itemFacets, resolveNotePath } from "./context";
+import type { NoteFeatureDeps } from "./context";
+import {
+  frontmatterRefusal,
+  NO_BODY_UPDATE,
+  refusedCreate,
+  refusedMissingDocument,
+  refusedProfileConflict,
+  refusedTemplateConversion,
+  refusedUnknownProfile,
+  refusedUpdateMissingDocument,
+  refusedUpdateProfile,
+  refusedUpdateProfileConflict,
+  refusedUpdateTemplateConversion,
+} from "./diagnostics";
+import { prepareManagedFrontmatter } from "./frontmatter";
+import type { PreparedManagedFrontmatter } from "./frontmatter";
+import {
+  readItem,
+  relocationSource,
+  resolveProfileDocument,
+} from "./note-reads";
+import type {
+  CreateNoteInternalOptions,
+  CreateNoteResult,
+  ManagedFrontmatterRefusalDiagnostic,
+  NoteKeyChangedDiagnostic,
+  NoteProfileChangedDiagnostic,
+  OpsContext,
+  UpdateResult,
+  WriteNoteUpdateOptions,
+} from "./types";
+
+const logger = getLogger("note-feature");
+
+/**
+ * The bound feature serializes calls by Indexed Key before this operation.
+ * This operation checks the settled Note Index before it writes. After that
+ * check, `vault.create` is the atomic filename gate: on a collision, the name
+ * is re-resolved with a forced `suffix()` and the write retried. Without a
+ * `suffix()` marker there is nothing to disambiguate, so the collision
+ * surfaces to the caller.
+ *
+ * @throws {@link EmptyFilenameError} when the rendered filename is empty, or an
+ *   Obsidian vault error (e.g. a colliding path with no `suffix()` marker, or
+ *   retries exhausted).
+ */
+async function createNote(
+  ctx: OpsContext,
+  item: Item,
+  options: CreateNoteInternalOptions = {},
+): Promise<CreateNoteResult> {
+  await ctx.noteIndex.whenIndexed();
+  const settings = ctx.bridge.runSync(ctx.settings.current);
+  const requestedProfile = options.profile ?? DEFAULT_PROFILE;
+  const profile = ctx.profile.resolveProfile(requestedProfile);
+  if (!profile) {
+    return refusedUnknownProfile(requestedProfile, {
+      indexedKey: item.indexedKey,
+    });
+  }
+  if (conversionRequired(settings, requestedProfile)) {
+    return refusedTemplateConversion(requestedProfile, {
+      indexedKey: item.indexedKey,
+    });
+  }
+  const existing = ctx.noteIndex.getNotesByItemKey(item.indexedKey);
+  if (existing.length > 0) {
+    if (existing.length === 1 && options.profile !== undefined) {
+      const result = ctx.profile.profileOf(existing[0]!);
+      if (!result.ok) {
+        return refusedUnknownProfile(result.stamped.stamp, {
+          indexedKey: item.indexedKey,
+          path: existing[0]!.path,
+        });
+      }
+      if (result.profile.selector !== requestedProfile) {
+        return refusedProfileConflict(item.indexedKey, existing[0]!, {
+          existingProfile: result.profile.selector,
+          requestedProfile,
+        });
+      }
+    }
+    return refusedCreate(item.indexedKey, existing);
+  }
+  const document = resolveProfileDocument(ctx, profile);
+  if (document === null) {
+    return refusedMissingDocument(profile.document!, {
+      indexedKey: item.indexedKey,
+    });
+  }
+  // One Snapshot across the render and the vault write: every read of this
+  // create sees one database state. A batch hands in its own.
+  await using lease = options.reads
+    ? undefined
+    : await ctx.zoteroReads.acquireRead();
+  const reads = options.reads ?? lease!.reads;
+  const source = await readNoteSource(reads, item.itemID, {
+    username: options.username,
+  });
+  if (!source) throw new Error(`Zotero item not found: ${item.indexedKey}`);
+  // The filename renders from the Snapshot's Item, as the body does.
+  const { itemTags, itemCollections } = itemFacets(source);
+  const { path } =
+    options.preparedPath ??
+    resolveNotePath(ctx, source.item, {
+      itemTags,
+      itemCollections,
+      settings: profile.settings,
+      document,
+    });
+  return await writeNewNote(ctx, item, {
+    reads,
+    source,
+    path,
+    settings: profile.settings,
+    profile,
+    document,
+    onFileCreated: options.onFileCreated,
+    reportExcerpts: options.reportExcerpts,
+    outcomes: options.outcomes,
+    // The path was found free in the vault cache when it was resolved; a
+    // note that took it since fails the create with `FileExists`.
+    createFile: async (content) => {
+      await ensureParentFolder(ctx.app, path);
+      return await ctx.bridge.runPromise(ctx.vault.create(path, content));
+    },
+  });
+}
+
+/**
+ * Prepare and render once; the supplied create boundary writes these composed
+ * bytes in one create.
+ *
+ * @throws `FileExists` when a note took the path since it was resolved, or
+ *   `VaultError` when Obsidian refuses the create.
+ */
+async function writeNewNote(
+  ctx: OpsContext,
+  item: Item,
+  options: {
+    reads: ZoteroReadsApi;
+    /** The item's bundle, read under the same Snapshot. */
+    source: NoteSource;
+    path: string;
+    settings: Readonly<Settings>;
+    profile: ResolvedProfile;
+    document: ResolvedLiteratureNoteTemplate | undefined;
+    onFileCreated?: (file: TFile) => void;
+    createFile: (content: string) => Promise<TFile>;
+    reportExcerpts?: (summary: ExcerptSummary) => void;
+    /** The batch's retained outcomes, or omitted for this note's own scope. */
+    outcomes?: ExcerptOutcomeScope;
+  },
+): Promise<CreateNoteResult> {
+  const { path, settings } = options;
+  await ensureParentFolder(ctx.app, path);
+  await using stack = new AsyncDisposableStack();
+  // One created note is one initiating batch: its excerpts share this
+  // retention until the note settles.
+  const outcomes = resolveOutcomeScope(options.outcomes, stack);
+
+  const excerptImages = ctx.excerptImages?.({
+    reads: options.reads,
+    notePath: path,
+    settings,
+    outcomes,
+  });
+
+  const attachmentImport = await ctx.attachmentImport.prepare(path);
+  const resolvers = buildNoteResolvers(ctx, {
+    attachmentImport,
+    settings,
+    sourcePath: path,
+    excerptImages,
+  });
+  const context = buildNoteContextFromSource(options.source, resolvers);
+  await excerptImages?.prepare();
+  const composed = composeLiteratureNote(ctx, {
+    context,
+    itemKey: item.indexedKey,
+    profile: options.profile,
+    document: options.document,
+  });
+  if (composed.outcome === "refused") {
+    return {
+      outcome: "refused",
+      diagnostic: frontmatterRefusal(composed.failures, {
+        itemKey: item.indexedKey,
+        diagnosticContext: { indexedKey: item.indexedKey },
+      }),
+    };
+  }
+
+  const file = await options.createFile(composed.content);
+  options.onFileCreated?.(file);
+  await flushNoteAttachments(ctx, {
+    attachmentImport,
+    excerptImages,
+    reportExcerpts: options.reportExcerpts,
+  });
+  logger.debug("Created literature note", {
+    path: file.path,
+    itemKey: item.indexedKey,
+  });
+  return { outcome: "created", file };
+}
+
+async function updateNote(
+  ctx: OpsContext,
+  file: TFile,
+  options: {
+    indexedKey: string;
+    scope?: UpdateScope;
+    profile?: ProfileSelector;
+    beforeWrite?: () => void;
+    /**
+     * The initiating batch's retained outcomes. Omitted, this update opens its
+     * own scope for the note it writes, then releases it once the note settles.
+     */
+    outcomes?: ExcerptOutcomeScope;
+  },
+): Promise<UpdateResult> {
+  const { indexedKey, scope = "full" } = options;
+  // Settle readiness and prepare the attachment handle before pinning the
+  // Snapshot, so the lease spans only the DB reads and the vault writes — not
+  // the warm-up awaits.
+  await ctx.noteIndex.whenIndexed();
+  const settings = ctx.bridge.runSync(ctx.settings.current);
+  const existing = ctx.profile.profileOf(file);
+  const existingSelector = noteProfileSelector(existing);
+  if (options.profile !== undefined && existingSelector !== undefined) {
+    const requestedProfile = options.profile;
+    if (!ctx.profile.resolveProfile(requestedProfile)) {
+      return refusedUpdateProfile(requestedProfile, file.path);
+    }
+    if (requestedProfile !== existingSelector) {
+      return refusedUpdateProfileConflict(indexedKey, file.path, {
+        existingProfile: existingSelector,
+        requestedProfile,
+      });
+    }
+  }
+  if (!existing.ok) {
+    return refusedUpdateProfile(existing.stamped.stamp, file.path);
+  }
+  const profile = existing.profile;
+  if (conversionRequired(settings, profile.selector)) {
+    return refusedUpdateTemplateConversion(profile.selector, file.path);
+  }
+  const document = resolveProfileDocument(ctx, profile);
+  if (document === null) {
+    return refusedUpdateMissingDocument(profile.document!, file.path);
+  }
+  const attachmentImport = await ctx.attachmentImport.prepare(file.path);
+  await using lease = await ctx.zoteroReads.acquireRead();
+  await using stack = new AsyncDisposableStack();
+  // One initiating batch: this note's excerpts share one retention until the
+  // note settles.
+  const outcomes = resolveOutcomeScope(options.outcomes, stack);
+  const { context, excerptImages } = await contextForIndexedKey(
+    ctx,
+    indexedKey,
+    {
+      reads: lease.reads,
+      attachmentImport,
+      sourcePath: file.path,
+      settings: profile.settings,
+      previousNote: scope === "full" ? file : undefined,
+      outcomes,
+    },
+  );
+  // Awaited inside the retention's scope: returning the pending update would
+  // release it before the note resolved its excerpts.
+  return await applyManagedUpdate(ctx, file, {
+    context,
+    attachmentImport,
+    itemKey: indexedKey,
+    scope,
+    profile,
+    document,
+    beforeWrite: options.beforeWrite,
+    excerptImages,
+  });
+}
+
+const NO_KEYS: ReadonlySet<string> = new Set();
+
+/**
+ * The keys of a Literature Note that its next update replaces: those its
+ * own Profile manages with the replace strategy, a Spread Entry's as it
+ * evaluates for the note's Item now. A note the metadata cache has not
+ * parsed yet, as one just created, is read once it does. None where the
+ * update would refuse, or the Profile, its template or the Item cannot be
+ * read now, so that a key stays editable rather than locked on a passing
+ * fault.
+ */
+async function replacedKeys(
+  ctx: OpsContext,
+  file: TFile,
+): Promise<ReadonlySet<string>> {
+  try {
+    const settings = ctx.bridge.runSync(ctx.settings.current);
+    const cache = await parsedCache(ctx, file);
+    const resolved = ctx.profile.profileOf(file);
+    if (!resolved.ok) return NO_KEYS;
+    const { profile } = resolved;
+    if (conversionRequired(settings, profile.selector)) return NO_KEYS;
+    const document = resolveProfileDocument(ctx, profile);
+    if (document === null) return NO_KEYS;
+    if (document === undefined)
+      return new Set(
+        ctx.template.frontmatterFields.flatMap(({ key, merge }) =>
+          merge === "replace" ? [key] : [],
+        ),
+      );
+    const entries = document.frontmatter?.compiled ?? [];
+    const keys = new Set(
+      entries.flatMap(({ key, merge }) =>
+        key !== undefined && merge === "replace" ? [key] : [],
+      ),
+    );
+    const spreads = entries.filter(
+      ({ key, merge }) => key === undefined && merge === "replace",
+    );
+    const indexedKey = cache && itemKeyFromFrontmatter(cache);
+    if (spreads.length === 0 || !indexedKey) return keys;
+    // A Spread Entry names its keys as it runs for the Item, as the update
+    // runs it; nothing it queues is imported.
+    const attachmentImport = await ctx.attachmentImport.prepare(file.path);
+    try {
+      await using lease = await ctx.zoteroReads.acquireRead();
+      const { context } = await contextForIndexedKey(ctx, indexedKey, {
+        reads: lease.reads,
+        attachmentImport,
+        sourcePath: file.path,
+        settings: profile.settings,
+      });
+      const evaluation = evalManagedFrontmatterEntries(
+        spreads,
+        context,
+        toInstant(ctx.bridge.runSync(DateTime.now)),
+      );
+      for (const { key } of evaluation.values) keys.add(key);
+    } finally {
+      attachmentImport.discard();
+    }
+    return keys;
+  } catch (error) {
+    logger.debug("Could not read the keys a note's Profile replaces", {
+      path: file.path,
+      error,
+    });
+    return NO_KEYS;
+  }
+}
+
+/** The metadata of `file`, once the metadata cache has parsed it. */
+function parsedCache(
+  ctx: Pick<NoteFeatureDeps, "app">,
+  file: TFile,
+): Promise<CachedMetadata> {
+  const { metadataCache } = ctx.app;
+  const cache = metadataCache.getFileCache(file);
+  if (cache !== null) return Promise.resolve(cache);
+  return new Promise((resolve) => {
+    const ref = metadataCache.on("changed", (changed, _data, parsed) => {
+      if (changed.path !== file.path) return;
+      metadataCache.offref(ref);
+      resolve(parsed);
+    });
+  });
+}
+
+async function switchNoteProfile(
+  ctx: OpsContext,
+  file: TFile,
+  options: {
+    profile: ProfileSelector;
+    importedNotes?: readonly TFile[];
+    move?: boolean;
+  },
+): Promise<UpdateResult> {
+  const settings = ctx.bridge.runSync(ctx.settings.current);
+  const selector = options.profile;
+  const profile = ctx.profile.resolveProfile(selector);
+  if (!profile) return refusedUpdateProfile(selector, file.path);
+  if (conversionRequired(settings, selector)) {
+    return refusedUpdateTemplateConversion(selector, file.path);
+  }
+  const document = resolveProfileDocument(ctx, profile);
+  if (document === null) {
+    return refusedUpdateMissingDocument(profile.document!, file.path);
+  }
+  const previousPath = file.path;
+  const imported =
+    noteKeyFromFrontmatter(ctx.app.metadataCache.getFileCache(file)) !== null;
+  const targetPath = relocatedNotePath(file, {
+    from: relocationSource(ctx.profile.profileOf(file)),
+    to: profile,
+    imported,
+  });
+  const move = options.move && targetPath !== previousPath;
+  if (move) {
+    await ensureParentFolder(ctx.app, targetPath);
+    await ctx.bridge.runPromise(ctx.fileManager.renameFile(file, targetPath));
+  }
+  try {
+    await stampNoteFamily(
+      ctx,
+      [file, ...(options.importedNotes ?? [])],
+      profile.stamp,
+    );
+  } catch (error) {
+    if (move) {
+      try {
+        await ctx.bridge.runPromise(
+          ctx.fileManager.renameFile(file, previousPath),
+        );
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [error, rollbackError],
+          "Profile switch and folder move rollback failed",
+        );
+      }
+    }
+    throw error;
+  }
+  logger.debug("Switched Literature Note Profile for the next update", {
+    path: file.path,
+    selector,
+    importedNotes: options.importedNotes?.length ?? 0,
+    moved: !!move,
+  });
+  return NO_BODY_UPDATE;
+}
+
+async function getImportedNotesForItem(
+  ctx: NoteFeatureDeps,
+  indexedKey: string,
+): Promise<TFile[]> {
+  await ctx.noteIndex.whenIndexed();
+  await using lease = await ctx.zoteroReads.acquireRead();
+  const item = await readItem(lease.reads, indexedKey);
+  if (!item) throw new Error(`Zotero item not found: ${indexedKey}`);
+  const { childNotes } = await Effect.runPromise(
+    lease.reads.ItemFamily({ itemID: item.itemID }),
+  );
+  return childNotes.flatMap((note) =>
+    ctx.noteIndex.getImportedNoteByNoteKey(note.indexedKey),
+  );
+}
+
+async function stampNoteFamily(
+  ctx: NoteFeatureDeps,
+  files: readonly TFile[],
+  stamp: string | undefined,
+): Promise<void> {
+  const previous = files.map(
+    (file) =>
+      [file, readProfileStamp(ctx.app.metadataCache, file)?.stamp] as const,
+  );
+  const attempted: typeof previous = [];
+  try {
+    for (const entry of previous) {
+      attempted.push(entry);
+      await stampNoteProfile(ctx, entry[0], stamp);
+    }
+  } catch (error) {
+    const rollbackErrors: unknown[] = [];
+    for (const [file, previousStamp] of attempted.toReversed()) {
+      try {
+        await stampNoteProfile(ctx, file, previousStamp);
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError);
+      }
+    }
+    if (rollbackErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...rollbackErrors],
+        "Note Profile switch and rollback failed",
+      );
+    }
+    throw error;
+  }
+}
+
+/** Write one note's Profile stamp; `undefined` unstamps it as the default. */
+async function stampNoteProfile(
+  ctx: NoteFeatureDeps,
+  file: TFile,
+  stamp: string | undefined,
+): Promise<void> {
+  await processLiveFrontMatter(ctx.app, file, (fm) => {
+    if (stamp === undefined) delete fm[FIELD_LITERATURE_NOTE_PROFILE];
+    else fm[FIELD_LITERATURE_NOTE_PROFILE] = stamp;
+  });
+}
+
+/**
+ * Update an existing note from an already-fetched `item`. The batch runner
+ * calls this to reuse the item it classified, skipping the per-item
+ * resolution {@link updateNote} does via `indexedKey` (re-deriving the
+ * library and re-querying the item).
+ *
+ * Assumes the caller has gated database, note-index, and template readiness;
+ * the batch runner does so once for the whole run, so unlike {@link updateNote}
+ * (via {@link contextForIndexedKey}) this does not await them itself.
+ */
+async function writeNoteUpdate(
+  ctx: OpsContext,
+  file: TFile,
+  options: WriteNoteUpdateOptions,
+): Promise<UpdateResult> {
+  const existing = ctx.profile.profileOf(file);
+  const existingSelector = noteProfileSelector(existing);
+  if (options.profile !== undefined && existingSelector !== undefined) {
+    const requestedProfile = options.profile;
+    if (!ctx.profile.resolveProfile(requestedProfile)) {
+      return refusedUpdateProfile(requestedProfile, file.path);
+    }
+    if (requestedProfile !== existingSelector) {
+      return refusedUpdateProfileConflict(options.item.indexedKey, file.path, {
+        existingProfile: existingSelector,
+        requestedProfile,
+      });
+    }
+  }
+  if (!existing.ok) {
+    return refusedUpdateProfile(existing.stamped.stamp, file.path);
+  }
+  const profile = existing.profile;
+  if (conversionRequired(options.settings, profile.selector)) {
+    return refusedUpdateTemplateConversion(profile.selector, file.path);
+  }
+  const document = resolveProfileDocument(ctx, profile);
+  if (document === null) {
+    return refusedUpdateMissingDocument(profile.document!, file.path);
+  }
+  const attachmentImport = await ctx.attachmentImport.prepare(file.path);
+  await using stack = new AsyncDisposableStack();
+  // Without a batch above it, this update is its own initiating batch: its
+  // excerpts share this retention.
+  const outcomes = resolveOutcomeScope(options.outcomes, stack);
+  const source = await readNoteSource(options.reads, options.item.itemID, {
+    username: options.username,
+  });
+  if (!source)
+    throw new Error(`Zotero item not found: ${options.item.indexedKey}`);
+  const excerptImages =
+    options.scope !== "metadata"
+      ? ctx.excerptImages?.({
+          reads: options.reads,
+          notePath: file.path,
+          settings: profile.settings,
+          previousNote: file,
+          outcomes,
+        })
+      : undefined;
+  const resolvers = buildNoteResolvers(ctx, {
+    attachmentImport,
+    settings: profile.settings,
+    sourcePath: file.path,
+    excerptImages,
+  });
+  const context = buildNoteContextFromSource(source, resolvers);
+  // Awaited inside the scope: returning the pending update would release the
+  // retention before the note resolved its excerpts.
+  return await applyManagedUpdate(ctx, file, {
+    context,
+    attachmentImport,
+    itemKey: options.item.indexedKey,
+    reportExcerpts: options.reportExcerpts,
+    scope: options.scope ?? "full",
+    profile,
+    document,
+    excerptImages,
+  });
+}
+
+/** Compose a managed update: prepare the frontmatter, render the managed body
+ *  region for the `full` scope, then write both in one {@link rewriteNote}. A
+ *  document field refusal returns before the write, and the body render —
+ *  where a call to a Shared Partial the vault holds no document for raises —
+ *  runs while the note is still untouched, so a refusal leaves both the
+ *  Properties block and the body as authored. Shared by {@link updateNote} and
+ *  {@link writeNoteUpdate}; the caller supplies the already-built context and
+ *  its prepared `attachmentImport`. */
+async function applyManagedUpdate(
+  ctx: OpsContext,
+  file: TFile,
+  input: {
+    context: NoteTemplateContext;
+    attachmentImport: Pick<AttachmentImport, "flush">;
+    itemKey: string;
+    scope: UpdateScope;
+    profile: ResolvedProfile;
+    document: ResolvedLiteratureNoteTemplate | undefined;
+    beforeWrite?: () => void;
+    excerptImages?: PreparedExcerpts;
+    reportExcerpts?: (summary: ExcerptSummary) => void;
+  },
+): Promise<UpdateResult> {
+  const { context, itemKey, scope, profile, document, beforeWrite } = input;
+  const prepared = prepareFrontmatter({
+    ctx,
+    context,
+    itemKey,
+    document,
+    diagnosticContext: { path: file.path },
+  });
+  if ("diagnostic" in prepared)
+    return { ...NO_BODY_UPDATE, diagnostic: prepared.diagnostic };
+  await input.excerptImages?.prepare();
+  const noManagedBlock =
+    scope === "full" && document !== undefined && !document.hasManagedBlock;
+  // The render waits until the note's live text has a region to receive it.
+  const renderRegion =
+    scope === "full" && !noManagedBlock
+      ? () =>
+          document
+            ? document.renderForUpdate(context)!
+            : ctx.template.renderManagedContent(context)
+      : undefined;
+  let replaced = false;
+  let duplicateCount = 0;
+  const refused = await rewriteNote(ctx, file, {
+    context,
+    itemKey,
+    profile,
+    prepared,
+    beforeWrite,
+    body: (body) => {
+      if (renderRegion === undefined) return body;
+      const result = replaceManagedRegion(body, renderRegion);
+      replaced = result.replaced;
+      duplicateCount = result.duplicateCount;
+      return result.content;
+    },
+  });
+  if (refused) return { ...NO_BODY_UPDATE, diagnostic: refused };
+  if (duplicateCount > 0) {
+    logger.warn("Literature note has duplicate managed regions", {
+      path: file.path,
+      itemKey,
+      count: duplicateCount + 1,
+    });
+  }
+
+  await flushNoteAttachments(ctx, input);
+
+  logger.debug("Updated literature note", {
+    path: file.path,
+    itemKey,
+    scope,
+    bodyUpdated: replaced,
+  });
+  return {
+    bodyUpdated: replaced,
+    duplicateRegionCount: duplicateCount,
+    ...(noManagedBlock && { noManagedBlock: true }),
+  };
+}
+
+/** What an overwrite writes, and the batch above it when there is one. */
+interface OverwriteNoteOptions {
+  /** The Indexed Key of the Zotero item the note is stamped for. */
+  indexedKey: string;
+  /**
+   * The initiating batch's retained outcomes. Omitted, this overwrite opens its
+   * own scope for the note it writes, then releases it once the note settles.
+   */
+  outcomes?: ExcerptOutcomeScope;
+}
+
+async function overwriteNote(
+  ctx: OpsContext,
+  file: TFile,
+  options: OverwriteNoteOptions,
+): Promise<UpdateResult> {
+  const { indexedKey } = options;
+  // Settle readiness and prepare the attachment handle before pinning the
+  // Snapshot, so the lease spans only the DB reads and the vault writes — not
+  // the warm-up awaits.
+  await ctx.noteIndex.whenIndexed();
+  const settings = ctx.bridge.runSync(ctx.settings.current);
+  const result = ctx.profile.profileOf(file);
+  if (!result.ok) return refusedUpdateProfile(result.stamped.stamp, file.path);
+  const profile = result.profile;
+  if (conversionRequired(settings, profile.selector)) {
+    return refusedUpdateTemplateConversion(profile.selector, file.path);
+  }
+  const document = resolveProfileDocument(ctx, profile);
+  if (document === null) {
+    return refusedUpdateMissingDocument(profile.document!, file.path);
+  }
+  const attachmentImport = await ctx.attachmentImport.prepare(file.path);
+  await using lease = await ctx.zoteroReads.acquireRead();
+  await using stack = new AsyncDisposableStack();
+  // One initiating batch: this note's excerpts share one retention until the
+  // note settles.
+  const outcomes = resolveOutcomeScope(options.outcomes, stack);
+  const { context, excerptImages } = await contextForIndexedKey(
+    ctx,
+    indexedKey,
+    {
+      reads: lease.reads,
+      attachmentImport,
+      sourcePath: file.path,
+      settings: profile.settings,
+      previousNote: file,
+      outcomes,
+    },
+  );
+  const prepared = prepareFrontmatter({
+    ctx,
+    context,
+    itemKey: indexedKey,
+    document,
+    diagnosticContext: { path: file.path },
+  });
+  if ("diagnostic" in prepared)
+    return { ...NO_BODY_UPDATE, diagnostic: prepared.diagnostic };
+  await excerptImages?.prepare();
+  // The body renders before either write, so a render that raises — a call to
+  // a Shared Partial the vault holds no document for — leaves the note whole.
+  const body = document
+    ? document.renderForCreate(context)
+    : ctx.template.render("note", context);
+  const refused = await rewriteNote(ctx, file, {
+    context,
+    itemKey: indexedKey,
+    profile,
+    prepared,
+    body: () => body,
+  });
+  if (refused) return { ...NO_BODY_UPDATE, diagnostic: refused };
+
+  await flushNoteAttachments(ctx, { attachmentImport, excerptImages });
+  logger.info("Overwrote literature note", {
+    path: file.path,
+    itemKey: indexedKey,
+  });
+  return { bodyUpdated: true, duplicateRegionCount: 0 };
+}
+
+function collectNoteExcerpts(
+  ctx: OpsContext,
+  input: {
+    excerptImages?: PreparedExcerpts;
+    reportExcerpts?: (summary: ExcerptSummary) => void;
+  },
+) {
+  const reports = collectExcerptSummary(
+    input.reportExcerpts ??
+      ((summary) => ctx.events.emit("excerpt-images-reported", summary)),
+  );
+  const summary = input.excerptImages?.summary();
+  if (summary) reports.add(summary);
+  return reports;
+}
+
+/** Commit the note's attachment copies, then report its excerpt outcomes. */
+async function flushNoteAttachments(
+  ctx: OpsContext,
+  input: {
+    attachmentImport: Pick<AttachmentImport, "flush">;
+    excerptImages?: PreparedExcerpts;
+    reportExcerpts?: (summary: ExcerptSummary) => void;
+  },
+): Promise<void> {
+  using _reports = collectNoteExcerpts(ctx, input);
+  await input.attachmentImport.flush();
+}
+
+/**
+ * Assumes the caller has settled note-index and template readiness (and pinned
+ * a Snapshot via `acquireRead`); {@link updateNote} and {@link overwriteNote} do
+ * so before acquiring the lease. The Template layer completes compilation before
+ * consumers build, so {@link applyComposedFrontmatter} reads settled fields.
+ */
+async function contextForIndexedKey(
+  ctx: NoteFeatureDeps,
+  indexedKey: string,
+  options: {
+    /** Bound to the operation's Snapshot. */
+    reads: ZoteroReadsApi;
+    attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
+    sourcePath: string;
+    settings: Readonly<Settings>;
+    previousNote?: TFile;
+    /** The initiating batch's retained outcomes. */
+    outcomes?: ExcerptOutcomeScope;
+  },
+): Promise<{
+  context: NoteTemplateContext;
+  excerptImages?: PreparedExcerpts;
+}> {
+  const { reads, sourcePath, settings } = options;
+  const item = await readItem(reads, indexedKey);
+  const source = item && (await readNoteSource(reads, item.itemID));
+  if (!source) throw new Error(`Zotero item not found: ${indexedKey}`);
+  const excerptImages = options.previousNote
+    ? ctx.excerptImages?.({
+        reads,
+        notePath: sourcePath,
+        settings,
+        previousNote: options.previousNote,
+        outcomes: options.outcomes,
+      })
+    : undefined;
+  const resolvers = buildNoteResolvers(ctx, {
+    attachmentImport: options.attachmentImport,
+    settings,
+    sourcePath,
+    excerptImages,
+  });
+  const context = buildNoteContextFromSource(source, resolvers);
+  return { context, excerptImages };
+}
+
+/**
+ * The {@link NoteSource} of an item, or `null` for an unknown item. An omitted
+ * `username` reads the signed-in account.
+ */
+async function readNoteSource(
+  reads: ZoteroReadsApi,
+  itemID: number,
+  options: { username?: string | null } = {},
+): Promise<NoteSource | null> {
+  return await Effect.runPromise(
+    reads.NoteSource({
+      itemID,
+      ...(options.username !== undefined && { username: options.username }),
+    }),
+  );
+}
+
+/**
+ * Rewrite a Literature Note's live text in one {@link processLiveText}: apply
+ * the prepared Managed Frontmatter with {@link spliceFrontMatter}, and transform
+ * the body, so both land together or not at all. The note's Zotero key and
+ * Profile stamp are read from the text this write replaces: the metadata cache
+ * that chose the Profile lags behind a recent write or an unsaved edit.
+ *
+ * @returns the refusal when the note no longer carries `itemKey`, or its stamp
+ *   no longer names the Profile the update rendered under; the note is left
+ *   untouched then.
+ */
+async function rewriteNote(
+  ctx: OpsContext,
+  file: TFile,
+  input: ComposeFrontmatterInput & {
+    /** The Profile the update rendered under. */
+    profile: Pick<ResolvedProfile, "selector">;
+    /** The caller's own session check, run just before the write. */
+    beforeWrite?: () => void;
+    body: (body: string) => string;
+  },
+): Promise<
+  NoteKeyChangedDiagnostic | NoteProfileChangedDiagnostic | undefined
+> {
+  let changed: "key" | "profile" | undefined;
+  await processLiveText(ctx.app, file, (content) => {
+    const fm = parseFrontMatter(content);
+    changed = undefined;
+    if (fm[FIELD_ZOTERO_KEY] !== input.itemKey) changed = "key";
+    else if (stampedSelector(fm) !== input.profile.selector)
+      changed = "profile";
+    if (changed) return content;
+    input.beforeWrite?.();
+    applyComposedFrontmatter(ctx, fm, input);
+    // The Properties block and the body are rewritten apart, then joined.
+    const { contentStart } = getFrontMatterInfo(content);
+    return (
+      spliceFrontMatter(content.slice(0, contentStart), fm) +
+      input.body(content.slice(contentStart))
+    );
+  });
+  if (changed === "key")
+    return {
+      code: "literature-note-key-changed",
+      hint: "The note's Zotero key changed while the update ran. Run the update again from the note.",
+      indexedKey: input.itemKey,
+      path: file.path,
+    };
+  if (changed === "profile")
+    return {
+      code: "literature-note-profile-changed",
+      hint: "The note's Profile stamp changed while the update ran. Run the update again from the note.",
+      indexedKey: input.itemKey,
+      path: file.path,
+    };
+  return undefined;
+}
+
+/** The Profile a note's Properties stamp: `default` when they carry no stamp. */
+function stampedSelector(
+  fm: Record<string, unknown>,
+): ProfileSelector | undefined {
+  const stamped = parseProfileStamp(fm[FIELD_LITERATURE_NOTE_PROFILE]);
+  return stamped === undefined ? DEFAULT_PROFILE : stamped.id;
+}
+
+function prepareFrontmatter(input: {
+  ctx: Pick<NoteFeatureDeps, "bridge">;
+  context: NoteTemplateContext;
+  itemKey: string;
+  document: ResolvedLiteratureNoteTemplate | undefined;
+  diagnosticContext: { path?: string; indexedKey?: string };
+}):
+  | PreparedManagedFrontmatter
+  | { diagnostic: ManagedFrontmatterRefusalDiagnostic } {
+  const frontmatter = input.document?.frontmatter;
+  const result = prepareManagedFrontmatter(
+    frontmatter,
+    input.context,
+    toInstant(input.ctx.bridge.runSync(DateTime.now)),
+  );
+  if ("prepared" in result) return result.prepared;
+  return { diagnostic: frontmatterRefusal(result.failures, input) };
+}
+
+/** A type guard: when conversion is pending, a non-default selector is a real Profile ID. */
+function conversionRequired(
+  settings: Readonly<Settings>,
+  selector: ProfileSelector,
+): selector is ProfileId {
+  return (
+    settings["note.template-conversion-pending"] && selector !== DEFAULT_PROFILE
+  );
+}
+
+export {
+  createNote,
+  getImportedNotesForItem,
+  overwriteNote,
+  replacedKeys,
+  switchNoteProfile,
+  updateNote,
+  writeNoteUpdate,
+};
