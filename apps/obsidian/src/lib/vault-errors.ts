@@ -1,6 +1,7 @@
 // The typed failures of the Vault and FileManager capability tags. An expected
 // outcome is its own tagged error, which the tag decides from the vault cache
-// before it calls Obsidian; `VaultError` is every other rejection.
+// before it calls Obsidian, or from the adapter's `ENOENT` for a read by path;
+// `VaultError` is every other rejection.
 import { Schema } from "effect";
 
 /**
@@ -21,6 +22,19 @@ export class FileExists extends Schema.TaggedError<
     return "File already exists.";
   }
 }
+
+/**
+ * The vault adapter has no file at `path`: its read rejected with `ENOENT`.
+ * `cause` holds what the adapter threw.
+ */
+export class FileNotFound extends Schema.TaggedError<
+  FileNotFound,
+  { readonly brand: unique symbol }
+>()("FileNotFound", {
+  /** The vault path that holds no file. */
+  path: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
 /**
  * A vault or file manager call rejected. `message` is Obsidian's own, for logs and

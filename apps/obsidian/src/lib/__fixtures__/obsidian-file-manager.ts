@@ -65,6 +65,11 @@ export class MemoryFileManager implements FileManagerSource {
   ): string {
     return `[[${file.path}${subpath}${alias ? `|${alias}` : ""}]]`;
   }
+
+  /** The attachment's name at the vault root, as Obsidian's default setting. */
+  async getAvailablePathForAttachment(filename: string): Promise<string> {
+    return filename;
+  }
 }
 
 /**

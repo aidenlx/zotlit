@@ -19,8 +19,8 @@ import type {
   PreparedProfileCreation,
 } from "@/services/profile/service";
 import { loadTemplateData } from "@/services/template-workbench/data";
-import { loadLiteratureNoteTemplateMigrationData } from "@/services/template/migration";
-import type { LiteratureNoteTemplateMigrationDataDeps } from "@/services/template/migration";
+import type { TemplateDataDeps } from "@/services/template-workbench/data";
+import type { TemplateDataHandle } from "@/services/template-workbench/data-handle";
 import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
@@ -63,14 +63,11 @@ export interface ProfileCreationDeps {
   }) => Promise<ProfileCreationData | null>;
 }
 
-export type ProfileDialogServices = Omit<
-  LiteratureNoteTemplateMigrationDataDeps,
-  "templates"
-> & {
-  template: Pick<
-    PlainTemplate,
-    "render" | "renderCitation" | "prepareLiteratureNoteTemplateSource"
-  >;
+export type ProfileDialogServices = TemplateDataDeps & {
+  templateData: Pick<TemplateDataHandle, "verificationData">;
+  app: App;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
+  template: Pick<PlainTemplate, "prepareLiteratureNoteTemplateSource">;
   profile: ProfileCreationDeps["profile"] & Pick<PlainProfile, "prepareImport">;
   noteFeature: Pick<NoteFeature, "prepareProfileNote">;
 };
@@ -79,9 +76,8 @@ export async function loadProfilePreviewData(
   deps: ProfileDialogServices,
   options: { indexedKey?: string } = {},
 ): Promise<ProfileCreationData | null> {
-  const dataDeps = { ...deps, templates: deps.template };
   if (!options.indexedKey) {
-    const data = await loadLiteratureNoteTemplateMigrationData(dataDeps, {
+    const data = await deps.templateData.verificationData({
       annotation: false,
     });
     return data
@@ -89,8 +85,8 @@ export async function loadProfilePreviewData(
       : null;
   }
   const [note, filename] = await Promise.all([
-    loadTemplateData(dataDeps, options.indexedKey, "note"),
-    loadTemplateData(dataDeps, options.indexedKey, "filename"),
+    loadTemplateData(deps, options.indexedKey, "note"),
+    loadTemplateData(deps, options.indexedKey, "filename"),
   ]);
   return note.kind === "data" && filename.kind === "data"
     ? { note: note.data as NoteTemplateContext, filename: filename.data }

@@ -112,6 +112,43 @@ it.effect("forwards subpath and alias to Obsidian's generateMarkdownLink", () =>
   }),
 );
 
+it.effect("asks Obsidian for an attachment's free path", () =>
+  Effect.gen(function* () {
+    const source = new MemoryFileManager();
+    const ask = vi.spyOn(source, "getAvailablePathForAttachment");
+    const files = yield* over(source);
+    expect(
+      yield* files.getAvailablePathForAttachment("image.png", "notes/a.md"),
+    ).toBe("image.png");
+    expect(ask).toHaveBeenCalledExactlyOnceWith("image.png", "notes/a.md");
+  }),
+);
+
+it.effect("fails a rejected attachment path with VaultError on the note", () =>
+  Effect.gen(function* () {
+    const source = new MemoryFileManager();
+    const cause = new Error("Folder is not writable");
+    vi.spyOn(source, "getAvailablePathForAttachment").mockRejectedValue(cause);
+    const files = yield* over(source);
+    expect(
+      yield* Effect.flip(
+        files.getAvailablePathForAttachment("image.png", "notes/a.md"),
+      ),
+    ).toEqual(
+      new VaultError({
+        operation: "getAvailablePathForAttachment",
+        path: "notes/a.md",
+        message: "Folder is not writable",
+        cause,
+      }),
+    );
+    expect(
+      (yield* Effect.flip(files.getAvailablePathForAttachment("image.png")))
+        .path,
+    ).toBe("/");
+  }),
+);
+
 it.effect(
   "fails a rejected rename with VaultError and Obsidian's message",
   () =>

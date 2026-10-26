@@ -133,7 +133,6 @@ function setup() {
     {
       runtime: testRuntime(),
       webWorkbenchEnabled: true,
-      app,
       // The classifier reads a filename only inside the template folder.
       settings: stubService<
         Parameters<typeof registerTemplateWorkbenchView>[1]["settings"]

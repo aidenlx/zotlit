@@ -13,7 +13,10 @@ import type { VaultError } from "@/lib/vault-errors";
 /** The Obsidian object the tag calls: what `app.fileManager` gives. */
 export type FileManagerSource = Pick<
   ObsidianFileManager,
-  "processFrontMatter" | "renameFile" | "generateMarkdownLink"
+  | "processFrontMatter"
+  | "renameFile"
+  | "generateMarkdownLink"
+  | "getAvailablePathForAttachment"
 >;
 
 export interface FileManagerShape {
@@ -44,6 +47,15 @@ export interface FileManagerShape {
     sourcePath: string,
     options?: { readonly subpath?: string; readonly alias?: string },
   ): Effect.Effect<string>;
+  /**
+   * A free vault path for an attachment named `filename`, in the folder the
+   * user's attachment setting picks for the note at `sourcePath`. A rejection
+   * fails with `VaultError` on `sourcePath`, or on the vault root `/` without it.
+   */
+  getAvailablePathForAttachment(
+    filename: string,
+    sourcePath?: string,
+  ): Effect.Effect<string, VaultError>;
 }
 
 /** The vault's file manager. */
@@ -92,6 +104,14 @@ export const makeFileManager = Effect.fnUntraced(function* (
             options.alias,
           ),
         ),
+    ),
+    getAvailablePathForAttachment: Effect.fn(
+      "FileManager.getAvailablePathForAttachment",
+    )((filename, sourcePath) =>
+      Effect.tryPromise({
+        try: () => source.getAvailablePathForAttachment(filename, sourcePath),
+        catch: vaultError("getAvailablePathForAttachment", sourcePath ?? "/"),
+      }),
     ),
   });
 });

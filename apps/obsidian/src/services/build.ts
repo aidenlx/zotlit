@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { FileSystemAdapter } from "obsidian";
 
 import { cliRunner } from "@/lib/cli-command";
@@ -81,7 +82,8 @@ import { plainQueryClients } from "./query-client/plain";
 import { Release } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import { PluginSettings } from "./settings/service";
-import { loadLiteratureNoteTemplateMigrationData } from "./template/migration";
+import { bindTemplateData } from "./template-workbench/data-handle";
+import type { TemplateDataHandleServices } from "./template-workbench/data-handle";
 import type { TemplateMigrationOptions } from "./template/migration";
 import { plainTemplate, plainTemplateMigration } from "./template/plain";
 import { plainUseLedger } from "./use-ledger/plain";
@@ -114,8 +116,12 @@ export async function buildServices(
   stack: AsyncDisposableStack,
   languagePack: LanguagePackStartup,
 ) {
-  let bindMigration!: (actions: TemplateMigrationOptions) => void;
-  const migrationActions = new Promise<TemplateMigrationOptions>((resolve) => {
+  let bindMigration!: (
+    actions: Pick<TemplateMigrationOptions, "openPrompt">,
+  ) => void;
+  const migrationActions = new Promise<
+    Pick<TemplateMigrationOptions, "openPrompt">
+  >((resolve) => {
     bindMigration = resolve;
   });
   // The citekey editor opens a note it has to create through the legacy
@@ -135,8 +141,6 @@ export async function buildServices(
     pluginLayer(
       plugin,
       {
-        loadVerificationData: async (options) =>
-          (await migrationActions).loadVerificationData(options),
         openPrompt: async () => (await migrationActions).openPrompt(),
       },
       {
@@ -381,27 +385,15 @@ export async function buildServices(
         }),
     })
     .useValue({
-      templateMigration: ({
-        zoteroReads,
-        noteIndex,
-        settings,
-        template,
-        zoteroPref,
-      }) => {
+      templateData: () =>
+        bindTemplateData(
+          bridge,
+          runtime.runSync(Effect.context<TemplateDataHandleServices>()),
+        ),
+    })
+    .useValue({
+      templateMigration: ({ settings }) => {
         bindMigration({
-          loadVerificationData: (options) =>
-            loadLiteratureNoteTemplateMigrationData(
-              {
-                app: plugin.app,
-                zoteroReads,
-                libraryScope: libraryScopeService,
-                noteIndex,
-                settings,
-                templates: template,
-                zoteroPref,
-              },
-              options,
-            ),
           openPrompt: () => openWelcomeView(plugin.app, settings, bridge),
         });
         return plainTemplateMigration(runtime);
@@ -456,21 +448,16 @@ export async function buildServices(
       createProfile: ({
         profile,
         template,
-        zoteroReads,
-        noteIndex,
+        templateData,
         zoteroPref,
-        settings,
         noteFeature,
       }) =>
         createProfileCreator({
           app: plugin.app,
           profile,
           template,
-          zoteroReads,
-          noteIndex,
+          templateData,
           zoteroPref,
-          settings,
-          libraryScope: libraryScopeService,
           noteFeature,
         }),
     })
@@ -478,21 +465,16 @@ export async function buildServices(
       importProfile: ({
         profile,
         template,
-        zoteroReads,
-        noteIndex,
+        templateData,
         zoteroPref,
-        settings,
         noteFeature,
       }) =>
         createProfileImporter({
           app: plugin.app,
           profile,
           template,
-          zoteroReads,
-          noteIndex,
+          templateData,
           zoteroPref,
-          settings,
-          libraryScope: libraryScopeService,
           noteFeature,
         }),
     })

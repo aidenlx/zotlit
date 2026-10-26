@@ -10,7 +10,7 @@ import {
   Scope,
   Stream,
 } from "effect";
-import { MarkdownView, TFile } from "obsidian";
+import { MarkdownView, TextFileView, TFile } from "obsidian";
 import type {
   Editor,
   Workspace as WorkspaceApi,
@@ -32,6 +32,22 @@ function file(path: string): TFile {
   const file = new TFile();
   file.path = path;
   return file;
+}
+
+/** A text view that holds its text in `data`. */
+class MemoryTextView extends TextFileView {
+  override getViewData(): string {
+    return this.data;
+  }
+  override setViewData(data: string): void {
+    this.data = data;
+  }
+  override clear(): void {
+    this.data = "";
+  }
+  override getViewType(): string {
+    return "markdown";
+  }
 }
 
 /** The layer built on a Scope of its own, closed with the case's Scope. */
@@ -62,6 +78,33 @@ it.effect("reads the live layer's workspace from ObsidianApp", () =>
       ),
     );
     expect((yield* workspace.getActiveFile)?.path).toBe("a.md");
+  }),
+);
+
+it.effect("finds the loaded text view of a file in any leaf", () =>
+  Effect.gen(function* () {
+    const source = new MemoryWorkspace();
+    const textView = (path: string, lastSavedData: string | null) => {
+      const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+        updateHeader() {},
+      });
+      // The text view reads its App from the leaf.
+      Object.defineProperty(leaf, "app", { value: {} });
+      const view = Object.assign(new MemoryTextView(leaf), {
+        file: file(path),
+        data: "edited",
+        lastSavedData,
+      });
+      source.openLeaf("markdown", view);
+      return view;
+    };
+    const loaded = textView("a.md", "saved");
+    // A view whose text has not loaded yet does not count.
+    const unloaded = textView("b.md", null);
+    const { workspace } = yield* open(layerWorkspaceFrom(source));
+    expect(yield* workspace.loadedTextView(loaded.file)).toBe(loaded);
+    expect(yield* workspace.loadedTextView(unloaded.file)).toBeNull();
+    expect(yield* workspace.loadedTextView(file("c.md"))).toBeNull();
   }),
 );
 

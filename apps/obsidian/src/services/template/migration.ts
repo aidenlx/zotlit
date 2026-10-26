@@ -1,8 +1,7 @@
-import { Context, Deferred, Effect, Fiber, Layer, Scope, Stream } from "effect";
+import { Context, Deferred, Effect, Fiber, Layer, Scope } from "effect";
 import { join } from "node:path/posix";
 import type {
   FileManager,
-  TFile,
   Vault,
   Workspace as ObsidianWorkspace,
 } from "obsidian";
@@ -17,19 +16,12 @@ import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { Workspace } from "@/lib/obsidian-workspace";
-import type { LibraryScope } from "@/services/library-scope/service";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
-import { loadTemplateData } from "@/services/template-workbench/data";
-import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
-import type {
-  ZoteroReadLease,
-  ZoteroReadsApi,
-} from "@/services/zotero-reads/service";
 
 import { templateFileFromPath } from "./defaults";
+import type { MigrationVerificationData } from "./migration-data";
 import { Template, templateFailure } from "./service";
-import type { TemplateOperations } from "./service";
 import type {
   ConvertedLegacyProfileDocument,
   ConvertedLegacyTemplateDocuments,
@@ -85,144 +77,6 @@ interface MigrationEngineOptions {
     message: string,
     fields?: Record<string, unknown>,
   ) => void;
-}
-
-/** One real Zotero item, in every shape a conversion verifies against. */
-export interface MigrationVerificationData {
-  readonly note: object;
-  readonly filename: object;
-  readonly annotation: object | null;
-  /** The one-item Citation both Citation Variants of the fold render. */
-  readonly citation: readonly CiteRef[];
-}
-
-export interface LiteratureNoteTemplateMigrationDataDeps {
-  app: Parameters<typeof loadTemplateData>[0]["app"];
-  zoteroReads: { acquireRead(): Promise<ZoteroReadLease> };
-  libraryScope: Pick<LibraryScope["Service"], "resolveLibraries">;
-  noteIndex: {
-    whenIndexed(): Promise<void>;
-    getNotesByItemKey(indexedKey: string): TFile[];
-    getImportedNoteByNoteKey(noteKey: string): TFile[];
-  };
-  settings: Pick<PluginSettings["Service"], "current">;
-  templates: Pick<TemplateOperations, "render" | "renderCitation">;
-  zoteroPref: Pick<ZoteroPrefSnapshot, "dataDir" | "baseAttachmentPath">;
-}
-
-/** Load one real in-scope Zotero item through the Workbench's inert render seam. */
-export async function loadLiteratureNoteTemplateMigrationData(
-  deps: LiteratureNoteTemplateMigrationDataDeps,
-  options: { annotation: boolean },
-): Promise<MigrationVerificationData | null> {
-  await using lease = await deps.zoteroReads.acquireRead();
-  const scope = await Effect.runPromise(
-    lease.reads
-      .Libraries({})
-      .pipe(
-        Effect.flatMap((libraries) =>
-          deps.libraryScope.resolveLibraries(libraries),
-        ),
-      ),
-  );
-  const candidates: string[] = [];
-  for (const library of scope.available) {
-    const itemIDs = await Effect.runPromise(
-      lease.reads.ScopeItemIDs({
-        kind: "literature-items",
-        libraryID: library.libraryID,
-      }),
-    );
-    const slices = await Effect.runPromise(
-      Stream.runCollect(lease.reads.DisplayRefs({ itemIDs: itemIDs ?? [] })),
-    );
-    for (const { ref } of slices.flat())
-      if (ref) candidates.push(ref.indexedKey);
-  }
-
-  const dataDeps = {
-    app: deps.app,
-    zoteroReads: deps.zoteroReads,
-    noteIndex: deps.noteIndex,
-    settings: deps.settings,
-    templates: deps.templates,
-    zoteroPref: deps.zoteroPref,
-  };
-  let verificationBase: MigrationVerificationData | undefined;
-  for (const indexedKey of candidates) {
-    // The Citation is read under the lease before the render, not after.
-    const citation = await citationVerificationRefs(lease.reads, indexedKey);
-    const [note, filename] = await Promise.all([
-      loadTemplateData(dataDeps, indexedKey, "note"),
-      loadTemplateData(dataDeps, indexedKey, "filename"),
-    ]);
-    if (note.kind !== "data" || filename.kind !== "data") continue;
-    if (!options.annotation) {
-      return {
-        note: note.data,
-        filename: filename.data,
-        annotation: null,
-        citation,
-      };
-    }
-    verificationBase ??= {
-      note: note.data,
-      filename: filename.data,
-      annotation: null,
-      citation,
-    };
-    const annotationKey = firstAnnotationIndexedKey(note.data);
-    if (!annotationKey) continue;
-    const annotation = await loadTemplateData(
-      dataDeps,
-      annotationKey,
-      "annotation",
-    );
-    if (annotation.kind !== "data") continue;
-    return {
-      note: note.data,
-      filename: filename.data,
-      annotation: annotation.data,
-      citation,
-    };
-  }
-  return verificationBase ?? null;
-}
-
-/**
- * The one-item Citation the Citation Template fold verifies against: the same
- * ref shape the citation suggester inserts, so the fold is checked through the
- * data path a real insertion takes.
- */
-async function citationVerificationRefs(
-  reads: ZoteroReadsApi,
-  indexedKey: string,
-): Promise<readonly CiteRef[]> {
-  const items = await Effect.runPromise(
-    reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
-  );
-  const item = items.get(indexedKey);
-  if (!item) return [];
-  const citationKey =
-    "citationKey" in item.fields ? (item.fields.citationKey ?? null) : null;
-  return [{ citationKey, item }];
-}
-
-function firstAnnotationIndexedKey(data: object): string | undefined {
-  if (!("annotations" in data) || !Array.isArray(data.annotations)) {
-    return undefined;
-  }
-  for (const annotation of data.annotations) {
-    if (
-      annotation !== null &&
-      typeof annotation === "object" &&
-      "indexedKey" in annotation &&
-      typeof annotation.indexedKey === "string"
-    ) {
-      return annotation.indexedKey;
-    }
-  }
-  return undefined;
 }
 
 export type LiteratureNoteTemplateMigrationDiagnostic =
@@ -612,8 +466,11 @@ function refusedByConversion(
   };
 }
 
-export interface TemplateMigrationOptions {
-  loadVerificationData: MigrationEngineOptions["loadVerificationData"];
+export interface TemplateMigrationOptions<R = never> {
+  /** The real Zotero item a conversion verifies against, run by the layer. */
+  loadVerificationData: (options: {
+    annotation: boolean;
+  }) => Effect.Effect<MigrationVerificationData | null, unknown, R>;
   openPrompt: MigrationEngineOptions["openPrompt"];
 }
 
@@ -632,7 +489,9 @@ export class TemplateMigration extends Context.Service<
   }
 >()("zotlit/template/TemplateMigration") {}
 
-export function layerTemplateMigration(options: TemplateMigrationOptions) {
+export function layerTemplateMigration<R = never>(
+  options: TemplateMigrationOptions<R>,
+) {
   return Layer.effect(
     TemplateMigration,
     Effect.gen(function* () {
@@ -640,7 +499,7 @@ export function layerTemplateMigration(options: TemplateMigrationOptions) {
       const workspace = yield* Workspace;
       const settings = yield* PluginSettings;
       const template = yield* Template;
-      const context = yield* Effect.context<never>();
+      const context = yield* Effect.context<R>();
       const scope = yield* Scope.fork(yield* Scope.Scope);
       const run = Effect.runSyncWith(context);
       const runPromise = Effect.runPromiseWith(context);
@@ -651,6 +510,8 @@ export function layerTemplateMigration(options: TemplateMigrationOptions) {
       }>();
       const engine = new MigrationEngine({
         ...options,
+        loadVerificationData: (verification) =>
+          runPromise(options.loadVerificationData(verification)),
         app,
         settings: {
           get current() {

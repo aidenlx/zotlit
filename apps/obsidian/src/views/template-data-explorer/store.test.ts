@@ -5,13 +5,11 @@ import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import { annotationSamples } from "@zotlit/workbench/ui";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import {
-  loadCitationData,
-  loadTemplateData,
-} from "@/services/template-workbench/data";
+import { loadTemplateData } from "@/services/template-workbench/data";
 import type {
   CitationDataLoadResult,
   TemplateDataDeps,
+  TemplateDataLoader,
   TemplateDataLoadResult,
 } from "@/services/template-workbench/data";
 import {
@@ -23,11 +21,15 @@ import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 import { NativeExplorerSession } from "./store";
 
 vi.mock("@/services/template-workbench/data", () => ({
-  loadCitationData: vi.fn(),
   loadTemplateData: vi.fn(),
 }));
 
-const deps = stubService<TemplateDataDeps>("TemplateDataDeps", {});
+const loadCitation = vi.fn<TemplateDataLoader["loadCitation"]>();
+const deps = stubService<TemplateDataDeps>("TemplateDataDeps", {
+  templateData: stubService<TemplateDataLoader>("TemplateDataLoader", {
+    loadCitation,
+  }),
+});
 const paper = { id: "sample:conference-paper", title: null };
 const real = { id: "MAIN2345", title: "Real paper" };
 
@@ -265,7 +267,7 @@ describe("the citation root", () => {
   });
 
   it("reads a chosen Item's own one-item set from the database", async () => {
-    vi.mocked(loadCitationData).mockResolvedValue({
+    loadCitation.mockResolvedValue({
       kind: "data",
       data: { variant: "main", items: [], citations: [] },
     } as CitationDataLoadResult);
@@ -273,11 +275,7 @@ describe("the citation root", () => {
     session.setTarget(real, "citation");
     await session.ready;
 
-    expect(loadCitationData).toHaveBeenCalledWith(
-      deps,
-      { key: real.id },
-      "main",
-    );
+    expect(loadCitation).toHaveBeenCalledWith({ key: real.id }, "main");
     expect(session.state.getState().status).toBe("ready");
   });
 
@@ -313,7 +311,7 @@ describe("the citation root", () => {
     const state = session.state.getState();
     expect(state.data).toMatchObject({ variant: "alt" });
     expect((state.data!["citations"] as unknown[]).length).toBe(2);
-    expect(loadCitationData).not.toHaveBeenCalled();
+    expect(loadCitation).not.toHaveBeenCalled();
   });
 
   it("follows the caller a Shared Partial is previewed as called from", async () => {
@@ -354,7 +352,7 @@ describe("the citation root", () => {
   });
 
   it("reads a chosen Item's set under the Variant the preview renders", async () => {
-    vi.mocked(loadCitationData).mockResolvedValue({
+    loadCitation.mockResolvedValue({
       kind: "data",
       data: { variant: "alt", items: [], citations: [] },
     } as CitationDataLoadResult);
@@ -373,10 +371,6 @@ describe("the citation root", () => {
     });
     await session.ready;
 
-    expect(loadCitationData).toHaveBeenCalledWith(
-      deps,
-      { key: real.id },
-      "alt",
-    );
+    expect(loadCitation).toHaveBeenCalledWith({ key: real.id }, "alt");
   });
 });

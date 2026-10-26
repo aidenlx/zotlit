@@ -1,17 +1,22 @@
 import { it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Context, Effect } from "effect";
 import type { CliFlags } from "obsidian";
 import { describe, expect, vi } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { ObsidianEnv } from "@/lib/obsidian-env";
+import { PluginSettings } from "@/services/settings/service";
 
-import { emptyApp, workbenchRegistrationDeps } from "./__fixtures__";
+import { workbenchContext } from "./__fixtures__";
 import { TEMPLATE_DATA_COMMAND } from "./cli";
 import { registerTemplateWorkbench } from "./register";
 
-type RegistrationOptions = Parameters<typeof workbenchRegistrationDeps>[0];
+/** The host version the check command reports. */
+const env = Context.make(
+  ObsidianEnv,
+  stubService<ObsidianEnv["Service"]>("ObsidianEnv", { apiVersion: "1.0.0" }),
+);
 
 /**
  * The flags each command declares. Obsidian checks its own `required` list
@@ -22,14 +27,7 @@ function declaredFlags(): Map<string, CliFlags | null> {
   const { host, commands } = fakeCliHost();
   registerTemplateWorkbench(
     { ...host, manifest: { version: "1.2.3" } },
-    workbenchRegistrationDeps({
-      runtime: testRuntime(),
-      app: stubService<RegistrationOptions["app"]>("App", {
-        vault: stubService<RegistrationOptions["app"]["vault"]>("Vault", {
-          getName: () => "Test Vault",
-        }),
-      }),
-    }),
+    workbenchContext(env),
   );
   return new Map([...commands].map(([command, { flags }]) => [command, flags]));
 }
@@ -69,14 +67,15 @@ describe("Template Workbench CLI registration", () => {
       const update = vi.fn();
       registerTemplateWorkbench(
         { ...host, manifest: { version: "test" } },
-        workbenchRegistrationDeps({
-          runtime: testRuntime(),
-          app: emptyApp(),
-          settings: stubService<NonNullable<RegistrationOptions["settings"]>>(
-            "PluginSettings",
-            { update },
+        workbenchContext(
+          env,
+          Context.make(
+            PluginSettings,
+            stubService<PluginSettings["Service"]>("PluginSettings", {
+              update,
+            }),
           ),
-        }),
+        ),
       );
       const retired = command(`zotlit:${name}`);
       expect(

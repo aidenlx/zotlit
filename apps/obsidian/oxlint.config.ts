@@ -282,17 +282,10 @@ export default defineConfig({
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
-      // Calls `vault.getMarkdownFiles` on the App, which the Vault tag now
-      // has.
-      files: ["src/services/template-workbench/inspect.ts"],
-      rules: { "zotlit-services/obsidian-capabilities": "off" },
-    },
-    {
       // No tag member yet: `vault.getName`.
       files: [
         "src/services/citation-index/cli/register.ts",
         "src/services/local-bridge/customize.ts",
-        "src/services/template-workbench/register.ts",
       ],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
@@ -336,7 +329,6 @@ export default defineConfig({
         "src/services/build.ts",
         "src/services/note-feature/operations.ts",
         "src/services/pandoc/register.ts",
-        "src/services/template-workbench/data.ts",
       ],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
@@ -347,7 +339,6 @@ export default defineConfig({
         "src/services/local-bridge/vault-targets.ts",
         "src/services/note-feature/update-single.ts",
         "src/services/note-import/service.ts",
-        "src/services/template-workbench/check-profile-document.ts",
         "src/views/note-preview/render.ts",
         "src/views/note-preview/session.ts",
       ],
@@ -399,8 +390,6 @@ export default defineConfig({
         "src/services/note-import/batch-import.ts",
         "src/services/note-import/service.ts",
         "src/services/profile/service.ts",
-        "src/services/template-workbench/data.ts",
-        "src/services/template/migration.ts",
         "src/views/annot-view/view.tsx",
         "src/views/library/item-actions.ts",
         "src/views/library/library-tree.tsx",

@@ -3,25 +3,22 @@
 // Command, flag, guide, and diagnostic text is all hardcoded English: an
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
-import { Effect } from "effect";
-import type { App, CliFlag, CliFlags, FileSystemAdapter } from "obsidian";
-import { apiVersion } from "obsidian";
+import { Context, Effect, Layer } from "effect";
+import type { CliData, CliFlag, CliFlags } from "obsidian";
 
 import type { VersionedCliHost } from "@/lib/cli-command";
-import type { EffectBridge } from "@/lib/effect-bridge";
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
-import type { PlainProfile } from "@/services/profile/plain";
-import type { PluginSettings } from "@/services/settings/service";
-import type { PlainTemplate } from "@/services/template/plain";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import { ObsidianEnv } from "@/lib/obsidian-env";
+import { PluginHost } from "@/lib/plugin-host";
+import type { ProfileSelector } from "@/lib/profile-stamp";
+import { Profile } from "@/services/profile/service";
+import { Template } from "@/services/template/service";
 
 import {
   createCheckHandler,
   checkFlags,
   TEMPLATE_CHECK_COMMAND,
 } from "./check";
+import type { CheckServices } from "./check";
 import {
   createTemplateWorkbenchHandlers,
   FRONTMATTER_EVAL_COMMAND,
@@ -39,8 +36,9 @@ import {
 } from "./cli";
 import { readCitationData, readTemplateData, withSelectedNote } from "./data";
 import { diagnostic, envelope } from "./envelope";
-import type { WorkbenchCommand, WorkbenchIdentity } from "./envelope";
+import type { WorkbenchCommand } from "./envelope";
 import { GUIDE_TOPIC_NAMES } from "./guide";
+import { readWorkbenchIdentity } from "./identity";
 import {
   createInspectHandler,
   selectInspectionNote,
@@ -68,71 +66,26 @@ import type {
   SourceParam,
 } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
+import { templateCall } from "./sync-template";
 import { choices } from "./vocabulary";
 
-interface TemplateWorkbenchRegistrationDeps {
-  runtime: SubscriptionRuntime;
-  app: App;
-  zoteroReads: Pick<
-    PlainZoteroReads,
-    | "acquireRead"
-    | "reads"
-    | "state"
-    | "changed"
-    | "degraded"
-    | "refresh-failed"
-    | "refreshing"
-    | "db-file-missing"
-    | "refresh-requested"
-  >;
-  noteIndex: Pick<
-    PlainNoteIndex,
-    "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
-  >;
-  settings: Pick<PluginSettings["Service"], "current" | "update">;
-  bridge: Pick<EffectBridge, "runSync">;
-  profile: Pick<
-    PlainProfile,
-    | "resolveProfile"
-    | "profiles"
-    | "diagnostics"
-    | "profileOf"
-    | "getBuiltInSource"
-  >;
-  templates: Pick<
-    PlainTemplate,
-    | "frontmatterFields"
-    | "prepareLiteratureNoteTemplateSource"
-    | "renderCitationSource"
-    | "renderPartialSource"
-    | "getTemplateFileStatuses"
-    | "getPartialDocument"
-    | "renderFilename"
-    | "renderCitationData"
-    | "waitUntilSettled"
-    | "analyzeRootVariables"
-    | "getTemplateSource"
-    | "getLiteratureNoteTemplateStatuses"
-    | "getLiteratureNoteTemplate"
-    | "renderLiteratureNoteTemplateSource"
-    | "getFrontmatterFieldStatus"
-    | "javascriptTemplatesEnabled"
-    | "evaluateFrontmatterFields"
-    | "validateFrontmatterExpr"
-    | "getCitationTemplateStatus"
-    | "compileErrors"
-    | "getPartialDocuments"
-    | "getReservedPartialFiles"
-    | "getLoadedDocumentSource"
-    | "compile-status-changed"
-    | "render"
-    | "renderCitation"
-  >;
-  zoteroPref: Pick<
-    PlainZoteroPref,
-    "sourceId" | "databasePath" | "dataDir" | "baseAttachmentPath"
-  >;
-}
+/** What the Workbench commands read: the Template, Profile, Note Index,
+ *  Zotero Pref and Zotero Reads services, and Obsidian's capabilities. */
+export type WorkbenchServices = CheckServices;
+
+/** Registers the Workbench commands over the plugin's services. */
+export const layerTemplateWorkbenchCli: Layer.Layer<
+  never,
+  never,
+  PluginHost | WorkbenchServices
+> = Layer.effectDiscard(
+  Effect.gen(function* () {
+    registerTemplateWorkbench(
+      yield* PluginHost,
+      yield* Effect.context<WorkbenchServices>(),
+    );
+  }),
+);
 
 /** The Indexed Key selector a command with no other way to name an object takes. */
 function keyFlag(): CliFlag {
@@ -341,118 +294,76 @@ function frontmatterReorderFlags(): CliFlags {
   } satisfies Record<FrontmatterReorderParam, CliFlag>;
 }
 
-/**
- * The identity of the vault and the connected Zotero source that an envelope
- * carries, read once the source is known.
- */
-export async function readWorkbenchIdentity(deps: {
-  app: App;
-  zoteroPref: Pick<
-    PlainZoteroPref,
-    "sourceId" | "databasePath" | "dataDir" | "baseAttachmentPath"
-  >;
-}): Promise<WorkbenchIdentity> {
-  return {
-    vault: {
-      name: deps.app.vault.getName(),
-      path: (deps.app.vault.adapter as FileSystemAdapter).getBasePath(),
-    },
-    source: {
-      id: deps.zoteroPref.sourceId,
-      databasePath: deps.zoteroPref.databasePath,
-    },
-  };
-}
-
 export function registerTemplateWorkbench(
   host: VersionedCliHost,
-  deps: TemplateWorkbenchRegistrationDeps,
+  context: Context.Context<WorkbenchServices>,
 ): void {
-  const getIdentity = async () => {
-    return readWorkbenchIdentity(deps);
-  };
+  const provide = <A, E>(effect: Effect.Effect<A, E, WorkbenchServices>) =>
+    Effect.provideContext(effect, context);
+  const handle =
+    <E>(
+      handler: (params: CliData) => Effect.Effect<string, E, WorkbenchServices>,
+    ) =>
+    (params: CliData) =>
+      provide(handler(params));
+  const template = Context.get(context, Template);
+  const profile = Context.get(context, Profile);
   host.registerCliCommand(TEMPLATE_INSPECT_COMMAND, {
     description:
       "Inspect a Template Document and verify saved source freshness",
     flags: inspectFlags,
-    handler: createInspectHandler({
-      runtime: deps.runtime,
-      app: deps.app,
-      profile: deps.profile,
-      templates: deps.templates,
-      folder: () =>
-        deps.bridge.runSync(deps.settings.current)["template.folder"],
-      identity: getIdentity,
-    }),
+    handler: handle(createInspectHandler()),
   });
   host.registerCliCommand(TEMPLATE_CHECK_COMMAND, {
     description:
       "Check every saved Profile create or update component with verified source freshness",
     flags: checkFlags,
-    handler: createCheckHandler({
-      runtime: deps.runtime,
-      pluginVersion: host.manifest.version,
-      hostVersion: `Obsidian ${apiVersion}`,
-      app: deps.app,
-      profile: deps.profile,
-      templates: deps.templates,
-      folder: () =>
-        deps.bridge.runSync(deps.settings.current)["template.folder"],
-      identity: getIdentity,
-      data: deps,
-    }),
+    handler: handle(
+      createCheckHandler({
+        pluginVersion: host.manifest.version,
+        hostVersion: `Obsidian ${Context.get(context, ObsidianEnv).apiVersion}`,
+      }),
+    ),
   });
   const handlers = createTemplateWorkbenchHandlers({
     pluginVersion: host.manifest.version,
-    getIdentity,
-    selectNote: async (name) => {
-      return selectInspectionNote(deps, name);
-    },
-    loadData: (indexedKey, root, options) =>
-      readTemplateData(
+    getIdentity: provide(readWorkbenchIdentity),
+    selectNote: (name) => provide(selectInspectionNote(name)),
+    loadData: (indexedKey, root, options) => {
+      const read = readTemplateData(indexedKey, root);
+      return provide(
         options?.note === undefined
-          ? deps
-          : withSelectedNote(deps, { key: indexedKey, path: options.note }),
-        indexedKey,
-        root,
-      ),
-    loadCitation: (selector, variant) =>
-      readCitationData(deps, selector, variant),
-    templates: deps.templates,
-    literatureNotes: {
-      readProfiles: () => ({
-        defaultProfile: deps.profile.resolveProfile("default"),
-        profiles: deps.profile.profiles.map((entry) => ({
-          ...entry,
-          bindings: deps.profile.resolveProfile(entry.id)!.bindings,
-        })),
-        diagnostics: deps.profile.diagnostics,
-      }),
-      getDocumentStatuses: () =>
-        deps.templates.getLiteratureNoteTemplateStatuses(),
-      getDocument: (reference) =>
-        deps.templates.getLiteratureNoteTemplate(reference),
-      renderSource: (source, data) =>
-        deps.templates.renderLiteratureNoteTemplateSource(source, data),
+          ? read
+          : read.pipe(
+              withSelectedNote({ key: indexedKey, path: options.note }),
+            ),
+      );
     },
-    frontmatter: {
-      read: () => {
-        const status = deps.templates.getFrontmatterFieldStatus();
+    loadCitation: (selector, variant) =>
+      provide(readCitationData(selector, variant)),
+    templates: template,
+    literatureNotes: {
+      readProfiles: Effect.gen(function* () {
+        const resolve = (selector: ProfileSelector) =>
+          profile.resolveProfile(selector);
         return {
-          fields: status.fields,
-          inertKeys: status.inertKeys,
-          javascriptTemplatesEnabled: deps.templates.javascriptTemplatesEnabled,
+          defaultProfile: yield* resolve("default"),
+          profiles: yield* Effect.forEach(yield* profile.profiles, (entry) =>
+            Effect.map(resolve(entry.id), (resolved) => ({
+              ...entry,
+              bindings: resolved!.bindings,
+            })),
+          ),
+          diagnostics: yield* profile.diagnostics,
         };
-      },
-      evaluate: (fields, zt) =>
-        deps.templates.evaluateFrontmatterFields(fields, zt),
-      validateExpr: (expr, language) =>
-        deps.templates.validateFrontmatterExpr(expr, language),
-      write: (fields) => {
-        deps.bridge.runSync(
-          deps.settings.update({ "note.frontmatter-fields": [...fields] }),
-        );
-      },
+      }),
+      getDocumentStatuses: Effect.suspend(
+        () => template.getLiteratureNoteTemplateStatuses,
+      ),
+      getDocument: (reference) =>
+        templateCall(template.getLiteratureNoteTemplate(reference)),
+      renderSource: (source, data) =>
+        templateCall(template.renderLiteratureNoteTemplateSource(source, data)),
     },
   });
 

@@ -70,6 +70,42 @@ it.effect("reads the live layer's vault from ObsidianApp", () =>
   }),
 );
 
+it.effect(
+  "reads a path through the adapter, failing FileNotFound on ENOENT",
+  () =>
+    Effect.gen(function* () {
+      const source = new MemoryVault();
+      source.contents.set("raw.md", "on disk");
+      const { vault } = yield* open(layerVaultFrom(source));
+      expect(yield* vault.readPath("raw.md")).toBe("on disk");
+      const error = yield* Effect.flip(vault.readPath("gone.md"));
+      expect(error).toMatchObject({
+        _tag: "FileNotFound",
+        path: "gone.md",
+        cause: { code: "ENOENT" },
+      });
+    }),
+);
+
+it.effect("fails any other adapter rejection with VaultError", () =>
+  Effect.gen(function* () {
+    const source = new MemoryVault();
+    const denied = Object.assign(new Error("EACCES: raw.md"), {
+      code: "EACCES",
+    });
+    Object.assign(source.adapter, { read: () => Promise.reject(denied) });
+    const { vault } = yield* open(layerVaultFrom(source));
+    const error = yield* Effect.flip(vault.readPath("raw.md"));
+    expect(error).toMatchObject({
+      _tag: "VaultError",
+      operation: "readPath",
+      path: "raw.md",
+      message: "EACCES: raw.md",
+      cause: denied,
+    });
+  }),
+);
+
 it.effect("lists the vault's Markdown files", () =>
   Effect.gen(function* () {
     const source = new MemoryVault();

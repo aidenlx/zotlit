@@ -53,6 +53,16 @@ export class MemoryVault implements VaultSource {
     return this.read(file);
   }
 
+  /** As Obsidian's adapter: the text at a path, rejecting with `ENOENT` when none. */
+  readonly adapter = {
+    read: async (path: string): Promise<string> => {
+      const text = this.contents.get(path);
+      if (text === undefined)
+        throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" });
+      return text;
+    },
+  };
+
   async process(
     file: TFile,
     fn: (data: string) => string,

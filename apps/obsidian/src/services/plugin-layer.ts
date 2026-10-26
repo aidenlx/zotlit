@@ -99,12 +99,14 @@ import type { Release } from "./release/service";
 import { layerPluginSettings } from "./settings/service";
 import type { PluginSettings } from "./settings/service";
 import { startingAs } from "./startup-failure";
+import { layerTemplateWorkbenchCli } from "./template-workbench/register";
 import { layerCitationTemplateActions } from "./template/actions";
 import { layerTemplateMigration } from "./template/migration";
 import type {
   TemplateMigration,
   TemplateMigrationOptions,
 } from "./template/migration";
+import { readMigrationVerificationData } from "./template/migration-data";
 import { layerTemplate } from "./template/service";
 import type { Template } from "./template/service";
 import { layerUseLedger } from "./use-ledger/service";
@@ -137,7 +139,7 @@ import { workerClient } from "./zotero-reads/worker-client";
  */
 export function pluginLayer(
   plugin: Plugin & CliHost,
-  migration: TemplateMigrationOptions,
+  migration: Pick<TemplateMigrationOptions, "openPrompt">,
   {
     excerpt,
     languagePack,
@@ -218,6 +220,13 @@ export function pluginLayer(
         layerCitationLookup.pipe(startingAs("CitationLookup")),
       ),
     ),
+    // The migration verifies a conversion against a real in-scope item.
+    Layer.provideMerge(
+      layerTemplateMigration({
+        ...migration,
+        loadVerificationData: readMigrationVerificationData,
+      }).pipe(startingAs("TemplateMigration")),
+    ),
     Layer.provideMerge(
       Layer.mergeAll(
         layerLibraryScope.pipe(startingAs("LibraryScope")),
@@ -258,10 +267,7 @@ export function pluginLayer(
             await openLibraryView(plugin.app, { pane: "first-screen" });
           },
         }).pipe(startingAs("Release")),
-        layerTemplateMigration(migration).pipe(
-          startingAs("TemplateMigration"),
-          Layer.provideMerge(layerTemplate.pipe(startingAs("Template"))),
-        ),
+        layerTemplate.pipe(startingAs("Template")),
         layerZoteroPref.pipe(
           Layer.provide(layerZoteroPrefFiles),
           startingAs("ZoteroPref"),
@@ -322,6 +328,7 @@ export function pluginLayer(
       ? layerQueryMeasureCli.pipe(startingAs("QueryMeasureCli"))
       : Layer.empty,
     layerReleaseActions.pipe(startingAs("ReleaseActions")),
+    layerTemplateWorkbenchCli.pipe(startingAs("TemplateWorkbenchCli")),
     layerWikilinkEditor.pipe(startingAs("WikilinkEditor")),
     layerWikilinkReading.pipe(startingAs("WikilinkReading")),
   ).pipe(Layer.provide(Layer.mergeAll(layerPluginHost(plugin), obsidian)));
