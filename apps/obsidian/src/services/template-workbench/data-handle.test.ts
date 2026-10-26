@@ -1,9 +1,10 @@
 import { it } from "@effect/vitest";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Exit, Layer, Scope } from "effect";
 import { expect, vi } from "vitest";
 
 import type { Library } from "@zotlit/db";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import {
@@ -34,14 +35,20 @@ const SEED = `
 
 /**
  * The handle over `reads`, with plugin settings that count their reads and a
- * Library Scope that records the libraries it resolves.
+ * Library Scope that records the libraries it resolves. It runs through
+ * `bridge`, or through a bridge that counts its runs.
  */
-function handle(reads: Context.Context<ZoteroReads>) {
+function handle(
+  reads: Context.Context<ZoteroReads>,
+  bridge?: Pick<EffectBridge, "runPromise">,
+) {
   const runs = { count: 0 };
-  const runPromise: EffectBridge["runPromise"] = (effect) => {
-    runs.count += 1;
-    return Effect.runPromise(effect);
-  };
+  const runPromise: EffectBridge["runPromise"] =
+    bridge?.runPromise ??
+    ((effect) => {
+      runs.count += 1;
+      return Effect.runPromise(effect);
+    });
   const settingsReads = { count: 0 };
   const resolveLibraries = vi.fn((libraries: readonly Library[]) =>
     Effect.sync(() => resolveLibraryScope(libraries, MY_LIBRARY_SCOPE)),
@@ -143,5 +150,39 @@ it.effect("reads the verification data over the bound Library Scope", () =>
       ),
     ).toBeNull();
     expect(resolveLibraries).toHaveBeenCalledOnce();
+  }),
+);
+
+it.effect("settles a load after disposal as the bridge does", () =>
+  Effect.gen(function* () {
+    const scope = yield* Scope.fork(yield* Scope.Scope);
+    const reads = yield* Layer.buildWithScope(
+      layerZoteroReads(
+        inProcessClient(layerRcRef(memoryOpener(() => SEED).open)),
+      ),
+      scope,
+    );
+    const bridge = openTestBridge();
+    const { templateData } = handle(reads, bridge);
+    const settled = (load: () => Promise<unknown>) =>
+      Effect.promise(() =>
+        load().then(
+          (value) => ({ value }),
+          (error: unknown) => ({ error }),
+        ),
+      );
+    expect(yield* settled(() => templateData.load("ABCD2345", "note"))).toEqual(
+      { value: { kind: "not-found" } },
+    );
+
+    // Unload: the runtime under the bridge, then the services it held.
+    yield* Effect.promise(() => bridge[Symbol.asyncDispose]());
+    yield* Scope.close(scope, Exit.void);
+
+    // bridge.runPromise runs on the captured context, so the load rejects
+    // with the released reads' own answer.
+    expect(
+      yield* settled(() => templateData.load("ABCD2345", "note")),
+    ).toMatchObject({ error: { _tag: "DbUnavailable" } });
   }),
 );
