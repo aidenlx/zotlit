@@ -806,7 +806,7 @@ it.effect(
 );
 
 it.effect(
-  "answers a read in flight when the repository closes, and leaves the Local API session standing",
+  "answers a read in flight when the repository closes, leaves the Local API session standing, and answers null after",
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
@@ -847,6 +847,8 @@ it.effect(
       expect(
         localApiBridge.runSync(localApiService.demandSource),
       ).not.toBeNull();
+      // A read asked after the close finds no list to hold.
+      expect(yield* service.read("EPUBBKS2")).toBeNull();
     }),
 );
 
