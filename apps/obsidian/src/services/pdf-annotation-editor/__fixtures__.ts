@@ -9,7 +9,6 @@ import type { Mock } from "vitest";
 import { parseAnnotationPosition } from "@zotlit/db";
 import type { AnnotationPositionRaw } from "@zotlit/db";
 import type { PdfPosition, PdfTextStructure } from "@zotlit/pdf-structure";
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { dispatchKey } from "@/lib/__fixtures__/keymap";
 import { withRecentColor } from "@/lib/annotation-colors";
@@ -30,10 +29,7 @@ import type {
   HistoryOutcome,
 } from "@/services/annotation-repository/service";
 import { IDLE } from "@/services/annotation-repository/write";
-import type {
-  AttachmentResolution,
-  AttachmentResolverEvents,
-} from "@/services/attachment-resolver/service";
+import type { AttachmentResolution } from "@/services/attachment-resolver/service";
 import { ReaderSessionHost } from "@/services/reader-session/session";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -42,6 +38,7 @@ import { freshnessSignal } from "@/services/zotero-local-api/__fixtures__";
 import type { WireAnnotation } from "@/services/zotero-local-api/__fixtures__";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
+import type { AttachmentReads } from "./binding";
 import { MarkCreation } from "./creation";
 import type { AnnotationCreates } from "./creation";
 import { MarkPopupHost } from "./mark-popup-host";
@@ -301,19 +298,21 @@ export function annotation(
  */
 export function attachmentReads(
   resolution: AttachmentResolution = { kind: "pending" },
-) {
-  const emitter = createNanoEvents<AttachmentResolverEvents>();
+): AttachmentReads & {
+  resolve: Mock<AttachmentReads["resolve"]>;
+  answer(next: AttachmentResolution): void;
+} {
+  const changes = Effect.runSync(PubSub.unbounded<void>());
   let current = resolution;
   return {
-    resolve: vi.fn(() => current),
-    on: <K extends keyof AttachmentResolverEvents>(
-      event: K,
-      cb: AttachmentResolverEvents[K],
-    ) => emitter.on(event, cb),
+    resolve: vi.fn<AttachmentReads["resolve"]>(() =>
+      Effect.sync(() => current),
+    ),
+    resolutionsChanged: Stream.fromPubSub(changes),
     /** What the resolver does once the database it waited on is readable. */
     answer(next: AttachmentResolution): void {
       current = next;
-      emitter.emit("resolutions-changed");
+      PubSub.publishUnsafe(changes, undefined);
     },
   };
 }

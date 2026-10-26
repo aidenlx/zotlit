@@ -73,7 +73,7 @@ export async function verifyPdfReadSource(
       async () =>
         (await obEval(
           vaultId,
-          `String(${services}.attachmentResolver.resolve(${JSON.stringify(join(vaultPath, oldPdf))}).kind==='resolved')`,
+          `String(${services}.bridge.runSync(${services}.attachmentResolver.resolve(${JSON.stringify(join(vaultPath, oldPdf))})).kind==='resolved')`,
         )) === "true",
     ),
   ).toBe(true);
@@ -100,7 +100,7 @@ export async function verifyPdfReadSource(
       async () =>
         (await obEval(
           vaultId,
-          `String(${services}.attachmentResolver.resolve(${JSON.stringify(join(vaultPath, oldPdf))}).kind==='unresolved')`,
+          `String(${services}.bridge.runSync(${services}.attachmentResolver.resolve(${JSON.stringify(join(vaultPath, oldPdf))})).kind==='unresolved')`,
         )) === "true",
     ),
   ).toBe(true);

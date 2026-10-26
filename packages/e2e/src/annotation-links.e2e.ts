@@ -196,7 +196,7 @@ const RESTORE_LEDGER = `
     const fresh=app.plugins.plugins.zotlit.services;
     const restored=JSON.stringify(app.loadLocalStorage('zotlit-use-ledger')??null);
     if(restored!==savedLedger)throw new Error('The Use Ledger came back changed: '+restored);
-    await within(fresh.attachmentResolver.indexed,deadline(),'The Attachment index was not built again');
+    await within(fresh.bridge.runPromise(fresh.attachmentResolver.indexed),deadline(),'The Attachment index was not built again');
   });`;
 
 /**
@@ -634,8 +634,8 @@ async function reindexed(kind: "resolved" | "unresolved"): Promise<string> {
       ${WAITS}
       const s=app.plugins.plugins.zotlit.services;
       await s.zoteroReads.refresh();
-      await until(()=>s.attachmentResolver.lookup(${JSON.stringify(SHARED.attachmentKey)}).kind===${JSON.stringify(kind)},()=>'The Attachment index never answered ${kind} for ${SHARED.attachmentKey}');
-      return JSON.stringify(s.attachmentResolver.resolve(app.vault.adapter.getFullPath(${JSON.stringify(PDF_PATH)})).attachmentKey??null);
+      await until(()=>s.bridge.runSync(s.attachmentResolver.lookup(${JSON.stringify(SHARED.attachmentKey)})).kind===${JSON.stringify(kind)},()=>'The Attachment index never answered ${kind} for ${SHARED.attachmentKey}');
+      return JSON.stringify(s.bridge.runSync(s.attachmentResolver.resolve(app.vault.adapter.getFullPath(${JSON.stringify(PDF_PATH)}))).attachmentKey??null);
     })()`,
     60000,
   );
@@ -692,7 +692,7 @@ async function sharedTabs(): Promise<SharedTabsOutcome> {
         // ZotLit loads with the tab already open, as at startup.
         await app.plugins.disablePlugin('zotlit');
         await app.plugins.enablePlugin('zotlit');
-        await within(services().attachmentResolver.indexed,deadline(),'The Attachment index was not built again');
+        await within(services().bridge.runPromise(services().attachmentResolver.indexed),deadline(),'The Attachment index was not built again');
         await boundTo(restored,${JSON.stringify(annotationAttachment.key)},'The tab ZotLit found open');
         // A read is recorded once its binding names the Attachment, before
         // the tab's session does, so each is credited to the binding's.
@@ -960,7 +960,7 @@ describe.skipIf(!reachable)("Annotation links", () => {
     expect(
       await obEval(
         run.vaultId,
-        `(async()=>{await app.plugins.disablePlugin('zotlit');const s=window.__ztLinks={native:window.open,passed:[],stopAnchor:(e)=>{const a=e.target?.closest?.('a[href^="zotero:"]');if(a?.closest('.workspace-leaf-content[data-type="zotero-annotation-view"]'))e.preventDefault();}};window.addEventListener('click',s.stopAnchor,true);window.open=function(url,target,features){if(String(url).startsWith('zotero:')){s.passed.push({url:String(url),target:target??null});return null;}return s.native.apply(this,arguments);};await app.plugins.enablePlugin('zotlit');const timeout=new Promise((resolve)=>setTimeout(()=>resolve('not indexed'),20000));return await Promise.race([app.plugins.plugins.zotlit.services.attachmentResolver.indexed.then(()=>'indexed'),timeout]);})()`,
+        `(async()=>{await app.plugins.disablePlugin('zotlit');const s=window.__ztLinks={native:window.open,passed:[],stopAnchor:(e)=>{const a=e.target?.closest?.('a[href^="zotero:"]');if(a?.closest('.workspace-leaf-content[data-type="zotero-annotation-view"]'))e.preventDefault();}};window.addEventListener('click',s.stopAnchor,true);window.open=function(url,target,features){if(String(url).startsWith('zotero:')){s.passed.push({url:String(url),target:target??null});return null;}return s.native.apply(this,arguments);};await app.plugins.enablePlugin('zotlit');const timeout=new Promise((resolve)=>setTimeout(()=>resolve('not indexed'),20000));return await Promise.race([((z)=>z.bridge.runPromise(z.attachmentResolver.indexed))(app.plugins.plugins.zotlit.services).then(()=>'indexed'),timeout]);})()`,
         60000,
       ),
       "the Attachment index is built with no lookup asking for it",

@@ -159,7 +159,6 @@ export default defineConfig({
         "src/lib/wikilink-citation.ts",
         "src/services/attachment-import/service.ts",
         "src/services/attachment-open/actions.ts",
-        "src/services/attachment-resolver/service.ts",
         "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
         "src/services/citekey-editor/service.ts",
@@ -414,7 +413,6 @@ export default defineConfig({
         "src/lib/effect-scope.ts",
         "src/lib/temp-sweep.ts",
         "src/services/attachment-open/actions.ts",
-        "src/services/attachment-resolver/service.ts",
         "src/services/batch-run.ts",
         "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
@@ -520,11 +518,9 @@ export default defineConfig({
       // list when its service converts to Effect.
       files: [
         "src/services/attachment-import/service.ts",
-        "src/services/attachment-resolver/service.ts",
         "src/services/citekey-editor/service.ts",
         "src/services/local-bridge/service.ts",
         "src/services/note-feature/operations.ts",
-        "src/services/pdf-annotation-editor/__fixtures__.ts",
         "src/services/pdf-annotation-editor/service.ts",
         "src/services/reader-session/session.ts",
         "src/views/library/item-drag.test.ts",
@@ -690,7 +686,6 @@ export default defineConfig({
       files: [
         "src/services/annotation-repository/notices.ts",
         "src/services/attachment-import/service.ts",
-        "src/services/attachment-resolver/service.ts",
         "src/services/citekey-editor/service.ts",
         "src/services/citekey-reading/service.ts",
         "src/services/excerpt-image/display.ts",

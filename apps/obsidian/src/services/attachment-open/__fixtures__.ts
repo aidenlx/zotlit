@@ -3,9 +3,8 @@
 // handler are the host boundaries, so both are recorders.
 
 import { Effect } from "effect";
+import type { Context } from "effect";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { effectBridge } from "@/lib/effect-bridge";
 import {
   DATA_DIR,
   resolverHarness,
@@ -73,22 +72,26 @@ export async function openerHarness(
     missing = [],
     native,
     settings = defaults,
+    context,
     ...options
   }: Omit<ResolverHarnessOptions, "rows"> & {
     missing?: readonly string[];
     native?: NativeOpener;
     settings?: Settings;
+    /** What the resolver's runtime also carries: a test's `TestClock`, for one. */
+    context?: Context.Context<never>;
   } = {},
 ) {
   const opened: { attachment: ObsidianOpenableAttachment; pane: unknown }[] =
     [];
   const handed: string[] = [];
-  const harness = await resolverHarness(stack, {
-    rows: OPENER_ROWS,
-    ...options,
-  });
+  const harness = await resolverHarness(
+    stack,
+    { rows: OPENER_ROWS, ...options },
+    context,
+  );
   const opener = createTargetOpener({
-    attachments: harness.resolver,
+    attachments: harness.service,
     reader: {
       open: (attachment, pane): Promise<ReaderOutcome> => {
         if (missing.includes(attachment.absolutePath))
@@ -99,7 +102,7 @@ export async function openerHarness(
     },
     native: native ?? ((url) => void handed.push(url)),
     settings: { current: Effect.sync(() => settings) },
-    bridge: effectBridge(testRuntime()),
+    bridge: harness.bridge,
     vaultBasePath: VAULT,
     platform: "linux",
   });
