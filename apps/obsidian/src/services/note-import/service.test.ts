@@ -35,7 +35,7 @@ import {
 import { noteImporterOver } from "./__fixtures__/importer";
 import { childNoteLink } from "./child-note-link";
 import { noteAnnotationKeys, parseNote } from "./note-parser";
-import { NoteImportMintError } from "./service";
+import { NoteImportMintError, NoteImportPortError } from "./service";
 
 // The service owns the annotation renderer now; stub the leaf so the test asserts
 // the wiring (resolveLink binding, library scoping) without the template pipeline.
@@ -349,7 +349,7 @@ beforeEach(() => {
   vi.mocked(renderAnnotationSources).mockReturnValue(new Map());
 });
 
-describe("createNoteImporter", () => {
+describe("NoteImporter", () => {
   it.effect(
     "skips when an existing note changes Profile after its import preview",
     () =>
@@ -1182,5 +1182,41 @@ describe("createNoteImporter", () => {
       expect(started).toBe(17);
       expect(create).toHaveBeenCalledTimes(17);
     }),
+  );
+
+  it.effect(
+    "fails with a typed error that keeps an attachment copy's rejection",
+    () =>
+      Effect.gen(function* () {
+        const { app } = makeApp();
+        const base = makeAttachmentImport();
+        const copyFailed = new Error("EACCES: permission denied");
+        const service = yield* makeService(app, {
+          attachmentImport: {
+            prepare: async (...args: Parameters<typeof base.prepare>) => {
+              const batch = await base.prepare(...args);
+              return Object.assign(batch, {
+                flush: async () => {
+                  throw copyFailed;
+                },
+              });
+            },
+          },
+        });
+
+        const error = yield* Effect.flip(
+          service.importNote(makeNote(), {
+            reads,
+            settings: importSettings(),
+          }),
+        );
+
+        expect(error).toBeInstanceOf(NoteImportPortError);
+        expect(error).toMatchObject({
+          step: "attachment-flush",
+          cause: copyFailed,
+          message: "EACCES: permission denied",
+        });
+      }),
   );
 });

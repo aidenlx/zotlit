@@ -289,6 +289,19 @@ interface ImportDeps {
 }
 
 /**
+ * A case's Promise as the importer answers: a {@link NoteImportProfileError}
+ * it rejects with is the importer's typed failure, anything else a defect.
+ */
+const settled = <A>(call: () => Promise<A>) =>
+  Effect.promise(() => call()).pipe(
+    Effect.catchDefect((defect) =>
+      defect instanceof NoteImportProfileError
+        ? Effect.fail(defect)
+        : Effect.die(defect),
+    ),
+  );
+
+/**
  * The real {@link bindBatchImport}, as `build.ts` binds it, over services
  * that answer from `deps` at the time of each call. The case's resources
  * dispose the runtime.
@@ -305,16 +318,14 @@ function importOver(deps: ImportDeps): BatchImport {
       }),
       Layer.mock(NoteImporter, {
         importNote: (note, options) =>
-          Effect.promise(() => deps.noteImport.importNote(note, options)),
+          settled(() => deps.noteImport.importNote(note, options)),
         prepareExplicitImport: (note, options) =>
           Effect.map(
-            Effect.promise(() =>
-              deps.noteImport.prepareExplicitImport(note, options),
-            ),
+            settled(() => deps.noteImport.prepareExplicitImport(note, options)),
             (prepared): PreparedExplicitImport => ({
               ...prepared,
               import: (current, runOptions) =>
-                Effect.promise(() => prepared.import(current, runOptions)),
+                settled(() => prepared.import(current, runOptions)),
             }),
           ),
       }),
@@ -571,7 +582,7 @@ it.each([true, false])(
       },
       { getFileCache: () => ({ frontmatter: { "zotlit-profile": stamp } }) },
     );
-    const error = new NoteImportProfileError(stamp, { path: file.path });
+    const error = NoteImportProfileError.unknown(stamp, { path: file.path });
     vi.mocked(deps.noteImport.prepareExplicitImport).mockRejectedValue(error);
     importNote.mockRejectedValue(error);
     seedNotes([1]);
@@ -1401,7 +1412,7 @@ describe("runChildImportByKey", () => {
     expect(
       Reflect.apply(error as (...args: unknown[]) => string, null, [
         "fallback",
-        new NoteImportProfileError("missing-profile", {
+        NoteImportProfileError.unknown("missing-profile", {
           path: "Imported/Methods.md",
         }),
       ]),

@@ -1,6 +1,6 @@
 // Batch import runner for Zotero notes into standalone Markdown mirrors.
 import { distinct } from "@std/collections";
-import { Cause, Effect, Exit, Stream } from "effect";
+import { Cause, Effect, Stream } from "effect";
 import type { TFile } from "obsidian";
 
 import { parseIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
@@ -56,7 +56,7 @@ import type {
 } from "@/views/batch-modal";
 
 import { importRunSummary } from "./batch-import-notices";
-import { NoteImporter, NoteImportProfileError } from "./service";
+import { NoteImporter } from "./service";
 import type { PreparedExplicitImport, WriteOutcome } from "./service";
 import type { NoteImportView } from "./view";
 
@@ -351,28 +351,32 @@ const prepareImportProfiles = Effect.fnUntraced(function* (
     Effect.gen(function* () {
       const reads = yield* zoteroReads.snapshot;
       for (const action of actions) {
-        const exit = yield* Effect.exit(
-          importer.prepareExplicitImport(action.note, {
+        const unavailable = (error: unknown) =>
+          Effect.logDebug(
+            "Import preview unavailable; write will report the note diagnostic",
+          ).pipe(
+            Effect.annotateLogs({ noteKey: action.note.indexedKey, error }),
+            logged,
+          );
+        yield* importer
+          .prepareExplicitImport(action.note, {
             reads,
             orphanProfile: selection.selector,
-          }),
-        );
-        if (Exit.isSuccess(exit)) {
-          action.profilePlan = exit.value;
-          initial.set(action.note.itemID, exit.value);
-          continue;
-        }
-        if (Cause.hasInterruptsOnly(exit.cause))
-          return yield* Effect.failCause(exit.cause);
-        const error = Cause.squash(exit.cause);
-        if (error instanceof NoteImportProfileError)
-          action.unknownStamp = error.diagnostic.stamp;
-        yield* Effect.logDebug(
-          "Import preview unavailable; write will report the note diagnostic",
-        ).pipe(
-          Effect.annotateLogs({ noteKey: action.note.indexedKey, error }),
-          logged,
-        );
+          })
+          .pipe(
+            Effect.map((plan) => {
+              action.profilePlan = plan;
+              initial.set(action.note.itemID, plan);
+            }),
+            Effect.catchTag("NoteImportProfileError", (error) => {
+              action.unknownStamp = error.diagnostic.stamp;
+              return unavailable(error);
+            }),
+            Effect.catchCauseIf(
+              (cause) => !Cause.hasInterruptsOnly(cause),
+              (cause) => unavailable(Cause.squash(cause)),
+            ),
+          );
       }
     }),
   );
