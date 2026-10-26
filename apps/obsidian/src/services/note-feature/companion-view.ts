@@ -7,7 +7,7 @@ import type { ProtocolAction } from "@zotlit/protocol";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { portCall } from "@/lib/legacy-port";
-import { Notifier, withProgress } from "@/lib/notifier";
+import { Notifier } from "@/lib/notifier";
 import { Workspace } from "@/lib/obsidian-workspace";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { UseLedger } from "@/services/use-ledger/service";
@@ -16,13 +16,13 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import { createNoteInteractively } from "./creation-view";
 import type { InteractiveCreationDeps } from "./creation-view";
-import { plainNoteError } from "./errors";
 import type { CompanionNoteTarget, UpdateScope } from "./operations";
 import { NoteFeature } from "./service";
 import {
   noteOperationDiagnosticContent,
   resolveLiteratureNoteWithWarning,
   updateNoteToast,
+  updateWithNotice,
 } from "./update-single";
 
 /**
@@ -71,16 +71,11 @@ export const openCompanionNote = Effect.fn("openCompanionNote")(function* (
       yield* notifier.show(notice!);
     } else if (options.action === "update") {
       const scope = options.scope ?? "full";
-      const copy = updateNoteToast(scope, { app: deps.app });
-      // The notice tells the user how the update failed.
-      yield* withProgress(
-        noteFeature.updateNote(file, { indexedKey: ref.indexedKey, scope }),
-        {
-          loading: copy.loading,
-          success: copy.success,
-          error: (error) => copy.error("", plainNoteError(error)),
-        },
-      ).pipe(Effect.ignore);
+      yield* updateWithNotice(
+        file,
+        { indexedKey: ref.indexedKey, scope },
+        updateNoteToast(scope, { app: deps.app }),
+      );
     }
     return;
   }

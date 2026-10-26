@@ -1,6 +1,6 @@
 // An in-memory Notifier: records each notice in place of drawing it.
 import { Effect, Layer } from "effect";
-import { Notifier } from "@/lib/notifier";
+import { noticeFibers, Notifier } from "@/lib/notifier";
 import type { NoticeMessage } from "@/lib/notifier";
 
 export interface RecordedNotice {
@@ -23,7 +23,7 @@ export function testNotifier() {
     notices.push(notice);
     return notice;
   };
-  const service = Notifier.of({
+  const base: Omit<Notifier["Service"], "track"> = {
     show: (message, options) =>
       Effect.sync(() => {
         const notice = record(message, options?.duration);
@@ -50,10 +50,16 @@ export function testNotifier() {
       }),
       (progress) => Effect.sync(progress.hide),
     ).pipe(Effect.map(({ setMessage }) => ({ setMessage }))),
-  });
+  };
   return {
     notices: notices as readonly RecordedNotice[],
-    service,
-    layer: Layer.succeed(Notifier, service),
+    /** The notices without a layer Scope: a tracked notice needs `layer`. */
+    service: Notifier.of({
+      ...base,
+      track: () =>
+        Effect.die(new Error("A tracked notice needs testNotifier().layer")),
+    }),
+    /** The notices, with tracked notices on a FiberSet of the layer's Scope. */
+    layer: Layer.effect(Notifier, noticeFibers(base)),
   };
 }

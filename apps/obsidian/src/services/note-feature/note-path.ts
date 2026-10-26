@@ -34,7 +34,7 @@ export class NotePathUnavailable extends Schema.TaggedError<
 
 const unavailable = (cause: unknown) =>
   new NotePathUnavailable({
-    message: cause instanceof Error ? cause.message : String(cause),
+    message: Error.isError(cause) ? cause.message : String(cause),
     cause,
   });
 

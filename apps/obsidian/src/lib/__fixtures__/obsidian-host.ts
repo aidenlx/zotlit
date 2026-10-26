@@ -107,7 +107,8 @@ export class MockVault {
   readonly adapter = {
     read: async (path: string): Promise<string> => {
       const text = this.contents.get(path);
-      if (text === undefined) throw new Error(`ENOENT: ${path}`);
+      if (text === undefined)
+        throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" });
       return text;
     },
   };

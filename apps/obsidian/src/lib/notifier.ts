@@ -1,5 +1,14 @@
 // Obsidian notices as a service the Effect layers show their toasts through.
-import { Cause, Context, Deferred, Effect, Exit, Layer, Option } from "effect";
+import {
+  Cause,
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  FiberSet,
+  Layer,
+  Option,
+} from "effect";
 import type { Duration } from "effect";
 import type { Scope } from "effect";
 
@@ -36,13 +45,34 @@ export class Notifier extends Context.Service<
     ): Effect.Effect<NoticeHandle>;
     /** In place of `using LazyNotice`: the notice hides when the Scope closes. */
     readonly progress: Effect.Effect<ProgressNotice, never, Scope.Scope>;
+    /**
+     * Run `notice` on a fiber of the Notifier's own, so it outlives the
+     * caller's run and stops when the layer closes.
+     */
+    track(notice: Effect.Effect<void>): Effect.Effect<void>;
   }
 >()("zotlit/obsidian/Notifier") {}
 
+/**
+ * The Notifier over `base`, its `track` forking each notice on a `FiberSet`
+ * of the current Scope.
+ */
+export const noticeFibers = Effect.fnUntraced(function* (
+  base: Omit<Notifier["Service"], "track">,
+) {
+  const fibers = yield* FiberSet.make();
+  return Notifier.of({
+    ...base,
+    track: Effect.fn("Notifier.track")(function* (notice) {
+      yield* FiberSet.run(fibers, notice);
+    }),
+  });
+});
+
 /** Notices drawn by Obsidian, with ZotLit's `BaseNotice` styling. */
-export const layerNotifier: Layer.Layer<Notifier> = Layer.succeed(
+export const layerNotifier: Layer.Layer<Notifier> = Layer.effect(
   Notifier,
-  Notifier.of({
+  noticeFibers({
     show: Effect.fn("Notifier.show")((message, options) =>
       Effect.sync(() => {
         const notice = new BaseNotice(message, options?.duration);
@@ -142,20 +172,28 @@ const failureMessage = Effect.fnUntraced(function* (
 /**
  * Run `task` behind a progress notice, as `toast.promise` did: the task's
  * result or failure returns once the task ends, while the notice reports the
- * outcome on its own fiber, as {@link reportProgress} does.
+ * outcome as {@link reportProgress} does, on the Notifier's fiber
+ * ({@link Notifier.track}): it outlives the task and stops when the plugin
+ * unloads.
  */
 export const withProgress = <A, E, R>(
   task: Effect.Effect<A, E, R>,
   copy: ProgressCopy<A>,
 ): Effect.Effect<A, E, R | Notifier> =>
-  Effect.gen(function* () {
-    const outcome = yield* Deferred.make<Exit.Exit<A, E>>();
-    // Detached, so the notice outlives the caller's run, as the toast did.
-    yield* Effect.forkDetach(reportProgress(Deferred.await(outcome), copy));
-    return yield* task.pipe(
-      Effect.onExit((exit) => Deferred.succeed(outcome, exit)),
-    );
-  });
+  Effect.uninterruptibleMask((restore) =>
+    Effect.gen(function* () {
+      const notifier = yield* Notifier;
+      const outcome = yield* Deferred.make<Exit.Exit<A, E>>();
+      yield* notifier.track(
+        reportProgress(Deferred.await(outcome), copy).pipe(
+          Effect.provideService(Notifier, notifier),
+        ),
+      );
+      return yield* restore(task).pipe(
+        Effect.onExit((exit) => Deferred.succeed(outcome, exit)),
+      );
+    }),
+  );
 
 /** The messages of a task's outcome notice; see {@link reportOutcome}. */
 export interface OutcomeCopy<A> {

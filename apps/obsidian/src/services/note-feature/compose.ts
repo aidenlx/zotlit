@@ -58,6 +58,8 @@ export interface ComposeNoteInput extends Omit<
   "prepared"
 > {
   document: ResolvedLiteratureNoteTemplate | undefined;
+  /** The instant a Managed Frontmatter `now` reads. */
+  now: Temporal.Instant;
 }
 
 export interface ComposedNote {
@@ -105,12 +107,12 @@ export interface PreparedComposition {
  */
 export function prepareLiteratureNote(
   deps: ComposeNoteDeps,
-  input: Pick<ComposeNoteInput, "context" | "document">,
+  input: Pick<ComposeNoteInput, "context" | "document" | "now">,
 ): PreparedComposition | ComposeRefusal {
   const result = prepareManagedFrontmatter(
     input.document?.frontmatter,
     input.context,
-    Temporal.Now.instant(),
+    input.now,
   );
   if ("failures" in result)
     return {

@@ -1,5 +1,6 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
-import { Effect, Layer } from "effect";
+import { DateTime, Effect, Fiber, Layer } from "effect";
+import { TestClock } from "effect/testing";
 import {
   mkdir,
   mkdtemp,
@@ -177,6 +178,34 @@ function createNoteFeature(deps: TestDeps) {
       know(args[0]);
       return feature.createNote(...args);
     },
+    /** Run a create on the runtime as a fiber, which a case can interrupt. */
+    forkCreateNote: (item: Item) => {
+      know(item);
+      return runtime.runFork(
+        Effect.flatMap(NoteFeature, (service) => service.createNote(item)),
+      );
+    },
+    /** Create on the runtime under a TestClock set to `millis`. */
+    createNoteAt: (
+      item: Item,
+      options: Parameters<NoteFeatureHandle["createNote"]>[1],
+      millis: number,
+    ) => {
+      know(item);
+      return runtime.runPromise(
+        TestClock.setTime(millis).pipe(
+          Effect.andThen(
+            Effect.flatMap(NoteFeature, (service) =>
+              service.createNote(item, options),
+            ),
+          ),
+          Effect.provide(TestClock.layer()),
+        ),
+      );
+    },
+    /** Interrupt `fiber`, and settle once it has ended. */
+    interrupt: (fiber: Fiber.Fiber<unknown, unknown>) =>
+      runtime.runPromise(Fiber.interrupt(fiber)),
     // The batch runners' members, which no Promise caller holds.
     reportExcerptImages: (summary: ExcerptSummary) =>
       runtime.runSync(
@@ -1649,6 +1678,59 @@ describe("createNote", () => {
     expect(app.vault.create).toHaveBeenCalledOnce();
   });
 
+  it("copies the attachments of a created note when an interrupt reaches its pending write", async () => {
+    const item = makeCreateGateItem();
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
+    const app = makeApp();
+    const write = app.vault.create.getMockImplementation()!;
+    const started = Promise.withResolvers<void>();
+    const held = Promise.withResolvers<void>();
+    app.vault.create.mockImplementationOnce(async (...args) => {
+      started.resolve();
+      await held.promise;
+      return write(...args);
+    });
+    const flush = vi.fn(async () => ({
+      copied: 0,
+      skipped: 0,
+      missing: 0,
+      blocked: 0,
+      refused: 0,
+    }));
+    const template = makeTemplate();
+    template.renderFilename = () => `Root${filenameSuffix()}`;
+    const feature = createNoteFeature({
+      app,
+      template,
+      ...makeDbDeps(),
+      noteIndex: {
+        getImportedNoteByNoteKey: () => [],
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings(),
+      attachmentImport: {
+        prepare: async () => ({
+          decide: blockedDecide,
+          resolveLink: () => () => "",
+          discard: () => undefined,
+          flush,
+        }),
+      },
+    });
+
+    const running = feature.forkCreateNote(item);
+    await started.promise;
+    const interrupted = feature.interrupt(running);
+    held.resolve();
+    await interrupted;
+
+    // The note is written, so its copies are too.
+    expect(app.vault.create).toHaveBeenCalledOnce();
+    expect(flush).toHaveBeenCalledOnce();
+  });
+
   it("creates under an explicit Profile with its folder, stamp, and citation style", async () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeItem({
@@ -1782,6 +1864,51 @@ describe("createNote", () => {
     const file = createdFile(result);
     expect(file.path).toBe("Literature/Converted-Root.md");
     expect(document.renderForCreate).toHaveBeenCalledOnce();
+  });
+
+  it("reads a created note's Managed Frontmatter `now` from the Effect clock", async () => {
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
+    const item = makeCreateGateItem();
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
+    const app = makeApp();
+    const document = makeDocumentTemplate({
+      createBody: formatManagedRegion("BODY"),
+      filename: `Clock-Root${filenameSuffix()}`,
+      frontmatter: compileDocumentFrontmatter([
+        { key: "created", merge: "replace", value: { $eval: "now" } },
+      ]),
+    });
+    const feature = createNoteFeature({
+      app,
+      template: {
+        ...makeTemplate(),
+        getLiteratureNoteTemplate: (reference) =>
+          reference === "clock.md" ? document : undefined,
+      },
+      ...makeDbDeps(),
+      noteIndex: {
+        getImportedNoteByNoteKey: () => [],
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings({
+        profiles: [{ id: profileId, label: "Clock", document: "clock.md" }],
+      }),
+      attachmentImport: blockedAttachmentImport,
+    });
+
+    const file = createdFile(
+      await feature.createNoteAt(
+        item,
+        { profile: profileId },
+        DateTime.toEpochMillis(DateTime.makeUnsafe("2024-03-01T08:00:00Z")),
+      ),
+    );
+
+    expect(app.vault.contents.get(file.path)).toContain(
+      "created: 2024-03-01T08:00:00Z",
+    );
   });
 
   it("creates a Profile note from its document body, filename, and frontmatter", async () => {

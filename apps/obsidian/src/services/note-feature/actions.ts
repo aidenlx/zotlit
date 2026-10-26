@@ -314,12 +314,17 @@ function handleUpdateNote(
   file: TFile,
   opts: { itemKey: string; scope: UpdateScope },
 ): Promise<void> {
+  const copy = updateNoteToast(opts.scope, { app: deps.app });
   return toast.promise(
     deps.noteFeature.updateNote(file, {
       indexedKey: opts.itemKey,
       scope: opts.scope,
     }),
-    updateNoteToast(opts.scope, { app: deps.app }),
+    {
+      loading: copy.loading,
+      success: copy.success,
+      error: (_msg, e) => copy.error(e),
+    },
   );
 }
 
