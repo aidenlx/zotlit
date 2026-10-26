@@ -4,7 +4,7 @@
 import type { Setting } from "obsidian";
 
 import type { ReferencesStyleOption } from "@/lib/citation-style";
-import { listInstalledStyles } from "@/services/pandoc/styles";
+import { listInstalledStylesOrNone } from "@/services/pandoc/styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 
 export interface StyleDropdownOptions {
@@ -51,7 +51,7 @@ export function addStyleDropdown(
       selected = next;
       onChange(next);
     });
-    void listInstalledStyles(dataDir).then((installed) => {
+    void listInstalledStylesOrNone(dataDir).then((installed) => {
       styles = installed;
       repopulate();
     });

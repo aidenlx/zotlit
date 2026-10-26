@@ -32,6 +32,7 @@ export function attachmentOpenFileMenu(
           void (async () => {
             const attachments =
               await deps.attachments.literatureNoteAttachments(itemKey);
+            if (!attachments) return;
             openAttachments(attachments, {
               reader: pdfPickerReader(deps.opener),
               host: deps.app,

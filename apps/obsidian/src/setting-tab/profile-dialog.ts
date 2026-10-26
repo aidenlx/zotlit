@@ -107,7 +107,7 @@ export function previewPanel(
     properties: string;
     body: string;
   },
-): { set(preview: ProfileNotePreview | undefined): void } {
+): { set(preview: Omit<ProfileNotePreview, "create"> | undefined): void } {
   const panel = parent.createDiv({
     cls: "zt:flex zt:flex-col zt:gap-3 zt:rounded-md zt:border zt:border-border zt:bg-(--background-secondary) zt:p-3",
   });

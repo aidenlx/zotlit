@@ -10,7 +10,7 @@ import type {
   BatchProfilePickerDeps,
   BatchProfilePickerOptions,
 } from "@/services/batch-profile-choice";
-import type { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { BatchModal } from "@/views/batch-modal";
 import type { BatchModalOptions } from "@/views/batch-modal";
 
@@ -23,10 +23,13 @@ export interface NoteImportView {
   openBatchModal(options: BatchModalOptions): void;
   /** The user's answer; an interrupt closes the modal. */
   confirm(options: ConfirmOptions): Effect.Effect<boolean>;
-  /** The user's Profile, or `undefined`; an interrupt closes the picker. */
+  /**
+   * The user's Profile, or `undefined`; an interrupt closes the picker and
+   * the Profile dialog it opened.
+   */
   chooseProfile(
     options: BatchProfilePickerOptions,
-  ): Effect.Effect<ProfileSelector | undefined, never, ZoteroPref>;
+  ): Effect.Effect<ProfileSelector | undefined, never, ProfileDialogServices>;
 }
 
 export function createNoteImportView(

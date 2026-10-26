@@ -3,7 +3,6 @@ import type { App, TFile } from "obsidian";
 
 import { recover } from "@/lib/effect-cause";
 import * as m from "@/lib/i18n/generated/messages";
-import { LegacyPortError } from "@/lib/legacy-port";
 import { BaseNotice } from "@/lib/notice";
 import { withProgress } from "@/lib/notifier";
 import type { NoticeMessage, ProgressCopy } from "@/lib/notifier";
@@ -17,7 +16,7 @@ import type {
   UpdateResult,
   UpdateScope,
 } from "@/services/note-feature/operations";
-import { InertTemplateError } from "@/services/template/errors";
+import { isInertTemplateError } from "@/services/template/errors";
 
 import { NoteFeature } from "./service";
 import type { UpdateNoteOptions } from "./write-pipeline";
@@ -45,7 +44,7 @@ export function updateNoteToast(
     const cause = plainNoteError(failure);
     return (
       missingPartialNotice(cause, options) ??
-      (cause instanceof InertTemplateError
+      (isInertTemplateError(cause)
         ? cause.message
         : m.notice_update_note_failed())
     );
@@ -98,7 +97,7 @@ export function batchUpdateNotices(app: App): BatchUpdateNotices {
       const cause = plainNoteError(error);
       return (
         missingPartialNotice(cause, { app }) ??
-        (cause instanceof InertTemplateError
+        (isInertTemplateError(cause)
           ? cause.message
           : m.batch_update_run_failed())
       );
@@ -134,15 +133,10 @@ export const createWithNotice = Effect.fnUntraced(function* <E, R>(
 ) {
   const result = yield* withProgress(
     create,
-    createNoteToast(options, plainCreateError),
+    createNoteToast(options, plainNoteError),
   ).pipe(recover(() => Effect.void, Effect.void));
   return result?.outcome === "created" ? result.file : null;
 });
-
-/** What a create failed with, as its notice shows it: a legacy port's rejection, or a Note Feature failure, as thrown. */
-function plainCreateError(error: unknown): unknown {
-  return plainNoteError(error instanceof LegacyPortError ? error.cause : error);
-}
 
 /**
  * The create notice's messages. `plainError` gives what a failure threw, for
@@ -161,7 +155,7 @@ function createNoteToast(
       const e = plainError(error);
       return (
         missingPartialNotice(e, options) ??
-        (e instanceof EmptyFilenameError || e instanceof InertTemplateError
+        (e instanceof EmptyFilenameError || isInertTemplateError(e)
           ? e.message
           : m.notice_create_note_failed())
       );

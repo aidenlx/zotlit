@@ -1,38 +1,11 @@
 import { dirname } from "node:path/posix";
 import { normalizePath, TFile, TFolder } from "obsidian";
-import type { App, Vault } from "obsidian";
+import type { Vault } from "obsidian";
 
 /** The vault surface {@link ensureFolder} / {@link ensureParentFolder} touch. */
 type FolderVaultApp = {
   vault: Pick<Vault, "getRoot" | "getAbstractFileByPath" | "createFolder">;
 };
-
-/**
- * Resolve the in-vault attachment folder path without touching the filesystem.
- * Folder creation is deferred to import time (see {@link ensureFolder}), so a
- * note that embeds no images never leaves an empty folder behind.
- *
- * @returns the normalized folder path, or `"/"` for the vault root (which needs
- * no creation).
- */
-export async function resolveAttachmentFolderPath(
-  app: App,
-  folderPath: string | null,
-  sourcePath?: string,
-): Promise<string> {
-  let path = folderPath;
-  // Empty (settings-tab "use default") is treated the same as null.
-  if (!path) {
-    path = dirname(
-      await app.fileManager.getAvailablePathForAttachment(
-        "zotlit-attachment",
-        sourcePath,
-      ),
-    );
-  }
-
-  return normalizeFolderPath(path);
-}
 
 export async function ensureFolder(
   app: FolderVaultApp,

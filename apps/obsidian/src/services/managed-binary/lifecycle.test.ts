@@ -14,7 +14,11 @@ import { TestClock } from "effect/testing";
 import { createHash } from "node:crypto";
 
 import { managedBinaryPorts } from "./platform";
-import { layerManagedBinary, ManagedBinaryPlatform } from "./service";
+import {
+  HashMismatchError,
+  layerManagedBinary,
+  ManagedBinaryPlatform,
+} from "./service";
 import type {
   ManagedBinary,
   ManagedBinaryApi,
@@ -96,6 +100,31 @@ it.effect("publishes the current status and each later change", () =>
       expect(yield* Queue.take(statuses)).toEqual({ kind: "absent" });
     }),
   ),
+);
+
+it.effect(
+  "fails a joined install with the error of the install it joined",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const device = memoryDevice();
+        const context = yield* Layer.build(
+          testLayer(device, { pin: { ...PIN, sha256: "0".repeat(64) } }),
+        );
+        const binary = Context.get(context, TestBinary);
+        const first = yield* Effect.forkChild(Effect.flip(binary.install), {
+          startImmediately: true,
+        });
+        expect((yield* binary.getStatus).kind).toBe("installing");
+
+        const joined = yield* Effect.flip(binary.install);
+        const own = yield* Fiber.join(first);
+
+        expect(joined).toBeInstanceOf(HashMismatchError);
+        expect(joined).toBe(own);
+        expect((yield* binary.getStatus).kind).toBe("failed");
+      }),
+    ),
 );
 
 it.effect.each([false, true])(

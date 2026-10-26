@@ -25,7 +25,12 @@ import {
 } from "./excerpt-acceptance.ts";
 import { verifyExcerptRendering } from "./excerpt-rendering.ts";
 import { useListingProfile } from "./listing-profile.ts";
-import { obEval, obEvalUntil } from "./obsidian-cli.ts";
+import {
+  clearNotices,
+  obEval,
+  obEvalUntil,
+  WINDOW_DOCUMENTS,
+} from "./obsidian-cli.ts";
 import { PAGE } from "./page-gestures.ts";
 import { clearVault, e2eVaultDir } from "./vault-script.ts";
 
@@ -385,16 +390,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe(true);
 
-    await obEval(
-      id,
-      `(()=>{const feature=app.plugins.plugins.zotlit.services.noteFeature;window.__zotlitExcerptReports=[];window.__zotlitExcerptReportOff=feature.on('excerpt-images-reported',summary=>window.__zotlitExcerptReports.push(summary));return true;})()`,
-    );
-    cleanup.defer(async () => {
-      await obEval(
-        id,
-        `(()=>{window.__zotlitExcerptReportOff?.();delete window.__zotlitExcerptReportOff;delete window.__zotlitExcerptReports;return true;})()`,
-      );
-    });
+    await clearNotices(id);
     const sourcePdf = join(path, "attachments/rougier-2014.pdf");
     const unavailablePdf = `${sourcePdf}.unavailable`;
     await rename(sourcePdf, unavailablePdf);
@@ -410,15 +406,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     } finally {
       await rename(unavailablePdf, sourcePdf);
     }
-    const pooledReports = JSON.parse(
-      await obEval(
-        id,
-        `JSON.stringify((()=>{window.__zotlitExcerptReportOff?.();const reports=window.__zotlitExcerptReports;delete window.__zotlitExcerptReportOff;delete window.__zotlitExcerptReports;return reports;})())`,
-      ),
-    ) as { zotero: number; unchecked: number; unavailable: number }[];
-    expect(pooledReports).toEqual([
-      { zotero: 0, unchecked: 2, unavailable: 0 },
+    // The reimport pools its excerpt outcomes into one summary notice.
+    const summaryNotices = `JSON.stringify([...${WINDOW_DOCUMENTS}].flatMap(doc=>[...doc.querySelectorAll('.notice')]).map(node=>node.textContent).filter(text=>text.includes('Excerpt images:')))`;
+    const pooledSummary = JSON.stringify([
+      "Excerpt images: 0 from Zotero with uncertain freshness, 2 with unchecked PDF freshness, 0 unavailable, 0 kept from the note and not refreshed.",
     ]);
+    await obEvalUntil(id, summaryNotices, { expected: pooledSummary });
+    expect(await obEval(id, summaryNotices)).toBe(pooledSummary);
     expect(
       JSON.parse(
         await obEval(

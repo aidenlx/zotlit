@@ -3,6 +3,7 @@
 import type { SettingDefinition } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { PandocEngine } from "@/services/pandoc/service";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 import { managedBinaryDefinition } from "./managed-binary";
@@ -11,7 +12,7 @@ import { managedBinaryDefinition } from "./managed-binary";
 export function pandocEngineDefinition(
   ctx: SettingTabContext,
 ): SettingDefinition<SettingsKey> {
-  return managedBinaryDefinition(ctx.pandocEngine, {
+  return managedBinaryDefinition(ctx.tab, PandocEngine, {
     id: "settings_citation_engine",
     name: m.settings_citation_engine_name(),
     desc: m.settings_citation_engine_desc(),

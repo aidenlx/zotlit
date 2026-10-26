@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 import { openDB, deleteDB } from "idb";
 import { expect, it } from "vitest";
 
+import { CitationIndex } from "./service";
 import { openCitekeyStore } from "./store";
 import { createCitationIndexHarness, makeFile } from "./test-harness";
 
@@ -53,7 +54,9 @@ it("discards schema v1 once, then restores current records without a read (#1691
       restored.workspace.layoutReady();
       await restored.index.whenIndexed();
       expect(restored.vault.reads).toEqual([]);
-      await restored.index.reset();
+      await restored.runtime.runPromise(
+        CitationIndex.use((index) => index.reset()),
+      );
       await restored.index.whenIndexed();
       expect(restored.vault.reads).toEqual(["draft.md"]);
     }

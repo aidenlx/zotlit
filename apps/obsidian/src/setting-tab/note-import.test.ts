@@ -1,21 +1,23 @@
 // @vitest-environment happy-dom
-import { Setting } from "@mock/obsidian";
+import { it as effectIt } from "@effect/vitest";
+import { renderRow } from "@mock/obsidian";
 import type { DropdownComponent, TextComponent } from "@mock/obsidian";
-import { Effect } from "effect";
-import type {
-  Setting as ObsidianSetting,
-  SettingDefinitionItem,
-  SettingGroup,
-} from "obsidian";
+import { Context, Effect } from "effect";
+import type { SettingDefinitionItem } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { eventually } from "@/lib/__fixtures__/eventually";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { highlightEmoji } from "@/lib/highlight-mapping";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import {
+  PluginSettings,
+  SettingsMutationError,
+} from "@/services/settings/service";
 
-import { testSettingTab } from "./__fixtures__";
+import { scopedSettingTab, testSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
 import { highlightMappingItems } from "./note-import";
 
@@ -29,17 +31,19 @@ function setup() {
       ...(typeof patch === "function" ? patch(current) : patch),
     };
   };
+  const settings = stubService<PluginSettings["Service"]>("PluginSettings", {
+    current: Effect.sync(() => current),
+    update: (patch) =>
+      Effect.sync(() => {
+        const next = typeof patch === "function" ? patch(current) : patch;
+        return Object.assign(current, next);
+      }),
+  });
+  const rebuild = vi.fn<() => void>();
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    tab: testSettingTab().tab,
-    settings: stubService<SettingTabContext["settings"]>("Settings", {
-      current: Effect.sync(() => current),
-      update: (patch) =>
-        Effect.sync(() => {
-          const next = typeof patch === "function" ? patch(current) : patch;
-          return Object.assign(current, next);
-        }),
-    }),
-    requestUpdate: vi.fn(),
+    tab: testSettingTab(Context.make(PluginSettings, settings), {
+      update: rebuild,
+    }).tab,
   });
   const rows = highlightMappingItems(ctx);
   const row = (name: string) => {
@@ -47,18 +51,7 @@ function setup() {
     if (!item) throw new Error(`Mapping row missing: ${name}`);
     return item;
   };
-  return { ctx, row, update };
-}
-
-function render(item: SettingDefinitionItem) {
-  if (!("render" in item) || !item.render)
-    throw new Error("Custom renderer missing");
-  const setting = new Setting(document.createElement("div"));
-  item.render(
-    setting as unknown as ObsidianSetting,
-    stubService<SettingGroup>("SettingGroup", {}),
-  );
-  return setting;
+  return { ctx, row, update, settings, rebuild };
 }
 
 function visible(item: SettingDefinitionItem) {
@@ -69,7 +62,7 @@ function visible(item: SettingDefinitionItem) {
 
 describe("highlight mapping page", () => {
   it("retains the selected output when the default Profile toggle changes", () => {
-    const { ctx, row, update } = setup();
+    const { row, update, rebuild } = setup();
     const setEnabled = (enabled: boolean) =>
       update({
         "note.default-profile": {
@@ -81,7 +74,7 @@ describe("highlight mapping page", () => {
       });
     setEnabled(true);
 
-    const dropdown = render(row(m.annot_view_color_blue()))
+    const dropdown = renderRow(row(m.annot_view_color_blue()))
       .components[0] as DropdownComponent;
     expect(dropdown.getValue()).toBe("🔵");
     expect(dropdown.options.map(({ value }) => value)).toEqual([
@@ -99,16 +92,16 @@ describe("highlight mapping page", () => {
     setEnabled(true);
     expect(
       (
-        render(row(m.annot_view_color_blue()))
+        renderRow(row(m.annot_view_color_blue()))
           .components[0] as DropdownComponent
       ).getValue(),
     ).toBe("mark");
-    expect(ctx.requestUpdate).toHaveBeenCalledOnce();
+    expect(rebuild).toHaveBeenCalledOnce();
   });
 
   it("shows custom input, validates it, and preserves it across output changes", () => {
-    const { ctx, row } = setup();
-    const dropdown = render(row(m.annot_view_color_blue()))
+    const { ctx, row, settings } = setup();
+    const dropdown = renderRow(row(m.annot_view_color_blue()))
       .components[0] as DropdownComponent;
     const inputRow = row(
       m.settings_note_import_custom_emoji_name({
@@ -119,12 +112,12 @@ describe("highlight mapping page", () => {
     dropdown.choose("custom");
     expect(visible(inputRow)).toBe(true);
 
-    const setting = render(inputRow);
+    const setting = renderRow(inputRow);
     const input = setting.components[0] as TextComponent;
     const emoji = () =>
       highlightEmoji(
         "blue",
-        ctx.tab.sync(ctx.settings.current)["note.import-highlight-mappings"],
+        ctx.tab.sync(settings.current)["note.import-highlight-mappings"],
       );
     expect(setting.errorMessage).toBeTruthy();
     expect(emoji()).toBeNull();
@@ -139,9 +132,42 @@ describe("highlight mapping page", () => {
     expect(visible(inputRow)).toBe(false);
     expect(emoji()).toBe("🟠");
     dropdown.choose("custom");
-    expect((render(inputRow).components[0] as TextComponent).getValue()).toBe(
-      "👩‍🔬",
-    );
+    expect(
+      (renderRow(inputRow).components[0] as TextComponent).getValue(),
+    ).toBe("👩‍🔬");
     expect(emoji()).toBe("👩‍🔬");
   });
 });
+
+effectIt.effect("shows a failed mapping save in a notice", () =>
+  Effect.gen(function* () {
+    const settings = stubService<PluginSettings["Service"]>("PluginSettings", {
+      current: Effect.succeed(defaults),
+      update: () =>
+        Effect.fail(
+          new SettingsMutationError({
+            message: "Settings are read-only",
+            cause: null,
+          }),
+        ),
+    });
+    const rebuild = vi.fn<() => void>();
+    const { tab, notices } = yield* scopedSettingTab(
+      Context.make(PluginSettings, settings),
+      { update: rebuild },
+    );
+    const ctx = stubService<SettingTabContext>("SettingTabContext", { tab });
+    const blue = highlightMappingItems(ctx).find(
+      (entry) => "name" in entry && entry.name === m.annot_view_color_blue(),
+    )!;
+    const dropdown = renderRow(blue).components[0] as DropdownComponent;
+
+    dropdown.choose("mark");
+    yield* eventually(() =>
+      expect(notices.map(({ messages }) => messages[0])).toEqual([
+        `${m.settings_failed_save()}: Settings are read-only`,
+      ]),
+    );
+    expect(rebuild).not.toHaveBeenCalled();
+  }),
+);

@@ -26,6 +26,7 @@ import type { ReactNode, RefObject } from "react";
 
 import type { PdfTextStructure, SelectedText } from "@zotlit/pdf-structure";
 
+import { AbortError } from "@/lib/abort-error";
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { registerDomEvent } from "@/lib/disposables";
 import type { EffectBridge } from "@/lib/effect-bridge";
@@ -1103,6 +1104,7 @@ export class MarkCreation implements CreationGestures, Disposable {
       if (disarm) this.#arm(null);
       return outcome.annotationKey;
     } catch (error) {
+      if (AbortError.test(error)) return null;
       logger.warn("An Annotation was not created", { type, error });
       this.#deps.reportCreateFailure(
         m.annot_view_write_reason_unknown_outcome(),

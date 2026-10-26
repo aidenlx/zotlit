@@ -1,7 +1,8 @@
 // boundary: Promise and AbortSignal facade for callers outside Effect.
-import { Effect } from "effect";
 import type { ManagedRuntime } from "effect";
 
+import { AbortError } from "@/lib/abort-error";
+import { effectBridge } from "@/lib/effect-bridge";
 import { settleAtEdge } from "@/lib/signal-edge";
 
 import type { ParseReply } from "./client";
@@ -14,16 +15,24 @@ export interface PlainCitationParse {
   ): Promise<ParseReply>;
 }
 
+/** Unload stops a pending parse, which then rejects with an `AbortError`. */
 export function plainCitationParse(
-  runtime: Pick<ManagedRuntime.ManagedRuntime<CitationParse, never>, "runSync">,
+  runtime: Pick<
+    ManagedRuntime.ManagedRuntime<CitationParse, never>,
+    "runSync" | "runFork" | "scope"
+  >,
 ): PlainCitationParse {
   const parser = runtime.runSync(CitationParse);
-  const run = Effect.runPromiseExitWith(
-    runtime.runSync(Effect.context<never>()),
-  );
+  const bridge = effectBridge(runtime);
   return {
     async parse(request, signal) {
-      return settleAtEdge(await run(parser.parse(request), { signal }), signal);
+      return settleAtEdge(
+        await bridge.runPromiseExit(parser.parse(request), { signal }),
+        signal,
+        () => {
+          throw new AbortError("The plugin unloaded during the parse.");
+        },
+      );
     },
   };
 }

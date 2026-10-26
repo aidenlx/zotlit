@@ -10,7 +10,10 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import { isCaseInsensitivePlatform } from "@zotlit/db/path";
 
 import type { AttachmentCopySource } from "@/lib/copy-attachments";
+import { withLogCategory } from "@/lib/effect-log";
 import { isErrno, nodeFileSystemCall } from "@/lib/errno";
+
+const logged = withLogCategory("attachment-import");
 
 /**
  * Whether the confirming open refuses a symbolic link at the final component.
@@ -363,6 +366,24 @@ const trustedRoot = (declared: string) =>
     Effect.map((canonical): CanonicalRoot | null =>
       canonical === null ? null : { declared, canonical },
     ),
+    dropUnreadable,
+  );
+
+/**
+ * A root that exists but cannot be read, as one the user may not search,
+ * drops out of the snapshot like one that does not resolve; a log names why.
+ */
+const dropUnreadable = <A>(
+  root: Effect.Effect<A | null, PlatformError.PlatformError>,
+): Effect.Effect<A | null> =>
+  root.pipe(
+    Effect.catchTag("PlatformError", (error) =>
+      Effect.logWarning("Dropped an attachment root that cannot be read").pipe(
+        Effect.annotateLogs({ reason: error.reason._tag }),
+        logged,
+        Effect.as(null),
+      ),
+    ),
   );
 
 /**
@@ -376,15 +397,25 @@ const approvedRoot = (folder: string) =>
     Effect.map((canonical): CanonicalRoot | null =>
       canonical === folder ? { declared: folder, canonical: folder } : null,
     ),
+    dropUnreadable,
   );
 
 /**
  * Resolve `path` through every symbolic link, or `null` when it does not
- * resolve. Also how an approved folder is reduced to the canonical form the
- * record holds.
+ * resolve: it is absent (`NotFound`), or a file or a link cycle stands in it
+ * (`BadResource`). Also how an approved folder is reduced to the canonical
+ * form the record holds. Fails with any other reason, such as
+ * `PermissionDenied`.
  */
-export const canonicalize = (path: string): Effect.Effect<string | null> =>
-  nativeRealPath(path).pipe(Effect.orElseSucceed(() => null));
+export const canonicalize = (
+  path: string,
+): Effect.Effect<string | null, PlatformError.PlatformError> =>
+  nativeRealPath(path).pipe(
+    Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(null)),
+    Effect.catchReason("PlatformError", "BadResource", () =>
+      Effect.succeed(null),
+    ),
+  );
 
 function fold(path: string, caseInsensitive: boolean): string {
   return caseInsensitive ? path.toLowerCase() : path;

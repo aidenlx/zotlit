@@ -4,6 +4,7 @@
 import type { SettingDefinitionItem } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { PluginSettings } from "@/services/settings/service";
 
 import { approvedFoldersPage } from "./approved-folders";
 import type { SettingsKey, SettingTabContext } from "./context";
@@ -22,7 +23,10 @@ export function attachmentPageItems(
       id: "settings_attachment_folder",
       name: m.settings_attachment_folder_name(),
       desc: m.settings_attachment_folder_desc(),
-      visible: () => ctx.tab.sync(ctx.settings.current)["attachment.import"],
+      visible: () =>
+        ctx.tab.sync(PluginSettings.use((settings) => settings.current))[
+          "attachment.import"
+        ],
       // Empty value falls back to Obsidian's default attachment folder.
       control: {
         type: "folder",

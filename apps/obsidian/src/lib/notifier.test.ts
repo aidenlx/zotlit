@@ -167,4 +167,26 @@ describe("withProgress", () => {
         expect(notifier.notices[0]?.hidden).toBe(true);
       }),
   );
+
+  it.effect("shows no success message for an interrupted task", () =>
+    Effect.gen(function* () {
+      const notifier = testNotifier();
+      const fiber = yield* withProgress(Effect.never, {
+        ...copy,
+        success: "Created",
+      }).pipe(Effect.provide(notifier.layer), Effect.forkChild);
+      yield* TestClock.adjust("200 millis");
+      expect(notifier.notices).toEqual([
+        { messages: ["Creating"], duration: 0, hidden: false },
+      ]);
+
+      yield* Fiber.interrupt(fiber);
+      // Past the success message's 2 s, so the notice has ended either way.
+      yield* TestClock.adjust("2 seconds");
+
+      expect(notifier.notices).toEqual([
+        { messages: ["Creating"], duration: 0, hidden: true },
+      ]);
+    }),
+  );
 });

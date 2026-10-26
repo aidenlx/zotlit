@@ -17,7 +17,12 @@ import {
 import { defaults } from "@/services/settings/schema";
 import { activateAnnotView } from "@/views/annot-view/register";
 
-import { addAttachmentOpenActions, createPdfReader } from "./actions";
+import { openerHarness } from "./__fixtures__";
+import {
+  addAttachmentOpenActions,
+  createPdfReader,
+  pdfPickerReader,
+} from "./actions";
 import type { AttachmentOpenDeps, PdfReaderDeps } from "./actions";
 import type { LiteratureNoteAttachmentsHandle } from "./handle";
 import type { TargetOpener } from "./open-target";
@@ -202,5 +207,25 @@ describe("createPdfReader", () => {
     )();
 
     expect(activateAnnotView).not.toHaveBeenCalled();
+  });
+});
+
+describe("pdfPickerReader", () => {
+  // A picker row fires its open and forgets it; unload must not turn the
+  // wait for the index into an unhandled rejection.
+  it("stays silent when unload ends an open that waits for the index", async () => {
+    await using stack = new AsyncDisposableStack();
+    const { opener, gate, close } = await openerHarness(stack, {
+      prime: false,
+    });
+    const read = gate();
+
+    const opening = pdfPickerReader(opener).open(OPENABLE_FIXTURE[0]!, false);
+    await read.waiting;
+    const closing = close();
+    read.release();
+    await closing;
+
+    await expect(opening).resolves.toBeUndefined();
   });
 });
