@@ -418,6 +418,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       noteIndex: services.noteIndex,
       itemLookup: services.itemLookup,
       settings: services.settings,
+      registry: services.runtime.runSync(ViewRegistry),
     });
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);

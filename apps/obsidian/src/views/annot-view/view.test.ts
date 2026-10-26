@@ -2,6 +2,7 @@
 import { Menu, setMockPlatform } from "@mock/obsidian";
 import { delay } from "@std/async";
 import { Effect, Stream, SubscriptionRef } from "effect";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { debounce, Scope } from "obsidian";
 import type { App, Menu as ObsidianMenu, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
@@ -93,6 +94,9 @@ it("settles a pending attachment load without restarting a closed view", async (
     ),
     zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
     literatureNotes: noLiteratureNotes(),
+    registry: readsCleanup.adopt(AtomRegistry.make(), (registry) =>
+      registry.dispose(),
+    ),
   });
   const view = new TestView(
     stubService<WorkspaceLeaf & { app: App }>("WorkspaceLeaf", {
@@ -339,6 +343,9 @@ async function openSidebar(
     libraryTagNames: () => Promise.resolve([]),
     allowEditing: vi.fn(),
     reportBlockedGesture: vi.fn(),
+    registry: readsCleanup.adopt(AtomRegistry.make(), (registry) =>
+      registry.dispose(),
+    ),
   });
   const view = new OpenView(
     stubService<WorkspaceLeaf & { app: App }>("WorkspaceLeaf", {
@@ -366,6 +373,7 @@ async function openSidebar(
   await settle();
   return {
     view,
+    app,
     run,
     reads,
     settle,
@@ -420,6 +428,44 @@ it("sorts the cards by one property and direction from More options", async () =
   expect(run.mock.calls.at(-1)![0].sort).toEqual([
     { field: "dateAdded", direction: "desc" },
   ]);
+});
+
+it("carries a Follow Mode gesture into the workspace layout and the cards' state", async () => {
+  const { view, app, settle } = await openSidebar([PDF]);
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => act(() => view.close()));
+  const requestSaveLayout = vi.spyOn(app.workspace, "requestSaveLayout");
+
+  // Restoring the state the layout already holds asks for no save.
+  await act(() => view.setState(view.getState(), { history: false }));
+  await settle();
+  expect(requestSaveLayout).not.toHaveBeenCalled();
+
+  await act(() => view.gestures!.onUnpin());
+  await settle();
+
+  expect(view.getState()).toEqual({
+    followMode: "active-tab",
+    previousMode: "active-tab",
+  });
+  expect(view.snapshot).toMatchObject({
+    followMode: "active-tab",
+    pinnedItemKey: null,
+  });
+  expect(requestSaveLayout).toHaveBeenCalledTimes(1);
+
+  // Switching to the mode in force changes nothing and saves nothing.
+  await act(() => view.gestures!.onSetFollowMode("active-tab"));
+  expect(requestSaveLayout).toHaveBeenCalledTimes(1);
+
+  await act(() => view.pinItem("ITEMAAAA"));
+  await settle();
+  expect(view.getState()).toEqual({
+    followMode: "pinned",
+    previousMode: "active-tab",
+    pinnedItemKey: "ITEMAAAA",
+  });
+  expect(requestSaveLayout).toHaveBeenCalledTimes(2);
 });
 
 it("runs the query once for a reload that keeps the Attachment, and again on a database change", async () => {
