@@ -269,10 +269,19 @@ const nativeTarget = Effect.fn("LocalBridge.nativeTarget")(function* (
 ) {
   const profile = yield* Profile;
   if (profileId === DEFAULT_PROFILE) {
-    const source = yield* profile.getSource(DEFAULT_PROFILE);
+    const defaultDocumentPath = yield* profile.defaultDocumentPath;
+    // The editor opens a saved document as written, so one that does not
+    // parse stays open for repair. Only the draft that stands in for a missing
+    // document needs the source.
+    const saved = yield* (yield* Vault).getFileByPath(defaultDocumentPath);
+    const source = saved ? null : yield* profile.getSource(DEFAULT_PROFILE);
     const target: NativeProfileTarget = {
-      defaultDocumentPath: yield* profile.defaultDocumentPath,
-      getSource: async () => source,
+      defaultDocumentPath,
+      getSource: async () => {
+        if (source === null)
+          throw new Error(`${defaultDocumentPath} was removed while opening`);
+        return source;
+      },
     };
     return target;
   }

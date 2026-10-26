@@ -23,7 +23,7 @@ import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { LocalServer } from "@/services/local-server/service";
-import { Profile } from "@/services/profile/service";
+import { Profile, ProfileOperationError } from "@/services/profile/service";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -72,6 +72,8 @@ const CALLING_PROFILE = LIQUID_PROFILE.replace(
 /** The build the unsupported check reads a Profile against. */
 const PLUGIN_VERSION = "2.3.0";
 
+const DEFAULT_DOCUMENT = "templates/zotlit-profile.default.md";
+
 const LAUNCH_URL =
   "https://zotlit.aidenlx.site/workbench#zotlit-connect=abc&port=9091";
 
@@ -106,6 +108,8 @@ interface Options {
   activeNote?: { basename: string; itemKey: string | null } | null;
   /** The Profiles the registry holds; the vault holds each one's file. */
   profiles?: readonly LiteratureNoteProfile[];
+  /** The vault holds a saved Default Profile document that does not parse. */
+  invalidDefault?: boolean;
 }
 
 const harness = Effect.fnUntraced(function* ({
@@ -118,6 +122,7 @@ const harness = Effect.fnUntraced(function* ({
   partials = [],
   activeNote = null,
   profiles = [],
+  invalidDefault = false,
 }: Options = {}) {
   const settings: Settings = {
     ...defaults,
@@ -151,6 +156,7 @@ const harness = Effect.fnUntraced(function* ({
 
   const vault = new MemoryVault();
   for (const { path } of profiles) vault.add(path);
+  if (invalidDefault) vault.add(DEFAULT_DOCUMENT);
 
   const layer = Layer.mergeAll(
     layerHost({ workspace, metadataCache, vault }),
@@ -172,10 +178,16 @@ const harness = Effect.fnUntraced(function* ({
     }),
     Layer.mock(Profile, {
       profiles: Effect.succeed(profiles),
-      defaultDocumentPath: Effect.succeed(
-        "templates/zotlit-profile.default.md",
-      ),
-      getSource: () => Effect.succeed(source),
+      defaultDocumentPath: Effect.succeed(DEFAULT_DOCUMENT),
+      getSource: () =>
+        invalidDefault
+          ? Effect.fail(
+              new ProfileOperationError({
+                message: "The Default Profile does not parse",
+                cause: undefined,
+              }),
+            )
+          : Effect.succeed(source),
     }),
     Layer.mock(Template, {
       exportLiteratureNotePackSource: (draft, options) =>
@@ -259,6 +271,21 @@ describe("the Customize flow", () => {
       // A Profile the registry does not hold opens nothing.
       expect(local.openedFiles).toEqual([books.path]);
     }),
+  );
+
+  it.effect(
+    "opens a saved Default Profile that does not parse, so it can be repaired",
+    () =>
+      Effect.gen(function* () {
+        const local = yield* harness({
+          webWorkbenchEnabled: false,
+          invalidDefault: true,
+        });
+
+        yield* local.customize({ profileId: "default" });
+
+        expect(local.openedFiles).toEqual([DEFAULT_DOCUMENT]);
+      }),
   );
 
   it.effect(
