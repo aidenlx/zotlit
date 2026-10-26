@@ -275,13 +275,13 @@ describe("AttachmentImport", () => {
         const batch = yield* service.prepare("Notes/A.md");
 
         expect(batch.decide(stored, "storage").approved).toBe(false);
+        const rebuilt = yield* Stream.runCollect(
+          service.rootsChanges.pipe(Stream.drop(1), Stream.take(1)),
+        ).pipe(Effect.forkChild({ startImmediately: true }));
 
         yield* moveZotero({ dataDir: movedDataDir, baseAttachmentPath: null });
-        yield* Effect.promise(() =>
-          vi.waitFor(() =>
-            expect(batch.decide(stored, "storage").approved).toBe(true),
-          ),
-        );
+        yield* Fiber.join(rebuilt);
+        expect(batch.decide(stored, "storage").approved).toBe(true);
       }),
   );
 
