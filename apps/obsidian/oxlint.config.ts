@@ -456,6 +456,7 @@ export default defineConfig({
       files: [
         "src/services/attachment-import/service.ts",
         "src/services/note-feature/operations.ts",
+        "src/services/note-feature/types.ts",
         "src/services/pdf-annotation-editor/service.ts",
         "src/services/reader-session/session.ts",
         "src/views/library/item-drag.test.ts",
