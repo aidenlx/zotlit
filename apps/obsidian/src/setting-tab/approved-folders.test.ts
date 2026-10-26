@@ -1,0 +1,77 @@
+// @vitest-environment happy-dom
+import { expect, it } from "@effect/vitest";
+import { Context, Effect, Ref } from "effect";
+import type { SettingDefinitionList } from "obsidian";
+import { vi } from "vitest";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import * as m from "@/lib/i18n/generated/messages";
+import { DeviceStorageError } from "@/lib/obsidian-device-storage";
+import { AttachmentImport } from "@/services/attachment-import/service";
+
+import { testSettingTab } from "./__fixtures__";
+import { approvedFoldersPage } from "./approved-folders";
+import type { SettingsKey, SettingTabContext } from "./context";
+
+/** The approved-folder list of the page over `service`, with the tab's notices. */
+function folderList(service: AttachmentImport["Service"]) {
+  const { tab, notices } = testSettingTab(
+    Context.make(AttachmentImport, service),
+  );
+  const page = approvedFoldersPage(
+    stubService<SettingTabContext>("SettingTabContext", { tab }),
+  );
+  const list = page.items?.find(
+    (item): item is SettingDefinitionList<SettingsKey> =>
+      "type" in item && item.type === "list",
+  );
+  if (!list) throw new Error("Approved folder list missing");
+  return { list, notices };
+}
+
+it.effect("lists the approved folders and revokes the one deleted", () =>
+  Effect.gen(function* () {
+    const folders = yield* Ref.make<readonly string[]>(["/a", "/b"]);
+    const { list } = folderList(
+      stubService<AttachmentImport["Service"]>("AttachmentImport", {
+        approvedFolders: Ref.get(folders),
+        revokeFolder: (folder) =>
+          Ref.update(folders, (all) => all.filter((path) => path !== folder)),
+      }),
+    );
+
+    expect(list.items?.map((item) => item.name)).toEqual(["/a", "/b"]);
+    list.onDelete?.(0);
+    yield* Effect.promise(() =>
+      vi.waitFor(() => expect(Ref.getUnsafe(folders)).toEqual(["/b"])),
+    );
+  }),
+);
+
+it.effect("names a failed revoke in a notice", () =>
+  Effect.gen(function* () {
+    const { list, notices } = folderList(
+      stubService<AttachmentImport["Service"]>("AttachmentImport", {
+        approvedFolders: Effect.succeed(["/a"]),
+        revokeFolder: () =>
+          Effect.fail(
+            new DeviceStorageError({
+              operation: "saveLocalStorage",
+              key: "zotlit-approved-folders",
+              message: "Storage is full",
+              cause: null,
+            }),
+          ),
+      }),
+    );
+
+    list.onDelete?.(0);
+    yield* Effect.promise(() =>
+      vi.waitFor(() =>
+        expect(notices.map((notice) => notice.messages[0])).toEqual([
+          `${m.settings_failed_revoke_folder()}: Storage is full`,
+        ]),
+      ),
+    );
+  }),
+);

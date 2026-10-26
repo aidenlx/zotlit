@@ -1,5 +1,5 @@
-// Attachment Import for callers outside Effect: the setting tab's approved
-// folders, the skipped-sources notice, and Note Feature's note writes.
+// Attachment Import for callers outside Effect: the skipped-sources notice
+// and Note Feature's note writes.
 import type { EffectBridge } from "@/lib/effect-bridge";
 
 import type {
@@ -21,11 +21,6 @@ export interface AttachmentImportBatchHandle extends Pick<
 
 /** The edge handle `build.ts` binds; see {@link bindAttachmentImport}. */
 export interface AttachmentImportHandle {
-  /** The folders approved on this device, canonical and in the order granted. */
-  readonly approvedFolders: readonly string[];
-  /** The canonical path stored, or `null` when `folder` does not resolve. */
-  approveFolder(folder: string): Promise<string | null>;
-  revokeFolder(folder: string): Promise<void>;
   /** Follow each pooled skip summary until the returned function stops it, or the runtime closes. */
   onSkipped(callback: (summary: AttachmentSkipSummary) => void): () => void;
   /** The import batch for the note at `notePath`. */
@@ -44,11 +39,6 @@ export function bindAttachmentImport(
   service: AttachmentImport["Service"],
 ): AttachmentImportHandle {
   return {
-    get approvedFolders() {
-      return bridge.runSync(service.approvedFolders);
-    },
-    approveFolder: (folder) => bridge.runPromise(service.approveFolder(folder)),
-    revokeFolder: (folder) => bridge.runPromise(service.revokeFolder(folder)),
     onSkipped: (callback) => bridge.subscribe(service.skipped, callback),
     prepare: async (notePath, options) => {
       const batch = await bridge.runPromise(service.prepare(notePath, options));

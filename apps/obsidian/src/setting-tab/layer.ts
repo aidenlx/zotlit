@@ -9,6 +9,7 @@ import { forkEach } from "@/lib/effect-stream";
 import { layerNotifier } from "@/lib/notifier";
 import type { Notifier } from "@/lib/notifier";
 import { layerPluginHost, PluginHost } from "@/lib/plugin-host";
+import { AttachmentImport } from "@/services/attachment-import/service";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 import { LibraryScope, scopeChanges } from "@/services/library-scope/service";
 import { LocalServer } from "@/services/local-server/service";
@@ -77,6 +78,7 @@ export function layerSettingTab(legacy: SettingTabLegacy) {
       const pandocEngine = yield* PandocEngine;
       const chineseSegmenter = yield* ChineseSegmenter;
       const libraryScope = yield* LibraryScope;
+      const attachmentImport = yield* AttachmentImport;
       yield* forkEach(
         Stream.mergeAll(
           [
@@ -88,6 +90,8 @@ export function layerSettingTab(legacy: SettingTabLegacy) {
             signal(Stream.drop(chineseSegmenter.changes, 1)),
             // A database refresh, a group rename, or a repair moves the scope.
             signal(scopeChanges(libraryScope.changes)),
+            // The Approved folders list names each grant.
+            signal(Stream.drop(attachmentImport.approvedFoldersChanges, 1)),
             signal(
               settings.changes.pipe(
                 Stream.map((current) => reminderFlags(current)),

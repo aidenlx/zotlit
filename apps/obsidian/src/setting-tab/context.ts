@@ -1,7 +1,6 @@
 import type { App, PluginManifest } from "obsidian";
 
 import type { LanguagePackLifecycle } from "@/lib/i18n";
-import type { AttachmentImportHandle } from "@/services/attachment-import/handle";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type {} from "@/services/citation-index/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
@@ -47,12 +46,6 @@ export type LocalBridgeActions = Pick<
 
 /** The Citation Index surface the setting tab needs: the recovery hatch. */
 export type CitationIndexActions = Pick<PlainCitationIndex, "reset">;
-
-/** The attachment-import surface the setting tab needs: read and edit the grants. */
-export type AttachmentImportActions = Pick<
-  AttachmentImportHandle,
-  "approvedFolders" | "approveFolder" | "revokeFolder"
->;
 
 /**
  * Shared dependencies every definition builder receives. Builders read services
@@ -148,8 +141,6 @@ export interface SettingTabContext {
   localBridge: LocalBridgeActions;
   /** The shared Customize flow the Template document row opens. */
   customize: CustomizeAction;
-  /** The approved-folder store the Attachments page lists and mutates. */
-  attachmentImport: AttachmentImportActions;
   /** The vault-wide Citation Index, reset from the Maintenance page. */
   citationIndex: CitationIndexActions;
   /** The derived image store, cleared from the Maintenance page. */

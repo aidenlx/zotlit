@@ -14,6 +14,7 @@ import { expect, it, vi } from "vitest";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
+import { AttachmentImport } from "@/services/attachment-import/service";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 import type { LocalServer } from "@/services/local-server/service";
 import { PandocEngine } from "@/services/pandoc/service";
@@ -45,6 +46,12 @@ function ctx(): SettingTabContext {
           changes: Stream.empty,
         }),
       ).pipe(
+        Context.add(
+          AttachmentImport,
+          stubService<AttachmentImport["Service"]>("AttachmentImport", {
+            approvedFolders: Effect.succeed([]),
+          }),
+        ),
         Context.add(
           ChineseSegmenter,
           stubService<ChineseSegmenter["Service"]>("ChineseSegmenter", {
@@ -107,14 +114,6 @@ function ctx(): SettingTabContext {
       on: () => () => {},
     }),
     customize: async () => {},
-    attachmentImport: stubService<SettingTabContext["attachmentImport"]>(
-      "AttachmentImport",
-      {
-        approvedFolders: [],
-        approveFolder: async () => null,
-        revokeFolder: async () => {},
-      },
-    ),
     citationIndex: stubService<SettingTabContext["citationIndex"]>(
       "CitationIndex",
       { reset: async () => {} },

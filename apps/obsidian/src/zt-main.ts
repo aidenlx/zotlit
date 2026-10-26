@@ -280,7 +280,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         localServer: services.localServer,
         localBridge: services.localBridge,
         customize,
-        attachmentImport: services.attachmentImport,
         citationIndex: services.citationIndex,
         excerptImage: services.excerptImage,
         excerptDisplay: services.excerptDisplay,

@@ -1,6 +1,6 @@
 // The Attachment Import edge handle: each member is one bridge call.
 import { it } from "@effect/vitest";
-import { Effect, Ref, Stream } from "effect";
+import { Effect, Stream } from "effect";
 import { expect } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
@@ -28,9 +28,8 @@ const SUMMARY: AttachmentSkipSummary = {
   blockedFolders: ["/outside"],
 };
 
-/** A service whose members answer from `folders` and count the batch calls. */
+/** A service whose members count the batch calls. */
 function fakeService() {
-  const folders = Ref.makeUnsafe<readonly string[]>(["/approved"]);
   const calls = { flush: 0, discard: 0, prepared: [] as string[] };
   const batch: AttachmentImportBatch = {
     decide: (path, origin) => ({
@@ -49,11 +48,6 @@ function fakeService() {
     }),
   };
   const service = stubService<AttachmentImport["Service"]>("AttachmentImport", {
-    approvedFolders: Ref.get(folders),
-    approveFolder: (folder) =>
-      Ref.update(folders, (list) => [...list, folder]).pipe(Effect.as(folder)),
-    revokeFolder: (folder) =>
-      Ref.update(folders, (list) => list.filter((path) => path !== folder)),
     skipped: Stream.make(SUMMARY),
     prepare: (notePath) =>
       Effect.sync(() => {
@@ -69,11 +63,6 @@ it.effect("resolves each member with the service's answer", () =>
     await using bridge = openTestBridge();
     const { service, calls } = fakeService();
     const handle = bindAttachmentImport(bridge, service);
-
-    expect(handle.approvedFolders).toEqual(["/approved"]);
-    await expect(handle.approveFolder("/granted")).resolves.toBe("/granted");
-    await expect(handle.revokeFolder("/approved")).resolves.toBeUndefined();
-    expect(handle.approvedFolders).toEqual(["/granted"]);
 
     const summaries: AttachmentSkipSummary[] = [];
     const stop = handle.onSkipped((summary) => summaries.push(summary));
@@ -107,10 +96,6 @@ it.effect("after release, each member settles as the bridge does", () =>
     await bridge[Symbol.asyncDispose]();
 
     // The bridge keeps its captured context, so the runs still answer.
-    expect(handle.approvedFolders).toEqual(
-      bridge.runSync(service.approvedFolders),
-    );
-    await expect(handle.approveFolder("/late")).resolves.toBe("/late");
     await expect(batch.flush()).resolves.toEqual(RESULT);
     batch.discard();
     expect(calls).toMatchObject({ flush: 1, discard: 1 });

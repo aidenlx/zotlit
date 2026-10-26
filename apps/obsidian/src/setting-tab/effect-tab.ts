@@ -16,6 +16,7 @@ import { Notifier } from "@/lib/notifier";
 import { formatErrorMessage } from "@/lib/toast";
 import type { CapabilityNotices } from "@/services/annotation-repository/notices";
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
+import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { LibraryScope } from "@/services/library-scope/service";
@@ -46,7 +47,8 @@ export type SettingTabEnv =
   | ZoteroLocalApi
   | CitationIndex
   | PandocEngine
-  | ChineseSegmenter;
+  | ChineseSegmenter
+  | AttachmentImport;
 
 export interface SettingTabShape {
   /**
