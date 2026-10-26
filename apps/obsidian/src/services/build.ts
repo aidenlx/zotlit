@@ -5,7 +5,7 @@ import type { FileSystemAdapter } from "obsidian";
 import { passAborted } from "@/lib/abort-error";
 import { cliRunner } from "@/lib/cli-command";
 import { DisposableAbortController } from "@/lib/disposables";
-import { effectBridge } from "@/lib/effect-bridge";
+import { effectBridge, exitOver, valueOr } from "@/lib/effect-bridge";
 import { fromInstant } from "@/lib/effect-clock";
 import { buildRuntime } from "@/lib/effect-layer";
 import { revealSetting } from "@/lib/open-settings";
@@ -406,29 +406,33 @@ export async function buildServices(
         }),
     })
     .useValue({
+      // Unload closes an open dialog, and the caller sees it dismissed.
       createProfile: (): CreateProfile => {
-        const context = runtime.runSync(
-          Effect.context<ProfileDialogServices>(),
+        const runExit = exitOver(
+          bridge,
+          runtime.runSync(Effect.context<ProfileDialogServices>()),
         );
-        return (options) =>
-          bridge.runPromise(
-            createProfileDialog(plugin.app, options).pipe(
-              Effect.provideContext(context),
-            ),
+        return async (options) =>
+          valueOr(
+            await runExit(createProfileDialog(plugin.app, options)),
+            undefined,
           );
       },
     })
     .useValue({
       importProfile: ({ createProfile }): ImportProfile => {
-        const context = runtime.runSync(
-          Effect.context<ProfileDialogServices>(),
+        const runExit = exitOver(
+          bridge,
+          runtime.runSync(Effect.context<ProfileDialogServices>()),
         );
-        const importProfile: ImportProfile = (options) =>
-          bridge.runPromise(
-            importProfileDialog(plugin.app, options).pipe(
-              Effect.provide(NodeFileSystem.layer),
-              Effect.provideContext(context),
+        const importProfile: ImportProfile = async (options) =>
+          valueOr(
+            await runExit(
+              importProfileDialog(plugin.app, options).pipe(
+                Effect.provide(NodeFileSystem.layer),
+              ),
             ),
+            undefined,
           );
         bindProfileDialogs({ createProfile, importProfile });
         return importProfile;
