@@ -32,6 +32,7 @@ import { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
+import { formatErrorMessage } from "@/lib/toast";
 import type { VaultError } from "@/lib/vault-errors";
 import type {
   AttachmentImport,
@@ -639,8 +640,7 @@ export class NoteImportParseError extends Schema.TaggedError<
   cause: Schema.Defect(),
 }) {
   override get message(): string {
-    if (this.cause instanceof Error) return this.cause.message;
-    return typeof this.cause === "string" ? this.cause : "Unknown error";
+    return formatErrorMessage(this.cause);
   }
 }
 
