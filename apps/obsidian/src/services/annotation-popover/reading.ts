@@ -120,7 +120,8 @@ export const layerAnnotationLinkReading = Layer.effectDiscard(
           new AnnotationLinkReadingCore({
             host,
             markdownViews: () => bridge.runSync(workspace.markdownViews),
-            show: (request) => void bridge.runPromise(popover.show(request)),
+            // Unload interrupts a pending popover.
+            show: (request) => bridge.runAndForget(popover.show(request)),
           }),
       ),
     );
