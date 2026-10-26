@@ -23,7 +23,6 @@ import { registerFileLinkCapture } from "./services/attachment-open/capture";
 import { attachmentOpenFileMenu } from "./services/attachment-open/menu";
 import { buildServices } from "./services/build";
 import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
-import { savedExcerptRequest } from "./services/excerpt-image/request";
 import { registerFileMenu } from "./services/file-menu";
 import { addGraphCitationsActions } from "./services/graph-citations/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
@@ -687,18 +686,13 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         ({ record, source }) => {
           const edit = Symbol(record.key);
           latestEdit.set(record.key, edit);
-          void savedExcerptRequest({
-            annotation: record,
-            source,
-            sourceScope: services.zoteroPref.dataDir,
-            zoteroReads: services.zoteroReads,
-            paths: services.zoteroPref,
-            bridge: services.bridge,
-          }).then((request) => {
-            if (latestEdit.get(record.key) !== edit) return;
-            latestEdit.delete(record.key);
-            if (request) services.excerptDisplay.revalidate(request);
-          });
+          void services
+            .excerptRequest({ annotation: record, source })
+            .then((request) => {
+              if (latestEdit.get(record.key) !== edit) return;
+              latestEdit.delete(record.key);
+              if (request) services.excerptDisplay.revalidate(request);
+            });
         },
       ),
     );

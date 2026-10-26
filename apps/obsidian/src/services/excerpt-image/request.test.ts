@@ -267,6 +267,31 @@ describe("Saved excerpt request", () => {
         ).toBeNull();
       }),
   );
+
+  it.effect(
+    "resolves to nothing through the Effect services where unload stops the read",
+    () =>
+      Effect.gen(function* () {
+        const bridge = openTestBridge();
+        const requestOver = savedExcerptRequestOver({
+          reads: stubService<ZoteroReads["Service"]>("ZoteroReads", {
+            snapshot: Effect.never,
+          }),
+          pref: {
+            current: Effect.succeed({
+              dataDir: paths.dataDir,
+              baseAttachmentPath: paths.baseAttachmentPath,
+            } as ZoteroPrefSnapshot),
+          },
+          bridge,
+        });
+
+        const pending = requestOver({ annotation, source: apiSource });
+        yield* Effect.promise(() => bridge[Symbol.asyncDispose]());
+
+        expect(yield* Effect.promise(() => pending)).toBeNull();
+      }),
+  );
 });
 
 describe("Excerpt request verification", () => {
