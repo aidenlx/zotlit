@@ -1,4 +1,4 @@
-import { Cause, Data, Effect } from "effect";
+import { Data, Effect } from "effect";
 import type { Scope } from "effect";
 
 import {
@@ -18,6 +18,7 @@ import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import type {
   AnnotationRecord,
@@ -74,7 +75,11 @@ export function savedExcerptRequest(options: {
         (lease) => lease.reads,
       ),
       paths,
-    }),
+    }).pipe(
+      // A caller outside Effect gets nothing for a read the runtime stopped,
+      // as for one the database could not answer.
+      Effect.catchCause(() => Effect.succeed(null)),
+    ),
   );
 }
 
@@ -99,19 +104,15 @@ export function resolveSavedExcerptRequest<E>(options: {
     return (yield* options.paths).dataDir === paths.dataDir ? request : null;
   }).pipe(
     Effect.scoped,
-    // Whatever stops the read, as a throw from a reader, resolves to nothing.
-    Effect.catchCause((cause) => {
-      const error = Cause.squash(cause);
-      return Effect.logDebug(
-        "No excerpt request: the database did not answer",
-      ).pipe(
-        Effect.annotateLogs({
-          annotationKey: annotation.key,
-          error: error instanceof Cause.UnknownError ? error.cause : error,
-        }),
-        Effect.as(null),
-      );
-    }),
+    // A failed read, as a throw from a reader, resolves to nothing; an
+    // interrupt passes through.
+    recover(
+      (cause) =>
+        Effect.logDebug("No excerpt request: the database did not answer").pipe(
+          Effect.annotateLogs({ annotationKey: annotation.key, cause }),
+        ),
+      Effect.succeed(null),
+    ),
     withLogCategory("excerpt-image"),
   );
 }
