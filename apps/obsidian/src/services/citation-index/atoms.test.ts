@@ -33,16 +33,23 @@ const host = Effect.gen(function* () {
     Layer.merge(
       layerHost({ vault, metadataCache, workspace }),
       Layer.mock(CitationIndex, {
-        observeCitedBy: (key, callback) =>
-          Effect.sync(() => {
-            started.push(key);
-            Queue.offerUnsafe(starts, key);
-            publish.set(key, callback);
-            return () => {
-              publish.delete(key);
-              Queue.offerUnsafe(stopped, key);
-            };
-          }),
+        citedBy: (key) =>
+          Stream.callback<CitedBySnapshot>((queue) =>
+            Effect.acquireRelease(
+              Effect.sync(() => {
+                started.push(key);
+                Queue.offerUnsafe(starts, key);
+                publish.set(key, (snapshot) => {
+                  Queue.offerUnsafe(queue, snapshot);
+                });
+              }),
+              () =>
+                Effect.sync(() => {
+                  publish.delete(key);
+                  Queue.offerUnsafe(stopped, key);
+                }),
+            ),
+          ),
       }),
     ),
   );

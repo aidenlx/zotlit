@@ -1,7 +1,7 @@
 // A test host for the Cited By Sidebar: the plugin's view registry over
 // in-memory Obsidian sources and a Citation Index whose observers the test
 // drives.
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Queue, Stream } from "effect";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type { TFile } from "obsidian";
 
@@ -48,15 +48,22 @@ export async function makeCitedByHost(): Promise<CitedByHost> {
     Layer.merge(
       layerHost({ vault, metadataCache, workspace }),
       Layer.mock(CitationIndex, {
-        observeCitedBy: (key, callback) =>
-          Effect.sync(() => {
-            started.push(key);
-            observers.set(key, callback);
-            return () => {
-              observers.delete(key);
-              stopped.push(key);
-            };
-          }),
+        citedBy: (key) =>
+          Stream.callback<CitedBySnapshot>((queue) =>
+            Effect.acquireRelease(
+              Effect.sync(() => {
+                started.push(key);
+                observers.set(key, (snapshot) => {
+                  Queue.offerUnsafe(queue, snapshot);
+                });
+              }),
+              () =>
+                Effect.sync(() => {
+                  observers.delete(key);
+                  stopped.push(key);
+                }),
+            ),
+          ),
       }),
     ),
     stack,

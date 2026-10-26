@@ -1,6 +1,6 @@
 // View atoms over the Citation Index: the live Cited By of an Item. Read
 // through `@/lib/view-atoms`.
-import { Effect, Option, Queue, Stream } from "effect";
+import { Effect, Option, Stream } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 
@@ -9,17 +9,10 @@ import { CitationIndex } from "@/services/citation-index/service";
 import type { CitedBySnapshot } from "@/services/citation-index/service";
 import { activeKeyAtom } from "@/services/note-index/atoms";
 
-/** The Cited By of the Item `key`, live; interrupting it stops the observer. */
-export const citedBy = (
-  key: string,
-): Stream.Stream<CitedBySnapshot, never, CitationIndex> =>
-  Stream.callback<CitedBySnapshot>((queue) =>
+const citedBy = (key: string) =>
+  Stream.unwrap(
     Effect.gen(function* () {
-      const index = yield* CitationIndex;
-      const stop = yield* index.observeCitedBy(key, (snapshot) => {
-        Queue.offerUnsafe(queue, snapshot);
-      });
-      yield* Effect.addFinalizer(() => Effect.sync(stop));
+      return (yield* CitationIndex).citedBy(key);
     }),
   );
 
