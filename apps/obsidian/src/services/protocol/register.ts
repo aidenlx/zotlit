@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Fiber, FiberSet, Scope } from "effect";
+import { Cause, Effect, Fiber, FiberSet, Schema, Scope } from "effect";
 import type { ManagedRuntime } from "effect";
 import type { ObsidianProtocolData, PaneType, Plugin } from "obsidian";
 
@@ -674,9 +674,12 @@ const handleProfileImportProtocol = Effect.fn(
 }, withLogCategory("protocol"));
 
 /** The Profile document the import wrote is not in the vault. */
-class ImportedProfileMissing extends Data.TaggedError(
-  "ImportedProfileMissing",
-)<{ readonly path: string }> {
+class ImportedProfileMissing extends Schema.TaggedError<
+  ImportedProfileMissing,
+  { readonly brand: unique symbol }
+>()("ImportedProfileMissing", {
+  path: Schema.String,
+}) {
   override get message() {
     return `Imported Profile document is unavailable: ${this.path}`;
   }
@@ -686,7 +689,7 @@ class ImportedProfileMissing extends Data.TaggedError(
 const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
   function* (deps: ProtocolDeps, paneType: PaneType | undefined) {
     yield* Effect.logDebug("Opening clipboard Profile import");
-    const profile = yield* Effect.tryPromise(() =>
+    const profile = yield* portCall("import-profile", () =>
       deps.importProfile({ source: "clipboard" }),
     );
     if (!profile) {
@@ -701,7 +704,7 @@ const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
     const options = paneType
       ? { leaf: yield* (yield* Workspace).getLeaf(paneType) }
       : {};
-    yield* Effect.tryPromise(() =>
+    yield* portCall("open-template-workbench", () =>
       openTemplateWorkbench(deps.app, file, options),
     );
     yield* Effect.logDebug("Opened imported Profile in editor").pipe(

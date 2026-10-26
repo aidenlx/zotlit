@@ -9,6 +9,7 @@ import type { AnnotationOpenUriOptions } from "@zotlit/db";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { getLogger } from "@/lib/log";
 import type {
+  AnnotationList,
   AnnotationRecord,
   AnnotationRepository,
   AnnotationSource,
@@ -41,9 +42,14 @@ export interface AnnotationHoverRequest {
 export interface AnnotationPopoverCoreDeps {
   annotations: Pick<
     AnnotationRepository["Service"],
-    "read" | "hold" | "annotationsChanged"
+    "hold" | "annotationsChanged"
   >;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
+  /**
+   * Reads an Attachment's list. Unload interrupts the read, which then
+   * answers `undefined`.
+   */
+  read: (attachmentKey: string) => Promise<AnnotationList | null | undefined>;
+  bridge: Pick<EffectBridge, "runSync" | "subscribe">;
   /** The live Excerpt Image display the Annotation View's cards share. */
   excerptDisplay: Pick<ExcerptDisplayService, "open">;
   /** The file inputs one saved Annotation's Excerpt Image resolves through. */
@@ -134,10 +140,11 @@ export class AnnotationPopoverCore implements Disposable {
     const draw = (): Promise<void> => {
       const generation = ++visit.state.generation;
       const current = (): boolean => visit.state.generation === generation;
-      return deps.bridge
-        .runPromise(deps.annotations.read(attachmentKey))
+      return deps
+        .read(attachmentKey)
         .then((list) => {
-          if (!current()) return;
+          // An interrupted read draws nothing.
+          if (list === undefined || !current()) return;
           // No list stands: the library holds no such Attachment, or a change
           // cancelled this read and draws again — over what is drawn, if any.
           if (list === null && drawn) return;

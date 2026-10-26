@@ -5,7 +5,7 @@ import { Effect, Layer } from "effect";
 import { MarkdownRenderChild, setTooltip } from "obsidian";
 import type { MarkdownPostProcessorContext } from "obsidian";
 
-import { scopedBridge, valueOr } from "@/lib/effect-bridge";
+import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
@@ -244,9 +244,7 @@ export const layerCitekeyReading = Layer.effectDiscard(
         where: { surface: "reading" },
         // Unload interrupts a pending open.
         open: (citekey, pane) => {
-          void bridge
-            .runPromiseExit(citekeyEditor.openCitekey(citekey, pane))
-            .then((exit) => valueOr(exit, undefined));
+          bridge.runAndForget(citekeyEditor.openCitekey(citekey, pane));
         },
         showPopover: (request) => run(citationPopover.show(request)),
         hoverPreferences: () => hover,
