@@ -25,6 +25,12 @@ export interface EffectBridge {
     effect: Effect.Effect<A, E>,
     options?: { readonly signal?: AbortSignal },
   ) => Promise<Exit.Exit<A, E>>;
+  /**
+   * Starts `effect` from a callback that ignores its answer, such as a DOM or
+   * editor handler. Unload interrupts the run, as `runPromiseExit` does; any
+   * other failure surfaces as an unhandled rejection.
+   */
+  readonly runAndForget: <A, E>(effect: Effect.Effect<A, E>) => void;
   readonly subscribe: <A>(
     stream: Stream.Stream<A>,
     callback: (value: A) => void,
@@ -58,6 +64,11 @@ function bridgeOver(
     runPromise: Effect.runPromiseWith(context),
     runPromiseExit: (effect, options) =>
       runPromiseExit(effect, { ...options, onFiberStart }),
+    runAndForget: (effect) => {
+      void runPromiseExit(Effect.asVoid(effect), { onFiberStart }).then(
+        (exit) => valueOr(exit, undefined),
+      );
+    },
     subscribe: (stream, callback) => subscribe(host, stream, callback),
     closed: () => isScopeClosed(scope),
   };
