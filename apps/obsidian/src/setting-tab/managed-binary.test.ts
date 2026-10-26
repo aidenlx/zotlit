@@ -8,7 +8,6 @@ import type {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type {
@@ -16,6 +15,7 @@ import type {
   ManagedBinaryStatus,
 } from "@/services/managed-binary/service";
 
+import { testSettingTab } from "./__fixtures__";
 import { chineseSegmenterDefinition } from "./chinese-segmenter";
 import type {
   ManagedBinaryActions,
@@ -150,7 +150,7 @@ describe("managedBinaryDefinition", () => {
 describe("pandocEngineDefinition", () => {
   it("renders the Pandoc engine row from its own messages", () => {
     const ctx = stubService<SettingTabContext>("SettingTabContext", {
-      runtime: testRuntime(),
+      tab: testSettingTab().tab,
       pandocEngine: binary({
         kind: "installed",
         version: "3.10",
@@ -173,7 +173,7 @@ describe("pandocEngineDefinition", () => {
 describe("chineseSegmenterDefinition", () => {
   it("renders the Chinese segmenter row from its own messages", () => {
     const ctx = stubService<SettingTabContext>("SettingTabContext", {
-      runtime: testRuntime(),
+      tab: testSettingTab().tab,
       chineseSegmenter: binary({ kind: "absent" }),
     });
     const row = chineseSegmenterDefinition(ctx);

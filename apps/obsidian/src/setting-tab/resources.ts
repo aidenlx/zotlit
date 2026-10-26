@@ -1,6 +1,5 @@
 // Headerless resources strip and migration reminder for the declarative (>=1.13) setting tab.
 
-import { Effect } from "effect";
 import type {
   Setting,
   SettingDefinition,
@@ -54,7 +53,10 @@ export function templateConversionReminderItem(
           .setButtonText(m.settings_template_conversion_reminder_action())
           .setCta()
           .onClick(
-            () => void openWelcomeView(ctx.app, ctx.settings, ctx.bridge),
+            () =>
+              void openWelcomeView(ctx.app, ctx.settings, {
+                runSync: (effect) => ctx.tab.sync(effect),
+              }),
           ),
       );
     },
@@ -76,12 +78,9 @@ function renderMigrationReminderButtons(
       // See the blur comment in templates.ts's renderJsTemplatesButton: the
       // reconciler skips re-rendering the row containing document.activeElement.
       btn.buttonEl.blur();
-      ctx.bridge.runAndForget(
-        ctx.release.acknowledgeMigration.pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning("Cannot mark the migration reminder done", cause),
-          ),
-        ),
+      void ctx.tab.run(
+        ctx.release.acknowledgeMigration,
+        "Cannot mark the migration reminder done",
       );
     }),
   );
@@ -95,7 +94,7 @@ function renderMigrationReminderButtons(
 export function resourcesGroup(
   ctx: SettingTabContext,
 ): SettingDefinitionGroup<SettingsKey> {
-  const current = ctx.bridge.runSync(ctx.settings.current);
+  const current = ctx.tab.sync(ctx.settings.current);
   const pending = current["release.migration-pending"] === true;
   const templateConversionPending =
     current["note.template-conversion-pending"] === true;
@@ -128,8 +127,12 @@ function resourcesItems(
         setting.addButton((btn) =>
           btn
             .setButtonText(m.settings_resources_whats_new_button())
-            .onClick(() =>
-              ctx.bridge.runAndForget(ctx.release.openReleaseNote),
+            .onClick(
+              () =>
+                void ctx.tab.run(
+                  ctx.release.openReleaseNote,
+                  "Cannot open the release note",
+                ),
             ),
         );
       },

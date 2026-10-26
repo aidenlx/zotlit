@@ -6,7 +6,7 @@ import {
   Modal,
   Setting,
 } from "@mock/obsidian";
-import { Effect } from "effect";
+import { Context, Effect } from "effect";
 import { TFile } from "obsidian";
 import type {
   App,
@@ -19,7 +19,6 @@ import type {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
@@ -27,18 +26,16 @@ import type { ProfileId } from "@/lib/profile-stamp";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { PreparedProfileCreation } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 import {
   openNativeProfile,
   openTemplateWorkbench,
 } from "@/views/template-workbench/register";
 
+import { testSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
-import {
-  getProfileControlValue,
-  literatureNoteItems,
-  profilesPage,
-  setProfileControlValue,
-} from "./profiles";
+import { profileControlValue, setProfileControlValue } from "./controls";
+import { literatureNoteItems, profilesPage } from "./profiles";
 
 vi.mock("@/views/template-workbench/register", () => ({
   openNativeProfile: vi.fn(async () => {}),
@@ -64,19 +61,13 @@ function fileAt(path: string): TFile {
 
 function context(): SettingTabContext {
   return stubService<SettingTabContext>("SettingTabContext", {
-    runtime: testRuntime(),
+    tab: testSettingTab().tab,
     app: stubService<App>("App", {
       vault: stubService<SettingTabContext["app"]["vault"]>("Vault", {
         getFileByPath: () => null,
       }),
     }),
     customize: vi.fn(() => Promise.resolve()),
-    bridge: {
-      runSync: Effect.runSync,
-      runPromise: Effect.runPromise,
-      runAndForget: (effect) => void Effect.runPromise(effect),
-      subscribe: () => () => {},
-    },
     settings: stubService<SettingTabContext["settings"]>("Settings", {
       current: Effect.succeed(defaults),
       updateDefaultLiteratureNoteProfileBindings: vi.fn(() => Effect.void),
@@ -338,19 +329,13 @@ describe("Profile settings", () => {
 
   it("writes only default bindings through the settings controls", () => {
     const ctx = context();
-    expect(
-      getProfileControlValue(
-        ctx.settings,
-        ctx.bridge,
-        "note-profile:default:folder",
-      ),
-    ).toBe("literatures");
-    setProfileControlValue(
-      ctx.settings,
-      ctx.bridge,
-      "note-profile:default:folder",
-      "Reading",
+    const { tab } = testSettingTab(
+      Context.make(PluginSettings, ctx.settings as PluginSettings["Service"]),
     );
+    expect(tab.sync(profileControlValue("note-profile:default:folder"))).toBe(
+      "literatures",
+    );
+    tab.sync(setProfileControlValue("note-profile:default:folder", "Reading"));
     expect(
       // oxlint-disable-next-line unbound-method -- `expect` reads the spy without calling it.
       ctx.settings.updateDefaultLiteratureNoteProfileBindings,

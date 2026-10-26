@@ -23,6 +23,7 @@ import type { ProfileId } from "@/lib/profile-stamp";
 import * as nativeDialog from "@/lib/require";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 
+import { testSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
 import { ShareProfileModal, profilesPage } from "./profiles";
 
@@ -182,8 +183,7 @@ it.each(["default", id] as const)(
     const container = document.createElement("div");
     const page = profilesPage(
       stubService<SettingTabContext>("SettingTabContext", {
-        runtime: f.runtime,
-        bridge: f.bridge,
+        tab: testSettingTab().tab,
         app: stubService<App>("App", {
           vault: stubService<App["vault"]>("Vault", {
             getFileByPath: f.vault.getFileByPath.bind(f.vault),

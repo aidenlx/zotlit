@@ -5,15 +5,15 @@ import { Stream } from "effect";
 import type { SettingGroupItem } from "obsidian";
 
 import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
-import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
 
 import type { SettingsKey, SettingTabContext } from "./context";
+import { paintEach } from "./effect-tab";
 import { defaultPlaceholder } from "./placeholder";
 
 function serverEnabled(ctx: SettingTabContext): () => boolean {
-  return () => ctx.bridge.runSync(ctx.settings.current)["server.enabled"];
+  return () => ctx.tab.sync(ctx.settings.current)["server.enabled"];
 }
 
 /**
@@ -24,7 +24,7 @@ export function localServerItems(
   ctx: SettingTabContext,
 ): SettingGroupItem<SettingsKey>[] {
   const enabled = serverEnabled(ctx);
-  const port = ctx.bridge.runSync(ctx.localServer.effectivePort);
+  const port = ctx.tab.sync(ctx.localServer.effectivePort);
   return [
     {
       id: "settings_local_server_enabled",
@@ -121,23 +121,24 @@ export function liveUpdatesItems(
         // the setting and the listener while the row is on screen.
         const stack = new DisposableStack();
         const apply = (): void => {
-          const port = ctx.bridge.runSync(ctx.localServer.effectivePort);
+          const port = ctx.tab.sync(ctx.localServer.effectivePort);
           const listening = port !== null;
           setting.setDesc(
             listening
               ? m.settings_zotero_local_server_on({ port })
-              : ctx.bridge.runSync(ctx.settings.current)["server.enabled"]
+              : ctx.tab.sync(ctx.settings.current)["server.enabled"]
                 ? m.settings_zotero_local_server_not_listening()
                 : m.settings_zotero_local_server_off(),
           );
           setting.descEl.toggleClass("mod-warning", !listening);
         };
-        stack.defer(subscribe(ctx.runtime, ctx.settings.changes, apply));
+        stack.defer(ctx.tab.mount(paintEach(ctx.settings.changes, apply)));
         stack.defer(
-          subscribe(
-            ctx.runtime,
-            Stream.drop(ctx.localServer.effectivePortChanges, 1),
-            apply,
+          ctx.tab.mount(
+            paintEach(
+              Stream.drop(ctx.localServer.effectivePortChanges, 1),
+              apply,
+            ),
           ),
         );
         return () => stack.dispose();

@@ -38,7 +38,7 @@ import {
 } from "./services/note-feature/actions";
 import { addProfileActions } from "./services/profile/actions";
 import { ServiceStartupFailed } from "./services/startup-failure";
-import { ZotLitSettingTab } from "./setting-tab";
+import { startSettingTab } from "./setting-tab/layer";
 import { createCommentRenderer } from "./views/annot-view/comment-render";
 import { registerAnnotView } from "./views/annot-view/register";
 import { AnnotationView } from "./views/annot-view/view";
@@ -266,15 +266,13 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       },
     });
 
-    this.addSettingTab(
-      new ZotLitSettingTab({
-        runtime: services.runtime,
-        bridge: services.bridge,
+    // The tab reads graph services through its layer's context and the rest
+    // from the container, so it closes on the stack ahead of those services.
+    stack.defer(
+      startSettingTab(services.runtime, this, {
         webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
         importProfile: services.importProfile,
         profile: services.profile,
-        plugin: this,
-        settings: services.settings,
         db: services.zoteroReads,
         libraryScope: services.libraryScope,
         zoteroPref: services.zoteroPref,
@@ -285,12 +283,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         citationIndex: services.citationIndex,
         excerptImage: services.excerptImage,
         excerptDisplay: services.excerptDisplay,
-        annotations: services.annotationRepository,
-        writeAuthorization: {
-          allowEditing: () => services.capabilityNotices.allowEditing(),
-          forgetAuthorization: services.zoteroLocalApi.forgetAuthorization,
-          remembered: services.zoteroLocalApi.remembered,
-        },
         template: services.template,
         release: services.release,
         pandocEngine: services.pandocEngine,

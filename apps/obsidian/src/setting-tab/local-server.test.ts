@@ -9,15 +9,14 @@ import type {
 } from "obsidian";
 import { expect, it, vi } from "vitest";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { WorkbenchConnection } from "@/services/local-bridge/service";
 import type { LocalServer } from "@/services/local-server/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
+import { testSettingTab } from "./__fixtures__";
 import type { SettingsKey, SettingTabContext } from "./context";
 import { localServerItems } from "./local-server";
 
@@ -33,10 +32,8 @@ function setup({
   disconnect = () => {},
 }: Options = {}) {
   const current: Settings = { ...defaults, ...settings };
-  const runtime = testRuntime();
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    runtime,
-    bridge: effectBridge(runtime),
+    tab: testSettingTab().tab,
     webWorkbenchEnabled: true,
     settings: stubService<SettingTabContext["settings"]>("Settings", {
       current: Effect.succeed(current),
