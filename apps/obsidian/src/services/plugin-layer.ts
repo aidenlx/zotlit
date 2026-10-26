@@ -61,6 +61,8 @@ import { layerExcerptDisplays } from "./excerpt-image/display";
 import type { ExcerptDisplays } from "./excerpt-image/display";
 import { layerExcerptImages } from "./excerpt-image/layer";
 import type { ExcerptImages } from "./excerpt-image/layer";
+import { layerExcerptPreparation } from "./excerpt-image/prepare";
+import type { ExcerptPreparation } from "./excerpt-image/prepare";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
 import { layerAnnotationImageCli } from "./excerpt-image/register-cli";
 import type { ExcerptStore } from "./excerpt-image/store";
@@ -91,7 +93,7 @@ import { layerManagedBinaryPlatform } from "./managed-binary/service";
 import { layerNoteFeature } from "./note-feature/service";
 import type { NoteFeature } from "./note-feature/service";
 import { layerNoteImporter } from "./note-import/service";
-import type { NoteImporter, NoteImportPorts } from "./note-import/service";
+import type { NoteImporter } from "./note-import/service";
 import { layerNoteIndex } from "./note-index/service";
 import type { NoteIndex } from "./note-index/service";
 import { layerCitationStyleNotice } from "./pandoc/notices";
@@ -155,7 +157,6 @@ export function pluginLayer(
     excerpt,
     languagePack,
     noteCreation,
-    noteImport,
   }: {
     readonly excerpt: {
       readonly openStore: () => Promise<ExcerptStore>;
@@ -163,7 +164,6 @@ export function pluginLayer(
     };
     readonly languagePack: LanguagePackStartup;
     readonly noteCreation: CitekeyNoteCreation;
-    readonly noteImport: NoteImportPorts;
   },
 ): Layer.Layer<
   | GraphCitations
@@ -177,6 +177,7 @@ export function pluginLayer(
   | QueryService
   | ExcerptDisplays
   | ExcerptImages
+  | ExcerptPreparation
   | CitationText
   | CitationPopover
   | CitationIndex
@@ -226,7 +227,7 @@ export function pluginLayer(
     layerAnnotationPopover.pipe(startingAs("AnnotationPopover")),
     layerCitekeyEditor(noteCreation).pipe(startingAs("CitekeyEditor")),
     layerItemLookup.pipe(startingAs("ItemLookup")),
-    layerNoteImporter(noteImport).pipe(startingAs("NoteImporter")),
+    layerNoteImporter.pipe(startingAs("NoteImporter")),
     layerLocalBridge({
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       pluginVersion: plugin.manifest.version,
@@ -263,6 +264,9 @@ export function pluginLayer(
     ),
     Layer.provideMerge(
       layerExcerptDisplays.pipe(startingAs("ExcerptDisplays")),
+    ),
+    Layer.provideMerge(
+      layerExcerptPreparation.pipe(startingAs("ExcerptPreparation")),
     ),
     Layer.provideMerge(
       layerExcerptImages(excerpt).pipe(startingAs("ExcerptImages")),
@@ -365,9 +369,8 @@ export function pluginLayer(
     layerWikilinkReading.pipe(startingAs("WikilinkReading")),
   ).pipe(Layer.provide(Layer.mergeAll(layerPluginHost(plugin), obsidian)));
   // The Note Feature plans creations through ZotLit Query, so it builds above
-  // the other services. Its note writes call the excerpt preparation through
-  // the same legacy port as the note importer.
-  const noteFeature = layerNoteFeature(noteImport).pipe(
+  // the other services.
+  const noteFeature = layerNoteFeature.pipe(
     startingAs("NoteFeature"),
     Layer.provideMerge(services),
   );

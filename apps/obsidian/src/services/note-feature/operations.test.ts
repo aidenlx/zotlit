@@ -1,4 +1,5 @@
-import { Effect } from "effect";
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { Effect, Layer } from "effect";
 import {
   mkdir,
   mkdtemp,
@@ -53,6 +54,7 @@ import type { ItemFields } from "@zotlit/zotero-types";
 import { MemoryFileManager } from "@/lib/__fixtures__/obsidian-file-manager";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import type { ObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import {
   FIELD_CITATION_STYLE,
   FIELD_CITEKEY,
@@ -74,9 +76,11 @@ import {
 } from "@/services/excerpt-image/__fixtures__/png";
 import { excerptReuseProbe } from "@/services/excerpt-image/__fixtures__/reuse";
 import { PNG_FORMAT } from "@/services/excerpt-image/format";
-import { materializeExcerpt } from "@/services/excerpt-image/materialize";
+import {
+  makePublicationGate,
+  materializeExcerpt,
+} from "@/services/excerpt-image/materialize";
 import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
-import { createExcerptPreparation } from "@/services/excerpt-image/prepare";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import { ExcerptImageService } from "@/services/excerpt-image/service";
 import type {
@@ -347,7 +351,7 @@ describe("Profile source selection", () => {
     deps.app = app;
     const prepareImages = vi.fn(() => ({
       annotationImageLink: () => null,
-      prepare: async () => {},
+      prepare: Effect.void,
       summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
     }));
     deps.excerptImages = prepareImages;
@@ -684,12 +688,7 @@ describe("createNote", () => {
         };
       },
     };
-    const prepareExcerpts = createExcerptPreparation({
-      app: app as unknown as App,
-      resolver,
-      paths: deps.zoteroPref,
-    });
-    deps.excerptImages = (options) => prepareExcerpts(options);
+    deps.excerptResolver = resolver;
     if (mode === "write-failure") await writeFile(`${root}/Images`, "occupied");
     const engine = new TemplateEngine();
     engine.define(
@@ -787,20 +786,27 @@ describe("createNote", () => {
     await writeFile(otherNote, original);
     const retainedAssets: string[] = [];
     if (mode === "retain-replaced") {
+      const host = Layer.mergeAll(
+        layerHost({ vault: app.vault, fileManager: app.fileManager }),
+        NodeFileSystem.layer,
+      );
       for (const [request] of resolver.resolve.mock.calls) {
         const save = (bytes: Uint8Array) =>
-          materializeExcerpt({
-            app: app as unknown as App,
-            notePath: file.path,
-            settings: Effect.runSync(deps.settings.current),
-            request,
-            outcome: availableOutcome({
-              bytes,
-              format: PNG_FORMAT,
-              provenance: "rendered",
-              freshness: "checked",
-            }),
-          });
+          Effect.gen(function* () {
+            const gate = yield* makePublicationGate;
+            return yield* materializeExcerpt({
+              gate,
+              notePath: file.path,
+              settings: yield* deps.settings.current,
+              request,
+              outcome: availableOutcome({
+                bytes,
+                format: PNG_FORMAT,
+                provenance: "rendered",
+                freshness: "checked",
+              }),
+            });
+          }).pipe(Effect.scoped, Effect.provide(host), Effect.runPromise);
         const oldAsset = await save(redPng),
           newAsset = await save(bluePng);
         if (oldAsset.kind !== "saved" || newAsset.kind !== "saved")
@@ -2722,7 +2728,7 @@ describe("updateNote", () => {
     });
     const prepare = vi.fn<NonNullable<TestDeps["excerptImages"]>>(() => ({
       annotationImageLink: () => null,
-      prepare: async () => {},
+      prepare: Effect.void,
       summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
     }));
     harness.deps.excerptImages = prepare;
@@ -4283,9 +4289,7 @@ describe("writeNoteUpdate", () => {
       excerptScopes.push(options.outcomes);
       return {
         annotationImageLink: () => null,
-        prepare: async () => {
-          await probe.resolve(options.outcomes);
-        },
+        prepare: Effect.promise(() => probe.resolve(options.outcomes)),
         summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
       };
     };

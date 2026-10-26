@@ -4,6 +4,7 @@ import type { Context } from "effect";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { settleAtEdge } from "@/lib/signal-edge";
+import type { ExcerptPreparation } from "@/services/excerpt-image/prepare";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { Profile } from "@/services/profile/service";
 import type { PluginSettings } from "@/services/settings/service";
@@ -19,11 +20,11 @@ import { prepareAnnotationInsert } from "./insert-annotation";
 import type {
   AnnotationInsert,
   AnnotationInsertOptions,
-  SingleExcerpt,
 } from "./insert-annotation";
 
 /** The services the citations and the annotation insert read. */
 export type NoteCitationServices =
+  | ExcerptPreparation
   | Template
   | Profile
   | ZoteroReads
@@ -56,7 +57,6 @@ export interface NoteCitations {
 export function bindNoteCitations(
   bridge: Pick<EffectBridge, "runSync" | "runPromise" | "runPromiseExit">,
   context: Context.Context<NoteCitationServices>,
-  ports: { singleExcerpt: SingleExcerpt },
 ): NoteCitations {
   const provide = <A, E>(effect: Effect.Effect<A, E, NoteCitationServices>) =>
     effect.pipe(
@@ -70,10 +70,9 @@ export function bindNoteCitations(
       bridge.runPromise(provide(renderAnnotationCitation(annotationKey))),
     prepareAnnotationInsert: async ({ signal, ...options }) =>
       settleAtEdge(
-        await bridge.runPromiseExit(
-          provide(prepareAnnotationInsert(ports.singleExcerpt, options)),
-          { signal },
-        ),
+        await bridge.runPromiseExit(provide(prepareAnnotationInsert(options)), {
+          signal,
+        }),
         signal,
       ),
   };

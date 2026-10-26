@@ -62,7 +62,6 @@ import {
 import type {
   CreateNoteError,
   NoteWriteContext,
-  NoteWritePorts,
   NoteWriteServices,
   OverwriteNoteError,
   SwitchNoteProfileError,
@@ -183,93 +182,90 @@ export class NoteFeature extends Context.Service<
 >()("zotlit/obsidian/NoteFeature") {}
 
 /**
- * The Note Feature over the graph's tags and the legacy `ports`. Closing the
- * layer ends {@link NoteFeature.changes}.
+ * The Note Feature over the graph's tags. Closing the layer ends
+ * {@link NoteFeature.changes}.
  */
-export const layerNoteFeature = (ports: NoteWritePorts) =>
-  Layer.effect(
-    NoteFeature,
-    Effect.gen(function* () {
-      const context = yield* Effect.context<NoteFeatureServices>();
-      const provide = <A, E>(
-        effect: Effect.Effect<A, E, NoteFeatureServices>,
-      ) => Effect.provideContext(effect, context);
-      const events = yield* Effect.acquireRelease(
-        PubSub.unbounded<NoteFeatureEvent>(),
-        (pubsub) => PubSub.shutdown(pubsub),
-      );
-      const ctx: NoteWriteContext = {
-        ports,
-        emit: (event) => void PubSub.publishUnsafe(events, event),
-      };
-      const createAtGate = yield* makeCreateGate((item, options) =>
-        provide(createNote(ctx, item, options)),
-      );
-      const create = (item: Item, options: CreateNoteInternalOptions) =>
-        provide(createAtGate(item, options));
-      return NoteFeature.of({
-        changes: Stream.fromPubSub(events),
-        reportExcerptImages: Effect.fn("NoteFeature.reportExcerptImages")(
-          function* (summary) {
-            yield* PubSub.publish(events, {
-              _tag: "excerpt-images-reported",
-              summary,
-            });
-          },
-        ),
-        createNote: Effect.fn("NoteFeature.createNote")((item, options = {}) =>
-          create(item, options),
-        ),
-        updateNote: Effect.fn("NoteFeature.updateNote")((file, options) =>
-          provide(updateNote(ctx, file, options)),
-        ),
-        switchNoteProfile: Effect.fn("NoteFeature.switchNoteProfile")(
-          (file, options) => provide(switchNoteProfile(file, options)),
-        ),
-        replacedKeys: Effect.fn("NoteFeature.replacedKeys")((file) =>
-          provide(replacedKeys(ctx, file)),
-        ),
-        overwriteNote: Effect.fn("NoteFeature.overwriteNote")(
-          (file, indexedKey, options) =>
-            provide(overwriteNote(ctx, file, { ...options, indexedKey })),
-        ),
-        writeNoteUpdate: Effect.fn("NoteFeature.writeNoteUpdate")(
-          (file, options) => provide(writeNoteUpdate(ctx, file, options)),
-        ),
-        resolveCompanionNote: Effect.fn("NoteFeature.resolveCompanionNote")(
-          (indexedKey, options) =>
-            provide(resolveCompanionNote(indexedKey, options)),
-        ),
-        resolveCreationProfile: Effect.fn("NoteFeature.resolveCreationProfile")(
-          (sources) => provide(resolveCreationProfile(sources)),
-        ),
-        planCreations: Effect.fn("NoteFeature.planCreations")(
-          (indexedKeys, sources = {}) =>
-            provide(planCreations(indexedKeys, { ...sources, create })),
-        ),
-        prepareProfileNote: Effect.fn("NoteFeature.prepareProfileNote")(
-          (options) =>
-            provide(
-              prepareProfileNote(options, {
-                create,
-                events: composeEvents(ctx),
-              }),
-            ).pipe(
-              Effect.map((preview): ProfileNoteDraft => ({
-                ...preview,
-                create: provide(preview.create),
-              })),
-            ),
-        ),
-        prepareProfileSwitch: Effect.fn("NoteFeature.prepareProfileSwitch")(
-          (file) => provide(prepareProfileSwitch(file)),
-        ),
-        getImportedNotesForItem: Effect.fn(
-          "NoteFeature.getImportedNotesForItem",
-        )((indexedKey) => provide(getImportedNotesForItem(indexedKey))),
-      });
-    }),
-  );
+export const layerNoteFeature = Layer.effect(
+  NoteFeature,
+  Effect.gen(function* () {
+    const context = yield* Effect.context<NoteFeatureServices>();
+    const provide = <A, E>(effect: Effect.Effect<A, E, NoteFeatureServices>) =>
+      Effect.provideContext(effect, context);
+    const events = yield* Effect.acquireRelease(
+      PubSub.unbounded<NoteFeatureEvent>(),
+      (pubsub) => PubSub.shutdown(pubsub),
+    );
+    const ctx: NoteWriteContext = {
+      emit: (event) => void PubSub.publishUnsafe(events, event),
+    };
+    const createAtGate = yield* makeCreateGate((item, options) =>
+      provide(createNote(ctx, item, options)),
+    );
+    const create = (item: Item, options: CreateNoteInternalOptions) =>
+      provide(createAtGate(item, options));
+    return NoteFeature.of({
+      changes: Stream.fromPubSub(events),
+      reportExcerptImages: Effect.fn("NoteFeature.reportExcerptImages")(
+        function* (summary) {
+          yield* PubSub.publish(events, {
+            _tag: "excerpt-images-reported",
+            summary,
+          });
+        },
+      ),
+      createNote: Effect.fn("NoteFeature.createNote")((item, options = {}) =>
+        create(item, options),
+      ),
+      updateNote: Effect.fn("NoteFeature.updateNote")((file, options) =>
+        provide(updateNote(ctx, file, options)),
+      ),
+      switchNoteProfile: Effect.fn("NoteFeature.switchNoteProfile")(
+        (file, options) => provide(switchNoteProfile(file, options)),
+      ),
+      replacedKeys: Effect.fn("NoteFeature.replacedKeys")((file) =>
+        provide(replacedKeys(ctx, file)),
+      ),
+      overwriteNote: Effect.fn("NoteFeature.overwriteNote")(
+        (file, indexedKey, options) =>
+          provide(overwriteNote(ctx, file, { ...options, indexedKey })),
+      ),
+      writeNoteUpdate: Effect.fn("NoteFeature.writeNoteUpdate")(
+        (file, options) => provide(writeNoteUpdate(ctx, file, options)),
+      ),
+      resolveCompanionNote: Effect.fn("NoteFeature.resolveCompanionNote")(
+        (indexedKey, options) =>
+          provide(resolveCompanionNote(indexedKey, options)),
+      ),
+      resolveCreationProfile: Effect.fn("NoteFeature.resolveCreationProfile")(
+        (sources) => provide(resolveCreationProfile(sources)),
+      ),
+      planCreations: Effect.fn("NoteFeature.planCreations")(
+        (indexedKeys, sources = {}) =>
+          provide(planCreations(indexedKeys, { ...sources, create })),
+      ),
+      prepareProfileNote: Effect.fn("NoteFeature.prepareProfileNote")(
+        (options) =>
+          provide(
+            prepareProfileNote(options, {
+              create,
+              events: composeEvents(ctx),
+            }),
+          ).pipe(
+            Effect.map((preview): ProfileNoteDraft => ({
+              ...preview,
+              create: provide(preview.create),
+            })),
+          ),
+      ),
+      prepareProfileSwitch: Effect.fn("NoteFeature.prepareProfileSwitch")(
+        (file) => provide(prepareProfileSwitch(file)),
+      ),
+      getImportedNotesForItem: Effect.fn("NoteFeature.getImportedNotesForItem")(
+        (indexedKey) => provide(getImportedNotesForItem(indexedKey)),
+      ),
+    });
+  }),
+);
 
 /**
  * Collect one operation's excerpt outcomes. When the scope closes, their

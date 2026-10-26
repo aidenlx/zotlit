@@ -4,7 +4,6 @@
 // here, so none can cross the bridge.
 
 import { Effect } from "effect";
-import type { TFile } from "obsidian";
 
 import { annotationHasCacheImage } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
@@ -13,14 +12,14 @@ import type { SnapshotVaultTargets } from "@zotlit/workbench/snapshot";
 import { attachmentFolderPath } from "@/lib/attachment-folder";
 import { joinFolderPath } from "@/lib/ensure-folder";
 import type { FileManager } from "@/lib/obsidian-file-manager";
-import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import type { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
-import { Workspace } from "@/lib/obsidian-workspace";
+import type { Workspace } from "@/lib/obsidian-workspace";
 import {
   excerptAssetIdentities,
   isOwnedExcerptAssetPath,
 } from "@/services/excerpt-image/materialize";
-import { linkTargets } from "@/services/excerpt-image/references";
+import { referencedExcerptPaths } from "@/services/excerpt-image/references";
 import { NoteIndex } from "@/services/note-index/service";
 import { PluginSettings } from "@/services/settings/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
@@ -98,7 +97,7 @@ const annotationImageTargets = Effect.fnUntraced(function* (
     notePath,
   );
   const note = notePath ? yield* vault.getFileByPath(notePath) : null;
-  const referenced = note ? yield* referencedPaths(note) : [];
+  const referenced = note ? yield* referencedExcerptPaths(note) : [];
   const { dataDir } = yield* (yield* ZoteroPref).current;
   const [attachments, database] = yield* Effect.all([
     reads.AttachmentsOf({ itemIDs: [item.itemID] }),
@@ -136,21 +135,4 @@ const annotationImageTargets = Effect.fnUntraced(function* (
     }
   }
   return images;
-});
-
-/**
- * The vault files `note`'s live text links to: its loaded view's text, else
- * the vault's, read apart from the asynchronous metadata cache.
- */
-const referencedPaths = Effect.fnUntraced(function* (note: TFile) {
-  const view = yield* (yield* Workspace).loadedTextView(note);
-  const content =
-    view === null ? yield* (yield* Vault).cachedRead(note) : view.getViewData();
-  const metadata = yield* MetadataCache;
-  const paths = new Set<string>();
-  for (const link of linkTargets(content)) {
-    const target = yield* metadata.firstLinkpathDest(link, note.path);
-    if (target) paths.add(target.path);
-  }
-  return [...paths];
 });

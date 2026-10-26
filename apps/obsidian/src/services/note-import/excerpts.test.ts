@@ -30,12 +30,13 @@ import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw
 import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import type { MetadataCacheSource } from "@/lib/obsidian-metadata-cache";
 import type { VaultSource } from "@/lib/obsidian-vault";
 import { AttachmentCopyError } from "@/services/attachment-import/service";
 import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import { bluePng, redPng } from "@/services/excerpt-image/__fixtures__/png";
 import { PNG_FORMAT } from "@/services/excerpt-image/format";
-import { createExcerptPreparation } from "@/services/excerpt-image/prepare";
+import type { ExcerptImages } from "@/services/excerpt-image/layer";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import type {
   ExcerptOutcome,
@@ -167,17 +168,16 @@ async function setupFixture(mode = "normal") {
       fileManager: app.fileManager,
       basePath: vaultRoot,
     },
-    excerptImages: (options) =>
-      createExcerptPreparation({
-        app,
-        paths,
-        resolver: {
-          operation: () => ({
-            resolve,
-            [Symbol.asyncDispose]: async () => {},
-          }),
-        },
-      })(options),
+    excerptImages: {
+      resolver: stubService<ExcerptImages["Service"]>("ExcerptImages", {
+        operation: () => ({
+          resolve,
+          [Symbol.asyncDispose]: async () => {},
+        }),
+      }),
+      fileManager: app.fileManager,
+      metadataCache: app.metadataCache as unknown as MetadataCacheSource,
+    },
   };
   const { reads } = await stack.use(
     inProcessReadsService(sharedClientOpener(client)),

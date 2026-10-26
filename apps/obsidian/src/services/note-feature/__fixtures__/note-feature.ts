@@ -1,4 +1,5 @@
 // The Note Feature's layer over a test's plain deps, and the edge handle a test drives.
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { Context, Effect, Layer } from "effect";
 import type { ManagedRuntime } from "effect";
 
@@ -6,7 +7,10 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import { layerFileManagerFrom } from "@/lib/obsidian-file-manager";
-import type { FileManagerSource } from "@/lib/obsidian-file-manager";
+import type {
+  FileManager,
+  FileManagerSource,
+} from "@/lib/obsidian-file-manager";
 import {
   layerMetadataCacheFrom,
   MetadataCache,
@@ -15,10 +19,18 @@ import type { MetadataCacheSource } from "@/lib/obsidian-metadata-cache";
 import { layerVaultFrom, Vault } from "@/lib/obsidian-vault";
 import type { VaultSource } from "@/lib/obsidian-vault";
 import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
-import type { WorkspaceSource } from "@/lib/obsidian-workspace";
+import type { Workspace, WorkspaceSource } from "@/lib/obsidian-workspace";
 import type { AttachmentImportHandle } from "@/services/attachment-import/handle";
 import { AttachmentImport } from "@/services/attachment-import/service";
-import type { ExcerptPreparation } from "@/services/excerpt-image/prepare";
+import { ExcerptImages } from "@/services/excerpt-image/layer";
+import {
+  ExcerptPreparation,
+  layerExcerptPreparation,
+} from "@/services/excerpt-image/prepare";
+import type {
+  NoteExcerptOptions,
+  PreparedExcerpts,
+} from "@/services/excerpt-image/prepare";
 import type { QueryService } from "@/services/item-query/service";
 import { PluginSettings } from "@/services/settings/service";
 import { snapshotAt } from "@/services/attachment-import/__fixtures__";
@@ -54,7 +66,73 @@ export interface NoteFeatureSources extends Omit<
   settings: Pick<PluginSettings["Service"], "current" | "update">;
   zoteroPref: { dataDir: string; baseAttachmentPath: string | null };
   attachmentImport: Pick<AttachmentImportHandle, "prepare">;
-  excerptImages?: ExcerptPreparation;
+  /** A fake excerpt preparation for each note write. */
+  excerptImages?: (options: NoteExcerptOptions) => PreparedExcerpts;
+  /**
+   * The Excerpt Image resolver of the real preparation, which writes into
+   * `app`'s vault on disk. Without it or `excerptImages`, a note write
+   * prepares no excerpt and its image helpers give `null`.
+   */
+  excerptResolver?: Pick<ExcerptImages["Service"], "operation" | "resolve">;
+}
+
+/** A note write's excerpts when the test gives no preparation: none. */
+const noExcerpts = (): PreparedExcerpts => ({
+  annotationImageLink: () => null,
+  prepare: Effect.void,
+  summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
+});
+
+/**
+ * The preparation `sources` give when a write runs: their fake, the real
+ * preparation over their resolver and `host`, or none.
+ */
+function layerExcerptPreparationOver(
+  sources: NoteFeatureSources,
+  host: Layer.Layer<
+    | Vault
+    | MetadataCache
+    | Workspace
+    | FileManager
+  >,
+  pref: Context.Context<ZoteroPref>,
+): Layer.Layer<ExcerptPreparation> {
+  const real = layerExcerptPreparation.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        host,
+        NodeFileSystem.layer,
+        Layer.succeedContext(pref),
+        Layer.succeed(
+          ExcerptImages,
+          stubService<ExcerptImages["Service"]>("ExcerptImages", {
+            operation: (options) => sources.excerptResolver!.operation(options),
+            resolve: (request, signal) =>
+              sources.excerptResolver!.resolve(request, signal),
+          }),
+        ),
+      ),
+    ),
+  );
+  return Layer.effect(
+    ExcerptPreparation,
+    Effect.gen(function* () {
+      const preparation = yield* ExcerptPreparation;
+      // A stubbed `sources` may leave the optional members out.
+      const given = <K extends "excerptImages" | "excerptResolver">(key: K) =>
+        key in sources ? sources[key] : undefined;
+      return ExcerptPreparation.of({
+        forNote: (options) => {
+          const fake = given("excerptImages");
+          if (fake) return Effect.sync(() => fake(options));
+          return given("excerptResolver")
+            ? preparation.forNote(options)
+            : Effect.sync(noExcerpts);
+        },
+        forCard: (options) => preparation.forCard(options),
+      });
+    }),
+  ).pipe(Layer.provide(real));
 }
 
 /**
@@ -127,12 +205,13 @@ export function noteFeatureServices(
   return Layer.mergeAll(
     host,
     Layer.succeedContext(Context.merge(planning, plain)),
+    layerExcerptPreparationOver(sources, host, plain.pipe(Context.pick(ZoteroPref))),
   );
 }
 
 /**
  * The Note Feature's edge handle over its layer, built on `sources` and held
- * by `stack`, and the runtime the layer runs on. Its note writes call
+ * by `stack`, and the runtime the layer runs on. Its note writes read
  * `sources.excerptImages` as it is when they run. The citation members fail
  * the test unless `citations` gives them.
  */
@@ -148,12 +227,9 @@ export function noteFeatureHandle(
   runtime: ManagedRuntime.ManagedRuntime<NoteFeature, never>;
 } {
   const runtime = buildRuntime(
-    layerNoteFeature({
-      get excerptImages() {
-        // A stubbed `sources` may leave the optional port out.
-        return "excerptImages" in sources ? sources.excerptImages : undefined;
-      },
-    }).pipe(Layer.provideMerge(noteFeatureServices(sources, options.query))),
+    layerNoteFeature.pipe(
+      Layer.provideMerge(noteFeatureServices(sources, options.query)),
+    ),
     stack,
   );
   const handle = bindNoteFeature(

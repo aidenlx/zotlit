@@ -9,6 +9,7 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import { ExcerptPreparation } from "@/services/excerpt-image/prepare";
 import { NoteIndex } from "@/services/note-index/service";
 import { Profile } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
@@ -98,9 +99,11 @@ async function openHandle(
   ),
 ) {
   const stack = new AsyncDisposableStack();
+  const forCard = vi.fn(() => Effect.die("This test prepares no excerpt."));
   const runtime = buildRuntime(
     Layer.mergeAll(
       reads,
+      Layer.mock(ExcerptPreparation, { forCard }),
       Layer.mock(Template, {
         loaded: Effect.succeed(true),
         renderCitation: (refs) =>
@@ -123,15 +126,11 @@ async function openHandle(
     stack,
   );
   await runtime.context();
-  const singleExcerpt = vi.fn(() =>
-    Promise.reject(new Error("This test prepares no excerpt.")),
-  );
   const citations = bindNoteCitations(
     effectBridge(runtime),
     runtime.runSync(Effect.context<NoteCitationServices>()),
-    { singleExcerpt },
   );
-  return { citations, singleExcerpt, dispose: () => stack.disposeAsync() };
+  return { citations, forCard, dispose: () => stack.disposeAsync() };
 }
 
 it.effect(
@@ -177,7 +176,7 @@ it.effect("resolves the annotation reads with their results", () =>
       await expect(
         handle.citations.prepareAnnotationInsert(insertRequest()),
       ).resolves.toBeNull();
-      expect(handle.singleExcerpt).not.toHaveBeenCalled();
+      expect(handle.forCard).not.toHaveBeenCalled();
     } finally {
       await handle.dispose();
     }

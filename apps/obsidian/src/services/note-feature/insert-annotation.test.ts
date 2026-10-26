@@ -1,17 +1,17 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { it } from "@effect/vitest";
-import { Effect, Fiber, Layer, SubscriptionRef } from "effect";
+import { Effect, FileSystem, Fiber, Layer, SubscriptionRef } from "effect";
 import {
   mkdir,
   mkdtemp,
-  open,
   readFile,
   readdir,
   rm,
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
-import { FileSystemAdapter, TFile, TFolder } from "obsidian";
-import type { App, FileManager, Vault } from "obsidian";
+import { FileSystemAdapter } from "obsidian";
+import type { TFile } from "obsidian";
 import { expect, vi } from "vitest";
 
 import type { Annotation } from "@zotlit/db";
@@ -21,12 +21,16 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
+import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import type { FileManagerSource } from "@/lib/obsidian-file-manager";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import { redPng } from "@/services/excerpt-image/__fixtures__/png";
 import { PNG_FORMAT } from "@/services/excerpt-image/format";
-import { prepareSingleExcerpt } from "@/services/excerpt-image/prepare-single";
+import { ExcerptImages } from "@/services/excerpt-image/layer";
+import { layerExcerptPreparation } from "@/services/excerpt-image/prepare";
 import type {
   ExcerptOutcome,
   ExcerptRequest,
@@ -45,16 +49,8 @@ import {
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
-import type {
-  AnnotationInsertOptions,
-  SingleExcerpt,
-} from "./insert-annotation";
+import type { AnnotationInsertOptions } from "./insert-annotation";
 import { prepareAnnotationInsert } from "./insert-annotation";
-
-vi.mock("node:fs/promises", async (original) => {
-  const fs = await original<typeof import("node:fs/promises")>();
-  return { ...fs, open: vi.fn(fs.open) };
-});
 
 const card: AnnotationRecord = {
   key: "FDRFQ7C2",
@@ -81,6 +77,40 @@ const zoteroPrefAt = (dataDir: string) =>
     baseAttachmentPath: null,
   });
 
+/**
+ * The Node file system, except that the next temporary write, once armed,
+ * waits for the test after it writes its bytes.
+ */
+function pausingFileSystem() {
+  let pause: Effect.Effect<void> | undefined;
+  const layer = Layer.effect(
+    FileSystem.FileSystem,
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      return FileSystem.FileSystem.of({
+        ...fs,
+        open: (path, options) =>
+          Effect.map(fs.open(path, options), (file) => {
+            const paused = pause;
+            if (!paused || !path.endsWith(".tmp")) return file;
+            pause = undefined;
+            return {
+              ...file,
+              writeAll: (bytes: Uint8Array) =>
+                Effect.andThen(file.writeAll(bytes), paused),
+            };
+          }),
+      });
+    }),
+  ).pipe(Layer.provide(NodeFileSystem.layer));
+  return {
+    layer,
+    arm: (paused: Effect.Effect<void>) => {
+      pause = paused;
+    },
+  };
+}
+
 async function openFixture(mode: string) {
   const parent = join(
     await getWorkspaceRoot(import.meta.dirname),
@@ -104,32 +134,23 @@ async function openFixture(mode: string) {
     "attachment.import": mode !== "disabled",
     "attachment.folder-path": "Images",
   };
-  const registered = new Map<string, TFile>();
-  const app = stubService<App>("App", {
-    vault: stubService<Vault>("Vault", {
-      adapter: Object.assign(Object.create(FileSystemAdapter.prototype), {
-        getFullPath: (path: string) => join(root, path),
-        reconcileInternalFile: async (path: string) => {
-          if (
-            await readFile(join(root, path)).then(
-              () => true,
-              () => false,
-            )
-          )
-            registered.set(path, Object.assign(new TFile(), { path }));
-          else registered.delete(path);
-        },
-      }),
-      getAbstractFileByPath: () => null,
-      getFileByPath: (path: string) => registered.get(path) ?? null,
-      createFolder: async (path: string) => {
-        await mkdir(join(root, path), { recursive: true });
-        return Object.assign(new TFolder(), { path });
-      },
-    }),
-    fileManager: stubService<FileManager>("FileManager", {
-      generateMarkdownLink: (file: { path: string }) => `[[${file.path}]]`,
-    }),
+  const vault = new MemoryVault();
+  const adapter = Object.assign(Object.create(FileSystemAdapter.prototype), {
+    getFullPath: (path: string) => join(root, path),
+    reconcileInternalFile: async (path: string) => {
+      if (
+        await readFile(join(root, path)).then(
+          () => true,
+          () => false,
+        )
+      )
+        vault.add(path);
+      else vault.remove(path);
+    },
+  }) as FileSystemAdapter;
+  Object.assign(vault, { adapter });
+  const fileManager = stubService<FileManagerSource>("FileManagerSource", {
+    generateMarkdownLink: (file: TFile) => `[[${file.path}]]`,
   });
   const resolver = {
     resolve: vi.fn(
@@ -157,15 +178,33 @@ async function openFixture(mode: string) {
   const zoteroPref = Effect.runSync(
     SubscriptionRef.make(zoteroPrefAt("/zotero")),
   );
+  const pref = Layer.mock(ZoteroPref, {
+    current: SubscriptionRef.get(zoteroPref),
+    changes: SubscriptionRef.changes(zoteroPref),
+  });
+  const fileSystem = pausingFileSystem();
+  const excerpts = layerExcerptPreparation.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        layerHost({ vault, fileManager }),
+        fileSystem.layer,
+        pref,
+        Layer.succeed(
+          ExcerptImages,
+          stubService<ExcerptImages["Service"]>("ExcerptImages", {
+            resolve: (request) => resolver.resolve(request),
+          }),
+        ),
+      ),
+    ),
+  );
   const layer = Layer.mergeAll(
+    excerpts,
     Layer.mock(ZoteroReads, {
       reads: zoteroReads.reads,
       snapshot: zoteroReads.snapshot,
     }),
-    Layer.mock(ZoteroPref, {
-      current: SubscriptionRef.get(zoteroPref),
-      changes: SubscriptionRef.changes(zoteroPref),
-    }),
+    pref,
     Layer.mock(PluginSettings, { current: Effect.succeed(settings) }),
     Layer.mock(Profile, {
       profileOf: (file) =>
@@ -192,19 +231,15 @@ async function openFixture(mode: string) {
     await writeFile(join(root, "Images"), "occupied");
   return {
     root,
-    app,
+    adapter,
     options,
     resolver,
     render,
     zoteroPref,
+    /** Pause the next temporary write after its bytes, on `paused`. */
+    pauseTemporaryWrite: fileSystem.arm,
     /** The insert under test, over this fixture's services. */
-    insert: (
-      singleExcerpt: SingleExcerpt = (excerpt) =>
-        prepareSingleExcerpt({ ...excerpt, app, resolver }),
-    ) =>
-      prepareAnnotationInsert(singleExcerpt, options).pipe(
-        Effect.provide(layer),
-      ),
+    insert: () => prepareAnnotationInsert(options).pipe(Effect.provide(layer)),
     failProfile: (failure: ProfileOperationError) => {
       profileFailure = failure;
     },
@@ -378,34 +413,13 @@ it.effect.each(["interrupt", "target"])(
       const f = yield* fixture("success");
       const started = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
-      const fs = yield* read(() =>
-        vi.importActual<typeof import("node:fs/promises")>("node:fs/promises"),
+      f.pauseTemporaryWrite(
+        Effect.sync(() => started.resolve()).pipe(
+          Effect.andThen(Effect.promise(() => release.promise)),
+        ),
       );
-      vi.mocked(open).mockImplementationOnce(async (...args) => {
-        const file = await fs.open(...args);
-        const write = file.writeFile.bind(file);
-        vi.spyOn(file, "writeFile").mockImplementationOnce(
-          async (...writeArgs) => {
-            await write(...writeArgs);
-            started.resolve();
-            await release.promise;
-          },
-        );
-        return file;
-      });
-      // An interrupt does not wait for the legacy port: the test waits for it
-      // to clean up its temporary file.
-      let preparation: Promise<unknown> = Promise.resolve();
       const pending = yield* f
-        .insert((excerpt) => {
-          const prepared = prepareSingleExcerpt({
-            ...excerpt,
-            app: f.app,
-            resolver: f.resolver,
-          });
-          preparation = prepared.catch(() => undefined);
-          return prepared;
-        })
+        .insert()
         .pipe(Effect.forkChild({ startImmediately: true }));
       yield* read(() => started.promise).pipe(
         Effect.andThen(
@@ -424,7 +438,6 @@ it.effect.each(["interrupt", "target"])(
         Effect.ensuring(Effect.sync(() => release.resolve())),
       );
       if (mode === "target") expect(yield* Fiber.join(pending)).toBeNull();
-      yield* read(() => preparation);
       expect(yield* read(() => readdir(join(f.root, "Images")))).toEqual([]);
       expect(f.render).not.toHaveBeenCalled();
     }).pipe(Effect.scoped),
@@ -437,9 +450,8 @@ it.effect.each([false, true])(
       const f = yield* fixture("success");
       if (existing) yield* f.insert();
       f.render.mockClear();
-      const reconcile = f.app.vault.adapter as FileSystemAdapter;
-      const register = reconcile.reconcileInternalFile.bind(reconcile);
-      vi.spyOn(reconcile, "reconcileInternalFile").mockImplementationOnce(
+      const register = f.adapter.reconcileInternalFile.bind(f.adapter);
+      vi.spyOn(f.adapter, "reconcileInternalFile").mockImplementationOnce(
         async (path) => {
           await register(path);
           f.invalidate();
@@ -478,21 +490,6 @@ it.effect(
       };
       expect((yield* f.insert())?.text).toBe("2026-09-20T01:02:03Z");
     }).pipe(Effect.scoped),
-);
-
-it.effect("fails with the preparation's rejection, its message kept", () =>
-  Effect.gen(function* () {
-    const f = yield* fixture("success");
-    const failure = yield* Effect.flip(
-      f.insert(() => Promise.reject(new Error("disk full"))),
-    );
-    expect(failure).toMatchObject({
-      _tag: "LegacyPortError",
-      step: "single-excerpt",
-      message: "disk full",
-    });
-    expect(f.render).not.toHaveBeenCalled();
-  }).pipe(Effect.scoped),
 );
 
 it.effect(

@@ -158,7 +158,6 @@ export default defineConfig({
       files: [
         "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
-        "src/services/excerpt-image/prepare.ts",
         "src/services/pandoc/document-presentation.ts",
         "src/services/template/actions.ts",
         "src/views/annot-view/view.tsx",
@@ -358,7 +357,6 @@ export default defineConfig({
         "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
         "src/services/database/reap-temps.ts",
-        "src/services/excerpt-image/prepare.ts",
         "src/services/profile/service.ts",
         "src/views/annot-view/view.tsx",
         "src/views/library/item-actions.ts",
