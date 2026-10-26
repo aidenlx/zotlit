@@ -362,6 +362,53 @@ describe("LiteratureNoteTemplateMigrationService", () => {
       }),
   );
 
+  it.effect(
+    "finishes a conversion that unload reaches during its document write",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* Effect.promise(() =>
+          makeHarness({ pending: true }, context),
+        );
+        const write = harness.create.getMockImplementation()!;
+        const started = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        harness.create.mockImplementationOnce(async (path, source) => {
+          started.resolve();
+          await held.promise;
+          return write(path, source);
+        });
+
+        const converting = harness.service.convert();
+        yield* Effect.promise(() => started.promise);
+        const unloading = harness.service[Symbol.asyncDispose]();
+        held.resolve();
+        yield* Effect.promise(() => unloading);
+        yield* Effect.promise(() =>
+          converting.then(
+            () => undefined,
+            () => undefined,
+          ),
+        );
+
+        // The document stands, the legacy files are gone, and the result is
+        // recorded, so no retry meets a half-done conversion.
+        expect(harness.files.has("templates/zotlit-profile.default.md")).toBe(
+          true,
+        );
+        expect(harness.trashFile).toHaveBeenCalledTimes(3);
+        expect(
+          harness.bridge.runSync(harness.settings.current)[
+            "note.template-conversion-result"
+          ],
+        ).toEqual({
+          document: "templates/zotlit-profile.default.md",
+          trashed: 3,
+          pendingCleanup: [],
+        });
+      }),
+  );
+
   it.effect("records only files actually trashed", () =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();

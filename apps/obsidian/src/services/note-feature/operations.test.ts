@@ -3636,6 +3636,52 @@ describe("updateNote", () => {
     }),
   );
 
+  it.effect(
+    "stamps a moved note when an interrupt reaches its pending move",
+    () =>
+      Effect.gen(function* () {
+        const target = "Rz9Wm4YfH6Kd" as ProfileId;
+        const harness = makeUpdateHarness({
+          content: "My notes",
+          frontmatter: { "zotero-key": "ABCD2345" },
+          settings: {
+            profiles: [
+              {
+                id: target,
+                label: "Papers",
+                bindings: { "note.literature-folder": "Research/Papers" },
+              },
+            ],
+          },
+        });
+        const file = harness.file("Books/My chosen name.md");
+        const started = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        harness.deps.app.fileManager.renameFile = async (_file, path) => {
+          started.resolve();
+          await held.promise;
+          harness.host.vault.renameFile(file.path, path);
+        };
+        const feature = createNoteFeature(harness.deps);
+
+        const switching = yield* feature.service
+          .switchNoteProfile(file, { profile: target, move: true })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.promise(() => started.promise);
+        const interrupting = yield* Fiber.interrupt(switching).pipe(
+          Effect.forkChild({ startImmediately: true }),
+        );
+        held.resolve();
+        yield* Fiber.join(interrupting);
+
+        // The note is moved, so it carries the target Profile's stamp too.
+        expect(file.path).toBe("Research/Papers/My chosen name.md");
+        expect(harness.frontmatter()).toMatchObject({
+          [FIELD_LITERATURE_NOTE_PROFILE]: `Papers (${target})`,
+        });
+      }),
+  );
+
   it.effect("offers no move when the target path equals the current path", () =>
     Effect.gen(function* () {
       const target = "Rz9Wm4YfH6Kd" as ProfileId;
