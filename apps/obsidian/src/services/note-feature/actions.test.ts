@@ -1,44 +1,11 @@
-// @vitest-environment happy-dom
 import { TFile } from "obsidian";
 import type { App, Command, MetadataCache, Vault, Workspace } from "obsidian";
 import { expect, it, vi } from "vitest";
 
-import { MissingTemplateError } from "@zotlit/templates/facade";
-
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 
-import {
-  addNoteFeatureActions,
-  overwriteNoteToast,
-  reimportNoteToast,
-} from "./actions";
-import { switchNoteProfileInteractively } from "./switch-view";
-
-vi.mock("./switch-view", () => ({ switchNoteProfileInteractively: vi.fn() }));
-
-// Every Literature Note write that hits a missing partial names it and offers
-// the route back to the Workbench; create and single update already did.
-it.each([
-  ["overwrite", () => overwriteNoteToast({ app: appStub() }).error],
-  [
-    "reimport",
-    () => reimportNoteToast({ app: appStub(), path: "Books/Reading.md" }).error,
-  ],
-] as const)("names the missing partial when %s fails on one", (_name, make) => {
-  const notice = make()("msg", new MissingTemplateError("venue-line"));
-
-  expect(notice).toBeInstanceOf(DocumentFragment);
-  expect((notice as DocumentFragment).textContent).toContain(
-    m.notice_note_missing_partial({ name: "venue-line" }),
-  );
-});
-
-function appStub(): App {
-  return stubService<App>("App", {
-    workspace: stubService<Workspace>("Workspace", { trigger: vi.fn() }),
-  });
-}
+import { addNoteFeatureActions } from "./actions";
 
 it("offers Profile switching only for the active Literature Note and opens its consent flow", () => {
   const file = new TFile();
@@ -47,6 +14,7 @@ it("offers Profile switching only for the active Literature Note and opens its c
   let frontmatter: Record<string, string> = { "zotero-key": "ABCD2345" };
   const commands: Command[] = [];
   const on = vi.fn();
+  const switchProfile = vi.fn(async () => {});
   type NoteDeps = Parameters<typeof addNoteFeatureActions>[1];
   const deps: NoteDeps = {
     app: stubService<App>("App", {
@@ -59,14 +27,10 @@ it("offers Profile switching only for the active Literature Note and opens its c
         getFileCache: () => ({ frontmatter }),
       }),
     }),
-    noteFeature: stubService<NoteDeps["noteFeature"]>("NoteFeatureHandle", {
-      on: () => () => {},
+    noteActions: stubService<NoteDeps["noteActions"]>("NoteActions", {
+      switchProfile,
     }),
     batchImport: stubService<NoteDeps["batchImport"]>("BatchImport", {}),
-    updateAll: vi.fn(),
-    createProfile: vi.fn(),
-    importProfile: vi.fn(),
-    zoteroPref: { dataDir: "" },
   };
   addNoteFeatureActions(
     {
@@ -76,7 +40,6 @@ it("offers Profile switching only for the active Literature Note and opens its c
         return command;
       },
       registerEvent: () => {},
-      register: () => {},
     },
     deps,
   );
@@ -85,9 +48,9 @@ it("offers Profile switching only for the active Literature Note and opens its c
   )!;
   expect(command.name).toBe(m.command_switch_literature_note_profile_name());
   expect(command.checkCallback?.(true)).toBe(true);
-  expect(switchNoteProfileInteractively).not.toHaveBeenCalled();
+  expect(switchProfile).not.toHaveBeenCalled();
   command.checkCallback?.(false);
-  expect(switchNoteProfileInteractively).toHaveBeenCalledWith(deps, file);
+  expect(switchProfile).toHaveBeenCalledWith(file);
   frontmatter = { "zotero-note-key": "NOTE0001" };
   expect(command.checkCallback?.(true)).toBe(false);
   frontmatter = { "zotero-note-key": "NTE23456" };
@@ -95,7 +58,7 @@ it("offers Profile switching only for the active Literature Note and opens its c
     ([event]) => event === "zotlit:switch-profile",
   )![1] as (payload: { path: string }) => void;
   recover({ path: file.path });
-  expect(switchNoteProfileInteractively).toHaveBeenNthCalledWith(2, deps, file);
+  expect(switchProfile).toHaveBeenNthCalledWith(2, file);
   active = null;
   expect(command.checkCallback?.(true)).toBe(false);
 });

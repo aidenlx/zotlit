@@ -1,5 +1,4 @@
-import { Cause, Effect, Fiber, FiberSet, Schema, Scope } from "effect";
-import type { ManagedRuntime } from "effect";
+import { Cause, Effect, Fiber, FiberSet, Layer, Schema } from "effect";
 import type { ObsidianProtocolData, PaneType, Plugin } from "obsidian";
 
 import type { ItemRef } from "@zotlit/db";
@@ -29,9 +28,9 @@ import type { ProtocolAction } from "@zotlit/protocol";
 
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import type { AttachmentReader } from "@/lib/attachment-open";
+import { scopedBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { logAndContinue, withLogCategory } from "@/lib/effect-log";
-import { openScope } from "@/lib/effect-scope";
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { portCall } from "@/lib/legacy-port";
@@ -40,6 +39,7 @@ import type { NoticeMessage, OutcomeCopy } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
+import { PluginHost } from "@/lib/plugin-host";
 import {
   parseProfileSelector,
   unknownProfileDiagnostic,
@@ -56,7 +56,7 @@ import type {
   UpdateManyRequest,
 } from "@/services/local-server/service";
 import { openCompanionNote } from "@/services/note-feature";
-import type { CompanionNoteDeps } from "@/services/note-feature";
+import type { InteractiveCreationPorts } from "@/services/note-feature";
 import {
   runBatchUpdate,
   runBatchUpdateAll,
@@ -107,7 +107,7 @@ export type ProtocolServices =
  * The legacy values the handlers still hold. The interactive creation, the
  * Profile factories and the Attachment opener convert in later slices.
  */
-export interface ProtocolDeps extends CompanionNoteDeps {
+export interface ProtocolDeps extends InteractiveCreationPorts {
   webWorkbenchEnabled: boolean;
   /** The note import's classify, confirm and Profile modals. */
   noteImportView: NoteImportView;
@@ -131,7 +131,7 @@ export interface ProtocolDeps extends CompanionNoteDeps {
  * fails is logged. Every handler run and every run of a request the Local
  * Server pushes is a fiber of the current Scope: closing it stops the pushed
  * requests and interrupts the runs still going. A legacy Promise a run waits
- * on (Note Feature, a view opener) still runs to its end.
+ * on (a view opener) still runs to its end.
  */
 export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
   function* (
@@ -210,29 +210,21 @@ export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
 );
 
 /**
- * The edge `zt-main.ts` calls: {@link registerProtocolHandlers} on a Scope of
- * its own, which the returned disposal closes at unload.
- *
- * It calls `runtime.runSync` once, at load, in place of the container's
- * bridge: a departure from policies/services.md → Bridge, which leaves that
- * call to `build.ts`. The registration reads tags, and the bridge runs only
- * Effects that need none. The registration becomes a layer in the plugin
- * graph, and this edge goes away, once ticket 13 converts Note Feature.
+ * {@link registerProtocolHandlers} as a registration of the plugin graph: the
+ * handlers register on the {@link PluginHost} and run on the layer's Scope,
+ * which unload closes. The note import modal's callbacks run through the
+ * bridge over that Scope. `ports` hold the legacy values the handlers call.
  */
-export function startProtocolHandlers(
-  runtime: Pick<
-    ManagedRuntime.ManagedRuntime<ProtocolServices, never>,
-    "runSync"
-  >,
-  plugin: Pick<Plugin, "registerObsidianProtocolHandler">,
-  deps: ProtocolDeps,
-): AsyncDisposable {
-  const { scope, close } = openScope();
-  runtime.runSync(
-    registerProtocolHandlers(plugin, deps).pipe(Scope.provide(scope)),
+export const layerProtocolHandlers = (
+  ports: Omit<ProtocolDeps, "bridge">,
+): Layer.Layer<never, never, PluginHost | ProtocolServices> =>
+  Layer.effectDiscard(
+    Effect.gen(function* () {
+      const host = yield* PluginHost;
+      const bridge = yield* scopedBridge;
+      yield* registerProtocolHandlers(host, { ...ports, bridge });
+    }),
   );
-  return { [Symbol.asyncDispose]: close };
-}
 
 /** The ports a batch import takes, from the handlers' legacy values. */
 function importPorts(deps: ProtocolDeps): BatchImportPorts {

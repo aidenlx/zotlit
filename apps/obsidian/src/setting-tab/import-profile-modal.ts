@@ -9,6 +9,7 @@ import {
 } from "obsidian";
 import type { App, ButtonComponent } from "obsidian";
 
+import { AbortError } from "@/lib/abort-error";
 import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -95,9 +96,10 @@ export function createProfileImporter(
           ? ([null, []] as const)
           : await Promise.all([
               loadProfilePreviewData(deps, options).catch((error) => {
-                logger.warn("Profile import preview data unavailable", {
-                  error,
-                });
+                if (!AbortError.test(error))
+                  logger.warn("Profile import preview data unavailable", {
+                    error,
+                  });
                 return null;
               }),
               deps.zoteroPref.dataDir

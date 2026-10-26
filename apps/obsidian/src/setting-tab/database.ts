@@ -6,6 +6,7 @@ import type {
   SettingGroupItem,
 } from "obsidian";
 
+import { passAborted } from "@/lib/abort-error";
 import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
@@ -399,11 +400,14 @@ function renderProfileDirRow(
   };
 
   applyStatus();
-  void pref.listProfiles().then((list) => {
-    if (!dropdown?.selectEl.isConnected) return;
-    profiles = list;
-    repopulate();
-  });
+  void pref
+    .listProfiles()
+    .then((list) => {
+      if (!dropdown?.selectEl.isConnected) return;
+      profiles = list;
+      repopulate();
+    })
+    .catch(passAborted);
 
   stack.defer(
     subscribe(ctx.runtime, pref["changed"], () => {

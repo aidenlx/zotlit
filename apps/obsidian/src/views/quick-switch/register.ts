@@ -8,23 +8,18 @@ import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { NoteFeatureHandle } from "@/services/note-feature";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { PluginSettings } from "@/services/settings/service";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
 
 import { QuickSwitchModal } from "./modal";
 
 export interface QuickSwitchDeps {
-  createProfile: CreateProfile;
-  importProfile: ImportProfile;
   app: App;
   /** Resolves the Attachments of the PDF a result asks for. */
   attachments: LiteratureNoteAttachmentsHandle;
   lookup: ItemLookupHandle;
   noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByItemKey">;
-  noteFeature: Pick<NoteFeatureHandle, "createNote" | "planCreations">;
+  noteFeature: Pick<NoteFeatureHandle, "createNoteInteractively">;
   settings: Pick<PluginSettings["Service"], "current">;
   bridge: Pick<EffectBridge, "runSync">;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   /** Opens the PDF a result asks for. */
   opener: Pick<TargetOpener, "open">;
   /** Open the Library View with the Item selected. */

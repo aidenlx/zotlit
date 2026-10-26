@@ -59,6 +59,13 @@ export interface FileManagerShape {
 }
 
 /** The vault's file manager. */
+/** A synchronous {@link FileManagerShape.generateMarkdownLink}. */
+export type MarkdownLinker = (
+  file: TFile,
+  sourcePath: string,
+  options?: { readonly subpath?: string; readonly alias?: string },
+) => string;
+
 export class FileManager extends Context.Service<
   FileManager,
   FileManagerShape
@@ -134,3 +141,18 @@ export const layerFileManager: Layer.Layer<
     return yield* makeFileManager(app.fileManager);
   }),
 );
+
+/**
+ * The link call over the current FileManager, run synchronously: for a
+ * template render, which links inline. The template-render edge.
+ */
+export const markdownLinker: Effect.Effect<MarkdownLinker, never, FileManager> =
+  Effect.gen(function* () {
+    const run = Effect.runSyncWith(yield* Effect.context<FileManager>());
+    return (file, sourcePath, options) =>
+      run(
+        Effect.flatMap(FileManager, (fileManager) =>
+          fileManager.generateMarkdownLink(file, sourcePath, options),
+        ),
+      );
+  });

@@ -8,6 +8,7 @@ import type { App, FileSystemAdapter, Plugin, TFile } from "obsidian";
 import { parseIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
 import type { Library } from "@zotlit/db";
 
+import { AbortError } from "@/lib/abort-error";
 import { citationStyleLabel } from "@/lib/citation-style";
 import { valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
@@ -195,6 +196,7 @@ export async function runPandocExport(
     }
     output = result.output;
   } catch (error) {
+    if (AbortError.test(error)) return;
     logger.error("The Pandoc export failed", { error });
     showExportFailure({ kind: "engine", detail: describeError(error) });
     return;

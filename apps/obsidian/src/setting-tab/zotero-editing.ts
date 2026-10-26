@@ -2,6 +2,7 @@
 // to Zotero's annotations, and the two actions that change it.
 import type { ButtonComponent, Setting, SettingGroupItem } from "obsidian";
 
+import { AbortError, passAborted } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -163,6 +164,7 @@ function renderEditingRow(
         apply();
       })
       .catch((error: unknown) => {
+        if (AbortError.test(error)) return;
         logger.warn("Cannot read the Remembered Write Authorization", {
           error,
         });
@@ -176,7 +178,7 @@ function renderEditingRow(
         .setButtonText(m.settings_zotero_editing_enable())
         .setCta()
         .onClick(() => {
-          void ctx.writeAuthorization.allowEditing();
+          void ctx.writeAuthorization.allowEditing().catch(passAborted);
         });
     })
     .addButton((button) => {
@@ -199,6 +201,8 @@ function renderEditingRow(
                 if (result.detail) notice.addText(result.detail);
               }),
             );
+          } catch (error) {
+            passAborted(error);
           } finally {
             checking = false;
             apply();
@@ -213,6 +217,7 @@ function renderEditingRow(
           .runPromise(ctx.writeAuthorization.forgetAuthorization)
           .then(refreshRemembered)
           .catch((error: unknown) => {
+            if (AbortError.test(error)) return;
             logger.warn("Cannot forget the Remembered Write Authorization", {
               error,
             });
@@ -222,7 +227,7 @@ function renderEditingRow(
 
   apply();
   refreshRemembered();
-  void ctx.bridge.runPromise(ctx.annotations.probe);
+  ctx.bridge.runAndForget(ctx.annotations.probe);
   // An Allow editing from outside this row, such as a notice's button, can
   // save or drop a key, and the capability moves with it. The status redraws
   // at once; the key's line follows when the keystore answers.

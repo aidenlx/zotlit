@@ -3,8 +3,6 @@
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import { runUpdateAllWithNotice } from "@/services/note-feature/actions";
-import type { BatchUpdateResult } from "@/services/note-feature/update-batch";
 
 import type { LocalBridgeHandle } from "./handle";
 
@@ -12,8 +10,8 @@ const SAVED_NOTICE_DURATION_MS = 15_000;
 
 export interface WorkbenchSavedNoticeDeps {
   localBridge: Pick<LocalBridgeHandle, "on">;
-  /** The existing Update all notes flow, batch confirm modal included. */
-  updateAll: () => Promise<BatchUpdateResult>;
+  /** The existing Update all notes flow, batch confirm modal and outcome notice included. */
+  updateAll: () => Promise<void>;
 }
 
 interface WorkbenchSavedNoticeCopy {
@@ -34,7 +32,7 @@ export function registerWorkbenchSavedNotice(
   deps: WorkbenchSavedNoticeDeps,
 ): () => void {
   const copy = workbenchSavedNotice(() => {
-    void runUpdateAllWithNotice(deps.updateAll);
+    void deps.updateAll();
   });
   return subscribeWorkbenchSaved(deps.localBridge, () =>
     showWorkbenchSaved(copy),

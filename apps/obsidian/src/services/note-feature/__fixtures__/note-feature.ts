@@ -20,7 +20,6 @@ import { layerVaultFrom, Vault } from "@/lib/obsidian-vault";
 import type { VaultSource } from "@/lib/obsidian-vault";
 import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import type { Workspace, WorkspaceSource } from "@/lib/obsidian-workspace";
-import type { AttachmentImportHandle } from "@/services/attachment-import/handle";
 import { AttachmentImport } from "@/services/attachment-import/service";
 import { ExcerptImages } from "@/services/excerpt-image/layer";
 import {
@@ -40,6 +39,7 @@ import { ZoteroPref } from "@/services/zotero-pref/service";
 
 import type { NoteCitations } from "@/services/note-feature/citations-handle";
 import { bindNoteFeature } from "@/services/note-feature/handle";
+import type { NoteCreation } from "@/services/note-feature/creation-handle";
 import type { NoteFeatureHandle } from "@/services/note-feature/operations";
 import { layerNoteFeature, NoteFeature } from "@/services/note-feature/service";
 import type { NoteFeatureServices } from "@/services/note-feature/service";
@@ -65,7 +65,7 @@ export interface NoteFeatureSources extends Omit<
   app: NoteFeatureApp;
   settings: Pick<PluginSettings["Service"], "current" | "update">;
   zoteroPref: { dataDir: string; baseAttachmentPath: string | null };
-  attachmentImport: Pick<AttachmentImportHandle, "prepare">;
+  attachmentImport: Pick<AttachmentImport["Service"], "prepare">;
   /** A fake excerpt preparation for each note write. */
   excerptImages?: (options: NoteExcerptOptions) => PreparedExcerpts;
   /**
@@ -185,25 +185,15 @@ export function noteFeatureServices(
         current: Effect.sync(() => snapshotAt(sources.zoteroPref)),
       }),
     ),
-    Context.add(
-      AttachmentImport,
-      stubService<AttachmentImport["Service"]>("AttachmentImport", {
-        prepare: (notePath, options) =>
-          Effect.promise(() =>
-            sources.attachmentImport.prepare(notePath, options),
-          ).pipe(
-            Effect.map((batch) => ({
-              decide: batch.decide,
-              resolveLink: batch.resolveLink,
-              flush: Effect.promise(() => batch.flush()),
-              discard: Effect.sync(() => batch.discard()),
-            })),
-          ),
-      }),
-    ),
   );
   return Layer.mergeAll(
     host,
+    Layer.mock(AttachmentImport, {
+      prepare: (notePath, options) =>
+        Effect.suspend(() =>
+          sources.attachmentImport.prepare(notePath, options),
+        ),
+    }),
     Layer.succeedContext(Context.merge(planning, plain)),
     layerExcerptPreparationOver(sources, host, plain.pipe(Context.pick(ZoteroPref))),
   );
@@ -211,7 +201,8 @@ export function noteFeatureServices(
 
 /**
  * The Note Feature's edge handle over its layer, built on `sources` and held
- * by `stack`, and the runtime the layer runs on. Its note writes read
+ * by `stack`, the runtime the layer runs on, and the service itself for the
+ * operations no edge handle serves. Its note writes read
  * `sources.excerptImages` as it is when they run. The citation members fail
  * the test unless `citations` gives them.
  */
@@ -222,9 +213,10 @@ export function noteFeatureHandle(
     citations?: NoteCitations;
     query?: QueryService["Service"];
   } = {},
-): {
+ ): {
   handle: NoteFeatureHandle;
   runtime: ManagedRuntime.ManagedRuntime<NoteFeature, never>;
+  service: NoteFeature["Service"];
 } {
   const runtime = buildRuntime(
     layerNoteFeature.pipe(
@@ -232,10 +224,13 @@ export function noteFeatureHandle(
     ),
     stack,
   );
+  const service = runtime.runSync(NoteFeature);
   const handle = bindNoteFeature(
     effectBridge(runtime),
-    runtime.runSync(NoteFeature),
-    options.citations ?? stubService<NoteCitations>("NoteCitations", {}),
+    service,
+    stubService<NoteCitations & NoteCreation>("NoteFeatureEdges", {
+      ...options.citations,
+    }),
   );
-  return { handle, runtime };
+  return { handle, runtime, service };
 }

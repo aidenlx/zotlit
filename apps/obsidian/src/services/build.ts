@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import type { FileSystemAdapter } from "obsidian";
 
+import { passAborted } from "@/lib/abort-error";
 import { cliRunner } from "@/lib/cli-command";
 import { DisposableAbortController } from "@/lib/disposables";
 import { effectBridge } from "@/lib/effect-bridge";
@@ -44,13 +45,10 @@ import { plainCitationParse } from "./citation-parse/plain";
 import { CitationParse } from "./citation-parse/service";
 import { CitationPopover } from "./citation-popover/service";
 import { plainCitationText } from "./citation-text/plain";
-import { citekeyNoteCreation } from "./citekey-editor/note-creation";
 import { CitekeyEditor } from "./citekey-editor/service";
-import type { CitekeyNoteCreation } from "./citekey-editor/service";
 import { ExcerptDisplays } from "./excerpt-image/display";
 import { ExcerptImages } from "./excerpt-image/layer";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
-import { savedExcerptRequestOver } from "./excerpt-image/request";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
 import { bindItemLookup } from "./item-lookup/handle";
@@ -71,10 +69,13 @@ import { LocalServer } from "./local-server/service";
 import { bindManagedBinary } from "./managed-binary/handle";
 import { bindNoteFeature, NoteFeature } from "./note-feature";
 import type { NoteFeatureHandle } from "./note-feature";
-import { bindBatchUpdate } from "./note-feature/batch-update-handle";
+import { bindNoteActions } from "./note-feature/actions-handle";
+import type { NoteActionServices } from "./note-feature/actions-view";
 import { bindNoteCitations } from "./note-feature/citations-handle";
 import type { NoteCitationServices } from "./note-feature/citations-handle";
-import type { BatchUpdateServices } from "./note-feature/update-batch";
+import { bindNoteCreation } from "./note-feature/creation-handle";
+import type { NoteCreationServices } from "./note-feature/creation-handle";
+import type { InteractiveCreationPorts } from "./note-feature/creation-view";
 import { batchUpdateNotices } from "./note-feature/update-single";
 import type { BatchImportServices } from "./note-import/batch-import";
 import { bindBatchImport } from "./note-import/batch-import-handle";
@@ -86,6 +87,7 @@ import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
 import { pluginLayer } from "./plugin-layer";
 import { plainProfile } from "./profile/plain";
 import { Profile } from "./profile/service";
+import type { ProtocolDeps } from "./protocol/register";
 import { plainQueryClients } from "./query-client/plain";
 import { Release } from "./release/service";
 import { ServiceContainer } from "./service-base";
@@ -98,9 +100,11 @@ import { plainUseLedger } from "./use-ledger/plain";
 import { writeReadUse } from "./zotero-local-api/last-read";
 import { ZoteroLocalApi } from "./zotero-local-api/service";
 import { plainZoteroPref } from "./zotero-pref/plain";
-import { ZoteroPref } from "./zotero-pref/service";
 import { plainZoteroReads } from "./zotero-reads/plain";
 import { ZoteroReads } from "./zotero-reads/service";
+
+/** What the protocol handlers open: the note import's modals and the Attachment opener. */
+type ProtocolViews = Pick<ProtocolDeps, "noteImportView" | "opener">;
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -133,12 +137,50 @@ export async function buildServices(
   >((resolve) => {
     bindMigration = resolve;
   });
-  // The citekey editor opens a note it has to create through the legacy
-  // creation flow, which the container builds after the graph.
-  let bindNoteCreation!: (creation: CitekeyNoteCreation) => void;
-  const noteCreation = new Promise<CitekeyNoteCreation>((resolve) => {
-    bindNoteCreation = resolve;
+  // The note creation opens the setting tab's Profile dialogs, which the
+  // container builds after the graph (ticket 16 converts them).
+  let bindProfileDialogs!: (
+    dialogs: Pick<InteractiveCreationPorts, "createProfile" | "importProfile">,
+  ) => void;
+  const profileDialogs = new Promise<
+    Pick<InteractiveCreationPorts, "createProfile" | "importProfile">
+  >((resolve) => {
+    bindProfileDialogs = resolve;
   });
+  const creation: InteractiveCreationPorts = {
+    app: plugin.app,
+    createProfile: async (options) =>
+      (await profileDialogs).createProfile(options),
+    importProfile: async (options) =>
+      (await profileDialogs).importProfile(options),
+  };
+  // The protocol handlers open the note import's modals and the Attachment
+  // opener, which the container builds after the graph.
+  let bindProtocolViews!: (views: ProtocolViews) => void;
+  const protocolViews = new Promise<ProtocolViews>((resolve) => {
+    bindProtocolViews = resolve;
+  });
+  const importView = Effect.promise(async () => {
+    const { noteImportView } = await protocolViews;
+    return noteImportView;
+  });
+  const protocol: ProtocolViews = {
+    noteImportView: {
+      openBatchModal: (options) => {
+        void protocolViews.then(({ noteImportView }) =>
+          noteImportView.openBatchModal(options),
+        );
+      },
+      confirm: (options) =>
+        Effect.flatMap(importView, (view) => view.confirm(options)),
+      chooseProfile: (options) =>
+        Effect.flatMap(importView, (view) => view.chooseProfile(options)),
+    },
+    opener: {
+      open: async (target, pane) =>
+        (await protocolViews).opener.open(target, pane),
+    },
+  };
   // The excerpt service is registered before the PDF reader, so the reader
   // hands its documents over through this one holder. A crop asks for a reader
   // document per resolution, and answers detached while the holder is empty.
@@ -165,14 +207,13 @@ export async function buildServices(
           revealAnnotation: (annotationKey) =>
             void revealAnnotationInView(plugin, annotationKey),
         },
+        creation,
+        protocol,
         excerpt: {
           openStore: () => openExcerptStore(plugin.app.appId),
           readers,
         },
         languagePack,
-        noteCreation: {
-          createNote: async (item) => (await noteCreation).createNote(item),
-        },
       },
     ),
     stack,
@@ -237,14 +278,6 @@ export async function buildServices(
     })
     .useValue({ excerptImage: () => runtime.runSync(ExcerptImages) })
     .useValue({ excerptDisplay: () => runtime.runSync(ExcerptDisplays) })
-    .useValue({
-      excerptRequest: () =>
-        savedExcerptRequestOver({
-          reads: zoteroReadsService,
-          pref: runtime.runSync(ZoteroPref),
-          bridge,
-        }),
-    })
     .useValue({
       attachmentResolver: () => runtime.runSync(AttachmentResolver),
     })
@@ -314,7 +347,8 @@ export async function buildServices(
           capabilityGestures: {
             reportBlockedGesture: (attachmentKey) =>
               capabilityNotices.reportBlockedGesture(attachmentKey),
-            allowEditing: () => void capabilityNotices.showEditingCapability(),
+            allowEditing: () =>
+              void capabilityNotices.showEditingCapability().catch(passAborted),
           },
           markGestures: {
             revealAnnotation: (annotationKey) =>
@@ -324,7 +358,10 @@ export async function buildServices(
             blockedPress: (block) =>
               blockedNotice(
                 block,
-                () => void capabilityNotices.showEditingCapability(),
+                () =>
+                  void capabilityNotices
+                    .showEditingCapability()
+                    .catch(passAborted),
               ),
           },
         });
@@ -371,14 +408,17 @@ export async function buildServices(
     })
     .useValue({
       noteFeature: (): NoteFeatureHandle =>
-        bindNoteFeature(
-          bridge,
-          runtime.runSync(NoteFeature),
-          bindNoteCitations(
+        bindNoteFeature(bridge, runtime.runSync(NoteFeature), {
+          ...bindNoteCitations(
             bridge,
             runtime.runSync(Effect.context<NoteCitationServices>()),
           ),
-        ),
+          ...bindNoteCreation(
+            bridge,
+            runtime.runSync(Effect.context<NoteCreationServices>()),
+            creation,
+          ),
+        }),
     })
     .useValue({
       createProfile: ({
@@ -404,19 +444,29 @@ export async function buildServices(
         templateData,
         zoteroPref,
         noteFeature,
-      }) =>
-        createProfileImporter({
+        createProfile,
+      }) => {
+        const importProfile = createProfileImporter({
           app: plugin.app,
           profile,
           template,
           templateData,
           zoteroPref,
           noteFeature,
-        }),
+        });
+        bindProfileDialogs({ createProfile, importProfile });
+        return importProfile;
+      },
     })
     .useValue({
-      noteImportView: ({ createProfile, importProfile }) =>
-        createNoteImportView(plugin.app, { createProfile, importProfile }),
+      noteImportView: ({ createProfile, importProfile, targetOpener }) => {
+        const noteImportView = createNoteImportView(plugin.app, {
+          createProfile,
+          importProfile,
+        });
+        bindProtocolViews({ noteImportView, opener: targetOpener });
+        return noteImportView;
+      },
     })
     .useValue({
       batchImport: ({ noteImportView }) =>
@@ -427,13 +477,14 @@ export async function buildServices(
         ),
     })
     .useValue({
-      batchUpdate: ({ noteImportView }) =>
-        bindBatchUpdate(
+      noteActions: ({ noteImportView }) =>
+        bindNoteActions(
           bridge,
-          runtime.runSync(Effect.context<BatchUpdateServices>()),
+          runtime.runSync(Effect.context<NoteActionServices>()),
           {
-            notices: batchUpdateNotices(plugin.app),
+            creation,
             view: noteImportView,
+            notices: batchUpdateNotices(plugin.app),
           },
         ),
     })
@@ -455,24 +506,6 @@ export async function buildServices(
     .useValue({ citationText: () => plainCitationText(runtime) })
     .useValue({ citationPopover: () => runtime.runSync(CitationPopover) })
     .useValue({ annotationPopover: () => runtime.runSync(AnnotationPopover) })
-    .useValue({
-      citekeyEditor: ({
-        noteFeature,
-        createProfile,
-        importProfile,
-        zoteroPref,
-      }) => {
-        bindNoteCreation(
-          citekeyNoteCreation({
-            app: plugin.app,
-            noteFeature,
-            createProfile,
-            importProfile,
-            zoteroPref,
-          }),
-        );
-        return runtime.runSync(CitekeyEditor);
-      },
-    })
+    .useValue({ citekeyEditor: () => runtime.runSync(CitekeyEditor) })
     .useValue({ graphCitations: () => runtime.runSync(GraphCitations) });
 }

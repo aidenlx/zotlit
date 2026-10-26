@@ -2,12 +2,9 @@
 // treatment on and owns the click that opens a citekey's note. Its CodeMirror
 // extension registers in ./register.
 import { Cause, Context, Effect, Layer, PubSub, Stream } from "effect";
-import type { TFile } from "obsidian";
-
-import type { Item } from "@zotlit/db";
 
 import { logAndContinue, withLogCategory } from "@/lib/effect-log";
-import { portCall } from "@/lib/legacy-port";
+import type { Notifier } from "@/lib/notifier";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { describeCandidatesEffect } from "@/services/citation-index/ambiguity";
 import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
@@ -23,10 +20,14 @@ import type {
   NavigationPane,
 } from "@/services/citekey-navigation";
 import { LibraryScope } from "@/services/library-scope/service";
+import { createNoteInteractively } from "@/services/note-feature/creation-view";
+import type { InteractiveCreationPorts } from "@/services/note-feature/creation-view";
+import type { NoteFeature } from "@/services/note-feature/service";
 import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
 import { NoteIndex } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
+import type { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 export type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
@@ -79,18 +80,6 @@ export function citekeyTreatment(
     active: navigationEnabled || showFormatted,
     hover: hoverPreferences(settings),
   };
-}
-
-/**
- * The legacy note creation flow, which the container builds after the graph
- * (`build.ts`). Ticket 13 converts it.
- */
-export interface CitekeyNoteCreation {
-  /**
-   * Create the Literature Note of `item` at once, asking for a Profile where
-   * the flow asks. `null` when the user cancels.
-   */
-  createNote(item: Item): Promise<TFile | null>;
 }
 
 /**
@@ -176,10 +165,13 @@ const log = withLogCategory("citekey-editor");
 const contained = logAndContinue("Cannot open the note", "citekey-editor");
 
 export const layerCitekeyEditor = (
-  creation: CitekeyNoteCreation,
+  creation: InteractiveCreationPorts,
 ): Layer.Layer<
   CitekeyEditor,
   never,
+  | NoteFeature
+  | Notifier
+  | ZoteroPref
   | NoteIndex
   | ZoteroReads
   | CitationLookup
@@ -196,6 +188,9 @@ export const layerCitekeyEditor = (
       const libraryScope = yield* LibraryScope;
       const settings = yield* PluginSettings;
       const workspace = yield* Workspace;
+      const creationContext = yield* Effect.context<
+        NoteFeature | Notifier | ZoteroPref
+      >();
       const events = yield* Effect.acquireRelease(
         PubSub.unbounded<CitekeyEditorEvent>(),
         (pubsub) => PubSub.shutdown(pubsub),
@@ -255,15 +250,15 @@ export const layerCitekeyEditor = (
           return;
         }
 
-        const file = yield* portCall("create-note", () =>
-          creation.createNote(zoteroItem),
-        ).pipe(
-          Effect.catchTag("LegacyPortError", ({ cause }) =>
+        // A citation names one Item, so its note is created at once: the
+        // flow asks for a Profile only where no Profile resolves.
+        const file = yield* createNoteInteractively(creation, zoteroItem, {
+          direct: true,
+        }).pipe(
+          Effect.provideContext(creationContext),
+          Effect.catch((error) =>
             Effect.logError("Cannot create the citekey note").pipe(
-              Effect.annotateLogs({
-                indexedKey: item.indexedKey,
-                error: cause,
-              }),
+              Effect.annotateLogs({ indexedKey: item.indexedKey, error }),
               Effect.as(null),
             ),
           ),

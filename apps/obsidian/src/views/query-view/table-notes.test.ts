@@ -6,7 +6,6 @@ import { Effect } from "effect";
 import type { App, EventRef, TFile } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Item } from "@zotlit/db";
 import { makeItem } from "@zotlit/db/test-utils";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
@@ -14,10 +13,6 @@ import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
-import type {
-  CreationPlan,
-  CreationProfileSelection,
-} from "@/services/note-feature/operations";
 import {
   buildNoteIndex,
   cache,
@@ -25,7 +20,6 @@ import {
   startup,
 } from "@/services/note-index/__fixtures__";
 import { stubbedReads } from "@/services/zotero-reads/test-utils";
-import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
 import { openTextFileView } from "./__fixtures__/open-text-view";
 import { literatureNotes } from "./table-notes";
@@ -34,41 +28,6 @@ import type { LiteratureNotesDeps } from "./table-notes";
 vi.mock("@/views/annot-view/register", () => ({
   activateAnnotView: vi.fn(),
 }));
-vi.mock("@/views/quick-switch/profile-picker", () => ({
-  chooseLiteratureNoteProfile: vi.fn(),
-}));
-
-function creationPlans(
-  indexedKeys: readonly string[],
-  selection: CreationProfileSelection,
-  create: (item: {
-    indexedKey: string;
-  }) => Promise<{ outcome: "created"; file: TFile }>,
-): ReadonlyMap<string, CreationPlan> {
-  return new Map(
-    indexedKeys.map((indexedKey) => {
-      const item = { indexedKey, key: indexedKey } as Item;
-      return [
-        indexedKey,
-        {
-          item,
-          selection,
-          previews: [
-            {
-              selector: "default",
-              label: undefined,
-              folder: "",
-              citationStyle: null,
-              document: undefined,
-              path: `${indexedKey}.md`,
-              create: () => create(item),
-            },
-          ],
-        },
-      ];
-    }),
-  );
-}
 
 /** What each test's Note Index holds, released after the test. */
 let owned = new AsyncDisposableStack();
@@ -381,20 +340,17 @@ describe("literatureNotes vault properties", () => {
 });
 
 describe("literatureNotes vault property writes", () => {
-  afterEach(() => {
-    vi.mocked(chooseLiteratureNoteProfile).mockReset();
-  });
   /** A vault of notes on disk, the Note Index over them, and the keys each note's Profile replaces. */
   async function vault(
     files: Record<string, string>,
     {
       replaced = {},
-      selection = { selector: "default", source: "bound", shouldAsk: false },
+      cancelled = false,
     }: {
       /** The keys each note's Profile replaces on each update, by path. */
       replaced?: Record<string, string[]>;
-      /** The Profile the usual creation resolves for an Item. */
-      selection?: CreationProfileSelection;
+      /** The user cancels the usual creation's Profile choice. */
+      cancelled?: boolean;
     } = {},
   ) {
     const host = createObsidianHost(files);
@@ -405,13 +361,16 @@ describe("literatureNotes vault property writes", () => {
     );
     const sources = { profile: testEvent<void>(), template: testEvent<void>() };
     /** The usual creation: a note at `<key>.md`, as the Profile's template writes it. */
-    const createNote = vi.fn(async (item: { indexedKey: string }) => ({
-      outcome: "created" as const,
-      file: host.vault.createFile(
-        `${item.indexedKey}.md`,
-        `---\nzotero-key: ${item.indexedKey}\n---\n`,
-      ),
-    }));
+    const createNote = vi.fn<
+      LiteratureNotesDeps["noteFeature"]["createNoteInteractively"]
+    >(async (item) =>
+      cancelled
+        ? null
+        : (host.vault.createFile(
+            `${item.indexedKey}.md`,
+            `---\nzotero-key: ${item.indexedKey}\n---\n`,
+          ) as unknown as TFile),
+    );
     const app = stubService<LiteratureNotesDeps["app"]>("App", {
       vault: host.vault as unknown as LiteratureNotesDeps["app"]["vault"],
       metadataTypeManager: undefined,
@@ -461,17 +420,9 @@ describe("literatureNotes vault property writes", () => {
           ),
         },
       ),
-      zoteroPref: stubService<LiteratureNotesDeps["zoteroPref"]>("ZoteroPref", {
-        dataDir: "/Zotero",
-      }),
       noteFeature: stubService<LiteratureNotesDeps["noteFeature"]>(
         "NoteFeatureHandle",
-        {
-          createNote,
-          planCreations: async (keys: readonly string[]) =>
-            creationPlans(keys, selection, createNote),
-          replacedKeys,
-        },
+        { createNoteInteractively: createNote, replacedKeys },
       ),
     });
     return {
@@ -580,8 +531,9 @@ describe("literatureNotes vault property writes", () => {
       }),
     ).resolves.toBe("created");
 
-    expect(createNote).toHaveBeenCalledOnce();
-    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+    expect(createNote).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ indexedKey: "ITEMAAAA" }),
+    );
     expect(host.text("ITEMAAAA.md")).toBe(
       "---\nzotero-key: ITEMAAAA\nstatus: read\n---\n",
     );
@@ -625,43 +577,20 @@ describe("literatureNotes vault property writes", () => {
     );
   });
 
-  describe("where several Profiles fit the Item", () => {
-    const ask: CreationProfileSelection = {
-      selector: "default",
-      source: "headless",
-      shouldAsk: true,
-    };
-    const edit = {
-      itemKey: "ITEMAAAA",
-      name: "status",
-      value: "read",
-      host: null,
-    };
+  it("creates and writes nothing when the creation is cancelled", async () => {
+    const { host, notes, createNote } = await vault({}, { cancelled: true });
 
-    it("asks for the Profile, then creates the note under it and writes the key", async () => {
-      vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce({
-        id: "default",
-        label: "Default",
-      });
-      const { host, notes } = await vault({}, { selection: ask });
+    await expect(
+      notes.write({
+        itemKey: "ITEMAAAA",
+        name: "status",
+        value: "read",
+        host: null,
+      }),
+    ).resolves.toBe("cancelled");
 
-      await expect(notes.write(edit)).resolves.toBe("created");
-
-      expect(chooseLiteratureNoteProfile).toHaveBeenCalledOnce();
-      expect(host.text("ITEMAAAA.md")).toBe(
-        "---\nzotero-key: ITEMAAAA\nstatus: read\n---\n",
-      );
-    });
-
-    it("creates and writes nothing when the prompt is cancelled", async () => {
-      vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce(undefined);
-      const { host, notes, createNote } = await vault({}, { selection: ask });
-
-      await expect(notes.write(edit)).resolves.toBe("cancelled");
-
-      expect(createNote).not.toHaveBeenCalled();
-      expect(host.vault.getMarkdownFiles()).toEqual([]);
-    });
+    expect(createNote).toHaveBeenCalledOnce();
+    expect(host.vault.getMarkdownFiles()).toEqual([]);
   });
 
   it("tells a key the note's own Profile replaces, once its Profile is read, and says so", async () => {

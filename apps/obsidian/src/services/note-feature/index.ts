@@ -12,22 +12,18 @@ export {
   type ComposeRefusal,
   type PreparedComposition,
 } from "./compose";
-export {
-  openCompanionNote,
-  companionNoteNotice,
-  type CompanionNoteDeps,
-} from "./companion-view";
+export { openCompanionNote, companionNoteNotice } from "./companion-view";
 export { noteOperationDiagnosticContent } from "./update-single";
 export {
-  confirmProfileSwitch,
+  awaitProfileSwitchConsent,
   switchNoteProfileInteractively,
-  type InteractiveProfileSwitchDeps,
   type ProfileSwitchConsent,
 } from "./switch-view";
 export {
   createNoteInteractively,
   type InteractiveCreationDeps,
   type InteractiveCreationOptions,
+  type InteractiveCreationPorts,
 } from "./creation-view";
 export {
   type CompanionNoteTarget,

@@ -3,18 +3,17 @@ import { Effect } from "effect";
 
 import { awaitModal } from "@/lib/effect-modal";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import type { InteractiveCreationDeps } from "@/services/note-feature";
+import type { InteractiveCreationPorts } from "@/services/note-feature";
 import type {
   CreationProfileSelection,
   ProfilePreview,
 } from "@/services/note-feature";
-import { listInstalledStyles } from "@/services/pandoc/styles";
-import { ZoteroPref } from "@/services/zotero-pref/service";
+import { installedStyles } from "@/services/note-feature/creation-view";
 import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
 
 export type BatchProfilePickerDeps = Pick<
-  InteractiveCreationDeps,
+  InteractiveCreationPorts,
   "app" | "createProfile" | "importProfile"
 >;
 export interface BatchProfilePickerOptions {
@@ -33,11 +32,7 @@ export const chooseBatchProfile = Effect.fnUntraced(function* (
   deps: BatchProfilePickerDeps,
   options: BatchProfilePickerOptions,
 ) {
-  const { dataDir } = yield* (yield* ZoteroPref).current;
-  // The style listing answers an empty list for a directory it cannot read.
-  const styles = dataDir
-    ? yield* Effect.promise(() => listInstalledStyles(dataDir))
-    : [];
+  const styles = yield* installedStyles;
   const picker: Parameters<typeof openLiteratureNoteProfile>[1] = {
     preselected: options.selection.selector,
     matchContext: "batch",

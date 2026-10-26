@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 
 import type { SelectedText } from "@zotlit/pdf-structure";
 
+import { passAborted } from "@/lib/abort-error";
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { deadlineAfter } from "@/services/annotation-repository/__fixtures__/capability";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -423,7 +424,8 @@ it("takes a read's records with the drafts and write states that stood before it
     WORD,
   ]);
   zotero.holdWrites();
-  void repository.patchColor("PARA7777", "#ff6666");
+  // The held write is still away when the stack closes, and unload rejects it.
+  void repository.patchColor("PARA7777", "#ff6666").catch(passAborted);
   repository.editTextField("comment", "WRDS2222", "worth quoting");
 
   ingestAnnotations(store, [PARAGRAPH, WORD], { annotations: service, bridge });

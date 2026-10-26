@@ -45,7 +45,6 @@ import type {
   CreateNoteOptions,
   CreateNoteResult,
   CreationProfileSelection,
-  CreationPlan,
   CreationProfileSources,
   NoteFeatureEvent,
   NoteFeatureEventOf,
@@ -273,10 +272,6 @@ export const layerNoteFeature = Layer.effect(
 );
 
 /**
- * Collect one operation's excerpt outcomes. When the scope closes, their
- * total reports on {@link NoteFeature.changes}.
- */
-/**
  * The payloads of `event` on `changes`, each in the shape its
  * `NoteFeatureEvents` callback takes.
  */
@@ -293,26 +288,9 @@ export const eventPayloads = <K extends keyof NoteFeaturePayloads>(
   );
 
 /**
- * `plans` with each preview's create run by `run`, for a caller outside
- * Effect.
+ * Collect one operation's excerpt outcomes. When the scope closes, their
+ * total reports on {@link NoteFeature.changes}.
  */
-export const plansRunBy = (
-  plans: ReadonlyMap<string, PlannedCreation>,
-  run: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>,
-): ReadonlyMap<string, CreationPlan> =>
-  new Map(
-    Array.from(plans, ([key, plan]) => [
-      key,
-      {
-        ...plan,
-        previews: plan.previews.map((preview) => ({
-          ...preview,
-          create: (options) => run(preview.create(options)),
-        })),
-      },
-    ]),
-  );
-
 export const collectExcerptReports = Effect.gen(function* () {
   const feature = yield* NoteFeature;
   const collector = yield* Effect.acquireRelease(

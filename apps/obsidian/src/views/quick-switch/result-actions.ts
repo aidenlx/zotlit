@@ -11,12 +11,12 @@ import type { Item } from "@zotlit/db";
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import { pdfPickerReader } from "@/services/attachment-open/actions";
 import type { AttachmentOpenDeps } from "@/services/attachment-open/actions";
-import { createNoteInteractively } from "@/services/note-feature";
 import type { InteractiveCreationDeps } from "@/services/note-feature/creation-view";
 import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 
 export interface NoteResultDeps extends InteractiveCreationDeps {
+  app: App;
   noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByItemKey">;
 }
 
@@ -47,7 +47,11 @@ export async function openOrCreateNote(
   }
   const found = await item();
   if (!found) return;
-  await openNote(deps.app, await createNoteInteractively(deps, found), newPane);
+  await openNote(
+    deps.app,
+    await deps.noteFeature.createNoteInteractively(found),
+    newPane,
+  );
 }
 
 /**

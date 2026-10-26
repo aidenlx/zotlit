@@ -3,6 +3,7 @@
 import { TFile } from "obsidian";
 import type { App, Plugin } from "obsidian";
 
+import { passAborted } from "@/lib/abort-error";
 import {
   createObsidianAttachmentReader,
   openAttachments,
@@ -47,6 +48,8 @@ export function createPdfReader(deps: PdfReaderDeps): TargetReader {
 /**
  * A picker's reader that opens each row through the Target Opener, by the
  * row's key, so a picked Attachment is opened by the same rule as every other.
+ * The picker fires the open and forgets it, so the unload's `AbortError` ends
+ * it quietly.
  */
 export function pdfPickerReader(
   opener: Pick<TargetOpener, "open">,
@@ -55,10 +58,12 @@ export function pdfPickerReader(
     icon: "file-text",
     onEmpty: () => new BaseNotice(m.notice_no_pdf_attachment()),
     open: (attachment, pane) =>
-      opener.open(
-        { kind: "attachment", attachmentKey: attachment.indexedKey },
-        pane,
-      ),
+      opener
+        .open(
+          { kind: "attachment", attachmentKey: attachment.indexedKey },
+          pane,
+        )
+        .catch(passAborted),
   };
 }
 
