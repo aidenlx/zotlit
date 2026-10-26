@@ -900,6 +900,22 @@ it.effect(
     }),
 );
 
+it.effect("lets a hold go after the repository closes", () =>
+  Effect.gen(function* () {
+    const stack = yield* scopedStack;
+    const { repository, service } = yield* Effect.promise(() => setup(stack));
+    const held = yield* service.hold(["RGRPDF24"]);
+    yield* service.read("RGRPDF24");
+
+    yield* Effect.promise(() => repository[Symbol.asyncDispose]());
+
+    // A surface disposes its hold after the plugin unloaded: the release
+    // runs on the closed repository and asks nothing of it.
+    expect(() => held[Symbol.dispose]()).not.toThrow();
+    expect(yield* service.peek("RGRPDF24")).toBeNull();
+  }),
+);
+
 it.effect(
   "rejects a late database read from the prior configured database",
   () =>
