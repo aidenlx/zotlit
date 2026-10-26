@@ -73,6 +73,7 @@ async function setup(
   const getCache = vi.fn((path: string) => host.metadataCache.getCache(path));
   const deps = stubService<LiteratureNotesDeps>("LiteratureNotesDeps", {
     runtime: testRuntime(),
+    getFile: (path) => host.vault.getFileByPath(path),
     app: stubService<LiteratureNotesDeps["app"]>("App", {
       metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
         getCache,
@@ -404,6 +405,7 @@ describe("literatureNotes vault property writes", () => {
     });
     const deps = stubService<LiteratureNotesDeps>("LiteratureNotesDeps", {
       runtime: testRuntime(),
+      getFile: (path) => host.app.vault.getFileByPath(path),
       app,
       noteIndex,
       profile: stubService<LiteratureNotesDeps["profile"]>("Profile", {

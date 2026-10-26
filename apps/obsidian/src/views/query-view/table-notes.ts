@@ -249,7 +249,7 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
     };
   };
   const replacedOf = (file: TFile) => {
-    const atom = replacedKeysAtom(file);
+    const atom = replacedKeysAtom(file.path);
     const result = registry.get(atom);
     if (listeners > 0 && !replacedSubscriptions.has(file))
       replacedSubscriptions.set(
@@ -367,7 +367,7 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
           if (file === null) return "cancelled" as const;
           const keys = yield* AtomRegistry.getResult(
             registry,
-            replacedKeysAtom(file),
+            replacedKeysAtom(file.path),
             { suspendOnWaiting: true },
           );
           if (keys.has(name)) return "managed" as const;

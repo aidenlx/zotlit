@@ -1,5 +1,6 @@
 // A notes-table test host over the index and creation boundaries its tests drive.
 import { Effect, Layer, Stream } from "effect";
+import type { TFile } from "obsidian";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
@@ -7,6 +8,7 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { layerUnreadViewServices } from "@/lib/__fixtures__/view-atoms";
 import { buildRuntime } from "@/lib/effect-layer";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import { makeViewRegistry } from "@/lib/view-atoms";
@@ -34,7 +36,8 @@ export interface NotesHostDeps {
   noteFeature: Pick<
     NoteFeatureHandle,
     "replacedKeys" | "createNoteInteractively"
-  >;
+  >;  /** The vault's file at `path`, as the table resolves a note it keys by path. */
+  getFile: (path: string) => TFile | null;
 }
 
 export async function makeNotesHost(deps: NotesHostDeps) {
@@ -52,6 +55,9 @@ export async function makeNotesHost(deps: NotesHostDeps) {
           ),
       }),
       Layer.succeed(NoteIndex, deps.noteIndex.runtime.runSync(NoteIndex)),
+      Layer.mock(Vault, {
+        getFileByPath: (path) => Effect.sync(() => deps.getFile(path)),
+      }),
       Layer.mock(Profile, {
         changes: Stream.concat(Stream.make(null), deps.profile.changed).pipe(
           Stream.map(() => ({
