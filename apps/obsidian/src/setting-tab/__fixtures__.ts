@@ -1,5 +1,6 @@
-import { Context, Effect, Exit, Layer, Scope } from "effect";
 // The tab service over a test's own services, for builders and the tab class.
+
+import { Context, Effect, Exit, Layer, Scope } from "effect";
 import { onTestFinished } from "vitest";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
