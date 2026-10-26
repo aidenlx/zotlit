@@ -16,13 +16,12 @@ import { answerConfirmation } from "@/lib/__fixtures__/confirm";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { Vault } from "@/lib/obsidian-vault";
-import { PluginHost } from "@/lib/plugin-host";
 import { Template } from "@/services/template/service";
 import type { CitationTemplateStatus } from "@/services/template/service";
 import { openNewPartialPrompt } from "@/views/template-workbench/new-partial";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
-import { scopedSettingTab } from "./__fixtures__";
+import { rebuildingSettingTab } from "./__fixtures__";
 import type { SettingsKey, SettingTabContext } from "./context";
 import { citationTextItems, partialItems } from "./templates";
 
@@ -45,22 +44,13 @@ const tabOver = Effect.fnUntraced(function* (
     close?: () => void;
   } = {},
 ) {
-  const services = yield* Layer.build(
-    Layer.mergeAll(
+  const { tab, rebuilt } = yield* rebuildingSettingTab(
+    Layer.merge(
       Layer.mock(Template, template),
       Layer.mock(Vault, options.vault ?? {}),
-      Layer.succeed(
-        PluginHost,
-        stubService<PluginHost["Service"]>("PluginHost", {
-          closeSettings: Effect.sync(options.close ?? (() => {})),
-        }),
-      ),
     ),
+    options,
   );
-  const rebuilt = yield* Queue.unbounded<void>();
-  const { tab } = yield* scopedSettingTab(services, {
-    update: () => Queue.offerUnsafe(rebuilt, undefined),
-  });
   const app = stubService<App>("App", {});
   const ctx = stubService<SettingTabContext>("SettingTabContext", { tab, app });
   return { ctx, rebuilt };

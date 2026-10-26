@@ -24,7 +24,6 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { FileManager } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
-import { PluginHost } from "@/lib/plugin-host";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
@@ -42,7 +41,7 @@ import {
   openTemplateWorkbench,
 } from "@/views/template-workbench/register";
 
-import { scopedSettingTab } from "./__fixtures__";
+import { rebuildingSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
 import { profileControlValue, setProfileControlValue } from "./controls";
 import { literatureNoteItems, profilesPage } from "./profiles";
@@ -96,7 +95,7 @@ const tabOver = Effect.fnUntraced(function* (
     current: Effect.succeed(fakes.settings ?? defaults),
     updateDefaultLiteratureNoteProfileBindings: vi.fn(() => Effect.void),
   };
-  const services = yield* Layer.build(
+  const { tab, rebuilt } = yield* rebuildingSettingTab(
     Layer.mergeAll(
       Layer.mock(Profile, {
         loaded: Effect.succeed(true),
@@ -116,18 +115,8 @@ const tabOver = Effect.fnUntraced(function* (
       }),
       Layer.mock(FileManager, fakes.fileManager ?? {}),
       Layer.mock(PluginSettings, settings),
-      Layer.succeed(
-        PluginHost,
-        stubService<PluginHost["Service"]>("PluginHost", {
-          closeSettings: Effect.void,
-        }),
-      ),
     ),
   );
-  const rebuilt = yield* Queue.unbounded<void>();
-  const { tab } = yield* scopedSettingTab(services, {
-    update: () => Queue.offerUnsafe(rebuilt, undefined),
-  });
   const customize = vi.fn<CustomizeAction>(async () => {});
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
     tab,

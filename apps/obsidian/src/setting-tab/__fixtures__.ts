@@ -1,6 +1,6 @@
 // The tab service over a test's own services, for builders and the tab class.
 
-import { Context, Effect, Exit, FileSystem, Layer, Scope } from "effect";
+import { Context, Effect, Exit, FileSystem, Layer, Queue, Scope } from "effect";
 import { onTestFinished } from "vitest";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
@@ -102,6 +102,34 @@ export const scopedSettingTab = Effect.fnUntraced(function* (
     Effect.provide(unimplementedTabServices),
   );
   return { tab, notices: notifier.notices };
+});
+
+/**
+ * `scopedSettingTab` over the services `layer` builds, for a row whose actions
+ * rebuild the tab or leave the settings window. `rebuilt` takes one element
+ * per definition rebuild an action asks for; the settings window closes
+ * through `close`.
+ */
+export const rebuildingSettingTab = Effect.fnUntraced(function* (
+  layer: Layer.Layer<never>,
+  { close = () => {} }: { close?: () => void } = {},
+) {
+  const services = yield* Layer.build(
+    Layer.merge(
+      layer,
+      Layer.succeed(
+        PluginHost,
+        stubService<PluginHost["Service"]>("PluginHost", {
+          closeSettings: Effect.sync(close),
+        }),
+      ),
+    ),
+  );
+  const rebuilt = yield* Queue.unbounded<void>();
+  const { tab, notices } = yield* scopedSettingTab(services, {
+    update: () => Queue.offerUnsafe(rebuilt, undefined),
+  });
+  return { tab, notices, rebuilt };
 });
 
 /** `scopedSettingTab` for a plain test: its fibers end when the test finishes. */
