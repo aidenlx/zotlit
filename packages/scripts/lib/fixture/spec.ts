@@ -183,6 +183,11 @@ export interface FixtureItem {
   /** Fixture Vault filename stem when a prose page needs a stable target. */
   literatureNoteName?: string;
   /**
+   * Committed vault page that is this Item's Literature Note. The build copies
+   * the page and seeds no generated note, so the Item keeps one note.
+   */
+  literatureNotePage?: string;
+  /**
    * Citation Keys the seeded Literature Note cites in its body, so a
    * Literature Note carries citation edges of its own and a local graph can
    * walk from one literature node to a second.
@@ -741,6 +746,7 @@ export const ITEMS: readonly FixtureItem[] = [
     key: "PUBJRNL3",
     itemType: "journalArticle",
     citationKey: "marshMarginaliaEvidence2019",
+    literatureNotePage: "Scan target.md",
     title: "Marginalia as evidence of reading",
     venue: "Book History Review",
     fields: { volume: "8" },
@@ -1080,12 +1086,12 @@ export const SEEDED_CITATION_KEYS: Readonly<
   ioannidisWhyMost2005: "unique",
   labArchiveAlpha2021: "unique",
   luhmannCommunicatingSlipBoxes1981: "unique",
+  marshMarginaliaEvidence2019: "unique",
   matuschakTransformativeTools2019: "unique",
   nelsonComplexInformation1965: "unique",
   nonexistentCitekeyForSmokeTest2099: "missing",
   rougierTenSimpleRules2014: "unique",
   sharedReadingAlpha2023: "unique",
-  sharedReadingBeta2022: "unique",
   smallCoCitationScientific1973: "unique",
   "wallgren-petterssonDistalMyopathyCaused2007": "unique",
   wangMutationalClinicalSpectrum2020a: "unique",

@@ -19,7 +19,7 @@ import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { layerFileManagerFrom } from "@/lib/obsidian-file-manager";
+import { FileManager, layerFileManagerFrom } from "@/lib/obsidian-file-manager";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { layerVaultFrom } from "@/lib/obsidian-vault";
 import { NoteIndex } from "@/services/note-index/service";
@@ -40,7 +40,11 @@ import {
 
 import { workbenchContext, workbenchIdentity } from "./__fixtures__";
 import { createTemplateWorkbenchHandlers, TEMPLATE_DATA_COMMAND } from "./cli";
-import { readCitationData, readTemplateData } from "./data";
+import {
+  excerptImageContext,
+  readCitationData,
+  readTemplateData,
+} from "./data";
 import type { TemplateDataServices } from "./data";
 import { registerTemplateWorkbench } from "./register";
 
@@ -1078,3 +1082,72 @@ function seed(sqlite: DatabaseSync): void {
         (50, null, '<p>standalone</p>', 'Standalone');
   `);
 }
+
+describe("excerptImageContext", () => {
+  const NOTE_PATH = "Literature/Smith 2024.md";
+  const VAULT_FOLDER = "attachments/zotero";
+  /** A file manager whose default attachment folder sits beside `sourcePath`. */
+  const fileManager = Layer.mock(FileManager, {
+    getAvailablePathForAttachment: (filename, sourcePath) =>
+      Effect.succeed(`${sourcePath ? "Literature/" : ""}${filename}`),
+  });
+  const contextOf = (
+    attachmentImport: boolean,
+    folderPath: string | null,
+    litNotePath: string | null,
+  ) =>
+    excerptImageContext(
+      {
+        "attachment.import": attachmentImport,
+        "attachment.folder-path": folderPath,
+      },
+      litNotePath,
+    ).pipe(Effect.provide(fileManager));
+
+  it.effect("links the file itself while attachment import is off", () =>
+    Effect.gen(function* () {
+      expect(yield* contextOf(false, null, NOTE_PATH)).toEqual({
+        kind: "file-url",
+      });
+    }),
+  );
+
+  it.effect(
+    "names no place with import on, no folder set and no Literature Note",
+    () =>
+      Effect.gen(function* () {
+        expect(yield* contextOf(true, null, null)).toEqual({
+          kind: "not-imported",
+        });
+      }),
+  );
+
+  it.effect("uses the set folder even without a Literature Note", () =>
+    Effect.gen(function* () {
+      // A set attachment.folder-path does not depend on a note path, so an
+      // excerpt image imported before still resolves.
+      expect(yield* contextOf(true, VAULT_FOLDER, null)).toEqual({
+        kind: "vault",
+        folderPath: VAULT_FOLDER,
+      });
+    }),
+  );
+
+  it.effect("uses the set folder when a Literature Note exists", () =>
+    Effect.gen(function* () {
+      expect(yield* contextOf(true, VAULT_FOLDER, NOTE_PATH)).toEqual({
+        kind: "vault",
+        folderPath: VAULT_FOLDER,
+      });
+    }),
+  );
+
+  it.effect("asks Obsidian for the default folder of the Literature Note", () =>
+    Effect.gen(function* () {
+      expect(yield* contextOf(true, null, NOTE_PATH)).toEqual({
+        kind: "vault",
+        folderPath: "Literature",
+      });
+    }),
+  );
+});

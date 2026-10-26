@@ -49,10 +49,8 @@ import type {
   ResolvedProfile,
 } from "@/services/profile/bindings";
 import { Profile } from "@/services/profile/service";
-import {
-  profileRead,
-  syncTemplate,
-} from "@/services/template-workbench/sync-template";
+import type { ProfileOperationError } from "@/services/profile/service";
+import { syncTemplate } from "@/services/template-workbench/sync-template";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
@@ -127,6 +125,7 @@ export type NoteImportError =
   | NoteImportFolderError
   | NoteImportPortError
   | Effect.Error<ReturnType<typeof readDisplayRef>>
+  | ProfileOperationError
   | VaultError;
 
 export interface PreparedExplicitImport {
@@ -359,16 +358,14 @@ const explicitImportTarget = Effect.fnUntraced(function* (
       ? "parent"
       : "orphan";
   if (!file && options.orphanProfile !== undefined) {
-    const profile = yield* profileRead(
-      profiles.resolveProfile(options.orphanProfile),
-    );
+    const profile = yield* profiles.resolveProfile(options.orphanProfile);
     if (!profile)
       return yield* NoteImportProfileError.unknown(options.orphanProfile, {
         indexedKey: note.indexedKey,
       });
     return { existing, profile, source, sourcePath: undefined };
   }
-  const resolved = yield* profileRead(profiles.profileOf(file));
+  const resolved = yield* profiles.profileOf(file);
   if (!resolved.ok)
     return yield* NoteImportProfileError.unknown(resolved.stamped.stamp, {
       path: file?.path,
