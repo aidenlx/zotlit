@@ -291,7 +291,13 @@ export const layerAttachmentImport = (
       const pending = yield* Ref.make(NO_SKIPS);
       const nudges = yield* Queue.unbounded<void>();
       const skipped = yield* PubSub.unbounded<AttachmentSkipSummary>();
-      yield* Effect.addFinalizer(() => PubSub.shutdown(skipped));
+      // Closing the layer ends both streams for their subscribers.
+      yield* Effect.addFinalizer(() =>
+        Effect.all([
+          PubSub.shutdown(approved.pubsub),
+          PubSub.shutdown(skipped),
+        ]),
+      );
       // The pooled counts are announced once the window passes with no new
       // skip. Closing the layer drops a summary still waiting.
       yield* forkEach(

@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect, Fiber, Stream } from "effect";
+import { Effect, Exit, Fiber, Scope, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import {
@@ -566,6 +566,26 @@ describe("AttachmentImport approved folders", () => {
 
       expect(yield* Fiber.join(changes)).toEqual([[], [outsideDir], []]);
     }),
+  );
+
+  it.effect(
+    "ends the approved folders and skip streams when the layer closes",
+    () =>
+      Effect.gen(function* () {
+        const scope = yield* Scope.make();
+        const { service } = yield* makeService().pipe(Scope.provide(scope));
+        const changes = yield* Stream.runCollect(
+          service.approvedFoldersChanges,
+        ).pipe(Effect.forkChild({ startImmediately: true }));
+        const skips = yield* Stream.runCollect(service.skipped).pipe(
+          Effect.forkChild({ startImmediately: true }),
+        );
+
+        yield* Scope.close(scope, Exit.void);
+
+        expect(yield* Fiber.join(changes)).toEqual([[]]);
+        expect(yield* Fiber.join(skips)).toEqual([]);
+      }),
   );
 
   it.effect(
