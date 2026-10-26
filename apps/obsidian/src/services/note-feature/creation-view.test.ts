@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect, Fiber, Layer, Scope } from "effect";
+import { Effect, Fiber, Layer } from "effect";
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
 import { expect, vi } from "vitest";
@@ -122,16 +122,15 @@ function creation(
 }
 
 /**
- * Run the creation of `item` on `harness`'s services. Its notices keep
- * showing after it returns, as they do in the plugin, so the services stay
- * open.
+ * Run the creation of `item` on `harness`'s services, built on the case's
+ * Scope. Its notices keep showing after it returns, as they do in the
+ * plugin, until the case ends.
  */
 const run = Effect.fnUntraced(function* (
   harness: ReturnType<typeof creation>,
   options?: InteractiveCreationOptions,
 ) {
-  const scope = yield* Scope.make();
-  const context = yield* Layer.buildWithScope(harness.layer, scope);
+  const context = yield* Layer.build(harness.layer);
   const file = yield* createNoteInteractively(
     harness.ports,
     ITEM,
