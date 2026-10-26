@@ -16,7 +16,7 @@ import type {
   ReimportResult,
 } from "@/services/note-import/batch-import";
 import { importedNoteProfileErrorNotice } from "@/services/note-import/batch-import-notices";
-import { InertTemplateError } from "@/services/template/errors";
+import { isInertTemplateError } from "@/services/template/errors";
 import type { ZoteroPref } from "@/services/zotero-pref/service";
 
 import type { InteractiveCreationPorts } from "./creation-view";
@@ -147,7 +147,7 @@ export function reimportNoteToast(options: {
     success: reimportNoteNotice,
     error: (e) =>
       missingPartialNotice(e, options) ??
-      (e instanceof InertTemplateError
+      (isInertTemplateError(e)
         ? e.message
         : (importedNoteProfileErrorNotice(e, options) ??
           m.notice_reimport_note_failed())),
@@ -185,9 +185,7 @@ export function overwriteNoteToast(options: { app: App }): ProgressCopy<{
       const e = plainNoteError(failure);
       return (
         missingPartialNotice(e, options) ??
-        (e instanceof InertTemplateError
-          ? e.message
-          : m.notice_overwrite_note_failed())
+        (isInertTemplateError(e) ? e.message : m.notice_overwrite_note_failed())
       );
     },
   };

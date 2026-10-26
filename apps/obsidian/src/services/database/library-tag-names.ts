@@ -6,6 +6,7 @@ import type { ManagedRuntime } from "effect";
 
 import { resolveIndexedKeyLibraryIn } from "@zotlit/db";
 
+import { effectBridge, valueOr } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
@@ -45,14 +46,17 @@ export const libraryTagNames = (
 
 /**
  * The Promise form for the Annotation editor and view, which run outside
- * Effect. It runs on the context captured at construction, so a call after
- * unload answers no tags instead of rebuilding the runtime.
+ * Effect. It runs on the bridge, so unload stops a pending read, and a read
+ * that unload stops or that starts after it answers no tags.
  */
 export function libraryTagNamesOf(
   runtime: ManagedRuntime.ManagedRuntime<ZoteroReads, never>,
 ): (annotationKey: string) => Promise<readonly string[]> {
-  const context = runtime.runSync(Effect.context<ZoteroReads>());
-  const reads = Effect.runSyncWith(context)(ZoteroReads);
-  const run = Effect.runPromiseWith(context);
-  return (annotationKey) => run(libraryTagNames(reads, annotationKey));
+  const reads = runtime.runSync(ZoteroReads);
+  const bridge = effectBridge(runtime);
+  return async (annotationKey) =>
+    valueOr(
+      await bridge.runPromiseExit(libraryTagNames(reads, annotationKey)),
+      [],
+    );
 }

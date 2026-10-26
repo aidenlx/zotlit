@@ -63,6 +63,7 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { parseFrontMatter } from "@/lib/live-text";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -111,8 +112,8 @@ import type { PlanningSources } from "./__fixtures__/planning-context";
 import type { NoteCitations } from "./citations-handle";
 import { plainNoteError } from "./errors";
 import type { NoteFeatureHandle, UpdateScope } from "./operations";
-import { NoteFeature } from "./service";
-import type { WriteNoteUpdateOptions } from "./types";
+import { eventPayloads, NoteFeature } from "./service";
+import type { NoteFeaturePayloads, WriteNoteUpdateOptions } from "./types";
 /**
  * The note feature's deps, with the fixture database its reads serve. The
  * host's file manager also renames: the FileManager tag runs over it.
@@ -179,6 +180,11 @@ function createNoteFeature(deps: TestDeps) {
     ...handle,
     /** The Note Feature service, for the operations no edge handle serves. */
     service,
+    /** Call `cb` with each `event` payload on the service's changes. */
+    on: <K extends keyof NoteFeaturePayloads>(
+      event: K,
+      cb: (payload: NoteFeaturePayloads[K]) => void,
+    ) => subscribe(runtime, eventPayloads(service.changes, event), cb),
     createNote: (...args: Parameters<NoteFeatureHandle["createNote"]>) => {
       know(args[0]);
       return handle.createNote(...args);
@@ -246,19 +252,20 @@ const blockedDecide = (
 });
 
 /** The `attachmentImport` port every note-feature test runs against. */
-const blockedAttachmentImport = {
-  prepare: async () => ({
-    decide: blockedDecide,
-    resolveLink: () => () => "",
-    flush: async () => ({
-      copied: 0,
-      skipped: 0,
-      missing: 0,
-      blocked: 0,
-      refused: 0,
+const blockedAttachmentImport: NoteFeatureSources["attachmentImport"] = {
+  prepare: () =>
+    Effect.succeed({
+      decide: blockedDecide,
+      resolveLink: () => () => "",
+      flush: Effect.succeed({
+        copied: 0,
+        skipped: 0,
+        missing: 0,
+        blocked: 0,
+        refused: 0,
+      }),
+      discard: Effect.void,
     }),
-    discard: () => undefined,
-  }),
 };
 
 // Every read runs in the in-process handlers over seeded fixture rows. Only
@@ -1757,14 +1764,13 @@ describe("createNote", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
       attachmentImport: {
-        prepare: async () => ({
-          decide: blockedDecide,
-          resolveLink: () => () => "",
-          discard: () => undefined,
-          flush: async () => {
-            throw new Error("File already exists.");
-          },
-        }),
+        prepare: () =>
+          Effect.succeed({
+            decide: blockedDecide,
+            resolveLink: () => () => "",
+            discard: Effect.void,
+            flush: Effect.die(new Error("File already exists.")),
+          }),
       },
     });
 
@@ -1789,7 +1795,7 @@ describe("createNote", () => {
       await held.promise;
       return write(...args);
     });
-    const flush = vi.fn(async () => ({
+    const flush = vi.fn(() => ({
       copied: 0,
       skipped: 0,
       missing: 0,
@@ -1810,12 +1816,13 @@ describe("createNote", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
       attachmentImport: {
-        prepare: async () => ({
-          decide: blockedDecide,
-          resolveLink: () => () => "",
-          discard: () => undefined,
-          flush,
-        }),
+        prepare: () =>
+          Effect.succeed({
+            decide: blockedDecide,
+            resolveLink: () => () => "",
+            discard: Effect.void,
+            flush: Effect.sync(flush),
+          }),
       },
     });
 
@@ -3639,6 +3646,52 @@ describe("updateNote", () => {
       });
       expect(file.path).toBe(expected);
     }),
+  );
+
+  it.effect(
+    "stamps a moved note when an interrupt reaches its pending move",
+    () =>
+      Effect.gen(function* () {
+        const target = "Rz9Wm4YfH6Kd" as ProfileId;
+        const harness = makeUpdateHarness({
+          content: "My notes",
+          frontmatter: { "zotero-key": "ABCD2345" },
+          settings: {
+            profiles: [
+              {
+                id: target,
+                label: "Papers",
+                bindings: { "note.literature-folder": "Research/Papers" },
+              },
+            ],
+          },
+        });
+        const file = harness.file("Books/My chosen name.md");
+        const started = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        harness.deps.app.fileManager.renameFile = async (_file, path) => {
+          started.resolve();
+          await held.promise;
+          harness.host.vault.renameFile(file.path, path);
+        };
+        const feature = createNoteFeature(harness.deps);
+
+        const switching = yield* feature.service
+          .switchNoteProfile(file, { profile: target, move: true })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.promise(() => started.promise);
+        const interrupting = yield* Fiber.interrupt(switching).pipe(
+          Effect.forkChild({ startImmediately: true }),
+        );
+        held.resolve();
+        yield* Fiber.join(interrupting);
+
+        // The note is moved, so it carries the target Profile's stamp too.
+        expect(file.path).toBe("Research/Papers/My chosen name.md");
+        expect(harness.frontmatter()).toMatchObject({
+          [FIELD_LITERATURE_NOTE_PROFILE]: `Papers (${target})`,
+        });
+      }),
   );
 
   it.effect("offers no move when the target path equals the current path", () =>

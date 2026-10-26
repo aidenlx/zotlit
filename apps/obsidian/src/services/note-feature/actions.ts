@@ -9,7 +9,6 @@ import type {
 
 import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
-import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import type { FileMenuContext, FileMenuSegment } from "@/services/file-menu";
 import type { BatchImport } from "@/services/note-import/batch-import";
@@ -24,39 +23,20 @@ import {
 } from "@/services/note-index/service";
 
 import type { NoteActions } from "./actions-handle";
-import type { NoteFeatureHandle, UpdateScope } from "./operations";
+import type { UpdateScope } from "./operations";
 
 interface NoteFeatureActionDeps {
   app: App;
-  noteFeature: Pick<NoteFeatureHandle, "on">;
   noteActions: NoteActions;
   batchImport: Pick<BatchImport, "runChildImportByKey" | "runBatchImportAll">;
 }
 
 export function addNoteFeatureActions(
-  plugin: Pick<Plugin, "addCommand" | "registerEvent" | "register"> & {
+  plugin: Pick<Plugin, "addCommand" | "registerEvent"> & {
     app: Plugin["app"];
   },
   deps: NoteFeatureActionDeps,
 ): void {
-  plugin.register(
-    deps.noteFeature.on("excerpt-images-reported", (summary) => {
-      new BaseNotice(
-        m.excerpt_image_summary({
-          ...summary,
-          notRefreshed: summary.notRefreshed ?? 0,
-        }),
-      );
-    }),
-  );
-  plugin.register(
-    deps.noteFeature.on("frontmatter-eval-failed", ({ fields }) => {
-      new BaseNotice(
-        m.notice_frontmatter_eval_failed({ fields: fields.join(", ") }),
-      );
-    }),
-  );
-
   plugin.registerEvent(
     deps.app.workspace.on("zotlit:switch-profile", ({ path }) => {
       const file = deps.app.vault.getFileByPath(path);

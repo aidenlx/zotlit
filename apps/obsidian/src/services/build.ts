@@ -2,6 +2,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { Effect } from "effect";
 import type { FileSystemAdapter } from "obsidian";
 
+import { passAborted } from "@/lib/abort-error";
 import { cliRunner } from "@/lib/cli-command";
 import { DisposableAbortController } from "@/lib/disposables";
 import { effectBridge } from "@/lib/effect-bridge";
@@ -29,8 +30,6 @@ import { AnnotationPopover } from "./annotation-popover/service";
 import { CapabilityNotices } from "./annotation-repository/notices";
 import { bindCapabilityNotices } from "./annotation-repository/notices-handle";
 import { AnnotationRepository } from "./annotation-repository/service";
-import { bindAttachmentImport } from "./attachment-import/handle";
-import { AttachmentImport } from "./attachment-import/service";
 import { createPdfReader } from "./attachment-open/actions";
 import { openWithSystem } from "./attachment-open/capture";
 import { bindLiteratureNoteAttachments } from "./attachment-open/handle";
@@ -50,7 +49,6 @@ import { CitekeyEditor } from "./citekey-editor/service";
 import { ExcerptDisplays } from "./excerpt-image/display";
 import { ExcerptImages } from "./excerpt-image/layer";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
-import { savedExcerptRequestOver } from "./excerpt-image/request";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
 import { bindItemLookup } from "./item-lookup/handle";
@@ -101,7 +99,6 @@ import { plainUseLedger } from "./use-ledger/plain";
 import { writeReadUse } from "./zotero-local-api/last-read";
 import { ZoteroLocalApi } from "./zotero-local-api/service";
 import { plainZoteroPref } from "./zotero-pref/plain";
-import { ZoteroPref } from "./zotero-pref/service";
 import { plainZoteroReads } from "./zotero-reads/plain";
 import { ZoteroReads } from "./zotero-reads/service";
 
@@ -271,14 +268,6 @@ export async function buildServices(
     .useValue({ excerptImage: () => runtime.runSync(ExcerptImages) })
     .useValue({ excerptDisplay: () => runtime.runSync(ExcerptDisplays) })
     .useValue({
-      excerptRequest: () =>
-        savedExcerptRequestOver({
-          reads: zoteroReadsService,
-          pref: runtime.runSync(ZoteroPref),
-          bridge,
-        }),
-    })
-    .useValue({
       attachmentResolver: () => runtime.runSync(AttachmentResolver),
     })
     .useValue({
@@ -347,7 +336,8 @@ export async function buildServices(
           capabilityGestures: {
             reportBlockedGesture: (attachmentKey) =>
               capabilityNotices.reportBlockedGesture(attachmentKey),
-            allowEditing: () => void capabilityNotices.showEditingCapability(),
+            allowEditing: () =>
+              void capabilityNotices.showEditingCapability().catch(passAborted),
           },
           markGestures: {
             revealAnnotation: (annotationKey) =>
@@ -357,16 +347,15 @@ export async function buildServices(
             blockedPress: (block) =>
               blockedNotice(
                 block,
-                () => void capabilityNotices.showEditingCapability(),
+                () =>
+                  void capabilityNotices
+                    .showEditingCapability()
+                    .catch(passAborted),
               ),
           },
         });
         return reader;
       },
-    })
-    .useValue({
-      attachmentImport: () =>
-        bindAttachmentImport(bridge, runtime.runSync(AttachmentImport)),
     })
     .useValue({ libraryScope: () => plainLibraryScope(runtime) })
     .useValue({

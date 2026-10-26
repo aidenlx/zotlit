@@ -181,26 +181,41 @@ it.effect(
     }),
 );
 
-it.effect.each(["engine-absent", "style-missing"] as const)(
-  "#1705: released reads retain the %s outcome",
-  (reason) =>
-    Effect.gen(function* () {
-      const h = yield* harnessOf(
-        reason === "style-missing" ? { "citation.references-style": APA } : {},
-      );
-      if (reason === "engine-absent")
-        h.pandocEngine.setStatus({ kind: "absent" });
-      yield* Effect.promise(() => h.cache.runtime.dispose());
-      yield* Effect.promise(() =>
-        expect(h.cache.render([item("alpha")])).resolves.toEqual({
-          kind: "unavailable",
-          reason,
-        }),
-      );
-      yield* Effect.promise(() =>
-        expect(h.cache.readBibliography([item("alpha")])).resolves.toBeNull(),
-      );
-    }),
+it.effect("#1705: released reads retain the engine-absent outcome", () =>
+  Effect.gen(function* () {
+    const h = yield* harnessOf();
+    h.pandocEngine.setStatus({ kind: "absent" });
+    yield* Effect.promise(() => h.cache.runtime.dispose());
+    yield* Effect.promise(() =>
+      expect(h.cache.render([item("alpha")])).resolves.toEqual({
+        kind: "unavailable",
+        reason: "engine-absent",
+      }),
+    );
+    yield* Effect.promise(() =>
+      expect(h.cache.readBibliography([item("alpha")])).resolves.toBeNull(),
+    );
+  }),
+);
+
+// A read that must wait for the style finds the runtime closed: unload stops
+// it, so a render answers unavailable and a held read rejects.
+it.effect("a read that waits after unload ends at once", () =>
+  Effect.gen(function* () {
+    const h = yield* harnessOf({ "citation.references-style": APA });
+    yield* Effect.promise(() => h.cache.runtime.dispose());
+    yield* Effect.promise(() =>
+      expect(h.cache.render([item("alpha")])).resolves.toEqual({
+        kind: "unavailable",
+        reason: "failed",
+      }),
+    );
+    yield* Effect.promise(() =>
+      expect(h.cache.readBibliography([item("alpha")])).rejects.toMatchObject({
+        name: "AbortError",
+      }),
+    );
+  }),
 );
 
 it.effect(

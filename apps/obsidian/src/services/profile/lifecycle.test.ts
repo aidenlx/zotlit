@@ -136,7 +136,7 @@ it.effect(
 );
 
 it.effect(
-  "#1705: runtime disposal stops Profile listeners and retains the plain read surface",
+  "#1705: runtime disposal stops Profile listeners and calls, and retains the plain sync reads",
   () =>
     Effect.gen(function* () {
       const host = createTemplateHost();
@@ -157,13 +157,16 @@ it.effect(
       expect(profile.profiles).toBe(retained);
       expect(profile.loaded).toBe(true);
       expect(profile.resolveProfile("default")).toBeDefined();
-      expect(yield* Effect.promise(() => profile.getSource("default"))).toBe(
-        source,
+      yield* Effect.promise(() =>
+        expect(profile.getSource("default")).rejects.toMatchObject({
+          name: "AbortError",
+        }),
       );
-      expect(
-        (yield* Effect.promise(() => profile.prepareShare("default"))).manifest
-          .name,
-      ).toBe("Default");
+      yield* Effect.promise(() =>
+        expect(profile.prepareShare("default")).rejects.toMatchObject({
+          name: "AbortError",
+        }),
+      );
       subscribe(profile.runtime, profile.changes, () => {
         throw new Error("late listener");
       })();
@@ -188,18 +191,20 @@ it.effect(
         await release.promise;
         return create(...args);
       };
-      const writing = profile.materializeDefault();
+      // Unload stops the waiting caller; the write itself finishes.
+      const writing = expect(
+        profile.materializeDefault(),
+      ).rejects.toMatchObject({ name: "AbortError" });
       yield* Effect.promise(() => started.promise);
       let closed = false;
       const closing = runtime.dispose().then(() => {
         closed = true;
       });
+      yield* TestClock.adjust(500);
       expect(closed).toBe(false);
       release.resolve();
       yield* TestClock.adjust(500);
-      expect(yield* Effect.promise(() => writing)).toMatchObject({
-        created: true,
-      });
+      yield* Effect.promise(() => writing);
       yield* Effect.promise(() => closing);
       expect(
         host.vault.contents.has("templates/zotlit-profile.default.md"),

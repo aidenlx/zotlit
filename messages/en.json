@@ -848,7 +848,6 @@
   "settings_profile_name_invalid": "Enter a unique profile name whose filename is not default.",
   "settings_profile_folder_name": "Literature note folder",
   "settings_profile_citation_style_name": "Citation style",
-  "settings_profile_inherit": "Use default profile",
   "settings_profile_display": "{folder} · {style} · {document}",
   "settings_profile_document_name": "Templates and properties",
   "settings_profile_document_desc": "Edit the default profile in the template workbench.",

@@ -7,9 +7,9 @@ import { FileManager } from "@/lib/obsidian-file-manager";
 import type { VaultError } from "@/lib/vault-errors";
 
 /**
- * `resolveAttachmentFolderPath` (`@/lib/ensure-folder`) over the FileManager
- * tag: `folderPath`, or Obsidian's own attachment folder for the note at
- * `sourcePath` when the setting is empty. `"/"` names the vault root.
+ * The normalized attachment folder path, read without touching the
+ * filesystem: `folderPath`, or Obsidian's own attachment folder for the note
+ * at `sourcePath` when the setting is empty. `"/"` names the vault root.
  */
 export const attachmentFolderPath = (
   folderPath: string | null,

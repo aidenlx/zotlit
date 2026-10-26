@@ -13,6 +13,7 @@ import {
   obsidianCapabilities,
   plainAdapterStreams,
   scopeClosed,
+  scopedRunner,
   serviceTagId,
   temporalInEffect,
   workerRpc,
@@ -363,6 +364,32 @@ tester.run("no-default-runtime", noDefaultRuntime, {
     {
       code: 'import { Effect as E } from "effect";\nawait E.runPromiseExit(x);',
       errors: [{ messageId: "empty" }],
+    },
+  ],
+});
+
+tester.run("scoped-runner", scopedRunner, {
+  valid: [
+    'import { Effect } from "effect";\nimport { scopedBridge } from "@/lib/effect-bridge";\nEffect.gen(function* () { const bridge = yield* scopedBridge; bridge.runPromise(x); });',
+    'import { Effect, FiberSet } from "effect";\nEffect.gen(function* () { const run = yield* FiberSet.makeRuntimePromise(); });',
+    // A sync runner settles before unload can reach it.
+    'import { Effect } from "effect";\nEffect.runSyncWith(ctx)(x);',
+    // A local name that is not the Effect module.
+    "const Effect = { runPromiseWith: () => 0 };\nEffect.runPromiseWith(ctx);",
+    'import { Effect } from "./not-effect";\nEffect.runPromiseWith(ctx);',
+  ],
+  invalid: [
+    {
+      code: 'import { Effect } from "effect";\nconst run = Effect.runPromiseWith(ctx);',
+      errors: [{ messageId: "captured" }],
+    },
+    {
+      code: 'import { Effect } from "effect";\nconst run = Effect.runPromiseExitWith(ctx);',
+      errors: [{ messageId: "captured" }],
+    },
+    {
+      code: 'import { Effect as E } from "effect";\nawait E.runPromiseWith(ctx)(x);',
+      errors: [{ messageId: "captured" }],
     },
   ],
 });

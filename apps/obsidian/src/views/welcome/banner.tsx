@@ -8,6 +8,7 @@ import type { App } from "obsidian";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
+import { AbortError, passAborted } from "@/lib/abort-error";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
@@ -120,6 +121,7 @@ export class WelcomeBanner extends Component {
     const { bridge, settings } = this.#deps;
     bridge.runSync(settings.update(patch));
     bridge.runPromise(settings.flush).catch((error: unknown) => {
+      if (AbortError.test(error)) return;
       logger.warn("The Welcome View banner could not keep its state", {
         error,
       });
@@ -267,7 +269,7 @@ export class WelcomeBanner extends Component {
       dismiss: () => this.dismiss(),
       showSteps: (shown) => this.#keep({ "welcome.steps-shown": shown }),
       openReleaseNote: () => {
-        void bridge.runPromise(release.openReleaseNote);
+        void bridge.runPromise(release.openReleaseNote).catch(passAborted);
         bridge.runSync(release.acknowledgeUpdate);
       },
       ...this.#deps.setupActions,

@@ -34,6 +34,7 @@ import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
+import type { AttachmentImportBatch } from "@/services/attachment-import/service";
 import { excerptReuseProbe } from "@/services/excerpt-image/__fixtures__/reuse";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type {
@@ -677,8 +678,7 @@ describe("a write that rejects", () => {
       Effect.gen(function* () {
         const deps = makeDeps("ready");
         const inert = new InertTemplateError("Inert message");
-        deps.noteFeature.createNote = () =>
-          Effect.fail(new NoteWriteAborted({ path: "", cause: inert }));
+        deps.noteFeature.createNote = () => Effect.fail(inert);
         itemsIn(
           new Map([
             [1, USER_LIBRARY_ID],
@@ -706,7 +706,7 @@ describe("a write that rejects", () => {
             (reason: unknown) => reason,
           ),
         );
-        expect(error).toMatchObject({ _tag: "NoteWriteAborted", cause: inert });
+        expect(error).toBe(inert);
         expect(onItemSettled).not.toHaveBeenCalledWith(
           expect.objectContaining({ status: "failed" }),
         );
@@ -757,20 +757,14 @@ describe("a write that rejects", () => {
               zoteroPref: { dataDir: "", baseAttachmentPath: null },
               attachmentImport: {
                 prepare: () =>
-                  Promise.resolve(
-                    stubService<
-                      Awaited<
-                        ReturnType<
-                          NoteFeatureSources["attachmentImport"]["prepare"]
-                        >
-                      >
-                    >("AttachmentBatch", {
+                  Effect.succeed(
+                    stubService<AttachmentImportBatch>("AttachmentBatch", {
                       // The render stops the create before any attachment.
                       decide: () => {
                         throw new Error("This case copies no attachment.");
                       },
                       resolveLink: () => () => "",
-                      discard: () => undefined,
+                      discard: Effect.void,
                     }),
                   ),
               },
@@ -807,7 +801,9 @@ describe("a write that rejects", () => {
             (reason: unknown) => reason,
           ),
         );
-        expect(error).toMatchObject({ _tag: "NoteWriteAborted", cause: inert });
+        // The refusal stays a typed failure across the write pipeline.
+        expect(error).toBe(inert);
+        expect(error).toMatchObject({ _tag: "InertTemplateError" });
         expect(onItemSettled).not.toHaveBeenCalledWith(
           expect.objectContaining({ status: "failed" }),
         );
@@ -946,17 +942,12 @@ describe("the run's Snapshot", () => {
       const events: string[] = [];
       trackSnapshots(deps, events);
       deps.noteFeature.createNote = () =>
-        Effect.fail(
-          new NoteWriteAborted({
-            path: "",
-            cause: new InertTemplateError("Inert message"),
-          }),
-        );
+        Effect.fail(new InertTemplateError("Inert message"));
 
       const run = yield* classifyAndRun(deps);
       expect(yield* Fiber.join(run)).toMatchObject({
         rejected: true,
-        reason: { _tag: "NoteWriteAborted" },
+        reason: { _tag: "InertTemplateError" },
       });
       expect(events).toEqual(["open", "close", "open", "close"]);
     }),

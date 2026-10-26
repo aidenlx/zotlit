@@ -27,9 +27,6 @@ it("offers Profile switching only for the active Literature Note and opens its c
         getFileCache: () => ({ frontmatter }),
       }),
     }),
-    noteFeature: stubService<NoteDeps["noteFeature"]>("NoteFeatureHandle", {
-      on: () => () => {},
-    }),
     noteActions: stubService<NoteDeps["noteActions"]>("NoteActions", {
       switchProfile,
     }),
@@ -43,7 +40,6 @@ it("offers Profile switching only for the active Literature Note and opens its c
         return command;
       },
       registerEvent: () => {},
-      register: () => {},
     },
     deps,
   );

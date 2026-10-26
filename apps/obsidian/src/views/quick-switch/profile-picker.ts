@@ -6,7 +6,6 @@ import { holdScopeWhileFocused } from "@/lib/focus-scope";
 import type { FocusScope } from "@/lib/focus-scope";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { modalAnswer } from "@/lib/modal-answer";
 import { BaseNotice } from "@/lib/notice";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
@@ -15,7 +14,6 @@ import type {
   ProfilePreview,
 } from "@/services/note-feature";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
-import type { LiteratureNoteProfile } from "@/services/profile/service";
 
 const logger = getLogger(["profile-picker"]);
 
@@ -59,23 +57,6 @@ const PROFILE_BADGE_CLASS =
 /** Secondary line under a Profile label; the color comes from the caller. */
 const PROFILE_NOTE_CLASS = "zt:text-xs zt:leading-tight";
 
-export function chooseLiteratureNoteProfile(
-  app: App,
-  profilesOrOptions:
-    | readonly LiteratureNoteProfile[]
-    | (ProfilePickerOptions & {
-        previews: readonly ProfilePreview[];
-      }),
-  options: ProfilePickerOptions = {},
-): Promise<LiteratureNoteProfileChoice | undefined> {
-  const profiles = "previews" in profilesOrOptions ? [] : profilesOrOptions;
-  const selectedOptions =
-    "previews" in profilesOrOptions ? profilesOrOptions : options;
-  return modalAnswer<LiteratureNoteProfileChoice | undefined>((resolve) =>
-    openPicker(app, profiles, { resolve, ...selectedOptions }),
-  );
-}
-
 /**
  * Open the picker over `options.previews`, for a caller that waits on it with
  * `awaitModal`. `resolve` gets the choice, or `undefined` when it closes.
@@ -85,18 +66,9 @@ export function openLiteratureNoteProfile(
   options: ProfilePickerOptions & { previews: readonly ProfilePreview[] },
   resolve: (choice: LiteratureNoteProfileChoice | undefined) => void,
 ): { close(): void } {
-  return openPicker(app, [], { resolve, ...options });
-}
-
-function openPicker(
-  app: App,
-  profiles: readonly LiteratureNoteProfile[],
-  options: ProfilePickerOptions & {
-    resolve: (choice: LiteratureNoteProfileChoice | undefined) => void;
-  },
-): LiteratureNoteProfileModal {
-  const modal = new LiteratureNoteProfileModal(app, profiles, {
+  const modal = new LiteratureNoteProfileModal(app, {
     ...options,
+    resolve,
     preselected: options.preselected ?? DEFAULT_PROFILE,
   });
   modal.open();
@@ -114,8 +86,8 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
 
   constructor(
     app: App,
-    profiles: readonly LiteratureNoteProfile[],
     options: ProfilePickerOptions & {
+      previews: readonly ProfilePreview[];
       resolve: (choice: LiteratureNoteProfileChoice | undefined) => void;
       preselected: ProfileSelector;
     },
@@ -123,31 +95,9 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
     super(app);
     this.#onNew = options.onNew;
     this.#onImport = options.onImport;
-    this.#choices = options.previews
-      ? options.previews.map((preview) =>
-          profilePreviewChoice(preview, { styles: options.styles }),
-        )
-      : [
-          { id: DEFAULT_PROFILE, label: m.settings_profile_default_name() },
-          ...profiles.map(({ id, label, document, bindings }) => ({
-            id,
-            label:
-              profiles.filter((profile) => profile.label === label).length > 1
-                ? `${label} (${document})`
-                : label,
-            detail: m.settings_profile_display({
-              folder:
-                bindings["note.literature-folder"] ??
-                m.settings_profile_inherit(),
-              style:
-                bindings["citation.references-style"] === null
-                  ? citationStyleLabel()
-                  : (bindings["citation.references-style"] ??
-                    m.settings_profile_inherit()),
-              document,
-            }),
-          })),
-        ];
+    this.#choices = options.previews.map((preview) =>
+      profilePreviewChoice(preview, { styles: options.styles }),
+    );
     for (const choice of this.#choices) {
       choice.candidate = options.candidates?.includes(choice.id)
         ? (options.matchContext ?? "item")

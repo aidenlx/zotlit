@@ -13,7 +13,6 @@ import {
   Schema,
   Stream,
   SubscriptionRef,
-  SynchronizedRef,
 } from "effect";
 import type { PlatformError } from "effect";
 import {
@@ -42,7 +41,7 @@ import { fileUrlLink, syntheticFile } from "@/lib/markdown-link";
 import { DeviceStorage } from "@/lib/obsidian-device-storage";
 import type { DeviceStorageError } from "@/lib/obsidian-device-storage";
 import { ObsidianEnv } from "@/lib/obsidian-env";
-import { FileManager } from "@/lib/obsidian-file-manager";
+import { FileManager, markdownLinker } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
 import type { VaultError, VaultFolderBlockedError } from "@/lib/vault-errors";
 import { ensureVaultFolder } from "@/lib/vault-folder";
@@ -175,6 +174,11 @@ export class AttachmentImport extends Context.Service<
      */
     readonly approvedFoldersChanges: Stream.Stream<readonly string[]>;
     /**
+     * The canonical-roots snapshot every decision is taken against now, then
+     * after each rebuild. Ends when the layer closes.
+     */
+    readonly rootsChanges: Stream.Stream<CanonicalRoots>;
+    /**
      * Permit `folder` as a source for absolute linked files on this device. The
      * record holds the folder's canonical path, so a folder later replaced by a
      * link to another location stops matching. Rebuilds the snapshot before it
@@ -252,9 +256,7 @@ export const layerAttachmentImport = (
         saveApprovedFolders(folders).pipe(
           Effect.provideService(DeviceStorage, storage),
         );
-      // A render links synchronously, so it reads the file manager through
-      // this runner: the template-render edge.
-      const runSync = Effect.runSyncWith(yield* Effect.context<never>());
+      const link = yield* markdownLinker;
 
       // Obsidian's device store catches its own errors, so a failure here is
       // a defect, and the layer fails with it.
@@ -268,9 +270,9 @@ export const layerAttachmentImport = (
        * so a moved base directory is followed and a drag between refreshes
        * reads a snapshot at most one operation old.
        */
-      const roots = yield* SynchronizedRef.make<CanonicalRoots>(NO_ROOTS);
+      const roots = yield* SubscriptionRef.make<CanonicalRoots>(NO_ROOTS);
       // One rebuild at a time, so the last one started is the one that stays.
-      const rebuildRoots = SynchronizedRef.updateEffect(roots, () =>
+      const rebuildRoots = SubscriptionRef.updateEffect(roots, () =>
         Effect.gen(function* () {
           const { dataDir, baseAttachmentPath } = yield* pref.current;
           return yield* buildCanonicalRoots(
@@ -293,6 +295,7 @@ export const layerAttachmentImport = (
       yield* Effect.addFinalizer(() =>
         Effect.all([
           PubSub.shutdown(approved.pubsub),
+          PubSub.shutdown(roots.pubsub),
           PubSub.shutdown(skipped),
         ]),
       );
@@ -347,7 +350,7 @@ export const layerAttachmentImport = (
         // across every drag out of the active note. With import switched off
         // nothing is written, so no source is judged and no skip is announced.
         const rootsNow = importEnabled
-          ? SynchronizedRef.get(roots)
+          ? SubscriptionRef.get(roots)
           : Effect.succeed(NO_ROOTS);
         const items: PendingCopy[] = [];
         let blocked = 0;
@@ -433,7 +436,7 @@ export const layerAttachmentImport = (
             decideSource(
               path,
               origin,
-              importEnabled ? SynchronizedRef.getUnsafe(roots) : NO_ROOTS,
+              importEnabled ? SubscriptionRef.getUnsafe(roots) : NO_ROOTS,
             ),
           resolveLink: ({ source, vaultName }) => {
             if (!source.approved) return blockedLink(source, vaultName);
@@ -466,12 +469,10 @@ export const layerAttachmentImport = (
                   dest: absoluteVaultPath(basePath, vaultPath, folderPath),
                 });
               }
-              return runSync(
-                fileManager.generateMarkdownLink(file, notePath, {
-                  ...(subpath === undefined ? {} : { subpath }),
-                  ...(alias === undefined ? {} : { alias }),
-                }),
-              );
+              return link(file, notePath, {
+                ...(subpath === undefined ? {} : { subpath }),
+                ...(alias === undefined ? {} : { alias }),
+              });
             };
           },
           flush: Effect.gen(function* () {
@@ -548,9 +549,21 @@ export const layerAttachmentImport = (
       return AttachmentImport.of({
         approvedFolders: SubscriptionRef.get(approved),
         approvedFoldersChanges: SubscriptionRef.changes(approved),
+        rootsChanges: SubscriptionRef.changes(roots),
         approveFolder: Effect.fn("AttachmentImport.approveFolder")(
           function* (folder) {
-            const canonical = yield* canonicalize(folder);
+            const canonical = yield* canonicalize(folder).pipe(
+              Effect.catchTag("PlatformError", (error) =>
+                Effect.logWarning(
+                  "Ignored an approved folder that cannot be read",
+                ).pipe(
+                  Effect.annotateLogs({ reason: error.reason._tag }),
+                  logged,
+                  Effect.as(undefined),
+                ),
+              ),
+            );
+            if (canonical === undefined) return null;
             if (canonical === null) {
               yield* Effect.logWarning(
                 "Ignored an approved folder that does not resolve",
