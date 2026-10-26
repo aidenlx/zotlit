@@ -30,12 +30,27 @@ vi.mock("@/views/note-preview/register", () => ({
 }));
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
+/** Every message a Notice showed. */
+const shownNotices = vi.hoisted((): string[] => []);
+vi.mock("@/lib/notice", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/notice")>();
+  return {
+    ...actual,
+    BaseNotice: class extends actual.BaseNotice {
+      constructor(message: string | DocumentFragment, duration?: number) {
+        super(message, duration);
+        if (typeof message === "string") shownNotices.push(message);
+      }
+    },
+  };
+});
 const setOriginatingNote = vi.fn<(file: TFile | null) => void>();
 beforeEach(() => {
   vi.spyOn(
     TemplateWorkbenchView.prototype,
     "setOriginatingNote",
   ).mockImplementation(setOriginatingNote);
+  shownNotices.length = 0;
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -616,6 +631,7 @@ Annotation`);
       );
       await openNativeProfile(app, file);
       expect(setViewState).toHaveBeenCalledOnce();
+      expect(shownNotices).toEqual([m.template_workbench_native_required()]);
     },
   );
   it.each(["ask", "web"])(

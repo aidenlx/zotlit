@@ -436,8 +436,10 @@ describe("a colour key on the Card Selection", () => {
 
     expect(busy.actions.onRecolorSelection("#5fb236")).toBeNull();
     expect(empty.actions.onRecolorSelection("#5fb236")).toBeNull();
-    expect(busy.annotations.patchColor).not.toHaveBeenCalled();
-    expect(empty.annotations.patchColor).not.toHaveBeenCalled();
+    for (const { annotations } of [busy, empty]) {
+      expect(annotations.patchColor).not.toHaveBeenCalled();
+      expect(annotations.patchColors).not.toHaveBeenCalled();
+    }
   });
 });
 

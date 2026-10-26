@@ -1334,10 +1334,12 @@ async function writeVaultNotes(
   // Literature Notes for the My Library items give an update batch existing
   // notes to act on and leave every other Fixture item as create work. The
   // demo papers' PDFs live only in the demo vault, so they get no note here.
+  // An Item whose note is a committed vault page gets only that page.
   for (const item of ITEMS.filter(
     (candidate) =>
       candidate.libraryID === USER_LIBRARY_ID &&
-      !DEMO_ITEMS.includes(candidate),
+      !DEMO_ITEMS.includes(candidate) &&
+      candidate.literatureNotePage === undefined,
   )) {
     const profile = profiles.find(
       ({ id }) => id === item.literatureNoteProfile,
