@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { Setting } from "@mock/obsidian";
 import type { DropdownComponent, TextComponent } from "@mock/obsidian";
-import { Effect } from "effect";
+import { Context, Effect } from "effect";
 import type {
   Setting as ObsidianSetting,
   SettingDefinitionItem,
@@ -14,6 +14,7 @@ import { highlightEmoji } from "@/lib/highlight-mapping";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 
 import { testSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
@@ -29,16 +30,16 @@ function setup() {
       ...(typeof patch === "function" ? patch(current) : patch),
     };
   };
+  const settings = stubService<PluginSettings["Service"]>("PluginSettings", {
+    current: Effect.sync(() => current),
+    update: (patch) =>
+      Effect.sync(() => {
+        const next = typeof patch === "function" ? patch(current) : patch;
+        return Object.assign(current, next);
+      }),
+  });
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    tab: testSettingTab().tab,
-    settings: stubService<SettingTabContext["settings"]>("Settings", {
-      current: Effect.sync(() => current),
-      update: (patch) =>
-        Effect.sync(() => {
-          const next = typeof patch === "function" ? patch(current) : patch;
-          return Object.assign(current, next);
-        }),
-    }),
+    tab: testSettingTab(Context.make(PluginSettings, settings)).tab,
     requestUpdate: vi.fn(),
   });
   const rows = highlightMappingItems(ctx);
@@ -47,7 +48,7 @@ function setup() {
     if (!item) throw new Error(`Mapping row missing: ${name}`);
     return item;
   };
-  return { ctx, row, update };
+  return { ctx, row, update, settings };
 }
 
 function render(item: SettingDefinitionItem) {
@@ -107,7 +108,7 @@ describe("highlight mapping page", () => {
   });
 
   it("shows custom input, validates it, and preserves it across output changes", () => {
-    const { ctx, row } = setup();
+    const { ctx, row, settings } = setup();
     const dropdown = render(row(m.annot_view_color_blue()))
       .components[0] as DropdownComponent;
     const inputRow = row(
@@ -124,7 +125,7 @@ describe("highlight mapping page", () => {
     const emoji = () =>
       highlightEmoji(
         "blue",
-        ctx.tab.sync(ctx.settings.current)["note.import-highlight-mappings"],
+        ctx.tab.sync(settings.current)["note.import-highlight-mappings"],
       );
     expect(setting.errorMessage).toBeTruthy();
     expect(emoji()).toBeNull();

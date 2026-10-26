@@ -12,6 +12,7 @@ import {
 } from "@/lib/highlight-mapping";
 import type { HighlightMapping } from "@/lib/highlight-mapping";
 import * as m from "@/lib/i18n/generated/messages";
+import { PluginSettings } from "@/services/settings/service";
 
 import type {
   SettingsControlKey,
@@ -75,7 +76,9 @@ export function highlightMappingItems(
     (color) => {
       const current = () =>
         getHighlightMapping(
-          ctx.tab.sync(ctx.settings.current)["note.import-highlight-mappings"],
+          ctx.tab.sync(PluginSettings.use((settings) => settings.current))[
+            "note.import-highlight-mappings"
+          ],
           color,
         );
       return [
@@ -135,14 +138,16 @@ function updateMapping(
   patch: Partial<HighlightMapping>,
 ): void {
   ctx.tab.sync(
-    ctx.settings.update((settings) => {
-      const mappings = settings["note.import-highlight-mappings"];
-      return {
-        "note.import-highlight-mappings": {
-          ...mappings,
-          [color]: { ...getHighlightMapping(mappings, color), ...patch },
-        },
-      };
-    }),
+    PluginSettings.use((service) =>
+      service.update((settings) => {
+        const mappings = settings["note.import-highlight-mappings"];
+        return {
+          "note.import-highlight-mappings": {
+            ...mappings,
+            [color]: { ...getHighlightMapping(mappings, color), ...patch },
+          },
+        };
+      }),
+    ),
   );
 }

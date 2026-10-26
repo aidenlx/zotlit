@@ -11,6 +11,7 @@ import { BaseNotice } from "@/lib/notice";
 import { requireElectron } from "@/lib/require";
 import { LOG_FILENAME } from "@/services/log/service";
 import type { LogLevel } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 import {
   profileCustomization,
   saveProfileCustomization,
@@ -69,7 +70,9 @@ export function advancedPageItems(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsKey>[] {
   const fileDisabled = (): boolean =>
-    !ctx.tab.sync(ctx.settings.current)["log.to-file"];
+    !ctx.tab.sync(PluginSettings.use((settings) => settings.current))[
+      "log.to-file"
+    ];
   return [
     ...(ctx.webWorkbenchEnabled
       ? [
