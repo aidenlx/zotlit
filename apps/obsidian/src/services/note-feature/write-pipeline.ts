@@ -13,6 +13,7 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
+import { recover } from "@/lib/effect-cause";
 import { toInstant } from "@/lib/effect-clock";
 import { processLiveText } from "@/lib/effect-live-text";
 import { withLogCategory } from "@/lib/effect-log";
@@ -474,19 +475,15 @@ const NO_KEYS: ReadonlySet<string> = new Set();
  */
 export const replacedKeys = (ctx: NoteWriteContext, file: TFile) =>
   readReplacedKeys(ctx, file).pipe(
-    Effect.catchCause((cause) =>
-      Cause.hasInterruptsOnly(cause)
-        ? Effect.interrupt
-        : Effect.logDebug(
-            "Could not read the keys a note's Profile replaces",
-          ).pipe(
-            Effect.annotateLogs({
-              path: file.path,
-              error: Cause.squash(cause),
-            }),
-            logged,
-            Effect.as(NO_KEYS),
-          ),
+    recover(
+      (cause) =>
+        Effect.logDebug(
+          "Could not read the keys a note's Profile replaces",
+        ).pipe(
+          Effect.annotateLogs({ path: file.path, error: Cause.squash(cause) }),
+          logged,
+        ),
+      Effect.succeed(NO_KEYS),
     ),
   );
 
