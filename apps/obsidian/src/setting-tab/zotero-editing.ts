@@ -227,7 +227,7 @@ function renderEditingRow(
 
   apply();
   refreshRemembered();
-  void ctx.bridge.runPromise(ctx.annotations.probe).catch(passAborted);
+  ctx.bridge.runAndForget(ctx.annotations.probe);
   // An Allow editing from outside this row, such as a notice's button, can
   // save or drop a key, and the capability moves with it. The status redraws
   // at once; the key's line follows when the keystore answers.

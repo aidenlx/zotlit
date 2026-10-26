@@ -92,7 +92,10 @@ export type AttachmentImportActions = Pick<
  */
 export interface SettingTabContext {
   runtime: SubscriptionRuntime;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
+  bridge: Pick<
+    EffectBridge,
+    "runSync" | "runPromise" | "runAndForget" | "subscribe"
+  >;
   webWorkbenchEnabled: boolean;
   app: App;
   importProfile: ImportProfile;

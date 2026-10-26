@@ -204,7 +204,10 @@ export interface PdfViewBindingDeps {
   adapter: FileSystemAdapter;
   attachments: AttachmentReads;
   annotations: AnnotationReads;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
+  bridge: Pick<
+    EffectBridge,
+    "runSync" | "runPromise" | "runAndForget" | "subscribe"
+  >;
   capabilityGestures: CapabilityGestures;
   /**
    * The gestures the Mark Popup reaches outside the reader's own surfaces:
@@ -537,9 +540,9 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   /** Revalidates this PDF surface when Obsidian activates its leaf. */
   activate(): void {
     if (this.#attachment.kind === "resolved") {
-      void this.#bridge
-        .runPromise(this.#annotations.refresh(this.#attachment.attachmentKey))
-        .catch(passAborted);
+      this.#bridge.runAndForget(
+        this.#annotations.refresh(this.#attachment.attachmentKey),
+      );
     }
   }
 
@@ -682,16 +685,12 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
         // The Text Draft focuses itself as it opens; a read started then would
         // race the create its finish sends.
         if (event.target === this.#draftArea) return;
-        void this.#bridge
-          .runPromise(this.#annotations.refresh(attachmentKey))
-          .catch(passAborted);
+        this.#bridge.runAndForget(this.#annotations.refresh(attachmentKey));
       }),
     );
     this.#surfaces.use(
       registerMigratingWindowEvent(this.#view.containerEl, "focus", () => {
-        void this.#bridge
-          .runPromise(this.#annotations.refresh(attachmentKey))
-          .catch(passAborted);
+        this.#bridge.runAndForget(this.#annotations.refresh(attachmentKey));
       }),
     );
     this.#surfaces.defer(() => this.#unpaint());
