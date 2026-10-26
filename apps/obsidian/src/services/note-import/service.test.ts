@@ -35,7 +35,7 @@ import {
 import { noteImporterOver } from "./__fixtures__/importer";
 import { childNoteLink } from "./child-note-link";
 import { noteAnnotationKeys, parseNote } from "./note-parser";
-import { NoteImportMintError } from "./service";
+import { NoteImportMintError, NoteImportParseError } from "./service";
 
 // The service owns the annotation renderer now; stub the leaf so the test asserts
 // the wiring (resolveLink binding, library scoping) without the template pipeline.
@@ -1217,6 +1217,33 @@ describe("NoteImporter", () => {
           cause: copyFailed,
           message: "EACCES: permission denied",
         });
+      }),
+  );
+
+  it.effect(
+    "fails with a typed error that keeps what the note conversion threw",
+    () =>
+      Effect.gen(function* () {
+        const { app, create } = makeApp();
+        const renderFailed = new Error("Citation Template failed");
+        vi.mocked(parseNote).mockImplementationOnce(() => {
+          throw renderFailed;
+        });
+        const service = yield* makeService(app);
+
+        const error = yield* Effect.flip(
+          service.importNote(makeNote(), {
+            reads,
+            settings: importSettings(),
+          }),
+        );
+
+        expect(error).toBeInstanceOf(NoteImportParseError);
+        expect(error).toMatchObject({
+          cause: renderFailed,
+          message: "Citation Template failed",
+        });
+        expect(create).not.toHaveBeenCalled();
       }),
   );
 });

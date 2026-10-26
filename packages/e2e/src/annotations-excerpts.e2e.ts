@@ -17,6 +17,7 @@ import {
 } from "./e2e-run-fixture.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import { createFixtureNote } from "./e2e-run-note-helpers.ts";
+import { EFFECT_MODULE } from "./effect-module.ts";
 import {
   verifyMultiPdfExcerptBatch,
   verifyReaderBackedExcerpts,
@@ -52,9 +53,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obEval(
       run.vaultId,
       `(()=>{
+        const {Effect}=${EFFECT_MODULE};
         const repository=app.plugins.plugins.zotlit.services.annotationRepository;
         app.__zotlitCapabilitySubjects=[];
-        repository.capabilityFor=key=>{app.__zotlitCapabilitySubjects.push(key);return {kind:'read-only',reason:'stubbed'};};
+        app.__zotlitCapabilityFor=repository.capabilityFor;
+        repository.capabilityFor=key=>{app.__zotlitCapabilitySubjects.push(key);return Effect.succeed({kind:'read-only',reason:'stubbed'});};
         return true;
       })()`,
     );
@@ -74,8 +77,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obEval(
         run.vaultId,
         `(()=>{
-          const repository=app.plugins.plugins.zotlit.services.annotationRepository;
-          delete repository.capabilityFor;
+          app.plugins.plugins.zotlit.services.annotationRepository.capabilityFor=app.__zotlitCapabilityFor;
+          delete app.__zotlitCapabilityFor;
           delete app.__zotlitCapabilitySubjects;
           return true;
         })()`,
@@ -200,10 +203,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         if(settled)throw new Error('View read settled before its attachments loaded');
         leaf.detach();
         const repository=app.plugins.plugins.zotlit.services.annotationRepository;
-        const on=repository.on,read=repository.read;
+        const changed=Object.getOwnPropertyDescriptor(repository,'annotationsChanged'),read=repository.read;
         const afterClose={subscriptions:0,reads:0};
-        cleanup.defer(()=>{repository.on=on;repository.read=read;});
-        repository.on=function(event,...args){if(event==='annotations-changed')afterClose.subscriptions++;return on.call(this,event,...args);};
+        cleanup.defer(()=>{Object.defineProperty(repository,'annotationsChanged',changed);repository.read=read;});
+        Object.defineProperty(repository,'annotationsChanged',{get(){afterClose.subscriptions++;return changed.value;},configurable:true,enumerable:true});
         repository.read=function(...args){afterClose.reads++;return read.apply(this,args);};
         release();
         await reading;
@@ -361,7 +364,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const liveImport = JSON.parse(
       await obEval(
         id,
-        `(async()=>{const services=app.plugins.plugins.zotlit.services;services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':true});const file=app.vault.getFileByPath(${JSON.stringify(importedPath)});if(!file)throw new Error('Imported Note missing');return JSON.stringify(await services.batchImport.reimportNoteByKey('NNNNAAAA',file));})()`,
+        `(async()=>{const services=app.plugins.plugins.zotlit.services;services.bridge.runSync(services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':true}));const file=app.vault.getFileByPath(${JSON.stringify(importedPath)});if(!file)throw new Error('Imported Note missing');return JSON.stringify(await services.batchImport.reimportNoteByKey('NNNNAAAA',file));})()`,
       ),
     ) as { outcome: string };
     expect(liveImport).toEqual({ outcome: "overwritten" });

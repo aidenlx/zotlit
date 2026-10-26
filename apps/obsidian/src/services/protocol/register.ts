@@ -34,6 +34,7 @@ import { logAndContinue, withLogCategory } from "@/lib/effect-log";
 import { openScope } from "@/lib/effect-scope";
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
+import { portCall } from "@/lib/legacy-port";
 import { Notifier, reportOutcome } from "@/lib/notifier";
 import type { NoticeMessage, OutcomeCopy } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
@@ -463,7 +464,7 @@ const handleExploreProtocol = Effect.fn("protocol.handleExploreProtocol")(
     const ref = yield* resolveProtocolItem(query, action);
     if (!ref) return;
 
-    yield* Effect.promise(() =>
+    yield* portCall("open-template-data-explorer", () =>
       openTemplateDataExplorer(
         deps.app,
         {

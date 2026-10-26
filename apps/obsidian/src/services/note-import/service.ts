@@ -51,10 +51,8 @@ import type {
   ResolvedProfile,
 } from "@/services/profile/bindings";
 import { Profile } from "@/services/profile/service";
-import {
-  profileRead,
-  syncTemplate,
-} from "@/services/template-workbench/sync-template";
+import type { ProfileOperationError } from "@/services/profile/service";
+import { syncTemplate } from "@/services/template-workbench/sync-template";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
@@ -120,15 +118,17 @@ interface PrepareExplicitImportOptions {
 /**
  * What a note write fails with: the Profile it needs is unknown, its minted
  * path is taken, Attachment Import or the excerpt preparation failed, or a
- * read or vault write failed. A Template throw is a defect that carries what
- * was thrown.
+ * read or vault write failed, or the note conversion threw. A Template throw
+ * outside the conversion is a defect that carries what was thrown.
  */
 export type NoteImportError =
   | NoteImportProfileError
   | NoteImportMintError
   | NoteImportFolderError
   | LegacyPortError
+  | NoteImportParseError
   | Effect.Error<ReturnType<typeof readDisplayRef>>
+  | ProfileOperationError
   | VaultError;
 
 export interface PreparedExplicitImport {
@@ -361,16 +361,14 @@ const explicitImportTarget = Effect.fnUntraced(function* (
       ? "parent"
       : "orphan";
   if (!file && options.orphanProfile !== undefined) {
-    const profile = yield* profileRead(
-      profiles.resolveProfile(options.orphanProfile),
-    );
+    const profile = yield* profiles.resolveProfile(options.orphanProfile);
     if (!profile)
       return yield* NoteImportProfileError.unknown(options.orphanProfile, {
         indexedKey: note.indexedKey,
       });
     return { existing, profile, source, sourcePath: undefined };
   }
-  const resolved = yield* profileRead(profiles.profileOf(file));
+  const resolved = yield* profiles.profileOf(file);
   if (!resolved.ok)
     return yield* NoteImportProfileError.unknown(resolved.stamped.stamp, {
       path: file?.path,
@@ -454,22 +452,24 @@ const writeNote = Effect.fnUntraced(function* (
               }),
           })
       : undefined;
-    body = yield* Effect.sync(() =>
-      parseNote(TurndownService, html, {
-        citedItems: inputs.citedItems,
-        groupID: note.groupID,
-        attachments: inputs.attachments,
-        renderCite: (items) => templates.renderCitation(items, "main"),
-        pathContext: zoteroPref,
-        useColoredHighlightSyntax: getProfileBinding(
-          run.settings,
-          "note.import-colored-highlights",
-        ),
-        highlightMappings: run.settings["note.import-highlight-mappings"],
-        attachmentImport: batch,
-        renderAnnotationParagraph,
-      }),
-    );
+    body = yield* Effect.try({
+      try: () =>
+        parseNote(TurndownService, html, {
+          citedItems: inputs.citedItems,
+          groupID: note.groupID,
+          attachments: inputs.attachments,
+          renderCite: (items) => templates.renderCitation(items, "main"),
+          pathContext: zoteroPref,
+          useColoredHighlightSyntax: getProfileBinding(
+            run.settings,
+            "note.import-colored-highlights",
+          ),
+          highlightMappings: run.settings["note.import-highlight-mappings"],
+          attachmentImport: batch,
+          renderAnnotationParagraph,
+        }),
+      catch: (cause) => new NoteImportParseError({ cause }),
+    });
   }
 
   const frontmatter = {
@@ -624,6 +624,23 @@ export class NoteImportProfileError extends Schema.TaggedError<
           target: path ?? indexedKey ?? stamp,
         })
       : m.notice_literature_note_profile_unknown({ stamp });
+  }
+}
+
+/**
+ * The note conversion threw, for example when the Citation Template or the
+ * annotation Template fails. The message is the throw's own.
+ */
+export class NoteImportParseError extends Schema.TaggedError<
+  NoteImportParseError,
+  { readonly brand: unique symbol }
+>()("NoteImportParseError", {
+  /** What the conversion threw. */
+  cause: Schema.Defect(),
+}) {
+  override get message(): string {
+    if (this.cause instanceof Error) return this.cause.message;
+    return typeof this.cause === "string" ? this.cause : "Unknown error";
   }
 }
 
