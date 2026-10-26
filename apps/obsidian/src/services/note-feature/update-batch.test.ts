@@ -9,7 +9,6 @@ import {
   Option,
   Stream,
 } from "effect";
-import type { ManagedRuntime } from "effect";
 import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
@@ -24,8 +23,7 @@ import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
-import { effectBridge } from "@/lib/effect-bridge";
-import { buildRuntime } from "@/lib/effect-layer";
+import { scopedBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -258,7 +256,7 @@ interface UpdateDeps {
     getNotesByItemKey(indexedKey: string): TFile[];
   };
   /** The plugin services the runners read, answering from these values. */
-  runtime: ManagedRuntime.ManagedRuntime<BatchUpdateServices, never>;
+  layer: Layer.Layer<BatchUpdateServices>;
 }
 
 function makeDeps(
@@ -291,54 +289,54 @@ function makeDeps(
       whenIndexed: async () => {},
       getNotesByItemKey: () => [],
     },
-    runtime: buildRuntime(
-      Layer.mergeAll(
-        Layer.mock(LibraryScope, {
-          resolveLibraries: () => Effect.sync(() => currentScope),
-        }),
-        // Only the one-item path reads them, and no case here reaches it.
-        Layer.mock(MetadataCache, {}),
-        Layer.mock(Workspace, {}),
-        Layer.mock(NoteIndex, {
-          whenIndexed: Effect.promise(() => deps.noteIndex.whenIndexed()),
-          getNotesByItemKey: (indexedKey) =>
-            Effect.sync(() => deps.noteIndex.getNotesByItemKey(indexedKey)),
-        }),
-        testNotifier().layer,
-        Layer.mock(PluginSettings, {
-          current: Effect.suspend(() => deps.settings.current),
-          update: (patch) => deps.settings.update(patch),
-        }),
-        Layer.mock(Profile, {
-          profiles: Effect.sync(() => deps.profile.profiles),
-          resolveProfile: (selector) =>
-            Effect.sync(() => deps.profile.resolveProfile(selector)),
-          profileOf: (file) => Effect.sync(() => deps.profile.profileOf(file)),
-        }),
-        Layer.mock(ZoteroReads, {
-          current: Effect.sync(() =>
-            stubService<ZoteroReadsState>("ZoteroReadsState", {
-              state: deps.dbState,
-            }),
-          ),
-          reads: zoteroReads.reads,
-          snapshot: zoteroReads.snapshot,
-        }),
-      ),
-      caseResources,
+    layer: Layer.mergeAll(
+      Layer.mock(LibraryScope, {
+        resolveLibraries: () => Effect.sync(() => currentScope),
+      }),
+      // Only the one-item path reads them, and no case here reaches it.
+      Layer.mock(MetadataCache, {}),
+      Layer.mock(Workspace, {}),
+      Layer.mock(NoteIndex, {
+        whenIndexed: Effect.promise(() => deps.noteIndex.whenIndexed()),
+        getNotesByItemKey: (indexedKey) =>
+          Effect.sync(() => deps.noteIndex.getNotesByItemKey(indexedKey)),
+      }),
+      testNotifier().layer,
+      Layer.mock(PluginSettings, {
+        current: Effect.suspend(() => deps.settings.current),
+        update: (patch) => deps.settings.update(patch),
+      }),
+      Layer.mock(Profile, {
+        profiles: Effect.sync(() => deps.profile.profiles),
+        resolveProfile: (selector) =>
+          Effect.sync(() => deps.profile.resolveProfile(selector)),
+        profileOf: (file) => Effect.sync(() => deps.profile.profileOf(file)),
+      }),
+      Layer.mock(ZoteroReads, {
+        current: Effect.sync(() =>
+          stubService<ZoteroReadsState>("ZoteroReadsState", {
+            state: deps.dbState,
+          }),
+        ),
+        reads: zoteroReads.reads,
+        snapshot: zoteroReads.snapshot,
+      }),
     ),
   };
   return deps;
 }
 
 /**
- * The ports a case's runs take: its Note Feature, the view port fakes, and a
- * bridge over the case's runtime for the modal's callbacks.
+ * The ports a case's runs take: its Note Feature, the view port fakes, and
+ * `bridge` for the modal's callbacks.
  */
-function portsOf(deps: UpdateDeps): BatchUpdatePorts {
+function portsOf(
+  deps: UpdateDeps,
+  bridge: BatchUpdatePorts["bridge"],
+): BatchUpdatePorts {
   return {
     app: stubService<App>("App", {}),
-    bridge: effectBridge(deps.runtime),
+    bridge,
     view: {
       openBatchModal: (options) => {
         openedModals.push(options);
@@ -349,26 +347,36 @@ function portsOf(deps: UpdateDeps): BatchUpdatePorts {
   };
 }
 
-/** {@link runBatchUpdateEffect} on the case's services, through a Promise. */
-function runBatchUpdate(
+/**
+ * {@link runBatchUpdateEffect} on the case's services. The modal's callbacks
+ * run through a bridge over the case's Scope, so the case's end, or `bridge`
+ * when given, is the unload.
+ */
+const runBatchUpdate = Effect.fnUntraced(function* (
   deps: UpdateDeps,
   itemIDs: readonly number[],
-  options?: BatchUpdateOptions,
-): Promise<BatchUpdateResult> {
-  return deps.runtime.runPromise(
-    runBatchUpdateEffect(portsOf(deps), itemIDs, options),
-  );
-}
+  {
+    bridge,
+    ...options
+  }: BatchUpdateOptions & { readonly bridge?: BatchUpdatePorts["bridge"] } = {},
+) {
+  return yield* runBatchUpdateEffect(
+    portsOf(deps, bridge ?? (yield* scopedBridge)),
+    itemIDs,
+    options,
+  ).pipe(Effect.provide(deps.layer));
+});
 
-/** {@link runBatchUpdateAllEffect} on the case's services, through a Promise. */
-function runBatchUpdateAll(
+/** {@link runBatchUpdateAllEffect} on the case's services. */
+const runBatchUpdateAll = Effect.fnUntraced(function* (
   deps: UpdateDeps,
   target?: Parameters<typeof runBatchUpdateAllEffect>[1],
-): Promise<BatchUpdateResult> {
-  return deps.runtime.runPromise(
-    runBatchUpdateAllEffect(portsOf(deps), target),
-  );
-}
+) {
+  return yield* runBatchUpdateAllEffect(
+    portsOf(deps, yield* scopedBridge),
+    target,
+  ).pipe(Effect.provide(deps.layer));
+});
 
 /** Drive the last opened modal's loading phase and return its manifest options. */
 async function classifyLastModal(): Promise<{
@@ -419,167 +427,200 @@ function scopeReads() {
 }
 
 describe("classify through the DisplayRefs stream", () => {
-  it("classifies bounded requests under one Snapshot and writes each item under the run's Snapshot", async () => {
-    const recorded = recordCalls(["DisplayRefs", "ItemsByIndexedKeys"]);
-    const deps = makeDeps("ready", recorded.wrap);
-    deps.noteFeature.createNote = async (item, options) => {
-      // The create renders through the reads it was handed.
-      await deps.runtime.runPromise(
-        options!.reads!.ItemsByIndexedKeys({ indexedKeys: [item.indexedKey] }),
-      );
-      return {
-        outcome: "created",
-        file: noteAt("Literature/New.md"),
-      };
-    };
-    itemsIn(
-      new Map([
-        [1, USER_LIBRARY_ID],
-        [2, USER_LIBRARY_ID],
-      ]),
-    );
-    const progress: number[] = [];
-
-    const itemIDs = Array.from({ length: 1001 }, (_, index) => index + 1);
-    await runBatchUpdate(deps, itemIDs);
-    const modal = openedModals.at(-1)!;
-    await modal.onClassify({
-      onProgress: (classified) => progress.push(classified),
-      signal: new AbortController().signal,
-    });
-    const result = await modal.onRun({
-      onItemSettled: vi.fn(),
-      stop: Deferred.makeUnsafe<void>(),
-    });
-
-    expect(result).toMatchObject({ created: 2, failed: 0 });
-    expect(progress).toEqual([500, 1000, 1001]);
-    const classify = recorded.calls.slice(0, 3);
-    const loads = recorded.calls.slice(3);
-    expect(classify.map(({ operation }) => operation)).toEqual(
-      Array(3).fill("DisplayRefs"),
-    );
-    expect(classify.map(({ payload }) => payload.itemIDs)).toEqual([
-      itemIDs.slice(0, 500),
-      itemIDs.slice(500, 1000),
-      itemIDs.slice(1000),
-    ]);
-    // Two item loads and the two creates' reads.
-    expect(loads.map(({ operation }) => operation)).toEqual(
-      Array(4).fill("ItemsByIndexedKeys"),
-    );
-    // Classify reads its own Snapshot; the run's loads and creates share another.
-    const [classifySnapshot, runSnapshot] = recorded.snapshots;
-    for (const request of classify)
-      expect(request.payload.snapshot).toBe(classifySnapshot);
-    for (const load of loads) expect(load.payload.snapshot).toBe(runSnapshot);
-    expect(runSnapshot).not.toBe(classifySnapshot);
-  });
-
-  it("interrupts the DisplayRefs stream when Cancel lands during classify", async () => {
-    let interrupted = false;
-    const deps = makeDeps("ready", (client) => ({
-      ...client,
-      // The first slice arrives; the next one never does until interrupted.
-      DisplayRefs: ((payload: object, options?: object) =>
-        Stream.concat(
-          (
-            client.DisplayRefs as unknown as (
-              payload: object,
-              options?: object,
-            ) => Stream.Stream<unknown>
-          )(payload, options),
-          Stream.never,
-        ).pipe(
-          Stream.onExit((exit) =>
-            Effect.sync(() => {
-              interrupted = Exit.hasInterrupts(exit);
+  it.effect(
+    "classifies bounded requests under one Snapshot and writes each item under the run's Snapshot",
+    () =>
+      Effect.gen(function* () {
+        const recorded = recordCalls(["DisplayRefs", "ItemsByIndexedKeys"]);
+        const deps = makeDeps("ready", recorded.wrap);
+        const bridge = yield* scopedBridge;
+        deps.noteFeature.createNote = async (item, options) => {
+          // The create renders through the reads it was handed.
+          await bridge.runPromise(
+            options!.reads!.ItemsByIndexedKeys({
+              indexedKeys: [item.indexedKey],
             }),
-          ),
-        )) as unknown as ZoteroReadsClient["DisplayRefs"],
-    }));
-    itemsIn(new Map([[1, USER_LIBRARY_ID]]));
-    const abort = new AbortController();
+          );
+          return {
+            outcome: "created",
+            file: noteAt("Literature/New.md"),
+          };
+        };
+        itemsIn(
+          new Map([
+            [1, USER_LIBRARY_ID],
+            [2, USER_LIBRARY_ID],
+          ]),
+        );
+        const progress: number[] = [];
 
-    await runBatchUpdate(deps, [1, 2]);
-    const classified = openedModals.at(-1)!.onClassify({
-      onProgress: () => abort.abort(),
-      signal: abort.signal,
-    });
+        const itemIDs = Array.from({ length: 1001 }, (_, index) => index + 1);
+        yield* runBatchUpdate(deps, itemIDs);
+        const modal = openedModals.at(-1)!;
+        yield* Effect.promise(() =>
+          modal.onClassify({
+            onProgress: (classified) => progress.push(classified),
+            signal: new AbortController().signal,
+          }),
+        );
+        const result = yield* Effect.promise(() =>
+          modal.onRun({
+            onItemSettled: vi.fn(),
+            stop: Deferred.makeUnsafe<void>(),
+          }),
+        );
 
-    await expect(classified).rejects.toThrow();
-    expect(interrupted).toBe(true);
-  });
+        expect(result).toMatchObject({ created: 2, failed: 0 });
+        expect(progress).toEqual([500, 1000, 1001]);
+        const classify = recorded.calls.slice(0, 3);
+        const loads = recorded.calls.slice(3);
+        expect(classify.map(({ operation }) => operation)).toEqual(
+          Array(3).fill("DisplayRefs"),
+        );
+        expect(classify.map(({ payload }) => payload.itemIDs)).toEqual([
+          itemIDs.slice(0, 500),
+          itemIDs.slice(500, 1000),
+          itemIDs.slice(1000),
+        ]);
+        // Two item loads and the two creates' reads.
+        expect(loads.map(({ operation }) => operation)).toEqual(
+          Array(4).fill("ItemsByIndexedKeys"),
+        );
+        // Classify reads its own Snapshot; the run's loads and creates share another.
+        const [classifySnapshot, runSnapshot] = recorded.snapshots;
+        for (const request of classify)
+          expect(request.payload.snapshot).toBe(classifySnapshot);
+        for (const load of loads)
+          expect(load.payload.snapshot).toBe(runSnapshot);
+        expect(runSnapshot).not.toBe(classifySnapshot);
+      }),
+  );
+
+  it.effect(
+    "interrupts the DisplayRefs stream when Cancel lands during classify",
+    () =>
+      Effect.gen(function* () {
+        let interrupted = false;
+        const deps = makeDeps("ready", (client) => ({
+          ...client,
+          // The first slice arrives; the next one never does until interrupted.
+          DisplayRefs: ((payload: object, options?: object) =>
+            Stream.concat(
+              (
+                client.DisplayRefs as unknown as (
+                  payload: object,
+                  options?: object,
+                ) => Stream.Stream<unknown>
+              )(payload, options),
+              Stream.never,
+            ).pipe(
+              Stream.onExit((exit) =>
+                Effect.sync(() => {
+                  interrupted = Exit.hasInterrupts(exit);
+                }),
+              ),
+            )) as unknown as ZoteroReadsClient["DisplayRefs"],
+        }));
+        itemsIn(new Map([[1, USER_LIBRARY_ID]]));
+        const abort = new AbortController();
+
+        yield* runBatchUpdate(deps, [1, 2]);
+        const classified = openedModals.at(-1)!.onClassify({
+          onProgress: () => abort.abort(),
+          signal: abort.signal,
+        });
+
+        yield* Effect.promise(() => expect(classified).rejects.toThrow());
+        expect(interrupted).toBe(true);
+      }),
+  );
 });
 
 describe("a write that rejects", () => {
-  it("halts the run on an inert template, without a failure row, and shows the template's message", async () => {
-    const deps = makeDeps("ready");
-    const inert = new InertTemplateError("Inert message");
-    deps.noteFeature.createNote = () => Promise.reject(inert);
-    itemsIn(
-      new Map([
-        [1, USER_LIBRARY_ID],
-        [2, USER_LIBRARY_ID],
-      ]),
-    );
-    const onItemSettled = vi.fn();
+  it.effect(
+    "halts the run on an inert template, without a failure row, and shows the template's message",
+    () =>
+      Effect.gen(function* () {
+        const deps = makeDeps("ready");
+        const inert = new InertTemplateError("Inert message");
+        deps.noteFeature.createNote = () => Promise.reject(inert);
+        itemsIn(
+          new Map([
+            [1, USER_LIBRARY_ID],
+            [2, USER_LIBRARY_ID],
+          ]),
+        );
+        const onItemSettled = vi.fn();
 
-    await runBatchUpdate(deps, [1, 2]);
-    const modal = openedModals.at(-1)!;
-    await modal.onClassify({
-      onProgress: vi.fn(),
-      signal: new AbortController().signal,
-    });
-    const run = modal.onRun({
-      onItemSettled,
-      stop: Deferred.makeUnsafe<void>(),
-    });
+        yield* runBatchUpdate(deps, [1, 2]);
+        const modal = openedModals.at(-1)!;
+        yield* Effect.promise(() =>
+          modal.onClassify({
+            onProgress: vi.fn(),
+            signal: new AbortController().signal,
+          }),
+        );
+        const run = modal.onRun({
+          onItemSettled,
+          stop: Deferred.makeUnsafe<void>(),
+        });
 
-    const error: unknown = await run.then(
-      () => expect.unreachable("the run halts"),
-      (reason: unknown) => reason,
-    );
-    expect(error).toMatchObject({ _tag: "LegacyPortError", cause: inert });
-    expect(onItemSettled).not.toHaveBeenCalledWith(
-      expect.objectContaining({ status: "failed" }),
-    );
-    const { runFailed } = modal.text;
-    expect(typeof runFailed === "function" ? runFailed(error) : runFailed).toBe(
-      "Inert message",
-    );
-  });
-
-  it("reports any other rejection as the row's failure, with its message", async () => {
-    const deps = makeDeps("ready");
-    deps.noteFeature.createNote = () => Promise.reject(new Error("disk full"));
-    itemsIn(
-      new Map([
-        [1, USER_LIBRARY_ID],
-        [2, USER_LIBRARY_ID],
-      ]),
-    );
-    const onItemSettled = vi.fn();
-
-    await runBatchUpdate(deps, [1, 2]);
-    const modal = openedModals.at(-1)!;
-    await modal.onClassify({
-      onProgress: vi.fn(),
-      signal: new AbortController().signal,
-    });
-    const result = await modal.onRun({
-      onItemSettled,
-      stop: Deferred.makeUnsafe<void>(),
-    });
-
-    expect(result).toMatchObject({ failed: 2 });
-    expect(onItemSettled).toHaveBeenCalledWith(
-      expect.objectContaining({
-        status: "failed",
-        failure: expect.objectContaining({ message: "disk full" }),
+        const error: unknown = yield* Effect.promise(() =>
+          run.then(
+            () => expect.unreachable("the run halts"),
+            (reason: unknown) => reason,
+          ),
+        );
+        expect(error).toMatchObject({ _tag: "LegacyPortError", cause: inert });
+        expect(onItemSettled).not.toHaveBeenCalledWith(
+          expect.objectContaining({ status: "failed" }),
+        );
+        const { runFailed } = modal.text;
+        expect(
+          typeof runFailed === "function" ? runFailed(error) : runFailed,
+        ).toBe("Inert message");
       }),
-    );
-  });
+  );
+
+  it.effect(
+    "reports any other rejection as the row's failure, with its message",
+    () =>
+      Effect.gen(function* () {
+        const deps = makeDeps("ready");
+        deps.noteFeature.createNote = () =>
+          Promise.reject(new Error("disk full"));
+        itemsIn(
+          new Map([
+            [1, USER_LIBRARY_ID],
+            [2, USER_LIBRARY_ID],
+          ]),
+        );
+        const onItemSettled = vi.fn();
+
+        yield* runBatchUpdate(deps, [1, 2]);
+        const modal = openedModals.at(-1)!;
+        yield* Effect.promise(() =>
+          modal.onClassify({
+            onProgress: vi.fn(),
+            signal: new AbortController().signal,
+          }),
+        );
+        const result = yield* Effect.promise(() =>
+          modal.onRun({
+            onItemSettled,
+            stop: Deferred.makeUnsafe<void>(),
+          }),
+        );
+
+        expect(result).toMatchObject({ failed: 2 });
+        expect(onItemSettled).toHaveBeenCalledWith(
+          expect.objectContaining({
+            status: "failed",
+            failure: expect.objectContaining({ message: "disk full" }),
+          }),
+        );
+      }),
+  );
 });
 
 describe("batchCreateOutcome", () => {
@@ -781,330 +822,360 @@ describe("one item without additional Profiles", () => {
   );
 });
 
-it.each([false, true])(
+it.effect.each([false, true])(
   "reports affected creations once per batch (prepared Profiles: %s)",
-  async (prepared) => {
-    const deps = makeDeps();
-    const report = vi.fn();
-    deps.noteFeature.reportExcerptImages = report;
-    const summaries = [
-      { zotero: 1, unchecked: 0, unavailable: 1 },
-      { zotero: 0, unchecked: 1, unavailable: 2 },
-    ];
-    const create = async (
-      id: number,
-      options?: Pick<CreateNoteOptions, "reportExcerpts">,
-    ): Promise<CreateNoteResult> => {
-      expect(options?.reportExcerpts).toBeTypeOf("function");
-      options!.reportExcerpts!(summaries[id - 1]!);
-      expect(report).not.toHaveBeenCalled();
-      return {
-        outcome: "created",
-        file: noteAt(`Literature/Item ${id}.md`),
+  (prepared) =>
+    Effect.gen(function* () {
+      const deps = makeDeps();
+      const report = vi.fn();
+      deps.noteFeature.reportExcerptImages = report;
+      const summaries = [
+        { zotero: 1, unchecked: 0, unavailable: 1 },
+        { zotero: 0, unchecked: 1, unavailable: 2 },
+      ];
+      const create = async (
+        id: number,
+        options?: Pick<CreateNoteOptions, "reportExcerpts">,
+      ): Promise<CreateNoteResult> => {
+        expect(options?.reportExcerpts).toBeTypeOf("function");
+        options!.reportExcerpts!(summaries[id - 1]!);
+        expect(report).not.toHaveBeenCalled();
+        return {
+          outcome: "created",
+          file: noteAt(`Literature/Item ${id}.md`),
+        };
       };
-    };
-    deps.noteFeature.createNote = (item, options) =>
-      create(item.itemID, options);
-    if (prepared) {
-      deps.profile = profileReader({
-        ...defaults,
-        profiles: [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }],
+      deps.noteFeature.createNote = (item, options) =>
+        create(item.itemID, options);
+      if (prepared) {
+        deps.profile = profileReader({
+          ...defaults,
+          profiles: [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }],
+        });
+        deps.noteFeature.planCreations = async (keys) =>
+          creationPlans(keys, (item) => ({
+            selection: {
+              selector: "default",
+              source: "bound",
+              shouldAsk: false,
+            },
+            previews: [
+              {
+                selector: "default",
+                label: undefined,
+                folder: "Literature",
+                citationStyle: null,
+                document: undefined,
+                path: `Literature/Item ${item.itemID}.md`,
+                create: (options) => create(item.itemID, options),
+              },
+            ],
+          }));
+      }
+      itemsIn(
+        new Map([
+          [1, USER_LIBRARY_ID],
+          [2, USER_LIBRARY_ID],
+        ]),
+      );
+      yield* runBatchUpdate(deps, [1, 2]);
+      yield* Effect.promise(() => classifyLastModal());
+      const result = yield* Effect.promise(() =>
+        openedModals.at(-1)!.onRun({
+          onItemSettled: () => {
+            expect(report).not.toHaveBeenCalled();
+          },
+          stop: Deferred.makeUnsafe<void>(),
+        }),
+      );
+      expect(result).toMatchObject({ created: 2, failed: 0 });
+      expect(report).toHaveBeenCalledExactlyOnceWith({
+        zotero: 1,
+        unchecked: 1,
+        unavailable: 3,
       });
-      deps.noteFeature.planCreations = async (keys) =>
-        creationPlans(keys, (item) => ({
-          selection: { selector: "default", source: "bound", shouldAsk: false },
+    }),
+);
+
+it.effect(
+  "runs every row of one update batch under one outcome scope, released after the run",
+  () =>
+    Effect.gen(function* () {
+      const deps = makeDeps();
+      const probe = yield* Effect.acquireDisposable(
+        Effect.sync(excerptReuseProbe),
+      );
+      const scopes: (ExcerptOutcomeScope | undefined)[] = [];
+      // Each row resolves the probe's excerpt in turn, so the second resolution
+      // cannot be merged into the first one's in-flight request: only the run's own
+      // retention can answer it.
+      let resolutions: Promise<unknown> = Promise.resolve();
+      const resolveThrough = (outcomes: ExcerptOutcomeScope | undefined) => {
+        scopes.push(outcomes);
+        resolutions = resolutions.then(() => probe.resolve(outcomes));
+        return resolutions;
+      };
+      deps.noteFeature.writeNoteUpdate = async (_file, options) => {
+        await resolveThrough(options.outcomes);
+        return { bodyUpdated: true, duplicateRegionCount: 0 };
+      };
+      deps.noteFeature.createNote = async (_item, options) => {
+        await resolveThrough(options?.outcomes);
+        return { outcome: "created", file: noteAt("Literature/New.md") };
+      };
+      deps.noteIndex.getNotesByItemKey = (key) =>
+        key === "ITEM1" ? [noteAt("Literature/Item1.md")] : [];
+      itemsIn(
+        new Map([
+          [1, USER_LIBRARY_ID],
+          [2, USER_LIBRARY_ID],
+        ]),
+      );
+
+      yield* runBatchUpdate(deps, [1, 2]);
+      const modal = openedModals.at(-1)!;
+      yield* Effect.promise(() =>
+        modal.onClassify({
+          onProgress: vi.fn(),
+          signal: new AbortController().signal,
+        }),
+      );
+      const result = yield* Effect.promise(() =>
+        modal.onRun({
+          onItemSettled: vi.fn(),
+          stop: Deferred.makeUnsafe<void>(),
+        }),
+      );
+
+      expect(result).toMatchObject({ created: 1, updated: 1, failed: 0 });
+      // One run is one batch: both rows' notes share one scope, and the second one
+      // reuses the outcome the first produced instead of rendering it again.
+      expect(scopes).toHaveLength(2);
+      expect(scopes[1]).toBe(scopes[0]);
+      expect(probe.renders()).toBe(1);
+      // The run released what it retained, so a later note driven through the same
+      // scope renders again rather than reusing.
+      yield* Effect.promise(() => probe.resolve(scopes[0]));
+      expect(probe.renders()).toBe(2);
+    }),
+);
+
+it.effect(
+  "classifies conflicting Companion Profiles as kept rows before any write or picker",
+  () =>
+    Effect.gen(function* () {
+      const books = "Bk3Qn7XvT2Lp" as ProfileId;
+      const deps = makeDeps();
+      deps.profile = profileReader(
+        { ...defaults, profiles: [{ id: books, label: "Books" }] },
+        {
+          getFileCache: (file) => ({
+            frontmatter: file.path.startsWith("Books/")
+              ? { "zotlit-profile": `Books (${books})` }
+              : {},
+          }),
+        },
+      );
+      const create = vi.fn(async () => ({
+        outcome: "created" as const,
+        file: noteAt("Books/New.md"),
+      }));
+      const createDefault = vi.fn(async () => ({
+        outcome: "created" as const,
+        file: noteAt("Literature/New.md"),
+      }));
+      const writeNoteUpdate = vi.fn(async () => ({
+        bodyUpdated: true,
+        duplicateRegionCount: 0,
+      }));
+      deps.noteFeature.writeNoteUpdate = writeNoteUpdate;
+      // A remembered Profile persisted by an earlier version stays inert.
+      Object.assign(deps.settings, {
+        current: Effect.succeed({
+          ...defaults,
+          "note.last-used-profile": books,
+        }),
+      });
+      using settingsUpdate = vi.spyOn(deps.settings, "update");
+      deps.noteFeature.planCreations = vi.fn(async (keys) =>
+        creationPlans(keys, () => ({
+          selection: { selector: books, source: "headless", shouldAsk: true },
           previews: [
+            {
+              selector: books,
+              label: "Books",
+              folder: "Books",
+              citationStyle: null,
+              document: undefined,
+              path: "Books/New.md",
+              create,
+            },
             {
               selector: "default",
               label: undefined,
               folder: "Literature",
               citationStyle: null,
               document: undefined,
-              path: `Literature/Item ${item.itemID}.md`,
-              create: (options) => create(item.itemID, options),
+              path: "Literature/New.md",
+              create: createDefault,
             },
           ],
-        }));
-    }
-    itemsIn(
-      new Map([
-        [1, USER_LIBRARY_ID],
-        [2, USER_LIBRARY_ID],
-      ]),
-    );
-    await runBatchUpdate(deps, [1, 2]);
-    await classifyLastModal();
-    const result = await openedModals.at(-1)!.onRun({
-      onItemSettled: () => {
-        expect(report).not.toHaveBeenCalled();
-      },
-      stop: Deferred.makeUnsafe<void>(),
-    });
-    expect(result).toMatchObject({ created: 2, failed: 0 });
-    expect(report).toHaveBeenCalledExactlyOnceWith({
-      zotero: 1,
-      unchecked: 1,
-      unavailable: 3,
-    });
-  },
+        })),
+      );
+      deps.noteIndex.getNotesByItemKey = (key) =>
+        key === "ITEM2"
+          ? [{ path: "Books/Old.md" } as any]
+          : key === "ITEM3"
+            ? [{ path: "Literature/Other.md" } as any]
+            : [];
+      itemsIn(
+        new Map([
+          [1, USER_LIBRARY_ID],
+          [2, USER_LIBRARY_ID],
+          [3, USER_LIBRARY_ID],
+        ]),
+      );
+      chooseProfile.mockClear();
+      yield* runBatchUpdate(deps, [1, 2, 3], { profile: books });
+      const modal = openedModals.at(-1)!;
+      const manifest = (yield* Effect.promise(() =>
+        modal.onClassify({
+          onProgress: vi.fn(),
+          signal: new AbortController().signal,
+        }),
+      )) as any;
+      expect(manifest.options.tasks).toMatchObject([
+        { id: 1, profile: "Books", path: "Books/New.md" },
+        { id: 2, profile: "Books" },
+      ]);
+      expect(manifest.options.kept).toEqual([
+        {
+          label: "Item 3",
+          profile: m.settings_profile_default_name(),
+          reason: m.batch_profile_kept_reason({
+            label: m.settings_profile_default_name(),
+            requested: "Books",
+          }),
+        },
+      ]);
+      expect(manifest.counts.actionable).toBe(2);
+      expect(chooseProfile).not.toHaveBeenCalled();
+      expect(create).not.toHaveBeenCalled();
+      expect(settingsUpdate).not.toHaveBeenCalled();
+      // Every row carries the Companion's Profile, so the only control is the
+      // explicit all-new override.
+      const choices: BatchProfileChoice[] = manifest.options.profileChoices;
+      expect(choices.map(({ scope }) => scope)).toEqual(["all-new"]);
+      const choice = choices[0]!;
+      expect(choice).toMatchObject({
+        label: "Books",
+        source: "headless",
+        count: 1,
+      });
+      chooseProfile
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce("default");
+      yield* Effect.promise(() => choice.choose());
+      expect(manifest.options.tasks[0].path).toBe("Books/New.md");
+      yield* Effect.promise(() => choice.choose());
+      expect(manifest.options.tasks[0]).toMatchObject({
+        profile: m.settings_profile_default_name(),
+        path: "Literature/New.md",
+      });
+      expect(choice.source).toBe("asked");
+      expect(settingsUpdate).not.toHaveBeenCalled();
+      const result = yield* Effect.promise(() =>
+        modal.onRun({
+          onItemSettled: vi.fn(),
+          stop: Deferred.makeUnsafe<void>(),
+        }),
+      );
+      expect(result).toMatchObject({
+        created: 1,
+        updated: 1,
+        failed: 0,
+        skipped: 0,
+      });
+      expect(settingsUpdate).not.toHaveBeenCalled();
+      expect(create).not.toHaveBeenCalled();
+      expect(createDefault).toHaveBeenCalledOnce();
+      expect(writeNoteUpdate).toHaveBeenCalledOnce();
+      expect(writeNoteUpdate.mock.calls[0]).not.toHaveProperty("1.profile");
+      expect(
+        modal.text.runSummary(result, { cancelled: false, aborted: false }),
+      ).toBe(
+        m.batch_profile_summary({
+          created: m.batch_profile_created({
+            count: 1,
+            label: m.settings_profile_default_name(),
+          }),
+          updated: m.batch_profile_updated({ count: 1, label: "Books" }),
+          kept: 1,
+          failed: 0,
+          skipped: 0,
+          notFound: 0,
+        }),
+      );
+    }),
 );
 
-it("runs every row of one update batch under one outcome scope, released after the run", async () => {
-  const deps = makeDeps();
-  await using probe = excerptReuseProbe();
-  const scopes: (ExcerptOutcomeScope | undefined)[] = [];
-  // Each row resolves the probe's excerpt in turn, so the second resolution
-  // cannot be merged into the first one's in-flight request: only the run's own
-  // retention can answer it.
-  let resolutions: Promise<unknown> = Promise.resolve();
-  const resolveThrough = (outcomes: ExcerptOutcomeScope | undefined) => {
-    scopes.push(outcomes);
-    resolutions = resolutions.then(() => probe.resolve(outcomes));
-    return resolutions;
-  };
-  deps.noteFeature.writeNoteUpdate = async (_file, options) => {
-    await resolveThrough(options.outcomes);
-    return { bodyUpdated: true, duplicateRegionCount: 0 };
-  };
-  deps.noteFeature.createNote = async (_item, options) => {
-    await resolveThrough(options?.outcomes);
-    return { outcome: "created", file: noteAt("Literature/New.md") };
-  };
-  deps.noteIndex.getNotesByItemKey = (key) =>
-    key === "ITEM1" ? [noteAt("Literature/Item1.md")] : [];
-  itemsIn(
-    new Map([
-      [1, USER_LIBRARY_ID],
-      [2, USER_LIBRARY_ID],
-    ]),
-  );
-
-  await runBatchUpdate(deps, [1, 2]);
-  const modal = openedModals.at(-1)!;
-  await modal.onClassify({
-    onProgress: vi.fn(),
-    signal: new AbortController().signal,
-  });
-  const result = await modal.onRun({
-    onItemSettled: vi.fn(),
-    stop: Deferred.makeUnsafe<void>(),
-  });
-
-  expect(result).toMatchObject({ created: 1, updated: 1, failed: 0 });
-  // One run is one batch: both rows' notes share one scope, and the second one
-  // reuses the outcome the first produced instead of rendering it again.
-  expect(scopes).toHaveLength(2);
-  expect(scopes[1]).toBe(scopes[0]);
-  expect(probe.renders()).toBe(1);
-  // The run released what it retained, so a later note driven through the same
-  // scope renders again rather than reusing.
-  await probe.resolve(scopes[0]);
-  expect(probe.renders()).toBe(2);
-});
-
-it("classifies conflicting Companion Profiles as kept rows before any write or picker", async () => {
-  const books = "Bk3Qn7XvT2Lp" as ProfileId;
-  const deps = makeDeps();
-  deps.profile = profileReader(
-    { ...defaults, profiles: [{ id: books, label: "Books" }] },
-    {
-      getFileCache: (file) => ({
-        frontmatter: file.path.startsWith("Books/")
-          ? { "zotlit-profile": `Books (${books})` }
-          : {},
-      }),
-    },
-  );
-  const create = vi.fn(async () => ({
-    outcome: "created" as const,
-    file: noteAt("Books/New.md"),
-  }));
-  const createDefault = vi.fn(async () => ({
-    outcome: "created" as const,
-    file: noteAt("Literature/New.md"),
-  }));
-  const writeNoteUpdate = vi.fn(async () => ({
-    bodyUpdated: true,
-    duplicateRegionCount: 0,
-  }));
-  deps.noteFeature.writeNoteUpdate = writeNoteUpdate;
-  // A remembered Profile persisted by an earlier version stays inert.
-  Object.assign(deps.settings, {
-    current: Effect.succeed({
-      ...defaults,
-      "note.last-used-profile": books,
-    }),
-  });
-  using settingsUpdate = vi.spyOn(deps.settings, "update");
-  deps.noteFeature.planCreations = vi.fn(async (keys) =>
-    creationPlans(keys, () => ({
-      selection: { selector: books, source: "headless", shouldAsk: true },
-      previews: [
-        {
-          selector: books,
-          label: "Books",
-          folder: "Books",
-          citationStyle: null,
-          document: undefined,
-          path: "Books/New.md",
-          create,
-        },
-        {
-          selector: "default",
-          label: undefined,
-          folder: "Literature",
-          citationStyle: null,
-          document: undefined,
-          path: "Literature/New.md",
-          create: createDefault,
-        },
-      ],
-    })),
-  );
-  deps.noteIndex.getNotesByItemKey = (key) =>
-    key === "ITEM2"
-      ? [{ path: "Books/Old.md" } as any]
-      : key === "ITEM3"
-        ? [{ path: "Literature/Other.md" } as any]
-        : [];
-  itemsIn(
-    new Map([
-      [1, USER_LIBRARY_ID],
-      [2, USER_LIBRARY_ID],
-      [3, USER_LIBRARY_ID],
-    ]),
-  );
-  chooseProfile.mockClear();
-  await runBatchUpdate(deps, [1, 2, 3], { profile: books });
-  const modal = openedModals.at(-1)!;
-  const manifest = (await modal.onClassify({
-    onProgress: vi.fn(),
-    signal: new AbortController().signal,
-  })) as any;
-  expect(manifest.options.tasks).toMatchObject([
-    { id: 1, profile: "Books", path: "Books/New.md" },
-    { id: 2, profile: "Books" },
-  ]);
-  expect(manifest.options.kept).toEqual([
-    {
-      label: "Item 3",
-      profile: m.settings_profile_default_name(),
-      reason: m.batch_profile_kept_reason({
-        label: m.settings_profile_default_name(),
-        requested: "Books",
-      }),
-    },
-  ]);
-  expect(manifest.counts.actionable).toBe(2);
-  expect(chooseProfile).not.toHaveBeenCalled();
-  expect(create).not.toHaveBeenCalled();
-  expect(settingsUpdate).not.toHaveBeenCalled();
-  // Every row carries the Companion's Profile, so the only control is the
-  // explicit all-new override.
-  const choices: BatchProfileChoice[] = manifest.options.profileChoices;
-  expect(choices.map(({ scope }) => scope)).toEqual(["all-new"]);
-  const choice = choices[0]!;
-  expect(choice).toMatchObject({
-    label: "Books",
-    source: "headless",
-    count: 1,
-  });
-  chooseProfile
-    .mockResolvedValueOnce(undefined)
-    .mockResolvedValueOnce("default");
-  await choice.choose();
-  expect(manifest.options.tasks[0].path).toBe("Books/New.md");
-  await choice.choose();
-  expect(manifest.options.tasks[0]).toMatchObject({
-    profile: m.settings_profile_default_name(),
-    path: "Literature/New.md",
-  });
-  expect(choice.source).toBe("asked");
-  expect(settingsUpdate).not.toHaveBeenCalled();
-  const result = await modal.onRun({
-    onItemSettled: vi.fn(),
-    stop: Deferred.makeUnsafe<void>(),
-  });
-  expect(result).toMatchObject({
-    created: 1,
-    updated: 1,
-    failed: 0,
-    skipped: 0,
-  });
-  expect(settingsUpdate).not.toHaveBeenCalled();
-  expect(create).not.toHaveBeenCalled();
-  expect(createDefault).toHaveBeenCalledOnce();
-  expect(writeNoteUpdate).toHaveBeenCalledOnce();
-  expect(writeNoteUpdate.mock.calls[0]).not.toHaveProperty("1.profile");
-  expect(
-    modal.text.runSummary(result, { cancelled: false, aborted: false }),
-  ).toBe(
-    m.batch_profile_summary({
-      created: m.batch_profile_created({
-        count: 1,
-        label: m.settings_profile_default_name(),
-      }),
-      updated: m.batch_profile_updated({ count: 1, label: "Books" }),
-      kept: 1,
-      failed: 0,
-      skipped: 0,
-      notFound: 0,
-    }),
-  );
-});
-
-it.each([true, false])(
+it.effect.each([true, false])(
   "shows an unknown Literature Note stamp and preserves recovery (additional Profiles: %s)",
-  async (additionalProfiles) => {
-    const stamp = "Retired (Qw8Er5Ty2Ui9)";
-    const file = noteAt("Reading/Paper.md");
-    const deps = makeDeps();
-    deps.profile = profileReader(
-      {
-        ...defaults,
-        profiles: additionalProfiles
-          ? [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }]
-          : [],
-      },
-      {
-        getFileCache: () => ({ frontmatter: { "zotlit-profile": stamp } }),
-      },
-    );
-    deps.noteIndex.getNotesByItemKey = () => [file];
-    itemsIn(new Map([[1, USER_LIBRARY_ID]]));
-    deps.noteFeature.writeNoteUpdate = async () => ({
-      bodyUpdated: false,
-      duplicateRegionCount: 0,
-      diagnostic: unknownProfileDiagnostic(stamp, { path: file.path }),
-    });
-    await runBatchUpdate(deps, [1, 2]);
-    const options = openedModals.at(-1)!;
-    const manifest = (await options.onClassify({
-      onProgress: vi.fn(),
-      signal: new AbortController().signal,
-    })) as any;
-    expect(manifest.options.tasks).toMatchObject([{ id: 1 }]);
-    expect(manifest.options.tasks[0].profile).toBe(
-      additionalProfiles ? stamp : undefined,
-    );
-    expect(manifest.options.profileChoices).toBeUndefined();
-    const onItemSettled = vi.fn();
-    expect(
-      await options.onRun({
-        onItemSettled,
-        stop: Deferred.makeUnsafe<void>(),
-      }),
-    ).toMatchObject({ created: 0, updated: 0, failed: 1 });
-    expect(onItemSettled).toHaveBeenCalledExactlyOnceWith({
-      id: 1,
-      status: "failed",
-      failure: {
-        label: "Item 1",
-        message: m.notice_literature_note_profile_unknown({ stamp }),
-        recovery: { action: "switch-profile", path: file.path },
-      },
-    });
-  },
+  (additionalProfiles) =>
+    Effect.gen(function* () {
+      const stamp = "Retired (Qw8Er5Ty2Ui9)";
+      const file = noteAt("Reading/Paper.md");
+      const deps = makeDeps();
+      deps.profile = profileReader(
+        {
+          ...defaults,
+          profiles: additionalProfiles
+            ? [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }]
+            : [],
+        },
+        {
+          getFileCache: () => ({ frontmatter: { "zotlit-profile": stamp } }),
+        },
+      );
+      deps.noteIndex.getNotesByItemKey = () => [file];
+      itemsIn(new Map([[1, USER_LIBRARY_ID]]));
+      deps.noteFeature.writeNoteUpdate = async () => ({
+        bodyUpdated: false,
+        duplicateRegionCount: 0,
+        diagnostic: unknownProfileDiagnostic(stamp, { path: file.path }),
+      });
+      yield* runBatchUpdate(deps, [1, 2]);
+      const options = openedModals.at(-1)!;
+      const manifest = (yield* Effect.promise(() =>
+        options.onClassify({
+          onProgress: vi.fn(),
+          signal: new AbortController().signal,
+        }),
+      )) as any;
+      expect(manifest.options.tasks).toMatchObject([{ id: 1 }]);
+      expect(manifest.options.tasks[0].profile).toBe(
+        additionalProfiles ? stamp : undefined,
+      );
+      expect(manifest.options.profileChoices).toBeUndefined();
+      const onItemSettled = vi.fn();
+      expect(
+        yield* Effect.promise(() =>
+          options.onRun({
+            onItemSettled,
+            stop: Deferred.makeUnsafe<void>(),
+          }),
+        ),
+      ).toMatchObject({ created: 0, updated: 0, failed: 1 });
+      expect(onItemSettled).toHaveBeenCalledExactlyOnceWith({
+        id: 1,
+        status: "failed",
+        failure: {
+          label: "Item 1",
+          message: m.notice_literature_note_profile_unknown({ stamp }),
+          recovery: { action: "switch-profile", path: file.path },
+        },
+      });
+    }),
 );
 
 const BOOKS = "Bk3Qn7XvT2Lp" as ProfileId;
@@ -1216,13 +1287,15 @@ function mixedBatch() {
   return { deps, planCreations, created, updated, selections };
 }
 
-async function classifyMixedBatch(deps: UpdateDeps) {
-  await runBatchUpdate(deps, [1, 2, 3, 4, 5, 6, 7, 8]);
+const classifyMixedBatch = Effect.fnUntraced(function* (deps: UpdateDeps) {
+  yield* runBatchUpdate(deps, [1, 2, 3, 4, 5, 6, 7, 8]);
   const modal = openedModals.at(-1)!;
-  const manifest = (await modal.onClassify({
-    onProgress: vi.fn(),
-    signal: new AbortController().signal,
-  })) as any;
+  const manifest = (yield* Effect.promise(() =>
+    modal.onClassify({
+      onProgress: vi.fn(),
+      signal: new AbortController().signal,
+    }),
+  )) as any;
   const choices: BatchProfileChoice[] = manifest.options.profileChoices;
   const choice = (scope: BatchProfileChoice["scope"]) =>
     choices.find((entry) => entry.scope === scope)!;
@@ -1237,7 +1310,7 @@ async function classifyMixedBatch(deps: UpdateDeps) {
     run,
     onItemSettled,
   };
-}
+});
 
 function noteAt(path: string): TFile {
   const file = new TFile();
@@ -1248,491 +1321,587 @@ function noteAt(path: string): TFile {
 const DEFAULT_LABEL = () => m.settings_profile_default_name();
 
 describe("mixed batch", () => {
-  it("prepares each new row from its own selection and keeps the fallback to unmatched rows", async () => {
-    const { deps, planCreations, created, updated } = mixedBatch();
-    const { modal, tasks, choices, choice, run, onItemSettled } =
-      await classifyMixedBatch(deps);
+  it.effect(
+    "prepares each new row from its own selection and keeps the fallback to unmatched rows",
+    () =>
+      Effect.gen(function* () {
+        const { deps, planCreations, created, updated } = mixedBatch();
+        const { modal, tasks, choices, choice, run, onItemSettled } =
+          yield* classifyMixedBatch(deps);
 
-    // One call resolves every new row (#1642).
-    expect(planCreations).toHaveBeenCalledExactlyOnceWith(
-      [1, 2, 3, 4, 5].map((itemID) => `ITEM${itemID}`),
-      { headless: undefined, signal: expect.any(AbortSignal) },
-    );
-    expect(tasks).toMatchObject([
-      {
-        id: 1,
-        profile: "Books",
-        path: "Books/Item 1.md",
-        reason: m.profile_match_selected({ profile: "Books" }),
-      },
-      {
-        id: 2,
-        profile: "Articles",
-        path: "Articles/Item 2.md",
-        reason: m.profile_match_selected({ profile: "Articles" }),
-      },
-      {
-        id: 3,
-        profile: DEFAULT_LABEL(),
-        path: "Literature/Item 3.md",
-        reason: m.profile_match_unmatched(),
-      },
-      { id: 4, profile: DEFAULT_LABEL(), path: "Literature/Item 4.md" },
-      { id: 5, profile: undefined, path: undefined, reason: INVALID_PROBLEM },
-      { id: 6, profile: "Books" },
-      { id: 7, profile: DEFAULT_LABEL() },
-      { id: 8, profile: RETIRED_STAMP },
-    ]);
-    expect(choices.map(({ scope }) => scope)).toEqual([
-      "unresolved",
-      "affected",
-      "all-new",
-    ]);
-    expect(choice("unresolved")).toMatchObject({
-      count: 2,
-      label: DEFAULT_LABEL(),
-      source: "bound",
-    });
-    expect(choice("affected")).toMatchObject({ count: 1, label: undefined });
-    expect(choice("all-new")).toMatchObject({ count: 5, label: undefined });
+        // One call resolves every new row (#1642).
+        expect(planCreations).toHaveBeenCalledExactlyOnceWith(
+          [1, 2, 3, 4, 5].map((itemID) => `ITEM${itemID}`),
+          { headless: undefined, signal: expect.any(AbortSignal) },
+        );
+        expect(tasks).toMatchObject([
+          {
+            id: 1,
+            profile: "Books",
+            path: "Books/Item 1.md",
+            reason: m.profile_match_selected({ profile: "Books" }),
+          },
+          {
+            id: 2,
+            profile: "Articles",
+            path: "Articles/Item 2.md",
+            reason: m.profile_match_selected({ profile: "Articles" }),
+          },
+          {
+            id: 3,
+            profile: DEFAULT_LABEL(),
+            path: "Literature/Item 3.md",
+            reason: m.profile_match_unmatched(),
+          },
+          { id: 4, profile: DEFAULT_LABEL(), path: "Literature/Item 4.md" },
+          {
+            id: 5,
+            profile: undefined,
+            path: undefined,
+            reason: INVALID_PROBLEM,
+          },
+          { id: 6, profile: "Books" },
+          { id: 7, profile: DEFAULT_LABEL() },
+          { id: 8, profile: RETIRED_STAMP },
+        ]);
+        expect(choices.map(({ scope }) => scope)).toEqual([
+          "unresolved",
+          "affected",
+          "all-new",
+        ]);
+        expect(choice("unresolved")).toMatchObject({
+          count: 2,
+          label: DEFAULT_LABEL(),
+          source: "bound",
+        });
+        expect(choice("affected")).toMatchObject({
+          count: 1,
+          label: undefined,
+        });
+        expect(choice("all-new")).toMatchObject({ count: 5, label: undefined });
 
-    // The fallback moves the two unmatched rows only.
-    chooseProfile.mockResolvedValueOnce(BOOKS);
-    await choice("unresolved").choose();
-    expect(chooseProfile).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        indexedKey: "ITEM3",
-        selection: { selector: "default", source: "bound", shouldAsk: true },
-        problem: undefined,
+        // The fallback moves the two unmatched rows only.
+        chooseProfile.mockResolvedValueOnce(BOOKS);
+        yield* Effect.promise(() => choice("unresolved").choose());
+        expect(chooseProfile).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            indexedKey: "ITEM3",
+            selection: {
+              selector: "default",
+              source: "bound",
+              shouldAsk: true,
+            },
+            problem: undefined,
+          }),
+        );
+        expect(tasks.slice(0, 5)).toMatchObject([
+          { id: 1, profile: "Books", path: "Books/Item 1.md" },
+          { id: 2, profile: "Articles", path: "Articles/Item 2.md" },
+          {
+            id: 3,
+            profile: "Books",
+            path: "Books/Item 3.md",
+            reason: m.batch_profile_source_chosen(),
+          },
+          { id: 4, profile: "Books", path: "Books/Item 4.md" },
+          {
+            id: 5,
+            profile: undefined,
+            path: undefined,
+            reason: INVALID_PROBLEM,
+          },
+        ]);
+        expect(choice("unresolved")).toMatchObject({
+          label: "Books",
+          source: "asked",
+        });
+        expect(choice("affected")).toMatchObject({
+          count: 1,
+          label: undefined,
+        });
+
+        // Cancelling the recovery leaves the affected row without a destination.
+        chooseProfile.mockResolvedValueOnce(undefined);
+        yield* Effect.promise(() => choice("affected").choose());
+        expect(chooseProfile).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            indexedKey: "ITEM5",
+            problem: INVALID_PROBLEM,
+          }),
+        );
+        expect(tasks[4]).toMatchObject({ id: 5, profile: undefined });
+
+        const result = yield* Effect.promise(() => run());
+        expect(result).toMatchObject({
+          created: 4,
+          updated: 2,
+          failed: 2,
+          skipped: 0,
+        });
+        expect(created).toEqual([
+          { itemID: 1, selector: BOOKS },
+          { itemID: 2, selector: ARTICLES },
+          { itemID: 3, selector: BOOKS },
+          { itemID: 4, selector: BOOKS },
+        ]);
+        expect(updated).toEqual([
+          "Books/Old.md",
+          "Literature/Other.md",
+          "Reading/Retired.md",
+        ]);
+        expect(onItemSettled).toHaveBeenCalledWith({
+          id: 5,
+          status: "failed",
+          failure: { label: "Item 5", message: INVALID_PROBLEM },
+        });
+        expect(onItemSettled).toHaveBeenCalledWith({
+          id: 8,
+          status: "failed",
+          failure: {
+            label: "Item 8",
+            message: m.notice_literature_note_profile_unknown({
+              stamp: RETIRED_STAMP,
+            }),
+            recovery: { action: "switch-profile", path: "Reading/Retired.md" },
+          },
+        });
+        const summary = modal.text.runSummary(result, {
+          cancelled: false,
+          aborted: false,
+        });
+        for (const part of [
+          m.batch_profile_created({ count: 3, label: "Books" }),
+          m.batch_profile_created({ count: 1, label: "Articles" }),
+          m.batch_profile_updated({ count: 1, label: "Books" }),
+          m.batch_profile_updated({ count: 1, label: DEFAULT_LABEL() }),
+        ])
+          expect(summary).toContain(part);
+        expect(summary).toContain("2 failed");
       }),
-    );
-    expect(tasks.slice(0, 5)).toMatchObject([
-      { id: 1, profile: "Books", path: "Books/Item 1.md" },
-      { id: 2, profile: "Articles", path: "Articles/Item 2.md" },
-      {
-        id: 3,
-        profile: "Books",
-        path: "Books/Item 3.md",
-        reason: m.batch_profile_source_chosen(),
-      },
-      { id: 4, profile: "Books", path: "Books/Item 4.md" },
-      { id: 5, profile: undefined, path: undefined, reason: INVALID_PROBLEM },
-    ]);
-    expect(choice("unresolved")).toMatchObject({
-      label: "Books",
-      source: "asked",
-    });
-    expect(choice("affected")).toMatchObject({ count: 1, label: undefined });
+  );
 
-    // Cancelling the recovery leaves the affected row without a destination.
-    chooseProfile.mockResolvedValueOnce(undefined);
-    await choice("affected").choose();
-    expect(chooseProfile).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        indexedKey: "ITEM5",
-        problem: INVALID_PROBLEM,
+  it.effect(
+    "overrides every new note with one explicit Profile and leaves existing notes to their stamps",
+    () =>
+      Effect.gen(function* () {
+        const { deps, created, updated } = mixedBatch();
+        const { modal, tasks, choice, run } = yield* classifyMixedBatch(deps);
+
+        chooseProfile.mockResolvedValueOnce(ARTICLES);
+        yield* Effect.promise(() => choice("all-new").choose());
+        expect(tasks).toMatchObject([
+          { id: 1, profile: "Articles", path: "Articles/Item 1.md" },
+          { id: 2, profile: "Articles", path: "Articles/Item 2.md" },
+          { id: 3, profile: "Articles", path: "Articles/Item 3.md" },
+          { id: 4, profile: "Articles", path: "Articles/Item 4.md" },
+          {
+            id: 5,
+            profile: "Articles",
+            path: "Articles/Item 5.md",
+            reason: m.batch_profile_source_chosen(),
+          },
+          { id: 6, profile: "Books" },
+          { id: 7, profile: DEFAULT_LABEL() },
+          { id: 8, profile: RETIRED_STAMP },
+        ]);
+        expect(choice("all-new")).toMatchObject({
+          label: "Articles",
+          source: "asked",
+          count: 5,
+        });
+        expect(choice("unresolved")).toMatchObject({ label: "Articles" });
+        expect(choice("affected")).toMatchObject({ label: "Articles" });
+
+        const result = yield* Effect.promise(() => run());
+        expect(result).toMatchObject({ created: 5, updated: 2, failed: 1 });
+        expect(created.map(({ selector }) => selector)).toEqual(
+          Array(5).fill(ARTICLES),
+        );
+        expect(updated).toHaveLength(3);
+        const summary = modal.text.runSummary(result, {
+          cancelled: false,
+          aborted: false,
+        });
+        expect(summary).toContain(
+          m.batch_profile_created({ count: 5, label: "Articles" }),
+        );
+        expect(summary).not.toContain(
+          m.batch_profile_created({ count: 1, label: "Books" }),
+        );
       }),
-    );
-    expect(tasks[4]).toMatchObject({ id: 5, profile: undefined });
+  );
 
-    const result = await run();
-    expect(result).toMatchObject({
-      created: 4,
-      updated: 2,
-      failed: 2,
-      skipped: 0,
-    });
-    expect(created).toEqual([
-      { itemID: 1, selector: BOOKS },
-      { itemID: 2, selector: ARTICLES },
-      { itemID: 3, selector: BOOKS },
-      { itemID: 4, selector: BOOKS },
-    ]);
-    expect(updated).toEqual([
-      "Books/Old.md",
-      "Literature/Other.md",
-      "Reading/Retired.md",
-    ]);
-    expect(onItemSettled).toHaveBeenCalledWith({
-      id: 5,
-      status: "failed",
-      failure: { label: "Item 5", message: INVALID_PROBLEM },
-    });
-    expect(onItemSettled).toHaveBeenCalledWith({
-      id: 8,
-      status: "failed",
-      failure: {
-        label: "Item 8",
-        message: m.notice_literature_note_profile_unknown({
-          stamp: RETIRED_STAMP,
-        }),
-        recovery: { action: "switch-profile", path: "Reading/Retired.md" },
-      },
-    });
-    const summary = modal.text.runSummary(result, {
-      cancelled: false,
-      aborted: false,
-    });
-    for (const part of [
-      m.batch_profile_created({ count: 3, label: "Books" }),
-      m.batch_profile_created({ count: 1, label: "Articles" }),
-      m.batch_profile_updated({ count: 1, label: "Books" }),
-      m.batch_profile_updated({ count: 1, label: DEFAULT_LABEL() }),
-    ])
-      expect(summary).toContain(part);
-    expect(summary).toContain("2 failed");
-  });
+  it.effect(
+    "stops a creation whose Profile was removed after the preview and keeps the others frozen",
+    () =>
+      Effect.gen(function* () {
+        const { deps, created, planCreations } = mixedBatch();
+        const { tasks, run, onItemSettled } = yield* classifyMixedBatch(deps);
+        planCreations.mockClear();
 
-  it("overrides every new note with one explicit Profile and leaves existing notes to their stamps", async () => {
-    const { deps, created, updated } = mixedBatch();
-    const { modal, tasks, choice, run } = await classifyMixedBatch(deps);
-
-    chooseProfile.mockResolvedValueOnce(ARTICLES);
-    await choice("all-new").choose();
-    expect(tasks).toMatchObject([
-      { id: 1, profile: "Articles", path: "Articles/Item 1.md" },
-      { id: 2, profile: "Articles", path: "Articles/Item 2.md" },
-      { id: 3, profile: "Articles", path: "Articles/Item 3.md" },
-      { id: 4, profile: "Articles", path: "Articles/Item 4.md" },
-      {
-        id: 5,
-        profile: "Articles",
-        path: "Articles/Item 5.md",
-        reason: m.batch_profile_source_chosen(),
-      },
-      { id: 6, profile: "Books" },
-      { id: 7, profile: DEFAULT_LABEL() },
-      { id: 8, profile: RETIRED_STAMP },
-    ]);
-    expect(choice("all-new")).toMatchObject({
-      label: "Articles",
-      source: "asked",
-      count: 5,
-    });
-    expect(choice("unresolved")).toMatchObject({ label: "Articles" });
-    expect(choice("affected")).toMatchObject({ label: "Articles" });
-
-    const result = await run();
-    expect(result).toMatchObject({ created: 5, updated: 2, failed: 1 });
-    expect(created.map(({ selector }) => selector)).toEqual(
-      Array(5).fill(ARTICLES),
-    );
-    expect(updated).toHaveLength(3);
-    const summary = modal.text.runSummary(result, {
-      cancelled: false,
-      aborted: false,
-    });
-    expect(summary).toContain(
-      m.batch_profile_created({ count: 5, label: "Articles" }),
-    );
-    expect(summary).not.toContain(
-      m.batch_profile_created({ count: 1, label: "Books" }),
-    );
-  });
-
-  it("stops a creation whose Profile was removed after the preview and keeps the others frozen", async () => {
-    const { deps, created, planCreations } = mixedBatch();
-    const { tasks, run, onItemSettled } = await classifyMixedBatch(deps);
-    planCreations.mockClear();
-
-    // Articles disappears between preview and run; the rows keep the
-    // destinations they showed, and no selection is computed again.
-    deps.profile = profileReader({
-      ...defaults,
-      profiles: [{ id: BOOKS, label: "Books" }],
-    });
-    const result = await run();
-    expect(result).toMatchObject({ created: 3, updated: 2, failed: 3 });
-    expect(created).toEqual([
-      { itemID: 1, selector: BOOKS },
-      { itemID: 3, selector: "default" },
-      { itemID: 4, selector: "default" },
-    ]);
-    expect(onItemSettled).toHaveBeenCalledWith({
-      id: 2,
-      status: "failed",
-      failure: {
-        label: "Item 2",
-        message: m.notice_literature_note_profile_unknown({ stamp: ARTICLES }),
-      },
-    });
-    expect(planCreations).not.toHaveBeenCalled();
-    expect(tasks[1]).toMatchObject({ id: 2, path: "Articles/Item 2.md" });
-  });
+        // Articles disappears between preview and run; the rows keep the
+        // destinations they showed, and no selection is computed again.
+        deps.profile = profileReader({
+          ...defaults,
+          profiles: [{ id: BOOKS, label: "Books" }],
+        });
+        const result = yield* Effect.promise(() => run());
+        expect(result).toMatchObject({ created: 3, updated: 2, failed: 3 });
+        expect(created).toEqual([
+          { itemID: 1, selector: BOOKS },
+          { itemID: 3, selector: "default" },
+          { itemID: 4, selector: "default" },
+        ]);
+        expect(onItemSettled).toHaveBeenCalledWith({
+          id: 2,
+          status: "failed",
+          failure: {
+            label: "Item 2",
+            message: m.notice_literature_note_profile_unknown({
+              stamp: ARTICLES,
+            }),
+          },
+        });
+        expect(planCreations).not.toHaveBeenCalled();
+        expect(tasks[1]).toMatchObject({ id: 2, path: "Articles/Item 2.md" });
+      }),
+  );
 });
 
 describe("runBatchUpdateAll", () => {
-  it("returns db-unavailable when the database is closed", async () => {
-    const scope = scopeReads();
-    await expect(
-      runBatchUpdateAll(makeDeps("loading", scope.wrap)),
-    ).resolves.toEqual({
-      outcome: "db-unavailable",
-    } satisfies BatchUpdateResult);
-    expect(scope.asked()).toEqual([]);
-  });
-
-  it("reports an empty library scope before querying any item", async () => {
-    currentScope = scopeOf([], [{ type: "group", groupID: 7 }]);
-    const scope = scopeReads();
-
-    await expect(
-      runBatchUpdateAll(makeDeps("ready", scope.wrap)),
-    ).resolves.toEqual({
-      outcome: "no-library-in-scope",
-    });
-    expect(scope.asked()).toEqual([]);
-    expect(openedModals).toHaveLength(0);
-  });
-
-  it("updates every item of every library in scope, in canonical order", async () => {
-    currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
-    itemsIn(
-      new Map([
-        [1, USER_LIBRARY_ID],
-        [2, USER_LIBRARY_ID],
-        [3, GROUP_LIBRARY.libraryID],
-      ]),
-    );
-    const scope = scopeReads();
-
-    await expect(
-      runBatchUpdateAll(makeDeps("ready", scope.wrap)),
-    ).resolves.toEqual({
-      outcome: "batch-modal",
-    });
-    expect(scope.asked()).toEqual([USER_LIBRARY_ID, GROUP_LIBRARY.libraryID]);
-    expect(openedModals[0]?.total).toBe(3);
-  });
-
-  it("runs the available subset and states the unavailable library count", async () => {
-    currentScope = scopeOf([PERSONAL_LIBRARY], [{ type: "group", groupID: 9 }]);
-    itemsIn(
-      new Map([
-        [1, USER_LIBRARY_ID],
-        [2, USER_LIBRARY_ID],
-      ]),
-    );
-
-    await runBatchUpdateAll(makeDeps());
-
-    const { intro } = await classifyLastModal();
-    expect(intro).toContain("1 selected library is unavailable.");
-  });
-
-  it("keeps action-only headings while one library contributes", async () => {
-    currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
-    itemsIn(
-      new Map([
-        [1, USER_LIBRARY_ID],
-        [2, USER_LIBRARY_ID],
-      ]),
-    );
-
-    await runBatchUpdateAll(makeDeps());
-
-    const { groups, intro } = await classifyLastModal();
-    expect(groups.map((group) => group.header({ count: 2 }))).toEqual([
-      "Update (2)",
-      "Create (2)",
-    ]);
-    expect(intro).not.toContain("unavailable");
-  });
-
-  it("groups rows by library and action when several libraries contribute", async () => {
-    currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
-    itemsIn(
-      new Map([
-        [1, USER_LIBRARY_ID],
-        [3, GROUP_LIBRARY.libraryID],
-      ]),
-    );
-
-    await runBatchUpdateAll(makeDeps());
-
-    const { tasks, groups } = await classifyLastModal();
-    expect(tasks).toEqual([
-      expect.objectContaining({ id: 1, kind: "1:create" }),
-      expect.objectContaining({ id: 3, kind: "12:create" }),
-    ]);
-    expect(groups.map((group) => group.header({ count: 1 }))).toEqual([
-      "My Library · Update (1)",
-      "My Library · Create (1)",
-      "Reading group · Update (1)",
-      "Reading group · Create (1)",
-    ]);
-  });
-
-  it("routes a one-item multi-library expansion to the single-item path", async () => {
-    currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
-    itemsIn(new Map([[3, GROUP_LIBRARY.libraryID]]));
-    // The one item goes to the trash between the library listing and its
-    // lookup, so the single-item path answers not-found.
-    const deps = makeDeps("ready", (client) => ({
-      ...client,
-      DisplayRefs: ((payload: object, options?: object) => {
-        db.$client.exec("insert into deletedItems (itemID) values (3)");
-        return (
-          client.DisplayRefs as unknown as (
-            payload: object,
-            options?: object,
-          ) => unknown
-        )(payload, options);
-      }) as unknown as ZoteroReadsClient["DisplayRefs"],
-    }));
-
-    await expect(runBatchUpdateAll(deps)).resolves.toEqual({
-      outcome: "not-found",
-    });
-    expect(openedModals).toHaveLength(0);
-  });
-
-  describe("exact target", () => {
-    it("resolves the named group outside library scope", async () => {
-      currentScope = scopeOf([PERSONAL_LIBRARY]);
-      itemsIn(
-        new Map([
-          [1, GROUP_LIBRARY.libraryID],
-          [2, GROUP_LIBRARY.libraryID],
-        ]),
+  it.effect("returns db-unavailable when the database is closed", () =>
+    Effect.gen(function* () {
+      const scope = scopeReads();
+      expect(yield* runBatchUpdateAll(makeDeps("loading", scope.wrap))).toEqual(
+        {
+          outcome: "db-unavailable",
+        } satisfies BatchUpdateResult,
       );
+      expect(scope.asked()).toEqual([]);
+    }),
+  );
+
+  it.effect("reports an empty library scope before querying any item", () =>
+    Effect.gen(function* () {
+      currentScope = scopeOf([], [{ type: "group", groupID: 7 }]);
       const scope = scopeReads();
 
-      await expect(
-        runBatchUpdateAll(makeDeps("ready", scope.wrap), { groupID: 7 }),
-      ).resolves.toEqual({ outcome: "batch-modal" });
-      expect(scope.asked()).toEqual([GROUP_LIBRARY.libraryID]);
-    });
+      expect(yield* runBatchUpdateAll(makeDeps("ready", scope.wrap))).toEqual({
+        outcome: "no-library-in-scope",
+      });
+      expect(scope.asked()).toEqual([]);
+      expect(openedModals).toHaveLength(0);
+    }),
+  );
 
-    it("resolves an absent library parameter to My Library", async () => {
-      currentScope = scopeOf([GROUP_LIBRARY]);
+  it.effect(
+    "updates every item of every library in scope, in canonical order",
+    () =>
+      Effect.gen(function* () {
+        currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
+        itemsIn(
+          new Map([
+            [1, USER_LIBRARY_ID],
+            [2, USER_LIBRARY_ID],
+            [3, GROUP_LIBRARY.libraryID],
+          ]),
+        );
+        const scope = scopeReads();
+
+        expect(yield* runBatchUpdateAll(makeDeps("ready", scope.wrap))).toEqual(
+          {
+            outcome: "batch-modal",
+          },
+        );
+        expect(scope.asked()).toEqual([
+          USER_LIBRARY_ID,
+          GROUP_LIBRARY.libraryID,
+        ]);
+        expect(openedModals[0]?.total).toBe(3);
+      }),
+  );
+
+  it.effect(
+    "runs the available subset and states the unavailable library count",
+    () =>
+      Effect.gen(function* () {
+        currentScope = scopeOf(
+          [PERSONAL_LIBRARY],
+          [{ type: "group", groupID: 9 }],
+        );
+        itemsIn(
+          new Map([
+            [1, USER_LIBRARY_ID],
+            [2, USER_LIBRARY_ID],
+          ]),
+        );
+
+        yield* runBatchUpdateAll(makeDeps());
+
+        const { intro } = yield* Effect.promise(() => classifyLastModal());
+        expect(intro).toContain("1 selected library is unavailable.");
+      }),
+  );
+
+  it.effect("keeps action-only headings while one library contributes", () =>
+    Effect.gen(function* () {
+      currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
       itemsIn(
         new Map([
           [1, USER_LIBRARY_ID],
           [2, USER_LIBRARY_ID],
         ]),
       );
-      const scope = scopeReads();
 
-      await runBatchUpdateAll(makeDeps("ready", scope.wrap), { groupID: 0 });
+      yield* runBatchUpdateAll(makeDeps());
 
-      expect(scope.asked()).toEqual([USER_LIBRARY_ID]);
-    });
-
-    it("reports an unavailable group instead of a settings mismatch", async () => {
-      const scope = scopeReads();
-      await expect(
-        runBatchUpdateAll(makeDeps("ready", scope.wrap), { groupID: 99 }),
-      ).resolves.toEqual({ outcome: "unavailable-target" });
-      expect(scope.asked()).toEqual([]);
-    });
-
-    it("resolves a collection inside the named library only", async () => {
-      itemsIn(
-        new Map([
-          [4, GROUP_LIBRARY.libraryID],
-          [5, GROUP_LIBRARY.libraryID],
-        ]),
+      const { groups, intro } = yield* Effect.promise(() =>
+        classifyLastModal(),
       );
-      collectionHolds(GROUP_LIBRARY.libraryID, [4, 5]);
-      const scope = scopeReads();
-
-      await expect(
-        runBatchUpdateAll(makeDeps("ready", scope.wrap), {
-          groupID: 7,
-          collectionKey: COLLECTION,
-        }),
-      ).resolves.toEqual({ outcome: "batch-modal" });
-      expect(scope.asked()).toEqual([
-        { libraryID: GROUP_LIBRARY.libraryID, collectionKey: COLLECTION },
+      expect(groups.map((group) => group.header({ count: 2 }))).toEqual([
+        "Update (2)",
+        "Create (2)",
       ]);
-      expect(openedModals.at(-1)?.total).toBe(2);
-    });
+      expect(intro).not.toContain("unavailable");
+    }),
+  );
 
-    it("reports an unknown collection key instead of an empty scope", async () => {
-      // The key names a collection of another library only.
-      collectionHolds(GROUP_LIBRARY.libraryID, []);
-      db.$client.exec(
-        `delete from collections where libraryID = ${USER_LIBRARY_ID}`,
-      );
+  it.effect(
+    "groups rows by library and action when several libraries contribute",
+    () =>
+      Effect.gen(function* () {
+        currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
+        itemsIn(
+          new Map([
+            [1, USER_LIBRARY_ID],
+            [3, GROUP_LIBRARY.libraryID],
+          ]),
+        );
 
-      await expect(
-        runBatchUpdateAll(makeDeps(), {
-          groupID: 0,
-          collectionKey: COLLECTION,
+        yield* runBatchUpdateAll(makeDeps());
+
+        const { tasks, groups } = yield* Effect.promise(() =>
+          classifyLastModal(),
+        );
+        expect(tasks).toEqual([
+          expect.objectContaining({ id: 1, kind: "1:create" }),
+          expect.objectContaining({ id: 3, kind: "12:create" }),
+        ]);
+        expect(groups.map((group) => group.header({ count: 1 }))).toEqual([
+          "My Library · Update (1)",
+          "My Library · Create (1)",
+          "Reading group · Update (1)",
+          "Reading group · Create (1)",
+        ]);
+      }),
+  );
+
+  it.effect(
+    "routes a one-item multi-library expansion to the single-item path",
+    () =>
+      Effect.gen(function* () {
+        currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
+        itemsIn(new Map([[3, GROUP_LIBRARY.libraryID]]));
+        // The one item goes to the trash between the library listing and its
+        // lookup, so the single-item path answers not-found.
+        const deps = makeDeps("ready", (client) => ({
+          ...client,
+          DisplayRefs: ((payload: object, options?: object) => {
+            db.$client.exec("insert into deletedItems (itemID) values (3)");
+            return (
+              client.DisplayRefs as unknown as (
+                payload: object,
+                options?: object,
+              ) => unknown
+            )(payload, options);
+          }) as unknown as ZoteroReadsClient["DisplayRefs"],
+        }));
+
+        expect(yield* runBatchUpdateAll(deps)).toEqual({
+          outcome: "not-found",
+        });
+        expect(openedModals).toHaveLength(0);
+      }),
+  );
+
+  describe("exact target", () => {
+    it.effect("resolves the named group outside library scope", () =>
+      Effect.gen(function* () {
+        currentScope = scopeOf([PERSONAL_LIBRARY]);
+        itemsIn(
+          new Map([
+            [1, GROUP_LIBRARY.libraryID],
+            [2, GROUP_LIBRARY.libraryID],
+          ]),
+        );
+        const scope = scopeReads();
+
+        expect(
+          yield* runBatchUpdateAll(makeDeps("ready", scope.wrap), {
+            groupID: 7,
+          }),
+        ).toEqual({ outcome: "batch-modal" });
+        expect(scope.asked()).toEqual([GROUP_LIBRARY.libraryID]);
+      }),
+    );
+
+    it.effect("resolves an absent library parameter to My Library", () =>
+      Effect.gen(function* () {
+        currentScope = scopeOf([GROUP_LIBRARY]);
+        itemsIn(
+          new Map([
+            [1, USER_LIBRARY_ID],
+            [2, USER_LIBRARY_ID],
+          ]),
+        );
+        const scope = scopeReads();
+
+        yield* runBatchUpdateAll(makeDeps("ready", scope.wrap), { groupID: 0 });
+
+        expect(scope.asked()).toEqual([USER_LIBRARY_ID]);
+      }),
+    );
+
+    it.effect(
+      "reports an unavailable group instead of a settings mismatch",
+      () =>
+        Effect.gen(function* () {
+          const scope = scopeReads();
+          expect(
+            yield* runBatchUpdateAll(makeDeps("ready", scope.wrap), {
+              groupID: 99,
+            }),
+          ).toEqual({ outcome: "unavailable-target" });
+          expect(scope.asked()).toEqual([]);
         }),
-      ).resolves.toEqual({ outcome: "collection-not-found" });
-      expect(openedModals).toHaveLength(0);
-    });
+    );
 
-    it("reports an empty selection for a collection that holds no items", async () => {
-      await expect(
-        runBatchUpdateAll(makeDeps(), {
-          groupID: 0,
-          collectionKey: COLLECTION,
+    it.effect("resolves a collection inside the named library only", () =>
+      Effect.gen(function* () {
+        itemsIn(
+          new Map([
+            [4, GROUP_LIBRARY.libraryID],
+            [5, GROUP_LIBRARY.libraryID],
+          ]),
+        );
+        collectionHolds(GROUP_LIBRARY.libraryID, [4, 5]);
+        const scope = scopeReads();
+
+        expect(
+          yield* runBatchUpdateAll(makeDeps("ready", scope.wrap), {
+            groupID: 7,
+            collectionKey: COLLECTION,
+          }),
+        ).toEqual({ outcome: "batch-modal" });
+        expect(scope.asked()).toEqual([
+          { libraryID: GROUP_LIBRARY.libraryID, collectionKey: COLLECTION },
+        ]);
+        expect(openedModals.at(-1)?.total).toBe(2);
+      }),
+    );
+
+    it.effect(
+      "reports an unknown collection key instead of an empty scope",
+      () =>
+        Effect.gen(function* () {
+          // The key names a collection of another library only.
+          collectionHolds(GROUP_LIBRARY.libraryID, []);
+          db.$client.exec(
+            `delete from collections where libraryID = ${USER_LIBRARY_ID}`,
+          );
+
+          expect(
+            yield* runBatchUpdateAll(makeDeps(), {
+              groupID: 0,
+              collectionKey: COLLECTION,
+            }),
+          ).toEqual({ outcome: "collection-not-found" });
+          expect(openedModals).toHaveLength(0);
         }),
-      ).resolves.toEqual({ outcome: "empty-selection" });
-      expect(openedModals).toHaveLength(0);
-    });
+    );
+
+    it.effect(
+      "reports an empty selection for a collection that holds no items",
+      () =>
+        Effect.gen(function* () {
+          expect(
+            yield* runBatchUpdateAll(makeDeps(), {
+              groupID: 0,
+              collectionKey: COLLECTION,
+            }),
+          ).toEqual({ outcome: "empty-selection" });
+          expect(openedModals).toHaveLength(0);
+        }),
+    );
   });
 });
 
-it("uses one fallback for unmatched and distinct overlaps, exposing all candidates and preserving unique matches", async () => {
-  const { deps, selections, created } = mixedBatch();
-  const profiles = deps.profile.profiles;
-  const extra = {
-    ...profiles[0]!,
-    id: "Mn4Vb8GhJ2Rt" as ProfileId,
-    label: "Manual",
-  };
-  selections[4] = {
-    selector: "default",
-    source: "bound",
-    shouldAsk: true,
-    problem: { kind: "overlap", candidates: profiles },
-  };
-  selections[5] = {
-    selector: "default",
-    source: "bound",
-    shouldAsk: true,
-    problem: { kind: "overlap", candidates: [profiles[1]!, extra] },
-  };
-  const { tasks, choices, choice, run } = await classifyMixedBatch(deps);
-  expect(choices.map(({ scope }) => scope)).toEqual(["unresolved", "all-new"]);
-  expect(choice("unresolved")).toMatchObject({ count: 3, label: undefined });
-  chooseProfile.mockResolvedValueOnce(BOOKS);
-  await choice("unresolved").choose();
-  expect(chooseProfile).toHaveBeenLastCalledWith(
-    expect.objectContaining({
-      selection: expect.objectContaining({
-        problem: { kind: "overlap", candidates: [...profiles, extra] },
-      }),
-      problem: `${m.modal_profile_problem_overlap({ profiles: "Books, Articles" })} ${m.modal_profile_problem_overlap({ profiles: "Articles, Manual" })}`,
+it.effect(
+  "uses one fallback for unmatched and distinct overlaps, exposing all candidates and preserving unique matches",
+  () =>
+    Effect.gen(function* () {
+      const { deps, selections, created } = mixedBatch();
+      const profiles = deps.profile.profiles;
+      const extra = {
+        ...profiles[0]!,
+        id: "Mn4Vb8GhJ2Rt" as ProfileId,
+        label: "Manual",
+      };
+      selections[4] = {
+        selector: "default",
+        source: "bound",
+        shouldAsk: true,
+        problem: { kind: "overlap", candidates: profiles },
+      };
+      selections[5] = {
+        selector: "default",
+        source: "bound",
+        shouldAsk: true,
+        problem: { kind: "overlap", candidates: [profiles[1]!, extra] },
+      };
+      const { tasks, choices, choice, run } = yield* classifyMixedBatch(deps);
+      expect(choices.map(({ scope }) => scope)).toEqual([
+        "unresolved",
+        "all-new",
+      ]);
+      expect(choice("unresolved")).toMatchObject({
+        count: 3,
+        label: undefined,
+      });
+      chooseProfile.mockResolvedValueOnce(BOOKS);
+      yield* Effect.promise(() => choice("unresolved").choose());
+      expect(chooseProfile).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          selection: expect.objectContaining({
+            problem: { kind: "overlap", candidates: [...profiles, extra] },
+          }),
+          problem: `${m.modal_profile_problem_overlap({ profiles: "Books, Articles" })} ${m.modal_profile_problem_overlap({ profiles: "Articles, Manual" })}`,
+        }),
+      );
+      expect(tasks.slice(0, 5)).toMatchObject([
+        {
+          id: 1,
+          profile: "Books",
+          path: "Books/Item 1.md",
+          reason: m.profile_match_selected({ profile: "Books" }),
+        },
+        {
+          id: 2,
+          profile: "Articles",
+          path: "Articles/Item 2.md",
+          reason: m.profile_match_selected({ profile: "Articles" }),
+        },
+        { id: 3, profile: "Books", path: "Books/Item 3.md" },
+        { id: 4, profile: "Books", path: "Books/Item 4.md" },
+        { id: 5, profile: "Books", path: "Books/Item 5.md" },
+      ]);
+      expect(yield* Effect.promise(() => run())).toMatchObject({ created: 5 });
+      expect(created.map(({ selector }) => selector)).toEqual([
+        BOOKS,
+        ARTICLES,
+        BOOKS,
+        BOOKS,
+        BOOKS,
+      ]);
     }),
-  );
-  expect(tasks.slice(0, 5)).toMatchObject([
-    {
-      id: 1,
-      profile: "Books",
-      path: "Books/Item 1.md",
-      reason: m.profile_match_selected({ profile: "Books" }),
-    },
-    {
-      id: 2,
-      profile: "Articles",
-      path: "Articles/Item 2.md",
-      reason: m.profile_match_selected({ profile: "Articles" }),
-    },
-    { id: 3, profile: "Books", path: "Books/Item 3.md" },
-    { id: 4, profile: "Books", path: "Books/Item 4.md" },
-    { id: 5, profile: "Books", path: "Books/Item 5.md" },
-  ]);
-  expect(await run()).toMatchObject({ created: 5 });
-  expect(created.map(({ selector }) => selector)).toEqual([
-    BOOKS,
-    ARTICLES,
-    BOOKS,
-    BOOKS,
-    BOOKS,
-  ]);
-});
+);
