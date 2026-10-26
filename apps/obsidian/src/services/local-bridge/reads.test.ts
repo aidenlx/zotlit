@@ -1,19 +1,12 @@
 import { configureSync, resetSync } from "@logtape/logtape";
 import "@mock/dom-parser";
 import type { LogRecord } from "@logtape/logtape";
-import { Effect } from "effect";
+import { Effect, Layer, Scope } from "effect";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { TFile } from "obsidian";
-import type {
-  App,
-  FileManager,
-  MetadataCache,
-  Vault,
-  Workspace,
-} from "obsidian";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
 import { getZoteroDatabaseIdentity } from "@zotlit/db";
@@ -22,26 +15,39 @@ import annotationSchema from "@zotlit/db/contract/annotation.schema.json" with {
 import noteSchema from "@zotlit/db/contract/note.schema.json" with { type: "json" };
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
-import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature-note-pack";
+import type {
+  LiteratureNotePackError,
+  LiteratureNoteTemplatePartial,
+} from "@zotlit/templates/literature-note-pack";
 import { LOCAL_BRIDGE_PATHS } from "@zotlit/workbench/bridge";
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { MemoryFileManager } from "@/lib/__fixtures__/obsidian-file-manager";
+import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge } from "@/lib/effect-bridge";
+import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import { excerptAssetIdentities } from "@/services/excerpt-image/materialize";
+import { NoteIndex } from "@/services/note-index/service";
+import type { ResolvedProfile } from "@/services/profile/bindings";
+import { Profile } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
-import type { PluginSettings } from "@/services/settings/service";
+import { PluginSettings } from "@/services/settings/service";
+import { Template } from "@/services/template/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { layerRcRef } from "@/services/zotero-reads/connection";
+import { layerZoteroReads } from "@/services/zotero-reads/service";
 import {
-  inProcessReadsService,
+  inProcessClient,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
 import { createLocalBridgeApp } from "./app";
 import { STABLE_DOCS_ORIGIN } from "./origins";
-import { createLocalBridgeReads } from "./reads";
-import type { BridgeProfileReader, LocalBridgeReadDeps } from "./reads";
+import { makeLocalBridgeReads } from "./reads";
 import { BridgeSessions } from "./sessions";
 
 const INSTALLATION_ID = "install-1";
@@ -137,6 +143,8 @@ async function harness(
     immutable?: "owned" | "previous" | "foreign";
     reference?: "embed" | "link";
     shifted?: boolean;
+    /** What the Note Index's first full scan waits on; settled by default. */
+    whenIndexed?: Effect.Effect<void>;
   } = {},
 ): Promise<Harness> {
   await using stack = new AsyncDisposableStack();
@@ -190,69 +198,66 @@ async function harness(
     const file = fileAt(path);
     return file ? [file] : [];
   };
-  const app = stubService<App>("App", {
-    vault: stubService<Vault>("Vault", {
-      getName: () => VAULT_NAME,
+  const host = layerHost({
+    vault: MemoryVault.with({
       getFileByPath: fileAt,
       cachedRead: async () => content,
     }),
-    workspace: stubService<Workspace>("Workspace", {
-      iterateAllLeaves: () => {},
-    }),
-    metadataCache: stubService<MetadataCache>("MetadataCache", {
-      getFileCache: () => ({
-        [options.reference === "link" ? "links" : "embeds"]: options.immutable
-          ? [
-              {
-                original,
-                link: immutablePath,
-                position: {
-                  start: { offset: 0 },
-                  end: { offset: original.length },
-                },
-              },
-            ]
-          : [],
-      }),
+    metadataCache: Object.assign(new MemoryMetadataCache(), {
       getFirstLinkpathDest: fileAt,
     }),
-    fileManager: stubService<FileManager>("FileManager", {
+    fileManager: Object.assign(new MemoryFileManager(), {
       getAvailablePathForAttachment: (name: string) =>
         Promise.resolve(`literatures/attachments/${name}`),
     }),
   });
 
-  const settings = {
-    current: Effect.sync(() => ({ ...defaults, "attachment.import": true })),
-  } satisfies Pick<PluginSettings["Service"], "current">;
-
   const partials = options.partials ?? [CITATION_TEMPLATE];
-  const reads = createLocalBridgeReads({
-    app,
-    settings,
-    bridge: effectBridge(testRuntime()),
-    zoteroReads: inProcessReadsService(sharedClientOpener(sqlite)),
-    noteIndex: stubService<LocalBridgeReadDeps["noteIndex"]>("NoteIndex", {
-      whenIndexed: () => Promise.resolve(),
-      getNotesByItemKey: (indexedKey: string) =>
-        indexedKey === ITEM.key ? notesAt(ITEM_NOTE_PATH) : [],
-      getImportedNoteByNoteKey: (noteKey: string) =>
-        noteKey === "NOTE2345" ? notesAt(CHILD_NOTE_PATH) : [],
-    }),
-    profile: profileReader(),
-    template: stubService<LocalBridgeReadDeps["template"]>("PlainTemplate", {
-      exportLiteratureNotePackSource: (
-        source: string,
-        exportOptions: Parameters<typeof exportLiteratureNotePack>[2],
-      ) =>
-        Promise.resolve(
-          exportLiteratureNotePack(source, partials, exportOptions),
+  const runtime = buildRuntime(
+    Layer.mergeAll(
+      host,
+      layerZoteroReads(inProcessClient(layerRcRef(sharedClientOpener(sqlite)))),
+      Layer.mock(PluginSettings, {
+        current: Effect.sync(() => ({
+          ...defaults,
+          "attachment.import": true,
+        })),
+      }),
+      Layer.mock(NoteIndex, {
+        whenIndexed: options.whenIndexed ?? Effect.void,
+        getNotesByItemKey: (indexedKey: string) =>
+          Effect.sync(() =>
+            indexedKey === ITEM.key ? notesAt(ITEM_NOTE_PATH) : [],
+          ),
+        getImportedNoteByNoteKey: (noteKey: string) =>
+          Effect.sync(() =>
+            noteKey === "NOTE2345" ? notesAt(CHILD_NOTE_PATH) : [],
+          ),
+      }),
+      layerProfileReader(),
+      Layer.mock(Template, {
+        exportLiteratureNotePackSource: (source, exportOptions) =>
+          Effect.try({
+            try: () =>
+              exportLiteratureNotePack(source, partials, exportOptions),
+            catch: (error) => error as LiteratureNotePackError,
+          }),
+      }),
+      Layer.mock(ZoteroPref, {
+        current: Effect.succeed(
+          stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", { dataDir }),
         ),
-    }),
-    zoteroPref: { dataDir },
-    installationId: () => INSTALLATION_ID,
-    vaultName: () => VAULT_NAME,
-  });
+      }),
+    ),
+    stack,
+  );
+  await runtime.context();
+  const reads = runtime.runSync(
+    makeLocalBridgeReads({
+      installationId: INSTALLATION_ID,
+      vault: VAULT_NAME,
+    }).pipe(Scope.provide(runtime.scope)),
+  );
 
   const sessions = new BridgeSessions(() => {});
   const app_ = createLocalBridgeApp({
@@ -292,21 +297,24 @@ async function harness(
 }
 
 /** The registry as the bridge reads it: two Profiles, one of them the built-in. */
-function profileReader(): BridgeProfileReader {
-  return Object.assign({} as BridgeProfileReader, {
-    ready: Promise.resolve(),
-    loaded: true,
-    resolveProfile: (selector: string) => {
-      if (selector === BOOKS_PROFILE) {
-        return { label: "Books", document: "zotlit-profile.books.md" };
-      }
-      // Default is still built-in here: it has no document of its own.
-      if (selector === "default")
-        return { label: undefined, document: undefined };
-      return undefined;
-    },
-    getSource: (selector: string) =>
-      Promise.resolve(
+function layerProfileReader() {
+  const resolved = (
+    label: string | undefined,
+    document: string | undefined,
+  ): ResolvedProfile =>
+    stubService<ResolvedProfile>("ResolvedProfile", { label, document });
+  return Layer.mock(Profile, {
+    loaded: Effect.succeed(true),
+    resolveProfile: (selector) =>
+      Effect.sync(() => {
+        if (selector === BOOKS_PROFILE)
+          return resolved("Books", "zotlit-profile.books.md");
+        // Default is still built-in here: it has no document of its own.
+        if (selector === "default") return resolved(undefined, undefined);
+        return undefined;
+      }),
+    getSource: (selector) =>
+      Effect.succeed(
         selector === "default" ? DEFAULT_PROFILE_SOURCE : BOOKS_SOURCE,
       ),
   });
@@ -618,6 +626,28 @@ it("refuses a Profile this vault no longer holds", async () => {
   await expect(res.json()).resolves.toEqual({
     error: { code: "document-missing", message: expect.any(String) },
   });
+});
+
+it("ends a pending selected-item read when the plugin unloads", async () => {
+  const started = Promise.withResolvers<void>();
+  const bridge = await harness({
+    whenIndexed: Effect.sync(() => started.resolve()).pipe(
+      Effect.andThen(Effect.never),
+    ),
+  });
+  const pending = bridge.request(LOCAL_BRIDGE_PATHS.selectedItem, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  await started.promise;
+
+  await bridge[Symbol.asyncDispose]();
+
+  const answered = await Promise.race([
+    pending.then((res) => res.status),
+    new Promise((resolve) => setTimeout(resolve, 200, "still pending")),
+  ]);
+  expect(answered).toBe(500);
 });
 
 it("logs the operation and never the source, the snapshot, or the credential", async () => {

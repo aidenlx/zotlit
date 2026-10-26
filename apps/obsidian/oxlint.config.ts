@@ -161,7 +161,6 @@ export default defineConfig({
         "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
         "src/services/excerpt-image/prepare.ts",
-        "src/services/local-bridge/service.ts",
         "src/services/note-feature/operations.ts",
         "src/services/note-feature/update-batch.ts",
         "src/services/note-import/batch-import.ts",
@@ -283,10 +282,7 @@ export default defineConfig({
     },
     {
       // No tag member yet: `vault.getName`.
-      files: [
-        "src/services/citation-index/cli/register.ts",
-        "src/services/local-bridge/customize.ts",
-      ],
+      files: ["src/services/citation-index/cli/register.ts"],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
@@ -336,7 +332,6 @@ export default defineConfig({
       // Plain async code, or an Effect.fn, that reaches the App through
       // `deps.app`: the deps must carry the tag first.
       files: [
-        "src/services/local-bridge/vault-targets.ts",
         "src/services/note-feature/update-single.ts",
         "src/services/note-import/service.ts",
         "src/views/note-preview/render.ts",
@@ -381,8 +376,6 @@ export default defineConfig({
         "src/services/database/reap-temps.ts",
         "src/services/excerpt-image/prepare.ts",
         "src/services/excerpt-image/request.ts",
-        "src/services/local-bridge/reads.ts",
-        "src/services/local-bridge/vault-targets.ts",
         "src/services/note-feature/annotation-citation.ts",
         "src/services/note-feature/operations.ts",
         "src/services/note-feature/update-batch.ts",
@@ -471,7 +464,6 @@ export default defineConfig({
       // list when its service converts to Effect.
       files: [
         "src/services/attachment-import/service.ts",
-        "src/services/local-bridge/service.ts",
         "src/services/note-feature/operations.ts",
         "src/services/pdf-annotation-editor/service.ts",
         "src/services/reader-session/session.ts",
@@ -640,7 +632,6 @@ export default defineConfig({
         "src/services/attachment-import/service.ts",
         "src/services/excerpt-image/display.ts",
         "src/services/excerpt-image/service.ts",
-        "src/services/local-bridge/service.ts",
         "src/services/pdf-annotation-editor/service.ts",
       ],
       rules: { "zotlit-services/no-legacy-service": "off" },

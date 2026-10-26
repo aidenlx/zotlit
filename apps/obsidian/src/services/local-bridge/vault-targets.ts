@@ -4,79 +4,79 @@
 // here, so none can cross the bridge.
 
 import { Effect } from "effect";
-import type { App } from "obsidian";
+import type { TFile } from "obsidian";
 
 import { annotationHasCacheImage } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 import type { SnapshotVaultTargets } from "@zotlit/workbench/snapshot";
 
-import type { EffectBridge } from "@/lib/effect-bridge";
-import {
-  joinFolderPath,
-  resolveAttachmentFolderPath,
-} from "@/lib/ensure-folder";
+import { attachmentFolderPath } from "@/lib/attachment-folder";
+import { joinFolderPath } from "@/lib/ensure-folder";
+import type { FileManager } from "@/lib/obsidian-file-manager";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import { Vault } from "@/lib/obsidian-vault";
+import { Workspace } from "@/lib/obsidian-workspace";
 import {
   excerptAssetIdentities,
   isOwnedExcerptAssetPath,
 } from "@/services/excerpt-image/materialize";
-import { referencedExcerptPaths } from "@/services/excerpt-image/references";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
-import type { PluginSettings } from "@/services/settings/service";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import { linkTargets } from "@/services/excerpt-image/references";
+import { NoteIndex } from "@/services/note-index/service";
+import { PluginSettings } from "@/services/settings/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
-export interface VaultTargetDeps {
-  app: App;
-  settings: Pick<PluginSettings["Service"], "current">;
-  bridge: Pick<EffectBridge, "runSync">;
-  noteIndex: Pick<
-    PlainNoteIndex,
-    "getNotesByItemKey" | "getImportedNoteByNoteKey"
-  >;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
-}
+/** The services the vault targets read. */
+export type VaultTargetServices =
+  | NoteIndex
+  | PluginSettings
+  | ZoteroPref
+  | Vault
+  | FileManager
+  | MetadataCache
+  | Workspace;
 
 /**
  * The note and annotation-image targets this vault can answer for `item`: its
  * own Literature Note, the imported notes of its child notes, the notes of its
  * related Items, and the excerpt images already imported beside its note.
  */
-export async function collectVaultTargets(
+export const collectVaultTargets = Effect.fnUntraced(function* (
   reads: ZoteroReadsApi,
   item: Item,
-  deps: VaultTargetDeps,
-): Promise<SnapshotVaultTargets> {
+) {
+  const index = yield* NoteIndex;
   const notes: Record<string, string> = {};
   const remember = (indexedKey: string, files: readonly { path: string }[]) => {
     const path = files[0]?.path;
     if (path !== undefined) notes[indexedKey] = path;
   };
 
-  remember(item.indexedKey, deps.noteIndex.getNotesByItemKey(item.indexedKey));
-  const family = await Effect.runPromise(
-    reads.ItemFamily({ itemID: item.itemID }),
-  );
+  remember(item.indexedKey, yield* index.getNotesByItemKey(item.indexedKey));
+  const family = yield* reads.ItemFamily({ itemID: item.itemID });
   for (const entry of family.relatedItems) {
     remember(
       entry.indexedKey,
-      deps.noteIndex.getNotesByItemKey(entry.indexedKey),
+      yield* index.getNotesByItemKey(entry.indexedKey),
     );
   }
   for (const child of family.childNotes) {
     remember(
       child.indexedKey,
-      deps.noteIndex.getImportedNoteByNoteKey(child.indexedKey),
+      yield* index.getImportedNoteByNoteKey(child.indexedKey),
     );
   }
 
-  return {
+  const targets: SnapshotVaultTargets = {
     notes,
-    annotationImages: await annotationImageTargets(reads, item, {
-      ...deps,
-      notePath: notes[item.indexedKey],
-    }),
+    annotationImages: yield* annotationImageTargets(
+      reads,
+      item,
+      notes[item.indexedKey],
+    ),
   };
-}
+  return targets;
+});
 
 /**
  * Excerpt images the vault already holds. Import names each copy
@@ -84,37 +84,34 @@ export async function collectVaultTargets(
  * path is the image this Item's annotation renders; anything absent is left for
  * the exporter to report rather than pointed at a Zotero cache path.
  */
-async function annotationImageTargets(
+const annotationImageTargets = Effect.fnUntraced(function* (
   reads: ZoteroReadsApi,
   item: Item,
-  deps: VaultTargetDeps & { notePath: string | undefined },
-): Promise<Record<string, string>> {
-  const settings = deps.bridge.runSync(deps.settings.current);
-  if (!settings["attachment.import"]) return {};
-  const folder = await resolveAttachmentFolderPath(
-    deps.app,
-    settings["attachment.folder-path"],
-    deps.notePath,
-  );
+  notePath: string | undefined,
+) {
   const images: Record<string, string> = {};
-  const note = deps.notePath
-    ? deps.app.vault.getFileByPath(deps.notePath)
-    : null;
-  const referenced = note ? await referencedExcerptPaths(deps.app, note) : [];
-  const [attachments, database] = await Effect.runPromise(
-    Effect.all([
-      reads.AttachmentsOf({ itemIDs: [item.itemID] }),
-      reads.DatabaseIdentity({}),
-    ]),
+  const settings = yield* (yield* PluginSettings).current;
+  if (!settings["attachment.import"]) return images;
+  const vault = yield* Vault;
+  const folder = yield* attachmentFolderPath(
+    settings["attachment.folder-path"],
+    notePath,
   );
+  const note = notePath ? yield* vault.getFileByPath(notePath) : null;
+  const referenced = note ? yield* referencedPaths(note) : [];
+  const { dataDir } = yield* (yield* ZoteroPref).current;
+  const [attachments, database] = yield* Effect.all([
+    reads.AttachmentsOf({ itemIDs: [item.itemID] }),
+    reads.DatabaseIdentity({}),
+  ]);
   for (const attachment of attachments) {
-    const { annotations } = await Effect.runPromise(
-      reads.AnnotationsOfAttachment({ attachmentKey: attachment.indexedKey }),
-    );
+    const { annotations } = yield* reads.AnnotationsOfAttachment({
+      attachmentKey: attachment.indexedKey,
+    });
     for (const annotation of annotations) {
       if (!annotationHasCacheImage(annotation.type)) continue;
       const identities = excerptAssetIdentities({
-        sourceScope: deps.zoteroPref.dataDir,
+        sourceScope: dataDir,
         source: {
           kind: "zotero-db",
           database,
@@ -133,10 +130,27 @@ async function annotationImageTargets(
         continue;
       }
       const path = joinFolderPath(folder, `${annotation.key}.png`);
-      if (deps.app.vault.getFileByPath(path)) {
+      if (yield* vault.getFileByPath(path)) {
         images[annotation.indexedKey] = path;
       }
     }
   }
   return images;
-}
+});
+
+/**
+ * The vault files `note`'s live text links to: its loaded view's text, else
+ * the vault's, read apart from the asynchronous metadata cache.
+ */
+const referencedPaths = Effect.fnUntraced(function* (note: TFile) {
+  const view = yield* (yield* Workspace).loadedTextView(note);
+  const content =
+    view === null ? yield* (yield* Vault).cachedRead(note) : view.getViewData();
+  const metadata = yield* MetadataCache;
+  const paths = new Set<string>();
+  for (const link of linkTargets(content)) {
+    const target = yield* metadata.firstLinkpathDest(link, note.path);
+    if (target) paths.add(target.path);
+  }
+  return [...paths];
+});

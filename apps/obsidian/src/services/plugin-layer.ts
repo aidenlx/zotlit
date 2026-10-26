@@ -4,6 +4,7 @@ import { Layer } from "effect";
 import type { Plugin } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
+import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { layerRequestUrlHttpClient } from "@/lib/http-client";
 import { layerNotifier } from "@/lib/notifier";
 import type { Notifier } from "@/lib/notifier";
@@ -14,6 +15,7 @@ import { layerObsidianEnv } from "@/lib/obsidian-env";
 import { layerFileManager } from "@/lib/obsidian-file-manager";
 import type { FileManager } from "@/lib/obsidian-file-manager";
 import { layerMetadataCache } from "@/lib/obsidian-metadata-cache";
+import type { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { layerVault } from "@/lib/obsidian-vault";
 import type { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
@@ -77,6 +79,8 @@ import { layerLibraryScopeCli } from "./library-scope/cli";
 import { layerLibraryScopeNotices } from "./library-scope/notices";
 import { layerLibraryScope } from "./library-scope/service";
 import type { LibraryScope } from "./library-scope/service";
+import { layerLocalBridge } from "./local-bridge/service";
+import type { LocalBridge } from "./local-bridge/service";
 import { layerLocalServer } from "./local-server/service";
 import type { LocalServer } from "./local-server/service";
 import { layerLogging, layerLogOutput } from "./log/service";
@@ -155,6 +159,7 @@ export function pluginLayer(
 ): Layer.Layer<
   | GraphCitations
   | LanguagePack
+  | LocalBridge
   | Notifier
   | AnnotationRepository
   | AnnotationPopover
@@ -189,6 +194,7 @@ export function pluginLayer(
   | Vault
   | FileManager
   | Workspace
+  | MetadataCache
   | ObsidianEnv
 > {
   // The file manager decides its outcomes from the vault's cache.
@@ -208,6 +214,10 @@ export function pluginLayer(
     layerAnnotationPopover.pipe(startingAs("AnnotationPopover")),
     layerCitekeyEditor(noteCreation).pipe(startingAs("CitekeyEditor")),
     layerItemLookup.pipe(startingAs("ItemLookup")),
+    layerLocalBridge({
+      webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
+      pluginVersion: plugin.manifest.version,
+    }).pipe(startingAs("LocalBridge")),
     layerQueryService({ pluginVersion: plugin.manifest.version }).pipe(
       startingAs("QueryService"),
     ),
@@ -284,9 +294,16 @@ export function pluginLayer(
     ),
     // The legacy note writers create and move through the tags (`build.ts`).
     // The protocol handlers (`zt-main.ts`) also open notes through the
-    // Workspace and read the vault folder from the environment.
+    // Workspace and read the vault folder from the environment. The Customize
+    // flow reads the active note's paper from the metadata cache.
     Layer.provideMerge(
-      Layer.mergeAll(layerVault, fileManager, layerWorkspace, layerObsidianEnv),
+      Layer.mergeAll(
+        layerVault,
+        fileManager,
+        layerWorkspace,
+        layerObsidianEnv,
+        layerMetadataCache,
+      ),
     ),
     Layer.provideMerge(
       layerLanguagePack(languagePack).pipe(

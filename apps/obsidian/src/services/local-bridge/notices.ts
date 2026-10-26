@@ -6,12 +6,12 @@ import { BaseNotice } from "@/lib/notice";
 import { runUpdateAllWithNotice } from "@/services/note-feature/actions";
 import type { BatchUpdateResult } from "@/services/note-feature/update-batch";
 
-import type { LocalBridgeService } from "./service";
+import type { LocalBridgeHandle } from "./handle";
 
 const SAVED_NOTICE_DURATION_MS = 15_000;
 
 export interface WorkbenchSavedNoticeDeps {
-  localBridge: Pick<LocalBridgeService, "on">;
+  localBridge: Pick<LocalBridgeHandle, "on">;
   /** The existing Update all notes flow, batch confirm modal included. */
   updateAll: () => Promise<BatchUpdateResult>;
 }
@@ -57,7 +57,7 @@ export function workbenchSavedNotice(
  * trigger to rendering: one Notice per Save that landed, none for a refusal.
  */
 export function subscribeWorkbenchSaved(
-  localBridge: Pick<LocalBridgeService, "on">,
+  localBridge: Pick<LocalBridgeHandle, "on">,
   showNotice: () => void,
 ): () => void {
   return localBridge.on("profile-saved", () => showNotice());

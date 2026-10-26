@@ -12,7 +12,7 @@ import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import type { ExcerptImageService } from "@/services/excerpt-image/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
-import type { LocalBridgeService } from "@/services/local-bridge/service";
+import type { LocalBridgeHandle } from "@/services/local-bridge/handle";
 import type { LocalServer } from "@/services/local-server/service";
 import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
 import type { PlainProfile } from "@/services/profile/plain";
@@ -52,7 +52,7 @@ export type LocalServerActions = Pick<
 
 /** The Local Bridge surface the setting tab needs: the live connection and its end. */
 export type LocalBridgeActions = Pick<
-  LocalBridgeService,
+  LocalBridgeHandle,
   "connection" | "disconnect" | "on"
 >;
 

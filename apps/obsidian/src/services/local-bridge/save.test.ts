@@ -1,17 +1,22 @@
 // The write boundary, driven the way the page drives it: the Hono app in
 // process over a real Profile service and a fake vault.
+import { Deferred, Effect, Exit, Layer, Scope } from "effect";
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { CONTRACT_VERSION } from "@zotlit/db";
 import { LOCAL_BRIDGE_PATHS } from "@zotlit/workbench/bridge";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
+import type { ResolvedProfile } from "@/services/profile/bindings";
+import { Profile } from "@/services/profile/service";
+import { Template } from "@/services/template/service";
 
 import { createLocalBridgeApp } from "./app";
 import { STABLE_DOCS_ORIGIN } from "./origins";
 import type { LocalBridgeReads } from "./reads";
-import { createLocalBridgeSave } from "./save";
+import { makeLocalBridgeSave } from "./save";
 import { BridgeSessions } from "./sessions";
 
 const BOOKS_PROFILE = "Bk7Qm2Xr9Tz4";
@@ -92,12 +97,12 @@ async function harness(
     allowedOrigins: [STABLE_DOCS_ORIGIN],
     sessions,
     reads: {} as LocalBridgeReads,
-    save: createLocalBridgeSave({
-      profile: fixture.profile,
-      template: fixture.template,
-      pluginVersion: "2.1.1",
-      onSaved: (profileId) => saved.push(profileId),
-    }),
+    save: fixture.runtime.runSync(
+      makeLocalBridgeSave({
+        pluginVersion: "2.1.1",
+        onSaved: (profileId) => Effect.sync(() => saved.push(profileId)),
+      }).pipe(Scope.provide(fixture.runtime.scope)),
+    ),
     describeGrant: () => Promise.reject(new Error("not used here")),
   });
   const code = sessions.mintCode({
@@ -372,4 +377,91 @@ it("refuses an installed Eta dependency without writing the Profile", async () =
   });
   expect(bridge.vault.contents.get(BOOKS_PATH)).toBe(BOOKS_SOURCE);
   expect(bridge.saved).toEqual([]);
+});
+
+/**
+ * A Save over a Profile whose resolve and write the test holds, made in a
+ * Scope the test closes the way the layer closes at unload.
+ */
+function heldSave(profile: {
+  resolveProfile: Effect.Effect<ResolvedProfile | undefined>;
+  saveSource: Effect.Effect<{ state: "saved"; revision: string }>;
+}) {
+  const scope = Effect.runSync(Scope.make());
+  const saved: string[] = [];
+  const writes: string[] = [];
+  const save = Effect.runSync(
+    makeLocalBridgeSave({
+      pluginVersion: "2.1.1",
+      onSaved: (profileId) => Effect.sync(() => saved.push(profileId)),
+    }).pipe(
+      Scope.provide(scope),
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.mock(Profile, {
+            resolveProfile: () => profile.resolveProfile,
+            saveSource: (_selector, source) =>
+              Effect.sync(() => writes.push(source)).pipe(
+                Effect.andThen(profile.saveSource),
+              ),
+          }),
+          Layer.mock(Template, {
+            exportLiteratureNotePackSource: (source) => Effect.succeed(source),
+          }),
+        ),
+      ),
+    ),
+  );
+  return {
+    saved,
+    writes,
+    answer: save.saveSelectedProfile(BOOKS_PROFILE, {
+      reference: BOOKS_PROFILE,
+      expected: { state: "revision", revision: REVISION.books },
+      source: BOOKS_EDITED,
+    }),
+    unload: () => Effect.runPromise(Scope.close(scope, Exit.void)),
+  };
+}
+
+const booksProfile = stubService<ResolvedProfile>("ResolvedProfile", {});
+
+it("stops a Save that has not started writing when the plugin unloads", async () => {
+  const held = heldSave({
+    resolveProfile: Effect.never,
+    saveSource: Effect.succeed({ state: "saved", revision: "unused" }),
+  });
+
+  await held.unload();
+
+  await expect(held.answer).rejects.toThrow();
+  expect(held.writes).toEqual([]);
+  expect(held.saved).toEqual([]);
+});
+
+it("finishes a Save that started writing before the unload, with its answer", async () => {
+  const release = Deferred.makeUnsafe<void>();
+  const held = heldSave({
+    resolveProfile: Effect.succeed(booksProfile),
+    saveSource: Deferred.await(release).pipe(
+      Effect.as({ state: "saved" as const, revision: REVISION.booksEdited }),
+    ),
+  });
+  await vi.waitFor(() => expect(held.writes).toEqual([BOOKS_EDITED]));
+
+  let unloaded = false;
+  const unload = held.unload().then(() => {
+    unloaded = true;
+  });
+  await vi.advanceTimersByTimeAsync(10);
+  expect(unloaded).toBe(false);
+
+  Deferred.doneUnsafe(release, Exit.void);
+  await unload;
+
+  await expect(held.answer).resolves.toEqual({
+    state: "saved",
+    revision: REVISION.booksEdited,
+  });
+  expect(held.saved).toEqual([BOOKS_PROFILE]);
 });

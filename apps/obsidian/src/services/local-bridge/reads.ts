@@ -5,10 +5,8 @@
 // Every answer is built from what a template renders. Absolute paths, note
 // bodies, attachment contents, and image bytes are kept out by the shared
 // exporter and by the vault-target module, and none is assembled here.
-import { Effect } from "effect";
-import type { App } from "obsidian";
+import { Effect, FiberSet, Schema } from "effect";
 
-import type { Item } from "@zotlit/db";
 import annotationSchema from "@zotlit/db/contract/annotation.schema.json" with { type: "json" };
 import filenameSchema from "@zotlit/db/contract/filename.schema.json" with { type: "json" };
 import noteSchema from "@zotlit/db/contract/note.schema.json" with { type: "json" };
@@ -26,66 +24,66 @@ import type {
   SnapshotSelection,
 } from "@zotlit/workbench/snapshot";
 
-import type { EffectBridge } from "@/lib/effect-bridge";
-import * as m from "@/lib/i18n/generated/messages";
 import { profileRevision } from "@/lib/profile-revision";
 import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
+import { NoteIndex } from "@/services/note-index/service";
 import {
   listInstalledStyles,
   resolveInstalledStyle,
 } from "@/services/pandoc/styles";
-import type { PlainProfile } from "@/services/profile/plain";
-import type { ProfileReader } from "@/services/profile/service";
-import type { PluginSettings } from "@/services/settings/service";
-import type { PlainTemplate } from "@/services/template/plain";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import { Profile } from "@/services/profile/service";
+import { Template } from "@/services/template/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
+import { profileDisplayName } from "./profile-name";
 import type { SelectedItemIdentity } from "./sessions";
 import { collectVaultTargets } from "./vault-targets";
-
-/** The Profile service as the bridge reads it: the registry plus exact source. */
-export type BridgeProfileReader = ProfileReader &
-  Pick<PlainProfile, "getSource">;
+import type { VaultTargetServices } from "./vault-targets";
 
 /** The selected Profile no longer has a document in this vault. */
-export class ProfileDocumentMissingError extends Error {
-  constructor(profileId: string) {
-    super(`Profile '${profileId}' has no document in this vault.`);
-    this.name = "ProfileDocumentMissingError";
-  }
-}
+export class ProfileDocumentMissingError extends Schema.TaggedError<
+  ProfileDocumentMissingError,
+  { readonly brand: unique symbol }
+>()("ProfileDocumentMissingError", {
+  profileId: Schema.String,
+  message: Schema.String,
+}) {}
 
 /** The selected Item is not in the library this vault reads. */
-export class SelectedItemUnavailableError extends Error {
-  constructor(key: string) {
-    super(`Item '${key}' is not available in this library.`);
-    this.name = "SelectedItemUnavailableError";
-  }
-}
+export class SelectedItemUnavailableError extends Schema.TaggedError<
+  SelectedItemUnavailableError,
+  { readonly brand: unique symbol }
+>()("SelectedItemUnavailableError", {
+  key: Schema.String,
+  message: Schema.String,
+}) {}
 
-export interface LocalBridgeReadDeps {
-  app: App;
-  settings: Pick<PluginSettings["Service"], "current">;
-  bridge: Pick<EffectBridge, "runSync">;
-  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
-  noteIndex: Pick<
-    PlainNoteIndex,
-    "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
-  >;
-  profile: BridgeProfileReader;
-  template: Pick<PlainTemplate, "exportLiteratureNotePackSource">;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
+export const profileDocumentMissing = (
+  profileId: string,
+): ProfileDocumentMissingError =>
+  new ProfileDocumentMissingError({
+    profileId,
+    message: `Profile '${profileId}' has no document in this vault.`,
+  });
+
+/** The services every read answers from. */
+export type BridgeReadServices =
+  | VaultTargetServices
+  | Profile
+  | Template
+  | ZoteroReads;
+
+/** Who answers a connected Snapshot: this device's id and the vault's name. */
+export interface BridgeProvenance {
   /** The device id the page keys its drafts on, minted by the service. */
-  installationId(): string;
-  /** The vault name the Snapshot's provenance carries. */
-  vaultName(): string;
+  readonly installationId: string;
+  readonly vault: string;
 }
 
-/** The read half of the Local Bridge, apart from HTTP. */
+/** The read half of the Local Bridge as the HTTP routes call it. */
 export interface LocalBridgeReads {
   templateSchema(): TemplateSchemaResponse;
   /** @throws {@link SelectedItemUnavailableError} */
@@ -99,60 +97,79 @@ export interface LocalBridgeReads {
   ): Promise<SelectedCitationStyleResponse>;
 }
 
-export function createLocalBridgeReads(
-  deps: LocalBridgeReadDeps,
-): LocalBridgeReads {
+/**
+ * The reads for the HTTP routes, each run over the services of the layer that
+ * makes them: a route handler is the edge where a request enters Effect. Each
+ * read runs on a `FiberSet` of the caller's Scope, so a layer close ends a
+ * pending read.
+ */
+export const makeLocalBridgeReads = Effect.fnUntraced(function* (
+  provenance: BridgeProvenance,
+) {
+  const run = yield* FiberSet.makeRuntimePromise<BridgeReadServices>();
+  const reads: LocalBridgeReads = {
+    templateSchema,
+    selectedItem: (item) => run(readSelectedItem(item, provenance)),
+    selectedProfile: (profileId) => run(readSelectedProfile(profileId)),
+    templateDependencies: (source) => run(readTemplateDependencies(source)),
+    citationStyles: () => run(readCitationStyles),
+    selectedCitationStyle: (request) => run(readSelectedCitationStyle(request)),
+  };
+  return reads;
+});
+
+function templateSchema(): TemplateSchemaResponse {
+  if (!__WEB_WORKBENCH_ENABLED__)
+    throw new Error("Web Workbench support is disabled.");
   return {
-    templateSchema: () => {
-      if (!__WEB_WORKBENCH_ENABLED__)
-        throw new Error("Web Workbench support is disabled.");
-      return {
-        note: noteSchema,
-        annotation: annotationSchema,
-        filename: filenameSchema,
-      };
-    },
+    note: noteSchema,
+    annotation: annotationSchema,
+    filename: filenameSchema,
+  };
+}
 
-    async selectedItem(item) {
-      await deps.noteIndex.whenIndexed();
-      // One Snapshot: the vault targets and the export read one state.
-      await using lease = await deps.zoteroReads.acquireRead();
-      const selected = await resolveSelection(lease.reads, item.key);
-      const vaultTargets = await collectVaultTargets(
-        lease.reads,
-        selected.item,
-        deps,
-      );
-      return await Effect.runPromise(
-        lease.reads.ItemSnapshot({
+/** The selected Item as a Snapshot: the vault targets and the export read one state. */
+export const readSelectedItem = Effect.fn("LocalBridge.selectedItem")(
+  function* (item: SelectedItemIdentity, provenance: BridgeProvenance) {
+    yield* NoteIndex.use((index) => index.whenIndexed);
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        const reads = yield* (yield* ZoteroReads).snapshot;
+        const selected = yield* resolveSelection(reads, item.key);
+        const vaultTargets = yield* collectVaultTargets(reads, selected.item);
+        return yield* reads.ItemSnapshot({
           selection: selected.selection,
-          provenance: {
-            kind: "connected",
-            installationId: deps.installationId(),
-            vault: deps.vaultName(),
-          },
+          provenance: { kind: "connected", ...provenance },
           vaultTargets,
-        }),
-      );
-    },
+        });
+      }),
+    );
+  },
+);
 
-    async selectedProfile(profileId) {
-      const selector = profileSelector(profileId);
-      const resolved = selector && deps.profile.resolveProfile(selector);
-      if (!selector || !resolved) {
-        throw new ProfileDocumentMissingError(profileId);
-      }
-      const profile = {
-        id: profileId,
-        name: resolved.label ?? m.settings_profile_default_name(),
-      };
-      // The document reference a Save addresses is the Profile id and nothing
-      // else, so no vault path crosses and the page can key a draft on it.
-      const reference = profileId;
-      const source = await readSource(deps.profile, selector, profileId);
-      // A built-in Default that was never ejected has no file: the source is the
-      // document an eject would write, and the page learns it is still absent.
-      return resolved.document === undefined
+/** The selected Profile's exact source, and whether its document exists yet. */
+export const readSelectedProfile = Effect.fn("LocalBridge.selectedProfile")(
+  function* (profileId: string) {
+    const profiles = yield* Profile;
+    const selector = profileSelector(profileId);
+    const resolved = selector && (yield* profiles.resolveProfile(selector));
+    if (!selector || !resolved) {
+      return yield* profileDocumentMissing(profileId);
+    }
+    const profile = {
+      id: profileId,
+      name: yield* profileDisplayName(profileId),
+    };
+    // The document reference a Save addresses is the Profile id and nothing
+    // else, so no vault path crosses and the page can key a draft on it.
+    const reference = profileId;
+    const source = yield* profiles
+      .getSource(selector)
+      .pipe(Effect.mapError(() => profileDocumentMissing(profileId)));
+    // A built-in Default that was never ejected has no file: the source is the
+    // document an eject would write, and the page learns it is still absent.
+    const response: SelectedProfileResponse =
+      resolved.document === undefined
         ? { profile, source, document: { state: "built-in-absent", reference } }
         : {
             profile,
@@ -163,21 +180,9 @@ export function createLocalBridgeReads(
               revision: profileRevision(source),
             },
           };
-    },
-
-    async templateDependencies(source) {
-      return dependencyBundle(deps.template, source);
-    },
-
-    async citationStyles() {
-      return listInstalledStyles(deps.zoteroPref.dataDir);
-    },
-
-    async selectedCitationStyle(request) {
-      return resolveInstalledStyle(deps.zoteroPref.dataDir, request);
-    },
-  };
-}
+    return response;
+  },
+);
 
 /** The name the page renders an annotation's citation through. */
 const CITATION_TEMPLATE = "citation";
@@ -191,20 +196,22 @@ const CITATION_TEMPLATE = "citation";
  * cannot run are diagnostics rather than a refusal, so the page keeps every
  * partial that did resolve.
  */
-async function dependencyBundle(
-  template: Pick<PlainTemplate, "exportLiteratureNotePackSource">,
-  source: string,
-): Promise<TemplateDependenciesResponse> {
+export const readTemplateDependencies = Effect.fn(
+  "LocalBridge.templateDependencies",
+)(function* (source: string) {
   const missing: string[] = [];
-  const bundled = await template.exportLiteratureNotePackSource(source, {
-    include: [CITATION_TEMPLATE],
-    onMissingPartial: (name) => missing.push(name),
-  });
-  const { manifest } = new TemplateFacade().parseLiteratureNoteTemplate(
-    bundled,
+  const bundled = yield* (yield* Template).exportLiteratureNotePackSource(
+    source,
+    {
+      include: [CITATION_TEMPLATE],
+      onMissingPartial: (name) => missing.push(name),
+    },
+  );
+  const { manifest } = yield* Effect.try(() =>
+    new TemplateFacade().parseLiteratureNoteTemplate(bundled),
   );
   const partials = manifest.partials ?? [];
-  return {
+  const response: TemplateDependenciesResponse = {
     templates: partials.filter(({ language }) => language === "liquid"),
     diagnostics: [
       ...missing.map((name) => ({
@@ -219,29 +226,47 @@ async function dependencyBundle(
         })),
     ],
   };
-}
+  return response;
+});
+
+/** The citation styles this Zotero has installed. */
+export const readCitationStyles = Effect.gen(function* () {
+  const { dataDir } = yield* (yield* ZoteroPref).current;
+  return yield* Effect.tryPromise(() => listInstalledStyles(dataDir));
+}).pipe(Effect.withSpan("LocalBridge.citationStyles"));
+
+/** The installed style the page asked for, resolved against this Zotero. */
+export const readSelectedCitationStyle = Effect.fn(
+  "LocalBridge.selectedCitationStyle",
+)(function* (request: SelectedCitationStyleRequest) {
+  const { dataDir } = yield* (yield* ZoteroPref).current;
+  return yield* Effect.tryPromise(() =>
+    resolveInstalledStyle(dataDir, request),
+  );
+});
 
 /** The Snapshot selection and the Item row an Indexed Key names. */
-async function resolveSelection(
+const resolveSelection = Effect.fnUntraced(function* (
   reads: ZoteroReadsApi,
   indexedKey: string,
-): Promise<{ item: Item; selection: SnapshotSelection }> {
-  const items = await Effect.runPromise(
-    reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
-  );
+) {
+  const items = yield* reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] });
   const item = items.values().next().value;
-  if (!item) throw new SelectedItemUnavailableError(indexedKey);
-  return {
-    item,
-    selection: {
-      library:
-        item.groupID === null
-          ? { type: "personal" }
-          : { type: "group", groupID: item.groupID },
-      key: item.key,
-    },
+  if (!item) {
+    return yield* new SelectedItemUnavailableError({
+      key: indexedKey,
+      message: `Item '${indexedKey}' is not available in this library.`,
+    });
+  }
+  const selection: SnapshotSelection = {
+    library:
+      item.groupID === null
+        ? { type: "personal" }
+        : { type: "group", groupID: item.groupID },
+    key: item.key,
   };
-}
+  return { item, selection };
+});
 
 /** The selector the registry knows a Profile id by, or `undefined` for none. */
 export function profileSelector(
@@ -249,16 +274,4 @@ export function profileSelector(
 ): ProfileSelector | undefined {
   if (profileId === DEFAULT_PROFILE) return DEFAULT_PROFILE;
   return isProfileId(profileId) ? profileId : undefined;
-}
-
-async function readSource(
-  profile: BridgeProfileReader,
-  selector: ProfileSelector,
-  profileId: string,
-): Promise<string> {
-  try {
-    return await profile.getSource(selector);
-  } catch {
-    throw new ProfileDocumentMissingError(profileId);
-  }
 }

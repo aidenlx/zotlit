@@ -2,7 +2,6 @@ import { Effect } from "effect";
 import type { FileSystemAdapter } from "obsidian";
 
 import { cliRunner } from "@/lib/cli-command";
-import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
 import { effectBridge } from "@/lib/effect-bridge";
 import { fromInstant } from "@/lib/effect-clock";
@@ -62,7 +61,13 @@ import { LanguagePack } from "./language-pack/service";
 import type { LanguagePackStartup } from "./language-pack/service";
 import { plainLibraryScope } from "./library-scope/plain";
 import { LibraryScope } from "./library-scope/service";
-import { LocalBridgeService } from "./local-bridge/service";
+import { bindCustomize } from "./local-bridge/customize";
+import type {
+  CustomizePorts,
+  CustomizeServices,
+} from "./local-bridge/customize";
+import { bindLocalBridge } from "./local-bridge/handle";
+import { LocalBridge } from "./local-bridge/service";
 import { LocalServer } from "./local-server/service";
 import { bindManagedBinary } from "./managed-binary/handle";
 import { createNoteFeature } from "./note-feature";
@@ -78,6 +83,7 @@ import { PandocEngine } from "./pandoc/service";
 import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
 import { pluginLayer } from "./plugin-layer";
 import { plainProfile } from "./profile/plain";
+import { Profile } from "./profile/service";
 import { plainQueryClients } from "./query-client/plain";
 import { Release } from "./release/service";
 import { ServiceContainer } from "./service-base";
@@ -331,29 +337,16 @@ export async function buildServices(
       query: () => bindQuery(bridge, runtime.runSync(QueryService)),
     })
     .useValue({ profile: () => plainProfile(runtime) })
-    .use({
-      localBridge: ({
-        settings,
-        profile,
-        localServer,
-        zoteroReads,
-        noteIndex,
-        template,
-        zoteroPref,
-      }) =>
-        new LocalBridgeService({
-          bridge,
-          webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-          app: plugin.app,
-          settings,
-          profile,
-          localServer,
-          zoteroReads,
-          noteIndex,
-          template,
-          zoteroPref,
-          pluginVersion: plugin.manifest.version,
-        }),
+    .useValue({ profileService: () => runtime.runSync(Profile) })
+    .useValue({
+      localBridge: () => bindLocalBridge(bridge, runtime.runSync(LocalBridge)),
+    })
+    .useValue({
+      // zt-main hands in the launch sheet and the editors it opens.
+      bindCustomize: () => {
+        const context = runtime.runSync(Effect.context<CustomizeServices>());
+        return (ports: CustomizePorts) => bindCustomize(bridge, context, ports);
+      },
     })
     .useValue({
       noteImport: ({

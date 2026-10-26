@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 
+import type { LocalBridgeHandle } from "./handle";
 import { subscribeWorkbenchSaved, workbenchSavedNotice } from "./notices";
-import type { LocalBridgeService } from "./service";
 
 describe("workbenchSavedNotice", () => {
   it("carries the approved copy and runs Update all notes through its action", () => {
@@ -28,7 +28,7 @@ describe("subscribeWorkbenchSaved", () => {
         listeners.add(callback);
         return () => listeners.delete(callback);
       },
-    } as unknown as Pick<LocalBridgeService, "on">;
+    } as unknown as Pick<LocalBridgeHandle, "on">;
     const showNotice = vi.fn();
 
     const dispose = subscribeWorkbenchSaved(localBridge, showNotice);
