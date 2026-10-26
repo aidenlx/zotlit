@@ -73,7 +73,6 @@ import {
 import type {
   AnnotationList,
   AnnotationRecord,
-  AnnotationRepositoryCoreDeps,
   AnnotationSource,
 } from "./service";
 import { layerAnnotationRepository, AnnotationRepository } from "./service";
@@ -206,7 +205,10 @@ export async function setup(
   options: ClientOptions & {
     writeToken?: () => string;
     /** What this device's persisted Excerpt Images were made from, by Annotation. */
-    persistedExcerpt?: AnnotationRepositoryCoreDeps["persistedExcerpt"];
+    persistedExcerpt?: (
+      annotation: AnnotationRecord,
+      source: AnnotationSource,
+    ) => Promise<string | null>;
     /** The Annotations Zotero imported from the PDF file, by key. */
     external?: readonly string[];
     /** The Fixture's rows in a group library, not the personal library. */

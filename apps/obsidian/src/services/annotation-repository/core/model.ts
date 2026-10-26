@@ -1,5 +1,7 @@
 // The records, sources, drafts, events and write types the Annotation Repository core's parts share, with their shared pure helpers.
 import type { Mutation, QueryKey } from "@tanstack/query-core";
+import { Schema } from "effect";
+import type { Effect } from "effect";
 
 import { tagTypeToName } from "@zotlit/db";
 import type {
@@ -365,6 +367,12 @@ export type AnnotationRepositoryEvent =
       attachmentKey: string;
     };
 
+/** This device's persisted Excerpt Image could not be read. */
+class PersistedExcerptUnreadable extends Schema.TaggedError<
+  PersistedExcerptUnreadable,
+  { readonly brand: unique symbol }
+>()("PersistedExcerptUnreadable", { cause: Schema.Defect() }) {}
+
 export interface AnnotationRepositoryCoreDeps {
   bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
   db: Pick<ZoteroReads["Service"], "snapshot" | "events" | "refresh">;
@@ -403,7 +411,7 @@ export interface AnnotationRepositoryCoreDeps {
   persistedExcerpt?: (
     annotation: AnnotationRecord,
     source: AnnotationSource,
-  ) => Promise<string | null>;
+  ) => Effect.Effect<string | null, PersistedExcerptUnreadable>;
   publish: (event: AnnotationRepositoryEvent) => void;
 }
 
@@ -619,6 +627,7 @@ function fromLocalApi({
 }
 
 export {
+  PersistedExcerptUnreadable,
   ANNOTATIONS,
   TEXT_FIELD_SPECS,
   DRAFT_FIELDS,

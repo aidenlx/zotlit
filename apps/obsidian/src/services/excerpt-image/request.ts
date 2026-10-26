@@ -1,4 +1,5 @@
 import { Cause, Data, Effect } from "effect";
+import type { Scope } from "effect";
 
 import {
   annotationTypeToName,
@@ -53,44 +54,65 @@ export function savedExcerptRequest(options: {
   /** Runs the read on the plugin's runtime, so its log reaches the plugin logger. */
   bridge: Pick<EffectBridge, "runPromise">;
 }): Promise<ExcerptRequest | null> {
-  const { annotation, source, sourceScope } = options;
   // The paths as they stand now: a request belongs to the data directory its
   // source was read from, whatever the settings become during the read.
-  const paths: AttachmentPathContext = {
+  const paths = Effect.sync((): AttachmentPathContext => ({
     dataDir: options.paths.dataDir,
     baseAttachmentPath: options.paths.baseAttachmentPath,
-  };
-  if (!source || sourceScope !== paths.dataDir) return Promise.resolve(null);
+  }));
+  if (!options.source || options.sourceScope !== options.paths.dataDir)
+    return Promise.resolve(null);
   return options.bridge.runPromise(
-    Effect.gen(function* () {
-      // One Snapshot, so the identity and the attachment come from one database.
-      const lease = yield* Effect.acquireDisposable(
-        Effect.tryPromise(() => options.zoteroReads.acquireRead()),
+    resolveSavedExcerptRequest({
+      annotation: options.annotation,
+      source: options.source,
+      sourceScope: options.sourceScope,
+      snapshot: Effect.map(
+        Effect.acquireDisposable(
+          Effect.tryPromise(() => options.zoteroReads.acquireRead()),
+        ),
+        (lease) => lease.reads,
+      ),
+      paths,
+    }),
+  );
+}
+
+/**
+ * {@link savedExcerptRequest} as an Effect: the reads come from one `snapshot`,
+ * and `paths` is read before the read and again after it.
+ */
+export function resolveSavedExcerptRequest<E>(options: {
+  annotation: AnnotationRecord;
+  source: AnnotationSource | null;
+  sourceScope: string | null;
+  snapshot: Effect.Effect<ExcerptRequestReads, E, Scope.Scope>;
+  paths: Effect.Effect<AttachmentPathContext>;
+}): Effect.Effect<ExcerptRequest | null> {
+  const { annotation, source, sourceScope } = options;
+  return Effect.gen(function* () {
+    const paths = yield* options.paths;
+    if (!source || sourceScope !== paths.dataDir) return null;
+    // One Snapshot, so the identity and the attachment come from one database.
+    const reads = yield* options.snapshot;
+    const request = yield* excerptRequest({ annotation, source, reads, paths });
+    return (yield* options.paths).dataDir === paths.dataDir ? request : null;
+  }).pipe(
+    Effect.scoped,
+    // Whatever stops the read, as a throw from a reader, resolves to nothing.
+    Effect.catchCause((cause) => {
+      const error = Cause.squash(cause);
+      return Effect.logDebug(
+        "No excerpt request: the database did not answer",
+      ).pipe(
+        Effect.annotateLogs({
+          annotationKey: annotation.key,
+          error: error instanceof Cause.UnknownError ? error.cause : error,
+        }),
+        Effect.as(null),
       );
-      const request = yield* excerptRequest({
-        annotation,
-        source,
-        reads: lease.reads,
-        paths,
-      });
-      return options.paths.dataDir === paths.dataDir ? request : null;
-    }).pipe(
-      Effect.scoped,
-      // Whatever stops the read, as a throw from a reader, resolves to nothing.
-      Effect.catchCause((cause) => {
-        const error = Cause.squash(cause);
-        return Effect.logDebug(
-          "No excerpt request: the database did not answer",
-        ).pipe(
-          Effect.annotateLogs({
-            annotationKey: annotation.key,
-            error: error instanceof Cause.UnknownError ? error.cause : error,
-          }),
-          Effect.as(null),
-        );
-      }),
-      withLogCategory("excerpt-image"),
-    ),
+    }),
+    withLogCategory("excerpt-image"),
   );
 }
 

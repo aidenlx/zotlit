@@ -14,7 +14,7 @@ import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ExcerptImages } from "@/services/excerpt-image/layer";
-import { savedExcerptRequestOver } from "@/services/excerpt-image/request";
+import { resolveSavedExcerptRequest } from "@/services/excerpt-image/request";
 import type { Held } from "@/services/query-client/service";
 import { QueryClients } from "@/services/query-client/service";
 import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
@@ -58,6 +58,7 @@ import {
   sourceMoved,
 } from "./core/lists";
 import type { AnnotationLibraryUnresolved } from "./core/lists";
+import { PersistedExcerptUnreadable } from "./core/model";
 import type {
   AnnotationList,
   AnnotationRecord,
@@ -510,18 +511,33 @@ export function layerAnnotationRepository(options: {
       const bridge = yield* scopedBridge;
       const bus = yield* PubSub.unbounded<AnnotationRepositoryEvent>();
       yield* Effect.addFinalizer(() => PubSub.shutdown(bus));
-      const excerptRequest = savedExcerptRequestOver({ reads, pref, bridge });
       // A session's first read of an Attachment has no list that stood
       // before it to compare against, so it is compared against the image
       // this device persists for the Annotation instead — the display's own
       // stored-outcome read, so an Annotation this device never cached has
       // no baseline here exactly as it has no image to replace there.
+      const paths = Effect.map(
+        pref.current,
+        ({ dataDir, baseAttachmentPath }) => ({ dataDir, baseAttachmentPath }),
+      );
       const persistedExcerpt: AnnotationRepositoryCoreDeps["persistedExcerpt"] =
-        async (annotation, source) => {
-          const request = await excerptRequest({ annotation, source });
+        Effect.fnUntraced(function* (annotation, source) {
+          const request = yield* resolveSavedExcerptRequest({
+            annotation,
+            source,
+            sourceScope: (yield* pref.current).dataDir,
+            snapshot: reads.snapshot,
+            paths,
+          });
           if (!request) return null;
-          return (await images.stored(request))?.identity.fingerprint ?? null;
-        };
+          // The Excerpt Image service is legacy until #1790: its stored read
+          // is the one Promise port left here.
+          const stored = yield* Effect.tryPromise({
+            try: () => images.stored(request),
+            catch: (cause) => new PersistedExcerptUnreadable({ cause }),
+          });
+          return stored?.identity.fingerprint ?? null;
+        });
       const fibers = yield* FiberSet.make();
       const refreshes = yield* FiberMap.make<
         string,

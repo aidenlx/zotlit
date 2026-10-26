@@ -115,12 +115,6 @@ export class AnnotationLibraryUnresolved extends Schema.TaggedError<
   }
 }
 
-/** This device's persisted Excerpt Image could not be read. */
-class PersistedExcerptUnreadable extends Schema.TaggedError<
-  PersistedExcerptUnreadable,
-  { readonly brand: unique symbol }
->()("PersistedExcerptUnreadable", { cause: Schema.Defect() }) {}
-
 /**
  * @param attachmentKey the Attachment's Indexed Key.
  * @returns the list that stands, with the Pending Proposal of each write in
@@ -504,10 +498,7 @@ const persistedFingerprints = Effect.fnUntraced(function* (
   const stood = yield* Effect.forEach(
     candidate.annotations,
     (record) =>
-      Effect.tryPromise({
-        try: () => persisted(record, candidate.source),
-        catch: (cause) => new PersistedExcerptUnreadable({ cause }),
-      }).pipe(
+      persisted(record, candidate.source).pipe(
         recover(
           (cause) =>
             Effect.logDebug(
