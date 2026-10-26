@@ -42,7 +42,7 @@ import {
   openTemplateWorkbench,
 } from "@/views/template-workbench/register";
 
-import { testSettingTab } from "./__fixtures__";
+import { scopedSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
 import { profileControlValue, setProfileControlValue } from "./controls";
 import { literatureNoteItems, profilesPage } from "./profiles";
@@ -119,7 +119,7 @@ const tabOver = Effect.fnUntraced(function* (
     ),
   );
   const rebuilt = yield* Queue.unbounded<void>();
-  const { tab } = testSettingTab(services, {
+  const { tab } = yield* scopedSettingTab(services, {
     update: () => Queue.offerUnsafe(rebuilt, undefined),
   });
   const customize = vi.fn<CustomizeAction>(async () => {});
