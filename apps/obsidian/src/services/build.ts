@@ -463,16 +463,10 @@ export async function buildServices(
       },
     })
     .useValue({
-      noteImportView: ({
-        createProfile,
-        importProfile,
-        zoteroPref,
-        targetOpener,
-      }) => {
+      noteImportView: ({ createProfile, importProfile, targetOpener }) => {
         const noteImportView = createNoteImportView(plugin.app, {
           createProfile,
           importProfile,
-          zoteroPref,
         });
         bindProtocolViews({ noteImportView, opener: targetOpener });
         return noteImportView;

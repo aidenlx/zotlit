@@ -24,7 +24,7 @@ const OLD_WINDOW = "__ztWindowBeforeReload";
 export async function reloadWindow(vaultId: string): Promise<void> {
   await obEval(
     vaultId,
-    "(app.plugins.plugins.zotlit?.services.settings.flush()??Promise.resolve()).then(()=>true)",
+    "(app.plugins.plugins.zotlit?.services.bridge.runPromise(app.plugins.plugins.zotlit?.services.settings.flush)??Promise.resolve()).then(()=>true)",
   );
   // The reload goes after the reply, so this call is answered by the old
   // window; the marker tells that window from the new one.

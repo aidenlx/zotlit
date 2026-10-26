@@ -11,7 +11,8 @@ import { isCitationExampleId } from "@zotlit/workbench/render";
 import type { RenderCallerSource } from "@zotlit/workbench/render";
 
 import { parseProfileSelector } from "@/lib/profile-stamp";
-import { Profile } from "@/services/profile/service";
+import { Profile, ProfileOperationError } from "@/services/profile/service";
+import { plainTemplateError } from "@/services/template/errors";
 import { Template } from "@/services/template/service";
 import { checkDiagnostic } from "@/views/note-preview/check-profile";
 import type { ProfileCheck } from "@/views/note-preview/check-profile";
@@ -27,7 +28,7 @@ import { readCitationData, readTemplateData, withSettings } from "./data";
 import { createInspectHandler, sourceRevision } from "./inspect";
 import { INSPECT_DIAGNOSTICS } from "./inspect-contract";
 import type { InspectDiagnosticCode } from "./inspect-contract";
-import { profileRead, templateCall, templateRead } from "./sync-template";
+import { templateCall } from "./sync-template";
 
 /** The refusal a Reserved Partial Name carries, as the inspection registry names it. */
 export const RESERVED_PARTIAL_NAME =
@@ -52,7 +53,9 @@ export const attempt = <A>(evaluate: () => A) =>
 
 /** What a failed check reports: what was thrown, or the failure itself. */
 export const thrown = (error: unknown): unknown =>
-  error instanceof CheckSourceThrew ? error.cause : error;
+  error instanceof CheckSourceThrew || error instanceof ProfileOperationError
+    ? error.cause
+    : plainTemplateError(error);
 
 /** Checks a document the Profile branch does not own, and returns the answer. */
 export const checkPlainDocument = Effect.fn(
@@ -104,7 +107,7 @@ export const checkPlainDocument = Effect.fn(
     const template = yield* Template;
     if (
       documentContext.language === "eta" &&
-      !(yield* templateRead(template.javascriptTemplatesEnabled))
+      !(yield* template.javascriptTemplatesEnabled)
     )
       return {
         context: documentContext,
@@ -162,7 +165,7 @@ export const checkPlainDocument = Effect.fn(
     const profile =
       selector === undefined
         ? undefined
-        : yield* profileRead((yield* Profile).resolveProfile(selector));
+        : yield* (yield* Profile).resolveProfile(selector);
     if (!profile)
       return yield* new CheckSourceThrew({
         cause: new Error("The selected Profile does not resolve."),

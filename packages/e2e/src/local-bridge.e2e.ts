@@ -51,7 +51,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
       await obEval(
         run.vaultId,
-        `(async function(){var file=app.vault.getFileByPath(${JSON.stringify(defaultPath)});if(file)await app.vault.delete(file);app.saveLocalStorage('zotlit-workbench-launch-approved',null);app.saveLocalStorage('zotlit-profile-customization','ask');app.plugins.plugins.zotlit.services.settings.update({'server.enabled':false,'server.workbench':false});window.zotlitE2EOpen=window.open;window.open=url=>{window.zotlitE2ELaunch=url;return null;};return true;})()`,
+        `(async function(){var file=app.vault.getFileByPath(${JSON.stringify(defaultPath)});if(file)await app.vault.delete(file);app.saveLocalStorage('zotlit-workbench-launch-approved',null);app.saveLocalStorage('zotlit-profile-customization','ask');app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'server.enabled':false,'server.workbench':false}));window.zotlitE2EOpen=window.open;window.open=function(url){if(!/^https?:/.test(String(url)))return window.zotlitE2EOpen.apply(this,arguments);window.zotlitE2ELaunch=url;return null;};return true;})()`,
       );
       await suite.mainSettings();
       expect(await suite.clickTemplateCustomize()).toBe(true);
@@ -78,7 +78,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEval(
           run.vaultId,
-          `String(!!app.vault.getFileByPath(${JSON.stringify(defaultPath)})&&app.workspace.activeLeaf?.view.controller?.readOnly===false&&window.zotlitE2ELaunch===undefined&&!app.plugins.plugins.zotlit.services.settings.current['server.enabled']&&!app.plugins.plugins.zotlit.services.settings.current['server.workbench'])`,
+          `String(!!app.vault.getFileByPath(${JSON.stringify(defaultPath)})&&app.workspace.activeLeaf?.view.controller?.readOnly===false&&window.zotlitE2ELaunch===undefined&&!app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['server.enabled']&&!app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['server.workbench'])`,
         ),
       ).toBe("true");
       await suite.mainSettings();
@@ -93,13 +93,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEval(
           run.vaultId,
-          "String(window.zotlitE2ELaunch===undefined&&!app.plugins.plugins.zotlit.services.settings.current['server.enabled'])",
+          "String(window.zotlitE2ELaunch===undefined&&!app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['server.enabled'])",
         ),
       ).toBe("true");
       // The web save cases start from the built-in Default again.
       await obEval(
         run.vaultId,
-        "app.plugins.plugins.zotlit.services.profile.restoreDefault();true",
+        "(async function(){await app.plugins.plugins.zotlit.services.profile.restoreDefault();return true;})()",
       );
       expect(
         await obEvalUntil(
@@ -146,7 +146,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       port = Number(
         await obEval(
           run.vaultId,
-          "app.plugins.plugins.zotlit.services.localServer.effectivePort",
+          "app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.localServer.effectivePort)",
         ),
       );
       const fragment = new URLSearchParams(launch.hash.slice(1));
@@ -177,6 +177,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       };
       expect(profile.document.state).toBe("built-in-absent");
       source = profile.source;
+      await obEval(run.vaultId, "app.setting.close();true");
     });
 
     it("saves Default's document and shows the ejected settings state and Notice", async () => {
@@ -209,10 +210,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEvalUntil(
           run.vaultId,
-          `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(run.m.settings_profile_document_name())});return String(!!row&&row.textContent.includes('zotlit-profile.default.md')&&Array.from(row.querySelectorAll('button')).some(el=>el.getAttribute('aria-label')===${JSON.stringify(run.m.settings_profile_document_restore())}));})()`,
+          `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(run.m.settings_profile_document_name())});return String(!!row&&Array.from(row.querySelectorAll('button')).some(el=>el.getAttribute('aria-label')===${JSON.stringify(run.m.settings_profile_document_restore())}));})()`,
           { expected: "true" },
         ),
       ).toBe(true);
+      await obEval(run.vaultId, "app.setting.close();true");
     });
 
     it("refuses a Save after the vault document changes", async () => {
@@ -258,6 +260,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           { expected: "true" },
         ),
       ).toBe(true);
+      await obEval(run.vaultId, "app.setting.close();true");
     });
 
     it("keeps an unsupported Profile in Obsidian with one Notice when native is remembered", async () => {

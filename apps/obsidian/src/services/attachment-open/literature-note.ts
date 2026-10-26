@@ -1,6 +1,7 @@
 // Resolves a Literature Note's Indexed Key to its Item's PDF Attachments, over the Zotero database.
-import { Cause, Effect } from "effect";
+import { Effect } from "effect";
 
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { ZoteroPref } from "@/services/zotero-pref/service";
@@ -40,13 +41,14 @@ export function literatureNoteAttachments(
     });
   }).pipe(
     Effect.scoped,
-    Effect.catchCause((cause) => {
-      if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
-      return Effect.logWarning(
-        "Literature Note Attachments unavailable",
-        cause,
-      ).pipe(Effect.annotateLogs({ indexedKey }), Effect.as([]));
-    }),
+    recover(
+      (cause) =>
+        Effect.logWarning(
+          "Literature Note Attachments unavailable",
+          cause,
+        ).pipe(Effect.annotateLogs({ indexedKey })),
+      Effect.succeed([]),
+    ),
     withLogCategory("attachment-open"),
   );
 }

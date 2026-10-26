@@ -9,14 +9,14 @@ import type {
   ProfilePreview,
 } from "@/services/note-feature";
 import { listInstalledStyles } from "@/services/pandoc/styles";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
 
 export type BatchProfilePickerDeps = Pick<
   InteractiveCreationPorts,
   "app" | "createProfile" | "importProfile"
-> & { zoteroPref: Pick<PlainZoteroPref, "dataDir"> };
+>;
 export interface BatchProfilePickerOptions {
   indexedKey?: string;
   selection: CreationProfileSelection;
@@ -33,7 +33,7 @@ export const chooseBatchProfile = Effect.fnUntraced(function* (
   deps: BatchProfilePickerDeps,
   options: BatchProfilePickerOptions,
 ) {
-  const { dataDir } = deps.zoteroPref;
+  const { dataDir } = yield* (yield* ZoteroPref).current;
   // The style listing answers an empty list for a directory it cannot read.
   const styles = dataDir
     ? yield* Effect.promise(() => listInstalledStyles(dataDir))

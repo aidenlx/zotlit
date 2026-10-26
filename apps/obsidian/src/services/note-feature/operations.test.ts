@@ -93,6 +93,7 @@ import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fi
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
+import { InertTemplateError } from "@/services/template/errors";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {
@@ -427,6 +428,54 @@ describe("Profile source selection", () => {
     const file = createdFile(await preview.create());
     expect(file.path).toBe(preview.path);
     expect(app.vault.contents.get("Reading/Paper.md")).toBe("Occupied");
+  });
+
+  describe("with inert global Managed Frontmatter fields", () => {
+    // The global field set has a JavaScript field while JavaScript Templates
+    // are off: the engine's getter throws, as `TemplateService` does.
+    const inert = new InertTemplateError("Inert global fields");
+    const previewWith = (
+      frontmatter: CompiledManagedFrontmatter | undefined,
+    ) => {
+      const id = "Bk3Qn7XvT2Lp" as ProfileId;
+      const { deps } = makeUpdateHarness({
+        content: "",
+        settings: {
+          profiles: [{ id, label: "Reading", document: "reading.md" }],
+        },
+      });
+      const document = makeDocumentTemplate({ frontmatter });
+      deps.template = {
+        ...makeTemplate(),
+        get frontmatterFields(): never {
+          throw inert;
+        },
+        getLiteratureNoteTemplate: () => document,
+      };
+      const feature = createNoteFeature(deps);
+      return () =>
+        feature.prepareProfileNote({
+          profile: profileReader(
+            deps.bridge!.runSync(deps.settings.current),
+          ).resolveProfile(id)!,
+          document,
+          note: updateContext(),
+          filename: {},
+        });
+    };
+
+    it("previews a document with its own Managed Frontmatter", () => {
+      const preview = previewWith(
+        compileDocumentFrontmatter([
+          { key: "topic", merge: "replace", value: "Research" },
+        ]),
+      )();
+      expect(preview.properties).toMatchObject({ topic: "Research" });
+    });
+
+    it("refuses a legacy document, which composes the global fields", () => {
+      expect(previewWith(undefined)).toThrow("Inert global fields");
+    });
   });
 
   it("keeps the preview's random suffix and refuses when another file takes that path", async () => {

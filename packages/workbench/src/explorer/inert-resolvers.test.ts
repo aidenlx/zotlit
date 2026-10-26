@@ -15,14 +15,8 @@ import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { inertPlaceholderReason } from "./inert-placeholder";
-import {
-  buildInertNoteResolvers,
-  resolveExcerptImageContext,
-} from "./inert-resolvers";
-import type {
-  ExcerptImageContext,
-  InertNoteResolverDeps,
-} from "./inert-resolvers";
+import { buildInertNoteResolvers } from "./inert-resolvers";
+import type { InertNoteResolverDeps } from "./inert-resolvers";
 
 function makeAttachment(overrides: Partial<Attachment>): Attachment {
   return {
@@ -305,56 +299,6 @@ describe("buildInertNoteResolvers", () => {
       expect(result?.noteLink()).toBe(
         "[Methods](zotero://select/library/items/NOTE9999)",
       );
-    });
-  });
-});
-
-describe("resolveExcerptImageContext", () => {
-  it("resolves to file-url when attachment import is disabled", async () => {
-    const context = await resolveExcerptImageContext({
-      attachmentImport: false,
-      attachmentFolderPath: null,
-      litNotePath: NOTE_PATH,
-      resolveAttachmentFolderPath: async () => VAULT_FOLDER,
-    });
-    expect(context).toEqual<ExcerptImageContext>({ kind: "file-url" });
-  });
-
-  it("resolves to not-imported when import is enabled, no explicit folder is set, and no literature note exists", async () => {
-    const context = await resolveExcerptImageContext({
-      attachmentImport: true,
-      attachmentFolderPath: null,
-      litNotePath: null,
-      resolveAttachmentFolderPath: async () => VAULT_FOLDER,
-    });
-    expect(context).toEqual<ExcerptImageContext>({ kind: "not-imported" });
-  });
-
-  it("resolves to vault with the explicit folder path even without a literature note", async () => {
-    // An explicit attachment.folder-path is deterministic regardless of any
-    // note path, so an already-imported excerpt image should still resolve.
-    const context = await resolveExcerptImageContext({
-      attachmentImport: true,
-      attachmentFolderPath: VAULT_FOLDER,
-      litNotePath: null,
-      resolveAttachmentFolderPath: async (folderPath) => folderPath!,
-    });
-    expect(context).toEqual<ExcerptImageContext>({
-      kind: "vault",
-      folderPath: VAULT_FOLDER,
-    });
-  });
-
-  it("resolves to vault with the configured folder path when a literature note exists", async () => {
-    const context = await resolveExcerptImageContext({
-      attachmentImport: true,
-      attachmentFolderPath: VAULT_FOLDER,
-      litNotePath: NOTE_PATH,
-      resolveAttachmentFolderPath: async (folderPath) => folderPath!,
-    });
-    expect(context).toEqual<ExcerptImageContext>({
-      kind: "vault",
-      folderPath: VAULT_FOLDER,
     });
   });
 });
