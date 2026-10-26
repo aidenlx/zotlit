@@ -119,14 +119,15 @@ const UNKNOWN_OUTCOME: MutationState = {
 
 /** One write on the query client's mutation cache; its variables are its proposal. */
 /**
- * What a write does once its turn comes, given the send itself: it can resolve
- * as still pending with nothing sent, or act on its outcome before the next
- * write on the Annotation starts.
+ * What a write does once its turn comes, given the send itself: it can answer
+ * still pending with nothing sent, or act on its outcome before the next
+ * write on the Annotation starts. It runs inside the write, on the layer's
+ * bridge.
  */
 type WriteTurn = (
-  send: () => Promise<MutationState>,
+  send: Effect.Effect<MutationState, WriteReadError>,
   own: AnnotationMutation,
-) => Promise<MutationState>;
+) => Effect.Effect<MutationState, WriteReadError>;
 
 /** One command, as {@link command} takes it. */
 type Command = WriteAttempt & {
@@ -399,9 +400,12 @@ const patchGeometry = Effect.fnUntraced(function* (
     yield* Effect.logDebug(
       "A Geometry Edit's position is longer than Zotero accepts",
     ).pipe(Effect.annotateLogs({ annotationKey }));
-    return settle(core, annotationKey, "geometry", {
-      kind: "failed",
-      failure: { kind: "position-too-large" },
+    return settle(core, annotationKey, {
+      write: "geometry",
+      state: {
+        kind: "failed",
+        failure: { kind: "position-too-large" },
+      },
     });
   }
   return yield* command(core, annotationKey, {
@@ -440,8 +444,8 @@ const erase = Effect.fnUntraced(function* (
   gather?: GroupWrites,
 ) {
   for (const field of TEXT_FIELDS) {
-    const draft = draftFor(core, field, annotationKey);
-    if (draft) cancelTextSave(core, field, draft);
+    const draft = yield* draftFor(core, field, annotationKey);
+    if (draft) yield* cancelTextSave(core, field, draft);
   }
   return yield* command(core, annotationKey, {
     write: "delete",
@@ -590,7 +594,7 @@ const discardConflict = Effect.fnUntraced(function* (
   yield* Effect.logDebug("A write conflict was discarded").pipe(
     Effect.annotateLogs({ annotationKey }),
   );
-  settle(core, annotationKey, standing.conflict.write, IDLE);
+  settle(core, annotationKey, { write: standing.conflict.write, state: IDLE });
 });
 
 /**
@@ -650,17 +654,15 @@ const command = Effect.fnUntraced(function* (
     scope: { id: JSON.stringify([ANNOTATIONS, annotationKey]) },
     // Zotero runs on this device, so no write waits for an online event.
     networkMode: "always",
-    mutationFn: () => {
+    mutationFn: async () => {
       // A close of the layer interrupts the write: before Zotero took the
       // send, its outcome is unknown; after, the write was saved.
-      const send = async () => {
-        const progress = { accepted: false };
-        const exit = await core.bridge.runPromiseExit(
-          runCommand(core, annotationKey, { ...queued, progress }),
-        );
-        return valueOr(exit, progress.accepted ? IDLE : UNKNOWN_OUTCOME);
-      };
-      return command.run ? command.run(send, mutation) : send();
+      const progress = { accepted: false };
+      const send = runCommand(core, annotationKey, { ...queued, progress });
+      const exit = await core.bridge.runPromiseExit(
+        command.run ? command.run(send, mutation) : send,
+      );
+      return valueOr(exit, progress.accepted ? IDLE : UNKNOWN_OUTCOME);
     },
   });
   // The mutation holds its proposal from here on, so a surface redrawing on
@@ -671,7 +673,13 @@ const command = Effect.fnUntraced(function* (
     ...("session" in command && command.session && { session: true }),
   });
   const operation = mutation.execute(proposal);
-  core.operations.set(mutation, operation);
+  // Query Core answers the write as a Promise: the wait on it is the edge
+  // that every caller of the write, and every caller that joins it, takes.
+  const answer = Effect.tryPromise({
+    try: () => operation,
+    catch: (cause) => new WriteRunFailed({ cause }),
+  });
+  core.operations.set(mutation, answer);
   if (proposal) {
     core.publish({
       _tag: "annotations-changed",
@@ -693,14 +701,7 @@ const command = Effect.fnUntraced(function* (
     core.publish({ _tag: "annotation-changed", annotationKey });
   };
   void operation.then(settled, settled);
-  return yield* counted(
-    core,
-    attachmentHolding(core, annotationKey),
-    Effect.tryPromise({
-      try: () => operation,
-      catch: (cause) => new WriteRunFailed({ cause }),
-    }),
-  );
+  return yield* counted(core, attachmentHolding(core, annotationKey), answer);
 });
 
 const runCommand: (
@@ -711,9 +712,12 @@ const runCommand: (
   function* (core, annotationKey, command) {
     const held = yield* prepareWrite(core, annotationKey);
     if (held === "server-changed") {
-      return leave(core, annotationKey, command.write, {
-        kind: "failed",
-        failure: { kind: "server-changed" },
+      return leave(core, annotationKey, {
+        write: command.write,
+        state: {
+          kind: "failed",
+          failure: { kind: "server-changed" },
+        },
       });
     }
     if (command.generation !== core.commandGeneration) {
@@ -727,22 +731,31 @@ const runCommand: (
     }
     const parsed = parseIndexedKey(annotationKey);
     if (!held || !parsed) {
-      return leave(core, annotationKey, command.write, {
-        kind: "failed",
-        failure: { kind: "unknown-annotation" },
+      return leave(core, annotationKey, {
+        write: command.write,
+        state: {
+          kind: "failed",
+          failure: { kind: "unknown-annotation" },
+        },
       });
     }
     if (!(yield* compatibleApiSource(core, held.attachmentKey))) {
-      return leave(core, annotationKey, command.write, {
-        kind: "failed",
-        failure: { kind: "db-source" },
+      return leave(core, annotationKey, {
+        write: command.write,
+        state: {
+          kind: "failed",
+          failure: { kind: "db-source" },
+        },
       });
     }
     const { version } = held.record;
     if (version === null) {
-      return leave(core, annotationKey, command.write, {
-        kind: "failed",
-        failure: { kind: "db-source" },
+      return leave(core, annotationKey, {
+        write: command.write,
+        state: {
+          kind: "failed",
+          failure: { kind: "db-source" },
+        },
       });
     }
 
@@ -751,9 +764,12 @@ const runCommand: (
     takeOver(core, annotationKey, command.write);
     const blocked = yield* writeBlocked(core, held.attachmentKey);
     if (blocked) {
-      return leave(core, annotationKey, command.write, {
-        kind: "failed",
-        failure: blocked,
+      return leave(core, annotationKey, {
+        write: command.write,
+        state: {
+          kind: "failed",
+          failure: blocked,
+        },
       });
     }
 
@@ -785,9 +801,12 @@ const runCommand: (
       ) {
         return { kind: "failed", failure: { kind: "server-changed" } };
       }
-      return leave(core, annotationKey, command.write, {
-        kind: "failed",
-        failure: { kind: "server-changed" },
+      return leave(core, annotationKey, {
+        write: command.write,
+        state: {
+          kind: "failed",
+          failure: { kind: "server-changed" },
+        },
       });
     }
     if ("failure" in reply) {
@@ -813,7 +832,7 @@ const runCommand: (
           ? { kind: "failed", failure: reply.failure }
           : refused;
       if (state.kind === "failed") yield* refresh(core, held.attachmentKey);
-      leave(core, annotationKey, command.write, state);
+      leave(core, annotationKey, { write: command.write, state });
       if (state.kind === "conflict") {
         core.publish({
           _tag: "write-conflict",
@@ -835,13 +854,16 @@ const runCommand: (
     });
     if ("failure" in applied) {
       yield* refresh(core, held.attachmentKey);
-      return leave(core, annotationKey, command.write, {
-        kind: "failed",
-        failure: applied.failure,
+      return leave(core, annotationKey, {
+        write: command.write,
+        state: {
+          kind: "failed",
+          failure: applied.failure,
+        },
       });
     }
     if (command.settle === "drop") {
-      dropDrafts(core, annotationKey);
+      yield* dropDrafts(core, annotationKey);
     }
     if (
       !(yield* sourceStillBound(core, held.attachmentKey, source)) ||
@@ -851,9 +873,12 @@ const runCommand: (
         applied.value,
       ))
     ) {
-      return leave(core, annotationKey, command.write, {
-        kind: "failed",
-        failure: { kind: "server-changed" },
+      return leave(core, annotationKey, {
+        write: command.write,
+        state: {
+          kind: "failed",
+          failure: { kind: "server-changed" },
+        },
       });
     }
     yield* refresh(core, held.attachmentKey);
@@ -874,7 +899,7 @@ const runCommand: (
       _tag: "annotations-changed",
       attachmentKey: held.attachmentKey,
     });
-    return leave(core, annotationKey, command.write, IDLE);
+    return leave(core, annotationKey, { write: command.write, state: IDLE });
   },
 );
 
@@ -1199,7 +1224,11 @@ const publishApiChange = Effect.fnUntraced(function* (
   core.publishedLists.set(attachmentKey, next);
   core.publishedStatuses.set(attachmentKey, "fresh");
   if (confirmation.kind === "deleted") {
-    reconcileDrafts(core, source.serverID, attachmentKey, annotations);
+    yield* reconcileDrafts(
+      core,
+      { serverID: source.serverID, attachmentKey },
+      annotations,
+    );
   }
   yield* announceReadPixels(core, previous, next);
   return true;

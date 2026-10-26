@@ -35,9 +35,9 @@ import type {
   TagChange,
 } from "@/services/annotation-repository/write";
 
-import { draftFor } from "./draft-store";
+import { autosaveDue, draftFor } from "./draft-store";
 import { holding } from "./lists";
-import { DRAFT_FIELDS, indexedID, proposedTags } from "./model";
+import { DRAFT_FIELDS, proposedTags } from "./model";
 import type { AnnotationRecord } from "./model";
 import type { CoreState } from "./state";
 import {
@@ -111,12 +111,18 @@ const closeHistory = Effect.fnUntraced(function* (
  *
  * @param attachmentKey the Attachment's Indexed Key.
  */
-function canUndo(core: CoreState, attachmentKey: string): boolean {
+function canUndo(
+  core: CoreState,
+  attachmentKey: string,
+): Effect.Effect<boolean> {
   return stepStands(core, attachmentKey, "undo");
 }
 
 /** Whether this Attachment's Annotation History holds a step to redo. */
-function canRedo(core: CoreState, attachmentKey: string): boolean {
+function canRedo(
+  core: CoreState,
+  attachmentKey: string,
+): Effect.Effect<boolean> {
   return stepStands(core, attachmentKey, "redo");
 }
 
@@ -162,7 +168,7 @@ const stepHistory = Effect.fnUntraced(function* (
     return { kind: "idle" };
   if (savePending(core, attachmentKey)) return { kind: "idle" };
   const step = history.peek(direction);
-  if (!step || beingEdited(core, step)) return { kind: "idle" };
+  if (!step || (yield* beingEdited(core, step))) return { kind: "idle" };
   // An undo is a write, so it needs the Editing Capability like any other,
   // and the existing notice says why it did not run.
   if (yield* writeBlocked(core, attachmentKey)) return { kind: "blocked" };
@@ -196,14 +202,14 @@ const stepHistory = Effect.fnUntraced(function* (
  * {@link AnnotationRepository.canRedo} answer, and what every surface that
  * draws a verb reads.
  */
-function stepStands(
+const stepStands = Effect.fnUntraced(function* (
   core: CoreState,
   attachmentKey: string,
   direction: HistoryDirection,
-): boolean {
+) {
   const step = core.histories.get(attachmentKey)?.peek(direction);
-  return !!step && !beingEdited(core, step);
-}
+  return !!step && !(yield* beingEdited(core, step));
+});
 
 /**
  * Whether an Annotation Draft stands on an Annotation this step changes: a
@@ -212,11 +218,17 @@ function stepStands(
  * yet. An open comment editor answers these keys with its own text undo,
  * and a tag draft ends by its save or its discard before a step is taken.
  */
-function beingEdited(core: CoreState, step: HistoryStep): boolean {
-  return step.changes.some(({ annotationKey }) =>
-    DRAFT_FIELDS.some((field) => draftFor(core, field, annotationKey)),
-  );
-}
+const beingEdited = Effect.fnUntraced(function* (
+  core: CoreState,
+  step: HistoryStep,
+) {
+  for (const { annotationKey } of step.changes) {
+    for (const field of DRAFT_FIELDS) {
+      if (yield* draftFor(core, field, annotationKey)) return true;
+    }
+  }
+  return false;
+});
 
 /**
  * The field check and the write of one step. Every Annotation the step names
@@ -565,11 +577,7 @@ function savePending(core: CoreState, attachmentKey: string): boolean {
   for (const field of TEXT_FIELDS) {
     for (const draft of core.drafts[field].values()) {
       if (draft.attachmentKey !== attachmentKey) continue;
-      const save = core.textSaves[field].get(
-        indexedID(draft.serverID, draft.annotationKey),
-      );
-      if (!save) continue;
-      if (save.idleTimer !== null || save.burstTimer !== null) return true;
+      if (autosaveDue(core, field, draft)) return true;
     }
   }
   return false;

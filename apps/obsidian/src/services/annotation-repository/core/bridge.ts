@@ -2,7 +2,6 @@
 import type { QueryFunction, QueryKey } from "@tanstack/query-core";
 import { Effect, Exit, Request, RequestResolver } from "effect";
 
-import { valueOr } from "@/lib/effect-bridge";
 import type { Held } from "@/services/query-client/service";
 import type {
   LocalApiSource,
@@ -78,24 +77,6 @@ function databaseRows(
   );
 }
 
-// A plain part of the core runs these through `core.bridge`, the layer's
-// `scopedBridge`, until its own slice converts it.
-
-/**
- * A converted read or write, for a plain part of the core that waits on it:
- * it runs on the layer's bridge, in the layer's Scope, and answers `released`
- * where the layer closed under it.
- */
-function awaitRead<A, E>(
-  core: CoreState,
-  read: Effect.Effect<A, E>,
-  released: A,
-): Promise<A> {
-  return core.bridge
-    .runPromiseExit(read)
-    .then((exit) => valueOr(exit, released));
-}
-
 function demandedSource(core: CoreState): Effect.Effect<LocalApiSource | null> {
   return core.localApi.demandSource;
 }
@@ -140,7 +121,6 @@ function readHeldQuery<T>(
 }
 
 export {
-  awaitRead,
   demandedSource,
   apiState,
   refreshZoteroDatabase,

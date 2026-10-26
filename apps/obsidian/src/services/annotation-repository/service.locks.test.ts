@@ -34,7 +34,6 @@ import {
   REMEMBERED_KEY,
   scopedStack,
   setup,
-  useFakeTimers,
   writable,
   zoteroLibrary,
   READING_ORDER,
@@ -44,7 +43,6 @@ import {
   moved,
 } from "./__fixtures__";
 import type { GroupLibrary } from "./__fixtures__";
-import type { RepositoryClient } from "./__fixtures__";
 import type {
   AnnotationList,
   AnnotationRecord,
@@ -103,15 +101,7 @@ function expectedLocks(locked: Readonly<Record<string, LockReason>> = {}) {
   );
 }
 
-function recordOf(repository: RepositoryClient, key: string): AnnotationRecord {
-  const record = repository
-    .peek("RGRPDF24")
-    ?.value.annotations.find((annotation) => annotation.key === key);
-  if (!record) throw new Error(`No record ${key}`);
-  return record;
-}
-
-/** {@link recordOf}, read through the repository tag. */
+/** The published record of one Fixture Annotation, read through the repository tag. */
 function recordIn(
   service: AnnotationRepository["Service"],
   key: string,
@@ -268,76 +258,83 @@ it.effect(
     }),
 );
 
-it("holds the drafts open when the lock appears, and sends none of them", async () => {
-  useFakeTimers();
-  try {
-    await using stack = new AsyncDisposableStack();
-    const harness = await writable(stack);
-    const { repository, requests } = harness;
-    repository.editTextField("comment", "PUPR5FG5", "typed before the import");
-    repository.editTextField("text", "PUPR5FG5", "Identify your message");
-    repository.editTags("PUPR5FG5", ["review"]);
-    const sent = requests.length;
+it.effect(
+  "holds the drafts open when the lock appears, and sends none of them",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const harness = yield* Effect.promise(() => writable(stack));
+      const { service, requests, adjustLayerClock } = harness;
+      yield* service.editTextField(
+        "comment",
+        "PUPR5FG5",
+        "typed before the import",
+      );
+      yield* service.editTextField("text", "PUPR5FG5", "Identify your message");
+      yield* service.editTags("PUPR5FG5", ["review"]);
+      const sent = requests.length;
 
-    await importFromPdf(harness, "PUPR5FG5");
-    await vi.advanceTimersByTimeAsync(30_000);
+      yield* Effect.promise(() => importFromPdf(harness, "PUPR5FG5"));
+      yield* adjustLayerClock("30 seconds");
 
-    // Done on either text field, and Apply again, send nothing.
-    expect(await repository.submitTextField("comment", "PUPR5FG5")).toEqual(
-      LOCKED,
-    );
-    expect(await repository.submitTextField("text", "PUPR5FG5")).toEqual(
-      LOCKED,
-    );
-    expect(await repository.retryTextDraft("comment", "PUPR5FG5")).toEqual(
-      LOCKED,
-    );
-    expect(await repository.submitTags("PUPR5FG5")).toEqual(LOCKED);
-    // A keystroke is not taken.
-    repository.editTextField("comment", "PUPR5FG5", "typed after the import");
-    expect(
-      requests.slice(sent).filter(({ method }) => method !== "GET"),
-    ).toEqual([]);
+      // Done on either text field, and Apply again, send nothing.
+      expect(yield* service.submitTextField("comment", "PUPR5FG5")).toEqual(
+        LOCKED,
+      );
+      expect(yield* service.submitTextField("text", "PUPR5FG5")).toEqual(
+        LOCKED,
+      );
+      expect(yield* service.retryTextDraft("comment", "PUPR5FG5")).toEqual(
+        LOCKED,
+      );
+      expect(yield* service.submitTags("PUPR5FG5")).toEqual(LOCKED);
+      // A keystroke is not taken.
+      yield* service.editTextField(
+        "comment",
+        "PUPR5FG5",
+        "typed after the import",
+      );
+      expect(
+        requests.slice(sent).filter(({ method }) => method !== "GET"),
+      ).toEqual([]);
 
-    // The editor is read-only and says why; the held text keeps Discard alone.
-    const blocks = annotationBlocks({
-      annotation: recordOf(repository, "PUPR5FG5"),
-      capability: repository.capabilityFor("RGRPDF24"),
-      now: NOW,
-    });
-    const comment = repository.textDraftFor("comment", "PUPR5FG5");
-    expect(comment?.text).toBe("typed before the import");
-    expect(fieldEditorControls(blocks.comment, comment, NOW)).toMatchObject({
-      readOnly: true,
-      hint: m.annot_view_lock_external(),
-    });
-    const held = heldTextDraft(
-      "text",
-      repository.textDraftFor("text", "PUPR5FG5"),
-      {
-        block: blocks.text,
+      // The editor is read-only and says why; the held text keeps Discard alone.
+      const blocks = annotationBlocks({
+        annotation: yield* recordIn(service, "PUPR5FG5"),
+        capability: yield* service.capabilityFor("RGRPDF24"),
         now: NOW,
-      },
-    );
-    expect(held).toMatchObject({
-      text: "Identify your message",
-      reason: m.annot_view_lock_external(),
-    });
-    expect(held?.actions.map(({ kind }) => kind)).toEqual(["discard"]);
-    const tags = heldTagDraft(
-      blocks.tags,
-      repository.tagDraftFor("PUPR5FG5"),
-      NOW,
-    );
-    expect(tags).toMatchObject({
-      names: ["review"],
-      reason: m.annot_view_lock_external(),
-    });
-    expect(tags?.actions.map(({ kind }) => kind)).toEqual(["discard"]);
-  } finally {
-    vi.useRealTimers();
-  }
-});
+      });
+      const comment = yield* service.textDraftFor("comment", "PUPR5FG5");
+      expect(comment?.text).toBe("typed before the import");
+      expect(fieldEditorControls(blocks.comment, comment, NOW)).toMatchObject({
+        readOnly: true,
+        hint: m.annot_view_lock_external(),
+      });
+      const held = heldTextDraft(
+        "text",
+        yield* service.textDraftFor("text", "PUPR5FG5"),
+        {
+          block: blocks.text,
+          now: NOW,
+        },
+      );
+      expect(held).toMatchObject({
+        text: "Identify your message",
+        reason: m.annot_view_lock_external(),
+      });
+      expect(held?.actions.map(({ kind }) => kind)).toEqual(["discard"]);
+      const tags = heldTagDraft(
+        blocks.tags,
+        yield* service.tagDraftFor("PUPR5FG5"),
+        NOW,
+      );
+      expect(tags).toMatchObject({
+        names: ["review"],
+        reason: m.annot_view_lock_external(),
+      });
+      expect(tags?.actions.map(({ kind }) => kind)).toEqual(["discard"]);
+    }),
+);
 
 it.effect(
   "keeps a Write Conflict that stands when the lock appears, and sends no Apply again",
@@ -436,47 +433,52 @@ it.effect(
     }),
 );
 
-it("refuses the Text Edit step of an External Annotation with the Lock Reason, and the step stays", async () => {
-  useFakeTimers();
-  try {
-    await using stack = new AsyncDisposableStack();
-    const zotero = zoteroHolding("PUPR5FG5");
-    const harness = await writable(stack, zotero.answers);
-    const { repository, requests } = harness;
-    repository.openHistory("RGRPDF24");
-    // A comment step below, and the Text Edit step undone onto the redo side.
-    repository.editTextField("comment", "PUPR5FG5", "Worth citing");
-    await repository.submitTextField("comment", "PUPR5FG5");
-    const original = zotero.held?.text;
-    repository.editTextField("text", "PUPR5FG5", "Identify your message");
-    await repository.submitTextField("text", "PUPR5FG5");
-    expect(await repository.undo("RGRPDF24")).toMatchObject({
-      kind: "stepped",
-    });
-    expect(zotero.held?.text).toBe(original);
-    // A comment draft open when the lock appears is held, and hides the step.
-    repository.editTextField("comment", "PUPR5FG5", "typed before the import");
+it.effect(
+  "refuses the Text Edit step of an External Annotation with the Lock Reason, and the step stays",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const zotero = zoteroHolding("PUPR5FG5");
+      const harness = yield* Effect.promise(() =>
+        writable(stack, zotero.answers),
+      );
+      const { service, requests } = harness;
+      yield* service.openHistory("RGRPDF24");
+      // A comment step below, and the Text Edit step undone onto the redo side.
+      yield* service.editTextField("comment", "PUPR5FG5", "Worth citing");
+      yield* service.submitTextField("comment", "PUPR5FG5");
+      const original = zotero.held?.text;
+      yield* service.editTextField("text", "PUPR5FG5", "Identify your message");
+      yield* service.submitTextField("text", "PUPR5FG5");
+      expect(yield* service.undo("RGRPDF24")).toMatchObject({
+        kind: "stepped",
+      });
+      expect(zotero.held?.text).toBe(original);
+      // A comment draft open when the lock appears is held, and hides the step.
+      yield* service.editTextField(
+        "comment",
+        "PUPR5FG5",
+        "typed before the import",
+      );
 
-    await importFromPdf(harness, "PUPR5FG5");
-    const sent = requests.length;
+      yield* Effect.promise(() => importFromPdf(harness, "PUPR5FG5"));
+      const sent = requests.length;
 
-    expect(repository.canUndo("RGRPDF24")).toBe(false);
-    expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
-    repository.discardTextDraft("comment", "PUPR5FG5");
-    expect(repository.canUndo("RGRPDF24")).toBe(true);
-    expect(await repository.undo("RGRPDF24")).toEqual(LOCKED_STEP);
-    expect(await repository.redo("RGRPDF24")).toEqual(LOCKED_STEP);
-    expect(repository.canUndo("RGRPDF24")).toBe(true);
-    expect(repository.canRedo("RGRPDF24")).toBe(true);
-    expect(zotero.held?.comment).toBe("Worth citing");
-    expect(zotero.held?.text).toBe(original);
-    expect(
-      requests.slice(sent).filter(({ method }) => method !== "GET"),
-    ).toEqual([]);
-  } finally {
-    vi.useRealTimers();
-  }
-});
+      expect(yield* service.canUndo("RGRPDF24")).toBe(false);
+      expect(yield* service.undo("RGRPDF24")).toEqual({ kind: "idle" });
+      yield* service.discardTextDraft("comment", "PUPR5FG5");
+      expect(yield* service.canUndo("RGRPDF24")).toBe(true);
+      expect(yield* service.undo("RGRPDF24")).toEqual(LOCKED_STEP);
+      expect(yield* service.redo("RGRPDF24")).toEqual(LOCKED_STEP);
+      expect(yield* service.canUndo("RGRPDF24")).toBe(true);
+      expect(yield* service.canRedo("RGRPDF24")).toBe(true);
+      expect(zotero.held?.comment).toBe("Worth citing");
+      expect(zotero.held?.text).toBe(original);
+      expect(
+        requests.slice(sent).filter(({ method }) => method !== "GET"),
+      ).toEqual([]);
+    }),
+);
 
 it.effect(
   "refuses a group recolour with one External Annotation whole, and sends nothing",
@@ -505,31 +507,32 @@ it.effect(
     }),
 );
 
-it("refuses a group delete with one External Annotation whole, and keeps the drafts of the others", async () => {
-  useFakeTimers();
-  try {
-    await using stack = new AsyncDisposableStack();
-    const zotero = zoteroLibrary();
-    const { repository, requests } = await writable(stack, zotero.answers, {
-      external: ["K3JRFLFQ"],
-    });
-    repository.openHistory("RGRPDF24");
-    repository.editTextField("comment", "HRK7BG32", "Worth citing");
-    const sent = requests.length;
+it.effect(
+  "refuses a group delete with one External Annotation whole, and keeps the drafts of the others",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const zotero = zoteroLibrary();
+      const { service, requests } = yield* Effect.promise(() =>
+        writable(stack, zotero.answers, {
+          external: ["K3JRFLFQ"],
+        }),
+      );
+      yield* service.openHistory("RGRPDF24");
+      yield* service.editTextField("comment", "HRK7BG32", "Worth citing");
+      const sent = requests.length;
 
-    expect(
-      await repository.deleteAnnotations(["HRK7BG32", "K3JRFLFQ"]),
-    ).toEqual([{ kind: "idle" }, LOCKED]);
-    expect(requests.slice(sent)).toEqual([]);
-    expect(zotero.at("HRK7BG32")).not.toBeNull();
-    expect(zotero.at("K3JRFLFQ")).not.toBeNull();
-    expect(repository.textDraftFor("comment", "HRK7BG32")?.text).toBe(
-      "Worth citing",
-    );
-  } finally {
-    vi.useRealTimers();
-  }
-});
+      expect(
+        yield* service.deleteAnnotations(["HRK7BG32", "K3JRFLFQ"]),
+      ).toEqual([{ kind: "idle" }, LOCKED]);
+      expect(requests.slice(sent)).toEqual([]);
+      expect(zotero.at("HRK7BG32")).not.toBeNull();
+      expect(zotero.at("K3JRFLFQ")).not.toBeNull();
+      expect((yield* service.textDraftFor("comment", "HRK7BG32"))?.text).toBe(
+        "Worth citing",
+      );
+    }),
+);
 
 it.effect(
   "dims every verb of an External Annotation with the Lock Reason, and none of its neighbour's",

@@ -366,7 +366,7 @@ export type AnnotationRepositoryEvent =
     };
 
 export interface AnnotationRepositoryCoreDeps {
-  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit" | "subscribe">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
   db: Pick<ZoteroReads["Service"], "snapshot" | "events" | "refresh">;
   queryClient: Pick<
     QueryClients["Service"],
@@ -375,7 +375,6 @@ export interface AnnotationRepositoryCoreDeps {
   localApi: Pick<
     ZoteroLocalApi["Service"],
     | "authorizedSend"
-    | "capabilityChanges"
     | "changes"
     | "demandSource"
     | "listAnnotations"
@@ -470,11 +469,6 @@ interface GroupWrites {
   /** The one kind of step every write of the group joins. */
   kind: GroupKind;
   writes: GroupWrite[];
-}
-
-interface TextSave {
-  idleTimer: number | null;
-  burstTimer: number | null;
 }
 
 /** The fields a write in flight proposes, as Zotero will answer them. */
@@ -650,7 +644,6 @@ export type {
   GroupWrite,
   GroupKind,
   GroupWrites,
-  TextSave,
   ProposedFields,
   PendingProposal,
   AnnotationMutation,

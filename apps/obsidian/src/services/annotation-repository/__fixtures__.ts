@@ -76,7 +76,7 @@ import type {
   AnnotationSource,
 } from "./repository";
 import { layerAnnotationRepository, AnnotationRepository } from "./service";
-import type { GeometryEdit } from "./write";
+import type { GeometryEdit, TextField } from "./write";
 
 export const NOW = toInstant(DateTime.makeUnsafe("2026-09-16T15:52:21Z"));
 
@@ -365,6 +365,33 @@ export const scopedStack = Effect.acquireRelease(
   Effect.sync(() => new AsyncDisposableStack()),
   (stack) => Effect.promise(() => stack.disposeAsync()),
 );
+
+/**
+ * Read `read` task by task until `done` accepts its answer. A save that a
+ * timer started on the TestClock runs on to the fake Zotero's Promises, which
+ * `TestClock.adjust` does not wait for.
+ */
+export function eventually<A, E, R>(
+  read: Effect.Effect<A, E, R>,
+  done: (value: A) => boolean,
+): Effect.Effect<A, E, R> {
+  return Effect.yieldNow.pipe(
+    Effect.andThen(read),
+    Effect.repeat({ until: done }),
+  );
+}
+
+/** Wait until the save in flight lands and the text draft of `field` ends. */
+export function settledDraft(
+  service: AnnotationRepository["Service"],
+  field: TextField,
+  annotationKey = "PUPR5FG5",
+) {
+  return eventually(
+    service.textDraftFor(field, annotationKey),
+    (draft) => !draft,
+  );
+}
 
 type FixtureEvents = {
   "annotations-changed": (attachmentKey: string) => void;

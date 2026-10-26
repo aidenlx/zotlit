@@ -1,5 +1,7 @@
 // Draft editing and autosave: the comment, Quoted Text and tag drafts a surface edits, and how they are saved.
-import { getLogger } from "@/lib/log";
+import { Duration, Effect, FiberMap, FiberSet } from "effect";
+
+import { recover } from "@/lib/effect-cause";
 import {
   annotationTags,
   byTextField,
@@ -8,20 +10,21 @@ import {
   noTagChange,
   tagChange,
   tagsPatch,
+  TEXT_FIELDS,
 } from "@/services/annotation-repository/write";
 import type {
   MutationState,
   TextField,
 } from "@/services/annotation-repository/write";
 
-import { awaitRead, demandedSource } from "./bridge";
+import { demandedSource } from "./bridge";
 import {
-  clearTextTimers,
+  cancelTextSave,
   draftFor,
   draftsOn,
   dropDraft,
+  saveKey,
   setDraft,
-  textSave,
 } from "./draft-store";
 import { capabilityFor, holding } from "./lists";
 import {
@@ -45,19 +48,12 @@ import {
   settle,
 } from "./outcomes";
 import type { CoreState } from "./state";
-import {
-  command,
-  lockRefusal,
-  UNKNOWN_OUTCOME,
-  writeBlocked,
-  writeText,
-} from "./writes";
+import { command, lockRefusal, writeBlocked, writeText } from "./writes";
+import type { WriteRunFailed } from "./writes";
 
-const logger = getLogger("annotation-repository");
+const TEXT_IDLE_SAVE = Duration.seconds(1);
 
-const TEXT_IDLE_SAVE_MS = 1_000;
-
-const TEXT_BURST_SAVE_MS = 10_000;
+const TEXT_BURST_SAVE = Duration.seconds(10);
 
 type TextWriteDecision =
   | { kind: "drop" }
@@ -113,14 +109,14 @@ function textDraftAfterWrite(
  *
  * @param annotationKey the Annotation's Indexed Key.
  */
-function annotationState(
+const annotationState = Effect.fnUntraced(function* (
   core: CoreState,
   annotationKey: string,
-): AnnotationState {
-  const textDrafts = byTextField((field) =>
-    draftFor(core, field, annotationKey),
+): Effect.fn.Return<AnnotationState> {
+  const textDrafts = yield* Effect.all(
+    byTextField((field) => draftFor(core, field, annotationKey)),
   );
-  const tagDraft = tagDraftFor(core, annotationKey);
+  const tagDraft = yield* tagDraftFor(core, annotationKey);
   const shown = new Set<TextFieldDraft | TagDraft>(
     [...Object.values(textDrafts), tagDraft].filter((draft) => draft !== null),
   );
@@ -131,7 +127,7 @@ function annotationState(
     hidden: draftsOn(core, annotationKey).some((draft) => !shown.has(draft)),
     gone: core.gone.has(annotationKey),
   };
-}
+});
 
 /**
  * The active Zotero database's shared draft of one text field of an
@@ -141,7 +137,7 @@ function textDraftFor(
   core: CoreState,
   field: TextField,
   annotationKey: string,
-): TextFieldDraft | null {
+): Effect.Effect<TextFieldDraft | null> {
   return draftFor(core, field, annotationKey);
 }
 
@@ -152,25 +148,22 @@ function textDraftFor(
  *
  * @returns the draft, or `null` where none can start.
  */
-function editTextField(
+const editTextField = Effect.fnUntraced(function* (
   core: CoreState,
   field: TextField,
-  annotationKey: string,
-  text?: string,
-): TextFieldDraft | null {
-  const source = core.bridge.runSync(demandedSource(core));
-  const standing = draftFor(core, field, annotationKey);
-  const held = standing
-    ? null
-    : core.bridge.runSync(holding(core, annotationKey));
+  { annotationKey, text }: { annotationKey: string; text?: string },
+): Effect.fn.Return<TextFieldDraft | null> {
+  const source = yield* demandedSource(core);
+  const standing = yield* draftFor(core, field, annotationKey);
+  const held = standing ? null : yield* holding(core, annotationKey);
   if (!standing && (!source || !held)) return null;
-  const capability = core.bridge.runSync(
-    capabilityFor(core, standing?.attachmentKey ?? held!.attachmentKey),
+  const capability = yield* capabilityFor(
+    core,
+    standing?.attachmentKey ?? held!.attachmentKey,
   );
   if (capability.kind !== "writable") return standing ?? null;
   // A lock takes no keystroke either: a draft already standing is held.
-  if (core.bridge.runSync(lockRefusal(core, annotationKey, field)))
-    return standing ?? null;
+  if (yield* lockRefusal(core, annotationKey, field)) return standing ?? null;
   const baseline =
     standing?.baseline ?? TEXT_FIELD_SPECS[field].valueOf(held!.record) ?? "";
   const draft = standing
@@ -196,26 +189,25 @@ function editTextField(
       };
   setDraft(core, field, draft);
   if (text !== undefined && draft.state.kind !== "conflict") {
-    scheduleTextSave(core, field, draft);
+    yield* scheduleTextSave(core, field, draft);
   }
   return draft;
-}
+});
 
 /** Submit one text field's current shared draft once. */
-function submitTextField(
+const submitTextField = Effect.fnUntraced(function* (
   core: CoreState,
   field: TextField,
-  annotationKey: string,
-  { automatic = false }: { automatic?: boolean } = {},
-): Promise<MutationState> {
-  const draft = draftFor(core, field, annotationKey);
-  if (!draft) return Promise.resolve(IDLE);
-  clearTextTimers(
-    core,
-    textSave(core, field, indexedID(draft.serverID, annotationKey)),
-  );
+  {
+    annotationKey,
+    automatic = false,
+  }: { annotationKey: string; automatic?: boolean },
+): Effect.fn.Return<MutationState, WriteRunFailed> {
+  const draft = yield* draftFor(core, field, annotationKey);
+  if (!draft) return IDLE;
+  yield* cancelTextSave(core, field, draft);
   if (draft.state.kind === "conflict") {
-    return Promise.resolve(mutationFor(core, annotationKey));
+    return mutationFor(core, annotationKey);
   }
   const saving = savingText(core, field, annotationKey);
   // A draft holding what Zotero already has is not a draft: it is dropped
@@ -223,62 +215,66 @@ function submitTextField(
   // without typing leaves nothing behind for a card to announce. Manual-save
   // mode does not hold it either — there is nothing there to save.
   if (!saving && sameText(draft.text, draft.baseline)) {
-    dropDraft(core, field, draft);
-    return Promise.resolve(IDLE);
+    yield* dropDraft(core, field, draft);
+    return IDLE;
   }
   // Text a save already carries needs no second one.
   if (saving && sameText(proposedText(field, saving), draft.text)) {
-    return answerOf(core, saving);
+    return yield* answerOf(core, saving);
   }
   // Text typed while a save is in flight queues behind it, even behind the
   // Save comment pressed on a held draft, which that save's success ends.
   if (!saving) {
-    if (automatic && !canAutosave(core, draft)) return Promise.resolve(IDLE);
-    const capability = core.bridge.runSync(
-      capabilityFor(core, draft.attachmentKey),
-    );
+    if (automatic && !(yield* canAutosave(core, draft))) return IDLE;
+    const capability = yield* capabilityFor(core, draft.attachmentKey);
     if (capability.kind !== "writable")
-      return Promise.resolve({
+      return {
         kind: "failed",
-        failure: core.bridge.runSync(writeBlocked(core, draft.attachmentKey))!,
-      });
+        failure: (yield* writeBlocked(core, draft.attachmentKey))!,
+      };
   }
   // A lock refuses the draft before it turns pending, queued or not.
-  const locked = core.bridge.runSync(lockRefusal(core, annotationKey, field));
-  if (locked) return Promise.resolve({ kind: "failed", failure: locked });
+  const locked = yield* lockRefusal(core, annotationKey, field);
+  if (locked) return { kind: "failed", failure: locked };
   const submittedText = draft.text;
   setDraft(core, field, { ...draft, state: { kind: "pending" } });
-  return sendText(core, field, draft, { submittedText, automatic });
-}
+  return yield* sendText(core, field, { draft, submittedText, automatic });
+});
 
-async function sendText(
+const sendText = Effect.fnUntraced(function* (
   core: CoreState,
   field: TextField,
-  { annotationKey, serverID }: TextFieldDraft,
-  { submittedText, automatic }: { submittedText: string; automatic: boolean },
-): Promise<MutationState> {
+  {
+    draft: { annotationKey, serverID },
+    submittedText,
+    automatic,
+  }: { draft: TextFieldDraft; submittedText: string; automatic: boolean },
+) {
   const id = indexedID(serverID, annotationKey);
-  return await awaitRead(
-    core,
-    writeText(core, annotationKey, {
-      field,
-      value: submittedText,
-      // The draft takes the save's outcome before the next write on the
-      // Annotation starts, so a save queued behind a failed one is held.
-      run: async (send, own) => {
+  return yield* writeText(core, annotationKey, {
+    field,
+    value: submittedText,
+    // The draft takes the save's outcome before the next write on the
+    // Annotation starts, so a save queued behind a failed one is held.
+    run: (send, own) =>
+      Effect.gen(function* () {
         if (
-          textSuperseded(core, field, own, { annotationKey, id, automatic })
-        ) {
-          logger.debug("A queued text save stood down", {
+          yield* textSuperseded(core, field, {
+            own,
             annotationKey,
-            field,
-          });
-          return { kind: "pending", write: field };
+            id,
+            automatic,
+          })
+        ) {
+          yield* Effect.logDebug("A queued text save stood down").pipe(
+            Effect.annotateLogs({ annotationKey, field }),
+          );
+          return { kind: "pending", write: field } satisfies MutationState;
         }
-        const outcome = await send();
+        const outcome = yield* send;
         const current = core.drafts[field].get(id);
         if (current && current.state.kind !== "conflict") {
-          applyTextWriteDecision(core, field, {
+          yield* applyTextWriteDecision(core, field, {
             annotationKey,
             current,
             submittedText,
@@ -287,11 +283,9 @@ async function sendText(
           });
         }
         return outcome;
-      },
-    }),
-    UNKNOWN_OUTCOME,
-  );
-}
+      }),
+  });
+});
 
 /**
  * Whether a text save that waited its turn is no longer needed: a later
@@ -299,22 +293,27 @@ async function sendText(
  * its draft ended, met a conflict, or was held by a failed save while it
  * waited. An automatic save also stands down where autosave is off.
  */
-function textSuperseded(
+const textSuperseded = Effect.fnUntraced(function* (
   core: CoreState,
   field: TextField,
-  own: AnnotationMutation,
   {
+    own,
     annotationKey,
     id,
     automatic,
-  }: { annotationKey: string; id: string; automatic: boolean },
-): boolean {
+  }: {
+    own: AnnotationMutation;
+    annotationKey: string;
+    id: string;
+    automatic: boolean;
+  },
+) {
   const current = core.drafts[field].get(id);
   if (
     !current ||
     current.state.kind === "conflict" ||
     current.state.kind === "failed" ||
-    (automatic && !canAutosave(core, current))
+    (automatic && !(yield* canAutosave(core, current)))
   ) {
     return true;
   }
@@ -323,48 +322,45 @@ function textSuperseded(
     const write = options.mutationKey?.[2];
     return write === field || write === "delete";
   });
-}
+});
 
 /** Keep Zotero's reviewed value of one text field and discard the draft. */
-function discardTextDraft(
+const discardTextDraft = Effect.fnUntraced(function* (
   core: CoreState,
   field: TextField,
   annotationKey: string,
-): void {
-  const draft = draftFor(core, field, annotationKey);
-  if (draft) dropDraft(core, field, draft);
+) {
+  const draft = yield* draftFor(core, field, annotationKey);
+  if (draft) yield* dropDraft(core, field, draft);
   if (core.outcomes.get(annotationKey)?.get(field)?.kind === "conflict") {
-    settle(core, annotationKey, field, IDLE);
+    settle(core, annotationKey, { write: field, state: IDLE });
   }
-}
+});
 
 /** Apply one text field's shared draft again against the reviewed fresh record. */
-function retryTextDraft(
+const retryTextDraft = Effect.fnUntraced(function* (
   core: CoreState,
   field: TextField,
   annotationKey: string,
-): Promise<MutationState> {
-  const draft = draftFor(core, field, annotationKey);
-  if (!draft) return Promise.resolve(IDLE);
-  clearTextTimers(
-    core,
-    textSave(core, field, indexedID(draft.serverID, annotationKey)),
-  );
+): Effect.fn.Return<MutationState, WriteRunFailed> {
+  const draft = yield* draftFor(core, field, annotationKey);
+  if (!draft) return IDLE;
+  yield* cancelTextSave(core, field, draft);
   const saving = savingText(core, field, annotationKey);
-  if (saving) return answerOf(core, saving);
+  if (saving) return yield* answerOf(core, saving);
   // The draft and its Write Conflict stay as they stand.
-  const locked = core.bridge.runSync(lockRefusal(core, annotationKey, field));
-  if (locked) return Promise.resolve({ kind: "failed", failure: locked });
-  return resendText(core, field, annotationKey, draft);
-}
+  const locked = yield* lockRefusal(core, annotationKey, field);
+  if (locked) return { kind: "failed", failure: locked };
+  return yield* resendText(core, field, draft);
+});
 
-async function resendText(
+const resendText = Effect.fnUntraced(function* (
   core: CoreState,
   field: TextField,
-  annotationKey: string,
   draft: TextFieldDraft,
-): Promise<MutationState> {
-  const held = core.bridge.runSync(holding(core, annotationKey));
+) {
+  const { annotationKey } = draft;
+  const held = yield* holding(core, annotationKey);
   const reviewed =
     draft.state.kind === "conflict" ? draft.state.fresh : draft.baseline;
   const fresh = (held && TEXT_FIELD_SPECS[field].valueOf(held.record)) ?? "";
@@ -373,7 +369,7 @@ async function resendText(
       kind: "conflict",
       conflict: { write: field, attempted: draft.text, fresh },
     };
-    settle(core, annotationKey, field, outcome);
+    settle(core, annotationKey, { write: field, state: outcome });
     setDraft(core, field, { ...draft, state: { kind: "conflict", fresh } });
     if (held) {
       core.publish({
@@ -387,32 +383,30 @@ async function resendText(
   const submittedText = draft.text;
   const id = indexedID(draft.serverID, annotationKey);
   setDraft(core, field, { ...draft, state: { kind: "pending" } });
-  const resend = () =>
-    awaitRead(
-      core,
-      writeText(core, annotationKey, { field, value: submittedText }),
-      UNKNOWN_OUTCOME,
-    );
-  let outcome = await resend();
+  const resend = writeText(core, annotationKey, {
+    field,
+    value: submittedText,
+  });
+  let outcome = yield* resend;
   if (
     outcome.kind === "conflict" &&
     outcome.conflict.write === field &&
     sameText(outcome.conflict.fresh, reviewed)
   ) {
-    outcome = await resend();
+    outcome = yield* resend;
   }
   const current = core.drafts[field].get(id);
   if (!current) return outcome;
-  applyTextWriteDecision(core, field, {
+  yield* applyTextWriteDecision(core, field, {
     annotationKey,
     current,
     submittedText,
     outcome,
   });
   return outcome;
-}
+});
 
-function applyTextWriteDecision(
+const applyTextWriteDecision = Effect.fnUntraced(function* (
   core: CoreState,
   field: TextField,
   {
@@ -429,7 +423,7 @@ function applyTextWriteDecision(
     /** The write that answered, while it still counts as in flight. */
     own?: AnnotationMutation;
   },
-): void {
+) {
   const decision = textDraftAfterWrite(current, submittedText, outcome);
   const later = savingText(core, field, annotationKey);
   // A later save of the draft is still on its way.
@@ -442,7 +436,7 @@ function applyTextWriteDecision(
     decision.draft = { ...decision.draft, state: { kind: "pending" } };
   }
   if (decision.kind === "drop") {
-    dropDraft(core, field, current);
+    yield* dropDraft(core, field, current);
   } else if (decision.kind === "update") {
     core.drafts[field].set(
       indexedID(current.serverID, annotationKey),
@@ -452,13 +446,16 @@ function applyTextWriteDecision(
     // Text typed while the save was away, even behind a Save comment
     // pressed on a held draft, whose success ends the hold, is sent now.
     if (outcome.kind === "idle" && decision.draft.state.kind === "editing") {
-      void submitTextField(core, field, annotationKey, { automatic: true });
+      yield* autosave(core, field, annotationKey);
     }
   }
-}
+});
 
 /** The active Zotero database's shared tag draft for one Annotation. */
-function tagDraftFor(core: CoreState, annotationKey: string): TagDraft | null {
+function tagDraftFor(
+  core: CoreState,
+  annotationKey: string,
+): Effect.Effect<TagDraft | null> {
   return draftFor(core, "tags", annotationKey);
 }
 
@@ -470,26 +467,24 @@ function tagDraftFor(core: CoreState, annotationKey: string): TagDraft | null {
  * @param names the editor's current names; left out, the session starts or
  *   stays as it is.
  */
-function editTags(
+const editTags = Effect.fnUntraced(function* (
   core: CoreState,
   annotationKey: string,
   names?: readonly string[],
-): TagDraft | null {
-  const standing = tagDraftFor(core, annotationKey);
+): Effect.fn.Return<TagDraft | null> {
+  const standing = yield* tagDraftFor(core, annotationKey);
   if (standing?.state.kind === "pending") return standing;
-  const source = core.bridge.runSync(demandedSource(core));
-  const held = standing
-    ? null
-    : core.bridge.runSync(holding(core, annotationKey));
+  const source = yield* demandedSource(core);
+  const held = standing ? null : yield* holding(core, annotationKey);
   if (!standing && (!source || !held)) return null;
   const attachmentKey = standing?.attachmentKey ?? held!.attachmentKey;
-  const capability = core.bridge.runSync(capabilityFor(core, attachmentKey));
+  const capability = yield* capabilityFor(core, attachmentKey);
   // While editing is unavailable no session starts, but a standing one
   // still takes its editor's last names: the editor closing as editing goes
   // adds the text still typed, which the held draft keeps for Save tags.
   const refused =
     capability.kind !== "writable" ||
-    !!core.bridge.runSync(lockRefusal(core, annotationKey, "tags"));
+    !!(yield* lockRefusal(core, annotationKey, "tags"));
   if (refused && (!standing || names === undefined)) return standing;
   const draft: TagDraft = standing
     ? {
@@ -510,7 +505,7 @@ function editTags(
       };
   setDraft(core, "tags", draft);
   return draft;
-}
+});
 
 /**
  * Save one tag editing session: one write that applies the session's added
@@ -527,32 +522,34 @@ function editTags(
  *   failed save — is then held, unsaved.
  * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
  */
-async function submitTags(
+const submitTags = Effect.fnUntraced(function* (
   core: CoreState,
   annotationKey: string,
   { automatic = false }: { automatic?: boolean } = {},
-): Promise<MutationState> {
-  const draft = tagDraftFor(core, annotationKey);
+): Effect.fn.Return<MutationState, WriteRunFailed> {
+  const draft = yield* tagDraftFor(core, annotationKey);
   if (!draft) return IDLE;
   if (draft.state.kind === "pending") return mutationFor(core, annotationKey);
   const change = tagChange(draft.baseline, draft.names);
   if (noTagChange(change)) {
-    dropDraft(core, "tags", draft);
+    yield* dropDraft(core, "tags", draft);
     return IDLE;
   }
-  if (automatic && !canAutosave(core, draft)) {
-    logger.debug("A tag draft is held for Save tags", {
-      annotationKey,
-      state: draft.state.kind,
-      capability: core.bridge.runSync(capabilityFor(core, draft.attachmentKey))
-        .kind,
-    });
+  if (automatic && !(yield* canAutosave(core, draft))) {
+    const capability = yield* capabilityFor(core, draft.attachmentKey);
+    yield* Effect.logDebug("A tag draft is held for Save tags").pipe(
+      Effect.annotateLogs({
+        annotationKey,
+        state: draft.state.kind,
+        capability: capability.kind,
+      }),
+    );
     setDraft(core, "tags", { ...draft, manualSave: true, held: true });
     return IDLE;
   }
   const blocked =
-    core.bridge.runSync(writeBlocked(core, draft.attachmentKey)) ??
-    core.bridge.runSync(lockRefusal(core, annotationKey, "tags"));
+    (yield* writeBlocked(core, draft.attachmentKey)) ??
+    (yield* lockRefusal(core, annotationKey, "tags"));
   if (blocked) {
     setDraft(core, "tags", {
       ...draft,
@@ -563,23 +560,21 @@ async function submitTags(
     return { kind: "failed", failure: blocked };
   }
   setDraft(core, "tags", { ...draft, state: { kind: "pending" } });
-  logger.debug("A tag editing session is saved", {
-    annotationKey,
-    added: change.added.length,
-    removed: change.removed.length,
-  });
-  const outcome = await awaitRead(
-    core,
-    command(core, annotationKey, {
-      write: "tags",
-      session: true,
-      request: (target, record) =>
-        tagsPatch(target, mergeTags(annotationTags(record), change)),
-      propose: (record) =>
-        proposedTags(mergeTags(annotationTags(record), change)),
+  yield* Effect.logDebug("A tag editing session is saved").pipe(
+    Effect.annotateLogs({
+      annotationKey,
+      added: change.added.length,
+      removed: change.removed.length,
     }),
-    UNKNOWN_OUTCOME,
   );
+  const outcome = yield* command(core, annotationKey, {
+    write: "tags",
+    session: true,
+    request: (target, record) =>
+      tagsPatch(target, mergeTags(annotationTags(record), change)),
+    propose: (record) =>
+      proposedTags(mergeTags(annotationTags(record), change)),
+  });
   const current = core.drafts.tags.get(
     indexedID(draft.serverID, annotationKey),
   );
@@ -592,55 +587,109 @@ async function submitTags(
       state: outcome,
     });
   } else {
-    dropDraft(core, "tags", current);
+    yield* dropDraft(core, "tags", current);
   }
   return outcome;
-}
+});
 
 /** Drop a held tag draft and keep the tags Zotero holds. */
-function discardTagDraft(core: CoreState, annotationKey: string): void {
-  const draft = tagDraftFor(core, annotationKey);
-  if (draft && draft.state.kind !== "pending") dropDraft(core, "tags", draft);
-}
+const discardTagDraft = Effect.fnUntraced(function* (
+  core: CoreState,
+  annotationKey: string,
+) {
+  const draft = yield* tagDraftFor(core, annotationKey);
+  if (draft && draft.state.kind !== "pending")
+    yield* dropDraft(core, "tags", draft);
+});
 
-function canAutosave(
+const canAutosave = Effect.fnUntraced(function* (
   core: CoreState,
   draft: Pick<TextFieldDraft, "attachmentKey" | "manualSave">,
-): boolean {
-  const capability = core.bridge.runSync(
-    capabilityFor(core, draft.attachmentKey),
-  );
+) {
+  const capability = yield* capabilityFor(core, draft.attachmentKey);
   return !draft.manualSave && capability.kind === "writable";
+});
+
+/**
+ * An automatic save that no caller waits on. It runs on the layer's
+ * FiberSet, so the layer's close stops it, and a failure is logged.
+ */
+function autosave(core: CoreState, field: TextField, annotationKey: string) {
+  return FiberSet.run(
+    core.fibers,
+    submitTextField(core, field, { annotationKey, automatic: true }).pipe(
+      recover(
+        (cause) =>
+          Effect.logWarning("An automatic text save failed", cause).pipe(
+            Effect.annotateLogs({ annotationKey, field }),
+          ),
+        Effect.void,
+      ),
+    ),
+  );
 }
 
-function scheduleTextSave(
+/**
+ * Arm a draft's autosave: the idle timer starts again with each keystroke,
+ * and the burst timer runs from the first keystroke of a run of typing. A
+ * timer that comes due leaves its map and starts the save on the layer's
+ * FiberSet, so the save outlives the timer.
+ */
+const scheduleTextSave = Effect.fnUntraced(function* (
   core: CoreState,
   field: TextField,
   draft: TextFieldDraft,
-): void {
-  const save = textSave(
-    core,
-    field,
-    indexedID(draft.serverID, draft.annotationKey),
-  );
+) {
   // Text typed behind a save in flight is sent once that save lands.
   if (savingText(core, field, draft.annotationKey)) return;
-  if (!canAutosave(core, draft)) return;
+  if (!(yield* canAutosave(core, draft))) return;
   if (sameText(draft.text, draft.baseline)) return;
-  if (save.idleTimer !== null) window.clearTimeout(save.idleTimer);
-  save.idleTimer = window.setTimeout(() => {
-    save.idleTimer = null;
-    void submitTextField(core, field, draft.annotationKey, {
-      automatic: true,
-    });
-  }, TEXT_IDLE_SAVE_MS);
-  save.burstTimer ??= window.setTimeout(() => {
-    save.burstTimer = null;
-    void submitTextField(core, field, draft.annotationKey, {
-      automatic: true,
-    });
-  }, TEXT_BURST_SAVE_MS);
-}
+  const key = saveKey(field, draft);
+  const save = autosave(core, field, draft.annotationKey);
+  yield* FiberMap.run(
+    core.idleSaves,
+    key,
+    Effect.andThen(Effect.sleep(TEXT_IDLE_SAVE), save),
+  );
+  yield* FiberMap.run(
+    core.burstSaves,
+    key,
+    Effect.andThen(Effect.sleep(TEXT_BURST_SAVE), save),
+    { onlyIfMissing: true },
+  );
+});
+
+/**
+ * Hold every draft that Zotero no longer lets ZotLit save, after the Editing
+ * Capability changed: a text draft stops its autosave, and each held draft
+ * waits for an explicit save.
+ */
+const holdUnsavableDrafts = Effect.fnUntraced(function* (core: CoreState) {
+  for (const field of TEXT_FIELDS) {
+    const drafts = core.drafts[field];
+    for (const [id, draft] of drafts) {
+      if ((yield* capabilityFor(core, draft.attachmentKey)).kind === "writable")
+        continue;
+      yield* cancelTextSave(core, field, draft);
+      drafts.set(id, { ...draft, manualSave: true });
+      core.publish({
+        _tag: "annotation-changed",
+        annotationKey: draft.annotationKey,
+      });
+    }
+  }
+  // A tag draft has no timer or queued save to cancel, unlike a text
+  // draft, so one already held needs no second event.
+  for (const draft of core.drafts.tags.values()) {
+    if (
+      draft.manualSave ||
+      (yield* capabilityFor(core, draft.attachmentKey)).kind === "writable"
+    )
+      continue;
+    setDraft(core, "tags", { ...draft, manualSave: true });
+  }
+  core.publish({ _tag: "capability-changed" });
+});
 
 export {
   annotationState,
@@ -653,4 +702,5 @@ export {
   editTags,
   submitTags,
   discardTagDraft,
+  holdUnsavableDrafts,
 };

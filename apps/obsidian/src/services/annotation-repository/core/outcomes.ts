@@ -1,4 +1,6 @@
 // What a write left on an Annotation: the outcomes that stand, and the writes in flight on the mutation cache.
+import { Effect } from "effect";
+
 import { IDLE } from "@/services/annotation-repository/write";
 import type {
   MutationState,
@@ -8,6 +10,12 @@ import type {
 import { ANNOTATIONS } from "./model";
 import type { AnnotationMutation, OutcomeWrite } from "./model";
 import type { CoreState } from "./state";
+
+/** One field's outcome, as a write leaves it on its Annotation. */
+interface Outcome {
+  write: OutcomeWrite;
+  state: MutationState;
+}
 
 /**
  * What a write left on one Annotation, for the card that draws its verbs:
@@ -29,12 +37,11 @@ function mutationFor(core: CoreState, annotationKey: string): MutationState {
 function settle(
   core: CoreState,
   annotationKey: string,
-  write: OutcomeWrite,
-  state: MutationState,
+  outcome: Outcome,
 ): MutationState {
-  leave(core, annotationKey, write, state);
+  leave(core, annotationKey, outcome);
   core.publish({ _tag: "annotation-changed", annotationKey });
-  return state;
+  return outcome.state;
 }
 
 /**
@@ -45,8 +52,7 @@ function settle(
 function leave(
   core: CoreState,
   annotationKey: string,
-  write: OutcomeWrite,
-  state: MutationState,
+  { write, state }: Outcome,
 ): MutationState {
   const outcomes = core.outcomes.get(annotationKey) ?? new Map();
   outcomes.delete(write);
@@ -111,14 +117,15 @@ function savingText(
   );
 }
 
-/** What a write in flight answers, for a caller that joins it. */
-function answerOf(
-  core: CoreState,
-  mutation: AnnotationMutation,
-): Promise<MutationState> {
+/**
+ * What a write in flight answers, for a caller that joins it: the wait on
+ * the write's own mutation that the command stored, or what the Annotation
+ * shows where none is stored.
+ */
+function answerOf(core: CoreState, mutation: AnnotationMutation) {
   return (
     core.operations.get(mutation) ??
-    Promise.resolve(
+    Effect.sync(() =>
       mutationFor(core, String(mutation.options.mutationKey?.[1])),
     )
   );
