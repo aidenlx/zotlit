@@ -1,17 +1,10 @@
 import { it } from "@effect/vitest";
 import { Context, Effect, Exit, Layer, Scope } from "effect";
-import { expect, vi } from "vitest";
-
-import type { Library } from "@zotlit/db";
+import { expect } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { EffectBridge } from "@/lib/effect-bridge";
-import {
-  MY_LIBRARY_SCOPE,
-  resolveLibraryScope,
-} from "@/services/library-scope/scope";
-import { LibraryScope } from "@/services/library-scope/service";
 import { NoteIndex } from "@/services/note-index/service";
 import { defaults } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -34,9 +27,8 @@ const SEED = `
 `;
 
 /**
- * The handle over `reads`, with plugin settings that count their reads and a
- * Library Scope that records the libraries it resolves. It runs through
- * `bridge`, or through a bridge that counts its runs.
+ * The handle over `reads`, with plugin settings that count their reads. It
+ * runs through `bridge`, or through a bridge that counts its runs.
  */
 function handle(
   reads: Context.Context<ZoteroReads>,
@@ -50,39 +42,28 @@ function handle(
       return Effect.runPromise(effect);
     });
   const settingsReads = { count: 0 };
-  const resolveLibraries = vi.fn((libraries: readonly Library[]) =>
-    Effect.sync(() => resolveLibraryScope(libraries, MY_LIBRARY_SCOPE)),
-  );
   const templateData = bindTemplateData(
     { runPromise },
-    Context.merge(
-      workbenchContext(
-        reads,
-        Context.make(
-          PluginSettings,
-          stubService<PluginSettings["Service"]>("PluginSettings", {
-            current: Effect.sync(() => {
-              settingsReads.count += 1;
-              return defaults;
-            }),
+    workbenchContext(
+      reads,
+      Context.make(
+        PluginSettings,
+        stubService<PluginSettings["Service"]>("PluginSettings", {
+          current: Effect.sync(() => {
+            settingsReads.count += 1;
+            return defaults;
           }),
-        ),
-        Context.make(
-          NoteIndex,
-          stubService<NoteIndex["Service"]>("NoteIndex", {
-            whenIndexed: Effect.void,
-          }),
-        ),
+        }),
       ),
       Context.make(
-        LibraryScope,
-        stubService<LibraryScope["Service"]>("LibraryScope", {
-          resolveLibraries,
+        NoteIndex,
+        stubService<NoteIndex["Service"]>("NoteIndex", {
+          whenIndexed: Effect.void,
         }),
       ),
     ),
   );
-  return { templateData, runs, settingsReads, resolveLibraries };
+  return { templateData, runs, settingsReads };
 }
 
 /** Zotero reads over a database that holds My Library alone. */
@@ -137,19 +118,6 @@ it.effect("rejects with what failed to read the data", () =>
         templateData.loadCitation({ key: "ABCD2345" }, "main"),
       ),
     ).toBe(unavailable);
-  }),
-);
-
-it.effect("reads the verification data over the bound Library Scope", () =>
-  Effect.gen(function* () {
-    const { templateData, resolveLibraries } = handle(yield* memoryReads);
-
-    expect(
-      yield* Effect.promise(() =>
-        templateData.verificationData({ annotation: false }),
-      ),
-    ).toBeNull();
-    expect(resolveLibraries).toHaveBeenCalledOnce();
   }),
 );
 

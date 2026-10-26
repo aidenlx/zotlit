@@ -5,14 +5,13 @@ import { describe, expect, vi } from "vitest";
 import { createObsidianHost } from "./__fixtures__/obsidian-host";
 import { layerHost } from "./__fixtures__/obsidian-host-app";
 import { processLiveText } from "./effect-live-text";
-import type { VaultSource } from "./obsidian-vault";
 
 const PATH = "Notes/Paper.md";
 
 /** The Vault and Workspace tags over `host`'s vault and views. */
 function tagsOver(host: ReturnType<typeof createObsidianHost>) {
   return layerHost({
-    vault: host.vault as unknown as VaultSource,
+    vault: host.vault,
     workspace: host.workspace,
   });
 }

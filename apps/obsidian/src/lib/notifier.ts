@@ -94,10 +94,7 @@ export const layerNotifier: Layer.Layer<Notifier> = Layer.effect(
 /** The three messages of a task's progress notice. */
 export interface ProgressCopy<A = unknown> {
   readonly loading: NoticeMessage;
-  /**
-   * The success message, or the message for the task's result. A message for
-   * the result shows nothing for an interrupted task.
-   */
+  /** The success message, or the message for the task's result. */
   readonly success: NoticeMessage | ((result: A) => NoticeMessage);
   /** The error message, or the message for the error the task failed with. */
   readonly error: NoticeMessage | ((error: unknown) => NoticeMessage);
@@ -113,8 +110,8 @@ export interface ProgressCopy<A = unknown> {
  * Report a task's outcome the way `toast.promise` does: the loading message
  * after 200 ms when the task has not finished (so a fast task does not flash
  * it), then the success message for 2 s (or `successDuration`) or the error
- * message for 4 s. An interrupted task counts as a success, an abort shows
- * nothing, and an error is logged.
+ * message for 4 s. An interrupted task or an abort shows nothing, and an
+ * error is logged.
  *
  * @param outcome Completes with the task's Exit once the task ends. It runs
  *   again after the loading delay, so it awaits a task started elsewhere
@@ -129,15 +126,15 @@ export const reportProgress = Effect.fn("Notifier.reportProgress")(function* <
   const early = yield* Effect.timeoutOption(outcome, "200 millis");
   if (Option.isNone(early)) yield* notice.setMessage(copy.loading);
   const exit = Option.isSome(early) ? early.value : yield* outcome;
-  if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) {
+  if (Exit.isSuccess(exit)) {
     const { success } = copy;
-    if (typeof success !== "function") yield* notice.setMessage(success);
-    else if (Exit.isSuccess(exit))
-      yield* notice.setMessage(success(exit.value));
-    else return;
+    yield* notice.setMessage(
+      typeof success === "function" ? success(exit.value) : success,
+    );
     yield* Effect.sleep(copy.successDuration ?? "2 seconds");
     return;
   }
+  if (Cause.hasInterruptsOnly(exit.cause)) return;
   const { error } = copy;
   const message = yield* failureMessage(
     exit.cause,

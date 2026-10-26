@@ -5,6 +5,7 @@
 // start one with `void`, and each returns the failure notices it raised.
 import type { App } from "obsidian";
 
+import { AbortError } from "@/lib/abort-error";
 import { confirm } from "@/lib/confirm";
 import type { ConfirmOptions } from "@/lib/confirm";
 import type { EffectBridge } from "@/lib/effect-bridge";
@@ -184,6 +185,7 @@ async function settleWrites(
   try {
     outcomes = await send();
   } catch (error) {
+    if (AbortError.test(error)) return [];
     logger.warn("A write threw before Zotero answered", {
       verb: what,
       annotations: count,

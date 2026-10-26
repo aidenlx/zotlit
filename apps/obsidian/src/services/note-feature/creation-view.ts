@@ -4,19 +4,22 @@ import type { App, TFile } from "obsidian";
 
 import type { Item } from "@zotlit/db";
 
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
-import { portCall } from "@/lib/legacy-port";
-import { listInstalledStyles } from "@/services/pandoc/styles";
+import { Notifier } from "@/lib/notifier";
+import { listInstalledStyles } from "@/services/pandoc/installed-styles";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type {
-  ImportProfile,
-  CreateProfile,
-  CreatedProfile,
-} from "@/setting-tab/profiles";
+  CreateProfileDialog,
+  ImportProfileDialog,
+} from "@/setting-tab/profile-dialogs";
 import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
-import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
+import type {
+  LiteratureNoteProfileChoice,
+  ProfilePick,
+} from "@/views/quick-switch/profile-picker";
 
 import type {
   CreateNoteResult,
@@ -32,14 +35,14 @@ import { createWithNotice } from "./update-single";
 const logged = withLogCategory("note-feature");
 
 /**
- * The legacy values the interactive creation opens: the Profile dialogs of
- * the setting tab (ticket 16), and the App the picker and the notices'
- * recovery actions open in.
+ * The values the interactive creation opens: the Profile dialogs of the
+ * setting tab, which run in the caller's fiber, and the App the picker and
+ * the notices' recovery actions open in.
  */
 export interface InteractiveCreationPorts {
   readonly app: App;
-  readonly createProfile: CreateProfile;
-  readonly importProfile: ImportProfile;
+  readonly createProfile: CreateProfileDialog;
+  readonly importProfile: ImportProfileDialog;
 }
 
 /** What a view holds to create a note through the Profile selection. */
@@ -57,13 +60,60 @@ export interface InteractiveCreationOptions extends CreationProfileSources {
 
 /**
  * The CSL styles installed in the Zotero data folder, for the Profile picker's
- * previews; none without a data folder.
+ * previews; none without a data folder or when its styles folder refuses to be
+ * read, so the picker still opens.
  */
 export const installedStyles = Effect.gen(function* () {
   const { dataDir } = yield* (yield* ZoteroPref).current;
-  return dataDir
-    ? yield* portCall("list-styles", () => listInstalledStyles(dataDir))
-    : [];
+  if (!dataDir) return [];
+  return yield* listInstalledStyles(dataDir).pipe(
+    Effect.catchTag("PlatformError", (error) =>
+      Effect.as(
+        Effect.logWarning("Cannot read the installed CSL styles", error).pipe(
+          logged,
+        ),
+        [],
+      ),
+    ),
+  );
+});
+
+/**
+ * What a Profile picker's answer settles to: the Profile the user chose, or
+ * the one the New profile dialog made, whose answer `created` holds. An
+ * import, a closed picker and a closed dialog settle to no choice. The dialog
+ * runs in this fiber, so an interrupt closes it. A New profile dialog that
+ * fails is logged, and a notice tells the user.
+ */
+export const settleProfilePick = Effect.fnUntraced(function* (
+  ports: Pick<InteractiveCreationPorts, "createProfile" | "importProfile">,
+  pick: ProfilePick | undefined,
+  options: { indexedKey: string | undefined; useForNote: boolean },
+) {
+  if (!pick || !("action" in pick))
+    return { choice: pick, created: undefined } as const;
+  if (pick.action === "import") {
+    yield* ports.importProfile({ indexedKey: options.indexedKey });
+    return { choice: undefined, created: undefined } as const;
+  }
+  const notifier = yield* Notifier;
+  const created = yield* ports
+    .createProfile(options)
+    .pipe(
+      recover(
+        (cause) =>
+          Effect.logError("Failed to open Profile creation", cause).pipe(
+            Effect.andThen(notifier.show(m.notice_profile_action_failed())),
+            Effect.asVoid,
+          ),
+        Effect.undefined,
+      ),
+    );
+  const choice: LiteratureNoteProfileChoice | undefined = created && {
+    id: created.profile.id,
+    label: created.profile.label,
+  };
+  return { choice, created } as const;
 });
 
 /**
@@ -122,38 +172,28 @@ export const createNoteInteractively = Effect.fn("createNoteInteractively")(
       }
       problem = unavailableSelection(selection);
     }
-    let created: CreatedProfile | undefined;
-    const choice = yield* awaitModal<LiteratureNoteProfileChoice | undefined>(
-      (resolve) =>
-        openLiteratureNoteProfile(
-          ports.app,
-          {
-            preselected: selection.selector,
-            source: selection.source,
-            reason: selection.reason,
-            candidates:
-              problem?.kind === "overlap"
-                ? problem.candidates.map(({ id }) => id)
-                : undefined,
-            problem: problem && describeSelectionProblem(problem),
-            previews,
-            styles,
-            onImport: async () => {
-              await ports.importProfile({ indexedKey: item.indexedKey });
-            },
-            onNew: async () => {
-              created = await ports.createProfile({
-                indexedKey: item.indexedKey,
-                useForNote: true,
-              });
-              return created
-                ? { id: created.profile.id, label: created.profile.label }
-                : undefined;
-            },
-          },
-          resolve,
-        ),
+    const pick = yield* awaitModal<ProfilePick | undefined>((resolve) =>
+      openLiteratureNoteProfile(
+        ports.app,
+        {
+          preselected: selection.selector,
+          source: selection.source,
+          reason: selection.reason,
+          candidates:
+            problem?.kind === "overlap"
+              ? problem.candidates.map(({ id }) => id)
+              : undefined,
+          problem: problem && describeSelectionProblem(problem),
+          previews,
+          styles,
+        },
+        resolve,
+      ),
     );
+    const { choice, created } = yield* settleProfilePick(ports, pick, {
+      indexedKey: item.indexedKey,
+      useForNote: true,
+    });
     if (!choice) {
       yield* Effect.logDebug(
         "Cancelled Literature Note Profile selection",
@@ -166,10 +206,10 @@ export const createNoteInteractively = Effect.fn("createNoteInteractively")(
     );
     if (created) {
       const { preview, profile } = created;
-      // The New profile dialog prepared its preview through the edge handle
-      // (ticket 16).
+      // The New profile dialog prepared this write: it writes the path the
+      // dialog showed, and an interrupt stops it.
       return yield* createPrepared(
-        portCall("create-profile-note", () => preview.create()),
+        preview.create,
         { label: profile.label },
         ports.app,
       );

@@ -1,14 +1,14 @@
 // The interactive note creation for callers outside Effect: the Note Feature's views.
-import { Effect } from "effect";
 import type { Context } from "effect";
 import type { TFile } from "obsidian";
 
 import type { Item } from "@zotlit/db";
 
+import { exitOver, valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import type { Notifier } from "@/lib/notifier";
-import { settleAtEdge } from "@/lib/signal-edge";
 import type { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 
 import { createNoteInteractively } from "./creation-view";
 import type {
@@ -17,8 +17,12 @@ import type {
 } from "./creation-view";
 import type { NoteFeature } from "./service";
 
-/** The services the interactive creation reads. */
-export type NoteCreationServices = NoteFeature | Notifier | ZoteroPref;
+/** The services the interactive creation and the Profile dialogs it opens read. */
+export type NoteCreationServices =
+  | NoteFeature
+  | Notifier
+  | ZoteroPref
+  | ProfileDialogServices;
 
 export interface NoteCreation {
   /** @see createNoteInteractively */
@@ -39,17 +43,12 @@ export function bindNoteCreation(
   context: Context.Context<NoteCreationServices>,
   ports: InteractiveCreationPorts,
 ): NoteCreation {
+  const runExit = exitOver(bridge, context);
   return {
     createNoteInteractively: async (item, options) =>
-      settleAtEdge(
-        await bridge.runPromiseExit(
-          Effect.provideContext(
-            createNoteInteractively(ports, item, options),
-            context,
-          ),
-        ),
-        undefined,
-        () => null,
+      valueOr(
+        await runExit(createNoteInteractively(ports, item, options)),
+        null,
       ),
   };
 }

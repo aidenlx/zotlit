@@ -11,7 +11,7 @@
 // stops once no leaf reads it.
 import { RegistryContext } from "@effect/atom-react";
 import { Context, Effect, Layer, Option } from "effect";
-import type { Stream } from "effect";
+import type { FileSystem, Stream } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
@@ -21,6 +21,7 @@ import type { ReactNode } from "react";
 import { scheduleBrowserTask } from "@/lib/browser-scheduler";
 import type { Notifier } from "@/lib/notifier";
 import type { ObsidianEnv } from "@/lib/obsidian-env";
+import type { FileManager } from "@/lib/obsidian-file-manager";
 import type { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
@@ -50,6 +51,8 @@ import type { ZoteroReads } from "@/services/zotero-reads/service";
 export type ViewServices =
   | CitationIndex
   | CitationLookup
+  | FileManager
+  | FileSystem.FileSystem
   | ObsidianEnv
   | ItemLookup
   | NoteIndex

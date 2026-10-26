@@ -1,12 +1,14 @@
 // @vitest-environment happy-dom
 import { ButtonComponent, Setting } from "@mock/obsidian";
-import { Effect } from "effect";
+import { Context, Effect } from "effect";
 import type { Setting as ObsidianSetting, SettingGroup } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { LanguagePack } from "@/services/language-pack/service";
 import { defaults } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 import { openWelcomeView } from "@/views/welcome/register";
 
 import { testSettingTab } from "./__fixtures__";
@@ -48,24 +50,27 @@ function reviewButton(settings: Setting[]): ButtonComponent | undefined {
 
 it("opens conversion review from the pending reminder and removes it after acceptance", () => {
   let current = { ...defaults, "note.template-conversion-pending": true };
+  const settings = stubService<PluginSettings["Service"]>("PluginSettings", {
+    current: Effect.sync(() => current),
+  });
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    tab: testSettingTab().tab,
+    tab: testSettingTab(
+      Context.make(PluginSettings, settings).pipe(
+        Context.add(
+          LanguagePack,
+          stubService<LanguagePack["Service"]>("LanguagePack", {
+            situation: Effect.succeed({
+              kind: "active" as const,
+              pack: { fileName: "en.json", origin: "https://example.com" },
+            }),
+            endonym: "English",
+          }),
+        ),
+      ),
+    ).tab,
     app: stubService<SettingTabContext["app"]>("App", {}),
-    languagePack: stubService<SettingTabContext["languagePack"]>(
-      "LanguagePack",
-      {
-        getSituation: () => ({
-          kind: "active" as const,
-          pack: { fileName: "en.json", origin: "https://example.com" },
-        }),
-        endonym: "English",
-      },
-    ),
     manifest: stubService<SettingTabContext["manifest"]>("PluginManifest", {
       version: "2.3.0",
-    }),
-    settings: stubService<SettingTabContext["settings"]>("Settings", {
-      current: Effect.sync(() => current),
     }),
   });
   const rendered = renderResources(ctx);

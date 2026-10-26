@@ -47,7 +47,7 @@ vi.mock("@/services/pandoc/styles", async (importOriginal) => {
     await importOriginal<typeof import("@/services/pandoc/styles")>();
   return {
     ...actual,
-    listInstalledStyles: () => Promise.resolve(zotero.styles),
+    listInstalledStylesOrNone: () => Promise.resolve(zotero.styles),
     // An installed style resolves as Zotero lists it; anything else takes the
     // real resolver's answer for a data directory that holds no styles.
     resolveInstalledStyle: (

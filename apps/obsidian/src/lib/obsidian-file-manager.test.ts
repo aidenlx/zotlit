@@ -169,6 +169,27 @@ it.effect(
     }),
 );
 
+it.effect("moves a file to the trash through trashFile", () =>
+  Effect.gen(function* () {
+    const source = new MemoryFileManager();
+    const files = yield* over(source);
+    const note = file("a.md");
+    yield* files.trashFile(note);
+    expect(source.trashed).toEqual([note]);
+
+    const cause = new Error("File is locked");
+    source.failNext = cause;
+    expect(yield* Effect.flip(files.trashFile(note))).toEqual(
+      new VaultError({
+        operation: "trashFile",
+        path: "a.md",
+        message: "File is locked",
+        cause,
+      }),
+    );
+  }),
+);
+
 it.effect("fails processFrontMatter with VaultError when fn throws", () =>
   Effect.gen(function* () {
     const files = yield* over(new MemoryFileManager());

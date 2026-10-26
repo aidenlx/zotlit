@@ -94,6 +94,7 @@ export async function openItemPdf(
 ): Promise<void> {
   const attachments =
     await deps.attachments.literatureNoteAttachments(indexedKey);
+  if (!attachments) return;
   openAttachments(attachments, {
     reader: withFixedPane(pdfPickerReader(deps.opener), pane),
     app: deps.app,

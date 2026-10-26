@@ -4,8 +4,6 @@ import { expect, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
-import type { MetadataCacheSource } from "@/lib/obsidian-metadata-cache";
-import type { VaultSource } from "@/lib/obsidian-vault";
 
 import { referencedExcerptPaths } from "./references";
 
@@ -29,8 +27,8 @@ const referenced = (host: ReturnType<typeof vaultWith>["host"]) =>
   referencedExcerptPaths(host.file(PATH)).pipe(
     Effect.provide(
       layerHost({
-        vault: host.vault as unknown as VaultSource,
-        metadataCache: host.metadataCache as unknown as MetadataCacheSource,
+        vault: host.vault,
+        metadataCache: host.metadataCache,
         workspace: host.workspace,
       }),
     ),

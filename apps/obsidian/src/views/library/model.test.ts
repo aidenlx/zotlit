@@ -4,21 +4,29 @@ import { Effect, Layer, Stream } from "effect";
 import { expect } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { AbortError } from "@/lib/abort-error";
 import { ItemLookup } from "@/services/item-lookup/service";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
 import type { QueryViewRequest } from "@/services/item-query/query-view";
 import { QueryService } from "@/services/item-query/service";
 import { resolveLibraryScope } from "@/services/library-scope/scope";
 import { LibraryScope } from "@/services/library-scope/service";
+import { defaults } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import { waitFor } from "@/views/welcome/__fixtures__";
 
 import { makeLibraryHost } from "./__fixtures__";
 import { makeItemNodeCommand } from "./atoms";
 import { makeCardModel, patchCard } from "./card-model";
-import { libraryItemCommand } from "./item-actions";
+import {
+  libraryItemCommand,
+  libraryTargetOpener,
+  openLibraryTargetCommand,
+} from "./item-actions";
 import { waitForRead } from "./model";
 import { makeSearchModel, patchSearch } from "./search-model";
+import { LibraryViewStorage } from "./storage";
 import { makeTreeModel, patchTree, refreshTree } from "./tree-model";
 
 const EMPTY: QueryViewOutcome = {
@@ -414,4 +422,62 @@ it.live("runs shared item gestures together across leaves", () =>
     finish.get("first")!();
     yield* Effect.promise(() => first.result.promise);
   }),
+);
+
+it.live(
+  "settles pending Library commands quietly when the registry closes",
+  () =>
+    Effect.gen(function* () {
+      let saving = false;
+      const host = yield* Effect.acquireDisposable(
+        Effect.promise(() =>
+          makeLibraryHost({
+            services: Layer.mock(PluginSettings, {
+              update: () => Effect.succeed(defaults),
+              flush: Effect.sync(() => {
+                saving = true;
+              }).pipe(Effect.andThen(Effect.never)),
+            }),
+          }),
+        ),
+      );
+      host.registry.mount(libraryItemCommand);
+      host.registry.mount(openLibraryTargetCommand);
+      const storage = new LibraryViewStorage(host.registry, () => null);
+      let acting = false;
+      const result = Promise.withResolvers<void>();
+      const acted = result.promise.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      host.registry.set(libraryItemCommand, {
+        result,
+        effect: Effect.sync(() => {
+          acting = true;
+        }).pipe(Effect.andThen(Effect.never)),
+      });
+      let opening = false;
+      const opener = libraryTargetOpener(host.registry, {
+        open: () => {
+          opening = true;
+          return new Promise(() => {});
+        },
+      });
+      const opened = opener
+        .open({ kind: "attachment", attachmentKey: "ABCD2345" }, false)
+        .catch((error: unknown) => error);
+      const saved = storage.save().catch((error: unknown) => error);
+      yield* Effect.promise(() =>
+        waitFor(() => {
+          expect(acting).toBe(true);
+          expect(opening).toBe(true);
+          expect(saving).toBe(true);
+        }),
+      );
+      storage.close();
+      yield* Effect.promise(() => host.close());
+      expect(yield* Effect.promise(() => acted)).toBeUndefined();
+      expect(AbortError.test(yield* Effect.promise(() => opened))).toBe(true);
+      expect(yield* Effect.promise(() => saved)).toBeUndefined();
+    }),
 );

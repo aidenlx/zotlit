@@ -19,14 +19,16 @@ export interface ProfileDeletionConsent {
   move: boolean;
 }
 
-export function confirmProfileDeletion(
+/**
+ * Open the deletion dialog for `plan`. `resolve` gets the user's consent, or
+ * `undefined` when the dialog closes.
+ */
+export function openProfileDeletion(
   app: App,
   options: { plan: ProfileDeletionPlan; styles?: readonly InstalledCslStyle[] },
-): Promise<ProfileDeletionConsent | undefined> {
+  resolve: (consent: ProfileDeletionConsent | undefined) => void,
+): ConfirmationModal {
   const { plan } = options;
-  const { promise, resolve } = Promise.withResolvers<
-    ProfileDeletionConsent | undefined
-  >();
   const modal = new ConfirmationModal(app);
   modal.contentEl.addClasses(["zt-root", "zt:flex", "zt:flex-col", "zt:gap-4"]);
   modal.setTitle(
@@ -160,7 +162,7 @@ export function confirmProfileDeletion(
   modal.addCancelButton(m.modal_cancel());
   modal.setCloseCallback(() => resolve(undefined));
   modal.open();
-  return promise;
+  return modal;
 }
 
 /** Body text as separate paragraphs; a plain string would run them together. */

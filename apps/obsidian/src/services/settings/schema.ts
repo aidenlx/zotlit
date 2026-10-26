@@ -100,6 +100,13 @@ export const settingsNumber = v.pipe(v.number(), v.finite());
 const logLevel = v.nullable(v.picklist(getLogLevels()));
 export type LogLevel = v.InferOutput<typeof logLevel>;
 
+/** Every LogTape severity level, in LogTape's order. */
+export const LOG_LEVELS = getLogLevels();
+
+/** Whether `value` names a LogTape severity level. */
+export const isLogLevel = (value: string): value is NonNullable<LogLevel> =>
+  LOG_LEVELS.some((level) => level === value);
+
 export type { AutoTrim };
 
 const zoteroReadMode = v.picklist(["auto", "reflink", "copy", "immutable"]);

@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Fiber, FiberSet, Layer } from "effect";
+import { Cause, Effect, Fiber, FiberSet, Layer, Schema } from "effect";
 import type { ObsidianProtocolData, PaneType, Plugin } from "obsidian";
 
 import type { ItemRef } from "@zotlit/db";
@@ -87,6 +87,7 @@ import type { UseLedger } from "@/services/use-ledger/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
@@ -97,6 +98,7 @@ export type ProtocolServices =
   | LocalServer
   | Notifier
   | ObsidianEnv
+  | ProfileDialogServices
   | UseLedger
   | Vault
   | Workspace
@@ -104,8 +106,9 @@ export type ProtocolServices =
   | ZoteroReads;
 
 /**
- * The legacy values the handlers still hold. The interactive creation, the
- * Profile factories and the Attachment opener convert in later slices.
+ * The legacy values the handlers still hold. The Profile dialogs run in the
+ * handler's fiber; the note import view and the Attachment opener convert in
+ * later slices.
  */
 export interface ProtocolDeps extends InteractiveCreationPorts {
   webWorkbenchEnabled: boolean;
@@ -131,7 +134,7 @@ export interface ProtocolDeps extends InteractiveCreationPorts {
  * fails is logged. Every handler run and every run of a request the Local
  * Server pushes is a fiber of the current Scope: closing it stops the pushed
  * requests and interrupts the runs still going. A legacy Promise a run waits
- * on (Note Feature, a view opener) still runs to its end.
+ * on (a view opener) still runs to its end.
  */
 export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
   function* (
@@ -666,9 +669,12 @@ const handleProfileImportProtocol = Effect.fn(
 }, withLogCategory("protocol"));
 
 /** The Profile document the import wrote is not in the vault. */
-class ImportedProfileMissing extends Data.TaggedError(
-  "ImportedProfileMissing",
-)<{ readonly path: string }> {
+class ImportedProfileMissing extends Schema.TaggedError<
+  ImportedProfileMissing,
+  { readonly brand: unique symbol }
+>()("ImportedProfileMissing", {
+  path: Schema.String,
+}) {
   override get message() {
     return `Imported Profile document is unavailable: ${this.path}`;
   }
@@ -678,9 +684,7 @@ class ImportedProfileMissing extends Data.TaggedError(
 const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
   function* (deps: ProtocolDeps, paneType: PaneType | undefined) {
     yield* Effect.logDebug("Opening clipboard Profile import");
-    const profile = yield* Effect.tryPromise(() =>
-      deps.importProfile({ source: "clipboard" }),
-    );
+    const profile = yield* deps.importProfile({ source: "clipboard" });
     if (!profile) {
       yield* Effect.logDebug(
         "Clipboard Profile import ended without a document",
@@ -693,7 +697,7 @@ const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
     const options = paneType
       ? { leaf: yield* (yield* Workspace).getLeaf(paneType) }
       : {};
-    yield* Effect.tryPromise(() =>
+    yield* portCall("open-template-workbench", () =>
       openTemplateWorkbench(deps.app, file, options),
     );
     yield* Effect.logDebug("Opened imported Profile in editor").pipe(

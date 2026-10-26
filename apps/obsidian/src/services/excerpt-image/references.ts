@@ -5,9 +5,8 @@ import { Effect } from "effect";
 import { parseLinktext } from "obsidian";
 import type { TFile } from "obsidian";
 
+import { readLiveText } from "@/lib/effect-live-text";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
-import { Vault } from "@/lib/obsidian-vault";
-import { Workspace } from "@/lib/obsidian-workspace";
 
 const markdown = parser.configure({
   defineNodes: ["WikiLink"],
@@ -55,9 +54,7 @@ function markdownTarget(raw: string): string {
 export const referencedExcerptPaths = Effect.fnUntraced(function* (
   note: TFile,
 ) {
-  const view = yield* (yield* Workspace).loadedTextView(note);
-  const content =
-    view === null ? yield* (yield* Vault).cachedRead(note) : view.getViewData();
+  const content = yield* readLiveText(note);
   const metadata = yield* MetadataCache;
   const paths = new Set<string>();
   for (const link of linkTargets(content)) {

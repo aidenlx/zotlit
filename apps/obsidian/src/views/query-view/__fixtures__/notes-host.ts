@@ -138,8 +138,8 @@ export async function makeNotesHost(deps: NotesHostDeps) {
     registry,
     creation: {
       app: deps.app,
-      createProfile: async () => undefined,
-      importProfile: async () => undefined,
+      createProfile: () => Effect.undefined,
+      importProfile: () => Effect.undefined,
     },
   });
   stack.defer(notes.on("changed", () => {}));

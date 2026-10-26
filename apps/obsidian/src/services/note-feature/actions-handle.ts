@@ -1,11 +1,10 @@
 // The note commands and menu entries for callers outside Effect: the command
 // callbacks, the file menu and the Workbench's saved notice.
-import { Effect } from "effect";
-import type { Context } from "effect";
+import type { Context, Effect } from "effect";
 import type { TFile } from "obsidian";
 
+import { exitOver, valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
-import { settleAtEdge } from "@/lib/signal-edge";
 import type { NoteImportView } from "@/services/note-import/view";
 
 import {
@@ -56,12 +55,9 @@ export function bindNoteActions(
     batchImport: { view: ports.view, bridge },
     batchUpdate: { notices: ports.notices, view: ports.view, bridge },
   };
+  const runExit = exitOver(bridge, context);
   const run = async <E>(effect: Effect.Effect<void, E, NoteActionServices>) =>
-    settleAtEdge(
-      await bridge.runPromiseExit(Effect.provideContext(effect, context)),
-      undefined,
-      () => undefined,
-    );
+    valueOr(await runExit(effect), undefined);
   return {
     switchProfile: (file) => run(switchProfile(actionPorts, file)),
     updateNote: (file, options) => run(updateNote(actionPorts, file, options)),

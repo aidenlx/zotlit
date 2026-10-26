@@ -7,11 +7,13 @@ import { expect, vi } from "vitest";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
 import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
 import {
@@ -192,6 +194,7 @@ function switching(
   return {
     notifier,
     layer: Layer.mergeAll(
+      unimplementedProfileDialogServices,
       Layer.mock(NoteFeature, {
         prepareProfileSwitch: () =>
           Effect.succeed({
@@ -220,8 +223,8 @@ function switching(
 
 const PORTS = {
   app: stubService<App>("App", {}),
-  createProfile: async () => undefined,
-  importProfile: async () => undefined,
+  createProfile: () => Effect.undefined,
+  importProfile: () => Effect.undefined,
 };
 
 /** The picker answers the requested Profile, as the user would. */
@@ -259,8 +262,6 @@ it.effect(
           current: CURRENT,
           preselected: CURRENT,
           styles: [],
-          onNew: expect.any(Function),
-          onImport: expect.any(Function),
         },
         expect.any(Function),
       );
@@ -321,6 +322,40 @@ it.effect(
       yield* Deferred.succeed(gate, undefined);
       yield* Fiber.join(interrupting);
       expect(finished).toBe(true);
+    }),
+);
+
+it.effect.each(["new", "import"] as const)(
+  "closes the %s Profile dialog the picker opened when the switch is interrupted",
+  (action) =>
+    Effect.gen(function* () {
+      const opened = yield* Deferred.make<void>();
+      const close = vi.fn();
+      // The dialog stays open until something closes it.
+      const dialog = awaitModal<undefined>(() => {
+        Deferred.doneUnsafe(opened, Effect.void);
+        return { close };
+      });
+      const harness = switching(noteAt("Imported/Child.md"), () =>
+        Effect.succeed(SWITCHED),
+      );
+      vi.mocked(openLiteratureNoteProfile).mockImplementation(
+        (_app, _options, resolve) => {
+          resolve({ action });
+          return { close: () => {} };
+        },
+      );
+      const task = yield* switchNoteProfileInteractively(
+        { ...PORTS, createProfile: () => dialog, importProfile: () => dialog },
+        noteAt("Books/2024/My title.md"),
+      ).pipe(
+        Effect.provide(harness.layer),
+        Effect.forkChild({ startImmediately: true }),
+      );
+      yield* Deferred.await(opened);
+      yield* Fiber.interrupt(task);
+      expect(close).toHaveBeenCalledOnce();
+      expect(harness.notifier.notices).toEqual([]);
     }),
 );
 

@@ -18,8 +18,8 @@ import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
+import type { TemplateDataLoader } from "./data";
 import { bindTemplateData } from "./data-handle";
-import type { TemplateDataHandle } from "./data-handle";
 import type { WorkbenchServices } from "./register";
 
 /** The services a Profile fixture's runtime holds for the Workbench. */
@@ -142,7 +142,7 @@ export function templateDataHandle(
     >;
     readonly libraryScope?: LibraryScope["Service"];
   },
-): TemplateDataHandle {
+): TemplateDataLoader {
   const scope = Scope.makeUnsafe();
   stack.defer(() => Effect.runPromise(Scope.close(scope, Exit.void)));
   const vault = layerVaultFrom(services.app.vault);

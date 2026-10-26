@@ -5,6 +5,7 @@ import type {
   Command,
   Plugin,
   PluginManifest,
+  PluginSettingTab,
   View,
   WorkspaceLeaf,
 } from "obsidian";
@@ -102,6 +103,43 @@ describe("makePluginHost", () => {
         .pipe(Effect.scoped);
 
       expect(hooked).toBe(false);
+    }),
+  );
+
+  it.effect("holds the setting tab until its Scope closes", () =>
+    Effect.gen(function* () {
+      const tabs: PluginSettingTab[] = [];
+      const close = vi.fn<() => void>();
+      const plugin = stubService<Plugin & CliHost>("Plugin", {
+        app: stubService<App>("App", {
+          setting: stubService<App["setting"]>("SettingsModal", {
+            close,
+            removeSettingTab: (tab) => void tabs.splice(tabs.indexOf(tab), 1),
+          }),
+        }),
+        addSettingTab: (tab) => void tabs.push(tab),
+      });
+      const host = makePluginHost(plugin);
+      const scope = yield* Scope.fork(yield* Effect.scope);
+      const tab = stubService<PluginSettingTab>("PluginSettingTab", {});
+      const owners: Plugin[] = [];
+
+      const added = yield* host
+        .addSettingTab((owner) => {
+          owners.push(owner);
+          return tab;
+        })
+        .pipe(Scope.provide(scope));
+
+      expect(added === tab).toBe(true);
+      expect(owners[0] === plugin).toBe(true);
+      expect(tabs.length === 1 && tabs[0] === tab).toBe(true);
+
+      yield* host.closeSettings;
+      expect(close).toHaveBeenCalledOnce();
+
+      yield* Scope.close(scope, Exit.void);
+      expect(tabs).toHaveLength(0);
     }),
   );
 
