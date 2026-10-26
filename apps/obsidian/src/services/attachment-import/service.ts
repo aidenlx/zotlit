@@ -38,7 +38,6 @@ import type {
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import { joinFolderPath, normalizeFolderPath } from "@/lib/ensure-folder";
-import type { SystemCallError } from "@/lib/errno";
 import { fileUrlLink, syntheticFile } from "@/lib/markdown-link";
 import { DeviceStorage } from "@/lib/obsidian-device-storage";
 import type { DeviceStorageError } from "@/lib/obsidian-device-storage";
@@ -107,7 +106,7 @@ export interface ResolveLinkOptions {
 export interface AttachmentImportResult
   extends AttachmentCopyResult, AttachmentSkipCounts {}
 
-/** The copy of confirmed sources failed; `cause` holds what it threw. */
+/** The copy of confirmed sources failed; `cause` holds the copy's failure. */
 export class AttachmentCopyError extends Schema.TaggedError<
   AttachmentCopyError,
   { readonly brand: unique symbol }
@@ -119,7 +118,6 @@ export class AttachmentCopyError extends Schema.TaggedError<
 /** What a flush fails with: a source check, the folder, or the copy. */
 export type AttachmentFlushError =
   | PlatformError.PlatformError
-  | SystemCallError
   | VaultFolderBlockedError
   | AttachmentCopyError
   | VaultError;
@@ -492,15 +490,17 @@ export const layerAttachmentImport = (
                     Effect.provideService(Vault, vault),
                   );
                 }
-                const copies = yield* Effect.tryPromise({
-                  try: () => copyAttachments(confirmation.confirmed),
-                  catch: (cause) =>
-                    new AttachmentCopyError({
-                      message:
-                        cause instanceof Error ? cause.message : String(cause),
-                      cause,
-                    }),
-                });
+                const copies = yield* copyAttachments(
+                  confirmation.confirmed,
+                ).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new AttachmentCopyError({
+                        message: cause.message,
+                        cause,
+                      }),
+                  ),
+                );
                 return { ...confirmation, copied: copies };
               }),
             );

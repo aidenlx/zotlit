@@ -2,27 +2,23 @@
 // decision taken against it while rendering, and the copy-time confirmation
 // that catches what a string cannot express (ADR 0019).
 
-import { Effect, FileSystem, PlatformError } from "effect";
-import type { Scope } from "effect";
-import { constants } from "node:fs";
-import { open, realpath } from "node:fs/promises";
+import { Effect, FileSystem } from "effect";
+import type { PlatformError, Scope } from "effect";
+import { realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 
 import { isCaseInsensitivePlatform } from "@zotlit/db/path";
 
 import type { AttachmentCopySource } from "@/lib/copy-attachments";
-import { isErrno, systemCallError } from "@/lib/errno";
-import type { SystemCallError } from "@/lib/errno";
+import { isErrno, nodeFileSystemCall } from "@/lib/errno";
 
 /**
- * Read-only open that refuses a symbolic link at the final component. The path
- * being opened is already canonical, so a link there appeared after the
- * canonicalization and is an escape attempt. `O_NOFOLLOW` is POSIX-only.
+ * Whether the confirming open refuses a symbolic link at the final component.
+ * The path being opened is already canonical, so a link there appeared after
+ * the canonicalization and is an escape attempt. `FileSystem` supports
+ * `noFollow` on POSIX only, and fails it on Windows.
  */
-const OPEN_CONFIRMED =
-  process.platform === "win32"
-    ? constants.O_RDONLY
-    : constants.O_RDONLY | constants.O_NOFOLLOW;
+const OPEN_NO_FOLLOW = process.platform !== "win32";
 
 /**
  * Resolve `path` through every symbolic link with the native `realpath`, which
@@ -35,30 +31,7 @@ const OPEN_CONFIRMED =
 const nativeRealPath = (
   path: string,
 ): Effect.Effect<string, PlatformError.PlatformError> =>
-  Effect.tryPromise({
-    try: () => realpath(path),
-    catch: (cause) =>
-      PlatformError.systemError({
-        _tag: realPathReason(cause),
-        module: "FileSystem",
-        method: "realPath",
-        syscall: "realpath",
-        pathOrDescriptor: path,
-        cause,
-      }),
-  });
-
-function realPathReason(cause: unknown): PlatformError.SystemErrorTag {
-  if (isErrno(cause, "ENOENT")) return "NotFound";
-  if (
-    isErrno(cause, "ENOTDIR") ||
-    isErrno(cause, "ELOOP") ||
-    isErrno(cause, "EISDIR")
-  )
-    return "BadResource";
-  if (isErrno(cause, "EACCES")) return "PermissionDenied";
-  return "Unknown";
-}
+  nodeFileSystemCall("realPath", path, () => realpath(path));
 
 /**
  * Where an approved source's bytes came from. It selects the copy strategy:
@@ -265,7 +238,7 @@ export const confirmSource = Effect.fnUntraced(function* (
   caseInsensitive: boolean,
 ): Effect.fn.Return<
   ConfirmedSource,
-  PlatformError.PlatformError | SystemCallError,
+  PlatformError.PlatformError,
   FileSystem.FileSystem | Scope.Scope
 > {
   const fs = yield* FileSystem.FileSystem;
@@ -292,35 +265,20 @@ export const confirmSource = Effect.fnUntraced(function* (
   if (!readsFromDescriptor(source.origin)) {
     return { status: "confirmed", source: { kind: "path", path: canonical } };
   }
-  // FileSystem opens without `O_NOFOLLOW`, so the descriptor comes from Node,
-  // as the canonical path does (see `nativeRealPath`).
-  return yield* Effect.acquireRelease(
-    Effect.tryPromise({
-      try: () => open(canonical, OPEN_CONFIRMED),
-      catch: systemCallError,
-    }),
-    (handle) =>
-      Effect.tryPromise({
-        try: () => handle.close(),
-        catch: systemCallError,
-      }).pipe(Effect.orDie),
-  ).pipe(
+  return yield* fs.open(canonical, { noFollow: OPEN_NO_FOLLOW }).pipe(
     Effect.map((handle): ConfirmedSource => ({
       status: "confirmed",
       source: { kind: "handle", handle },
     })),
-    Effect.catchTag("SystemCallError", (error) => {
-      switch (error.code) {
-        case "ENOENT":
-        case "ENOTDIR":
-          return Effect.succeed(MISSING);
-        // `OPEN_CONFIRMED` refused a symbolic link that took the canonical
-        // path's place after it was checked.
-        case "ELOOP":
-          return Effect.succeed(ESCAPED);
-        default:
-          return Effect.fail(error);
-      }
+    Effect.catchReason("PlatformError", "NotFound", () =>
+      Effect.succeed(MISSING),
+    ),
+    Effect.catchReason("PlatformError", "BadResource", (reason, error) => {
+      // `noFollow` refused a symbolic link that took the canonical path's
+      // place after it was checked.
+      if (isErrno(reason.cause, "ELOOP")) return Effect.succeed(ESCAPED);
+      if (isErrno(reason.cause, "ENOTDIR")) return Effect.succeed(MISSING);
+      return Effect.fail(error);
     }),
   );
 });

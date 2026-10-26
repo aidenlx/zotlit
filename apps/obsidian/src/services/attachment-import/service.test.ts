@@ -21,11 +21,9 @@ import { attachmentImportFixture } from "./__fixtures__";
 import type { AttachmentImportFixtureOptions } from "./__fixtures__";
 
 vi.mock("@/lib/copy-attachments", () => ({
-  copyAttachments: vi.fn(async (items: readonly unknown[]) => ({
-    copied: items.length,
-    skipped: 0,
-    missing: 0,
-  })),
+  copyAttachments: vi.fn((items: readonly unknown[]) =>
+    Effect.succeed({ copied: items.length, skipped: 0, missing: 0 }),
+  ),
 }));
 
 /** Whether the temp file system finds a folder by a name in another letter case. */

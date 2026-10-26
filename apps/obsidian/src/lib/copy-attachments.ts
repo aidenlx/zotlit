@@ -1,16 +1,18 @@
+import { Effect, FileSystem, Option, Schema } from "effect";
+import type { PlatformError } from "effect";
 import { randomUUID } from "node:crypto";
-import { constants, createWriteStream } from "node:fs";
-import type { Stats } from "node:fs";
-import { copyFile, lstat, rename, rm, stat, utimes } from "node:fs/promises";
-import type { FileHandle } from "node:fs/promises";
+import { constants } from "node:fs";
+import { copyFile, lstat } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { pipeline } from "node:stream/promises";
 
-import { isErrno } from "./errno";
-import { getLogger } from "./log";
+import { withLogCategory } from "./effect-log";
+import { nodeFileSystemCall } from "./errno";
 import { reflink } from "./reflink";
 
-const logger = getLogger("attachment-import");
+const logged = withLogCategory("attachment-import");
+
+/** Bytes read from a descriptor source per step of its copy. */
+const CHUNK_SIZE = 64 * 1024;
 
 /**
  * Where one queued copy reads its bytes. The attachment import service picks
@@ -20,13 +22,13 @@ const logger = getLogger("attachment-import");
  * paths; it is the confirmed canonical path of a Zotero-managed source, where
  * the window between the check and the copy is not meaningful.
  *
- * `handle` is the descriptor opened while the source was confirmed, so a
- * linked file outside Zotero's control writes the bytes that were checked even
- * if the path is swapped underneath. The caller owns the handle and closes it.
+ * `handle` is the file opened while the source was confirmed, so a linked
+ * file outside Zotero's control writes the bytes that were checked even if
+ * the path is swapped underneath. The caller's Scope owns it and closes it.
  */
 export type AttachmentCopySource =
   | { kind: "path"; path: string }
-  | { kind: "handle"; handle: FileHandle };
+  | { kind: "handle"; handle: FileSystem.File };
 
 export interface AttachmentCopyItem {
   source: AttachmentCopySource;
@@ -40,47 +42,72 @@ export interface AttachmentCopyResult {
   missing: number;
 }
 
+/** The destination is a symbolic link, which a copy never writes through. */
+export class DestinationSymlinkError extends Schema.TaggedError<
+  DestinationSymlinkError,
+  { readonly brand: unique symbol }
+>()("DestinationSymlinkError", { dest: Schema.String }) {
+  override get message(): string {
+    return `Refusing to write through existing symbolic link at destination: ${this.dest}`;
+  }
+}
+
+/** What a copy fails with: a file system call, or a destination link. */
+export type AttachmentCopyFailure =
+  | PlatformError.PlatformError
+  | DestinationSymlinkError;
+
 /**
  * Copy each queued attachment, reflinking when possible. A missing source is
- * counted in `missing` rather than thrown, so one absent file never aborts the
+ * counted in `missing` rather than failed, so one absent file never aborts the
  * surrounding note import.
  */
-export async function copyAttachments(
+export const copyAttachments = Effect.fnUntraced(function* (
   items: readonly AttachmentCopyItem[],
-): Promise<AttachmentCopyResult> {
+): Effect.fn.Return<
+  AttachmentCopyResult,
+  AttachmentCopyFailure,
+  FileSystem.FileSystem
+> {
   const result: AttachmentCopyResult = { copied: 0, skipped: 0, missing: 0 };
   for (const item of items) {
-    result[await copyAttachment(item)] += 1;
+    result[yield* copyAttachment(item)] += 1;
   }
   return result;
-}
+});
 
 /**
  * Attempt one attachment copy and report which bucket it fell into. The source
  * is read and written directly; a path source that is absent — whether at the
- * initial read or because it vanished mid-copy — surfaces as a Node `ENOENT`
- * we classify as `"missing"`, never a check-then-act existence probe.
+ * initial read or because it vanished mid-copy — fails `NotFound`, which is
+ * counted as `"missing"`, never a check-then-act existence probe.
  */
-async function copyAttachment({
+const copyAttachment = ({
   source,
   dest,
-}: AttachmentCopyItem): Promise<keyof AttachmentCopyResult> {
-  try {
-    const sourceStat =
+}: AttachmentCopyItem): Effect.Effect<
+  keyof AttachmentCopyResult,
+  AttachmentCopyFailure,
+  FileSystem.FileSystem
+> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const sourceInfo =
       source.kind === "handle"
-        ? await source.handle.stat()
-        : await stat(source.path);
-    if (await destMatches(sourceStat, dest)) return "skipped";
-    await writeCopy(source, dest, sourceStat);
-    return "copied";
-  } catch (error) {
-    if (isErrno(error, "ENOENT")) {
-      logger.warn("Skipped attachment with missing source", { dest, error });
-      return "missing";
-    }
-    throw error;
-  }
-}
+        ? yield* source.handle.stat
+        : yield* fs.stat(source.path);
+    if (yield* destMatches(sourceInfo, dest)) return "skipped" as const;
+    yield* writeCopy(source, dest, sourceInfo);
+    return "copied" as const;
+  }).pipe(
+    Effect.catchReason("PlatformError", "NotFound", (error) =>
+      Effect.logWarning("Skipped attachment with missing source").pipe(
+        Effect.annotateLogs({ dest, error }),
+        logged,
+        Effect.as("missing" as const),
+      ),
+    ),
+  );
 
 /**
  * Copy into a randomly named temp file next to `dest`, stamp it with the
@@ -90,74 +117,95 @@ async function copyAttachment({
  * metadata write through a symlink. `rename` replaces whatever directory
  * entry sits at `dest` without ever opening `dest` itself, so a reader never
  * observes a partially written file. A failed attempt removes the temp file.
+ * The steps run uninterruptibly, so a copy does not stop half-way.
  */
-async function writeCopy(
+const writeCopy = (
   source: AttachmentCopySource,
   dest: string,
-  sourceStat: Stats,
-): Promise<void> {
-  const tempPath = join(dirname(dest), `.${randomUUID()}.zotlit-tmp`);
-  try {
-    await copyIntoTemp(source, tempPath);
-    await utimes(tempPath, sourceStat.atime, sourceStat.mtime);
-    await rename(tempPath, dest);
-  } catch (error) {
-    await rm(tempPath, { force: true });
-    throw error;
-  }
-}
+  sourceInfo: FileSystem.File.Info,
+): Effect.Effect<void, PlatformError.PlatformError, FileSystem.FileSystem> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const tempPath = join(dirname(dest), `.${randomUUID()}.zotlit-tmp`);
+    yield* Effect.gen(function* () {
+      yield* copyIntoTemp(source, tempPath);
+      const times = Option.all([sourceInfo.atime, sourceInfo.mtime]);
+      if (Option.isSome(times)) {
+        const [atime, mtime] = times.value;
+        yield* fs.utimes(tempPath, atime, mtime);
+      }
+      yield* fs.rename(tempPath, dest);
+    }).pipe(Effect.tapCause(() => fs.remove(tempPath, { force: true })));
+  }).pipe(Effect.uninterruptible);
 
 /**
  * Every branch creates `tempPath` with exclusive access: `reflink` clones onto
  * a path that must not already exist, the plain-copy fallback passes
- * `COPYFILE_EXCL`, and the descriptor stream opens with `wx`. Combined with
+ * `COPYFILE_EXCL`, and the descriptor copy opens with `wx`. Combined with
  * `tempPath`'s unpredictable name, no branch can be redirected onto a file an
- * attacker prepared in advance.
+ * attacker prepared in advance. `FileSystem` has no reflink and no exclusive
+ * `copyFile`, so the path branch calls Node and fails as `FileSystem` would.
  *
- * A descriptor source streams rather than reflinks: cloning names its source
+ * A descriptor source is read rather than reflinked: cloning names its source
  * by path, which is the substitution this branch exists to rule out. That
  * costs little, because a linked file usually sits on a different filesystem
- * from the vault anyway.
+ * from the vault anyway. Reads start at the beginning of the file, and the
+ * temp file closes before the rename.
  */
-async function copyIntoTemp(
+const copyIntoTemp = (
   source: AttachmentCopySource,
   tempPath: string,
-): Promise<void> {
+): Effect.Effect<void, PlatformError.PlatformError, FileSystem.FileSystem> => {
   if (source.kind === "handle") {
-    await pipeline(
-      source.handle.createReadStream({ autoClose: false, start: 0 }),
-      createWriteStream(tempPath, { flags: "wx" }),
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const target = yield* fs.open(tempPath, { flag: "wx" });
+        let position = 0n;
+        while (true) {
+          const chunk = yield* source.handle.readAlloc(CHUNK_SIZE, {
+            position,
+          });
+          if (Option.isNone(chunk)) return;
+          yield* target.writeAll(chunk.value);
+          position += BigInt(chunk.value.byteLength);
+        }
+      }),
     );
-    return;
   }
-  try {
-    await reflink(source.path, tempPath);
-  } catch {
-    await copyFile(source.path, tempPath, constants.COPYFILE_EXCL);
-  }
-}
+  return Effect.tryPromise(() => reflink(source.path, tempPath)).pipe(
+    Effect.catch(() =>
+      nodeFileSystemCall("copyFile", source.path, () =>
+        copyFile(source.path, tempPath, constants.COPYFILE_EXCL),
+      ),
+    ),
+  );
+};
 
 /**
  * `lstat`, not `stat`: inspecting the directory entry itself — rather than
  * whatever it points to — is what lets an existing destination symlink be
  * rejected outright instead of silently compared against and then replaced.
- *
- * @throws When `dest` exists and is a symbolic link.
+ * `FileSystem` has no `lstat`, so this calls Node. Modification times compare
+ * at the millisecond, the precision `FileSystem` reports.
  */
-async function destMatches(sourceStat: Stats, dest: string): Promise<boolean> {
-  try {
-    const destStat = await lstat(dest);
-    if (destStat.isSymbolicLink()) {
-      throw new Error(
-        `Refusing to write through existing symbolic link at destination: ${dest}`,
-      );
-    }
-    return (
-      sourceStat.size === destStat.size &&
-      sourceStat.mtimeMs === destStat.mtimeMs
-    );
-  } catch (error) {
-    if (isErrno(error, "ENOENT")) return false;
-    throw error;
-  }
-}
+const destMatches = (
+  sourceInfo: FileSystem.File.Info,
+  dest: string,
+): Effect.Effect<boolean, AttachmentCopyFailure> =>
+  nodeFileSystemCall("lstat", dest, () => lstat(dest, { bigint: true })).pipe(
+    Effect.flatMap((destStat) =>
+      destStat.isSymbolicLink()
+        ? Effect.fail(new DestinationSymlinkError({ dest }))
+        : Effect.succeed(
+            sourceInfo.size === destStat.size &&
+              Option.exists(
+                sourceInfo.mtime,
+                (mtime) => mtime.getTime() === destStat.mtime.getTime(),
+              ),
+          ),
+    ),
+    Effect.catchReason("PlatformError", "NotFound", () =>
+      Effect.succeed(false),
+    ),
+  );
