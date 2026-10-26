@@ -74,6 +74,7 @@ function context(): SettingTabContext {
     bridge: {
       runSync: Effect.runSync,
       runPromise: Effect.runPromise,
+      runAndForget: (effect) => void Effect.runPromise(effect),
       subscribe: () => () => {},
     },
     settings: stubService<SettingTabContext["settings"]>("Settings", {
