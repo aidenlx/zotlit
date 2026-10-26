@@ -223,6 +223,64 @@ describe("listInstalledStyles", () => {
 
     await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([]);
   });
+
+  it("lists nothing when the styles folder is empty", async () => {
+    await using library = await installStyles();
+    await mkdir(join(library.dataDir, "styles"), { recursive: true });
+
+    await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([]);
+  });
+
+  it("skips a CSL file it cannot read", async () => {
+    await using library = await installStyles();
+    await library.writeStyle("apa.csl", {
+      id: "http://www.zotero.org/styles/apa",
+      title: "APA",
+    });
+    await library.writeStyle("nature.csl", {
+      id: "http://www.zotero.org/styles/nature",
+      title: "Nature",
+    });
+    deniedReads.add("nature.csl");
+
+    await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([
+      { id: "http://www.zotero.org/styles/apa", title: "APA" },
+    ]);
+  });
+
+  it("lists nothing when the styles folder cannot be read", async () => {
+    await using library = await installStyles();
+    await library.writeStyle("apa.csl", {
+      id: "http://www.zotero.org/styles/apa",
+      title: "APA",
+    });
+    deniedDirs.add("styles");
+
+    await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([]);
+  });
+
+  it("omits the dependents of a hidden folder it cannot read", async () => {
+    await using library = await installStyles();
+    await library.writeStyle("apa.csl", {
+      id: "http://www.zotero.org/styles/apa",
+      title: "APA",
+    });
+    await library.writeStyle("nature-neuroscience.csl", {
+      id: "http://www.zotero.org/styles/nature-neuroscience",
+      title: "Nature Neuroscience",
+      parentId: "http://www.zotero.org/styles/nature",
+    });
+    await library.writeStyle("nature.csl", {
+      id: "http://www.zotero.org/styles/nature",
+      title: "Nature",
+      hidden: true,
+    });
+    deniedDirs.add("hidden");
+
+    await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([
+      { id: "http://www.zotero.org/styles/apa", title: "APA" },
+    ]);
+  });
 });
 
 describe("resolveInstalledStyle", () => {
