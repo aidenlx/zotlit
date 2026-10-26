@@ -59,7 +59,6 @@ import type {
   InspectServices,
   SourceVersion,
 } from "./inspect";
-import { profileRead } from "./sync-template";
 import {
   choices,
   CITATION_EXAMPLE_NAMES,
@@ -817,9 +816,7 @@ export function createCheckHandler(
             params.draft === undefined &&
             selected.stamp &&
             (!selected.stamp.id ||
-              !(yield* profileRead(
-                (yield* Profile).resolveProfile(selected.stamp.id),
-              )))
+              !(yield* (yield* Profile).resolveProfile(selected.stamp.id)))
           )
             return finish(sourceContext, {
               ok: false,
