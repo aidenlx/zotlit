@@ -10,14 +10,11 @@ import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { LocalBridgeHandle } from "@/services/local-bridge/handle";
 import type { LocalServer } from "@/services/local-server/service";
 import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
-import type { PlainProfile } from "@/services/profile/plain";
 import type { Release } from "@/services/release/service";
 import type { Settings } from "@/services/settings/schema";
 import type { PluginSettings } from "@/services/settings/service";
-import type { PlainTemplate } from "@/services/template/plain";
 
 import type { SettingTabShape } from "./effect-tab";
-import type { ImportProfile } from "./import-profile-modal";
 
 /** Settings keys, used to type declarative `control` bindings against the schema. */
 export type SettingsKey = keyof Settings;
@@ -69,7 +66,6 @@ export interface SettingTabContext {
   tab: SettingTabShape;
   webWorkbenchEnabled: boolean;
   app: App;
-  importProfile: ImportProfile;
   /**
    * The plugin's own manifest — its version and its folder in the vault. The
    * plugin object itself stays out of this context: its `services` getter is a
@@ -83,25 +79,6 @@ export interface SettingTabContext {
     | "update"
     | "updateDefaultLiteratureNoteProfileBindings"
     | "changes"
-  >;
-  profile: Pick<
-    PlainProfile,
-    | "loaded"
-    | "profiles"
-    | "diagnostics"
-    | "resolveProfile"
-    | "changed"
-    | "duplicate"
-    | "ejectDefault"
-    | "restoreDefault"
-    | "prepareDelete"
-    | "delete"
-    | "getSource"
-    | "defaultDocumentPath"
-    | "prepareCreate"
-    | "prepareShare"
-    | "prepareImport"
-    | "materializeDefault"
   >;
   /** The one loopback listener, read by the Local server rows. */
   localServer: LocalServerActions;
@@ -118,29 +95,6 @@ export interface SettingTabContext {
   /** The live Excerpt Image display, released with the store it paints from. */
   excerptDisplay: Pick<ExcerptDisplayService, "clear">;
   release: ReleaseTabActions;
-  /**
-   * The template store the Templates, Frontmatter, and Profile rows read.
-   * Injected rather than reached through `plugin.services`: the first
-   * `getSettingDefinitions()` runs from `addSettingTab()`, while `onload()` is
-   * still wiring and that escape hatch still throws.
-   */
-  template: Pick<
-    PlainTemplate,
-    | "loaded"
-    | "javascriptTemplatesEnabled"
-    | "setJavascriptTemplatesEnabled"
-    | "getUnrecognizedFiles"
-    | "getPartialDocuments"
-    | "getReservedPartialFiles"
-    | "getPartialDocument"
-    | "deletePartial"
-    | "getCitationTemplateStatus"
-    | "restoreCitationTemplate"
-    | "getPartialNames"
-    | "createPartial"
-    | "materializeCitationTemplate"
-    | "compile-status-changed"
-  >;
   /** The device-wide Pandoc engine binary, installed and uninstalled from here. */
   pandocEngine: ManagedBinaryActions;
   /** The device-wide Chinese Segmenter binary, installed and uninstalled from here. */

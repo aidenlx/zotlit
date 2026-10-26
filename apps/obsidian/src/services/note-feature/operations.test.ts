@@ -384,64 +384,70 @@ describe("Profile source selection", () => {
       }),
   );
 
-  it("previews the draft stamp and document Properties, then creates at the same suffixed path", async () => {
-    const id = "Bk3Qn7XvT2Lp" as ProfileId;
-    const { deps } = makeUpdateHarness({
-      content: "",
-      settings: {
-        profiles: [
-          {
-            id,
-            label: "Reading",
-            document: "reading.md",
-            bindings: { "note.literature-folder": "Reading" },
+  it.effect(
+    "previews the draft stamp and document Properties, then creates at the same suffixed path",
+    () =>
+      Effect.gen(function* () {
+        const id = "Bk3Qn7XvT2Lp" as ProfileId;
+        const { deps } = makeUpdateHarness({
+          content: "",
+          settings: {
+            profiles: [
+              {
+                id,
+                label: "Reading",
+                document: "reading.md",
+                bindings: { "note.literature-folder": "Reading" },
+              },
+            ],
           },
-        ],
-      },
-    });
-    const app = makeApp();
-    deps.app = app;
-    const prepareImages = vi.fn(() => ({
-      annotationImageLink: () => null,
-      prepare: Effect.void,
-      summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
-    }));
-    deps.excerptImages = prepareImages;
-    const document = makeDocumentTemplate({
-      filename: `Paper${filenameSuffix()}`,
-      createBody: "# A Study",
-      frontmatter: compileDocumentFrontmatter([
-        { key: "topic", merge: "replace", value: "Research" },
-      ]),
-    });
-    deps.template = {
-      ...makeTemplate(),
-      getLiteratureNoteTemplate: () => document,
-    };
-    stubIndexedKeyUpdate(updateContext());
-    await app.vault.create("Reading/Paper.md", "Occupied");
-    const feature = createNoteFeature(deps);
-    const preview = feature.prepareProfileNote({
-      profile: profileReader(
-        deps.bridge!.runSync(deps.settings.current),
-      ).resolveProfile(id)!,
-      document,
-      note: updateContext(),
-      filename: {},
-    });
-    expect(preview.path).not.toBe("Reading/Paper.md");
-    expect(preview.properties).toEqual({
-      "zotero-key": "ABC23456",
-      "zotlit-profile": "Reading (Bk3Qn7XvT2Lp)",
-      topic: "Research",
-    });
-    expect(preview.body).toBe("# A Study");
-    expect(prepareImages).not.toHaveBeenCalled();
-    expect(app.vault.create).toHaveBeenCalledTimes(1);
-    const file = createdFile(await preview.create());
-    expect(file.path).toBe(preview.path);
-    expect(app.vault.contents.get("Reading/Paper.md")).toBe("Occupied");
-  });
+        });
+        const app = makeApp();
+        deps.app = app;
+        const prepareImages = vi.fn(() => ({
+          annotationImageLink: () => null,
+          prepare: Effect.void,
+          summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
+        }));
+        deps.excerptImages = prepareImages;
+        const document = makeDocumentTemplate({
+          filename: `Paper${filenameSuffix()}`,
+          createBody: "# A Study",
+          frontmatter: compileDocumentFrontmatter([
+            { key: "topic", merge: "replace", value: "Research" },
+          ]),
+        });
+        deps.template = {
+          ...makeTemplate(),
+          getLiteratureNoteTemplate: () => document,
+        };
+        stubIndexedKeyUpdate(updateContext());
+        yield* Effect.promise(() =>
+          app.vault.create("Reading/Paper.md", "Occupied"),
+        );
+        const feature = createNoteFeature(deps);
+        const preview = yield* feature.service.prepareProfileNote({
+          profile: profileReader(
+            deps.bridge!.runSync(deps.settings.current),
+          ).resolveProfile(id)!,
+          document,
+          note: updateContext(),
+          filename: {},
+        });
+        expect(preview.path).not.toBe("Reading/Paper.md");
+        expect(preview.properties).toEqual({
+          "zotero-key": "ABC23456",
+          "zotlit-profile": "Reading (Bk3Qn7XvT2Lp)",
+          topic: "Research",
+        });
+        expect(preview.body).toBe("# A Study");
+        expect(prepareImages).not.toHaveBeenCalled();
+        expect(app.vault.create).toHaveBeenCalledTimes(1);
+        const file = createdFile(yield* preview.create);
+        expect(file.path).toBe(preview.path);
+        expect(app.vault.contents.get("Reading/Paper.md")).toBe("Occupied");
+      }),
+  );
 
   describe("with inert global Managed Frontmatter fields", () => {
     // The global field set has a JavaScript field while JavaScript Templates
@@ -466,29 +472,35 @@ describe("Profile source selection", () => {
         getLiteratureNoteTemplate: () => document,
       };
       const feature = createNoteFeature(deps);
-      return () =>
-        feature.prepareProfileNote({
-          profile: profileReader(
-            deps.bridge!.runSync(deps.settings.current),
-          ).resolveProfile(id)!,
-          document,
-          note: updateContext(),
-          filename: {},
-        });
+      return feature.service.prepareProfileNote({
+        profile: profileReader(
+          deps.bridge!.runSync(deps.settings.current),
+        ).resolveProfile(id)!,
+        document,
+        note: updateContext(),
+        filename: {},
+      });
     };
 
-    it("previews a document with its own Managed Frontmatter", () => {
-      const preview = previewWith(
-        compileDocumentFrontmatter([
-          { key: "topic", merge: "replace", value: "Research" },
-        ]),
-      )();
-      expect(preview.properties).toMatchObject({ topic: "Research" });
-    });
+    it.effect("previews a document with its own Managed Frontmatter", () =>
+      Effect.gen(function* () {
+        const preview = yield* previewWith(
+          compileDocumentFrontmatter([
+            { key: "topic", merge: "replace", value: "Research" },
+          ]),
+        );
+        expect(preview.properties).toMatchObject({ topic: "Research" });
+      }),
+    );
 
-    it("refuses a legacy document, which composes the global fields", () => {
-      expect(previewWith(undefined)).toThrow("Inert global fields");
-    });
+    it.effect(
+      "refuses a legacy document, which composes the global fields",
+      () =>
+        Effect.gen(function* () {
+          const exit = yield* Effect.exit(previewWith(undefined));
+          expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(inert);
+        }),
+    );
   });
 
   it.effect(

@@ -13,13 +13,13 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { LocalServer } from "@/services/local-server/service";
 import { defaults } from "@/services/settings/schema";
 
-import { testSettingTab } from "./__fixtures__";
+import { profileRowServices, testSettingTab } from "./__fixtures__";
 import { advancedPageItems, clearExcerptCache } from "./advanced";
 import type { SettingsKey, SettingTabContext } from "./context";
 
 function items(overrides: Partial<SettingTabContext> = {}) {
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    tab: testSettingTab().tab,
+    tab: testSettingTab(profileRowServices()).tab,
     webWorkbenchEnabled: true,
     app: stubService<SettingTabContext["app"]>("App", {
       loadLocalStorage: () => null,
@@ -27,9 +27,6 @@ function items(overrides: Partial<SettingTabContext> = {}) {
     }),
     settings: stubService<SettingTabContext["settings"]>("Settings", {
       current: Effect.succeed({ ...defaults, "log.to-file": false }),
-    }),
-    template: stubService<SettingTabContext["template"]>("Template", {
-      loaded: false,
     }),
     localServer: stubService<LocalServer["Service"]>("LocalServer", {
       effectivePort: Effect.succeed(null),

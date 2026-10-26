@@ -11,10 +11,10 @@ import { portCall } from "@/lib/legacy-port";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type {
-  ImportProfile,
   CreateProfile,
   CreatedProfile,
-} from "@/setting-tab/profiles";
+} from "@/setting-tab/create-profile-modal";
+import type { ImportProfile } from "@/setting-tab/import-profile-modal";
 import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
 
@@ -32,8 +32,8 @@ import { createWithNotice } from "./update-single";
 const logged = withLogCategory("note-feature");
 
 /**
- * The legacy values the interactive creation opens: the Profile dialogs of
- * the setting tab (ticket 16), and the App the picker and the notices'
+ * The values the interactive creation opens: the Profile dialogs of the
+ * setting tab, as Promise ports, and the App the picker and the notices'
  * recovery actions open in.
  */
 export interface InteractiveCreationPorts {
@@ -166,10 +166,10 @@ export const createNoteInteractively = Effect.fn("createNoteInteractively")(
     );
     if (created) {
       const { preview, profile } = created;
-      // The New profile dialog prepared its preview through the edge handle
-      // (ticket 16).
+      // The New profile dialog prepared this write: it writes the path the
+      // dialog showed, and an interrupt stops it.
       return yield* createPrepared(
-        portCall("create-profile-note", () => preview.create()),
+        preview.create,
         { label: profile.label },
         ports.app,
       );

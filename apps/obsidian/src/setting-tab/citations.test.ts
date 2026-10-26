@@ -9,7 +9,7 @@ import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
-import { testSettingTab } from "./__fixtures__";
+import { profileRowServices, testSettingTab } from "./__fixtures__";
 import {
   citationLocaleError,
   citationsPageItems,
@@ -29,7 +29,9 @@ describe("hover settings", () => {
   /** The Hover group's rows for a given saved hover action. */
   const hoverRows = (settings: Settings) => {
     const ctx = {
-      tab: testSettingTab().tab,
+      tab: testSettingTab(
+        profileRowServices({ template: { loaded: Effect.succeed(false) } }),
+      ).tab,
       app: { internalPlugins: { getEnabledPluginById: () => null } },
       settings: { current: Effect.succeed(settings) },
       pandocEngine: {
@@ -43,7 +45,6 @@ describe("hover settings", () => {
         runPromise: Effect.runPromise,
       },
       manifest: { version: "test" },
-      template: { loaded: false },
     } as unknown as SettingTabContext;
     const group = citationsPageItems(ctx).find(
       (item) =>
@@ -72,7 +73,9 @@ describe("hover settings", () => {
 describe("citation source settings", () => {
   it("offers each citation syntax as a source", () => {
     const ctx = {
-      tab: testSettingTab().tab,
+      tab: testSettingTab(
+        profileRowServices({ template: { loaded: Effect.succeed(false) } }),
+      ).tab,
       app: { internalPlugins: { getEnabledPluginById: () => null } },
       settings: { current: Effect.succeed(defaults) },
       pandocEngine: {
@@ -86,7 +89,6 @@ describe("citation source settings", () => {
         runPromise: Effect.runPromise,
       },
       manifest: { version: "test" },
-      template: { loaded: false },
     } as unknown as SettingTabContext;
     const sourceGroup = citationsPageItems(ctx).find(
       (item) =>

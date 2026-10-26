@@ -1,3 +1,4 @@
+import { it as effectIt } from "@effect/vitest";
 import {
   ButtonComponent,
   ExtraButtonComponent,
@@ -8,15 +9,17 @@ import {
   ToggleComponent,
   settingsOf,
 } from "@mock/obsidian";
+import { Effect, Fiber } from "effect";
 // @vitest-environment happy-dom
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { App, Setting as ObsidianSetting, SettingGroup } from "obsidian";
+import type { Setting as ObsidianSetting, SettingGroup } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { TemplateFacade } from "@zotlit/templates/facade";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -25,7 +28,10 @@ import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 
 import { testSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
-import { ShareProfileModal, profilesPage } from "./profiles";
+import { shareProfile } from "./profile-dialogs";
+import { profilesPage } from "./profiles";
+import { ShareProfileModal } from "./share-profile-modal";
+import type { ShareOutput } from "./share-profile-modal";
 
 const id = "Bk3Qn7XvT2Lp" as ProfileId;
 const source = `---
@@ -49,6 +55,18 @@ function dialogWith(
 ): ReturnType<typeof nativeDialog.requireDialog> {
   return stubService<ReturnType<typeof nativeDialog.requireDialog>>("Dialog", {
     showSaveDialog,
+  });
+}
+
+/** A Share output that records what each button hands it. */
+function recordedOutput() {
+  const share = vi.fn<ShareOutput>(async () => {});
+  return Object.assign(share, {
+    /** The bundles handed to `destination`, in order. */
+    sent: (destination: "clipboard" | "file") =>
+      share.mock.calls
+        .filter(([to]) => to === destination)
+        .map(([, source]) => source),
   });
 }
 
@@ -85,27 +103,18 @@ function observeControls(container: HTMLElement) {
   };
 }
 
-it("edits share metadata, bumps the version, and writes identical file and clipboard bytes without changing the vault", async () => {
-  await using stack = new AsyncDisposableStack();
-  const f = stack.use(
-    await profileServiceFixture({
-      "templates/zotlit-profile.books.md": source,
-      "templates/zotlit-partial.summary.md": "Shared summary",
-    }),
-  );
+it("edits share metadata, bumps the version, and hands both destinations the same bundle without changing the vault", async () => {
+  await using f = await profileServiceFixture({
+    "templates/zotlit-profile.books.md": source,
+    "templates/zotlit-partial.summary.md": "Shared summary",
+  });
   const before = new Map(f.vault.contents);
-  const folder = await mkdtemp(join(tmpdir(), "zotlit-share-"));
-  stack.defer(() => rm(folder, { recursive: true, force: true }));
-  const filePath = join(folder, "Books.md");
-  const clipboard = stack.use(
-    vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(),
+  const share = recordedOutput();
+  const modal = new ShareProfileModal(
+    f.app,
+    await f.profile.prepareShare(id),
+    share,
   );
-  stack.use(
-    vi
-      .spyOn(nativeDialog, "requireDialog")
-      .mockReturnValue(dialogWith(async () => ({ canceled: false, filePath }))),
-  );
-  const modal = new ShareProfileModal(f.app, await f.profile.prepareShare(id));
   modal.contentEl = document.createElement("div");
   using controls = observeControls(modal.contentEl);
   modal.onOpen();
@@ -115,7 +124,7 @@ it("edits share metadata, bumps the version, and writes identical file and clipb
   controls.type(m.profile_share_author(), "Research group");
   controls.type(m.profile_share_description(), "Revised notes");
   await controls.click(m.profile_share_copy());
-  const output = clipboard.mock.calls[0]![0];
+  const output = share.sent("clipboard")[0]!;
   const parsed = new TemplateFacade().parseLiteratureNoteTemplate(output);
   expect(parsed.manifest).toMatchObject({
     id,
@@ -127,12 +136,12 @@ it("edits share metadata, bumps the version, and writes identical file and clipb
   expect(parsed.manifest.folder).toBeUndefined();
   expect(parsed.manifest.importFolder).toBeUndefined();
   await controls.click(m.profile_share_save());
-  expect(await readFile(filePath, "utf8")).toBe(output);
+  expect(share.sent("file")).toEqual([output]);
   controls.toggle(m.profile_share_folders()).toggle(true);
   await controls.click(m.profile_share_copy());
   expect(
     new TemplateFacade().parseLiteratureNoteTemplate(
-      clipboard.mock.calls[1]![0],
+      share.sent("clipboard")[1]!,
     ).manifest,
   ).toMatchObject({
     folder: "Books",
@@ -142,19 +151,13 @@ it("edits share metadata, bumps the version, and writes identical file and clipb
   modal.onClose();
 });
 
-it("keeps an empty version inline and cancels a save without writing", async () => {
+it("keeps an empty version inline and hands nothing over until it is valid", async () => {
   await using f = await profileServiceFixture();
-  using clipboard = vi
-    .spyOn(navigator.clipboard, "writeText")
-    .mockResolvedValue();
-  using dialog = vi
-    .spyOn(nativeDialog, "requireDialog")
-    .mockReturnValue(
-      dialogWith(async () => ({ canceled: true, filePath: "" })),
-    );
+  const share = recordedOutput();
   const modal = new ShareProfileModal(
     f.app,
     await f.profile.prepareShare("default"),
+    share,
   );
   modal.contentEl = document.createElement("div");
   using controls = observeControls(modal.contentEl);
@@ -164,10 +167,10 @@ it("keeps an empty version inline and cancels a save without writing", async () 
     m.profile_share_version_required(),
   );
   await controls.click(m.profile_share_copy());
-  expect(clipboard).not.toHaveBeenCalled();
+  expect(share).not.toHaveBeenCalled();
   controls.type(m.profile_share_version(), "1.0.0");
   await controls.click(m.profile_share_save());
-  expect(dialog).toHaveBeenCalledOnce();
+  expect(share).toHaveBeenCalledOnce();
   expect(f.vault.contents.size).toBe(0);
   modal.onClose();
 });
@@ -183,28 +186,11 @@ it.each(["default", id] as const)(
     const container = document.createElement("div");
     const page = profilesPage(
       stubService<SettingTabContext>("SettingTabContext", {
-        tab: testSettingTab().tab,
-        app: stubService<App>("App", {
-          vault: stubService<App["vault"]>("Vault", {
-            getFileByPath: f.vault.getFileByPath.bind(f.vault),
-          }),
-        }),
+        tab: testSettingTab(await f.runtime.context()).tab,
+        app: f.app,
         settings: stubService<SettingTabContext["settings"]>("Settings", {
           current: f.settings.current,
         }),
-        profile: stubService<SettingTabContext["profile"]>("Profile", {
-          loaded: f.profile.loaded,
-          profiles: f.profile.profiles,
-          diagnostics: f.profile.diagnostics,
-          defaultDocumentPath: f.profile.defaultDocumentPath,
-          resolveProfile: f.profile.resolveProfile,
-          prepareShare: f.profile.prepareShare,
-        }),
-        template: stubService<SettingTabContext["template"]>(
-          "Template",
-          f.template,
-        ),
-        requestUpdate: vi.fn(),
       }),
     );
     const label =
@@ -240,37 +226,6 @@ it.each(["default", id] as const)(
   },
 );
 
-it("does not write when the Share sheet closes while the save dialog is open", async () => {
-  await using stack = new AsyncDisposableStack();
-  const f = stack.use(await profileServiceFixture());
-  const folder = await mkdtemp(join(tmpdir(), "zotlit-share-cancel-"));
-  stack.defer(() => rm(folder, { recursive: true, force: true }));
-  const filePath = join(folder, "Default.md");
-  const selection = Promise.withResolvers<{
-    canceled: boolean;
-    filePath: string;
-  }>();
-  stack.use(
-    vi
-      .spyOn(nativeDialog, "requireDialog")
-      .mockReturnValue(dialogWith(() => selection.promise)),
-  );
-  const modal = new ShareProfileModal(
-    f.app,
-    await f.profile.prepareShare("default"),
-  );
-  modal.contentEl = document.createElement("div");
-  using controls = observeControls(modal.contentEl);
-  modal.onOpen();
-  const pending = controls.click(m.profile_share_save());
-  modal.onClose();
-  selection.resolve({ canceled: false, filePath });
-  await pending;
-  await expect(readFile(filePath, "utf8")).rejects.toMatchObject({
-    code: "ENOENT",
-  });
-});
-
 it.each([true, false])(
   "shares the checkbox choice as exact text with includeMatch=%s",
   async (includeMatch) => {
@@ -293,28 +248,14 @@ importAnnotationsAsTemplate: false
 --- zotlit:annotation ---
 Annotation`;
     const original = prefix + match + suffix;
-    await using stack = new AsyncDisposableStack();
-    const f = stack.use(
-      await profileServiceFixture({
-        "templates/zotlit-profile.books.md": original,
-      }),
-    );
-    const folder = await mkdtemp(join(tmpdir(), "zotlit-share-match-"));
-    stack.defer(() => rm(folder, { recursive: true, force: true }));
-    const filePath = join(folder, "Books.md");
-    stack.use(
-      vi
-        .spyOn(nativeDialog, "requireDialog")
-        .mockReturnValue(
-          dialogWith(async () => ({ canceled: false, filePath })),
-        ),
-    );
-    using clipboard = vi
-      .spyOn(navigator.clipboard, "writeText")
-      .mockResolvedValue();
+    await using f = await profileServiceFixture({
+      "templates/zotlit-profile.books.md": original,
+    });
+    const share = recordedOutput();
     const modal = new ShareProfileModal(
       f.app,
       await f.profile.prepareShare(id),
+      share,
     );
     modal.contentEl = document.createElement("div");
     using controls = observeControls(modal.contentEl);
@@ -326,13 +267,10 @@ Annotation`;
     if (!includeMatch)
       controls.toggle(m.profile_share_include_match()).toggle(false);
     await controls.click(m.profile_share_copy());
-    expect(clipboard).toHaveBeenCalledWith(
-      prefix + (includeMatch ? match : "") + suffix,
-    );
     await controls.click(m.profile_share_save());
-    expect(await readFile(filePath, "utf8")).toBe(
-      prefix + (includeMatch ? match : "") + suffix,
-    );
+    const expected = prefix + (includeMatch ? match : "") + suffix;
+    expect(share.sent("clipboard")).toEqual([expected]);
+    expect(share.sent("file")).toEqual([expected]);
     expect(f.vault.contents.get("templates/zotlit-profile.books.md")).toBe(
       original,
     );
@@ -349,10 +287,12 @@ it("checks the partials the profile calls, and drops one the reader clears", asy
     "templates/zotlit-partial.authors.md": "{{ zt.creators }}",
     "templates/zotlit-partial.venue-line.md": "{{ zt.publicationTitle }}",
   });
-  using clipboard = vi
-    .spyOn(navigator.clipboard, "writeText")
-    .mockResolvedValue();
-  const modal = new ShareProfileModal(f.app, await f.profile.prepareShare(id));
+  const share = recordedOutput();
+  const modal = new ShareProfileModal(
+    f.app,
+    await f.profile.prepareShare(id),
+    share,
+  );
   modal.contentEl = document.createElement("div");
   using controls = observeControls(modal.contentEl);
   modal.onOpen();
@@ -364,7 +304,7 @@ it("checks the partials the profile calls, and drops one the reader clears", asy
   await controls.click(m.profile_share_copy());
   expect(
     new TemplateFacade()
-      .parseLiteratureNoteTemplate(clipboard.mock.calls[0]![0])
+      .parseLiteratureNoteTemplate(share.sent("clipboard")[0]!)
       .manifest.partials?.map(({ name }) => name),
   ).toEqual(["authors", "venue-line"]);
 
@@ -374,7 +314,7 @@ it("checks the partials the profile calls, and drops one the reader clears", asy
   await controls.click(m.profile_share_copy());
   expect(
     new TemplateFacade().parseLiteratureNoteTemplate(
-      clipboard.mock.calls[1]![0],
+      share.sent("clipboard")[1]!,
     ).manifest.partials,
   ).toBeUndefined();
   modal.onClose();
@@ -414,7 +354,7 @@ it("opens for a profile whose call no document answers, and names it", async () 
   expect(plan.reachable).toEqual([]);
   expect(plan.partials).toEqual(["venue-line"]);
 
-  const modal = new ShareProfileModal(f.app, plan);
+  const modal = new ShareProfileModal(f.app, plan, recordedOutput());
   modal.contentEl = document.createElement("div");
   using controls = observeControls(modal.contentEl);
   modal.onOpen();
@@ -425,3 +365,148 @@ it("opens for a profile whose call no document answers, and names it", async () 
   expect(controls.toggle("venue-line").getValue()).toBe(false);
   modal.onClose();
 });
+
+/**
+ * The Share dialog over a Profile service fixture, started as the settings
+ * row starts it, and drawn. `answer` answers the save dialog with a path in
+ * the case's own folder.
+ */
+const sharing = Effect.fnUntraced(function* (
+  answer: (
+    folder: string,
+  ) => Promise<{ canceled: boolean; filePath: string }> = async () => ({
+    canceled: true,
+    filePath: "",
+  }),
+) {
+  const f = yield* Effect.acquireDisposable(
+    Effect.promise(() =>
+      profileServiceFixture({
+        "templates/zotlit-profile.books.md": source,
+        "templates/zotlit-partial.summary.md": "Shared summary",
+      }),
+    ),
+  );
+  const folder = yield* Effect.acquireRelease(
+    Effect.promise(() => mkdtemp(join(tmpdir(), "zotlit-share-"))),
+    (folder) =>
+      Effect.promise(() => rm(folder, { recursive: true, force: true })),
+  );
+  const spy = <A extends Disposable>(acquire: () => A) =>
+    Effect.acquireDisposable(Effect.sync(acquire));
+  const clipboard = yield* spy(() =>
+    vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(),
+  );
+  const showSaveDialog = vi.fn(() => answer(folder));
+  yield* spy(() =>
+    vi
+      .spyOn(nativeDialog, "requireDialog")
+      .mockReturnValue(dialogWith(showSaveDialog)),
+  );
+  const opened = yield* spy(() => vi.spyOn(Modal.prototype, "open"));
+  const notifier = testNotifier();
+  const services = yield* Effect.promise(() => f.runtime.context());
+  const pending = yield* shareProfile(f.app, id).pipe(
+    Effect.provideContext(services),
+    Effect.provide(notifier.layer),
+    Effect.forkChild({ startImmediately: true }),
+  );
+  yield* until(() => opened.mock.calls.length === 1);
+  const modal = Modal.instances.at(-1)!;
+  expect(modal).toBeInstanceOf(ShareProfileModal);
+  const controls = yield* spy(() => observeControls(modal.contentEl));
+  modal.onOpen();
+  return {
+    modal,
+    controls,
+    pending,
+    clipboard,
+    showSaveDialog,
+    folder,
+    notices: () => notifier.notices.map(({ messages }) => messages[0]),
+  };
+});
+
+/** Let the dialog's fiber and the Promises it waits on run until `done`. */
+const until = Effect.fnUntraced(function* (done: () => boolean) {
+  for (let turn = 0; turn < 1000 && !done(); turn++) yield* Effect.yieldNow;
+  expect(done()).toBe(true);
+});
+
+/** Press `label`, as the user does; the output it starts runs on. */
+const press = (
+  s: { controls: ReturnType<typeof observeControls> },
+  label: string,
+) => Effect.sync(() => void s.controls.click(label));
+
+effectIt.effect(
+  "copies the bundle and saves the same bytes to the file the user picks",
+  () =>
+    Effect.gen(function* () {
+      let saved = "";
+      const s = yield* sharing(async (folder) => {
+        saved = join(folder, "Books.md");
+        return { canceled: false, filePath: saved };
+      });
+      yield* press(s, m.profile_share_copy());
+      yield* until(() => s.notices().length === 1);
+      const output = s.clipboard.mock.calls[0]![0];
+      yield* press(s, m.profile_share_save());
+      yield* until(() => s.notices().length === 2);
+      expect(yield* Effect.promise(() => readFile(saved, "utf8"))).toBe(output);
+      expect(s.notices()).toEqual([
+        m.profile_share_copied(),
+        m.profile_share_saved({ file: "Books.md" }),
+      ]);
+      s.modal.onClose();
+      yield* Fiber.join(s.pending);
+    }),
+);
+
+effectIt.effect("cancels a save without writing or a notice", () =>
+  Effect.gen(function* () {
+    const s = yield* sharing();
+    yield* press(s, m.profile_share_save());
+    yield* until(() => s.showSaveDialog.mock.calls.length === 1);
+    s.modal.onClose();
+    yield* Fiber.join(s.pending);
+    expect(yield* Effect.promise(() => readdir(s.folder))).toEqual([]);
+    expect(s.notices()).toEqual([]);
+  }),
+);
+
+effectIt.effect(
+  "does not write when the Share sheet closes while the save dialog is open",
+  () =>
+    Effect.gen(function* () {
+      const selection = Promise.withResolvers<{
+        canceled: boolean;
+        filePath: string;
+      }>();
+      const s = yield* sharing(() => selection.promise);
+      yield* press(s, m.profile_share_save());
+      yield* until(() => s.showSaveDialog.mock.calls.length === 1);
+      s.modal.onClose();
+      // The native save dialog holds the window until it answers; the closed
+      // sheet's Scope then stops the output before it writes.
+      selection.resolve({
+        canceled: false,
+        filePath: join(s.folder, "Default.md"),
+      });
+      yield* Fiber.join(s.pending);
+      expect(yield* Effect.promise(() => readdir(s.folder))).toEqual([]);
+      expect(s.notices()).toEqual([]);
+    }),
+);
+
+effectIt.effect("tells the user when the clipboard refuses the bundle", () =>
+  Effect.gen(function* () {
+    const s = yield* sharing();
+    s.clipboard.mockRejectedValueOnce(new Error("Clipboard unavailable"));
+    yield* press(s, m.profile_share_copy());
+    yield* until(() => s.notices().length === 1);
+    expect(s.notices()).toEqual([m.profile_share_failed()]);
+    s.modal.onClose();
+    yield* Fiber.join(s.pending);
+  }),
+);

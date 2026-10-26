@@ -11,8 +11,6 @@ import type { NoteCreation } from "./creation-handle";
 import type {
   CreateNoteOptions,
   CreateNoteResult,
-  ProfileNotePreview,
-  ProfileNotePreviewOptions,
   UpdateResult,
 } from "./types";
 
@@ -52,7 +50,6 @@ export type {
  * over the `NoteFeature` tag.
  */
 export interface NoteFeatureHandle extends NoteCitations, NoteCreation {
-  prepareProfileNote(options: ProfileNotePreviewOptions): ProfileNotePreview;
   /** @see updateNote */
   updateNote(
     file: TFile,

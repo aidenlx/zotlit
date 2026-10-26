@@ -1,23 +1,34 @@
 // Duplicate a Profile and open the copy through the shared workbench flow.
+import { Effect } from "effect";
+
 import * as m from "@/lib/i18n/generated/messages";
-import { BaseNotice } from "@/lib/notice";
+import { portCall } from "@/lib/legacy-port";
+import { Notifier } from "@/lib/notifier";
 import type { ProfileSelector } from "@/lib/profile-stamp";
+import { Profile, ProfileOperationError } from "@/services/profile/service";
 
 import type { SettingTabContext } from "./context";
 
-export async function duplicateProfileToWorkbench(
-  ctx: Pick<SettingTabContext, "app" | "profile" | "customize">,
+export const duplicateProfileToWorkbench = Effect.fn(
+  "duplicateProfileToWorkbench",
+)(function* (
+  ctx: Pick<SettingTabContext, "app" | "customize">,
   selector: ProfileSelector,
   options: { label?: string } = {},
-): Promise<void> {
-  const source = ctx.profile.resolveProfile(selector);
-  if (!source) throw new Error(`Unknown Profile: ${selector}`);
-  const copy = await ctx.profile.duplicate(selector, options);
+) {
+  const profile = yield* Profile;
+  const source = yield* profile.resolveProfile(selector);
+  if (!source)
+    return yield* new ProfileOperationError({
+      message: `Unknown Profile: ${selector}`,
+      cause: undefined,
+    });
+  const copy = yield* profile.duplicate(selector, options);
   ctx.app.setting.close();
-  await ctx.customize({ profileId: copy.id });
-  new BaseNotice(
+  yield* portCall("customize", () => ctx.customize({ profileId: copy.id }));
+  yield* (yield* Notifier).show(
     m.notice_profile_duplicated({
       label: source.label ?? m.settings_profile_default_name(),
     }),
   );
-}
+});

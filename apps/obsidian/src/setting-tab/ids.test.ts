@@ -19,7 +19,7 @@ import type { LocalServer } from "@/services/local-server/service";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { defaults } from "@/services/settings/schema";
 
-import { testSettingTab } from "./__fixtures__";
+import { profileRowServices, testSettingTab } from "./__fixtures__";
 import { advancedPageItems } from "./advanced";
 import { attachmentPageItems } from "./attachments";
 import { citationsPageItems } from "./citations";
@@ -38,18 +38,20 @@ vi.mock("@/views/template-workbench/register", () => ({
 function ctx(): SettingTabContext {
   return stubService<SettingTabContext>("SettingTabContext", {
     tab: testSettingTab(
-      Context.make(
-        LibraryScope,
-        LibraryScope.of({
-          state: Effect.die("unread"),
-          changes: Stream.empty,
-          current: Effect.succeed(null),
-          effective: Effect.succeed({ mode: "all" }),
-          invalid: Effect.succeed(false),
-          libraries: Effect.succeed([]),
-          libraryRows: Effect.succeed(null),
-          resolveLibraries: () => Effect.die("unread"),
-        }),
+      profileRowServices().pipe(
+        Context.add(
+          LibraryScope,
+          LibraryScope.of({
+            state: Effect.die("unread"),
+            changes: Stream.empty,
+            current: Effect.succeed(null),
+            effective: Effect.succeed({ mode: "all" }),
+            invalid: Effect.succeed(false),
+            libraries: Effect.succeed([]),
+            libraryRows: Effect.succeed(null),
+            resolveLibraries: () => Effect.die("unread"),
+          }),
+        ),
       ),
     ).tab,
     webWorkbenchEnabled: true,
@@ -76,12 +78,6 @@ function ctx(): SettingTabContext {
       current: Effect.succeed(defaults),
       changes: Stream.empty,
     }),
-    profile: stubService<SettingTabContext["profile"]>("Profile", {
-      loaded: true,
-      profiles: [],
-      diagnostics: [],
-      defaultDocumentPath: "templates/zotlit-profile.default.md",
-    }),
     localServer: stubService<LocalServer["Service"]>("LocalServer", {
       effectivePort: Effect.succeed(null),
       effectivePortChanges: Stream.empty,
@@ -104,13 +100,6 @@ function ctx(): SettingTabContext {
       "CitationIndex",
       { reset: async () => {} },
     ),
-    template: stubService<SettingTabContext["template"]>("Template", {
-      loaded: true,
-      javascriptTemplatesEnabled: false,
-      getPartialDocuments: () => [],
-      getReservedPartialFiles: () => [],
-      getUnrecognizedFiles: () => [],
-    }),
     release: stubService<SettingTabContext["release"]>("Release", {}),
     pandocEngine: {
       binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
