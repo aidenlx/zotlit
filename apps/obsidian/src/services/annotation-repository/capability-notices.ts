@@ -25,7 +25,7 @@ export interface CapabilityNotice {
   /** Whether it waits to be dismissed rather than timing out. */
   sticky: boolean;
   /** Optional display time; problems use the renderer's normal reading time. */
-  duration?: Temporal.Duration;
+  durationMs?: number;
   /** The one action offered, or null where there is nothing to open. */
   action: string | null;
 }
@@ -45,7 +45,7 @@ export function allowEditingNotice(
   if (!("failure" in result)) {
     return {
       ...plainNotice(m.notice_zotero_editing_enabled()),
-      duration: Temporal.Duration.from({ seconds: 3 }),
+      durationMs: 3000,
     };
   }
   switch (result.failure.kind) {

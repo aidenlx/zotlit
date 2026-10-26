@@ -62,7 +62,7 @@ describe("authorization notice lifetime", () => {
     const notice = allowEditingNotice({ value: undefined });
 
     expect(notice).toMatchObject({ sticky: false, action: null });
-    expect(notice?.duration?.total("seconds")).toBe(3);
+    expect(notice?.durationMs).toBe(3000);
   });
 
   it.each(["not-remembered", "not-saved"] as const)(
@@ -71,7 +71,7 @@ describe("authorization notice lifetime", () => {
       const notice = allowEditingNotice({ failure: { kind } });
 
       expect(notice).toMatchObject({ sticky: false });
-      expect(notice).not.toHaveProperty("duration");
+      expect(notice).not.toHaveProperty("durationMs");
     },
   );
 });
@@ -162,8 +162,8 @@ describe("a write Zotero refused", () => {
 
     expect(invalid).toMatchObject({ sticky: true });
     expect(unsupported).toMatchObject({ sticky: true });
-    expect(invalid).not.toHaveProperty("duration");
-    expect(unsupported).not.toHaveProperty("duration");
+    expect(invalid).not.toHaveProperty("durationMs");
+    expect(unsupported).not.toHaveProperty("durationMs");
     expect(invalid?.lines).toEqual(
       readOnlyLines("invalid-response", time.instant),
     );

@@ -46,11 +46,9 @@ export function capabilityNoticeMessage(
 }
 
 /** How long one {@link CapabilityNotice} stays, in ms; `0` keeps it until dismissed. */
-function noticeDuration({ sticky, duration }: CapabilityNotice): number {
+function noticeDuration({ sticky, durationMs }: CapabilityNotice): number {
   if (sticky) return 0;
-  return duration === undefined
-    ? Duration.toMillis(NOTICE_DURATION)
-    : duration.total("milliseconds");
+  return durationMs ?? Duration.toMillis(NOTICE_DURATION);
 }
 
 /**
