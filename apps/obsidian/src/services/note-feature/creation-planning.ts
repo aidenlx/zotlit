@@ -106,18 +106,34 @@ export class ManagedFrontmatterRefused extends Schema.TaggedError<
   }
 }
 
-/** The create gate rejected; `cause` holds its rejection. */
-export class CreateRejected extends Schema.TaggedError<
-  CreateRejected,
+/**
+ * A legacy Promise port rejected at `step`; `cause` holds its rejection.
+ * A local copy of the shape of `lib/legacy-port.ts`, which 13a adds.
+ */
+export class LegacyPortError extends Schema.TaggedError<
+  LegacyPortError,
   { readonly brand: unique symbol }
->()("CreateRejected", { cause: Schema.Defect() }) {}
+>()("LegacyPortError", { step: Schema.String, cause: Schema.Defect() }) {
+  override get message(): string {
+    return this.cause instanceof Error
+      ? this.cause.message
+      : String(this.cause);
+  }
+}
+
+/** `call` as an Effect that fails with {@link LegacyPortError} on a rejection. */
+const portCall = <A>(step: string, call: () => Promise<A>) =>
+  Effect.tryPromise({
+    try: call,
+    catch: (cause) => new LegacyPortError({ step, cause }),
+  });
 
 /** {@link ProfileNotePreview} whose create runs on the services. */
 export type PreparedProfileNote = Omit<ProfileNotePreview, "create"> & {
   readonly create: Effect.Effect<
     CreateNoteResult,
     | ItemNotFound
-    | CreateRejected
+    | LegacyPortError
     | Effect.Error<ZoteroReads["Service"]["snapshot"]>
     | Effect.Error<ReturnType<ZoteroReadsApi["ItemsByIndexedKeys"]>>,
     ZoteroReads
@@ -541,15 +557,9 @@ const prepareProfileNote = Effect.fnUntraced(function* (
             message: m.notice_protocol_item_not_found(),
           });
         // Awaited inside the Snapshot's scope, which the create reads through.
-        return yield* Effect.tryPromise({
-          try: () =>
-            create(item, {
-              profile: profile.selector,
-              preparedPath,
-              reads,
-            }),
-          catch: (cause) => new CreateRejected({ cause }),
-        });
+        return yield* portCall("create note", () =>
+          create(item, { profile: profile.selector, preparedPath, reads }),
+        );
       }),
     ),
   };

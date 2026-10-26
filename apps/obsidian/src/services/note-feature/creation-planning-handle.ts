@@ -74,7 +74,7 @@ export function bindCreationPlanning(
         create: () =>
           run(
             preview.create.pipe(
-              Effect.catchTag("CreateRejected", ({ cause }) =>
+              Effect.catchTag("LegacyPortError", ({ cause }) =>
                 Effect.fail(cause),
               ),
             ),
