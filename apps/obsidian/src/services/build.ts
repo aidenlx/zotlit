@@ -1,25 +1,32 @@
 import { Effect } from "effect";
 import type { FileSystemAdapter } from "obsidian";
 
+import { passAborted } from "@/lib/abort-error";
 import { cliRunner } from "@/lib/cli-command";
+import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
-import { effectBridge } from "@/lib/effect-bridge";
+import { effectBridge, exitOver, valueOr } from "@/lib/effect-bridge";
 import { fromInstant } from "@/lib/effect-clock";
 import { buildRuntime } from "@/lib/effect-layer";
-import { languagePackEdge } from "@/lib/i18n";
-import { Notifier } from "@/lib/notifier";
 import { revealSetting } from "@/lib/open-settings";
 import { ZoteroHttp } from "@/lib/zotero-http";
 import { libraryTagNamesOf } from "@/services/database/library-tag-names";
+import type { ImportProfile } from "@/setting-tab/import-profile-modal";
 import {
-  createProfileCreator,
-  createProfileImporter,
-} from "@/setting-tab/profiles";
+  createProfileDialog,
+  importProfileDialog,
+} from "@/setting-tab/profile-dialogs";
+import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { blockedNotice } from "@/views/annot-view/card-verbs";
 import {
   annotationCardShown,
   revealAnnotationInView,
 } from "@/views/annot-view/register";
+import {
+  profileCustomization,
+  saveProfileCustomization,
+} from "@/views/template-workbench/preferences";
+import { openNativeProfile } from "@/views/template-workbench/register";
 import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
@@ -27,8 +34,6 @@ import { AnnotationPopover } from "./annotation-popover/service";
 import { CapabilityNotices } from "./annotation-repository/notices";
 import { bindCapabilityNotices } from "./annotation-repository/notices-handle";
 import { AnnotationRepository } from "./annotation-repository/service";
-import { bindAttachmentImport } from "./attachment-import/handle";
-import { AttachmentImport } from "./attachment-import/service";
 import { createPdfReader } from "./attachment-open/actions";
 import { openWithSystem } from "./attachment-open/capture";
 import { bindLiteratureNoteAttachments } from "./attachment-open/handle";
@@ -48,22 +53,17 @@ import { CitekeyEditor } from "./citekey-editor/service";
 import { ExcerptDisplays } from "./excerpt-image/display";
 import { ExcerptImages } from "./excerpt-image/layer";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
-import { savedExcerptRequestOver } from "./excerpt-image/request";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
 import { bindItemLookup } from "./item-lookup/handle";
 import { ItemLookup } from "./item-lookup/service";
 import { bindQuery } from "./item-query/handle";
 import { QueryService } from "./item-query/service";
-import { LanguagePack } from "./language-pack/service";
 import type { LanguagePackStartup } from "./language-pack/service";
 import { plainLibraryScope } from "./library-scope/plain";
-import { bindCustomize } from "./local-bridge/customize";
-import type {
-  CustomizePorts,
-  CustomizeServices,
-} from "./local-bridge/customize";
+import { bindCustomize, Customize } from "./local-bridge/customize";
 import { bindLocalBridge } from "./local-bridge/handle";
+import { createLaunchSheet } from "./local-bridge/launch-sheet";
 import { LocalBridge } from "./local-bridge/service";
 import { LocalServer } from "./local-server/service";
 import { bindManagedBinary } from "./managed-binary/handle";
@@ -92,15 +92,14 @@ import { plainQueryClients } from "./query-client/plain";
 import { Release } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import { PluginSettings } from "./settings/service";
+import type { TemplateDataServices } from "./template-workbench/data";
 import { bindTemplateData } from "./template-workbench/data-handle";
-import type { TemplateDataHandleServices } from "./template-workbench/data-handle";
 import type { TemplateMigrationOptions } from "./template/migration";
 import { plainTemplate, plainTemplateMigration } from "./template/plain";
 import { plainUseLedger } from "./use-ledger/plain";
 import { writeReadUse } from "./zotero-local-api/last-read";
 import { ZoteroLocalApi } from "./zotero-local-api/service";
 import { plainZoteroPref } from "./zotero-pref/plain";
-import { ZoteroPref } from "./zotero-pref/service";
 import { plainZoteroReads } from "./zotero-reads/plain";
 import { ZoteroReads } from "./zotero-reads/service";
 
@@ -138,22 +137,12 @@ export async function buildServices(
   >((resolve) => {
     bindMigration = resolve;
   });
-  // The note creation opens the setting tab's Profile dialogs, which the
-  // container builds after the graph (ticket 16 converts them).
-  let bindProfileDialogs!: (
-    dialogs: Pick<InteractiveCreationPorts, "createProfile" | "importProfile">,
-  ) => void;
-  const profileDialogs = new Promise<
-    Pick<InteractiveCreationPorts, "createProfile" | "importProfile">
-  >((resolve) => {
-    bindProfileDialogs = resolve;
-  });
+  // The note creation opens the setting tab's Profile dialogs, which run in
+  // the caller's fiber with the caller's services.
   const creation: InteractiveCreationPorts = {
     app: plugin.app,
-    createProfile: async (options) =>
-      (await profileDialogs).createProfile(options),
-    importProfile: async (options) =>
-      (await profileDialogs).importProfile(options),
+    createProfile: (options) => createProfileDialog(plugin.app, options),
+    importProfile: (options) => importProfileDialog(plugin.app, options),
   };
   // The protocol handlers open the note import's modals and the Attachment
   // opener, which the container builds after the graph.
@@ -209,6 +198,22 @@ export async function buildServices(
             void revealAnnotationInView(plugin, annotationKey),
         },
         creation,
+        customize: {
+          webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
+          pluginVersion: plugin.manifest.version,
+          confirmLaunch: createLaunchSheet(plugin.app),
+          openExternal: (url) => window.open(url),
+          preference: () => profileCustomization(plugin.app),
+          rememberPreference: (value) =>
+            saveProfileCustomization(plugin.app, value),
+          openNative: ({ item, originatingNote }, target) =>
+            openNativeProfile(plugin.app, target, {
+              ...(item ? { itemIndexedKey: item.key } : {}),
+              originatingNote,
+              explainUnsupported: false,
+              customize: true,
+            }),
+        },
         protocol,
         excerpt: {
           openStore: () => openExcerptStore(plugin.app.appId),
@@ -247,16 +252,6 @@ export async function buildServices(
     })
     .useValue({ release: () => runtime.runSync(Release) })
     .useValue({
-      languagePack: () =>
-        languagePackEdge(
-          {
-            pack: runtime.runSync(LanguagePack),
-            notifier: runtime.runSync(Notifier),
-          },
-          bridge,
-        ),
-    })
-    .useValue({
       template: () => plainTemplate(runtime),
     })
     .useValue({
@@ -279,14 +274,6 @@ export async function buildServices(
     })
     .useValue({ excerptImage: () => runtime.runSync(ExcerptImages) })
     .useValue({ excerptDisplay: () => runtime.runSync(ExcerptDisplays) })
-    .useValue({
-      excerptRequest: () =>
-        savedExcerptRequestOver({
-          reads: zoteroReadsService,
-          pref: runtime.runSync(ZoteroPref),
-          bridge,
-        }),
-    })
     .useValue({
       attachmentResolver: () => runtime.runSync(AttachmentResolver),
     })
@@ -356,7 +343,8 @@ export async function buildServices(
           capabilityGestures: {
             reportBlockedGesture: (attachmentKey) =>
               capabilityNotices.reportBlockedGesture(attachmentKey),
-            allowEditing: () => void capabilityNotices.showEditingCapability(),
+            allowEditing: () =>
+              void capabilityNotices.showEditingCapability().catch(passAborted),
           },
           markGestures: {
             revealAnnotation: (annotationKey) =>
@@ -366,16 +354,15 @@ export async function buildServices(
             blockedPress: (block) =>
               blockedNotice(
                 block,
-                () => void capabilityNotices.showEditingCapability(),
+                () =>
+                  void capabilityNotices
+                    .showEditingCapability()
+                    .catch(passAborted),
               ),
           },
         });
         return reader;
       },
-    })
-    .useValue({
-      attachmentImport: () =>
-        bindAttachmentImport(bridge, runtime.runSync(AttachmentImport)),
     })
     .useValue({ libraryScope: () => plainLibraryScope(runtime) })
     .useValue({
@@ -387,17 +374,13 @@ export async function buildServices(
       localBridge: () => bindLocalBridge(bridge, runtime.runSync(LocalBridge)),
     })
     .useValue({
-      // zt-main hands in the launch sheet and the editors it opens.
-      bindCustomize: () => {
-        const context = runtime.runSync(Effect.context<CustomizeServices>());
-        return (ports: CustomizePorts) => bindCustomize(bridge, context, ports);
-      },
+      customize: () => bindCustomize(bridge, runtime.runSync(Customize)),
     })
     .useValue({
       templateData: () =>
         bindTemplateData(
           bridge,
-          runtime.runSync(Effect.context<TemplateDataHandleServices>()),
+          runtime.runSync(Effect.context<TemplateDataServices>()),
         ),
     })
     .useValue({
@@ -426,49 +409,20 @@ export async function buildServices(
         }),
     })
     .useValue({
-      createProfile: ({
-        profile,
-        template,
-        templateData,
-        zoteroPref,
-        noteFeature,
-      }) =>
-        createProfileCreator({
-          app: plugin.app,
-          profile,
-          template,
-          templateData,
-          zoteroPref,
-          noteFeature,
-        }),
-    })
-    .useValue({
-      importProfile: ({
-        profile,
-        template,
-        templateData,
-        zoteroPref,
-        noteFeature,
-        createProfile,
-      }) => {
-        const importProfile = createProfileImporter({
-          app: plugin.app,
-          profile,
-          template,
-          templateData,
-          zoteroPref,
-          noteFeature,
-        });
-        bindProfileDialogs({ createProfile, importProfile });
-        return importProfile;
+      // The Import profile command. Unload closes an open dialog, and the
+      // caller sees it dismissed.
+      importProfile: (): ImportProfile => {
+        const runExit = exitOver(
+          bridge,
+          runtime.runSync(Effect.context<ProfileDialogServices>()),
+        );
+        return async (options) =>
+          valueOr(await runExit(creation.importProfile(options)), undefined);
       },
     })
     .useValue({
-      noteImportView: ({ createProfile, importProfile, targetOpener }) => {
-        const noteImportView = createNoteImportView(plugin.app, {
-          createProfile,
-          importProfile,
-        });
+      noteImportView: ({ targetOpener }) => {
+        const noteImportView = createNoteImportView(plugin.app, creation);
         bindProtocolViews({ noteImportView, opener: targetOpener });
         return noteImportView;
       },

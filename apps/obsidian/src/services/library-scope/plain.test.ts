@@ -81,7 +81,6 @@ it.effect("all adapter methods remain safe after whole-runtime disposal", () =>
     expect(f.plain.libraries).toEqual(before?.available);
     expect(f.plain.libraryRows).toBeNull();
     expect(f.plain.effective).toEqual({ mode: "all" });
-    expect(f.plain.invalid).toBe(false);
     expect(f.plain.resolveLibraries(rows!)).toEqual(before);
     subscribe(f.runtime, Stream.drop(f.plain.changes, 1), listener)();
     subscribe(f.runtime, f.plain["changed"], listener)();

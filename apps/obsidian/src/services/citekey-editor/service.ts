@@ -4,7 +4,6 @@
 import { Cause, Context, Effect, Layer, PubSub, Stream } from "effect";
 
 import { logAndContinue, withLogCategory } from "@/lib/effect-log";
-import type { Notifier } from "@/lib/notifier";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { describeCandidatesEffect } from "@/services/citation-index/ambiguity";
 import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
@@ -20,14 +19,13 @@ import type {
   NavigationPane,
 } from "@/services/citekey-navigation";
 import { LibraryScope } from "@/services/library-scope/service";
+import type { NoteCreationServices } from "@/services/note-feature/creation-handle";
 import { createNoteInteractively } from "@/services/note-feature/creation-view";
 import type { InteractiveCreationPorts } from "@/services/note-feature/creation-view";
-import type { NoteFeature } from "@/services/note-feature/service";
 import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
 import { NoteIndex } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
-import type { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 export type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
@@ -169,9 +167,7 @@ export const layerCitekeyEditor = (
 ): Layer.Layer<
   CitekeyEditor,
   never,
-  | NoteFeature
-  | Notifier
-  | ZoteroPref
+  | NoteCreationServices
   | NoteIndex
   | ZoteroReads
   | CitationLookup
@@ -188,9 +184,7 @@ export const layerCitekeyEditor = (
       const libraryScope = yield* LibraryScope;
       const settings = yield* PluginSettings;
       const workspace = yield* Workspace;
-      const creationContext = yield* Effect.context<
-        NoteFeature | Notifier | ZoteroPref
-      >();
+      const creationContext = yield* Effect.context<NoteCreationServices>();
       const events = yield* Effect.acquireRelease(
         PubSub.unbounded<CitekeyEditorEvent>(),
         (pubsub) => PubSub.shutdown(pubsub),

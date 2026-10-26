@@ -36,7 +36,7 @@ const settingCopy = Effect.fn("test.settingCopy")(function* (
   const situation = yield* pack.situation;
   return languagePackSettingCopy({
     endonym: pack.endonym,
-    getSituation: () => situation,
+    situation,
     install: () => {},
   });
 });

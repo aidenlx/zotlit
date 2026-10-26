@@ -54,7 +54,10 @@ export interface PdfAnnotationEditorDeps {
   app: App;
   attachments: AttachmentReads;
   annotations: AnnotationReads;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
+  bridge: Pick<
+    EffectBridge,
+    "runSync" | "runPromise" | "runAndForget" | "subscribe"
+  >;
   /** What the Editing Capability affordance and a blocked keystroke reach. */
   capabilityGestures: CapabilityGestures;
   /**

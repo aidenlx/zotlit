@@ -3,7 +3,11 @@
 // shape (policies/events.md, Capability tags); the file manager has no events.
 import { Context, Effect, Layer } from "effect";
 import { normalizePath } from "obsidian";
-import type { FileManager as ObsidianFileManager, TFile } from "obsidian";
+import type {
+  FileManager as ObsidianFileManager,
+  TAbstractFile,
+  TFile,
+} from "obsidian";
 
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { Vault } from "@/lib/obsidian-vault";
@@ -17,6 +21,7 @@ export type FileManagerSource = Pick<
   | "renameFile"
   | "generateMarkdownLink"
   | "getAvailablePathForAttachment"
+  | "trashFile"
 >;
 
 export interface FileManagerShape {
@@ -56,9 +61,21 @@ export interface FileManagerShape {
     filename: string,
     sourcePath?: string,
   ): Effect.Effect<string, VaultError>;
+  /**
+   * Move `file` to the trash the user chose in Obsidian's "Deleted files"
+   * setting. A rejection fails with `VaultError` on the file's path.
+   */
+  trashFile(file: TAbstractFile): Effect.Effect<void, VaultError>;
 }
 
 /** The vault's file manager. */
+/** A synchronous {@link FileManagerShape.generateMarkdownLink}. */
+export type MarkdownLinker = (
+  file: TFile,
+  sourcePath: string,
+  options?: { readonly subpath?: string; readonly alias?: string },
+) => string;
+
 export class FileManager extends Context.Service<
   FileManager,
   FileManagerShape
@@ -113,6 +130,12 @@ export const makeFileManager = Effect.fnUntraced(function* (
         catch: vaultError("getAvailablePathForAttachment", sourcePath ?? "/"),
       }),
     ),
+    trashFile: Effect.fn("FileManager.trashFile")((file) =>
+      Effect.tryPromise({
+        try: () => source.trashFile(file),
+        catch: vaultError("trashFile", file.path),
+      }),
+    ),
   });
 });
 
@@ -134,3 +157,18 @@ export const layerFileManager: Layer.Layer<
     return yield* makeFileManager(app.fileManager);
   }),
 );
+
+/**
+ * The link call over the current FileManager, run synchronously: for a
+ * template render, which links inline. The template-render edge.
+ */
+export const markdownLinker: Effect.Effect<MarkdownLinker, never, FileManager> =
+  Effect.gen(function* () {
+    const run = Effect.runSyncWith(yield* Effect.context<FileManager>());
+    return (file, sourcePath, options) =>
+      run(
+        Effect.flatMap(FileManager, (fileManager) =>
+          fileManager.generateMarkdownLink(file, sourcePath, options),
+        ),
+      );
+  });

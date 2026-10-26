@@ -24,11 +24,11 @@ describe("subscribeWorkbenchSaved", () => {
   it("shows one Notice per Save that landed and drops its subscription at the end", () => {
     const listeners = new Set<(profileId: string) => void>();
     const localBridge = {
-      on: (_event: "profile-saved", callback: (profileId: string) => void) => {
+      onProfileSaved: (callback: (profileId: string) => void) => {
         listeners.add(callback);
         return () => listeners.delete(callback);
       },
-    } as unknown as Pick<LocalBridgeHandle, "on">;
+    } as unknown as Pick<LocalBridgeHandle, "onProfileSaved">;
     const showNotice = vi.fn();
 
     const dispose = subscribeWorkbenchSaved(localBridge, showNotice);

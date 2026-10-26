@@ -10,6 +10,7 @@ import { useUniqueId } from "@zotlit/ui";
 import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
+import { passAborted } from "@/lib/abort-error";
 import { DOCS_COMPANION } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
@@ -696,7 +697,8 @@ function ConversionOffer() {
               })
               .finally(() => {
                 setConverting(false);
-              });
+              })
+              .catch(passAborted);
           }}
         >
           {m.welcome_template_conversion_action()}
@@ -736,9 +738,12 @@ function ConversionResult() {
             disabled={retrying}
             onClick={() => {
               setRetrying(true);
-              void actions.retryTemplateCleanup().finally(() => {
-                setRetrying(false);
-              });
+              void actions
+                .retryTemplateCleanup()
+                .finally(() => {
+                  setRetrying(false);
+                })
+                .catch(passAborted);
             }}
           >
             {m.welcome_template_cleanup_retry()}

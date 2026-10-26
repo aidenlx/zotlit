@@ -3,6 +3,7 @@ import { it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import { expect } from "vitest";
 
+import { AbortError } from "@/lib/abort-error";
 import { PluginSettings } from "@/services/settings/service";
 import { TemplateMigration } from "@/services/template/migration";
 import type { LiteratureNoteTemplateMigrationResult } from "@/services/template/migration";
@@ -85,16 +86,16 @@ it.effect(
       const a = Promise.withResolvers<LiteratureNoteTemplateMigrationResult>();
       const b = Promise.withResolvers<LiteratureNoteTemplateMigrationResult>();
       // Closing a leaf rejects the UI's wait on the interrupted command.
-      const rejectedA = a.promise.catch(() => "interrupted");
-      const rejectedB = b.promise.catch(() => "interrupted");
+      const rejectedA = a.promise.catch(AbortError.test);
+      const rejectedB = b.promise.catch(AbortError.test);
       host.registry.set(first, { retry: false, result: a });
       host.registry.set(second, { retry: false, result: b });
       yield* Effect.promise(() => waitFor(() => expect(started).toBe(2)));
       stopFirst();
       yield* Effect.promise(() => waitFor(() => expect(cancelled).toBe(1)));
-      expect(yield* Effect.promise(() => rejectedA)).toBe("interrupted");
+      expect(yield* Effect.promise(() => rejectedA)).toBe(true);
       stopSecond();
       yield* Effect.promise(() => waitFor(() => expect(cancelled).toBe(2)));
-      expect(yield* Effect.promise(() => rejectedB)).toBe("interrupted");
+      expect(yield* Effect.promise(() => rejectedB)).toBe(true);
     }),
 );

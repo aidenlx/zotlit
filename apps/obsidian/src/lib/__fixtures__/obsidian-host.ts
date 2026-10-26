@@ -15,11 +15,13 @@ import { vi } from "vitest";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { parseFrontMatter } from "@/lib/live-text";
+import type { MetadataCacheSource } from "@/lib/obsidian-metadata-cache";
+import type { VaultSource } from "@/lib/obsidian-vault";
 
 type VaultEvent = "create" | "modify" | "rename" | "delete";
 type VaultCallback = (...args: unknown[]) => void;
 
-export class MockVault {
+export class MockVault implements VaultSource {
   /** App settings the rendered surfaces read; tests run with Obsidian's defaults. */
   getConfig(_key: string): boolean {
     return false;
@@ -351,7 +353,7 @@ type MetadataCallback = (
  * until a test holds it; a held cache answers from the text it last parsed,
  * and `null` for a file it never parsed, until `settle`.
  */
-class HostMetadataCache {
+class HostMetadataCache implements MetadataCacheSource {
   readonly #parsed = new Map<string, string>();
   readonly #listeners = new Set<MetadataCallback>();
   #held = false;

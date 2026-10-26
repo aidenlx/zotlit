@@ -1699,6 +1699,34 @@ describe("GraphCitations hovers", () => {
       }),
   );
 
+  it.effect("interrupts a pending popover when the plugin unloads", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makePresentationFixture();
+      let interrupted = false;
+      fixture.citationPopover.showWork.mockImplementation(() =>
+        Effect.never.pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              interrupted = true;
+            }),
+          ),
+        ),
+      );
+      const engine = fixture.addLeaf("graph");
+      yield* fixture.layoutReady;
+
+      engine.renderer.onNodeHover(
+        new MouseEvent("mouseover"),
+        "@typo2024",
+        "unresolved",
+      );
+      expect(fixture.citationPopover.showWork).toHaveBeenCalledOnce();
+      yield* fixture.unload;
+
+      expect(interrupted).toBe(true);
+    }),
+  );
+
   it.effect(
     "shows the Citation Popover of the Item a Literature Note carries",
     () =>

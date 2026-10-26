@@ -20,8 +20,6 @@ export interface PlainLibraryScope {
   readonly current: ResolvedLibraryScope | null;
   /** The saved selection, or My Library while the saved value is broken. */
   readonly effective: SavedLibraryScope;
-  /** Independent of database availability, so recovery remains possible. */
-  readonly invalid: boolean;
   /** All Libraries in canonical order, including those outside the saved scope. */
   readonly libraries: readonly AvailableLibrary[];
   /** The rows from the Held Read, or null when none is held. */
@@ -41,9 +39,6 @@ export function plainLibraryScope(
     },
     get effective() {
       return run(service.effective);
-    },
-    get invalid() {
-      return run(service.invalid);
     },
     get libraries() {
       return run(service.libraries);

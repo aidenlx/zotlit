@@ -17,6 +17,7 @@ import {
 
 import type { CslItemData } from "@zotlit/db";
 
+import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { Profile } from "@/services/profile/service";
 import { QueryClients } from "@/services/query-client/service";
@@ -178,7 +179,7 @@ export const layerBibliographyRender = Layer.effect(
     const profile = yield* Profile;
     const queries = yield* QueryClients;
     const scope = yield* Scope.Scope;
-    const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+    const { runPromise } = yield* scopedBridge;
     const styles = new InstalledStyleCache();
     let closed = false;
     const state = yield* SubscriptionRef.make<BibliographyRenderState>({

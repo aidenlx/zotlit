@@ -272,10 +272,6 @@ export const layerNoteFeature = Layer.effect(
 );
 
 /**
- * Collect one operation's excerpt outcomes. When the scope closes, their
- * total reports on {@link NoteFeature.changes}.
- */
-/**
  * The payloads of `event` on `changes`, each in the shape its
  * `NoteFeatureEvents` callback takes.
  */
@@ -291,6 +287,10 @@ export const eventPayloads = <K extends keyof NoteFeaturePayloads>(
     Stream.map((change) => change.payload),
   );
 
+/**
+ * Collect one operation's excerpt outcomes. When the scope closes, their
+ * total reports on {@link NoteFeature.changes}.
+ */
 export const collectExcerptReports = Effect.gen(function* () {
   const feature = yield* NoteFeature;
   const collector = yield* Effect.acquireRelease(

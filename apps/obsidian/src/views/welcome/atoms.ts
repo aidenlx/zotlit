@@ -1,6 +1,7 @@
 // Welcome gestures run on the plugin's view registry; conversions belong to one banner.
 import { Cause, Effect, Exit } from "effect";
 
+import { AbortError } from "@/lib/abort-error";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
@@ -24,10 +25,15 @@ export const keepWelcomeCommand = viewRuntime.fn(
       yield* settings.update(patch);
       yield* settings.flush;
     }).pipe(
-      Effect.catchCause((error) =>
-        Effect.logWarning("The Welcome View banner could not keep its state", {
-          error,
-        }),
+      Effect.catchCauseIf(
+        (cause) => !Cause.hasInterruptsOnly(cause),
+        (error) =>
+          Effect.logWarning(
+            "The Welcome View banner could not keep its state",
+            {
+              error,
+            },
+          ),
       ),
       withLogCategory("welcome", "banner"),
     ),
@@ -42,11 +48,13 @@ export const dismissWelcomeCommand = viewRuntime.fn(
         yield* release.acknowledgeMigration;
         yield* release.acknowledgeUpdate;
       }).pipe(
-        Effect.catchCause((error) =>
-          Effect.logWarning(
-            "The Welcome View banner could not acknowledge the release",
-            { error },
-          ),
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterruptsOnly(cause),
+          (error) =>
+            Effect.logWarning(
+              "The Welcome View banner could not acknowledge the release",
+              { error },
+            ),
         ),
       );
       const settings = yield* PluginSettings;
@@ -57,10 +65,15 @@ export const dismissWelcomeCommand = viewRuntime.fn(
       });
       yield* settings.flush;
     }).pipe(
-      Effect.catchCause((error) =>
-        Effect.logWarning("The Welcome View banner could not keep its state", {
-          error,
-        }),
+      Effect.catchCauseIf(
+        (cause) => !Cause.hasInterruptsOnly(cause),
+        (error) =>
+          Effect.logWarning(
+            "The Welcome View banner could not keep its state",
+            {
+              error,
+            },
+          ),
       ),
       withLogCategory("welcome", "banner"),
     ),
@@ -94,7 +107,9 @@ export const makeConversionCommand = () =>
           Effect.sync(() => {
             if (Exit.isFailure(exit))
               request.result.reject(
-                plainTemplateError(Cause.squash(exit.cause)),
+                Cause.hasInterruptsOnly(exit.cause)
+                  ? new AbortError()
+                  : plainTemplateError(Cause.squash(exit.cause)),
               );
           }),
         ),
@@ -123,8 +138,12 @@ export const locateZoteroCommand = viewRuntime.fn(() =>
     if (!result.canceled && result.filePaths.length > 0)
       yield* pref.setDataDir(result.filePaths[0]!);
   }).pipe(
-    Effect.catchCause((error) =>
-      Effect.logError("Failed to open Zotero data directory dialog", { error }),
+    Effect.catchCauseIf(
+      (cause) => !Cause.hasInterruptsOnly(cause),
+      (error) =>
+        Effect.logError("Failed to open Zotero data directory dialog", {
+          error,
+        }),
     ),
     withLogCategory("views", "welcome"),
   ),

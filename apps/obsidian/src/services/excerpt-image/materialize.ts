@@ -1,3 +1,4 @@
+// Writes immutable excerpt assets and verifies their bytes before exposing a link.
 import {
   Cause,
   Effect,
@@ -7,13 +8,13 @@ import {
   Schema,
   Semaphore,
 } from "effect";
-// Writes immutable excerpt assets and verifies their bytes before exposing a link.
 import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, join, relative, isAbsolute, sep } from "node:path";
 
 import { parseIndexedKey } from "@zotlit/db";
 
 import { attachmentFolderPath } from "@/lib/attachment-folder";
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import { joinFolderPath } from "@/lib/ensure-folder";
 import type { FileManager } from "@/lib/obsidian-file-manager";
@@ -68,24 +69,6 @@ export class ExcerptAssetRefused extends Schema.TaggedError<
   ExcerptAssetRefused,
   { readonly brand: unique symbol }
 >()("ExcerptAssetRefused", { message: Schema.String }) {}
-
-/**
- * A failure boundary: interrupts pass through, and any other cause is logged
- * by `log` and answered by `fallback`.
- */
-export function recover<B>(
-  log: (cause: Cause.Cause<unknown>) => Effect.Effect<void>,
-  fallback: Effect.Effect<B>,
-) {
-  return <A, E, R>(
-    effect: Effect.Effect<A, E, R>,
-  ): Effect.Effect<A | B, never, R> =>
-    Effect.catchCause(effect, (cause) =>
-      Cause.hasInterruptsOnly(cause)
-        ? Effect.interrupt
-        : Effect.andThen(log(cause), fallback),
-    );
-}
 
 /** The file at `path`, refused past {@link MAX_PREVIOUS_BYTES} or when it grows while read. */
 const readPreviousImage = (path: string) =>
