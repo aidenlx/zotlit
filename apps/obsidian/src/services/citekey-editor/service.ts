@@ -169,8 +169,8 @@ function reportFailure<A, E, R, B, R2>(
 
 const log = withLogCategory("citekey-editor");
 /**
- * An open ends in a defect when a read, the creation flow or Obsidian rejects:
- * it is logged here, and the caller runs the open fire-and-forget.
+ * An open ends when a read, the creation flow or Obsidian fails: the failure
+ * or defect is logged here, and the caller runs the open fire-and-forget.
  */
 const contained = logAndContinue("Cannot open the note", "citekey-editor");
 
@@ -238,8 +238,8 @@ export const layerCitekeyEditor = (
           return;
         }
 
-        // A failed read ends the open unreported, as the rejection did.
-        const zoteroItem = yield* Effect.orDie(readItem(item.indexedKey));
+        // A failed read ends the open: the open's boundary logs it.
+        const zoteroItem = yield* readItem(item.indexedKey);
         if (!zoteroItem) {
           yield* Effect.logDebug("Citekey open blocked").pipe(
             Effect.annotateLogs({
