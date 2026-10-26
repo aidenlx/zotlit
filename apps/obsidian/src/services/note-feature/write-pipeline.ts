@@ -28,7 +28,7 @@ import {
   readProfileStamp,
 } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
-import type { AttachmentImport } from "@/services/attachment-import/service";
+import type { AttachmentImportBatchHandle as AttachmentImport } from "@/services/attachment-import/handle";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { resolveOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { collectExcerptSummary } from "@/services/excerpt-image/prepare";

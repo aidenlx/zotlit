@@ -28,7 +28,8 @@ import type ZotLitPlugin from "@/zt-main";
 import { AnnotationPopover } from "./annotation-popover/service";
 import { CapabilityNotices } from "./annotation-repository/notices";
 import { AnnotationRepository } from "./annotation-repository/service";
-import { AttachmentImportService } from "./attachment-import/service";
+import { bindAttachmentImport } from "./attachment-import/handle";
+import { AttachmentImport } from "./attachment-import/service";
 import { createPdfReader } from "./attachment-open/actions";
 import { openWithSystem } from "./attachment-open/capture";
 import { createTargetOpener } from "./attachment-open/open-target";
@@ -139,9 +140,9 @@ export async function buildServices(
   const noteCreation = new Promise<CitekeyNoteCreation>((resolve) => {
     bindNoteCreation = resolve;
   });
-  // A note write calls Attachment Import and the excerpt preparation, which
-  // the container builds after the graph, through this one holder. Nothing
-  // writes a note before the container has filled it.
+  // A note write calls the excerpt preparation, which the container builds
+  // after the graph, through this one holder. Nothing writes a note before the
+  // container has filled it.
   let noteImportPorts: Required<NoteImportPorts> | undefined;
   const boundNoteImportPorts = (): Required<NoteImportPorts> => {
     if (!noteImportPorts) throw new Error("Note import is not bound yet");
@@ -170,13 +171,6 @@ export async function buildServices(
           createNote: async (item) => (await noteCreation).createNote(item),
         },
         noteImport: {
-          attachmentImport: {
-            prepare: (notePath, options) =>
-              boundNoteImportPorts().attachmentImport.prepare(
-                notePath,
-                options,
-              ),
-          },
           excerptImages: (options) =>
             boundNoteImportPorts().excerptImages(options),
         },
@@ -337,14 +331,9 @@ export async function buildServices(
         return reader;
       },
     })
-    .use({
-      attachmentImport: ({ settings, zoteroPref }) =>
-        new AttachmentImportService({
-          bridge,
-          app: plugin.app,
-          settings,
-          zoteroPref,
-        }),
+    .useValue({
+      attachmentImport: () =>
+        bindAttachmentImport(bridge, runtime.runSync(AttachmentImport)),
     })
     .useValue({ libraryScope: () => plainLibraryScope(runtime) })
     .useValue({
@@ -363,9 +352,8 @@ export async function buildServices(
       },
     })
     .useValue({
-      noteImportPorts: ({ zoteroPref, attachmentImport, excerptImage }) => {
+      noteImportPorts: ({ zoteroPref, excerptImage }) => {
         noteImportPorts = {
-          attachmentImport,
           excerptImages: (options) =>
             createExcerptPreparation({
               app: plugin.app,

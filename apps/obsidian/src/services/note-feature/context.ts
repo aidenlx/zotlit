@@ -28,9 +28,9 @@ import { syntheticFile } from "@/lib/markdown-link";
 import type { FileManager as FileManagerTag } from "@/lib/obsidian-file-manager";
 import type { Vault as VaultTag } from "@/lib/obsidian-vault";
 import type {
-  AttachmentImport,
-  AttachmentImportService,
-} from "@/services/attachment-import/service";
+  AttachmentImportBatchHandle as AttachmentImport,
+  AttachmentImportHandle as AttachmentImportService,
+} from "@/services/attachment-import/handle";
 import type {
   ExcerptPreparation,
   PreparedExcerpts,

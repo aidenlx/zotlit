@@ -33,9 +33,10 @@ import type { Workspace } from "@/lib/obsidian-workspace";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { VaultError } from "@/lib/vault-errors";
+import { AttachmentImport } from "@/services/attachment-import/service";
 import type {
-  AttachmentImport,
-  AttachmentImportService,
+  AttachmentFlushError,
+  AttachmentImportBatch,
 } from "@/services/attachment-import/service";
 import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type {
@@ -88,12 +89,10 @@ interface RunContext {
 }
 
 /**
- * The legacy pieces a note write calls: Attachment Import's per-note batch and
- * the excerpt preparation. They convert in a later slice; until then
- * `build.ts` binds them once the container holds them.
+ * The legacy piece a note write calls: the excerpt preparation. It converts in
+ * a later slice; until then `build.ts` binds it once the container holds it.
  */
 export interface NoteImportPorts {
-  readonly attachmentImport: Pick<AttachmentImportService, "prepare">;
   readonly excerptImages?: ExcerptPreparation;
 }
 
@@ -128,6 +127,7 @@ export type NoteImportError =
   | NoteImportMintError
   | NoteImportFolderError
   | LegacyPortError
+  | AttachmentFlushError
   | Effect.Error<ReturnType<typeof readDisplayRef>>
   | VaultError;
 
@@ -177,7 +177,7 @@ export const layerNoteImporter = (ports: NoteImportPorts) =>
     Effect.gen(function* () {
       const writes = yield* Semaphore.make(WRITE_CONCURRENCY);
       const context = yield* Effect.context<
-        Profile | NoteIndex | Vault | Workspace | ZoteroPref
+        AttachmentImport | Profile | NoteIndex | Vault | Workspace | ZoteroPref
       >();
       const templates = yield* syncTemplate;
       const ctx: Ctx = { ports, templates };
@@ -185,7 +185,12 @@ export const layerNoteImporter = (ports: NoteImportPorts) =>
         effect: Effect.Effect<
           A,
           E,
-          Profile | NoteIndex | Vault | Workspace | ZoteroPref
+          | AttachmentImport
+          | Profile
+          | NoteIndex
+          | Vault
+          | Workspace
+          | ZoteroPref
         >,
       ) => Effect.provideContext(effect, context);
       return NoteImporter.of({
@@ -399,15 +404,13 @@ const writeNote = Effect.fnUntraced(function* (
   const path = mode.action === "create" ? mode.path : mode.file.path;
 
   let body = "";
-  let attachmentBatch: AttachmentImport | undefined;
+  let attachmentBatch: AttachmentImportBatch | undefined;
   let excerpts: PreparedExcerpts | undefined;
   if (note.note) {
     const html = note.note;
-    const batch = yield* portCall("attachment-prepare", () =>
-      ctx.ports.attachmentImport.prepare(path, {
-        folderCache: run.attachmentFolderCache,
-      }),
-    );
+    const batch = yield* (yield* AttachmentImport).prepare(path, {
+      folderCache: run.attachmentFolderCache,
+    });
     attachmentBatch = batch;
     const templateMode = getProfileBinding(
       run.settings,
@@ -504,8 +507,7 @@ const writeNote = Effect.fnUntraced(function* (
 
   if (excerpts) run.reportExcerpts?.(excerpts.summary());
   if (attachmentBatch) {
-    const flushed = attachmentBatch;
-    const copied = yield* portCall("attachment-flush", () => flushed.flush());
+    const copied = yield* attachmentBatch.flush;
     yield* Effect.logDebug("Imported note attachments").pipe(
       Effect.annotateLogs({
         path,
