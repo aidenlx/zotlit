@@ -16,6 +16,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
 import { AttachmentImport } from "@/services/attachment-import/service";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
+import { LanguagePack } from "@/services/language-pack/service";
 import { LocalBridge } from "@/services/local-bridge/service";
 import { LocalServer } from "@/services/local-server/service";
 import { PandocEngine } from "@/services/pandoc/service";
@@ -48,6 +49,13 @@ function ctx(): SettingTabContext {
           changes: Stream.empty,
         }),
       ).pipe(
+        Context.add(
+          LanguagePack,
+          stubService<LanguagePack["Service"]>("LanguagePack", {
+            situation: Effect.succeed({ kind: "unavailable" }),
+            endonym: "English",
+          }),
+        ),
         Context.add(
           PluginSettings,
           stubService<PluginSettings["Service"]>("PluginSettings", {
@@ -127,10 +135,6 @@ function ctx(): SettingTabContext {
       dataDir: undefined,
     }),
     customize: async () => {},
-    citationIndex: stubService<SettingTabContext["citationIndex"]>(
-      "CitationIndex",
-      { reset: async () => {} },
-    ),
     template: stubService<SettingTabContext["template"]>("Template", {
       loaded: true,
       javascriptTemplatesEnabled: false,
@@ -138,14 +142,6 @@ function ctx(): SettingTabContext {
       getReservedPartialFiles: () => [],
       getUnrecognizedFiles: () => [],
     }),
-    release: stubService<SettingTabContext["release"]>("Release", {}),
-    languagePack: stubService<SettingTabContext["languagePack"]>(
-      "LanguagePack",
-      {
-        getSituation: () => ({ kind: "unavailable" }),
-        endonym: "English",
-      },
-    ),
     requestUpdate: () => {},
   });
 }

@@ -6,8 +6,6 @@ import { DisposableAbortController } from "@/lib/disposables";
 import { effectBridge } from "@/lib/effect-bridge";
 import { fromInstant } from "@/lib/effect-clock";
 import { buildRuntime } from "@/lib/effect-layer";
-import { languagePackEdge } from "@/lib/i18n";
-import { Notifier } from "@/lib/notifier";
 import { revealSetting } from "@/lib/open-settings";
 import { ZoteroHttp } from "@/lib/zotero-http";
 import { libraryTagNamesOf } from "@/services/database/library-tag-names";
@@ -55,7 +53,6 @@ import { bindItemLookup } from "./item-lookup/handle";
 import { ItemLookup } from "./item-lookup/service";
 import { bindQuery } from "./item-query/handle";
 import { QueryService } from "./item-query/service";
-import { LanguagePack } from "./language-pack/service";
 import type { LanguagePackStartup } from "./language-pack/service";
 import { plainLibraryScope } from "./library-scope/plain";
 import { bindCustomize } from "./local-bridge/customize";
@@ -246,16 +243,6 @@ export async function buildServices(
       queryClient: () => plainQueryClients(runtime),
     })
     .useValue({ release: () => runtime.runSync(Release) })
-    .useValue({
-      languagePack: () =>
-        languagePackEdge(
-          {
-            pack: runtime.runSync(LanguagePack),
-            notifier: runtime.runSync(Notifier),
-          },
-          bridge,
-        ),
-    })
     .useValue({
       template: () => plainTemplate(runtime),
     })

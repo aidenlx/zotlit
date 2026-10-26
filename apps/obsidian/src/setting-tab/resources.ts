@@ -8,6 +8,10 @@ import type {
 
 import * as m from "@/lib/i18n/generated/messages";
 import { languagePackSettingCopy } from "@/lib/i18n/settings-copy";
+import { toastLanguagePackInstall } from "@/services/language-pack/notices";
+import { LanguagePack } from "@/services/language-pack/service";
+import { Release } from "@/services/release/service";
+import { PluginSettings } from "@/services/settings/service";
 import {
   BUG_REPORT,
   COMMUNITY,
@@ -54,7 +58,7 @@ export function templateConversionReminderItem(
           .setCta()
           .onClick(
             () =>
-              void openWelcomeView(ctx.app, ctx.settings, {
+              void openWelcomeView(ctx.app, ctx.tab.sync(PluginSettings), {
                 runSync: (effect) => ctx.tab.sync(effect),
               }),
           ),
@@ -79,8 +83,8 @@ function renderMigrationReminderButtons(
       // reconciler skips re-rendering the row containing document.activeElement.
       btn.buttonEl.blur();
       void ctx.tab.run(
-        ctx.release.acknowledgeMigration,
-        "Cannot mark the migration reminder done",
+        Release.use((release) => release.acknowledgeMigration),
+        m.settings_failed_migration_done(),
       );
     }),
   );
@@ -94,11 +98,22 @@ function renderMigrationReminderButtons(
 export function resourcesGroup(
   ctx: SettingTabContext,
 ): SettingDefinitionGroup<SettingsKey> {
-  const current = ctx.tab.sync(ctx.settings.current);
+  const current = ctx.tab.sync(
+    PluginSettings.use((settings) => settings.current),
+  );
   const pending = current["release.migration-pending"] === true;
   const templateConversionPending =
     current["note.template-conversion-pending"] === true;
-  const languagePack = languagePackSettingCopy(ctx.languagePack);
+  const pack = ctx.tab.sync(LanguagePack);
+  const languagePack = languagePackSettingCopy({
+    endonym: pack.endonym,
+    situation: ctx.tab.sync(pack.situation),
+    install: () =>
+      void ctx.tab.run(
+        toastLanguagePackInstall,
+        m.settings_failed_language_pack_install(),
+      ),
+  });
   return {
     type: "group",
     id: "settings_resources",
@@ -125,15 +140,13 @@ function resourcesItems(
       desc: m.settings_resources_whats_new_desc(),
       render: (setting) => {
         setting.addButton((btn) =>
-          btn
-            .setButtonText(m.settings_resources_whats_new_button())
-            .onClick(
-              () =>
-                void ctx.tab.run(
-                  ctx.release.openReleaseNote,
-                  "Cannot open the release note",
-                ),
-            ),
+          btn.setButtonText(m.settings_resources_whats_new_button()).onClick(
+            () =>
+              void ctx.tab.run(
+                Release.use((release) => release.openReleaseNote),
+                m.settings_failed_release_note(),
+              ),
+          ),
         );
       },
     },

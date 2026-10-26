@@ -3,7 +3,7 @@ import { strToU8, zipSync } from "fflate";
 import { FileSystemAdapter } from "obsidian";
 import type { SettingDefinitionItem } from "obsidian";
 
-import { confirm } from "@/lib/confirm";
+import { awaitConfirm } from "@/lib/confirm";
 import { exportTimestamp, saveFile } from "@/lib/file-save";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -18,6 +18,11 @@ import {
 
 import type { SettingsKey, SettingTabContext } from "./context";
 import { localServerItems } from "./local-server";
+import {
+  clearExcerptCache,
+  resetCitationIndex,
+  resetLanguagePacks,
+} from "./recovery";
 import { templateEngineItems } from "./templates";
 
 const logger = getLogger(["setting-tab", "advanced"]);
@@ -159,105 +164,65 @@ export function advancedPageItems(
           id: "settings_excerpt_cache_clear",
           name: m.settings_excerpt_cache_clear_name(),
           desc: m.settings_excerpt_cache_clear_desc(),
-          action: () => showExcerptCacheClear(ctx),
+          action: () =>
+            void ctx.tab.run(
+              clearExcerptCache(
+                awaitConfirm(
+                  {
+                    title: m.settings_excerpt_cache_clear_name(),
+                    content: m.settings_excerpt_cache_clear_confirm_body(),
+                    action: m.settings_excerpt_cache_clear_action(),
+                    destructive: true,
+                  },
+                  ctx.app,
+                ),
+              ),
+              m.settings_failed_excerpt_cache_clear(),
+            ),
         },
         {
           id: "settings_citation_index_reset",
           name: m.settings_citation_index_reset_name(),
           desc: m.settings_citation_index_reset_desc(),
-          action: () => void resetCitationIndex(ctx),
+          action: () =>
+            void ctx.tab.run(
+              resetCitationIndex(
+                awaitConfirm(
+                  {
+                    title: m.settings_citation_index_reset_confirm_title(),
+                    content: m.settings_citation_index_reset_confirm_body(),
+                    action: m.settings_citation_index_reset_action(),
+                    destructive: true,
+                  },
+                  ctx.app,
+                ),
+              ),
+              m.settings_failed_citation_index_reset(),
+            ),
         },
         {
           id: "settings_language_pack_reset",
           name: m.settings_language_pack_reset_name(),
           desc: m.settings_language_pack_reset_desc(),
-          action: () => void resetLanguagePacks(ctx),
+          action: () =>
+            void ctx.tab.run(
+              resetLanguagePacks(
+                awaitConfirm(
+                  {
+                    title: m.settings_language_pack_reset_confirm_title(),
+                    content: m.settings_language_pack_reset_confirm_body(),
+                    action: m.settings_language_pack_reset_action(),
+                    destructive: true,
+                  },
+                  ctx.app,
+                ),
+              ),
+              m.settings_failed_language_pack_reset(),
+            ),
         },
       ],
     },
   ];
-}
-
-/**
- * Clears every stored citekey scan and rebuilds it from the vault. The rebuild
- * runs on past this call, so the notice names it rather than claiming it is done.
- */
-async function resetCitationIndex(ctx: SettingTabContext): Promise<void> {
-  const confirmed = await confirm(
-    {
-      title: m.settings_citation_index_reset_confirm_title(),
-      content: m.settings_citation_index_reset_confirm_body(),
-      action: m.settings_citation_index_reset_action(),
-      destructive: true,
-    },
-    ctx.app,
-  );
-  if (!confirmed) return;
-  try {
-    await ctx.citationIndex.reset();
-    new BaseNotice(m.notice_citation_index_reset());
-  } catch (error) {
-    logger.error("Failed to reset the citation index", { error });
-    new BaseNotice(m.notice_citation_index_reset_failed());
-  }
-}
-
-async function showExcerptCacheClear(ctx: SettingTabContext): Promise<void> {
-  const outcome = await clearExcerptCache({
-    confirm: () =>
-      confirm(
-        {
-          title: m.settings_excerpt_cache_clear_name(),
-          content: m.settings_excerpt_cache_clear_confirm_body(),
-          action: m.settings_excerpt_cache_clear_action(),
-          destructive: true,
-        },
-        ctx.app,
-      ),
-    // The Held Reads go first: a card that repainted from the store while it
-    // emptied would hold an image the clear removed.
-    clear: async () => {
-      ctx.excerptDisplay.clear();
-      await ctx.excerptImage.clear();
-    },
-  });
-  if (outcome === "cleared") new BaseNotice(m.notice_excerpt_cache_cleared());
-  else if (outcome === "failed")
-    new BaseNotice(m.notice_excerpt_cache_clear_failed());
-}
-
-/** The confirmation decision gates storage; the settings seam renders its outcome. */
-export async function clearExcerptCache(actions: {
-  confirm: () => Promise<boolean>;
-  clear: () => Promise<void>;
-}): Promise<"cancelled" | "cleared" | "failed"> {
-  if (!(await actions.confirm())) return "cancelled";
-  try {
-    await actions.clear();
-    return "cleared";
-  } catch (error) {
-    logger.error("Failed to clear excerpt image cache", { error });
-    return "failed";
-  }
-}
-
-/**
- * Clears every downloaded Language Pack and the consent behind it. The pack
- * applied at startup keeps running, so the notice names the restart.
- */
-async function resetLanguagePacks(ctx: SettingTabContext): Promise<void> {
-  const confirmed = await confirm(
-    {
-      title: m.settings_language_pack_reset_confirm_title(),
-      content: m.settings_language_pack_reset_confirm_body(),
-      action: m.settings_language_pack_reset_action(),
-      destructive: true,
-    },
-    ctx.app,
-  );
-  if (!confirmed) return;
-  ctx.languagePack.reset();
-  new BaseNotice(m.notice_language_pack_reset());
 }
 
 async function openLogFile(ctx: SettingTabContext): Promise<void> {

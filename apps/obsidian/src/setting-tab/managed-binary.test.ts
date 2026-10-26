@@ -1,5 +1,5 @@
-import { expect, it } from "@effect/vitest";
 // @vitest-environment happy-dom
+import { expect, it } from "@effect/vitest";
 import { ButtonComponent, Setting } from "@mock/obsidian";
 import { Context, Effect, Layer, Stream } from "effect";
 import type {

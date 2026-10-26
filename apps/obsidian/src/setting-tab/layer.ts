@@ -11,6 +11,7 @@ import type { Notifier } from "@/lib/notifier";
 import { layerPluginHost, PluginHost } from "@/lib/plugin-host";
 import { AttachmentImport } from "@/services/attachment-import/service";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
+import { LanguagePack } from "@/services/language-pack/service";
 import { LibraryScope, scopeChanges } from "@/services/library-scope/service";
 import { LocalBridge } from "@/services/local-bridge/service";
 import { LocalServer } from "@/services/local-server/service";
@@ -81,6 +82,7 @@ export function layerSettingTab(legacy: SettingTabLegacy) {
       const libraryScope = yield* LibraryScope;
       const attachmentImport = yield* AttachmentImport;
       const localBridge = yield* LocalBridge;
+      const languagePack = yield* LanguagePack;
       yield* forkEach(
         Stream.mergeAll(
           [
@@ -88,6 +90,8 @@ export function layerSettingTab(legacy: SettingTabLegacy) {
             signal(Stream.drop(localServer.effectivePortChanges, 1)),
             // The Workbench Connection row stands only while a connection does.
             signal(Stream.drop(localBridge.changes, 1)),
+            // The Language Pack row stands only while a pack is offered.
+            signal(Stream.drop(languagePack.changes, 1)),
             signal(Stream.drop(profile.changes, 1)),
             template.compileEvents,
             signal(Stream.drop(pandocEngine.changes, 1)),
@@ -109,12 +113,6 @@ export function layerSettingTab(legacy: SettingTabLegacy) {
           { concurrency: "unbounded" },
         ).pipe(Stream.debounce(REBUILD_SETTLE)),
         () => service.update,
-      );
-
-      // The Language Pack rows follow a service that is not a tag yet.
-      yield* Effect.acquireRelease(
-        Effect.sync(() => legacy.languagePack.subscribe(requestUpdate)),
-        (off) => Effect.sync(off),
       );
     }),
   );

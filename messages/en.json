@@ -2919,5 +2919,11 @@
   "settings_failed_binary_uninstall": "Cannot remove the download",
   "settings_failed_approve_folder": "Cannot approve the folder",
   "settings_failed_revoke_folder": "Cannot remove the approved folder",
-  "settings_failed_workbench_disconnect": "Cannot end the Workbench connection"
+  "settings_failed_workbench_disconnect": "Cannot end the Workbench connection",
+  "settings_failed_migration_done": "Cannot mark the migration done",
+  "settings_failed_release_note": "Cannot open the release note",
+  "settings_failed_language_pack_install": "Cannot install the language pack",
+  "settings_failed_language_pack_reset": "Cannot remove the language packs",
+  "settings_failed_citation_index_reset": "Cannot reset the citation index",
+  "settings_failed_excerpt_cache_clear": "Cannot clear the excerpt image cache"
 }
