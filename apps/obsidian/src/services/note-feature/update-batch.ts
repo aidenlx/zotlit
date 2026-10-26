@@ -44,12 +44,13 @@ import { Profile } from "@/services/profile/service";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
-import { InertTemplateError } from "@/services/template/errors";
+import { isInertTemplateError } from "@/services/template/errors";
 import type { ZoteroPref } from "@/services/zotero-pref/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type { ItemDisplayRef } from "@/services/zotero-reads/display-ref";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
+import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { FlatManifest } from "@/views/batch-modal";
 import type {
   BatchProfileChoice,
@@ -61,7 +62,6 @@ import type {
   PlannedCreation,
   PlannedCreationProfile,
 } from "./creation-planning";
-import { plainNoteError } from "./errors";
 import type {
   CreateNoteDiagnostic,
   CreateNoteResult,
@@ -88,7 +88,10 @@ function profileLabel(profile: ResolvedProfile): string {
   return profile.label ?? m.settings_profile_default_name();
 }
 
-/** The services a note update reads through their tags. */
+/**
+ * The services a note update reads through their tags, the Profile dialogs
+ * its Profile choice opens included.
+ */
 export type BatchUpdateServices =
   | LibraryScope
   | MetadataCache
@@ -97,6 +100,7 @@ export type BatchUpdateServices =
   | Notifier
   | PluginSettings
   | Profile
+  | ProfileDialogServices
   | Workspace
   | ZoteroPref
   | ZoteroReads;
@@ -838,9 +842,8 @@ const executeBatchActions = Effect.fnUntraced(function* (
         onTaskFailed: (task, error) => {
           failures.push({ itemID: task.itemID, error });
         },
-        // A template that cannot render reaches the run as the cause of
-        // the write's failure.
-        haltOn: (error) => plainNoteError(error) instanceof InertTemplateError,
+        // A template that cannot render fails the write with its refusal.
+        haltOn: isInertTemplateError,
       });
     }),
   );

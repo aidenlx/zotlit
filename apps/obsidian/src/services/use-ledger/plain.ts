@@ -4,6 +4,7 @@ import { Effect, Stream } from "effect";
 import type { ManagedRuntime } from "effect";
 import type { TFile } from "obsidian";
 
+import { effectBridge } from "@/lib/effect-bridge";
 import { fromInstant, toInstant } from "@/lib/effect-clock";
 
 import { UseLedger } from "./service";
@@ -63,9 +64,7 @@ export function plainUseLedger(
   runtime: ManagedRuntime.ManagedRuntime<UseLedger, never>,
 ): PlainUseLedger {
   const ledger = runtime.runSync(UseLedger.use(Effect.succeed));
-  const context = runtime.runSync(Effect.context<never>());
-  const runSync = Effect.runSyncWith(context);
-  const runPromise = Effect.runPromiseWith(context);
+  const { runSync, runPromise } = effectBridge(runtime);
   return {
     get current() {
       return plainLedger(runSync(ledger.current));

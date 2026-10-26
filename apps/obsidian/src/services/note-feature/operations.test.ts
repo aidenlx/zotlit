@@ -63,6 +63,7 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { parseFrontMatter } from "@/lib/live-text";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -111,8 +112,8 @@ import type { PlanningSources } from "./__fixtures__/planning-context";
 import type { NoteCitations } from "./citations-handle";
 import { plainNoteError } from "./errors";
 import type { NoteFeatureHandle, UpdateScope } from "./operations";
-import { NoteFeature } from "./service";
-import type { WriteNoteUpdateOptions } from "./types";
+import { eventPayloads, NoteFeature } from "./service";
+import type { NoteFeaturePayloads, WriteNoteUpdateOptions } from "./types";
 /**
  * The note feature's deps, with the fixture database its reads serve. The
  * host's file manager also renames: the FileManager tag runs over it.
@@ -179,6 +180,11 @@ function createNoteFeature(deps: TestDeps) {
     ...handle,
     /** The Note Feature service, for the operations no edge handle serves. */
     service,
+    /** Call `cb` with each `event` payload on the service's changes. */
+    on: <K extends keyof NoteFeaturePayloads>(
+      event: K,
+      cb: (payload: NoteFeaturePayloads[K]) => void,
+    ) => subscribe(runtime, eventPayloads(service.changes, event), cb),
     createNote: (...args: Parameters<NoteFeatureHandle["createNote"]>) => {
       know(args[0]);
       return handle.createNote(...args);
@@ -246,19 +252,20 @@ const blockedDecide = (
 });
 
 /** The `attachmentImport` port every note-feature test runs against. */
-const blockedAttachmentImport = {
-  prepare: async () => ({
-    decide: blockedDecide,
-    resolveLink: () => () => "",
-    flush: async () => ({
-      copied: 0,
-      skipped: 0,
-      missing: 0,
-      blocked: 0,
-      refused: 0,
+const blockedAttachmentImport: NoteFeatureSources["attachmentImport"] = {
+  prepare: () =>
+    Effect.succeed({
+      decide: blockedDecide,
+      resolveLink: () => () => "",
+      flush: Effect.succeed({
+        copied: 0,
+        skipped: 0,
+        missing: 0,
+        blocked: 0,
+        refused: 0,
+      }),
+      discard: Effect.void,
     }),
-    discard: () => undefined,
-  }),
 };
 
 // Every read runs in the in-process handlers over seeded fixture rows. Only
@@ -377,64 +384,70 @@ describe("Profile source selection", () => {
       }),
   );
 
-  it("previews the draft stamp and document Properties, then creates at the same suffixed path", async () => {
-    const id = "Bk3Qn7XvT2Lp" as ProfileId;
-    const { deps } = makeUpdateHarness({
-      content: "",
-      settings: {
-        profiles: [
-          {
-            id,
-            label: "Reading",
-            document: "reading.md",
-            bindings: { "note.literature-folder": "Reading" },
+  it.effect(
+    "previews the draft stamp and document Properties, then creates at the same suffixed path",
+    () =>
+      Effect.gen(function* () {
+        const id = "Bk3Qn7XvT2Lp" as ProfileId;
+        const { deps } = makeUpdateHarness({
+          content: "",
+          settings: {
+            profiles: [
+              {
+                id,
+                label: "Reading",
+                document: "reading.md",
+                bindings: { "note.literature-folder": "Reading" },
+              },
+            ],
           },
-        ],
-      },
-    });
-    const app = makeApp();
-    deps.app = app;
-    const prepareImages = vi.fn(() => ({
-      annotationImageLink: () => null,
-      prepare: Effect.void,
-      summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
-    }));
-    deps.excerptImages = prepareImages;
-    const document = makeDocumentTemplate({
-      filename: `Paper${filenameSuffix()}`,
-      createBody: "# A Study",
-      frontmatter: compileDocumentFrontmatter([
-        { key: "topic", merge: "replace", value: "Research" },
-      ]),
-    });
-    deps.template = {
-      ...makeTemplate(),
-      getLiteratureNoteTemplate: () => document,
-    };
-    stubIndexedKeyUpdate(updateContext());
-    await app.vault.create("Reading/Paper.md", "Occupied");
-    const feature = createNoteFeature(deps);
-    const preview = feature.prepareProfileNote({
-      profile: profileReader(
-        deps.bridge!.runSync(deps.settings.current),
-      ).resolveProfile(id)!,
-      document,
-      note: updateContext(),
-      filename: {},
-    });
-    expect(preview.path).not.toBe("Reading/Paper.md");
-    expect(preview.properties).toEqual({
-      "zotero-key": "ABC23456",
-      "zotlit-profile": "Reading (Bk3Qn7XvT2Lp)",
-      topic: "Research",
-    });
-    expect(preview.body).toBe("# A Study");
-    expect(prepareImages).not.toHaveBeenCalled();
-    expect(app.vault.create).toHaveBeenCalledTimes(1);
-    const file = createdFile(await preview.create());
-    expect(file.path).toBe(preview.path);
-    expect(app.vault.contents.get("Reading/Paper.md")).toBe("Occupied");
-  });
+        });
+        const app = makeApp();
+        deps.app = app;
+        const prepareImages = vi.fn(() => ({
+          annotationImageLink: () => null,
+          prepare: Effect.void,
+          summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
+        }));
+        deps.excerptImages = prepareImages;
+        const document = makeDocumentTemplate({
+          filename: `Paper${filenameSuffix()}`,
+          createBody: "# A Study",
+          frontmatter: compileDocumentFrontmatter([
+            { key: "topic", merge: "replace", value: "Research" },
+          ]),
+        });
+        deps.template = {
+          ...makeTemplate(),
+          getLiteratureNoteTemplate: () => document,
+        };
+        stubIndexedKeyUpdate(updateContext());
+        yield* Effect.promise(() =>
+          app.vault.create("Reading/Paper.md", "Occupied"),
+        );
+        const feature = createNoteFeature(deps);
+        const preview = yield* feature.service.prepareProfileNote({
+          profile: profileReader(
+            deps.bridge!.runSync(deps.settings.current),
+          ).resolveProfile(id)!,
+          document,
+          note: updateContext(),
+          filename: {},
+        });
+        expect(preview.path).not.toBe("Reading/Paper.md");
+        expect(preview.properties).toEqual({
+          "zotero-key": "ABC23456",
+          "zotlit-profile": "Reading (Bk3Qn7XvT2Lp)",
+          topic: "Research",
+        });
+        expect(preview.body).toBe("# A Study");
+        expect(prepareImages).not.toHaveBeenCalled();
+        expect(app.vault.create).toHaveBeenCalledTimes(1);
+        const file = createdFile(yield* preview.create);
+        expect(file.path).toBe(preview.path);
+        expect(app.vault.contents.get("Reading/Paper.md")).toBe("Occupied");
+      }),
+  );
 
   describe("with inert global Managed Frontmatter fields", () => {
     // The global field set has a JavaScript field while JavaScript Templates
@@ -459,29 +472,35 @@ describe("Profile source selection", () => {
         getLiteratureNoteTemplate: () => document,
       };
       const feature = createNoteFeature(deps);
-      return () =>
-        feature.prepareProfileNote({
-          profile: profileReader(
-            deps.bridge!.runSync(deps.settings.current),
-          ).resolveProfile(id)!,
-          document,
-          note: updateContext(),
-          filename: {},
-        });
+      return feature.service.prepareProfileNote({
+        profile: profileReader(
+          deps.bridge!.runSync(deps.settings.current),
+        ).resolveProfile(id)!,
+        document,
+        note: updateContext(),
+        filename: {},
+      });
     };
 
-    it("previews a document with its own Managed Frontmatter", () => {
-      const preview = previewWith(
-        compileDocumentFrontmatter([
-          { key: "topic", merge: "replace", value: "Research" },
-        ]),
-      )();
-      expect(preview.properties).toMatchObject({ topic: "Research" });
-    });
+    it.effect("previews a document with its own Managed Frontmatter", () =>
+      Effect.gen(function* () {
+        const preview = yield* previewWith(
+          compileDocumentFrontmatter([
+            { key: "topic", merge: "replace", value: "Research" },
+          ]),
+        );
+        expect(preview.properties).toMatchObject({ topic: "Research" });
+      }),
+    );
 
-    it("refuses a legacy document, which composes the global fields", () => {
-      expect(previewWith(undefined)).toThrow("Inert global fields");
-    });
+    it.effect(
+      "refuses a legacy document, which composes the global fields",
+      () =>
+        Effect.gen(function* () {
+          const exit = yield* Effect.exit(previewWith(undefined));
+          expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(inert);
+        }),
+    );
   });
 
   it.effect(
@@ -1745,14 +1764,13 @@ describe("createNote", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
       attachmentImport: {
-        prepare: async () => ({
-          decide: blockedDecide,
-          resolveLink: () => () => "",
-          discard: () => undefined,
-          flush: async () => {
-            throw new Error("File already exists.");
-          },
-        }),
+        prepare: () =>
+          Effect.succeed({
+            decide: blockedDecide,
+            resolveLink: () => () => "",
+            discard: Effect.void,
+            flush: Effect.die(new Error("File already exists.")),
+          }),
       },
     });
 
@@ -1777,7 +1795,7 @@ describe("createNote", () => {
       await held.promise;
       return write(...args);
     });
-    const flush = vi.fn(async () => ({
+    const flush = vi.fn(() => ({
       copied: 0,
       skipped: 0,
       missing: 0,
@@ -1798,12 +1816,13 @@ describe("createNote", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
       attachmentImport: {
-        prepare: async () => ({
-          decide: blockedDecide,
-          resolveLink: () => () => "",
-          discard: () => undefined,
-          flush,
-        }),
+        prepare: () =>
+          Effect.succeed({
+            decide: blockedDecide,
+            resolveLink: () => () => "",
+            discard: Effect.void,
+            flush: Effect.sync(flush),
+          }),
       },
     });
 
@@ -3627,6 +3646,52 @@ describe("updateNote", () => {
       });
       expect(file.path).toBe(expected);
     }),
+  );
+
+  it.effect(
+    "stamps a moved note when an interrupt reaches its pending move",
+    () =>
+      Effect.gen(function* () {
+        const target = "Rz9Wm4YfH6Kd" as ProfileId;
+        const harness = makeUpdateHarness({
+          content: "My notes",
+          frontmatter: { "zotero-key": "ABCD2345" },
+          settings: {
+            profiles: [
+              {
+                id: target,
+                label: "Papers",
+                bindings: { "note.literature-folder": "Research/Papers" },
+              },
+            ],
+          },
+        });
+        const file = harness.file("Books/My chosen name.md");
+        const started = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        harness.deps.app.fileManager.renameFile = async (_file, path) => {
+          started.resolve();
+          await held.promise;
+          harness.host.vault.renameFile(file.path, path);
+        };
+        const feature = createNoteFeature(harness.deps);
+
+        const switching = yield* feature.service
+          .switchNoteProfile(file, { profile: target, move: true })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.promise(() => started.promise);
+        const interrupting = yield* Fiber.interrupt(switching).pipe(
+          Effect.forkChild({ startImmediately: true }),
+        );
+        held.resolve();
+        yield* Fiber.join(interrupting);
+
+        // The note is moved, so it carries the target Profile's stamp too.
+        expect(file.path).toBe("Research/Papers/My chosen name.md");
+        expect(harness.frontmatter()).toMatchObject({
+          [FIELD_LITERATURE_NOTE_PROFILE]: `Papers (${target})`,
+        });
+      }),
   );
 
   it.effect("offers no move when the target path equals the current path", () =>

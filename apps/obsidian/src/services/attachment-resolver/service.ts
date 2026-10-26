@@ -14,6 +14,7 @@ import type { AttachmentWithParentKey } from "@zotlit/db";
 import { attachmentAbsPath, attachmentPathKey } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 
+import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import { isPdfAttachment } from "@/services/attachment-open/resolve";
@@ -183,7 +184,7 @@ export function layerAttachmentResolver({
       const queries = yield* QueryClients;
       const zoteroPref = yield* ZoteroPref;
       const scope = yield* Scope.Scope;
-      const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+      const { runPromise } = yield* scopedBridge;
       const indexed = yield* Deferred.make<void>();
       const announcements = yield* PubSub.unbounded<void>();
 

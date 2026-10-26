@@ -3,6 +3,7 @@
 import type { SettingDefinition } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 import { managedBinaryDefinition } from "./managed-binary";
@@ -11,7 +12,7 @@ import { managedBinaryDefinition } from "./managed-binary";
 export function chineseSegmenterDefinition(
   ctx: SettingTabContext,
 ): SettingDefinition<SettingsKey> {
-  return managedBinaryDefinition(ctx.chineseSegmenter, {
+  return managedBinaryDefinition(ctx.tab, ChineseSegmenter, {
     id: "settings_chinese_segmenter",
     name: m.settings_chinese_segmenter_name(),
     desc: m.settings_chinese_segmenter_desc(),

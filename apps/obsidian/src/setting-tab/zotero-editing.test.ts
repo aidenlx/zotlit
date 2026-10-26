@@ -1,9 +1,8 @@
 // @vitest-environment happy-dom
 import { expect, it } from "@effect/vitest";
-import { Setting } from "@mock/obsidian";
-import { Context, DateTime, Effect, Stream } from "effect";
+import { ButtonComponent, renderRow } from "@mock/obsidian";
+import { Context, DateTime, Deferred, Effect, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
-import type { Setting as ObsidianSetting, SettingGroup } from "obsidian";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
@@ -109,14 +108,8 @@ it.effect(
       const item = zoteroEditingRow(
         stubService<SettingTabContext>("SettingTabContext", { tab }),
       );
-      if (!("render" in item) || !item.render)
-        throw new Error("Expected a render row");
-      const setting = new Setting(document.createElement("div"));
-      const cleanup = item.render(
-        setting as unknown as ObsidianSetting,
-        stubService<SettingGroup>("SettingGroup", {}),
-      );
-      yield* Effect.addFinalizer(() => Effect.sync(() => cleanup?.()));
+      const setting = renderRow(item);
+      yield* Effect.addFinalizer(() => Effect.sync(() => setting.cleanup?.()));
       const desc = () =>
         (setting.desc as unknown as DocumentFragment).textContent;
 
@@ -132,6 +125,107 @@ it.effect(
       yield* TestClock.adjust("5 seconds");
       expect(reads).toBe(settled);
     }),
+);
+
+it.effect(
+  "keeps reading the remembered key after one keystore read fails",
+  () =>
+    Effect.gen(function* () {
+      const changes = yield* Queue.unbounded<void>();
+      let reads = 0;
+      const { tab } = yield* scopedSettingTab(
+        Context.make(
+          AnnotationRepository,
+          stubService<AnnotationRepository["Service"]>("AnnotationRepository", {
+            capability: Effect.succeed({ kind: "writable" }),
+            probe: Effect.void,
+            capabilityChanges: Stream.fromQueue(changes),
+          }),
+        ).pipe(
+          Context.add(
+            ZoteroLocalApi,
+            stubService<ZoteroLocalApi["Service"]>("ZoteroLocalApi", {
+              remembered: Effect.suspend(() =>
+                reads++ === 0
+                  ? Effect.die(new Error("The keychain is locked"))
+                  : Effect.succeed(true),
+              ),
+            }),
+          ),
+          Context.add(
+            CapabilityNotices,
+            stubService<CapabilityNotices["Service"]>("CapabilityNotices", {}),
+          ),
+        ),
+      );
+      const setting = renderRow(
+        zoteroEditingRow(
+          stubService<SettingTabContext>("SettingTabContext", { tab }),
+        ),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(() => setting.cleanup?.()));
+      yield* TestClock.adjust("0 millis");
+      expect(reads).toBe(1);
+
+      // An Allow editing from a notice moves the capability after the failed
+      // read; the row reads the keystore again.
+      yield* Queue.offer(changes, undefined);
+      yield* TestClock.adjust("0 millis");
+      expect(reads).toBe(2);
+    }),
+);
+
+it.effect("keeps the check running when it is pressed again", () =>
+  Effect.gen(function* () {
+    const gate = yield* Deferred.make<void>();
+    const { tab } = yield* scopedSettingTab(
+      Context.make(
+        AnnotationRepository,
+        stubService<AnnotationRepository["Service"]>("AnnotationRepository", {
+          capability: Effect.succeed({
+            kind: "read-only",
+            reason: "local-api-disabled",
+          }),
+          probe: Deferred.await(gate),
+          capabilityChanges: Stream.never,
+        }),
+      ).pipe(
+        Context.add(
+          ZoteroLocalApi,
+          stubService<ZoteroLocalApi["Service"]>("ZoteroLocalApi", {
+            remembered: Effect.succeed(false),
+          }),
+        ),
+        Context.add(
+          CapabilityNotices,
+          stubService<CapabilityNotices["Service"]>("CapabilityNotices", {}),
+        ),
+      ),
+    );
+    const setting = renderRow(
+      zoteroEditingRow(
+        stubService<SettingTabContext>("SettingTabContext", { tab }),
+      ),
+    );
+    yield* Effect.addFinalizer(() => Effect.sync(() => setting.cleanup?.()));
+    const check = setting.components.find(
+      (control): control is ButtonComponent =>
+        control instanceof ButtonComponent &&
+        control.text === m.settings_zotero_editing_check(),
+    )!;
+    const status = () =>
+      (setting.desc as unknown as DocumentFragment).querySelector(
+        '[role="status"]',
+      )?.textContent;
+    yield* TestClock.adjust("0 millis");
+
+    check.click();
+    yield* TestClock.adjust("0 millis");
+    expect(status()).toBe(m.capability_probing());
+    check.click();
+    yield* TestClock.adjust("0 millis");
+    expect(status()).toBe(m.capability_probing());
+  }),
 );
 
 function row(capability: EditingCapability, remembered = false) {

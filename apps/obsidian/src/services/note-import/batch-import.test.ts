@@ -48,6 +48,7 @@ import {
   recordCalls,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
+import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
 import type {
   BatchClassifyControls,
   BatchModalOptions,
@@ -333,6 +334,7 @@ function portsOf(deps: ImportDeps): Omit<BatchImportPorts, "bridge"> {
 /** The services a batch import reads, answering from `deps` at each call. */
 function layerOver(deps: ImportDeps): Layer.Layer<BatchImportServices> {
   return Layer.mergeAll(
+    unimplementedProfileDialogServices,
     Layer.mock(LibraryScope, {
       resolveLibraries: () => Effect.sync(() => currentScope),
     }),

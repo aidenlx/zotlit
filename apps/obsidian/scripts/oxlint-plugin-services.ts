@@ -1,8 +1,8 @@
 // zotlit-services: the mechanical part of the Obsidian service architecture
-// (policies/services.md, policies/events.md): Effect services over legacy
-// classes, tag ids, Scope-owned resources, CLI registration, workers on
-// effect/rpc, Effect-native events and state, and failure boundaries. Rule
-// tests: src/lint/services.test.ts.
+// (policies/services.md, policies/events.md, policies/unload.md): Effect
+// services over legacy classes, tag ids, Scope-owned resources and runners,
+// CLI registration, workers on effect/rpc, Effect-native events and state, and
+// failure boundaries. Rule tests: src/lint/services.test.ts.
 import { sep } from "node:path";
 
 import { importsEffect, isMemberOf } from "./oxlint-ast.ts";
@@ -699,22 +699,7 @@ export const noDefaultRuntime: Rule = {
   create(context) {
     const effectNames = new Set<string>();
     return {
-      ImportDeclaration(node) {
-        const { source, specifiers } = node as unknown as ImportNode;
-        if (
-          typeof source?.value !== "string" ||
-          !EFFECT_SOURCES.has(source.value)
-        )
-          return;
-        for (const specifier of specifiers ?? []) {
-          if (
-            specifier.type === "ImportSpecifier" &&
-            specifier.imported?.name === "Effect" &&
-            typeof specifier.local?.name === "string"
-          )
-            effectNames.add(specifier.local.name);
-        }
-      },
+      ImportDeclaration: collectEffectNames(effectNames),
       CallExpression(node) {
         const callee = node.callee as AstNode;
         if (
@@ -725,6 +710,68 @@ export const noDefaultRuntime: Rule = {
           context.report({
             node: callee as never,
             messageId: "empty",
+            data: { name: String(callee.property?.name) },
+          });
+      },
+    };
+  },
+};
+
+/** Adds each local name of `Effect` imported from `effect` to `names`. */
+function collectEffectNames(names: Set<string>) {
+  return (node: AstNode): void => {
+    const { source, specifiers } = node as unknown as ImportNode;
+    if (typeof source?.value !== "string" || !EFFECT_SOURCES.has(source.value))
+      return;
+    for (const specifier of specifiers ?? []) {
+      if (
+        specifier.type === "ImportSpecifier" &&
+        specifier.imported?.name === "Effect" &&
+        typeof specifier.local?.name === "string"
+      )
+        names.add(specifier.local.name);
+    }
+  };
+}
+
+const CAPTURED_RUNNERS = new Set(["runPromiseWith", "runPromiseExitWith"]);
+
+/**
+ * `Effect.runPromiseWith(context)` and `runPromiseExitWith(context)` build a
+ * runner over a captured context that no Scope holds: unload leaves its
+ * pending runs going, and a run after unload answers from the released
+ * services. A service that keeps a runner for later callbacks builds it on a
+ * Scope instead — `scopedBridge`, `forkedBridge` for a write runner, the
+ * layer's `FiberSet.runtime`, or `effectBridge(runtime)` in a plain adapter —
+ * so unload stops what is pending (`policies/unload.md`). oxlint.config.ts
+ * turns the rule on for `src/services/**`, which leaves out the helpers that
+ * build those runners (`lib/effect-bridge.ts`, `lib/effect-scope.ts`).
+ */
+export const scopedRunner: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Forbid a Promise runner over a captured context in a service.",
+    },
+    messages: {
+      captured:
+        "build the runner on a Scope (`scopedBridge`, `forkedBridge`, `FiberSet.runtime`, or `effectBridge(runtime)`); `Effect.{{name}}` runs outside every Scope, so unload leaves its runs going",
+    },
+    schema: [],
+  },
+  create(context) {
+    const effectNames = new Set<string>();
+    return {
+      ImportDeclaration: collectEffectNames(effectNames),
+      CallExpression(node) {
+        const callee = node.callee as AstNode;
+        if (
+          isMemberOf(callee, effectNames, (name) => CAPTURED_RUNNERS.has(name))
+        )
+          context.report({
+            node: callee as never,
+            messageId: "captured",
             data: { name: String(callee.property?.name) },
           });
       },
@@ -991,6 +1038,7 @@ export default {
     "obsidian-capabilities": obsidianCapabilities,
     "plain-adapter-streams": plainAdapterStreams,
     "scope-closed": scopeClosed,
+    "scoped-runner": scopedRunner,
     "service-tag-id": serviceTagId,
     "temporal-in-effect": temporalInEffect,
     "worker-rpc": workerRpc,

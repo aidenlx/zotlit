@@ -97,6 +97,7 @@ import type {
 } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
+import { AbortError } from "@/lib/abort-error";
 import { AppContext } from "@/lib/app-context";
 import { confirm } from "@/lib/confirm";
 import { subscribe } from "@/lib/effect-stream";
@@ -117,7 +118,7 @@ import type {
 } from "@/services/note-feature/operations";
 import { updateNoteToast } from "@/services/note-feature/update-single";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import { listInstalledStyles } from "@/services/pandoc/styles";
+import { listInstalledStylesOrNone } from "@/services/pandoc/styles";
 import type { PlainProfile } from "@/services/profile/plain";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import { openCitationTemplate } from "@/services/template/actions";
@@ -479,10 +480,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         return { outcome: "unavailable", name: origin.file.basename };
       if (error === changed)
         return { outcome: "not-ready", name: origin.file.basename };
-      logger.error("Failed to update originating note at {path}", {
-        path: origin.file.path,
-        error,
-      });
+      if (!AbortError.test(error))
+        logger.error("Failed to update originating note at {path}", {
+          path: origin.file.path,
+          error,
+        });
       return { outcome: "failed", name: origin.file.basename, error };
     }
   }
@@ -1870,7 +1872,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     try {
       if (this.#closed) return;
       const dataDir = this.#deps.zoteroPref.dataDir;
-      const styles = dataDir ? await listInstalledStyles(dataDir) : [];
+      const styles = dataDir ? await listInstalledStylesOrNone(dataDir) : [];
       if (this.#closed) return;
       this.#citationStyles = styles;
       this.#stylesUnavailable = false;

@@ -1,5 +1,6 @@
-import * as Atom from "effect/reactivity/Atom";
 // @vitest-environment happy-dom
+import { Deferred } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 import { act } from "preact/test-utils";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -516,7 +517,11 @@ describe("References banners", () => {
     [
       "the install progress",
       {
-        engine: { kind: "installing", done: Promise.resolve(), binary: null },
+        engine: {
+          kind: "installing",
+          done: Deferred.makeUnsafe(),
+          binary: null,
+        },
       } satisfies Partial<ReferencesState>,
       "Downloading the Pandoc engine…",
     ],
@@ -634,7 +639,11 @@ describe("References toolbar", () => {
       [summaryEntry],
       { kind: "minimal" },
       {
-        engine: { kind: "installing", done: Promise.resolve(), binary: null },
+        engine: {
+          kind: "installing",
+          done: Deferred.makeUnsafe(),
+          binary: null,
+        },
       },
     );
     await activateStyleAction(container);

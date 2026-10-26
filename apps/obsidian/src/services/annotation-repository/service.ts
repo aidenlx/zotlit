@@ -13,6 +13,7 @@ import {
 import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag, forkEach } from "@/lib/effect-stream";
+import { portCall } from "@/lib/legacy-port";
 import { ExcerptImages } from "@/services/excerpt-image/layer";
 import { savedExcerptRequestFor } from "@/services/excerpt-image/request";
 import type { Held } from "@/services/query-client/service";
@@ -58,7 +59,6 @@ import {
   sourceMoved,
 } from "./core/lists";
 import type { AnnotationLibraryUnresolved } from "./core/lists";
-import { PersistedExcerptUnreadable } from "./core/model";
 import type {
   AnnotationList,
   AnnotationRecord,
@@ -528,10 +528,9 @@ export function layerAnnotationRepository(options: {
           if (!request) return null;
           // The Excerpt Image service is legacy until #1790: its stored read
           // is the one Promise port left here.
-          const stored = yield* Effect.tryPromise({
-            try: () => images.stored(request),
-            catch: (cause) => new PersistedExcerptUnreadable({ cause }),
-          });
+          const stored = yield* portCall("excerpt-stored", () =>
+            images.stored(request),
+          );
           return stored?.identity.fingerprint ?? null;
         });
       const fibers = yield* FiberSet.make();

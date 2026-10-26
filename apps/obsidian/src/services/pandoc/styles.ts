@@ -15,9 +15,9 @@ const logger = getLogger(["pandoc", "styles"]);
  *
  * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/style.js#L94-L155
  */
-const STYLES_DIR = "styles";
-const HIDDEN_DIR = "hidden";
-const CSL_EXT = ".csl";
+export const STYLES_DIR = "styles";
+export const HIDDEN_DIR = "hidden";
+export const CSL_EXT = ".csl";
 
 /** One installed style, as the Citation and References Style picker lists it. */
 export interface InstalledCslStyle {
@@ -27,7 +27,8 @@ export interface InstalledCslStyle {
   title: string;
 }
 
-interface StyleFile extends InstalledCslStyle {
+/** One installed CSL file, as discovery reads it. */
+export interface StyleFile extends InstalledCslStyle {
   path: string;
   /** Style ID of the independent parent, when this is a dependent style. */
   parentId: string | undefined;
@@ -107,21 +108,33 @@ export type ResolvedCslStyle =
     };
 
 /**
- * The styles a user can select, sorted by title. Zotero owns installation, so
- * an install ZotLit cannot read simply offers nothing to select.
- *
- * Hidden styles stay out of the list: Zotero keeps them as independent parents
- * of dependent styles, not as choices of their own.
+ * The styles a user can select, sorted by title, for a dialog outside Effect.
+ * Zotero owns installation, so an install ZotLit cannot read simply offers
+ * nothing to select. Effect code reads {@link listInstalledStyles}
+ * (`./installed-styles`), which fails where a folder refuses to be listed.
  */
-export async function listInstalledStyles(
+export async function listInstalledStylesOrNone(
   dataDir: string,
 ): Promise<InstalledCslStyle[]> {
   const root = join(dataDir, STYLES_DIR);
-  const visible = indexById((await readStyleDir(root)).files);
-  const all = indexById([
-    ...visible.values(),
-    ...(await readStyleDir(join(root, HIDDEN_DIR))).files,
-  ]);
+  return selectableStyles(
+    (await readStyleDir(root)).files,
+    (await readStyleDir(join(root, HIDDEN_DIR))).files,
+  );
+}
+
+/**
+ * The styles a user can select from the files of the styles folder and its
+ * hidden folder, sorted by title. Hidden styles stay out of the list: Zotero
+ * keeps them as independent parents of dependent styles, not as choices of
+ * their own.
+ */
+export function selectableStyles(
+  visibleFiles: readonly StyleFile[],
+  hiddenFiles: readonly StyleFile[],
+): InstalledCslStyle[] {
+  const visible = indexById(visibleFiles);
+  const all = indexById([...visible.values(), ...hiddenFiles]);
   return [...visible.values()]
     .filter(({ parentId }) => parentId === undefined || all.has(parentId))
     .map(({ id, title }) => ({ id, title }))
@@ -436,7 +449,8 @@ async function readStyleDir(dir: string): Promise<StyleDirectory> {
   return { files, unreadable };
 }
 
-function styleFileOf(path: string, xml: string): StyleFile | undefined {
+/** The style a CSL file declares; `undefined` for one that declares no style ID. */
+export function styleFileOf(path: string, xml: string): StyleFile | undefined {
   const info = INFO_BLOCK.exec(xml)?.groups.info;
   const id = info && ID.exec(info)?.groups.id.trim();
   if (!info || !id) {

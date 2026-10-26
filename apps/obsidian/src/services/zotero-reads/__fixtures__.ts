@@ -110,9 +110,6 @@ export function testReads(
     get dbFileMissing() {
       return plain?.dbFileMissing ?? false;
     },
-    get activeReadMode() {
-      return plain?.activeReadMode ?? null;
-    },
     snapshot: Effect.flatMap(
       Effect.promise(() => loaded),
       (adapter) => adapter.snapshot,

@@ -9,17 +9,29 @@
 // starts one with `mount` and returns its interrupt as the row's cleanup.
 // Every fiber lives in the tab layer's Scope, so closing the layer ends them.
 import { Cause, Context, Effect, Fiber, Scope, Stream } from "effect";
+import type { FileSystem } from "effect";
 
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log-category";
 import { Notifier } from "@/lib/notifier";
+import type { FileManager } from "@/lib/obsidian-file-manager";
+import type { Vault } from "@/lib/obsidian-vault";
+import type { PluginHost } from "@/lib/plugin-host";
 import { formatErrorMessage } from "@/lib/toast";
 import type { CapabilityNotices } from "@/services/annotation-repository/notices";
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
+import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 import type { CitationIndex } from "@/services/citation-index/service";
+import type { ExcerptDisplays } from "@/services/excerpt-image/display";
+import type { ExcerptImages } from "@/services/excerpt-image/layer";
+import type { LanguagePack } from "@/services/language-pack/service";
 import type { LibraryScope } from "@/services/library-scope/service";
+import type { Customize } from "@/services/local-bridge/customize";
+import type { LocalBridge } from "@/services/local-bridge/service";
 import type { LocalServer } from "@/services/local-server/service";
+import type { NoteFeature } from "@/services/note-feature/service";
+import type { NoteIndex } from "@/services/note-index/service";
 import type { PandocEngine } from "@/services/pandoc/service";
 import type { Profile } from "@/services/profile/service";
 import type { Release } from "@/services/release/service";
@@ -46,7 +58,19 @@ export type SettingTabEnv =
   | ZoteroLocalApi
   | CitationIndex
   | PandocEngine
-  | ChineseSegmenter;
+  | ChineseSegmenter
+  | AttachmentImport
+  | LocalBridge
+  | Customize
+  | LanguagePack
+  | ExcerptImages
+  | ExcerptDisplays
+  | NoteFeature
+  | NoteIndex
+  | Vault
+  | FileManager
+  | FileSystem.FileSystem
+  | PluginHost;
 
 export interface SettingTabShape {
   /**
@@ -58,14 +82,16 @@ export interface SettingTabShape {
   /**
    * Start a handler's Effect: a button, an action, a control write. A failure
    * is logged under `label` and shown as a notice; an interrupt (the tab
-   * closing) is silent. The Promise settles when the Effect ends and never
+   * closing) is silent. An Effect that reports its own outcome
+   * (`reportOutcome`, `withProgress`) takes no `label`: what still reaches the
+   * runner is only logged. The Promise settles when the Effect ends and never
    * rejects, so a caller that awaits it (Obsidian awaits `setControlValue`
    * before it refreshes the DOM state) sees the work done, and one that drops
    * it leaks no rejection.
    */
   run<A, E>(
     effect: Effect.Effect<A, E, SettingTabEnv>,
-    label: string,
+    label?: string,
   ): Promise<void>;
   /**
    * Start a row's live Effect in a Scope of its own, for `render` to return
@@ -107,13 +133,15 @@ export const makeSettingTab = Effect.fn("makeSettingTab")(function* (
         effect.pipe(
           recover(
             (cause) =>
-              Effect.logWarning(label, cause).pipe(
-                Effect.andThen(
-                  notifier.show(
-                    `${label}: ${formatErrorMessage(Cause.squash(cause))}`,
+              label === undefined
+                ? Effect.logWarning("A setting action failed", cause)
+                : Effect.logWarning(label, cause).pipe(
+                    Effect.andThen(
+                      notifier.show(
+                        `${label}: ${formatErrorMessage(Cause.squash(cause))}`,
+                      ),
+                    ),
                   ),
-                ),
-              ),
             Effect.void,
           ),
           withLogCategory("setting-tab"),

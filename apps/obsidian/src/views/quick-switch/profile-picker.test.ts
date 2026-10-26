@@ -6,20 +6,36 @@ import { expect, it, onTestFinished, vi } from "vitest";
 import { keymapApp, pressTop } from "@/lib/__fixtures__/keymap";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { modalAnswer } from "@/lib/modal-answer";
 import type { ProfileId } from "@/lib/profile-stamp";
-import type { LiteratureNoteProfile } from "@/services/profile/service";
+import type { ProfilePreview } from "@/services/note-feature";
 
-import { chooseLiteratureNoteProfile } from "./profile-picker";
-import type { LiteratureNoteProfileChoice } from "./profile-picker";
+import { openLiteratureNoteProfile } from "./profile-picker";
+import type {
+  LiteratureNoteProfileChoice,
+  ProfilePick,
+} from "./profile-picker";
 
-const books: LiteratureNoteProfile = {
-  id: "Bk3Qn7XvT2Lp" as ProfileId,
-  label: "Books",
-  document: "zotlit-profile.books.md",
-  path: "templates/zotlit-profile.books.md",
-  bindings: {},
-  match: { state: "absent", summary: m.profile_match_absent() },
-};
+const books = { id: "Bk3Qn7XvT2Lp" as ProfileId };
+/** The Default and Books rows, in that order. */
+const defaultAndBooks: ProfilePreview[] = [
+  {
+    selector: "default",
+    label: undefined,
+    folder: "Literature",
+    citationStyle: null,
+    document: undefined,
+    path: "Literature/Paper.md",
+  },
+  {
+    selector: books.id,
+    label: "Books",
+    folder: "Reading",
+    citationStyle: null,
+    document: "zotlit-profile.books.md",
+    path: "Reading/Paper.md",
+  },
+];
 const emptyApp = stubService<App>("App", {
   keymap: stubService<App["keymap"]>("Keymap", {
     pushScope: vi.fn(),
@@ -27,10 +43,21 @@ const emptyApp = stubService<App>("App", {
   }),
 });
 
+/** The picker opened as `awaitModal` opens it, its answer as a Promise. */
+function choose(
+  app: App,
+  options: Parameters<typeof openLiteratureNoteProfile>[1],
+): Promise<ProfilePick | undefined> {
+  return modalAnswer((settle) =>
+    openLiteratureNoteProfile(app, options, settle),
+  );
+}
+
 it("keeps the preselected choice when Obsidian closes before choosing it", async () => {
   using opened = vi.spyOn(SuggestModal.prototype, "open");
-  const choice = chooseLiteratureNoteProfile(emptyApp, [books], {
+  const choice = choose(emptyApp, {
     preselected: books.id,
+    previews: defaultAndBooks,
   });
   const modal = opened.mock
     .instances[0] as SuggestModal<LiteratureNoteProfileChoice>;
@@ -47,7 +74,7 @@ it("keeps the preselected choice when Obsidian closes before choosing it", async
 
 it("keeps Default first without preselection and resolves dismissal without a choice", async () => {
   using opened = vi.spyOn(SuggestModal.prototype, "open");
-  const choice = chooseLiteratureNoteProfile(emptyApp, [books]);
+  const choice = choose(emptyApp, { previews: defaultAndBooks });
   const modal = opened.mock
     .instances[0] as SuggestModal<LiteratureNoteProfileChoice>;
   const rows = await modal.getSuggestions("");
@@ -62,7 +89,7 @@ it("keeps Default first without preselection and resolves dismissal without a ch
 
 it("renders effective folders, style titles, templates, paths and the selected source for every Profile", async () => {
   using opened = vi.spyOn(SuggestModal.prototype, "open");
-  const choice = chooseLiteratureNoteProfile(emptyApp, {
+  const choice = choose(emptyApp, {
     preselected: books.id,
     source: "headless",
     styles: [{ id: "apa", title: "American Psychological Association" }],
@@ -142,7 +169,7 @@ it("shows the rule behind a preselected choice and the problem that stopped auto
     document: "books.md",
     path: "Reading/Paper.md",
   };
-  const choice = chooseLiteratureNoteProfile(emptyApp, {
+  const choice = choose(emptyApp, {
     preselected: books.id,
     source: "match",
     reason: "Item type is Book in My Library",
@@ -171,7 +198,7 @@ it("shows the rule behind a preselected choice and the problem that stopped auto
   modal.onClose();
   await expect(choice).resolves.toBeUndefined();
 
-  const stopped = chooseLiteratureNoteProfile(emptyApp, {
+  const stopped = choose(emptyApp, {
     preselected: "default",
     source: "bound",
     problem: "Rule broke. Choose a profile for this note.",
@@ -193,54 +220,34 @@ it("shows the rule behind a preselected choice and the problem that stopped auto
   await expect(stopped).resolves.toBeUndefined();
 });
 
-it("waits for the shared create dialog when New profile is chosen after native close", async () => {
+it("answers New profile when it is chosen after native close", async () => {
   using opened = vi.spyOn(SuggestModal.prototype, "open");
-  const created = Promise.withResolvers<
-    LiteratureNoteProfileChoice | undefined
-  >();
-  const onNew = vi.fn(() => created.promise);
-  const choice = chooseLiteratureNoteProfile(emptyApp, [books], { onNew });
+  const choice = choose(emptyApp, { previews: defaultAndBooks });
   const modal = opened.mock
     .instances[0] as SuggestModal<LiteratureNoteProfileChoice>;
   const rows = await modal.getSuggestions("");
   modal.onClose();
   modal.onChooseSuggestion(rows.at(-1)!, {} as KeyboardEvent);
-  await Promise.resolve();
-  expect(onNew).toHaveBeenCalledOnce();
-  created.resolve({ id: books.id, label: "New reading profile" });
-  await expect(choice).resolves.toEqual({
-    id: books.id,
-    label: "New reading profile",
-  });
+  await expect(choice).resolves.toEqual({ action: "new" });
 });
 
-it("imports from the secondary action without choosing a Profile or starting creation", async () => {
+it("answers Import from the secondary action without choosing a Profile or New profile", async () => {
   using opened = vi.spyOn(SuggestModal.prototype, "open");
-  const onImport = vi.fn(async () => {});
-  const onNew = vi.fn(async () => undefined);
-  const choice = chooseLiteratureNoteProfile(emptyApp, [books], {
-    onImport,
-    onNew,
-  });
+  const choice = choose(emptyApp, { previews: defaultAndBooks });
   const modal = opened.mock
     .instances[0] as SuggestModal<LiteratureNoteProfileChoice>;
   const rows = await modal.getSuggestions("");
   const el = document.createElement("div");
   modal.renderSuggestion(rows.at(-1)!, el);
   el.querySelector("button")!.click();
-  await expect(choice).resolves.toBeUndefined();
-  expect(onImport).toHaveBeenCalledOnce();
-  expect(onNew).not.toHaveBeenCalled();
+  await expect(choice).resolves.toEqual({ action: "import" });
 });
 
 it("imports from Enter on the focused secondary action, before the list takes the highlighted row", async () => {
   using opened = vi.spyOn(SuggestModal.prototype, "open");
-  const onImport = vi.fn(async () => {});
-  const onNew = vi.fn(async () => undefined);
   const app = keymapApp();
-  const choice = chooseLiteratureNoteProfile(app as unknown as App, [books], {
-    onImport,
-    onNew,
+  const choice = choose(stubService<App>("App", app), {
+    previews: defaultAndBooks,
   });
   const modal = opened.mock
     .instances[0] as SuggestModal<LiteratureNoteProfileChoice>;
@@ -265,9 +272,7 @@ it("imports from Enter on the focused secondary action, before the list takes th
   expect(app.scopes[0]).not.toBe(modal.scope);
   expect(pressTop(app, { key: "Enter" }, button).defaultPrevented).toBe(true);
 
-  await expect(choice).resolves.toBeUndefined();
-  expect(onImport).toHaveBeenCalledOnce();
-  expect(onNew).not.toHaveBeenCalled();
+  await expect(choice).resolves.toEqual({ action: "import" });
   // Closing the modal gives the Scope back.
   expect(app.scopes).toEqual([]);
 });
@@ -288,7 +293,7 @@ it.each([
   async ({ matchContext, reason, other }) => {
     using opened = vi.spyOn(SuggestModal.prototype, "open");
     const papers = "Rz9Wm4YfH6Kd" as ProfileId;
-    const choice = chooseLiteratureNoteProfile(emptyApp, {
+    const choice = choose(emptyApp, {
       candidates: [books.id, papers],
       matchContext,
       problem: m.modal_profile_problem_overlap({ profiles: "Books, Papers" }),

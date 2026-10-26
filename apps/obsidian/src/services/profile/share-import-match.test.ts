@@ -51,8 +51,8 @@ it.effect.each([true, false, undefined])(
           profileServiceFixture({ [path]: source }, undefined, context),
         ),
       );
-      const plan = yield* Effect.promise(() => f.profile.prepareShare(id));
-      const output = plan.render({
+      const plan = yield* f.profileService.prepareShare(id);
+      const output = yield* plan.render({
         version: "1.0.1",
         author: "",
         description: "",
@@ -78,9 +78,9 @@ it.effect.each([true, false])(
           profileServiceFixture({ [path]: source }, undefined, context),
         ),
       );
-      const plan = yield* Effect.promise(() => f.profile.prepareShare(id));
+      const plan = yield* f.profileService.prepareShare(id);
       expect(
-        plan.render({
+        yield* plan.render({
           version: "1.0.0",
           author: "",
           description: "",
@@ -116,15 +116,15 @@ it.effect.each([
         ),
       );
       const before = new Map(f.vault.contents);
-      const plan = yield* Effect.promise(() =>
-        f.profile.prepareImport(source, { includeMatch }),
-      );
+      const plan = yield* f.profileService.prepareImport(source, {
+        includeMatch,
+      });
       const expected =
         beforeMatch + (includeMatch === false ? "" : match) + afterMatch;
       expect(plan.kind).toBe(held ? "replace" : "fresh");
       expect(plan.source).toBe(expected);
       expect(f.vault.contents).toEqual(before);
-      const imported = yield* settled(() => plan.import());
+      const imported = yield* settled(plan.import());
       expect(f.vault.contents.get(imported.path)).toBe(expected);
       // An unknown Library is an ordinary nonmatch.
       expect(imported.match.state).toBe(
@@ -145,17 +145,14 @@ it.effect(
       );
       const absent = beforeMatch + afterMatch;
       expect(
-        (yield* Effect.promise(() =>
-          f.profile.prepareImport(absent, { includeMatch: false }),
-        )).source,
+        (yield* f.profileService.prepareImport(absent, { includeMatch: false }))
+          .source,
       ).toBe(absent);
-      const plan = yield* Effect.promise(() =>
-        f.profile.prepareImport(source, {
-          folder: "Recipient",
-          stripFolders: true,
-          inheritCitationStyle: true,
-        }),
-      );
+      const plan = yield* f.profileService.prepareImport(source, {
+        folder: "Recipient",
+        stripFolders: true,
+        inheritCitationStyle: true,
+      });
       const expected =
         beforeMatch
           .replace(
@@ -166,7 +163,7 @@ it.effect(
         match +
         afterMatch;
       expect(plan.source).toBe(expected);
-      const imported = yield* settled(() => plan.import());
+      const imported = yield* settled(plan.import());
       expect(f.vault.contents.get(imported.path)).toBe(expected);
     }),
 );
@@ -182,8 +179,10 @@ it.effect(
         ),
       );
       const source = `${beforeMatch}match: 'collections.within("Foreign/Reading") && tags.contains("Unfamiliar tag")'\r\n${afterMatch}`;
-      const imported = yield* settled(async () =>
-        (await f.profile.prepareImport(source)).import(),
+      const imported = yield* settled(
+        f.profileService
+          .prepareImport(source)
+          .pipe(Effect.flatMap((plan) => plan.import())),
       );
       expect(f.vault.contents.get(imported.path)).toBe(source);
       expect(imported.match.state).toBe("evaluable");
@@ -225,17 +224,17 @@ it.effect(
           profileServiceFixture({ [path]: source }, undefined, context),
         ),
       );
-      const plan = yield* Effect.promise(() => f.profile.prepareShare(id));
+      const plan = yield* f.profileService.prepareShare(id);
       const options = {
         version: "1.0.0",
         author: "Another author",
         description: "",
         includeFolders: true,
       };
-      expect(() => plan.render(options)).toThrow(
+      expect((yield* Effect.flip(plan.render(options))).message).toContain(
         m.profile_match_metadata_changed(),
       );
-      expect(plan.render({ ...options, includeMatch: false })).toBe(
+      expect(yield* plan.render({ ...options, includeMatch: false })).toBe(
         `${beforeMatch}author: &condition "Another author"\r\n${afterMatch}`,
       );
       expect(f.vault.contents.get(path)).toBe(source);
@@ -259,18 +258,16 @@ it.effect.each([true, false])(
           profileServiceFixture(undefined, undefined, context),
         ),
       );
-      const plan = yield* Effect.promise(() =>
-        f.profile.prepareImport(source, {
-          stripFolders: true,
-          includeMatch,
-        }),
-      );
+      const plan = yield* f.profileService.prepareImport(source, {
+        stripFolders: true,
+        includeMatch,
+      });
       const expected =
         beforeMatch.replace("folder: Books\r\nimportFolder: Imported\r\n", "") +
         (includeMatch ? match : "") +
         afterMatch;
       expect(plan.source).toBe(expected);
-      const imported = yield* settled(() => plan.import());
+      const imported = yield* settled(plan.import());
       expect(f.vault.contents.get(imported.path)).toBe(expected);
     }),
 );
@@ -291,28 +288,30 @@ it.effect(
           profileServiceFixture({ [path]: source }, undefined, context),
         ),
       );
-      const plan = yield* Effect.promise(() => f.profile.prepareShare(id));
+      const plan = yield* f.profileService.prepareShare(id);
       expect(runtime.getLocale()).toBe("zh-CN");
       expect(m.profile_match_metadata_changed()).toBe(
         chinesePack.messages.profile_match_metadata_changed,
       );
-      expect(() =>
-        plan.render({
-          version: "1.0.0",
-          author: "Another author",
-          description: "",
-          includeFolders: true,
-        }),
-      ).toThrow(m.profile_match_metadata_changed());
+      expect(
+        (yield* Effect.flip(
+          plan.render({
+            version: "1.0.0",
+            author: "Another author",
+            description: "",
+            includeFolders: true,
+          }),
+        )).message,
+      ).toContain(m.profile_match_metadata_changed());
       const incoming = `${beforeMatch.replace(
         "folder: Books",
         `folder: &condition 'tags.contains("Reading")'`,
       )}match: *condition\r\n${afterMatch}`;
-      yield* Effect.promise(() =>
-        expect(
-          f.profile.prepareImport(incoming, { folder: "Recipient" }),
-        ).rejects.toThrow(m.profile_match_metadata_changed()),
-      );
+      expect(
+        (yield* Effect.flip(
+          f.profileService.prepareImport(incoming, { folder: "Recipient" }),
+        )).message,
+      ).toContain(m.profile_match_metadata_changed());
     }),
 );
 
@@ -327,9 +326,9 @@ it.effect(
           profileServiceFixture({ [path]: source }, undefined, context),
         ),
       );
-      const plan = yield* Effect.promise(() => f.profile.prepareShare(id));
+      const plan = yield* f.profileService.prepareShare(id);
       expect(
-        plan.render({
+        yield* plan.render({
           version: "1.0.0",
           author: "",
           description: "",
@@ -341,10 +340,10 @@ it.effect(
     }),
 );
 
-const settled = Effect.fnUntraced(function* <A>(operation: () => Promise<A>) {
-  const pending = yield* Effect.promise(() => operation()).pipe(
-    Effect.forkChild,
-  );
+const settled = Effect.fnUntraced(function* <A, E>(
+  operation: Effect.Effect<A, E>,
+) {
+  const pending = yield* Effect.forkChild(operation);
   yield* TestClock.adjust(500);
   return yield* Fiber.join(pending);
 });

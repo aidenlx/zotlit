@@ -390,12 +390,7 @@ export async function openCitationVault({
       },
       db: harness.db,
       pandocEngine: pandocEngineHandle(engine),
-      zoteroPref: {
-        dataDir,
-        changed: Stream.empty,
-        "data-dir-changed": Stream.empty,
-        "resolved-changed": Stream.empty,
-      },
+      zoteroPref: { dataDir, moves: Stream.empty },
       settings,
       queryClient: harness.queryClient,
     }),

@@ -8,6 +8,7 @@ import { makeItem } from "@zotlit/db/test-utils";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { openAttachments } from "@/lib/attachment-open";
 import type { ProfileId } from "@/lib/profile-stamp";
+import type { LiteratureNoteAttachmentsHandle } from "@/services/attachment-open/handle";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 import type { SearchHit } from "@/services/item-lookup/service";
 import { defaults } from "@/services/settings/schema";
@@ -19,7 +20,7 @@ import type { QuickSwitchDeps } from "./register";
 // The picker's reader stays real, so the chord still exercises the reader the
 // plugin builds; only the database lookup behind it is stubbed.
 const literatureNoteAttachments =
-  vi.fn<(indexedKey: string) => Promise<ObsidianOpenableAttachment[]>>();
+  vi.fn<LiteratureNoteAttachmentsHandle["literatureNoteAttachments"]>();
 
 vi.mock("@/lib/attachment-open", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/attachment-open")>()),
@@ -254,6 +255,17 @@ describe("QuickSwitchModal PDF chord", () => {
       app: deps.app,
     });
     expect(getNotesByItemKey).not.toHaveBeenCalled();
+  });
+
+  it("opens nothing, and shows no notice, when unload ends the lookup", async () => {
+    const { modal } = pdfDeps();
+    literatureNoteAttachments.mockResolvedValue(undefined);
+
+    await modal.onChooseSuggestion(searchHit("PAPER234"), {
+      shiftKey: true,
+    } as KeyboardEvent);
+
+    expect(openAttachments).not.toHaveBeenCalled();
   });
 
   it("honors Mod+Shift+Enter's new-pane request, however many Attachments resolve", async () => {
