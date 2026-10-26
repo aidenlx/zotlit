@@ -69,6 +69,7 @@ New services are Effect services: a `Context.Service` tag and a scoped `Layer`, 
 - An existing legacy service keeps its shape until a change whose purpose is converting it. Convert leaves first, so the services it depends on are already in the graph, and take the file off the legacy list in `apps/obsidian/oxlint.config.ts`.
 - The `zotlit-services` lint rules (`apps/obsidian/scripts/oxlint-plugin-services.ts`) enforce the mechanical rules.
 - A test fake of a service keeps its type: root `policies/testing-strategy.md` → Service fakes holds the pattern.
+- A view reads Effect services through view atoms, not the bridge: `apps/obsidian/docs/adr/0082-obsidian-views-read-effect-services-through-view-atoms.md` holds the pattern catalogue, the pitfalls and the migration steps. A service a view reads joins `ViewServices` in `apps/obsidian/src/lib/view-atoms.ts`.
 
 ## Container Notes
 
