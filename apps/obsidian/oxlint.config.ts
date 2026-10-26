@@ -162,6 +162,7 @@ export default defineConfig({
         "src/services/citation-index/sources.ts",
         "src/services/excerpt-image/prepare.ts",
         "src/services/note-feature/operations.ts",
+        "src/services/note-feature/write-pipeline.ts",
         "src/services/pandoc/document-presentation.ts",
         "src/services/template/actions.ts",
         "src/views/annot-view/view.tsx",
@@ -316,11 +317,12 @@ export default defineConfig({
       // Helpers and constructors that take a raw App object
       // (`documentPresentation(app.metadataCache, …)`,
       // `readProfileStamp(app.metadataCache, …)`, `vault: app.vault`).
-      // note-feature/operations.ts also listens to `metadataCache.on("changed")`
+      // note-feature/write-pipeline.ts also listens to `metadataCache.on("changed")`
       // in `parsedCache` through a local alias, which the rule does not see.
       files: [
         "src/services/build.ts",
         "src/services/note-feature/operations.ts",
+        "src/services/note-feature/write-pipeline.ts",
         "src/services/pandoc/register.ts",
       ],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
@@ -373,6 +375,7 @@ export default defineConfig({
         "src/services/excerpt-image/request.ts",
         "src/services/note-feature/annotation-citation.ts",
         "src/services/note-feature/operations.ts",
+        "src/services/note-feature/write-pipeline.ts",
         "src/services/profile/service.ts",
         "src/views/annot-view/view.tsx",
         "src/views/library/item-actions.ts",
