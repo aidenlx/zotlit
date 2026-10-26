@@ -159,10 +159,10 @@ const resolveCompanionNote = Effect.fnUntraced(function* (
       Effect.annotateLogs({ indexedKey, requestedProfile: options.profile }),
       logged,
     );
-    return target({
+    return {
       outcome: "refused",
       diagnostic: unknownProfileDiagnostic(options.profile, { indexedKey }),
-    });
+    } satisfies CompanionNoteTarget;
   }
   const files = yield* noteIndex.getNotesByItemKey(indexedKey);
   const file = files[0];
@@ -171,7 +171,7 @@ const resolveCompanionNote = Effect.fnUntraced(function* (
       Effect.annotateLogs({ indexedKey }),
       logged,
     );
-    return target({ outcome: "create" });
+    return { outcome: "create" } satisfies CompanionNoteTarget;
   }
   const resolved = yield* profiles.profileOf(file);
   if (!resolved.ok) {
@@ -183,14 +183,14 @@ const resolveCompanionNote = Effect.fnUntraced(function* (
       }),
       logged,
     );
-    return target({
+    return {
       outcome: "existing",
       files: [file, ...files.slice(1)],
       diagnostic: unknownProfileDiagnostic(resolved.stamped.stamp, {
         indexedKey,
         path: file.path,
       }),
-    });
+    } satisfies CompanionNoteTarget;
   }
   const { selector, label } = resolved.profile;
   const keptProfile =
@@ -207,15 +207,12 @@ const resolveCompanionNote = Effect.fnUntraced(function* (
     }),
     logged,
   );
-  return target({
+  return {
     outcome: "existing",
     files: [file, ...files.slice(1)],
     keptProfile,
-  });
+  } satisfies CompanionNoteTarget;
 });
-
-/** `value` as a {@link CompanionNoteTarget}, so each branch returns one type. */
-const target = (value: CompanionNoteTarget): CompanionNoteTarget => value;
 
 /**
  * How each Indexed Key's note would be created: its Item in one Snapshot, the

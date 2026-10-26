@@ -35,10 +35,16 @@ function services(
     profiles?: readonly ProfileFixture[];
     notes?: readonly TFile[];
     stamps?: ReadonlyMap<TFile, string>;
+    rememberedProfile?: ProfileId;
   } = {},
 ) {
   const reader = profileReader(
-    { ...defaults, profiles: options.profiles ?? [] },
+    Object.assign(
+      { ...defaults, profiles: options.profiles ?? [] },
+      options.rememberedProfile === undefined
+        ? {}
+        : { "note.last-used-profile": options.rememberedProfile },
+    ),
     {
       getFileCache: (file) => {
         const stamp = options.stamps?.get(file);
@@ -187,7 +193,7 @@ describe("Companion note target", () => {
 
 describe("creation Profile", () => {
   it.effect(
-    "preselects headless over Default and lets an asked choice override it",
+    "preselects headless over Default, lets an asked choice override it, and ignores a remembered Profile",
     () =>
       Effect.gen(function* () {
         expect(yield* resolveCreationProfile()).toEqual({
@@ -210,6 +216,7 @@ describe("creation Profile", () => {
               { id: BOOKS, label: "Books" },
               { id: PAPERS, label: "Papers" },
             ],
+            rememberedProfile: BOOKS,
           }).layer,
         ),
       ),

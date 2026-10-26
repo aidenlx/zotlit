@@ -90,7 +90,9 @@ describe("bindCreationPlanning", () => {
     const h = await harness();
     await h.dispose();
     // A plan runs in the runtime's scope, which unload closed.
-    await expect(h.handle.planCreations(["ABCD2345"])).rejects.toBeDefined();
+    await expect(h.handle.planCreations(["ABCD2345"])).rejects.toThrow(
+      "All fibers interrupted without error",
+    );
     // A read answers from the services the bridge captured.
     await expect(h.handle.resolveCreationProfile()).resolves.toEqual({
       selector: "default",
