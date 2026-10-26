@@ -1421,6 +1421,39 @@ it.effect(
     }),
 );
 
+it.effect(
+  "answers a write in flight when the repository closes with an unknown outcome",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const reply = Promise.withResolvers<Response>();
+      const sending = Promise.withResolvers<void>();
+      const { repository, service } = yield* Effect.promise(() =>
+        writable(stack, {
+          write: () => {
+            sending.resolve();
+            return reply.promise;
+          },
+        }),
+      );
+
+      const running = yield* Effect.forkChild(
+        service.patchColor("PUPR5FG5", "#ff6666"),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(() => sending.promise);
+      yield* Effect.promise(() => repository[Symbol.asyncDispose]());
+      reply.resolve(writeAccepted());
+
+      // The close interrupts the write, so ZotLit cannot say whether Zotero
+      // saved it.
+      expect(yield* Fiber.join(running)).toEqual({
+        kind: "failed",
+        failure: { kind: "unknown-outcome" },
+      });
+    }),
+);
+
 // #endregion
 
 // #region the create path
