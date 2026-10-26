@@ -297,18 +297,16 @@ export const layerGraphCitations = Layer.effect(
         }
       });
 
-    const notePathsOf = (indexedKey: string): string[] =>
-      run(noteIndex.getNotesByItemKey(indexedKey)).map((note) => note.path);
-
     /**
      * One walk per render answers every node the graph draws, the citing
      * sources a hover reads a work's entry out of among them; the hover itself
-     * walks nothing. Only the render wrap calls it, inside Obsidian's render.
+     * walks nothing. Only the render wrap runs it, inside Obsidian's render:
+     * it reads every input first, then builds the additions from them.
      */
-    const additionsOf = (
+    const additionsOf = Effect.fnUntraced(function* (
       engine: GraphLeafMembers["engine"],
-    ): GraphCitationAdditions => {
-      const wikilinks = run(Ref.get(wikilinkCitations));
+    ) {
+      const wikilinks = yield* Ref.get(wikilinkCitations);
       // Wikilink occurrences derive from the link cache on every call, so they
       // are asked for only while the vault-wide setting admits the syntax — the
       // one state in which a wikilink is a Citation at all, so also the one in
@@ -316,7 +314,7 @@ export const layerGraphCitations = Layer.effect(
       const syntaxes: CitationSyntax[] = wikilinks
         ? ["citekey", "wikilink"]
         : ["citekey"];
-      const occurrences = run(citationIndex.citationsByPath(syntaxes));
+      const occurrences = yield* citationIndex.citationsByPath(syntaxes);
       lookup?.set({
         citekeys: [
           ...new Set(
@@ -328,19 +326,39 @@ export const layerGraphCitations = Layer.effect(
           ),
         ],
       });
+      /** The path each wikilink reaches from its source, keyed by `linkKey`. */
+      const linkKey = (linkpath: string, sourcePath: string) =>
+        `${sourcePath}\0${linkpath}`;
+      const linkTargets = new Map<string, string | null>();
+      for (const [sourcePath, found] of occurrences) {
+        for (const { kind, raw } of found) {
+          const key = linkKey(raw, sourcePath);
+          if (kind !== "wikilink" || linkTargets.has(key)) continue;
+          const target = yield* metadata.firstLinkpathDest(raw, sourcePath);
+          linkTargets.set(key, target?.path ?? null);
+        }
+      }
+      /** The Literature Note paths of each Indexed Key, in Note Index order. */
+      const notePaths = new Map<string, string[]>();
+      for (const indexedKey of yield* noteIndex.getIndexedItemKeys) {
+        const files = yield* noteIndex.getNotesByItemKey(indexedKey);
+        notePaths.set(
+          indexedKey,
+          files.map((file) => file.path),
+        );
+      }
+      const resolvedLinks = yield* metadata.resolvedLinks;
       return graphCitationAdditions({
         occurrences,
         resolveCitekey,
         resolveLink: (linkpath, sourcePath) =>
-          run(metadata.firstLinkpathDest(linkpath, sourcePath))?.path ?? null,
-        notePathsOf,
-        literatureNotes: run(noteIndex.getIndexedItemKeys).flatMap(
-          (indexedKey) => notePathsOf(indexedKey),
-        ),
-        resolvedLinks: run(metadata.resolvedLinks),
+          linkTargets.get(linkKey(linkpath, sourcePath)) ?? null,
+        notePathsOf: (indexedKey) => notePaths.get(indexedKey) ?? [],
+        literatureNotes: [...notePaths.values()].flat(),
+        resolvedLinks,
         filters: graphCitationFilters(engine, { wikilinkCitations: wikilinks }),
       });
-    };
+    });
 
     /**
      * Coalesces a burst of index events into one re-render of every installed
@@ -584,7 +602,7 @@ export const layerGraphCitations = Layer.effect(
       restores.defer(
         around(engine, {
           render: (native) => () => {
-            installation.additions = additionsOf(engine);
+            installation.additions = run(additionsOf(engine));
             return renderWithFacade(engine, native, installation.additions);
           },
         }),
