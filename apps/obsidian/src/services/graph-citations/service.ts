@@ -655,14 +655,13 @@ export const layerGraphCitations = Layer.effect(
       { saved, view = leaf.view }: { saved: GraphOptions | null; view?: View },
     ) {
       const { engine, renderer, viewType } = members;
-      const installation = attach(members, {
-        saved,
-        view,
-        wikilinks: yield* Ref.get(wikilinkCitations),
-      });
+      // Every yield comes before `attach`: an interrupt between the wrappers
+      // and `installations.set` would leave wrappers no uninstall can find.
       lookup ??= yield* citationLookup.observe(() => {
         void bridge.runPromise(invalidateLabels);
       });
+      const wikilinks = yield* Ref.get(wikilinkCitations);
+      const installation = attach(members, { saved, view, wikilinks });
       installations.set(renderer, installation);
       yield* Ref.update(installationCount, (n) => n + 1);
       if (saved) engine.setOptions?.(saved);

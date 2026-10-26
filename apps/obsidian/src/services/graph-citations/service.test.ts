@@ -5,6 +5,7 @@ import type { ToggleComponent } from "@mock/obsidian";
 import { Keymap, Menu } from "@mock/obsidian";
 import {
   Context,
+  Deferred,
   Effect,
   Exit,
   Layer,
@@ -644,6 +645,8 @@ interface FixtureOptions {
   workspaceFileError?: Error;
   /** What the vault-wide settings say beyond the Wikilink Citations choice. */
   settings?: Partial<Settings>;
+  /** What the lookup's `observe` waits for before it answers; nothing by default. */
+  observeGate?: Effect.Effect<void>;
 }
 
 /** How long the service lets a burst of events settle before it draws again. */
@@ -837,7 +840,11 @@ const makeFixture = Effect.fnUntraced(function* (options: FixtureOptions = {}) {
           }),
           Layer.mock(CitationLookup, {
             observe: (changed) =>
-              Effect.sync(() => citationIndex.lookup.observe(changed)),
+              (options.observeGate ?? Effect.void).pipe(
+                Effect.andThen(
+                  Effect.sync(() => citationIndex.lookup.observe(changed)),
+                ),
+              ),
           }),
           Layer.mock(CitekeyEditor, { openCitekey, openIndexedKey }),
           Layer.mock(CitationPopover, citationPopover),
@@ -983,6 +990,29 @@ afterEach(() => {
 });
 
 describe("GraphCitations installation", () => {
+  // Failure mode: the unload interrupts the first install while it waits for
+  // the lookup, and the wrapped render outlives the plugin.
+  it.effect(
+    "restores the render of a leaf whose first install the unload interrupts",
+    () =>
+      Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>();
+        const fixture = yield* makeFixture({
+          observeGate: Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Effect.never),
+          ),
+        });
+        const engine = fixture.addLeaf("graph");
+        const nativeRender = engine.render;
+        yield* fixture.layoutReady;
+        yield* Deferred.await(entered);
+
+        yield* fixture.unload;
+
+        expect(engine.render).toBe(nativeRender);
+      }),
+  );
+
   it.effect(
     "keeps current view choices after the graph feature is toggled off and on",
     () =>
