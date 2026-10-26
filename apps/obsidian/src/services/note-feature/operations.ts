@@ -61,6 +61,7 @@ import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 import { renderAnnotationCitation } from "./annotation-citation";
 import type { AnnotationCitation } from "./annotation-citation";
+import { renderCitation } from "./citation";
 import { applyComposedFrontmatter, composeLiteratureNote } from "./compose";
 import type { ComposeFrontmatterInput } from "./compose";
 import {
@@ -1497,25 +1498,6 @@ async function flushNoteAttachments(
 ): Promise<void> {
   using _reports = collectNoteExcerpts(ctx, input);
   await input.attachmentImport.flush();
-}
-
-/**
- * Render the Citation Template for the given items under one Citation Variant.
- * Synchronous (called from `selectSuggestion`/`onChooseSuggestion` handlers,
- * which can't await), so it returns `null` instead of throwing when the
- * template isn't loaded yet; the caller shows a "still loading" notice then.
- *
- * @param variant - the gesture the citation was requested with, which the
- *   Citation Template reads as `zt.variant`.
- * @returns the rendered citation in inline form.
- */
-function renderCitation(
-  ctx: NoteFeatureDeps,
-  items: readonly CiteRef[],
-  variant: CitationVariant,
-): string | null {
-  if (!ctx.template.loaded || !ctx.profile.loaded) return null;
-  return ctx.template.renderCitation(items, variant);
 }
 
 /**
