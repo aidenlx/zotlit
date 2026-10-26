@@ -204,9 +204,7 @@ function renderDatabaseFileRow(
         error: m.notice_db_refresh_failed(),
       }).pipe(Effect.ignore);
 
-      refreshButton?.onClick(
-        () => void ctx.tab.run(refresh, m.notice_db_refresh_failed()),
-      );
+      refreshButton?.onClick(() => void ctx.tab.run(refresh));
 
       // Events miss the loading→ready/degraded transition (T14 contract), so
       // the error starts from the reads' own state when already degraded.
@@ -411,7 +409,7 @@ function renderProfileDirRow(
   const setProfileDir = (dir: string | null): void =>
     void ctx.tab.run(
       ZoteroPref.use((pref) => pref.setProfileDir(dir)),
-      m.notice_db_profile_dir_failed(),
+      m.settings_failed_db_profile_dir(),
     );
 
   const repopulate = (current: string): void => {
@@ -534,7 +532,7 @@ function renderDataDirRow(
   const setDataDir = (dir: string | null): void =>
     void ctx.tab.run(
       ZoteroPref.use((pref) => pref.setDataDir(dir)),
-      m.notice_db_data_dir_failed(),
+      m.settings_failed_db_data_dir(),
     );
 
   const repopulate = (current: string): void => {

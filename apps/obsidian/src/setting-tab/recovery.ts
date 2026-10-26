@@ -2,35 +2,14 @@
 // the plugin can always fill again, and names the outcome in a notice.
 import { Effect } from "effect";
 
-import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log-category";
 import * as m from "@/lib/i18n/generated/messages";
 import { LegacyPortError, portCall } from "@/lib/legacy-port";
-import { Notifier } from "@/lib/notifier";
+import { Notifier, reportOutcome } from "@/lib/notifier";
 import { CitationIndex } from "@/services/citation-index/service";
 import { ExcerptDisplays } from "@/services/excerpt-image/display";
 import { ExcerptImages } from "@/services/excerpt-image/layer";
 import { LanguagePack } from "@/services/language-pack/service";
-
-/**
- * Run `clear` and name its outcome: `cleared` on success, else `failed`, with
- * the cause logged under `label`.
- */
-const withOutcome = <E, R>(
-  clear: Effect.Effect<void, E, R>,
-  label: string,
-  notices: { readonly cleared: string; readonly failed: string },
-) =>
-  Effect.gen(function* () {
-    const notifier = yield* Notifier;
-    yield* clear.pipe(
-      Effect.andThen(notifier.show(notices.cleared)),
-      recover(
-        (cause) => Effect.logError(label, cause),
-        notifier.show(notices.failed),
-      ),
-    );
-  });
 
 /**
  * Clear every stored citekey scan and rebuild it from the vault. The rebuild
@@ -40,12 +19,11 @@ const withOutcome = <E, R>(
 export const resetCitationIndex = Effect.fn("SettingTab.resetCitationIndex")(
   function* (confirm: Effect.Effect<boolean>) {
     if (!(yield* confirm)) return;
-    yield* withOutcome(
+    yield* reportOutcome(
       CitationIndex.use((index) => index.reset()),
-      "Failed to reset the citation index",
       {
-        cleared: m.notice_citation_index_reset(),
-        failed: m.notice_citation_index_reset_failed(),
+        success: () => m.notice_citation_index_reset(),
+        error: () => m.notice_citation_index_reset_failed(),
       },
     );
   },
@@ -58,7 +36,7 @@ export const clearExcerptCache = Effect.fn("SettingTab.clearExcerptCache")(
     if (!(yield* confirm)) return;
     const displays = yield* ExcerptDisplays;
     const images = yield* ExcerptImages;
-    yield* withOutcome(
+    yield* reportOutcome(
       // The Held Reads go first: a card that repainted from the store while
       // it emptied would hold an image the clear removed.
       Effect.try({
@@ -68,10 +46,9 @@ export const clearExcerptCache = Effect.fn("SettingTab.clearExcerptCache")(
       }).pipe(
         Effect.andThen(portCall("clear-excerpt-images", () => images.clear())),
       ),
-      "Failed to clear excerpt image cache",
       {
-        cleared: m.notice_excerpt_cache_cleared(),
-        failed: m.notice_excerpt_cache_clear_failed(),
+        success: () => m.notice_excerpt_cache_cleared(),
+        error: () => m.notice_excerpt_cache_clear_failed(),
       },
     );
   },

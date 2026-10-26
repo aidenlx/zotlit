@@ -76,14 +76,16 @@ export interface SettingTabShape {
   /**
    * Start a handler's Effect: a button, an action, a control write. A failure
    * is logged under `label` and shown as a notice; an interrupt (the tab
-   * closing) is silent. The Promise settles when the Effect ends and never
+   * closing) is silent. An Effect that reports its own outcome
+   * (`reportOutcome`, `withProgress`) takes no `label`: what still reaches the
+   * runner is only logged. The Promise settles when the Effect ends and never
    * rejects, so a caller that awaits it (Obsidian awaits `setControlValue`
    * before it refreshes the DOM state) sees the work done, and one that drops
    * it leaks no rejection.
    */
   run<A, E>(
     effect: Effect.Effect<A, E, SettingTabEnv>,
-    label: string,
+    label?: string,
   ): Promise<void>;
   /**
    * Start a row's live Effect in a Scope of its own, for `render` to return
@@ -125,13 +127,15 @@ export const makeSettingTab = Effect.fn("makeSettingTab")(function* (
         effect.pipe(
           recover(
             (cause) =>
-              Effect.logWarning(label, cause).pipe(
-                Effect.andThen(
-                  notifier.show(
-                    `${label}: ${formatErrorMessage(Cause.squash(cause))}`,
+              label === undefined
+                ? Effect.logWarning("A setting action failed", cause)
+                : Effect.logWarning(label, cause).pipe(
+                    Effect.andThen(
+                      notifier.show(
+                        `${label}: ${formatErrorMessage(Cause.squash(cause))}`,
+                      ),
+                    ),
                   ),
-                ),
-              ),
             Effect.void,
           ),
           withLogCategory("setting-tab"),

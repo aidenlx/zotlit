@@ -180,7 +180,6 @@ export function advancedPageItems(
                   ctx.app,
                 ),
               ),
-              m.settings_failed_excerpt_cache_clear(),
             ),
         },
         {
@@ -200,7 +199,6 @@ export function advancedPageItems(
                   ctx.app,
                 ),
               ),
-              m.settings_failed_citation_index_reset(),
             ),
         },
         {

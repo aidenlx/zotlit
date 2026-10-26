@@ -3,7 +3,6 @@
 import { Effect } from "effect";
 import type { Setting, SettingDefinition } from "obsidian";
 
-import * as m from "@/lib/i18n/generated/messages";
 import { reportOutcome, withProgress } from "@/lib/notifier";
 import type {
   ManagedBinaryApi,
@@ -132,7 +131,6 @@ function renderActions(
                 error: () => copy.notices.removeFailed,
               },
             ),
-            m.settings_failed_binary_uninstall(),
           );
         }),
     );
@@ -156,7 +154,6 @@ function renderActions(
               error: copy.notices.installFailed,
             },
           ).pipe(Effect.ignore),
-          m.settings_failed_binary_install(),
         );
       }),
   );

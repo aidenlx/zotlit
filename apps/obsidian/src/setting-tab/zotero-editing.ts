@@ -135,7 +135,7 @@ function renderEditingRow(
       const check = Effect.suspend(() => (checking ? Effect.void : runCheck));
 
       checkButton?.onClick(
-        () => void ctx.tab.run(check, m.settings_zotero_editing_check_failed()),
+        () => void ctx.tab.run(check, m.settings_failed_zotero_editing_check()),
       );
       forgetButton?.onClick(
         () =>
@@ -143,14 +143,14 @@ function renderEditingRow(
             localApi.forgetAuthorization.pipe(
               Effect.andThen(Queue.offer(rereads, undefined)),
             ),
-            m.settings_zotero_editing_forget_failed(),
+            m.settings_failed_zotero_editing_forget(),
           ),
       );
       enableButton?.onClick(
         () =>
           void ctx.tab.run(
             notices.allowEditing,
-            m.settings_zotero_editing_enable_failed(),
+            m.settings_failed_zotero_editing_enable(),
           ),
       );
 
