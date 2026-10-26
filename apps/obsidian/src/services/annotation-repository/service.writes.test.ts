@@ -1393,6 +1393,68 @@ it.effect(
     }),
 );
 
+it.effect(
+  "fails a write with WriteRunFailed, carrying the read failure, where its database check cannot read",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const reply = Promise.withResolvers<Response>();
+      const sent = Promise.withResolvers<void>();
+      const { service, acquireRead, dbEvents } = yield* Effect.promise(() =>
+        writable(stack, {
+          write: () => {
+            sent.resolve();
+            return reply.promise;
+          },
+        }),
+      );
+
+      const color = yield* Effect.forkChild(
+        Effect.flip(service.patchColor("PUPR5FG5", "#ff6666")),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(() => sent.promise);
+      // The database changes under the send, and its new read fails.
+      dbEvents.emit("changed");
+      acquireRead.mockRejectedValueOnce(new Error("database gone"));
+      reply.resolve(writeAccepted(20));
+
+      const failure = yield* Fiber.join(color);
+      expect(failure._tag).toBe("WriteRunFailed");
+      expect(failure.cause).toMatchObject({ _tag: "DbUnavailable" });
+    }),
+);
+
+it.effect(
+  "fails a create with the read failure where its database check cannot read",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const reply = Promise.withResolvers<Response>();
+      const sent = Promise.withResolvers<void>();
+      const { service, acquireRead, dbEvents } = yield* Effect.promise(() =>
+        writable(stack, {
+          write: () => {
+            sent.resolve();
+            return reply.promise;
+          },
+        }),
+      );
+
+      const creating = yield* Effect.forkChild(
+        Effect.flip(service.createAnnotation("RGRPDF24", DRAFT)),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(() => sent.promise);
+      // The database changes under the send, and its new read fails.
+      dbEvents.emit("changed");
+      acquireRead.mockRejectedValueOnce(new Error("database gone"));
+      reply.resolve(createAccepted(MADE));
+
+      expect((yield* Fiber.join(creating))._tag).toBe("DbUnavailable");
+    }),
+);
+
 it.effect("accepts a write completion after the same database refreshes", () =>
   Effect.gen(function* () {
     const stack = yield* scopedStack;
