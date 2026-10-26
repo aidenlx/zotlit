@@ -1,10 +1,15 @@
 // @vitest-environment happy-dom
 import { expect, it } from "@effect/vitest";
-import { DropdownComponent, Setting } from "@mock/obsidian";
+import {
+  DropdownComponent,
+  ExtraButtonComponent,
+  Setting,
+} from "@mock/obsidian";
 import { Effect, Layer, PubSub, Stream, SubscriptionRef } from "effect";
 import type { Setting as ObsidianSetting, SettingGroup } from "obsidian";
 import { vi } from "vitest";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
@@ -13,6 +18,7 @@ import type {
   ZoteroProfileInfo,
 } from "@/services/zotero-pref/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import type {
   ZoteroReadsApi,
   ZoteroReadsEvent,
@@ -22,7 +28,7 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import { testSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
-import { databaseLocationItems } from "./database";
+import { databaseFileItem, databaseLocationItems } from "./database";
 
 const SNAPSHOT: ZoteroPrefSnapshot = {
   state: "ready",
@@ -54,7 +60,10 @@ const READS: ZoteroReadsState = {
  * The Zotero location rows over a preference store and reads the test drives.
  * A folder write re-reads the preferences, as the real service does.
  */
-const setup = Effect.fn("setup")(function* () {
+const setup = Effect.fn("setup")(function* (
+  refresh: ZoteroReads["Service"]["refresh"] = Effect.void,
+) {
+  const notifier = testNotifier();
   const pref = yield* SubscriptionRef.make(SNAPSHOT);
   const reads = yield* SubscriptionRef.make(READS);
   const events = yield* PubSub.unbounded<ZoteroReadsEvent>({ replay: 1 });
@@ -74,6 +83,7 @@ const setup = Effect.fn("setup")(function* () {
     );
   const services = yield* Layer.build(
     Layer.mergeAll(
+      notifier.layer,
       Layer.mock(ZoteroPref, {
         current: SubscriptionRef.get(pref),
         changes: SubscriptionRef.changes(pref),
@@ -84,6 +94,8 @@ const setup = Effect.fn("setup")(function* () {
       Layer.mock(ZoteroReads, {
         reads: stubService<ZoteroReadsApi>("ZoteroReadsApi", {}),
         current: SubscriptionRef.get(reads),
+        changes: SubscriptionRef.changes(reads),
+        refresh,
         events: Stream.fromPubSub(events),
       }),
     ),
@@ -95,12 +107,14 @@ const setup = Effect.fn("setup")(function* () {
       changes: Stream.empty,
     }),
   });
-  return { ctx, pref, reads, events, writes };
+  return { ctx, pref, reads, events, writes, notices: notifier.notices };
 });
 
 /** The rendered row with the given id, so a test reads what the user gets. */
 function render(ctx: SettingTabContext, id: string) {
-  const row = databaseLocationItems(ctx).find((item) => item.id === id);
+  const row = [databaseFileItem(ctx), ...databaseLocationItems(ctx)].find(
+    (item) => item.id === id,
+  );
   if (!row || !("render" in row) || !row.render)
     throw new Error(`Expected a render row: ${id}`);
   const setting = new Setting(document.createElement("div"));
@@ -111,8 +125,12 @@ function render(ctx: SettingTabContext, id: string) {
   const dropdown = setting.components.find(
     (control) => control instanceof DropdownComponent,
   );
+  const button = setting.components.find(
+    (control) => control instanceof ExtraButtonComponent,
+  );
   return {
     dropdown,
+    button,
     text: () => (setting.desc as unknown as DocumentFragment).textContent,
   };
 }
@@ -209,6 +227,43 @@ it.effect("names the read mode again after the reads change", () =>
     yield* PubSub.publish(events, { _tag: "changed" });
     yield* eventually(() =>
       expect(row.text()).toContain(named(m.settings_db_read_mode_reflink)),
+    );
+  }),
+);
+
+/** Every message the notices showed, in order. */
+const messages = (notices: readonly { messages: readonly unknown[] }[]) =>
+  notices.flatMap((notice) => notice.messages);
+
+it.effect("reports a refresh from the database row as it ends", () =>
+  Effect.gen(function* () {
+    const { ctx, notices } = yield* setup();
+    const row = render(ctx, "settings_db_file");
+    // The path paints once the row's fiber has wired the button.
+    yield* eventually(() =>
+      expect(row.text()).toContain("/home/ada/Zotero/zotero.sqlite"),
+    );
+
+    row.button!.click();
+    yield* eventually(() =>
+      expect(messages(notices)).toEqual([m.notice_db_refreshed()]),
+    );
+  }),
+);
+
+it.effect("shows a failed refresh in one notice", () =>
+  Effect.gen(function* () {
+    const { ctx, notices } = yield* setup(
+      Effect.fail(new DbUnavailable({ message: "zotero.sqlite is locked" })),
+    );
+    const row = render(ctx, "settings_db_file");
+    yield* eventually(() =>
+      expect(row.text()).toContain("/home/ada/Zotero/zotero.sqlite"),
+    );
+
+    row.button!.click();
+    yield* eventually(() =>
+      expect(messages(notices)).toEqual([m.notice_db_refresh_failed()]),
     );
   }),
 );
