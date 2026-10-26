@@ -1317,6 +1317,82 @@ it.effect(
     }),
 );
 
+it.effect(
+  "answers a create Zotero accepted before repository unload with the created key",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const reply = Promise.withResolvers<Response>();
+      const sent = Promise.withResolvers<void>();
+      const verifying = Promise.withResolvers<void>();
+      const lease = Promise.withResolvers<ZoteroReadLease>();
+      const { repository, service, client, acquireRead, dbEvents } =
+        yield* Effect.promise(() =>
+          writable(stack, {
+            write: () => {
+              sent.resolve();
+              return reply.promise;
+            },
+          }),
+        );
+
+      const creating = yield* Effect.forkChild(
+        service.createAnnotation("RGRPDF24", DRAFT),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(() => sent.promise);
+      // The database changes under the send, so the create checks its binding
+      // against a new read of the Zotero database once Zotero answers.
+      dbEvents.emit("changed");
+      acquireRead.mockImplementationOnce(() => {
+        verifying.resolve();
+        return lease.promise;
+      });
+      reply.resolve(createAccepted(MADE));
+      yield* Effect.promise(() => verifying.promise);
+      yield* Effect.promise(() => repository[Symbol.asyncDispose]());
+      lease.resolve(yield* Effect.promise(() => leaseOver(stack, client)));
+
+      // Zotero created the Annotation before the unload, so the create keeps
+      // the key Zotero answered.
+      expect(yield* Fiber.join(creating)).toEqual({
+        kind: "created",
+        annotationKey: "MADE2345",
+      });
+    }),
+);
+
+it.effect(
+  "answers a create in flight at repository unload with an unknown outcome",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const reply = Promise.withResolvers<Response>();
+      const sent = Promise.withResolvers<void>();
+      const { repository, service } = yield* Effect.promise(() =>
+        writable(stack, {
+          write: () => {
+            sent.resolve();
+            return reply.promise;
+          },
+        }),
+      );
+
+      const creating = yield* Effect.forkChild(
+        service.createAnnotation("RGRPDF24", DRAFT),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(() => sent.promise);
+      yield* Effect.promise(() => repository[Symbol.asyncDispose]());
+      reply.resolve(createAccepted(MADE));
+
+      expect(yield* Fiber.join(creating)).toEqual({
+        kind: "failed",
+        failure: { kind: "unknown-outcome" },
+      });
+    }),
+);
+
 it.effect("accepts a write completion after the same database refreshes", () =>
   Effect.gen(function* () {
     const stack = yield* scopedStack;
