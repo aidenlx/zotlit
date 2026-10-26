@@ -157,7 +157,6 @@ export default defineConfig({
       // Logging backlog: rework the file to log through Effect, then remove it from the list.
       files: [
         "src/services/attachment-open/actions.ts",
-        "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
         "src/services/excerpt-image/prepare.ts",
         "src/services/note-feature/write-pipeline.ts",
@@ -362,12 +361,9 @@ export default defineConfig({
       // Default-runtime backlog: run the Effect through the bridge, a layer context runner or a runtime, then remove the file from the list.
       files: [
         "src/lib/effect-scope.ts",
-        "src/lib/temp-sweep.ts",
         "src/services/attachment-open/actions.ts",
         "src/services/batch-run.ts",
-        "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
-        "src/services/database/reap-temps.ts",
         "src/services/excerpt-image/prepare.ts",
         "src/services/note-feature/write-pipeline.ts",
         "src/services/profile/service.ts",

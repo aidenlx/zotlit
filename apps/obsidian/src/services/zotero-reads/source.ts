@@ -38,7 +38,7 @@ import type {
   ReadFallbackReason,
   SourceFingerprint,
 } from "@/services/database/read-source";
-import { reapReadClonesEffect } from "@/services/database/reap-temps";
+import { reapReadClones } from "@/services/database/reap-temps";
 
 import { makeStateFeed } from "./change-feed";
 import {
@@ -124,7 +124,7 @@ const defaultPorts: SourcePorts = {
   createClient: (uri) => createClient(uri, { jit: true }),
   watch,
   existsSync,
-  reapReadClones: reapReadClonesEffect,
+  reapReadClones,
 };
 
 export interface SourceOptions {
@@ -252,7 +252,7 @@ export function layerSource(
        * the plugin-load sweep of the system temp folder never looks. Sweep
        * that parent whenever the bound database path moves it.
        *
-       * @see {@link reapReadClonesEffect} for what counts as residue.
+       * @see {@link reapReadClones} for what counts as residue.
        */
       const reapReadParent = Effect.fnUntraced(function* (path: string) {
         const parent = readParentBeside(path);
