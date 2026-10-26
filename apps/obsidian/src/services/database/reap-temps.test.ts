@@ -11,7 +11,7 @@ import {
   ZOTERO_DB_READ_TEMP_PREFIX,
 } from "@/lib/constants";
 
-import { reapReadClonesEffect, reapWorkerClones } from "./reap-temps";
+import { reapReadClones, reapWorkerClones } from "./reap-temps";
 
 let parent: string;
 
@@ -45,11 +45,11 @@ async function names(): Promise<string[]> {
 /** A PID no process can hold: above the highest value any platform assigns. */
 const DEAD_PID = 4_194_305;
 
-layer(NodeFileSystem.layer)("reapReadClonesEffect", (it) => {
+layer(NodeFileSystem.layer)("reapReadClones", (it) => {
   it.effect("removes a clone owned by a dead process, with its contents", () =>
     Effect.gen(function* () {
       yield* Effect.promise(() => readClone(DEAD_PID));
-      yield* reapReadClonesEffect({ parent });
+      yield* reapReadClones({ parent });
       expect(yield* Effect.promise(() => names())).toEqual([]);
     }),
   );
@@ -57,7 +57,7 @@ layer(NodeFileSystem.layer)("reapReadClonesEffect", (it) => {
   it.effect("keeps a clone owned by this process", () =>
     Effect.gen(function* () {
       const own = yield* Effect.promise(() => readClone(process.pid));
-      yield* reapReadClonesEffect({ parent });
+      yield* reapReadClones({ parent });
       expect(yield* Effect.promise(() => names())).toEqual([own]);
     }),
   );
@@ -65,7 +65,7 @@ layer(NodeFileSystem.layer)("reapReadClonesEffect", (it) => {
   it.effect("keeps a clone owned by another live process", () =>
     Effect.gen(function* () {
       const other = yield* Effect.promise(() => readClone(process.ppid));
-      yield* reapReadClonesEffect({ parent });
+      yield* reapReadClones({ parent });
       expect(yield* Effect.promise(() => names())).toEqual([other]);
     }),
   );
@@ -79,7 +79,7 @@ layer(NodeFileSystem.layer)("reapReadClonesEffect", (it) => {
       yield* Effect.promise(() =>
         writeFile(join(parent, `${ZOTERO_DB_READ_TEMP_PREFIX}-0-x`), "x"),
       );
-      yield* reapReadClonesEffect({ parent });
+      yield* reapReadClones({ parent });
       expect(yield* Effect.promise(() => names())).toEqual([
         "unrelated-dir",
         `${ZOTERO_DB_READ_TEMP_PREFIX}-0-x`,
@@ -97,7 +97,7 @@ layer(NodeFileSystem.layer)("reapReadClonesEffect", (it) => {
       );
       const own = `${ZOTERO_DB_READ_TEMP_PREFIX}${process.pid}-aBcDeF`;
       yield* Effect.promise(() => mkdir(join(beside, own)));
-      yield* reapReadClonesEffect({ parent: beside });
+      yield* reapReadClones({ parent: beside });
       expect(yield* Effect.promise(() => readdir(beside))).toEqual([own]);
     }),
   );
@@ -105,7 +105,7 @@ layer(NodeFileSystem.layer)("reapReadClonesEffect", (it) => {
   it.effect("removes a dead process's clone that names its worker", () =>
     Effect.gen(function* () {
       yield* Effect.promise(() => readClone(DEAD_PID, "0123456789ab"));
-      yield* reapReadClonesEffect({ parent });
+      yield* reapReadClones({ parent });
       expect(yield* Effect.promise(() => names())).toEqual([]);
     }),
   );
@@ -113,7 +113,7 @@ layer(NodeFileSystem.layer)("reapReadClonesEffect", (it) => {
   it.effect("leaves every clone in place when interrupted before it runs", () =>
     Effect.gen(function* () {
       const dead = yield* Effect.promise(() => readClone(DEAD_PID));
-      const reap = yield* Effect.forkChild(reapReadClonesEffect({ parent }), {
+      const reap = yield* Effect.forkChild(reapReadClones({ parent }), {
         startImmediately: false,
       });
       yield* Fiber.interrupt(reap);
