@@ -95,6 +95,7 @@ import type { LocalServer } from "./local-server/service";
 import { layerLogging, layerLogOutput } from "./log/service";
 import { layerManagedBinaryPlatform } from "./managed-binary/service";
 import type { InteractiveCreationPorts } from "./note-feature/creation-view";
+import { layerNoteFeatureNotices } from "./note-feature/notices";
 import { layerNoteFeature } from "./note-feature/service";
 import type { NoteFeature } from "./note-feature/service";
 import { layerNoteImporter } from "./note-import/service";
@@ -378,6 +379,7 @@ export function pluginLayer(
     layerLanguagePackNotices.pipe(startingAs("LanguagePackNotices")),
     layerLibraryScopeCli.pipe(startingAs("LibraryScopeCli")),
     layerLibraryScopeNotices.pipe(startingAs("LibraryScopeNotices")),
+    layerNoteFeatureNotices.pipe(startingAs("NoteFeatureNotices")),
     layerPandocResolve.pipe(startingAs("PandocResolve")),
     layerProtocolHandlers({
       ...creation,

@@ -11,7 +11,6 @@ import type { NoteCreation } from "./creation-handle";
 import type {
   CreateNoteOptions,
   CreateNoteResult,
-  NoteFeatureEvents,
   ProfileNotePreview,
   ProfileNotePreviewOptions,
   UpdateResult,
@@ -85,9 +84,4 @@ export interface NoteFeatureHandle extends NoteCitations, NoteCreation {
     indexedKey: string,
     options?: { outcomes?: ExcerptOutcomeScope },
   ): Promise<UpdateResult>;
-  /** Subscribe to {@link NoteFeatureEvents}; returns an unsubscribe. */
-  on<K extends keyof NoteFeatureEvents>(
-    event: K,
-    cb: NoteFeatureEvents[K],
-  ): () => void;
 }

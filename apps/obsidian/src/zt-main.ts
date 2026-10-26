@@ -332,7 +332,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     );
     const noteFeatureDeps = {
       app: this.app,
-      noteFeature: services.noteFeature,
       noteActions: services.noteActions,
       batchImport: services.batchImport,
     };

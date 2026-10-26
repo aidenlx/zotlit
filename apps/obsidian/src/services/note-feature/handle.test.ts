@@ -1,7 +1,7 @@
 // The Note Feature's edge handle: Promise answers over the plugin runtime.
 // The members are Promise edges on purpose, so these cases stay plain.
 import { Effect } from "effect";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { Item, NoteTemplateContext } from "@zotlit/db";
 
@@ -10,7 +10,6 @@ import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { AttachmentImport } from "@/services/attachment-import/service";
-import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import {
   profileReader,
   resolveProfile,
@@ -21,7 +20,6 @@ import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
 
 import { noteFeatureHandle } from "./__fixtures__/note-feature";
 import { ItemNotFound } from "./errors";
-import { NoteFeature } from "./service";
 
 const PAPERS = "Rz9Wm4YfH6Kd" as ProfileId;
 const ITEM = stubService<Item>("Item", { itemID: 1, indexedKey: "ABCD2345" });
@@ -37,7 +35,7 @@ function harness() {
     NoteSource: () => Effect.succeed(null),
   });
   const host = createObsidianHost();
-  const { handle, runtime } = noteFeatureHandle(
+  const { handle } = noteFeatureHandle(
     {
       profile: profileReader(settings),
       noteIndex: {
@@ -72,13 +70,6 @@ function harness() {
     handle,
     host,
     settings,
-    /** Report `summary` on the Note Feature's changes, as a batch does. */
-    report: (summary: ExcerptSummary) =>
-      runtime.runPromise(
-        Effect.flatMap(NoteFeature, (feature) =>
-          feature.reportExcerptImages(summary),
-        ),
-      ),
     [Symbol.asyncDispose]: () => stack.disposeAsync(),
     dispose: () => stack.disposeAsync(),
   };
@@ -126,17 +117,5 @@ describe("bindNoteFeature", () => {
     await expect(created).rejects.toMatchObject({
       message: `Zotero item not found: ${ITEM.indexedKey}`,
     });
-  });
-
-  it("calls an event listener until it unsubscribes", async () => {
-    await using h = harness();
-    const heard = vi.fn();
-    const stop = h.handle.on("excerpt-images-reported", heard);
-    const summary = { zotero: 1, unchecked: 0, unavailable: 0 };
-    await h.report(summary);
-    await vi.waitFor(() => expect(heard).toHaveBeenCalledWith(summary));
-    stop();
-    await h.report(summary);
-    expect(heard).toHaveBeenCalledTimes(1);
   });
 });

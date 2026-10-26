@@ -7,7 +7,6 @@ import type { NoteCitations } from "./citations-handle";
 import type { NoteCreation } from "./creation-handle";
 import { plainNoteError } from "./errors";
 import type { NoteFeatureHandle } from "./operations";
-import { eventPayloads } from "./service";
 import type { NoteFeature } from "./service";
 
 /**
@@ -16,10 +15,10 @@ import type { NoteFeature } from "./service";
  * (`policies/services.md` → Edge handle). A
  * member resolves with its result and rejects with what failed, a render's
  * or a rewrite's throw as it was thrown. A Profile note preview renders
- * synchronously. An event subscription ends at unload.
+ * synchronously.
  */
 export function bindNoteFeature(
-  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">,
+  bridge: Pick<EffectBridge, "runSync" | "runPromise">,
   service: NoteFeature["Service"],
   edges: NoteCitations & NoteCreation,
 ): NoteFeatureHandle {
@@ -40,7 +39,5 @@ export function bindNoteFeature(
     },
     getImportedNotesForItem: (indexedKey) =>
       run(service.getImportedNotesForItem(indexedKey)),
-    on: (event, cb) =>
-      bridge.subscribe(eventPayloads(service.changes, event), cb),
   };
 }

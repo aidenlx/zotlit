@@ -63,6 +63,7 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { parseFrontMatter } from "@/lib/live-text";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -111,8 +112,8 @@ import type { PlanningSources } from "./__fixtures__/planning-context";
 import type { NoteCitations } from "./citations-handle";
 import { plainNoteError } from "./errors";
 import type { NoteFeatureHandle, UpdateScope } from "./operations";
-import { NoteFeature } from "./service";
-import type { WriteNoteUpdateOptions } from "./types";
+import { eventPayloads, NoteFeature } from "./service";
+import type { NoteFeaturePayloads, WriteNoteUpdateOptions } from "./types";
 /**
  * The note feature's deps, with the fixture database its reads serve. The
  * host's file manager also renames: the FileManager tag runs over it.
@@ -179,6 +180,11 @@ function createNoteFeature(deps: TestDeps) {
     ...handle,
     /** The Note Feature service, for the operations no edge handle serves. */
     service,
+    /** Call `cb` with each `event` payload on the service's changes. */
+    on: <K extends keyof NoteFeaturePayloads>(
+      event: K,
+      cb: (payload: NoteFeaturePayloads[K]) => void,
+    ) => subscribe(runtime, eventPayloads(service.changes, event), cb),
     createNote: (...args: Parameters<NoteFeatureHandle["createNote"]>) => {
       know(args[0]);
       return handle.createNote(...args);

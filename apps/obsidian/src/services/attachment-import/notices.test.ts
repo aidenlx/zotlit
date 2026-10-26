@@ -5,10 +5,9 @@ import { ButtonComponent, controlsOf } from "@mock/obsidian";
 import { Effect, Exit, Layer, PubSub, Queue, Scope, Stream } from "effect";
 import { expect, vi } from "vitest";
 
-import { testNotifier } from "@/lib/__fixtures__/notifier";
+import { layerSignalling, testNotifier } from "@/lib/__fixtures__/notifier";
 import type { RecordedNotice } from "@/lib/__fixtures__/notifier";
 import * as m from "@/lib/i18n/generated/messages";
-import { Notifier } from "@/lib/notifier";
 
 import { layerAttachmentSkipNotice } from "./notices";
 import { AttachmentImport } from "./service";
@@ -34,18 +33,7 @@ const register = Effect.fn("test.register")(function* (scope: Scope.Scope) {
       Layer.provide(
         Layer.mock(AttachmentImport, { skipped: Stream.fromPubSub(skipped) }),
       ),
-      Layer.provide(
-        Layer.succeed(
-          Notifier,
-          Notifier.of({
-            ...notifier.service,
-            show: (message, options) =>
-              notifier.service
-                .show(message, options)
-                .pipe(Effect.tap(Queue.offer(shown, undefined))),
-          }),
-        ),
-      ),
+      Layer.provide(layerSignalling(notifier.service, shown)),
     ),
     scope,
   );
