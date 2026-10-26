@@ -96,33 +96,15 @@ describe("bindNoteFeature", () => {
     });
   });
 
-  it("rejects a plan with its signal's abort reason, before it reads", async () => {
-    await using h = harness();
-    const reason = new Error("Stopped by the researcher");
-    await expect(
-      h.handle.planCreations(["ABCD2345"], {
-        signal: AbortSignal.abort(reason),
-      }),
-    ).rejects.toBe(reason);
-  });
-
   it("settles as the bridge does once the runtime is disposed", async () => {
     const h = harness();
     await h.dispose();
-    // A plan runs in the runtime's scope, which unload closed.
-    await expect(h.handle.planCreations(["ABCD2345"])).rejects.toThrow(
-      "All fibers interrupted without error",
-    );
     // A read answers from the services the bridge captured.
     await expect(h.handle.resolveCreationProfile()).resolves.toEqual({
       selector: "default",
       source: "bound",
       shouldAsk: true,
     });
-    // A write runs on the captured services too, and fails as it would before.
-    await expect(h.handle.createNote(ITEM)).rejects.toBeInstanceOf(
-      ItemNotFound,
-    );
   });
 
   it("rejects a Profile note's create with what the create failed with", async () => {

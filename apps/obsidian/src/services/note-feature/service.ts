@@ -45,7 +45,6 @@ import type {
   CreateNoteOptions,
   CreateNoteResult,
   CreationProfileSelection,
-  CreationPlan,
   CreationProfileSources,
   NoteFeatureEvent,
   NoteFeatureEventOf,
@@ -290,27 +289,6 @@ export const eventPayloads = <K extends keyof NoteFeaturePayloads>(
         change._tag === event,
     ),
     Stream.map((change) => change.payload),
-  );
-
-/**
- * `plans` with each preview's create run by `run`, for a caller outside
- * Effect.
- */
-export const plansRunBy = (
-  plans: ReadonlyMap<string, PlannedCreation>,
-  run: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>,
-): ReadonlyMap<string, CreationPlan> =>
-  new Map(
-    Array.from(plans, ([key, plan]) => [
-      key,
-      {
-        ...plan,
-        previews: plan.previews.map((preview) => ({
-          ...preview,
-          create: (options) => run(preview.create(options)),
-        })),
-      },
-    ]),
   );
 
 export const collectExcerptReports = Effect.gen(function* () {

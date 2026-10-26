@@ -108,7 +108,7 @@ import type { NoteFeatureSources } from "./__fixtures__/note-feature";
 import type { PlanningSources } from "./__fixtures__/planning-context";
 import type { NoteCitations } from "./citations-handle";
 import { plainNoteError } from "./errors";
-import type { NoteFeatureHandle, UpdateScope } from "./operations";
+import type { CreateNoteResult, UpdateScope } from "./operations";
 import { NoteFeature } from "./service";
 import type { WriteNoteUpdateOptions } from "./types";
 /**
@@ -140,7 +140,7 @@ function createNoteFeature(deps: TestDeps) {
       () => Effect.runSync(deps.settings.current) ?? settingsDefaults,
       deps.app.metadataCache,
     );
-  const { handle: feature, runtime } = noteFeatureHandle(
+  const { handle, runtime, calls } = noteFeatureHandle(
     {
       ...deps,
       // These Profiles name no Match, so creation runs no query.
@@ -174,10 +174,11 @@ function createNoteFeature(deps: TestDeps) {
   // The caller hands over an Item it read from Zotero, so the database holds it.
   const know = (item: Item) => seedItem(deps.db.client, item);
   return {
-    ...feature,
-    createNote: (...args: Parameters<NoteFeatureHandle["createNote"]>) => {
+    ...handle,
+    ...calls,
+    createNote: (...args: Parameters<typeof calls.createNote>) => {
       know(args[0]);
-      return feature.createNote(...args);
+      return calls.createNote(...args);
     },
     /** Run a create on the runtime as a fiber, which a case can interrupt. */
     forkCreateNote: (item: Item) => {
@@ -189,7 +190,7 @@ function createNoteFeature(deps: TestDeps) {
     /** Create on the runtime under a TestClock set to `millis`. */
     createNoteAt: (
       item: Item,
-      options: Parameters<NoteFeatureHandle["createNote"]>[1],
+      options: Parameters<typeof calls.createNote>[1],
       millis: number,
     ) => {
       know(item);
@@ -4874,9 +4875,7 @@ function makeFile(path: string): TFile {
   return file;
 }
 
-function createdFile(
-  result: Awaited<ReturnType<NoteFeatureHandle["createNote"]>>,
-): TFile {
+function createdFile(result: CreateNoteResult): TFile {
   expect(result.outcome).toBe("created");
   if (result.outcome !== "created") {
     throw new Error(`Expected a created note, got ${result.outcome}`);

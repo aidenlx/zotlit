@@ -317,7 +317,8 @@ async function harness(
       }),
     },
   };
-  const { handle: feature } = noteFeatureHandle(deps, stack, { query });
+  const { handle, calls } = noteFeatureHandle(deps, stack, { query });
+  const feature = { ...handle, ...calls };
   const cleanup = stack.move();
   return {
     ...fixture,
