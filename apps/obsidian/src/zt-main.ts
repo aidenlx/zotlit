@@ -573,8 +573,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       bridge: services.bridge,
       app: this.app,
       zoteroReads: services.zoteroReads,
-      noteIndex: services.noteIndex,
-      zoteroPref: services.zoteroPref,
       itemLookup: services.itemLookup,
       settings: services.settings,
       templates: services.template,
