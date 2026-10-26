@@ -4,12 +4,11 @@
 // Markdown again only when structure changes: which links it touches at all,
 // or whether it touches them.
 
-import { MarkdownRenderChild, MarkdownView } from "obsidian";
-import type { App, MarkdownPostProcessorContext } from "obsidian";
+import { Effect } from "effect";
+import { MarkdownRenderChild } from "obsidian";
+import type { MarkdownPostProcessorContext, MarkdownView } from "obsidian";
 
-import { getLogger } from "@/lib/log";
-
-const logger = getLogger("reading-view");
+import { withLogCategory } from "@/lib/effect-log";
 
 /** Draft previews supply their own citations while keeping the real path for native links. */
 export function isDraftMarkdown(element: HTMLElement): boolean {
@@ -20,20 +19,15 @@ export function isDraftMarkdown(element: HTMLElement): boolean {
  * The Markdown view an element a post-processor rendered sits in, which is
  * what a hover popover hangs off.
  *
+ * @param views the open Markdown views, as `Workspace.markdownViews` reads them.
  * @returns the view, or null for an element no open Markdown view holds — an
  *   embed's or a draft's own rendering.
  */
 export function markdownViewOf(
-  app: App,
+  views: readonly MarkdownView[],
   element: HTMLElement,
 ): MarkdownView | null {
-  for (const leaf of app.workspace.getLeavesOfType("markdown")) {
-    const { view } = leaf;
-    if (view instanceof MarkdownView && view.containerEl.contains(element)) {
-      return view;
-    }
-  }
-  return null;
+  return views.find((view) => view.containerEl.contains(element)) ?? null;
 }
 
 /** The document offsets one rendered reading-view section covers. */
@@ -83,23 +77,18 @@ function lineStart(text: string, line: number): number {
  * Renders every open reading view again, which is how a post-processor's output
  * catches up with a setting or a data change.
  *
+ * @param views the open Markdown views, as `Workspace.markdownViews` reads them.
  * @returns how many views rendered again.
  */
-export function rerenderReadingViews(app: App): number {
-  let rendered = 0;
-  for (const leaf of app.workspace.getLeavesOfType("markdown")) {
-    const { view } = leaf;
-    if (!(view instanceof MarkdownView)) continue;
-    view.previewMode.rerender(true);
-    rendered += 1;
-  }
-  return rendered;
+export function rerenderReadingViews(views: readonly MarkdownView[]): number {
+  for (const view of views) view.previewMode.rerender(true);
+  return views.length;
 }
 
 /** One held section: the document it shows, and the rewrite that refreshes it. */
 interface LiveSection {
   path: string;
-  show: () => void;
+  show: Effect.Effect<void>;
 }
 
 /**
@@ -121,7 +110,7 @@ export class LiveSections {
   hold(
     el: HTMLElement,
     ctx: MarkdownPostProcessorContext,
-    show: () => void,
+    show: Effect.Effect<void>,
   ): void {
     const held = this.#sections.get(el);
     if (held !== undefined) {
@@ -137,13 +126,18 @@ export class LiveSections {
   }
 
   /** Rewrites the live sections of one document, or every live section. */
-  refresh(path?: string): void {
-    let count = 0;
-    for (const section of this.#sections.values()) {
-      if (path !== undefined && section.path !== path) continue;
-      section.show();
-      count += 1;
-    }
-    logger.trace("Refreshed live sections", { path, count });
+  refresh(path?: string): Effect.Effect<void> {
+    const sections = this.#sections;
+    return Effect.gen(function* () {
+      let count = 0;
+      for (const section of sections.values()) {
+        if (path !== undefined && section.path !== path) continue;
+        yield* section.show;
+        count += 1;
+      }
+      yield* Effect.logTrace("Refreshed live sections").pipe(
+        Effect.annotateLogs({ path, count }),
+      );
+    }).pipe(withLogCategory("reading-view"));
   }
 }

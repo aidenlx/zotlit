@@ -45,7 +45,6 @@ import { plainCitationText } from "./citation-text/plain";
 import { citekeyNoteCreation } from "./citekey-editor/note-creation";
 import { CitekeyEditor } from "./citekey-editor/service";
 import type { CitekeyNoteCreation } from "./citekey-editor/service";
-import { CitekeyReading } from "./citekey-reading/service";
 import { ExcerptDisplays } from "./excerpt-image/display";
 import { ExcerptImages } from "./excerpt-image/layer";
 import { createExcerptPreparation } from "./excerpt-image/prepare";
@@ -82,7 +81,6 @@ import { loadLiteratureNoteTemplateMigrationData } from "./template/migration";
 import type { TemplateMigrationOptions } from "./template/migration";
 import { plainTemplate, plainTemplateMigration } from "./template/plain";
 import { plainUseLedger } from "./use-ledger/plain";
-import { WikilinkReading } from "./wikilink-reading/service";
 import { writeReadUse } from "./zotero-local-api/last-read";
 import { ZoteroLocalApi } from "./zotero-local-api/service";
 import { plainZoteroPref } from "./zotero-pref/plain";
@@ -570,48 +568,6 @@ export async function buildServices(
         );
         return runtime.runSync(CitekeyEditor);
       },
-    })
-    .use({
-      wikilinkReading: ({
-        noteIndex,
-        citationText,
-        citekeyEditor,
-        citationPopover,
-        settings,
-        bridge,
-      }) =>
-        new WikilinkReading({
-          runtime,
-          app: plugin.app,
-          plugin,
-          noteIndex,
-          citationText,
-          citekeyEditor,
-          citationPopover,
-          settings,
-          bridge,
-        }),
-    })
-    .use({
-      citekeyReading: ({
-        citationText,
-        citationLookup,
-        citationPopover,
-        citekeyEditor,
-        settings,
-        bridge,
-      }) =>
-        new CitekeyReading({
-          runtime,
-          app: plugin.app,
-          plugin,
-          citationText,
-          citationLookup,
-          citationPopover,
-          citekeyEditor,
-          settings,
-          bridge,
-        }),
     })
     .use({
       graphCitations: ({

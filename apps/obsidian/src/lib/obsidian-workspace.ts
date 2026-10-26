@@ -230,6 +230,18 @@ export const layerWorkspaceFrom = (
   source: WorkspaceSource,
 ): Layer.Layer<Workspace> => Layer.effect(Workspace, makeWorkspace(source));
 
+/**
+ * Obsidian's `trigger` over the tag, for plain code that raises a workspace
+ * event, such as a hover handler: each call runs the tag's `trigger` with
+ * `run`, the runner of the caller's layer.
+ */
+export function workspaceTrigger(
+  workspace: Pick<WorkspaceShape, "trigger">,
+  run: (effect: Effect.Effect<void>) => void,
+): Pick<ObsidianWorkspace, "trigger"> {
+  return { trigger: (name, ...data) => run(workspace.trigger(name, ...data)) };
+}
+
 /** The tag over the app's workspace. */
 export const layerWorkspace: Layer.Layer<Workspace, never, ObsidianApp> =
   Layer.effect(

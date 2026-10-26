@@ -9,7 +9,7 @@ import { scopedBridge, valueOr } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import { Workspace } from "@/lib/obsidian-workspace";
+import { Workspace, workspaceTrigger } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
 import { AnnotationPopover } from "@/services/annotation-popover/service";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
@@ -60,9 +60,7 @@ export const layerCitekeyEditorExtension = Layer.effectDiscard(
     /** Registered once; its contents are the on/off switch. */
     const extensions: Extension[] = [];
     const extension = citekeyEditorExtension({
-      workspace: {
-        trigger: (name, ...data) => run(workspace.trigger(name, ...data)),
-      },
+      workspace: workspaceTrigger(workspace, run),
       // Unload interrupts a pending open or popover.
       open: (citekey, pane) =>
         void bridge

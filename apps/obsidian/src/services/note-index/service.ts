@@ -17,6 +17,9 @@ import type { VaultEvent } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { DEFAULT_PROFILE, profileStampOf } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
+import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
+import { heldCitekeyOf } from "@/services/citation-index/lookup";
+import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
 
 import {
   diffContributions,
@@ -93,6 +96,30 @@ export const resolveLiteratureNoteIn = Effect.fnUntraced(function* (
   const dest = yield* metadata.firstLinkpathDest(linkpath, sourcePath);
   if (!dest) return null;
   return literatureNoteOf(dest, yield* metadata.fileCache(dest));
+});
+
+/**
+ * {@link resolveLiteratureNoteIn}, with the native citation key `lookup` holds
+ * for the note's Item: the target a wikilink surface turns into a Citation.
+ */
+export const literatureNoteTargetIn = Effect.fnUntraced(function* (
+  metadata: Pick<MetadataCacheShape, "firstLinkpathDest" | "fileCache">,
+  linkpath: string,
+  {
+    sourcePath,
+    lookup,
+  }: {
+    readonly sourcePath: string;
+    readonly lookup: CitationLookupAnswer | null;
+  },
+) {
+  const note = yield* resolveLiteratureNoteIn(metadata, linkpath, sourcePath);
+  if (!note) return null;
+  const target: LiteratureNoteTarget = {
+    ...note,
+    citationKey: heldCitekeyOf(lookup, note.indexedKey) ?? null,
+  };
+  return target;
 });
 
 /** The Literature Note `dest` is by its frontmatter, or `null` for an ordinary note. */

@@ -6,11 +6,9 @@
 // gone while its sections stay rendered.
 import { Component, MarkdownView } from "obsidian";
 import type {
-  App,
   MarkdownPostProcessor,
   MarkdownPostProcessorContext,
   MarkdownRenderChild,
-  Workspace,
   WorkspaceLeaf,
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
@@ -60,14 +58,8 @@ async function harness(stack: AsyncDisposableStack) {
   );
   const service = stack.use(
     new AnnotationLinkReadingCore({
+      markdownViews: () => [view],
       host: {
-        app: stubService<App>("App", {
-          workspace: stubService<Workspace>("Workspace", {
-            getLeavesOfType: () => [
-              stubService<WorkspaceLeaf>("WorkspaceLeaf", { view }),
-            ],
-          }),
-        }),
         registerMarkdownPostProcessor: (
           postProcessor: MarkdownPostProcessor,
         ) => {
