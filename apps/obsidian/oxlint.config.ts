@@ -164,7 +164,6 @@ export default defineConfig({
         "src/services/note-feature/operations.ts",
         "src/services/note-feature/update-batch.ts",
         "src/services/note-import/batch-import.ts",
-        "src/services/note-import/service.ts",
         "src/services/pandoc/document-presentation.ts",
         "src/services/template/actions.ts",
         "src/views/annot-view/view.tsx",
@@ -333,7 +332,6 @@ export default defineConfig({
       // `deps.app`: the deps must carry the tag first.
       files: [
         "src/services/note-feature/update-single.ts",
-        "src/services/note-import/service.ts",
         "src/views/note-preview/render.ts",
         "src/views/note-preview/session.ts",
       ],
@@ -381,7 +379,6 @@ export default defineConfig({
         "src/services/note-feature/update-batch.ts",
         "src/services/note-feature/update-single.ts",
         "src/services/note-import/batch-import.ts",
-        "src/services/note-import/service.ts",
         "src/services/profile/service.ts",
         "src/views/annot-view/view.tsx",
         "src/views/library/item-actions.ts",

@@ -28,10 +28,10 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
-import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
+import { buildRuntime } from "@/lib/effect-layer";
 import type { VaultSource } from "@/lib/obsidian-vault";
 import { AttachmentImportService } from "@/services/attachment-import/service";
 import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
@@ -51,7 +51,8 @@ import {
 } from "@/services/zotero-reads/test-utils";
 
 import { diskImageHost } from "./__fixtures__/disk-image-host";
-import { createNoteImporter } from "./service";
+import { layerNoteImporterOver } from "./__fixtures__/importer";
+import { NoteImporter } from "./service";
 
 const paragraph = (key: string, image: string) =>
   `<p><img data-attachment-key="${image}" data-annotation="${encodeURIComponent(JSON.stringify({ attachmentURI: "http://zotero.org/users/local/LOCAL/items/RGRPDF24", annotationKey: key }))}"></p>`;
@@ -162,34 +163,37 @@ async function fixture(mode = "normal") {
             language: "liquid",
           }),
   );
-  const importer = createNoteImporter({
-    app,
-    vault: vaultOver(app.vault as unknown as VaultSource),
-    bridge: effectBridge(runtime),
-    profile: profileReader(settings),
-    noteIndex: {
-      getImportedNoteByNoteKey: () => [],
-      getNotesByItemKey: () => [],
-    },
-    template: {
-      render: () => "",
-      renderCitation: () => "",
-      renderProfileAnnotation: render,
-    },
-    zoteroPref: paths,
-    attachmentImport: attachments,
-    excerptImages: (options) =>
-      createExcerptPreparation({
-        app,
-        paths,
-        resolver: {
-          operation: () => ({
-            resolve,
-            [Symbol.asyncDispose]: async () => {},
-          }),
-        },
-      })(options),
-  });
+  const importerRuntime = buildRuntime(
+    layerNoteImporterOver({
+      vault: host.app.vault as unknown as VaultSource,
+      workspace: host.app.workspace,
+      profile: profileReader(settings),
+      noteIndex: {
+        getImportedNoteByNoteKey: () => [],
+        getNotesByItemKey: () => [],
+      },
+      template: {
+        render: () => "",
+        renderCitation: () => "",
+        renderProfileAnnotation: render,
+      },
+      zoteroPref: paths,
+      attachmentImport: attachments,
+      excerptImages: (options) =>
+        createExcerptPreparation({
+          app,
+          paths,
+          resolver: {
+            operation: () => ({
+              resolve,
+              [Symbol.asyncDispose]: async () => {},
+            }),
+          },
+        })(options),
+    }),
+    stack,
+  );
+  const importer = importerRuntime.runSync(NoteImporter);
   const { reads } = await stack.use(
     inProcessReadsService(sharedClientOpener(client)),
   ).ready;
@@ -221,12 +225,17 @@ async function fixture(mode = "normal") {
       outcome = next;
     },
     import: async (targetFile?: TFile) =>
-      importer.importNote(getNoteByKey(client, "NTES2345", { libraryID: 1 })!, {
-        reads,
-        settings,
-        targetFile,
-        reportExcerpts: (summary) => reports.push(summary),
-      }),
+      importerRuntime.runPromise(
+        importer.importNote(
+          getNoteByKey(client, "NTES2345", { libraryID: 1 })!,
+          {
+            reads,
+            settings,
+            targetFile,
+            reportExcerpts: (summary) => reports.push(summary),
+          },
+        ),
+      ),
     note: () => host.vault.getMarkdownFiles()[0]!,
     images: () => readdir(join(vaultRoot, "Images")),
     [Symbol.asyncDispose]: () => cleanup[Symbol.asyncDispose](),

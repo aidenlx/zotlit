@@ -28,10 +28,10 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
-import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
+import { buildRuntime } from "@/lib/effect-layer";
 import type { VaultSource } from "@/lib/obsidian-vault";
 import { AttachmentImportService } from "@/services/attachment-import/service";
 import { bluePng } from "@/services/excerpt-image/__fixtures__/png";
@@ -50,7 +50,8 @@ import {
 } from "@/services/zotero-reads/test-utils";
 
 import { diskImageHost } from "./__fixtures__/disk-image-host";
-import { createNoteImporter } from "./service";
+import { layerNoteImporterOver } from "./__fixtures__/importer";
+import { NoteImporter } from "./service";
 
 /** One paragraph naming the Shared Annotation both Child Notes quote. */
 const paragraph = `<p><img data-attachment-key="SNAP2345" data-annotation="${encodeURIComponent(
@@ -181,27 +182,30 @@ async function fixture(
     paths,
     resolver: service,
   });
-  const importer = createNoteImporter({
-    app,
-    vault: vaultOver(app.vault as unknown as VaultSource),
-    bridge: effectBridge(runtime),
-    profile: profileReader(settings),
-    noteIndex: {
-      getImportedNoteByNoteKey: () => [],
-      getNotesByItemKey: () => [],
-    },
-    template: {
-      render: () => "",
-      renderCitation: () => "",
-      renderProfileAnnotation: renderAnnotation,
-    },
-    zoteroPref: paths,
-    attachmentImport: attachments,
-    excerptImages: (options) => {
-      scopes.push(options.outcomes);
-      return preparation(options);
-    },
-  });
+  const importerRuntime = buildRuntime(
+    layerNoteImporterOver({
+      vault: host.app.vault as unknown as VaultSource,
+      workspace: host.app.workspace,
+      profile: profileReader(settings),
+      noteIndex: {
+        getImportedNoteByNoteKey: () => [],
+        getNotesByItemKey: () => [],
+      },
+      template: {
+        render: () => "",
+        renderCitation: () => "",
+        renderProfileAnnotation: renderAnnotation,
+      },
+      zoteroPref: paths,
+      attachmentImport: attachments,
+      excerptImages: (options) => {
+        scopes.push(options.outcomes);
+        return preparation(options);
+      },
+    }),
+    stack,
+  );
+  const importer = importerRuntime.runSync(NoteImporter);
   const { reads } = await stack.use(
     inProcessReadsService(sharedClientOpener(client)),
   ).ready;
@@ -222,14 +226,13 @@ async function fixture(
   const importNote = (noteKey: string, outcomes?: ExcerptOutcomeScope) => {
     const report: ExcerptSummary[] = [];
     reports.push(report);
-    return importer.importNote(
-      getNoteByKey(client, noteKey, { libraryID: 1 })!,
-      {
+    return importerRuntime.runPromise(
+      importer.importNote(getNoteByKey(client, noteKey, { libraryID: 1 })!, {
         reads,
         settings,
         outcomes,
         reportExcerpts: (summary) => report.push(summary),
-      },
+      }),
     );
   };
   const cleanup = stack.move();

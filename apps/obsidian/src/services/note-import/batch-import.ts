@@ -52,13 +52,47 @@ import type {
 import { importRunSummary } from "./batch-import-notices";
 import { NoteImportProfileError } from "./service";
 import type {
+  ImportNoteOptions,
   NoteImporter,
   WriteOutcome,
-  PreparedExplicitImport,
+  PreparedExplicitImport as EffectPreparedExplicitImport,
 } from "./service";
 import type { NoteImportView } from "./view";
 
 const logger = getLogger("batch-import");
+
+type PreparedExplicitImport = Omit<EffectPreparedExplicitImport, "import"> & {
+  import(note: Note, options: ImportNoteOptions): Promise<WriteOutcome>;
+};
+
+/** The note importer's writes as Promises, for this legacy runner. */
+export interface PromiseNoteImporter {
+  prepareExplicitImport(
+    note: ChildNote,
+    options: Parameters<NoteImporter["Service"]["prepareExplicitImport"]>[1],
+  ): Promise<PreparedExplicitImport>;
+  importNote(note: Note, options: ImportNoteOptions): Promise<WriteOutcome>;
+}
+
+export function promiseNoteImporter(
+  bridge: Pick<EffectBridge, "runPromise">,
+  importer: NoteImporter["Service"],
+): PromiseNoteImporter {
+  return {
+    prepareExplicitImport: async (note, options) => {
+      const prepared = await bridge.runPromise(
+        importer.prepareExplicitImport(note, options),
+      );
+      return {
+        ...prepared,
+        import: (current, runOptions) =>
+          bridge.runPromise(prepared.import(current, runOptions)),
+      };
+    },
+    importNote: (note, options) =>
+      bridge.runPromise(importer.importNote(note, options)),
+  };
+}
 
 /** Bounds concurrent per-note loads + writes during a modal run, so Cancel can
  * stop the queued remainder between items. */
@@ -78,7 +112,7 @@ export interface NoteImportDeps {
   bridge: Pick<EffectBridge, "runSync">;
   /** Plans a library-wide import: which Libraries and notes it covers. */
   batchScope: BatchScopeHandle;
-  noteImport: Pick<NoteImporter, "importNote" | "prepareExplicitImport">;
+  noteImport: Pick<PromiseNoteImporter, "importNote" | "prepareExplicitImport">;
   noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getImportedNoteByNoteKey">;
   metadataCache: Pick<MetadataCache, "getFileCache">;
 }

@@ -50,12 +50,19 @@ export const profileRead = <A, R>(
   Effect.orDie(Effect.mapError(effect, (error) => error.cause));
 
 /**
- * The Template's `render`, `renderCitation` and `frontmatterFields`, run
+ * The Template's `render`, `renderCitation`, `renderProfileAnnotation` and
+ * `frontmatterFields`, run
  * synchronously on the caller's context. A failure throws what the Template
  * threw, as the getter or helper that runs it expects.
  */
 export const syncTemplate: Effect.Effect<
-  Pick<TemplateOperations, "render" | "renderCitation" | "frontmatterFields">,
+  Pick<
+    TemplateOperations,
+    | "render"
+    | "renderCitation"
+    | "renderProfileAnnotation"
+    | "frontmatterFields"
+  >,
   never,
   Template
 > = Effect.gen(function* () {
@@ -71,6 +78,8 @@ export const syncTemplate: Effect.Effect<
     render: (name, data) => read(template.render(name, data)),
     renderCitation: (refs, variant) =>
       read(template.renderCitation(refs, variant)),
+    renderProfileAnnotation: (data, options) =>
+      read(template.renderProfileAnnotation(data, options)),
     get frontmatterFields(): readonly CompiledFrontmatterField[] {
       return read(template.frontmatterFields);
     },

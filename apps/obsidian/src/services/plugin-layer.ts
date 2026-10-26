@@ -85,6 +85,8 @@ import { layerLocalServer } from "./local-server/service";
 import type { LocalServer } from "./local-server/service";
 import { layerLogging, layerLogOutput } from "./log/service";
 import { layerManagedBinaryPlatform } from "./managed-binary/service";
+import { layerNoteImporter } from "./note-import/service";
+import type { NoteImporter, NoteImportPorts } from "./note-import/service";
 import { layerNoteIndex } from "./note-index/service";
 import type { NoteIndex } from "./note-index/service";
 import { layerCitationStyleNotice } from "./pandoc/notices";
@@ -148,6 +150,7 @@ export function pluginLayer(
     excerpt,
     languagePack,
     noteCreation,
+    noteImport,
   }: {
     readonly excerpt: {
       readonly openStore: () => Promise<ExcerptStore>;
@@ -155,6 +158,7 @@ export function pluginLayer(
     };
     readonly languagePack: LanguagePackStartup;
     readonly noteCreation: CitekeyNoteCreation;
+    readonly noteImport: NoteImportPorts;
   },
 ): Layer.Layer<
   | GraphCitations
@@ -186,6 +190,7 @@ export function pluginLayer(
   | ChineseSegmenter
   | PandocEngine
   | NoteIndex
+  | NoteImporter
   | LocalServer
   | ZoteroLocalApi
   | ZoteroHttp
@@ -214,6 +219,7 @@ export function pluginLayer(
     layerAnnotationPopover.pipe(startingAs("AnnotationPopover")),
     layerCitekeyEditor(noteCreation).pipe(startingAs("CitekeyEditor")),
     layerItemLookup.pipe(startingAs("ItemLookup")),
+    layerNoteImporter(noteImport).pipe(startingAs("NoteImporter")),
     layerLocalBridge({
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       pluginVersion: plugin.manifest.version,

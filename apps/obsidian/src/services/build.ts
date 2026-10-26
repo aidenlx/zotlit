@@ -74,8 +74,9 @@ import { createNoteFeature } from "./note-feature";
 import type { NoteFeature } from "./note-feature";
 import { createBatchImport } from "./note-import/batch-import";
 import type { BatchImport } from "./note-import/batch-import";
-import { createNoteImporter } from "./note-import/service";
-import type { NoteImporter } from "./note-import/service";
+import { promiseNoteImporter } from "./note-import/batch-import";
+import { NoteImporter } from "./note-import/service";
+import type { NoteImportPorts } from "./note-import/service";
 import { createNoteImportView } from "./note-import/view";
 import { plainNoteIndex } from "./note-index/plain";
 import { plainBibliographyRender } from "./pandoc/render-cache/plain";
@@ -136,6 +137,14 @@ export async function buildServices(
   const noteCreation = new Promise<CitekeyNoteCreation>((resolve) => {
     bindNoteCreation = resolve;
   });
+  // A note write calls Attachment Import and the excerpt preparation, which
+  // the container builds after the graph, through this one holder. Nothing
+  // writes a note before the container has filled it.
+  let noteImportPorts: Required<NoteImportPorts> | undefined;
+  const boundNoteImportPorts = (): Required<NoteImportPorts> => {
+    if (!noteImportPorts) throw new Error("Note import is not bound yet");
+    return noteImportPorts;
+  };
   // The excerpt service is registered before the PDF reader, so the reader
   // hands its documents over through this one holder. A crop asks for a reader
   // document per resolution, and answers detached while the holder is empty.
@@ -157,6 +166,17 @@ export async function buildServices(
         languagePack,
         noteCreation: {
           createNote: async (item) => (await noteCreation).createNote(item),
+        },
+        noteImport: {
+          attachmentImport: {
+            prepare: (notePath, options) =>
+              boundNoteImportPorts().attachmentImport.prepare(
+                notePath,
+                options,
+              ),
+          },
+          excerptImages: (options) =>
+            boundNoteImportPorts().excerptImages(options),
         },
       },
     ),
@@ -349,22 +369,8 @@ export async function buildServices(
       },
     })
     .useValue({
-      noteImport: ({
-        profile,
-        noteIndex,
-        template,
-        zoteroPref,
-        attachmentImport,
-        excerptImage,
-      }): NoteImporter =>
-        createNoteImporter({
-          profile,
-          app: plugin.app,
-          vault,
-          bridge,
-          noteIndex,
-          template,
-          zoteroPref,
+      noteImport: ({ zoteroPref, attachmentImport, excerptImage }) => {
+        noteImportPorts = {
           attachmentImport,
           excerptImages: (options) =>
             createExcerptPreparation({
@@ -375,7 +381,9 @@ export async function buildServices(
                 baseAttachmentPath: zoteroPref.baseAttachmentPath,
               },
             })(options),
-        }),
+        };
+        return promiseNoteImporter(bridge, runtime.runSync(NoteImporter));
+      },
     })
     .useValue({
       templateData: () =>

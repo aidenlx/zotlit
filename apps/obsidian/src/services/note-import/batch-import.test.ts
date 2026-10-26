@@ -41,13 +41,13 @@ import type {
 
 import { createBatchImport } from "./batch-import";
 import type { NoteImportDeps } from "./batch-import";
+import type { PromiseNoteImporter as NoteImporter } from "./batch-import";
 import {
   batchImportNotice,
   batchImportToast,
   childImportToast,
 } from "./batch-import-notices";
 import { NoteImportProfileError } from "./service";
-import type { NoteImporter } from "./service";
 
 /** Captured options of every batch modal the runner opened via its view port. */
 const openedModals: BatchModalOptions[] = [];
