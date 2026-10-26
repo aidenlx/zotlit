@@ -82,40 +82,6 @@ export function savedExcerptRequest(options: {
 }
 
 /**
- * {@link savedExcerptRequest} as an Effect: the reads come from one `snapshot`,
- * and `paths` is read before the read and again after it.
- */
-export function resolveSavedExcerptRequest<E>(options: {
-  annotation: AnnotationRecord;
-  source: AnnotationSource | null;
-  sourceScope: string | null;
-  snapshot: Effect.Effect<ExcerptRequestReads, E, Scope.Scope>;
-  paths: Effect.Effect<AttachmentPathContext>;
-}): Effect.Effect<ExcerptRequest | null> {
-  const { annotation, source, sourceScope } = options;
-  return Effect.gen(function* () {
-    const paths = yield* options.paths;
-    if (!source || sourceScope !== paths.dataDir) return null;
-    // One Snapshot, so the identity and the attachment come from one database.
-    const reads = yield* options.snapshot;
-    const request = yield* excerptRequest({ annotation, source, reads, paths });
-    return (yield* options.paths).dataDir === paths.dataDir ? request : null;
-  }).pipe(
-    Effect.scoped,
-    // A failed read, as a throw from a reader, resolves to nothing; an
-    // interrupt passes through.
-    recover(
-      (cause) =>
-        Effect.logDebug("No excerpt request: the database did not answer").pipe(
-          Effect.annotateLogs({ annotationKey: annotation.key, cause }),
-        ),
-      Effect.succeed(null),
-    ),
-    withLogCategory("excerpt-image"),
-  );
-}
-
-/**
  * The file inputs one saved Annotation resolves through, under the paths of
  * the active source, or `null` where nothing can: no Annotation Source, a data
  * directory that moves during the read, or a database that cannot answer.
@@ -142,9 +108,8 @@ export function savedExcerptRequestFor(input: {
 
 /**
  * {@link savedExcerptRequestFor} for Promise callers: the pixel-edit
- * revalidation in `zt-main.ts`, and the Annotation Repository and Annotation
- * Popover cores. Unload interrupts a pending read, which then resolves to
- * `null`.
+ * revalidation in `zt-main.ts` and the Annotation Popover core. Unload
+ * interrupts a pending read, which then resolves to `null`.
  */
 export function savedExcerptRequestOver(services: {
   readonly reads: ZoteroReads["Service"];
@@ -186,7 +151,8 @@ function readSavedExcerptRequest<E>(options: {
     return (yield* options.dataDir) === paths.dataDir ? request : null;
   }).pipe(
     Effect.scoped,
-    // Whatever stops the read, as a throw from a reader, resolves to nothing.
+    // A failed read, as a throw from a reader, resolves to nothing; an
+    // interrupt passes through.
     recover(
       (cause) =>
         Effect.logDebug("No excerpt request: the database did not answer").pipe(

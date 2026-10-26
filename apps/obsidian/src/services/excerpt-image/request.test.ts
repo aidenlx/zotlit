@@ -31,7 +31,6 @@ import { PNG_FORMAT } from "./format";
 import {
   ExcerptSourceUnavailable,
   excerptRequestForKey,
-  resolveSavedExcerptRequest,
   savedExcerptRequest,
   savedExcerptRequestFor,
   savedExcerptRequestOver,
@@ -705,15 +704,22 @@ describe("Excerpt request for an Indexed Key", () => {
   );
 });
 
-describe("resolveSavedExcerptRequest", () => {
+describe("savedExcerptRequestFor", () => {
   const resolve = (snapshot: Effect.Effect<never, DbUnavailable>) =>
-    resolveSavedExcerptRequest({
-      annotation,
-      source: databaseSource,
-      sourceScope: paths.dataDir,
-      snapshot,
-      paths: Effect.succeed(paths),
-    });
+    savedExcerptRequestFor({ annotation, source: databaseSource }).pipe(
+      Effect.provideService(
+        ZoteroReads,
+        stubService<ZoteroReads["Service"]>("ZoteroReads", { snapshot }),
+      ),
+      Effect.provideService(
+        ZoteroPref,
+        stubService<ZoteroPref["Service"]>("ZoteroPref", {
+          current: Effect.succeed(
+            stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", paths),
+          ),
+        }),
+      ),
+    );
 
   it.effect("answers null where the database cannot answer", () =>
     Effect.gen(function* () {
