@@ -29,12 +29,14 @@ import { AnnotationPopover } from "./annotation-popover/service";
 import { CapabilityNotices } from "./annotation-repository/notices";
 import { bindCapabilityNotices } from "./annotation-repository/notices-handle";
 import { AnnotationRepository } from "./annotation-repository/service";
-import { AttachmentImportService } from "./attachment-import/service";
+import { bindAttachmentImport } from "./attachment-import/handle";
+import { AttachmentImport } from "./attachment-import/service";
 import { createPdfReader } from "./attachment-open/actions";
 import { openWithSystem } from "./attachment-open/capture";
+import { bindLiteratureNoteAttachments } from "./attachment-open/handle";
+import type { LiteratureNoteServices } from "./attachment-open/literature-note";
 import { createTargetOpener } from "./attachment-open/open-target";
 import { AttachmentResolver } from "./attachment-resolver/service";
-import { bindBatchScope } from "./batch-scope-handle";
 import { ChineseSegmenter } from "./chinese-segmenter/service";
 import {
   plainCitationIndex,
@@ -52,6 +54,7 @@ import { ExcerptImages } from "./excerpt-image/layer";
 import { createExcerptPreparation } from "./excerpt-image/prepare";
 import { prepareSingleExcerpt } from "./excerpt-image/prepare-single";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
+import { savedExcerptRequestOver } from "./excerpt-image/request";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
 import { bindItemLookup } from "./item-lookup/handle";
@@ -61,7 +64,6 @@ import { QueryService } from "./item-query/service";
 import { LanguagePack } from "./language-pack/service";
 import type { LanguagePackStartup } from "./language-pack/service";
 import { plainLibraryScope } from "./library-scope/plain";
-import { LibraryScope } from "./library-scope/service";
 import { bindCustomize } from "./local-bridge/customize";
 import type {
   CustomizePorts,
@@ -73,6 +75,12 @@ import { LocalServer } from "./local-server/service";
 import { bindManagedBinary } from "./managed-binary/handle";
 import { createNoteFeature } from "./note-feature";
 import type { NoteFeature } from "./note-feature";
+import { bindBatchUpdate } from "./note-feature/batch-update-handle";
+import { bindNoteCitations } from "./note-feature/citations-handle";
+import type { NoteCitationServices } from "./note-feature/citations-handle";
+import type { CreationPlanningServices } from "./note-feature/creation-planning";
+import type { BatchUpdateServices } from "./note-feature/update-batch";
+import { batchUpdateNotices } from "./note-feature/update-single";
 import type { BatchImportServices } from "./note-import/batch-import";
 import { bindBatchImport } from "./note-import/batch-import-handle";
 import type { NoteImportPorts } from "./note-import/service";
@@ -96,6 +104,7 @@ import { plainUseLedger } from "./use-ledger/plain";
 import { writeReadUse } from "./zotero-local-api/last-read";
 import { ZoteroLocalApi } from "./zotero-local-api/service";
 import { plainZoteroPref } from "./zotero-pref/plain";
+import { ZoteroPref } from "./zotero-pref/service";
 import { plainZoteroReads } from "./zotero-reads/plain";
 import { ZoteroReads } from "./zotero-reads/service";
 
@@ -136,9 +145,9 @@ export async function buildServices(
   const noteCreation = new Promise<CitekeyNoteCreation>((resolve) => {
     bindNoteCreation = resolve;
   });
-  // A note write calls Attachment Import and the excerpt preparation, which
-  // the container builds after the graph, through this one holder. Nothing
-  // writes a note before the container has filled it.
+  // A note write calls the excerpt preparation, which the container builds
+  // after the graph, through this one holder. Nothing writes a note before the
+  // container has filled it.
   let noteImportPorts: Required<NoteImportPorts> | undefined;
   const boundNoteImportPorts = (): Required<NoteImportPorts> => {
     if (!noteImportPorts) throw new Error("Note import is not bound yet");
@@ -179,13 +188,6 @@ export async function buildServices(
           createNote: async (item) => (await noteCreation).createNote(item),
         },
         noteImport: {
-          attachmentImport: {
-            prepare: (notePath, options) =>
-              boundNoteImportPorts().attachmentImport.prepare(
-                notePath,
-                options,
-              ),
-          },
           excerptImages: (options) =>
             boundNoteImportPorts().excerptImages(options),
         },
@@ -196,7 +198,6 @@ export async function buildServices(
   await runtime.context();
   const bridge = effectBridge(runtime);
   const zoteroReadsService = runtime.runSync(ZoteroReads);
-  const libraryScopeService = runtime.runSync(LibraryScope);
   const zoteroLocalApiService = runtime.runSync(ZoteroLocalApi);
   const vault = runtime.runSync(Vault);
   const fileManager = runtime.runSync(FileManager);
@@ -257,6 +258,14 @@ export async function buildServices(
     .useValue({ excerptImage: () => runtime.runSync(ExcerptImages) })
     .useValue({ excerptDisplay: () => runtime.runSync(ExcerptDisplays) })
     .useValue({
+      excerptRequest: () =>
+        savedExcerptRequestOver({
+          reads: zoteroReadsService,
+          pref: runtime.runSync(ZoteroPref),
+          bridge,
+        }),
+    })
+    .useValue({
       attachmentResolver: () => runtime.runSync(AttachmentResolver),
     })
     .useValue({
@@ -274,6 +283,13 @@ export async function buildServices(
             plugin.app.vault.adapter as FileSystemAdapter
           ).getBasePath(),
         }),
+    })
+    .useValue({
+      literatureNoteAttachments: () =>
+        bindLiteratureNoteAttachments(
+          bridge,
+          runtime.runSync(Effect.context<LiteratureNoteServices>()),
+        ),
     })
     .useValue({ zoteroLocalApi: () => zoteroLocalApiService })
     .useValue({
@@ -333,23 +349,11 @@ export async function buildServices(
         return reader;
       },
     })
-    .use({
-      attachmentImport: ({ settings, zoteroPref }) =>
-        new AttachmentImportService({
-          bridge,
-          app: plugin.app,
-          settings,
-          zoteroPref,
-        }),
+    .useValue({
+      attachmentImport: () =>
+        bindAttachmentImport(bridge, runtime.runSync(AttachmentImport)),
     })
     .useValue({ libraryScope: () => plainLibraryScope(runtime) })
-    .useValue({
-      batchScope: () =>
-        bindBatchScope(bridge, {
-          libraryScope: libraryScopeService,
-          zoteroReads: zoteroReadsService,
-        }),
-    })
     .useValue({
       query: () => bindQuery(bridge, runtime.runSync(QueryService)),
     })
@@ -366,9 +370,8 @@ export async function buildServices(
       },
     })
     .useValue({
-      noteImportPorts: ({ zoteroPref, attachmentImport, excerptImage }) => {
+      noteImportPorts: ({ zoteroPref, excerptImage }) => {
         noteImportPorts = {
-          attachmentImport,
           excerptImages: (options) =>
             createExcerptPreparation({
               app: plugin.app,
@@ -406,7 +409,6 @@ export async function buildServices(
         profile,
         template,
         zoteroReads,
-        query,
         noteIndex,
         zoteroPref,
         settings,
@@ -415,12 +417,18 @@ export async function buildServices(
         createNoteFeature({
           vault,
           fileManager,
-          singleExcerpt: (options) =>
-            prepareSingleExcerpt({
-              ...options,
-              app: plugin.app,
-              resolver: excerptImage,
-            }),
+          citations: bindNoteCitations(
+            bridge,
+            runtime.runSync(Effect.context<NoteCitationServices>()),
+            {
+              singleExcerpt: (options) =>
+                prepareSingleExcerpt({
+                  ...options,
+                  app: plugin.app,
+                  resolver: excerptImage,
+                }),
+            },
+          ),
           excerptImages: (options) =>
             createExcerptPreparation({
               app: plugin.app,
@@ -434,11 +442,11 @@ export async function buildServices(
           app: plugin.app,
           template,
           zoteroReads,
-          query,
           noteIndex,
           zoteroPref,
           settings,
           bridge,
+          context: runtime.runSync(Effect.context<CreationPlanningServices>()),
           attachmentImport,
         }),
     })
@@ -477,12 +485,8 @@ export async function buildServices(
         }),
     })
     .useValue({
-      noteImportView: ({ createProfile, importProfile, zoteroPref }) =>
-        createNoteImportView(plugin.app, {
-          createProfile,
-          importProfile,
-          zoteroPref,
-        }),
+      noteImportView: ({ createProfile, importProfile }) =>
+        createNoteImportView(plugin.app, { createProfile, importProfile }),
     })
     .useValue({
       batchImport: ({ noteFeature, noteImportView }) =>
@@ -490,6 +494,18 @@ export async function buildServices(
           bridge,
           runtime.runSync(Effect.context<BatchImportServices>()),
           { view: noteImportView, noteFeature },
+        ),
+    })
+    .useValue({
+      batchUpdate: ({ noteFeature, noteImportView }) =>
+        bindBatchUpdate(
+          bridge,
+          runtime.runSync(Effect.context<BatchUpdateServices>()),
+          {
+            notices: batchUpdateNotices(plugin.app),
+            view: noteImportView,
+            noteFeature,
+          },
         ),
     })
     .useValue({

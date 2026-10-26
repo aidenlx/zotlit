@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Fiber } from "effect";
+import { Deferred, Effect, Fiber, PlatformError } from "effect";
 import { expect } from "vitest";
 
 import { redPng } from "./__fixtures__/png";
@@ -57,10 +57,9 @@ it.effect(
                 pdf: null,
               },
             }),
-            publish: async () => {
-              throw new Error("Zotero image must keep its original path");
-            },
-            exists: async () => false,
+            publish: () =>
+              Effect.die(new Error("Zotero image must keep its original path")),
+            exists: () => Effect.succeed(false),
           },
         ),
       );
@@ -97,12 +96,13 @@ it.effect.each(["rendered", "cache"] as const)(
                 pdf: null,
               },
             }),
-            publish: async (fingerprint, bytes) => {
-              expect(fingerprint).toBe("a".repeat(64));
-              expect(bytes).toEqual(redPng);
-              return "/temp/zotlit-excerpts/image.png";
-            },
-            exists: async () => true,
+            publish: (fingerprint, bytes) =>
+              Effect.sync(() => {
+                expect(fingerprint).toBe("a".repeat(64));
+                expect(bytes).toEqual(redPng);
+                return "/temp/zotlit-excerpts/image.png";
+              }),
+            exists: () => Effect.succeed(true),
           },
         ),
       );
@@ -145,10 +145,8 @@ it.effect.each(
               throw new DOMException("The operation timed out", "TimeoutError");
             return { kind: "unavailable" };
           },
-          publish: async () => {
-            throw new Error("No bytes");
-          },
-          exists: async () => exists,
+          publish: () => Effect.die(new Error("No bytes")),
+          exists: () => Effect.succeed(exists),
         },
       ),
     );
@@ -173,10 +171,8 @@ it.effect("reports a failed read with the reader's own message", () =>
               }),
             ),
           resolve: async () => ({ kind: "unavailable" }),
-          publish: async () => {
-            throw new Error("No bytes");
-          },
-          exists: async () => false,
+          publish: () => Effect.die(new Error("No bytes")),
+          exists: () => Effect.succeed(false),
         },
       ),
     );
@@ -202,10 +198,8 @@ it.effect("aborts the render when the answer is interrupted", () =>
             Deferred.doneUnsafe(rendering, Effect.succeed(signal));
             return new Promise<never>(() => {});
           },
-          publish: async () => {
-            throw new Error("No bytes");
-          },
-          exists: async () => false,
+          publish: () => Effect.die(new Error("No bytes")),
+          exists: () => Effect.succeed(false),
         },
       ),
     );
@@ -215,5 +209,45 @@ it.effect("aborts the render when the answer is interrupted", () =>
     yield* Fiber.interrupt(answering);
 
     expect(signal?.aborted).toBe(true);
+  }),
+);
+
+it.effect("reports a PNG the store cannot publish as a failed render", () =>
+  Effect.gen(function* () {
+    const answer = JSON.parse(
+      yield* answerAnnotationImage(
+        { key: "ABCDEFGH" },
+        {
+          read: () => Effect.succeed(request),
+          resolve: async () => ({
+            kind: "available",
+            provenance: "rendered",
+            freshness: "checked",
+            bytes: redPng,
+            format: PNG_FORMAT,
+            identity: { key: "a".repeat(64), fingerprint: "image", pdf: null },
+          }),
+          publish: () =>
+            Effect.fail(
+              PlatformError.systemError({
+                _tag: "PermissionDenied",
+                module: "FileSystem",
+                method: "writeFile",
+                description: "permission denied",
+              }),
+            ),
+          exists: () => Effect.succeed(true),
+        },
+      ),
+    );
+    expect(answer).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "render-failed",
+        message: expect.stringMatching(
+          /^The Excerpt Image could not be prepared: .*permission denied/i,
+        ),
+      },
+    });
   }),
 );

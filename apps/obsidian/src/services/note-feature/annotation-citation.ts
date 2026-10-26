@@ -7,11 +7,12 @@ import {
 } from "@zotlit/db";
 
 import {
-  annotationCitation,
+  annotationCiteRefs,
   buildAnnotationResolvers,
 } from "@/lib/annotation-render";
-
-import type { NoteFeatureDeps } from "./context";
+import { Template } from "@/services/template/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 
 /** What "Copy citation" puts on the clipboard, or why it has nothing to put. */
 export type AnnotationCitation =
@@ -23,33 +24,31 @@ export type AnnotationCitation =
 
 /**
  * Render an Annotation's page-pinned citation: the same Citation Template path
- * the `zt.citation` field uses ({@link annotationCitation}), from one
- * `AnnotationSources` read. A citation string imports no file, so the
- * resolvers' `attachmentImport` port blocks every source.
+ * the `zt.citation` field uses ({@link annotationCiteRefs}), from one
+ * `AnnotationSources` read in one Snapshot. A citation string imports no file,
+ * so the resolvers' `attachmentImport` port blocks every source.
  *
  * @param annotationKey the Annotation's Indexed Key.
  */
-export async function renderAnnotationCitation(
-  ctx: Pick<NoteFeatureDeps, "zoteroReads" | "zoteroPref"> & {
-    template: Pick<NoteFeatureDeps["template"], "renderCitation">;
-  },
-  annotationKey: string,
-): Promise<AnnotationCitation> {
-  await using lease = await ctx.zoteroReads.acquireRead();
-  const { reads } = lease;
-  const sources = await Effect.runPromise(
-    Effect.flatMap(reads.Libraries({}), (libraries) => {
+export const renderAnnotationCitation = Effect.fn(
+  "NoteFeature.renderAnnotationCitation",
+)(function* (annotationKey: string) {
+  const sources = yield* Effect.scoped(
+    Effect.gen(function* () {
+      const reads = yield* (yield* ZoteroReads).snapshot;
+      const libraries = yield* reads.Libraries({});
       const selector = resolveIndexedKeyLibraryIn(libraries, annotationKey);
       return selector
-        ? reads.AnnotationSources({
+        ? yield* reads.AnnotationSources({
             libraryID: selector.libraryID,
             keys: [selector.key],
           })
-        : Effect.succeed(null);
+        : null;
     }),
   );
+  const { dataDir, baseAttachmentPath } = yield* (yield* ZoteroPref).current;
   const resolvers = buildAnnotationResolvers({
-    zoteroPref: ctx.zoteroPref,
+    zoteroPref: { dataDir, baseAttachmentPath },
     attachmentImport: {
       decide: (path, origin) => ({
         approved: false,
@@ -63,13 +62,9 @@ export async function renderAnnotationCitation(
   const [data] = sources
     ? buildAnnotationsTemplateData(sources, resolvers).values()
     : [];
-  if (!data) return { kind: "not-in-database" };
-  const text = annotationCitation(
-    data.parentItem,
-    data.pageLabel,
-    ctx.template,
-  );
-  return text === null
-    ? { kind: "no-citation-key" }
-    : { kind: "citation", text };
-}
+  if (!data) return { kind: "not-in-database" } satisfies AnnotationCitation;
+  const refs = annotationCiteRefs(data.parentItem, data.pageLabel);
+  if (!refs) return { kind: "no-citation-key" } satisfies AnnotationCitation;
+  const text = yield* (yield* Template).renderCitation(refs, "main");
+  return { kind: "citation", text } satisfies AnnotationCitation;
+});

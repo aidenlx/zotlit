@@ -9,10 +9,7 @@ import type { App, PaneType, TFile } from "obsidian";
 import type { Item } from "@zotlit/db";
 
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
-import {
-  pdfPickerReader,
-  resolveLiteratureNoteAttachments,
-} from "@/services/attachment-open/actions";
+import { pdfPickerReader } from "@/services/attachment-open/actions";
 import type { AttachmentOpenDeps } from "@/services/attachment-open/actions";
 import { createNoteInteractively } from "@/services/note-feature";
 import type { InteractiveCreationDeps } from "@/services/note-feature/creation-view";
@@ -91,7 +88,8 @@ export async function openItemPdf(
   indexedKey: string,
   pane: PaneType | boolean,
 ): Promise<void> {
-  const attachments = await resolveLiteratureNoteAttachments(deps, indexedKey);
+  const attachments =
+    await deps.attachments.literatureNoteAttachments(indexedKey);
   openAttachments(attachments, {
     reader: withFixedPane(pdfPickerReader(deps.opener), pane),
     app: deps.app,

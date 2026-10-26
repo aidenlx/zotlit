@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Exercises live and frozen Child Note images through the import writer.
 import { it } from "@effect/vitest";
-import { Effect, Stream } from "effect";
+import { Effect } from "effect";
 import {
   mkdir,
   mkdtemp,
@@ -29,11 +29,9 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge } from "@/lib/effect-bridge";
 import type { VaultSource } from "@/lib/obsidian-vault";
-import { AttachmentImportService } from "@/services/attachment-import/service";
+import { AttachmentCopyError } from "@/services/attachment-import/service";
 import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import { bluePng, redPng } from "@/services/excerpt-image/__fixtures__/png";
 import { PNG_FORMAT } from "@/services/excerpt-image/format";
@@ -53,7 +51,6 @@ import {
 import { diskImageHost } from "./__fixtures__/disk-image-host";
 import { noteImporterOver } from "./__fixtures__/importer";
 import type { ImporterFakes } from "./__fixtures__/importer";
-import { NoteImportPortError } from "./service";
 
 const paragraph = (key: string, image: string) =>
   `<p><img data-attachment-key="${image}" data-annotation="${encodeURIComponent(JSON.stringify({ attachmentURI: "http://zotero.org/users/local/LOCAL/items/RGRPDF24", annotationKey: key }))}"></p>`;
@@ -127,19 +124,6 @@ async function setupFixture(mode = "normal") {
     },
   };
   const paths = { dataDir, baseAttachmentPath: null };
-  const runtime = testRuntime();
-  const attachments = stack.use(
-    new AttachmentImportService({
-      bridge: effectBridge(runtime),
-      app,
-      settings: {
-        current: Effect.succeed(settings),
-        changes: Stream.empty,
-      },
-      zoteroPref: { ...paths, "resolved-changed": Stream.empty },
-    }),
-  );
-  await attachments.ready;
   let outcome: ExcerptOutcome = availableOutcome({
     bytes: bluePng,
     format: PNG_FORMAT,
@@ -178,7 +162,11 @@ async function setupFixture(mode = "normal") {
       renderProfileAnnotation: render,
     },
     zoteroPref: paths,
-    attachmentImport: attachments,
+    attachmentImport: {
+      settings,
+      fileManager: app.fileManager,
+      basePath: vaultRoot,
+    },
     excerptImages: (options) =>
       createExcerptPreparation({
         app,
@@ -310,7 +298,7 @@ it.effect(
         }),
       );
       expect(yield* Effect.flip(f.import())).toBeInstanceOf(
-        NoteImportPortError,
+        AttachmentCopyError,
       );
       const content = yield* Effect.promise(() => f.app.vault.read(f.note()));
       expect(content).toContain("Keep this prose.");

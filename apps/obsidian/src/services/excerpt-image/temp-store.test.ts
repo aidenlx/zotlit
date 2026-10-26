@@ -1,10 +1,20 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { it as effectIt } from "@effect/vitest";
-import { Clock, Duration, Effect } from "effect";
+import {
+  Clock,
+  Deferred,
+  Duration,
+  Effect,
+  Exit,
+  Fiber,
+  FileSystem,
+  Layer,
+  PlatformError,
+} from "effect";
 import { mkdtemp, readFile, readdir, rm, stat, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect } from "vitest";
 
 import { bluePng, redPng } from "./__fixtures__/png";
 import { reapExcerptTemps } from "./reap-temps";
@@ -19,31 +29,43 @@ afterEach(async () => {
   );
 });
 
-it("publishes a complete PNG once for concurrent uses of one fingerprint", async () => {
+/** A fresh directory under the system temp directory, removed after the case. */
+const testDirectory = Effect.promise(async () => {
   const directory = await mkdtemp(join(tmpdir(), "zotlit-excerpt-test-"));
   directories.push(directory);
-  const paths = await Promise.all(
-    Array.from({ length: 8 }, () =>
-      publishExcerptPng("a".repeat(64), redPng, directory),
-    ),
-  );
-  expect(new Set(paths).size).toBe(1);
-  expect(await readFile(paths[0]!)).toEqual(Buffer.from(redPng));
-  expect(await readdir(directory)).toEqual([basename(paths[0]!)]);
+  return directory;
 });
+
+effectIt.effect(
+  "publishes a complete PNG once for concurrent uses of one fingerprint",
+  () =>
+    Effect.gen(function* () {
+      const directory = yield* testDirectory;
+      const paths = yield* Effect.all(
+        Array.from({ length: 8 }, () =>
+          publishExcerptPng("a".repeat(64), redPng, directory),
+        ),
+        { concurrency: "unbounded" },
+      );
+      expect(new Set(paths).size).toBe(1);
+      expect(yield* Effect.promise(() => readFile(paths[0]!))).toEqual(
+        Buffer.from(redPng),
+      );
+      expect(yield* Effect.promise(() => readdir(directory))).toEqual([
+        basename(paths[0]!),
+      ]);
+    }).pipe(Effect.provide(NodeFileSystem.layer)),
+);
 
 // The publish restamps with the wall clock, so the reap reads the live Clock.
 effectIt.live(
   "keeps a reused PNG and reaps one unused for more than seven days",
   () =>
     Effect.gen(function* () {
-      const parent = yield* Effect.promise(() =>
-        mkdtemp(join(tmpdir(), "zotlit-excerpt-test-")),
-      );
-      directories.push(parent);
+      const parent = yield* testDirectory;
       const directory = excerptTempDirectory(parent);
       const publish = (fingerprint: string) =>
-        Effect.promise(() => publishExcerptPng(fingerprint, redPng, directory));
+        publishExcerptPng(fingerprint, redPng, directory);
       const recent = yield* publish("a".repeat(64));
       const old = yield* publish("b".repeat(64));
       const now = yield* Clock.currentTimeMillis;
@@ -62,14 +84,83 @@ effectIt.live(
     }).pipe(Effect.provide(NodeFileSystem.layer)),
 );
 
-it("publishes refreshed pixels for the same Annotation identity", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "zotlit-excerpt-test-"));
-  directories.push(directory);
-  const identity = "a".repeat(64);
-  const original = await publishExcerptPng(identity, redPng, directory);
-  const refreshed = await publishExcerptPng(identity, bluePng, directory);
-  expect(refreshed).not.toBe(original);
-  expect(await readFile(original)).toEqual(Buffer.from(redPng));
-  expect(await readFile(refreshed)).toEqual(Buffer.from(bluePng));
-  expect(await publishExcerptPng(identity, bluePng, directory)).toBe(refreshed);
+effectIt.effect(
+  "publishes refreshed pixels for the same Annotation identity",
+  () =>
+    Effect.gen(function* () {
+      const directory = yield* testDirectory;
+      const identity = "a".repeat(64);
+      const original = yield* publishExcerptPng(identity, redPng, directory);
+      const refreshed = yield* publishExcerptPng(identity, bluePng, directory);
+      expect(refreshed).not.toBe(original);
+      expect(yield* Effect.promise(() => readFile(original))).toEqual(
+        Buffer.from(redPng),
+      );
+      expect(yield* Effect.promise(() => readFile(refreshed))).toEqual(
+        Buffer.from(bluePng),
+      );
+      expect(yield* publishExcerptPng(identity, bluePng, directory)).toBe(
+        refreshed,
+      );
+    }).pipe(Effect.provide(NodeFileSystem.layer)),
+);
+
+const denied = PlatformError.systemError({
+  _tag: "PermissionDenied",
+  module: "FileSystem",
+  method: "link",
 });
+
+/** The Node file system, with a link that the system refuses. */
+const refusedLink = Layer.effect(
+  FileSystem.FileSystem,
+  Effect.map(FileSystem.FileSystem, (fs) =>
+    FileSystem.make({ ...fs, link: () => Effect.fail(denied) }),
+  ),
+).pipe(Layer.provide(NodeFileSystem.layer));
+
+effectIt.effect("fails with the refused step and removes the staged file", () =>
+  Effect.gen(function* () {
+    const directory = yield* testDirectory;
+    const exit = yield* Effect.exit(
+      publishExcerptPng("a".repeat(64), redPng, directory),
+    );
+    expect(exit).toEqual(Exit.fail(denied));
+    expect(yield* Effect.promise(() => readdir(directory))).toEqual([]);
+  }).pipe(Effect.provide(refusedLink)),
+);
+
+effectIt.effect("removes the staged file when the publish is interrupted", () =>
+  Effect.gen(function* () {
+    const directory = yield* testDirectory;
+    const staged = yield* Deferred.make<void>();
+    // The staged file is written, and the publish then waits.
+    const stalledAfterWrite = Layer.effect(
+      FileSystem.FileSystem,
+      Effect.map(FileSystem.FileSystem, (fs) =>
+        FileSystem.make({
+          ...fs,
+          writeFile: (path, data, options) =>
+            fs
+              .writeFile(path, data, options)
+              .pipe(
+                Effect.andThen(Deferred.succeed(staged, undefined)),
+                Effect.andThen(Effect.never),
+              ),
+        }),
+      ),
+    ).pipe(Layer.provide(NodeFileSystem.layer));
+    const publishing = yield* Effect.forkChild(
+      publishExcerptPng("a".repeat(64), redPng, directory).pipe(
+        Effect.provide(stalledAfterWrite),
+      ),
+      { startImmediately: true },
+    );
+    yield* Deferred.await(staged);
+    expect(yield* Effect.promise(() => readdir(directory))).toHaveLength(1);
+
+    yield* Fiber.interrupt(publishing);
+
+    expect(yield* Effect.promise(() => readdir(directory))).toEqual([]);
+  }),
+);
