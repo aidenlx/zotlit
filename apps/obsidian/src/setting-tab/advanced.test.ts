@@ -8,23 +8,18 @@ import type {
 } from "obsidian";
 import { expect, it, vi } from "vitest";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { LocalServer } from "@/services/local-server/service";
 import { defaults } from "@/services/settings/schema";
 
+import { testSettingTab } from "./__fixtures__";
 import { advancedPageItems, clearExcerptCache } from "./advanced";
 import type { SettingsKey, SettingTabContext } from "./context";
 
-function items(
-  overrides: Partial<SettingTabContext> = { runtime: testRuntime() },
-) {
-  const runtime = testRuntime();
+function items(overrides: Partial<SettingTabContext> = {}) {
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    runtime,
-    bridge: effectBridge(runtime),
+    tab: testSettingTab().tab,
     webWorkbenchEnabled: true,
     app: stubService<SettingTabContext["app"]>("App", {
       loadLocalStorage: () => null,

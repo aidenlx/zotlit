@@ -9,14 +9,13 @@ import type {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge } from "@/lib/effect-bridge";
 import { highlightEmoji } from "@/lib/highlight-mapping";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
+import { testSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
 import { highlightMappingItems } from "./note-import";
 
@@ -30,10 +29,8 @@ function setup() {
       ...(typeof patch === "function" ? patch(current) : patch),
     };
   };
-  const runtime = testRuntime();
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    runtime,
-    bridge: effectBridge(runtime),
+    tab: testSettingTab().tab,
     settings: stubService<SettingTabContext["settings"]>("Settings", {
       current: Effect.sync(() => current),
       update: (patch) =>
@@ -127,9 +124,7 @@ describe("highlight mapping page", () => {
     const emoji = () =>
       highlightEmoji(
         "blue",
-        ctx.bridge.runSync(ctx.settings.current)[
-          "note.import-highlight-mappings"
-        ],
+        ctx.tab.sync(ctx.settings.current)["note.import-highlight-mappings"],
       );
     expect(setting.errorMessage).toBeTruthy();
     expect(emoji()).toBeNull();

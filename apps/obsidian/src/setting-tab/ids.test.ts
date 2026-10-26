@@ -11,15 +11,14 @@ import type {
 } from "obsidian";
 import { expect, it, vi } from "vitest";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
 import type { LocalServer } from "@/services/local-server/service";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { defaults } from "@/services/settings/schema";
 
+import { testSettingTab } from "./__fixtures__";
 import { advancedPageItems } from "./advanced";
 import { attachmentPageItems } from "./attachments";
 import { citationsPageItems } from "./citations";
@@ -36,10 +35,8 @@ vi.mock("@/views/template-workbench/register", () => ({
 }));
 
 function ctx(): SettingTabContext {
-  const runtime = testRuntime();
   return stubService<SettingTabContext>("SettingTabContext", {
-    runtime,
-    bridge: effectBridge(runtime),
+    tab: testSettingTab().tab,
     webWorkbenchEnabled: true,
     app: stubService<SettingTabContext["app"]>("App", {
       vault: stubService<SettingTabContext["app"]["vault"]>("Vault", {
@@ -140,14 +137,6 @@ function ctx(): SettingTabContext {
       {
         getSituation: () => ({ kind: "unavailable" }),
         endonym: "English",
-      },
-    ),
-    writeAuthorization: stubService<SettingTabContext["writeAuthorization"]>(
-      "WriteAuthorization",
-      {
-        allowEditing: async () => {},
-        forgetAuthorization: Effect.void,
-        remembered: Effect.succeed(false),
       },
     ),
     requestUpdate: () => {},

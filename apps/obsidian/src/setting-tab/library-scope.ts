@@ -222,6 +222,6 @@ function removeSelector(
 
 /** Persist and rebuild the tab, so the list rows follow the new selection. */
 function saveScope(ctx: SettingTabContext, scope: LibraryScope): void {
-  ctx.bridge.runSync(ctx.settings.update({ "zotero.library-scope": scope }));
+  ctx.tab.sync(ctx.settings.update({ "zotero.library-scope": scope }));
   ctx.requestUpdate();
 }

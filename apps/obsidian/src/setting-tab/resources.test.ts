@@ -4,13 +4,12 @@ import { Effect } from "effect";
 import type { Setting as ObsidianSetting, SettingGroup } from "obsidian";
 import { expect, it, vi } from "vitest";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
 import { openWelcomeView } from "@/views/welcome/register";
 
+import { testSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
 import { resourcesGroup } from "./resources";
 
@@ -49,10 +48,8 @@ function reviewButton(settings: Setting[]): ButtonComponent | undefined {
 
 it("opens conversion review from the pending reminder and removes it after acceptance", () => {
   let current = { ...defaults, "note.template-conversion-pending": true };
-  const runtime = testRuntime();
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    runtime,
-    bridge: effectBridge(runtime),
+    tab: testSettingTab().tab,
     app: stubService<SettingTabContext["app"]>("App", {}),
     languagePack: stubService<SettingTabContext["languagePack"]>(
       "LanguagePack",
@@ -79,11 +76,9 @@ it("opens conversion review from the pending reminder and removes it after accep
   const review = reviewButton(rendered);
   expect(review).toBeDefined();
   review!.click();
-  expect(openWelcomeView).toHaveBeenCalledWith(
-    ctx.app,
-    ctx.settings,
-    ctx.bridge,
-  );
+  expect(openWelcomeView).toHaveBeenCalledWith(ctx.app, ctx.settings, {
+    runSync: expect.any(Function),
+  });
 
   current = {
     ...defaults,

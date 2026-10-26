@@ -1,3 +1,4 @@
+import { Effect, Stream } from "effect";
 import { join } from "node:path";
 import type {
   DropdownComponent,
@@ -7,9 +8,8 @@ import type {
 } from "obsidian";
 
 import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
-import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import * as toast from "@/lib/toast";
+import { Notifier } from "@/lib/notifier";
 import type {
   ConfiguredReadMode,
   EffectiveReadMode,
@@ -18,10 +18,20 @@ import {
   getZoteroProfilesRoot,
   PREFS_FILENAME,
 } from "@/services/zotero-pref/prefs-file";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroProfileInfo } from "@/services/zotero-pref/service";
+import {
+  changed,
+  degraded,
+  refreshFailed,
+  refreshing,
+} from "@/services/zotero-reads/events";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsState } from "@/services/zotero-reads/service";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 import { appendDeviceOverrideNote, browseForDir } from "./device-override";
+import { paintEach } from "./effect-tab";
 
 /** Folder-picker dropdown sentinel for auto-detect — a real dir is never empty. */
 const PICKER_AUTO = "";
@@ -120,23 +130,28 @@ export function databaseLocationItems(
   ];
 }
 
+/** What the Database file row's status line shows, folded from the reads' events. */
+interface DatabaseFileStatus {
+  readonly state: ZoteroReadsState["state"];
+  readonly refreshing: boolean;
+  readonly refreshFailed: boolean;
+  readonly errorMessage: string | null;
+}
+
 /**
  * Database file row: resolved `zotero.sqlite` path + a refresh button + an
  * inline status line that surfaces loading / refreshing / degraded /
- * refresh-failed states. The path derives from the Zotero profile's data dir
- * ({@link PlainZoteroPref.databasePath}), so it updates when the profile changes.
+ * refresh-failed states. The path derives from the Zotero profile's data dir,
+ * so it updates when the profile changes.
  */
 function renderDatabaseFileRow(
   setting: Setting,
   ctx: SettingTabContext,
 ): () => void {
-  const stack = new DisposableStack();
-
   const desc = createFragment();
   desc.append(m.settings_db_file_desc());
   desc.append(createEl("br"));
   const pathCode = createEl("code");
-  pathCode.textContent = ctx.zoteroPref.databasePath;
   desc.append(pathCode);
   const statusBr = createEl("br");
   const statusSpan = createSpan();
@@ -145,98 +160,141 @@ function renderDatabaseFileRow(
   desc.append(statusBr, statusSpan);
 
   let refreshButton: ExtraButtonComponent | undefined;
-
   setting.setDesc(desc).addExtraButton((button) => {
-    refreshButton = button;
-    button
+    refreshButton = button
       .setIcon("refresh-cw")
-      .setTooltip(m.settings_db_refresh())
-      .onClick(() => {
-        void toast.promise(ctx.db.refresh(), {
-          loading: m.notice_db_refreshing(),
-          success: m.notice_db_refreshed(),
-          error: m.notice_db_refresh_failed(),
-        });
-      });
+      .setTooltip(m.settings_db_refresh());
   });
 
-  let refreshing = false;
-  let lastRefreshFailed = false;
-  let lastErrorMessage: string | null = null;
-
-  // Events miss the loading→ready/degraded transition (T14 contract), so we
-  // seed the tooltip from the service's error when already degraded on mount.
-  if (ctx.db.state === "degraded" && ctx.db.error) {
-    lastErrorMessage = extractErrorMessage(ctx.db.error);
-  }
-
-  const applyStatus = (): void => {
-    const state = ctx.db.state;
-    let text = "";
-    let isError = false;
-    if (state === "loading") {
-      text = m.settings_db_status_loading();
-    } else if (refreshing) {
-      text = m.settings_db_status_refreshing();
-    } else if (state === "degraded") {
-      text = m.settings_db_status_degraded();
-      isError = true;
-    } else if (lastRefreshFailed) {
-      text = m.settings_db_status_refresh_failed();
-      isError = true;
-    }
-
-    if (text) {
-      statusBr.classList.remove("zt:hidden");
-      statusSpan.classList.remove("zt:hidden");
-      statusSpan.textContent = text;
-      statusSpan.classList.toggle("mod-warning", isError);
-      statusSpan.ariaLabel = lastErrorMessage ?? "";
-    } else {
-      statusBr.classList.add("zt:hidden");
-      statusSpan.classList.add("zt:hidden");
-      statusSpan.textContent = "";
-      statusSpan.classList.remove("mod-warning");
-      statusSpan.ariaLabel = null;
-    }
-    refreshButton?.setDisabled(state === "loading" || refreshing);
+  const paintStatus = (status: DatabaseFileStatus): void => {
+    const text =
+      status.state === "loading"
+        ? m.settings_db_status_loading()
+        : status.refreshing
+          ? m.settings_db_status_refreshing()
+          : status.state === "degraded"
+            ? m.settings_db_status_degraded()
+            : status.refreshFailed
+              ? m.settings_db_status_refresh_failed()
+              : "";
+    const isError =
+      !status.refreshing &&
+      status.state !== "loading" &&
+      (status.state === "degraded" || status.refreshFailed);
+    statusBr.classList.toggle("zt:hidden", !text);
+    statusSpan.classList.toggle("zt:hidden", !text);
+    statusSpan.textContent = text;
+    statusSpan.classList.toggle("mod-warning", Boolean(text) && isError);
+    statusSpan.ariaLabel = text ? (status.errorMessage ?? "") : null;
+    refreshButton?.setDisabled(status.state === "loading" || status.refreshing);
   };
 
-  const applyPath = (): void => {
-    pathCode.textContent = ctx.zoteroPref.databasePath;
-  };
+  return ctx.tab.mount(
+    Effect.gen(function* () {
+      const reads = yield* ZoteroReads;
+      const pref = yield* ZoteroPref;
+      const notifier = yield* Notifier;
 
-  applyStatus();
+      refreshButton?.onClick(
+        () =>
+          void ctx.tab.run(
+            Effect.scoped(
+              Effect.gen(function* () {
+                const progress = yield* notifier.progress;
+                yield* progress.setMessage(m.notice_db_refreshing());
+                yield* reads.refresh;
+              }),
+            ).pipe(Effect.andThen(notifier.show(m.notice_db_refreshed()))),
+            m.notice_db_refresh_failed(),
+          ),
+      );
 
-  stack.defer(subscribe(ctx.runtime, ctx.zoteroPref["changed"], applyPath));
-  stack.defer(
-    subscribe(ctx.runtime, ctx.db["changed"], () => {
-      lastRefreshFailed = false;
-      lastErrorMessage = null;
-      applyStatus();
+      // Events miss the loading→ready/degraded transition (T14 contract), so
+      // the error starts from the reads' own state when already degraded.
+      const initial = yield* reads.current;
+      const status = Stream.mergeAll(
+        [
+          reads.changes.pipe(
+            Stream.map(
+              ({ state }) =>
+                (current: DatabaseFileStatus): DatabaseFileStatus => ({
+                  ...current,
+                  state,
+                }),
+            ),
+          ),
+          changed(reads).pipe(
+            Stream.map(
+              () =>
+                (current: DatabaseFileStatus): DatabaseFileStatus => ({
+                  ...current,
+                  refreshFailed: false,
+                  errorMessage: null,
+                }),
+            ),
+          ),
+          degraded(reads).pipe(
+            Stream.map(
+              (error) =>
+                (current: DatabaseFileStatus): DatabaseFileStatus => ({
+                  ...current,
+                  errorMessage: extractErrorMessage(error),
+                }),
+            ),
+          ),
+          refreshFailed(reads).pipe(
+            Stream.map(
+              (error) =>
+                (current: DatabaseFileStatus): DatabaseFileStatus => ({
+                  ...current,
+                  refreshFailed: true,
+                  errorMessage: extractErrorMessage(error),
+                }),
+            ),
+          ),
+          refreshing(reads).pipe(
+            Stream.map(
+              (active) =>
+                (current: DatabaseFileStatus): DatabaseFileStatus => ({
+                  ...current,
+                  refreshing: active,
+                }),
+            ),
+          ),
+        ],
+        { concurrency: "unbounded" },
+      ).pipe(
+        Stream.scan(
+          (): DatabaseFileStatus => ({
+            state: initial.state,
+            refreshing: false,
+            refreshFailed: false,
+            errorMessage:
+              initial.state === "degraded" && initial.error
+                ? extractErrorMessage(initial.error)
+                : null,
+          }),
+          (
+            current,
+            step: (current: DatabaseFileStatus) => DatabaseFileStatus,
+          ) => step(current),
+        ),
+      );
+      const path = pref.changes.pipe(
+        Stream.map((snapshot) => snapshot.databasePath),
+        Stream.changes,
+      );
+      yield* Effect.all(
+        [
+          paintEach(status, paintStatus),
+          paintEach(path, (databasePath) => {
+            pathCode.textContent = databasePath;
+          }),
+        ],
+        { concurrency: "unbounded", discard: true },
+      );
     }),
   );
-  stack.defer(
-    subscribe(ctx.runtime, ctx.db["degraded"], (err) => {
-      lastErrorMessage = extractErrorMessage(err);
-      applyStatus();
-    }),
-  );
-  stack.defer(
-    subscribe(ctx.runtime, ctx.db["refresh-failed"], (err) => {
-      lastRefreshFailed = true;
-      lastErrorMessage = extractErrorMessage(err);
-      applyStatus();
-    }),
-  );
-  stack.defer(
-    subscribe(ctx.runtime, ctx.db["refreshing"], (active) => {
-      refreshing = active;
-      applyStatus();
-    }),
-  );
-
-  return () => stack.dispose();
 }
 
 function renderReadModeRow(
@@ -291,9 +349,9 @@ function renderReadModeRow(
       .addOption("reflink", modeLabel("reflink"))
       .addOption("copy", modeLabel("copy"))
       .addOption("immutable", modeLabel("immutable"))
-      .setValue(ctx.bridge.runSync(ctx.settings.current)["zotero.read-mode"])
+      .setValue(ctx.tab.sync(ctx.settings.current)["zotero.read-mode"])
       .onChange((value) => {
-        ctx.bridge.runSync(
+        ctx.tab.sync(
           ctx.settings.update({
             "zotero.read-mode": value as ConfiguredReadMode,
           }),
@@ -302,10 +360,10 @@ function renderReadModeRow(
   });
 
   applyActiveMode();
-  stack.defer(subscribe(ctx.runtime, ctx.db["changed"], applyActiveMode));
-  stack.defer(subscribe(ctx.runtime, ctx.db["degraded"], applyActiveMode));
+  stack.defer(ctx.tab.mount(paintEach(ctx.db["changed"], applyActiveMode)));
+  stack.defer(ctx.tab.mount(paintEach(ctx.db["degraded"], applyActiveMode)));
   stack.defer(
-    subscribe(ctx.runtime, ctx.db["refresh-failed"], applyActiveMode),
+    ctx.tab.mount(paintEach(ctx.db["refresh-failed"], applyActiveMode)),
   );
 
   return () => stack.dispose();
@@ -406,10 +464,12 @@ function renderProfileDirRow(
   });
 
   stack.defer(
-    subscribe(ctx.runtime, pref["changed"], () => {
-      applyStatus();
-      if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
-    }),
+    ctx.tab.mount(
+      paintEach(pref["changed"], () => {
+        applyStatus();
+        if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
+      }),
+    ),
   );
 
   return () => stack.dispose();
@@ -484,12 +544,14 @@ function renderDataDirRow(
 
   applyPath();
 
-  stack.defer(subscribe(ctx.runtime, pref["changed"], applyPath));
+  stack.defer(ctx.tab.mount(paintEach(pref["changed"], applyPath)));
   stack.defer(
-    subscribe(ctx.runtime, pref["data-dir-changed"], () => {
-      applyPath();
-      if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
-    }),
+    ctx.tab.mount(
+      paintEach(pref["data-dir-changed"], () => {
+        applyPath();
+        if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
+      }),
+    ),
   );
 
   return () => stack.dispose();
@@ -526,9 +588,9 @@ function renderSourceIdRow(
   setting.setDesc(desc);
   refresh();
 
-  stack.defer(subscribe(ctx.runtime, ctx.settings.changes, () => refresh()));
-  stack.defer(subscribe(ctx.runtime, pref["changed"], refresh));
-  stack.defer(subscribe(ctx.runtime, pref["data-dir-changed"], refresh));
+  stack.defer(ctx.tab.mount(paintEach(ctx.settings.changes, () => refresh())));
+  stack.defer(ctx.tab.mount(paintEach(pref["changed"], refresh)));
+  stack.defer(ctx.tab.mount(paintEach(pref["data-dir-changed"], refresh)));
 
   return () => stack.dispose();
 }

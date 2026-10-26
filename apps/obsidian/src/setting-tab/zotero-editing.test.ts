@@ -4,7 +4,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { deadlineAfter } from "@/services/annotation-repository/__fixtures__/capability";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 
-import { editingRowModel } from "./zotero-editing";
+import { editingRowModel } from "./zotero-editing-model";
 
 const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
