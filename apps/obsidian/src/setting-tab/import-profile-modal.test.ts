@@ -1,24 +1,47 @@
+import { it } from "@effect/vitest";
 import { ToggleComponent, controlsOf } from "@mock/obsidian";
+import { Context, Effect, Fiber, Layer } from "effect";
 // @vitest-environment happy-dom
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ButtonComponent, Modal, SuggestModal, TextComponent } from "obsidian";
 import type { App } from "obsidian";
-import { expect, it, vi } from "vitest";
+import { expect, vi } from "vitest";
 
-import type { NoteTemplateContext } from "@zotlit/db";
-
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import * as nativeDialog from "@/lib/require";
+import {
+  MY_LIBRARY_SCOPE,
+  resolveLibraryScope,
+} from "@/services/library-scope/scope";
+import { LibraryScope } from "@/services/library-scope/service";
+import { NoteFeature } from "@/services/note-feature/service";
+import type { ProfileNoteDraft } from "@/services/note-feature/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
-import type { PreparedProfileImport } from "@/services/profile/service";
+import { Profile } from "@/services/profile/service";
+import type {
+  PreparedProfileImport,
+  ProfileImport,
+} from "@/services/profile/service";
+import { workbenchContext } from "@/services/template-workbench/__fixtures__";
+import { Template } from "@/services/template/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { layerRcRef } from "@/services/zotero-reads/connection";
+import { layerZoteroReads } from "@/services/zotero-reads/service";
+import {
+  inProcessClient,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 
-import { ImportProfileModal, createProfileImporter } from "./profiles";
-import type { ImportProfileDeps, ProfileDialogServices } from "./profiles";
+import { ImportProfileModal } from "./import-profile-modal";
+import type { ImportProfileDeps } from "./import-profile-modal";
+import { importProfileDialog } from "./profile-dialogs";
 
 const id = "Ry4Ua8Nv2Mx6" as ProfileId;
 /** The keep-or-replace toggle of one partial, read off the row that names it. */
@@ -64,6 +87,17 @@ function observeButtons() {
     [Symbol.dispose]: () => cleanup.dispose(),
   };
 }
+/** A previewed note; the import tests never write it. */
+function draft(note: Partial<ProfileNoteDraft> = {}): ProfileNoteDraft {
+  return {
+    path: "Reading/Paper.md",
+    properties: {},
+    body: "Preview",
+    create: Effect.die("The import test does not create the preview"),
+    ...note,
+  };
+}
+
 function fixture(
   kind: "fresh" | "replace" = "fresh",
   partials: PreparedProfileImport["partials"][number][] = [
@@ -121,45 +155,22 @@ function fixture(
     previewSource: () => "Shared source",
     import: save,
   };
-  const prepareImport = vi.fn<ImportProfileDeps["profile"]["prepareImport"]>(
+  const prepareImport = vi.fn<ImportProfileDeps["prepareImport"]>(
     async () => plan,
   );
-  const reader = profileReader();
-  const deps = stubService<ImportProfileDeps>("ImportProfileDeps", {
+  const deps: ImportProfileDeps = {
     app: stubService<App>("App", {}),
-    profile: stubService<ImportProfileDeps["profile"]>("Profile", {
-      resolveProfile: reader.resolveProfile,
-      prepareImport,
-    }),
-    template: stubService<ImportProfileDeps["template"]>("Template", {
-      prepareLiteratureNoteTemplateSource: () =>
-        stubService<
-          ReturnType<
-            ImportProfileDeps["template"]["prepareLiteratureNoteTemplateSource"]
-          >
-        >("TemplateDocument", {}),
-    }),
-    noteFeature: stubService<ImportProfileDeps["noteFeature"]>(
-      "NoteFeatureHandle",
-      {
-        prepareProfileNote: () => ({
-          path: "Reading/Paper.md",
-          properties: { "zotlit-profile": "Shared (Ry4Ua8Nv2Mx6)" },
-          body: "Recipient item",
-          create: async () => {
-            throw new Error("The import test does not create the preview");
-          },
-        }),
-      },
-    ),
-  });
+    base: profileReader().resolveProfile("default")!,
+    prepareImport,
+    previewNote: async () =>
+      draft({
+        properties: { "zotlit-profile": "Shared (Ry4Ua8Nv2Mx6)" },
+        body: "Recipient item",
+      }),
+  };
   const modal = new ImportProfileModal(deps, {
     source: "IMPORTED SOURCE",
     plan,
-    data: {
-      note: stubService<NoteTemplateContext>("NoteTemplateContext", {}),
-      filename: {},
-    },
     styles: [],
   });
   modal.contentEl = document.createElement("div");
@@ -210,6 +221,10 @@ it("opens fresh consent with metadata, recipient preview, editable bindings and 
     }),
   );
   expect(f.save).not.toHaveBeenCalled();
+  // The preview renders after the plan, so Import waits for both.
+  await vi.waitFor(() =>
+    expect(buttons.disabled(m.profile_import_confirm())).toBe(false),
+  );
   buttons.click(m.profile_import_confirm());
   await expect(f.modal.result).resolves.toMatchObject({ id });
   expect(f.save).toHaveBeenCalledWith({
@@ -270,16 +285,7 @@ it("previews a conflicting partial with the reader's keep-or-replace choice", as
         ? "Bundled authors preview"
         : "Local authors preview",
   });
-  Object.assign(f.deps.template, {
-    prepareLiteratureNoteTemplateSource: (source: string) => ({ source }),
-  });
-  Object.assign(f.deps.noteFeature, {
-    prepareProfileNote: ({ document }: { document: { source: string } }) => ({
-      path: "Reading/Paper.md",
-      properties: {},
-      body: document.source,
-    }),
-  });
+  f.deps.previewNote = async (_profile, source) => draft({ body: source });
 
   f.modal.onOpen();
   await vi.waitFor(() =>
@@ -318,14 +324,32 @@ it("shows only Replace and Cancel for a held ID, naming version and separate not
   expect(f.save).toHaveBeenCalledOnce();
 });
 
-async function importerFixture(kind: "fresh" | "replace" = "fresh") {
-  await using stack = new AsyncDisposableStack();
-  const folder = await mkdtemp(join(tmpdir(), "zotlit-profile-source-"));
-  stack.defer(() => rm(folder, { recursive: true, force: true }));
+/** My Library, which holds no item: the preview reads none. */
+const SEED = `
+  insert into version (schema, version) values ('userdata', 129);
+  insert into libraries (libraryID, type, version, clientVersion)
+    values (1, 'user', 1, 1);
+`;
+
+/**
+ * The import dialog over fakes of its services, with a clipboard and a file
+ * that hold a Profile document. `resolveLibraries` records each preview read.
+ * The modals open in place of drawing.
+ */
+const importerFixture = Effect.fnUntraced(function* (
+  kind: "fresh" | "replace" = "fresh",
+) {
+  const folder = yield* Effect.acquireRelease(
+    Effect.promise(() => mkdtemp(join(tmpdir(), "zotlit-profile-source-"))),
+    (folder) =>
+      Effect.promise(() => rm(folder, { recursive: true, force: true })),
+  );
   const filePath = join(folder, "profile.md");
-  await writeFile(filePath, "FILE SOURCE");
+  yield* Effect.promise(() => writeFile(filePath, "FILE SOURCE"));
   const f = fixture(kind);
-  const clipboard = stack.use(
+  const spy = <A extends Disposable>(acquire: () => A) =>
+    Effect.acquireDisposable(Effect.sync(acquire));
+  const clipboard = yield* spy(() =>
     vi
       .spyOn(navigator.clipboard, "readText")
       .mockResolvedValue("CLIPBOARD SOURCE"),
@@ -334,149 +358,195 @@ async function importerFixture(kind: "fresh" | "replace" = "fresh") {
     canceled: false,
     filePaths: [filePath],
   }));
-  stack.use(
+  yield* spy(() =>
     vi.spyOn(nativeDialog, "requireDialog").mockReturnValue(
       stubService<ReturnType<typeof nativeDialog.requireDialog>>("Dialog", {
         showOpenDialog,
       }),
     ),
   );
-  // The preview reads one real item; the empty library has none.
-  const verificationData = vi.fn<
-    ProfileDialogServices["templateData"]["verificationData"]
-  >(async () => null);
-  const opened = stack.use(
+  const opened = yield* spy(() =>
     vi.spyOn(Modal.prototype, "open").mockImplementation(function (
       this: Modal,
     ) {
       this.contentEl = document.createElement("div");
     }),
   );
-  const suggestions = stack.use(vi.spyOn(SuggestModal.prototype, "open"));
-  const run = createProfileImporter(
-    stubService<ProfileDialogServices>("ProfileDialogServices", {
-      app: f.deps.app,
-      profile: stubService<ProfileDialogServices["profile"]>("Profile", {
-        resolveProfile: f.deps.profile.resolveProfile,
-        prepareImport: f.deps.profile.prepareImport,
-      }),
-      template: stubService<ProfileDialogServices["template"]>("Template", {
-        prepareLiteratureNoteTemplateSource:
-          f.deps.template.prepareLiteratureNoteTemplateSource,
-      }),
-      noteFeature: stubService<ProfileDialogServices["noteFeature"]>(
-        "NoteFeatureHandle",
-        {
-          prepareProfileNote: f.deps.noteFeature.prepareProfileNote,
-        },
-      ),
-      templateData: stubService<ProfileDialogServices["templateData"]>(
-        "TemplateData",
-        { verificationData },
-      ),
-      zoteroPref: stubService<ProfileDialogServices["zoteroPref"]>(
-        "ZoteroPref",
-        { dataDir: undefined },
-      ),
-    }),
+  const suggestions = yield* spy(() =>
+    vi.spyOn(SuggestModal.prototype, "open"),
   );
-  const cleanup = stack.move();
+  const plan: ProfileImport = {
+    ...f.plan,
+    previewSource: () => Effect.succeed("Shared source"),
+    import: () => Effect.promise(() => f.save()),
+  };
+  const prepareImport = vi.fn((_source: string) => Effect.succeed(plan));
+  const resolveLibraries = vi.fn(
+    (libraries: Parameters<LibraryScope["Service"]["resolveLibraries"]>[0]) =>
+      Effect.sync(() => resolveLibraryScope(libraries, MY_LIBRARY_SCOPE)),
+  );
+  const reads = yield* Layer.build(
+    layerZoteroReads(
+      inProcessClient(layerRcRef(memoryOpener(() => SEED).open)),
+    ),
+  );
+  const notifier = testNotifier();
+  const services = Context.mergeAll(
+    workbenchContext(
+      reads,
+      Context.make(
+        Profile,
+        stubService<Profile["Service"]>("Profile", {
+          resolveProfile: () =>
+            Effect.succeed(profileReader().resolveProfile("default")!),
+          prepareImport,
+        }),
+      ),
+      Context.make(Template, stubService<Template["Service"]>("Template", {})),
+      Context.make(
+        ZoteroPref,
+        stubService<ZoteroPref["Service"]>("ZoteroPref", {
+          current: Effect.succeed(
+            stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
+              dataDir: "",
+            }),
+          ),
+        }),
+      ),
+    ),
+    Context.make(
+      LibraryScope,
+      stubService<LibraryScope["Service"]>("LibraryScope", {
+        resolveLibraries,
+      }),
+    ),
+    Context.make(
+      NoteFeature,
+      stubService<NoteFeature["Service"]>("NoteFeature", {}),
+    ),
+    yield* Layer.build(notifier.layer),
+  );
+  /** Start the dialog as the user would, from the command or a menu. */
+  const run = (options?: Parameters<typeof importProfileDialog>[1]) =>
+    importProfileDialog(f.deps.app, options).pipe(
+      Effect.provideContext(services),
+      Effect.forkChild({ startImmediately: true }),
+    );
   return {
     ...f,
     run,
     clipboard,
     showOpenDialog,
-    verificationData,
+    prepareImport,
+    resolveLibraries,
     opened,
     suggestions,
-    [Symbol.asyncDispose]: () => cleanup.disposeAsync(),
   };
-}
+});
 
-it("offers two source suggestions and reads only after native close-before-choice selection", async () => {
-  await using f = await importerFixture();
-  const pending = f.run();
-  await vi.waitFor(() => expect(f.suggestions).toHaveBeenCalledOnce());
-  expect(f.clipboard).not.toHaveBeenCalled();
-  expect(f.showOpenDialog).not.toHaveBeenCalled();
-  expect(f.verificationData).not.toHaveBeenCalled();
-  expect(f.opened).not.toHaveBeenCalled();
-  const picker = f.suggestions.mock.instances[0] as SuggestModal<
-    "clipboard" | "file"
-  >;
-  const options = await picker.getSuggestions("");
-  expect(
-    options.map((option) => {
-      const row = document.createElement("div");
-      picker.renderSuggestion(option, row);
-      return row.textContent;
+/** Let the dialog's fiber and the Promises it waits on run until `done`. */
+const until = Effect.fnUntraced(function* (done: () => boolean) {
+  for (let turn = 0; turn < 1000 && !done(); turn++) yield* Effect.yieldNow;
+  expect(done()).toBe(true);
+});
+
+it.effect(
+  "offers two source suggestions and reads only after native close-before-choice selection",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* importerFixture();
+      const pending = yield* f.run();
+      yield* until(() => f.suggestions.mock.calls.length === 1);
+      expect(f.clipboard).not.toHaveBeenCalled();
+      expect(f.showOpenDialog).not.toHaveBeenCalled();
+      expect(f.resolveLibraries).not.toHaveBeenCalled();
+      expect(f.opened).not.toHaveBeenCalled();
+      const picker = f.suggestions.mock.instances[0] as SuggestModal<
+        "clipboard" | "file"
+      >;
+      const options = yield* Effect.promise(async () =>
+        picker.getSuggestions(""),
+      );
+      expect(
+        options.map((option) => {
+          const row = document.createElement("div");
+          picker.renderSuggestion(option, row);
+          return row.textContent;
+        }),
+      ).toEqual([m.profile_import_clipboard(), m.profile_import_file()]);
+      picker.onClose();
+      picker.onChooseSuggestion("clipboard", new MouseEvent("click"));
+      yield* until(() => f.opened.mock.calls.length === 1);
+      expect(f.clipboard).toHaveBeenCalledOnce();
+      expect(f.prepareImport).toHaveBeenCalledWith("CLIPBOARD SOURCE", {});
+      expect(f.resolveLibraries).toHaveBeenCalledOnce();
+      expect(f.opened.mock.instances[0]).toBeInstanceOf(ImportProfileModal);
+      (f.opened.mock.instances[0] as ImportProfileModal).onClose();
+      expect(yield* Fiber.join(pending)).toBeUndefined();
+      expect(f.save).not.toHaveBeenCalled();
     }),
-  ).toEqual([m.profile_import_clipboard(), m.profile_import_file()]);
-  picker.onClose();
-  picker.onChooseSuggestion("clipboard", {} as MouseEvent);
-  await vi.waitFor(() => expect(f.opened).toHaveBeenCalledOnce());
-  expect(f.clipboard).toHaveBeenCalledOnce();
-  expect(f.prepareImport).toHaveBeenCalledWith("CLIPBOARD SOURCE", {});
-  expect(f.verificationData).toHaveBeenCalledExactlyOnceWith({
-    annotation: false,
-  });
-  expect(f.opened.mock.instances[0]).toBeInstanceOf(ImportProfileModal);
-  (f.opened.mock.instances[0] as ImportProfileModal).onClose();
-  await expect(pending).resolves.toBeUndefined();
-  expect(f.save).not.toHaveBeenCalled();
-});
+);
 
-it("cancels the source suggester without reading or opening consent", async () => {
-  await using f = await importerFixture();
-  const pending = f.run();
-  await vi.waitFor(() => expect(f.suggestions).toHaveBeenCalledOnce());
-  (f.suggestions.mock.instances[0] as SuggestModal<unknown>).onClose();
-  await expect(pending).resolves.toBeUndefined();
-  expect(f.clipboard).not.toHaveBeenCalled();
-  expect(f.showOpenDialog).not.toHaveBeenCalled();
-  expect(f.verificationData).not.toHaveBeenCalled();
-  expect(f.opened).not.toHaveBeenCalled();
-});
+it.effect(
+  "cancels the source suggester without reading or opening consent",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* importerFixture();
+      const pending = yield* f.run();
+      yield* until(() => f.suggestions.mock.calls.length === 1);
+      (f.suggestions.mock.instances[0] as SuggestModal<unknown>).onClose();
+      expect(yield* Fiber.join(pending)).toBeUndefined();
+      expect(f.clipboard).not.toHaveBeenCalled();
+      expect(f.showOpenDialog).not.toHaveBeenCalled();
+      expect(f.resolveLibraries).not.toHaveBeenCalled();
+      expect(f.opened).not.toHaveBeenCalled();
+    }),
+);
 
-it.each([
+it.effect.each([
   { source: "clipboard", text: "CLIPBOARD SOURCE", dialogs: 0 },
   { source: "file", text: "FILE SOURCE", dialogs: 1 },
 ] as const)(
   "opens consent directly for the menu's $source source",
-  async ({ source, text, dialogs }) => {
-    await using f = await importerFixture("replace");
-    const pending = f.run({ source });
-    await vi.waitFor(() => expect(f.opened).toHaveBeenCalledOnce());
-    expect(f.suggestions).not.toHaveBeenCalled();
-    expect(f.verificationData).not.toHaveBeenCalled();
-    expect(f.prepareImport).toHaveBeenCalledWith(text, {});
-    expect(f.showOpenDialog).toHaveBeenCalledTimes(dialogs);
-    (f.opened.mock.instances[0] as ImportProfileModal).onClose();
-    await expect(pending).resolves.toBeUndefined();
-    expect(f.save).not.toHaveBeenCalled();
-  },
+  ({ source, text, dialogs }) =>
+    Effect.gen(function* () {
+      const f = yield* importerFixture("replace");
+      const pending = yield* f.run({ source });
+      yield* until(() => f.opened.mock.calls.length === 1);
+      expect(f.suggestions).not.toHaveBeenCalled();
+      expect(f.resolveLibraries).not.toHaveBeenCalled();
+      expect(f.prepareImport).toHaveBeenCalledWith(text, {});
+      expect(f.showOpenDialog).toHaveBeenCalledTimes(dialogs);
+      (f.opened.mock.instances[0] as ImportProfileModal).onClose();
+      expect(yield* Fiber.join(pending)).toBeUndefined();
+      expect(f.save).not.toHaveBeenCalled();
+    }),
 );
 
-it.each(["empty", "read-error", "file-cancel"] as const)(
+it.effect.each(["empty", "read-error", "file-cancel"] as const)(
   "opens no consent for %s and allows retry through the entry",
-  async (failure) => {
-    await using f = await importerFixture();
-    const source = failure === "file-cancel" ? "file" : "clipboard";
-    if (failure === "empty") f.clipboard.mockResolvedValueOnce(" \n");
-    else if (failure === "read-error")
-      f.clipboard.mockRejectedValueOnce(new Error("Clipboard unavailable"));
-    else
-      f.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] });
-    await expect(f.run({ source })).resolves.toBeUndefined();
-    expect(f.prepareImport).not.toHaveBeenCalled();
-    expect(f.verificationData).not.toHaveBeenCalled();
-    expect(f.opened).not.toHaveBeenCalled();
-    expect(f.save).not.toHaveBeenCalled();
-    const retry = f.run({ source });
-    await vi.waitFor(() => expect(f.opened).toHaveBeenCalledOnce());
-    (f.opened.mock.instances[0] as ImportProfileModal).onClose();
-    await expect(retry).resolves.toBeUndefined();
-  },
+  (failure) =>
+    Effect.gen(function* () {
+      const f = yield* importerFixture();
+      const source = failure === "file-cancel" ? "file" : "clipboard";
+      if (failure === "empty") f.clipboard.mockResolvedValueOnce(" \n");
+      else if (failure === "read-error")
+        f.clipboard.mockRejectedValueOnce(new Error("Clipboard unavailable"));
+      else
+        f.showOpenDialog.mockResolvedValueOnce({
+          canceled: true,
+          filePaths: [],
+        });
+      expect(yield* Fiber.join(yield* f.run({ source }))).toBeUndefined();
+      expect(f.prepareImport).not.toHaveBeenCalled();
+      expect(f.resolveLibraries).not.toHaveBeenCalled();
+      expect(f.opened).not.toHaveBeenCalled();
+      expect(f.save).not.toHaveBeenCalled();
+      const retry = yield* f.run({ source });
+      yield* until(() => f.opened.mock.calls.length === 1);
+      (f.opened.mock.instances[0] as ImportProfileModal).onClose();
+      expect(yield* Fiber.join(retry)).toBeUndefined();
+    }),
 );
 
 const incomingMatch = 'library == "group:987654"';
@@ -514,29 +584,12 @@ async function realImportFixture(held: boolean, source = incoming) {
   );
   const deps: ImportProfileDeps = {
     app: f.app,
-    profile: f.profile,
-    template: f.template,
-    noteFeature: {
-      prepareProfileNote: () => ({
-        path: "Reading/Paper.md",
-        properties: {},
-        body: "Preview",
-        create: async () => {
-          throw new Error("The import test does not create the preview");
-        },
-      }),
-    },
+    base: f.profile.resolveProfile("default")!,
+    prepareImport: (text, options) => f.profile.prepareImport(text, options),
+    previewNote: async () => draft(),
   };
   const plan = await f.profile.prepareImport(source);
-  const modal = new ImportProfileModal(deps, {
-    source,
-    plan,
-    data: {
-      note: stubService<NoteTemplateContext>("NoteTemplateContext", {}),
-      filename: {},
-    },
-    styles: [],
-  });
+  const modal = new ImportProfileModal(deps, { source, plan, styles: [] });
   modal.contentEl = document.createElement("div");
   modal.modalEl = document.createElement("div");
   const cleanup = stack.move();

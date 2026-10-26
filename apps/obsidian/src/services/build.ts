@@ -11,10 +11,13 @@ import { Notifier } from "@/lib/notifier";
 import { revealSetting } from "@/lib/open-settings";
 import { ZoteroHttp } from "@/lib/zotero-http";
 import { libraryTagNamesOf } from "@/services/database/library-tag-names";
+import type { CreateProfile } from "@/setting-tab/create-profile-modal";
+import type { ImportProfile } from "@/setting-tab/import-profile-modal";
 import {
-  createProfileCreator,
-  createProfileImporter,
-} from "@/setting-tab/profiles";
+  createProfileDialog,
+  importProfileDialog,
+} from "@/setting-tab/profile-dialogs";
+import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { blockedNotice } from "@/views/annot-view/card-verbs";
 import {
   annotationCardShown,
@@ -426,39 +429,29 @@ export async function buildServices(
         }),
     })
     .useValue({
-      createProfile: ({
-        profile,
-        template,
-        templateData,
-        zoteroPref,
-        noteFeature,
-      }) =>
-        createProfileCreator({
-          app: plugin.app,
-          profile,
-          template,
-          templateData,
-          zoteroPref,
-          noteFeature,
-        }),
+      createProfile: (): CreateProfile => {
+        const context = runtime.runSync(
+          Effect.context<ProfileDialogServices>(),
+        );
+        return (options) =>
+          bridge.runPromise(
+            createProfileDialog(plugin.app, options).pipe(
+              Effect.provideContext(context),
+            ),
+          );
+      },
     })
     .useValue({
-      importProfile: ({
-        profile,
-        template,
-        templateData,
-        zoteroPref,
-        noteFeature,
-        createProfile,
-      }) => {
-        const importProfile = createProfileImporter({
-          app: plugin.app,
-          profile,
-          template,
-          templateData,
-          zoteroPref,
-          noteFeature,
-        });
+      importProfile: ({ createProfile }): ImportProfile => {
+        const context = runtime.runSync(
+          Effect.context<ProfileDialogServices>(),
+        );
+        const importProfile: ImportProfile = (options) =>
+          bridge.runPromise(
+            importProfileDialog(plugin.app, options).pipe(
+              Effect.provideContext(context),
+            ),
+          );
         bindProfileDialogs({ createProfile, importProfile });
         return importProfile;
       },

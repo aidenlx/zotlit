@@ -1,19 +1,20 @@
 // @vitest-environment happy-dom
 import { ButtonComponent, TextComponent, controlsOf } from "@mock/obsidian";
+import { Effect } from "effect";
+import { TFile } from "obsidian";
 import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
-
-import type { NoteTemplateContext } from "@zotlit/db";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
+import type { ProfileNoteDraft } from "@/services/note-feature/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { PreparedProfileCreation } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 
-import { CreateProfileModal } from "./profiles";
-import type { ProfileCreationData, ProfileCreationDeps } from "./profiles";
+import { CreateProfileModal } from "./create-profile-modal";
+import type { ProfileCreationDeps } from "./create-profile-modal";
 
 const id = "Bk3Qn7XvT2Lp" as ProfileId;
 function fixture() {
@@ -42,48 +43,29 @@ function fixture() {
     create,
   };
   const prepareCreate = vi.fn(async () => draft);
-  const preview = {
+  // The note write the dialog hands over; the dialog itself never runs it.
+  const writes = { count: 0 };
+  const preview: ProfileNoteDraft = {
     path: "Reading/Paper-7cx.md",
     properties: {
       "zotero-key": "ABCD2345",
       "zotlit-profile": "Reading (Bk3Qn7XvT2Lp)",
     },
     body: "# Paper\nDefault look marker.",
-    create: vi.fn(),
+    create: Effect.sync(() => {
+      writes.count += 1;
+      return { outcome: "created" as const, file: new TFile() };
+    }),
   };
   const reader = profileReader();
-  const deps = stubService<ProfileCreationDeps>("ProfileCreationDeps", {
+  const deps: ProfileCreationDeps = {
     app: stubService<App>("App", {}),
-    profile: stubService<ProfileCreationDeps["profile"]>("Profile", {
-      profiles: reader.profiles,
-      resolveProfile: reader.resolveProfile,
-      prepareCreate,
-    }),
-    template: stubService<ProfileCreationDeps["template"]>("Template", {
-      prepareLiteratureNoteTemplateSource: () =>
-        stubService<
-          ReturnType<
-            ProfileCreationDeps["template"]["prepareLiteratureNoteTemplateSource"]
-          >
-        >("TemplateDocument", {}),
-    }),
-    noteFeature: stubService<ProfileCreationDeps["noteFeature"]>(
-      "NoteFeatureHandle",
-      { prepareProfileNote: () => preview },
-    ),
-    zoteroPref: stubService<ProfileCreationDeps["zoteroPref"]>("ZoteroPref", {
-      dataDir: undefined,
-    }),
-    loadData: async () => null,
-  });
-  return { deps, draft, create, prepareCreate, preview };
-}
-
-function previewData(): ProfileCreationData {
-  return {
-    note: stubService<NoteTemplateContext>("NoteTemplateContext", {}),
-    filename: {},
+    base: reader.resolveProfile("default")!,
+    profiles: reader.profiles,
+    prepareCreate,
+    previewNote: async () => preview,
   };
+  return { deps, draft, create, prepareCreate, preview, writes };
 }
 
 it("shows the preview while asking for a name, refuses a colliding label, then enables a name with no other difference", async () => {
@@ -105,10 +87,7 @@ it("shows the preview while asking for a name, refuses a colliding label, then e
     ...inheritsAll,
     constraint: { kind: "invalid-name", message: "ASK_FOR_NAME" },
   });
-  const modal = new CreateProfileModal(f.deps, {
-    data: previewData(),
-    styles: [],
-  });
+  const modal = new CreateProfileModal(f.deps, { styles: [] });
   modal.contentEl = document.createElement("div");
   modal.onOpen();
   const status = () => modal.contentEl.querySelector('[role="status"]')!;
@@ -169,11 +148,7 @@ it.each([false, true])(
         return button instanceof ButtonComponent && button.text === saveLabel;
       })?.[0];
     const f = fixture();
-    const modal = new CreateProfileModal(f.deps, {
-      data: previewData(),
-      styles: [],
-      useForNote,
-    });
+    const modal = new CreateProfileModal(f.deps, { styles: [], useForNote });
     modal.contentEl = document.createElement("div");
     modal.onOpen();
     await vi.waitFor(() => expect(saveDisabled()).toBe(false));
@@ -186,7 +161,7 @@ it.each([false, true])(
       preview: f.preview,
     });
     expect(f.create).toHaveBeenCalledOnce();
-    expect(f.preview.create).not.toHaveBeenCalled();
+    expect(f.writes.count).toBe(0);
     // The created Profile is handed to the caller's operation alone; besides
     // Cancel, the dialog offers no action that keeps it for a later note.
     expect(

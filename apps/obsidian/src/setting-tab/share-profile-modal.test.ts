@@ -12,7 +12,7 @@ import {
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { App, Setting as ObsidianSetting, SettingGroup } from "obsidian";
+import type { Setting as ObsidianSetting, SettingGroup } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { TemplateFacade } from "@zotlit/templates/facade";
@@ -25,7 +25,8 @@ import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 
 import { testSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
-import { ShareProfileModal, profilesPage } from "./profiles";
+import { profilesPage } from "./profiles";
+import { ShareProfileModal } from "./share-profile-modal";
 
 const id = "Bk3Qn7XvT2Lp" as ProfileId;
 const source = `---
@@ -183,28 +184,11 @@ it.each(["default", id] as const)(
     const container = document.createElement("div");
     const page = profilesPage(
       stubService<SettingTabContext>("SettingTabContext", {
-        tab: testSettingTab().tab,
-        app: stubService<App>("App", {
-          vault: stubService<App["vault"]>("Vault", {
-            getFileByPath: f.vault.getFileByPath.bind(f.vault),
-          }),
-        }),
+        tab: testSettingTab(await f.runtime.context()).tab,
+        app: f.app,
         settings: stubService<SettingTabContext["settings"]>("Settings", {
           current: f.settings.current,
         }),
-        profile: stubService<SettingTabContext["profile"]>("Profile", {
-          loaded: f.profile.loaded,
-          profiles: f.profile.profiles,
-          diagnostics: f.profile.diagnostics,
-          defaultDocumentPath: f.profile.defaultDocumentPath,
-          resolveProfile: f.profile.resolveProfile,
-          prepareShare: f.profile.prepareShare,
-        }),
-        template: stubService<SettingTabContext["template"]>(
-          "Template",
-          f.template,
-        ),
-        requestUpdate: vi.fn(),
       }),
     );
     const label =

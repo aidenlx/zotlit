@@ -13,6 +13,8 @@ import { Cause, Context, Effect, Fiber, Scope, Stream } from "effect";
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log-category";
 import { Notifier } from "@/lib/notifier";
+import type { FileManager } from "@/lib/obsidian-file-manager";
+import type { Vault } from "@/lib/obsidian-vault";
 import { formatErrorMessage } from "@/lib/toast";
 import type { CapabilityNotices } from "@/services/annotation-repository/notices";
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
@@ -20,6 +22,8 @@ import type { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { LibraryScope } from "@/services/library-scope/service";
 import type { LocalServer } from "@/services/local-server/service";
+import type { NoteFeature } from "@/services/note-feature/service";
+import type { NoteIndex } from "@/services/note-index/service";
 import type { PandocEngine } from "@/services/pandoc/service";
 import type { Profile } from "@/services/profile/service";
 import type { Release } from "@/services/release/service";
@@ -46,7 +50,11 @@ export type SettingTabEnv =
   | ZoteroLocalApi
   | CitationIndex
   | PandocEngine
-  | ChineseSegmenter;
+  | ChineseSegmenter
+  | NoteFeature
+  | NoteIndex
+  | Vault
+  | FileManager;
 
 export interface SettingTabShape {
   /**

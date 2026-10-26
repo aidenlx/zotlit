@@ -8,9 +8,7 @@ import inc from "semver/functions/inc";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import type { ProfileSelector } from "@/lib/profile-stamp";
 import { requireDialog } from "@/lib/require";
-import type { PlainProfile } from "@/services/profile/plain";
 import type {
   PreparedProfileShare,
   ProfileShareOptions,
@@ -25,14 +23,6 @@ import {
 } from "./profile-dialog";
 
 const logger = getLogger(["setting-tab", "profile-share"]);
-
-export async function shareProfile(
-  deps: { app: App; profile: Pick<PlainProfile, "prepareShare"> },
-  selector: ProfileSelector,
-): Promise<void> {
-  const plan = await deps.profile.prepareShare(selector);
-  new ShareProfileModal(deps.app, plan).open();
-}
 
 export class ShareProfileModal extends Modal {
   readonly #plan: PreparedProfileShare;

@@ -2,7 +2,7 @@
 import type { Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import type { ImportProfile } from "@/setting-tab/profiles";
+import type { ImportProfile } from "@/setting-tab/import-profile-modal";
 
 export function addProfileActions(
   plugin: Pick<Plugin, "addCommand">,

@@ -18,7 +18,7 @@ import type { LocalServer } from "@/services/local-server/service";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { defaults } from "@/services/settings/schema";
 
-import { testSettingTab } from "./__fixtures__";
+import { profileRowServices, testSettingTab } from "./__fixtures__";
 import { advancedPageItems } from "./advanced";
 import { attachmentPageItems } from "./attachments";
 import { citationsPageItems } from "./citations";
@@ -36,7 +36,7 @@ vi.mock("@/views/template-workbench/register", () => ({
 
 function ctx(): SettingTabContext {
   return stubService<SettingTabContext>("SettingTabContext", {
-    tab: testSettingTab().tab,
+    tab: testSettingTab(profileRowServices()).tab,
     webWorkbenchEnabled: true,
     app: stubService<SettingTabContext["app"]>("App", {
       vault: stubService<SettingTabContext["app"]["vault"]>("Vault", {
@@ -60,12 +60,6 @@ function ctx(): SettingTabContext {
     settings: stubService<SettingTabContext["settings"]>("Settings", {
       current: Effect.succeed(defaults),
       changes: Stream.empty,
-    }),
-    profile: stubService<SettingTabContext["profile"]>("Profile", {
-      loaded: true,
-      profiles: [],
-      diagnostics: [],
-      defaultDocumentPath: "templates/zotlit-profile.default.md",
     }),
     db: stubService<SettingTabContext["db"]>("ZoteroReads", {}),
     libraryScope: stubService<SettingTabContext["libraryScope"]>(
@@ -102,13 +96,6 @@ function ctx(): SettingTabContext {
       "CitationIndex",
       { reset: async () => {} },
     ),
-    template: stubService<SettingTabContext["template"]>("Template", {
-      loaded: true,
-      javascriptTemplatesEnabled: false,
-      getPartialDocuments: () => [],
-      getReservedPartialFiles: () => [],
-      getUnrecognizedFiles: () => [],
-    }),
     release: stubService<SettingTabContext["release"]>("Release", {}),
     pandocEngine: {
       binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(

@@ -1,15 +1,14 @@
 // Collect a second destination before committing its Profile document.
 import { Modal, TextComponent } from "obsidian";
+import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { BaseNotice } from "@/lib/notice";
 import type {
   LiteratureNoteProfile,
   PreparedProfileCreation,
+  ProfileCreateOptions,
 } from "@/services/profile/service";
-import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
-import type { SettingTabContext } from "./context";
 import {
   dialogFooter,
   field,
@@ -18,24 +17,18 @@ import {
   note,
 } from "./profile-dialog";
 
-type DestinationContext = Pick<SettingTabContext, "app" | "profile">;
-
-export async function addProfileDestination(
-  ctx: DestinationContext,
-): Promise<void> {
-  const modal = new ProfileDestinationModal(ctx);
-  modal.open();
-  const profile = await modal.result;
-  if (!profile) return;
-  ctx.app.setting.close();
-  const file = ctx.app.vault.getFileByPath(profile.path);
-  if (!file) throw new Error(m.notice_profile_action_failed());
-  await openTemplateWorkbench(ctx.app, file, { tab: "name", customize: true });
-  new BaseNotice(m.notice_profile_created({ label: profile.label }));
+/** What the destination dialog reads and runs while it is open. */
+export interface ProfileDestinationDeps {
+  app: App;
+  /** The default Profile's note folder, which an empty folder falls back to. */
+  defaultFolder: string;
+  prepareCreate(
+    options: ProfileCreateOptions,
+  ): Promise<PreparedProfileCreation>;
 }
 
 export class ProfileDestinationModal extends Modal {
-  readonly #ctx;
+  readonly #deps;
   readonly #decision = Promise.withResolvers<
     LiteratureNoteProfile | undefined
   >();
@@ -44,9 +37,9 @@ export class ProfileDestinationModal extends Modal {
   #closed = false;
   #saving = false;
 
-  constructor(ctx: DestinationContext) {
-    super(ctx.app);
-    this.#ctx = ctx;
+  constructor(deps: ProfileDestinationDeps) {
+    super(deps.app);
+    this.#deps = deps;
   }
 
   override onOpen(): void {
@@ -63,10 +56,7 @@ export class ProfileDestinationModal extends Modal {
       field(controls, m.settings_profile_folder_name()),
     ).setPlaceholder(
       m.settings_profile_same_as_default({
-        value:
-          this.#ctx.profile.resolveProfile("default")!.bindings[
-            "note.literature-folder"
-          ] || "/",
+        value: this.#deps.defaultFolder || "/",
       }),
     );
     const reason = note(controls, { status: true });
@@ -108,7 +98,7 @@ export class ProfileDestinationModal extends Modal {
       draft = undefined;
       create.setDisabled(true);
       try {
-        const prepared = await this.#ctx.profile.prepareCreate({
+        const prepared = await this.#deps.prepareCreate({
           label: name.getValue(),
           look: "default",
           bindings: { folder: folder.getValue() || undefined },

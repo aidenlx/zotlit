@@ -7,25 +7,16 @@ import type { NoteTemplateContext } from "@zotlit/db";
 import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { BaseNotice } from "@/lib/notice";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import type {
-  NoteFeatureHandle,
-  ProfileNotePreview,
-} from "@/services/note-feature";
-import { listInstalledStyles } from "@/services/pandoc/styles";
+import type { ProfileNoteDraft } from "@/services/note-feature/service";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
-import type { PlainProfile } from "@/services/profile/plain";
+import type { ResolvedProfile } from "@/services/profile/bindings";
 import type {
   LiteratureNoteProfile,
   ProfileBindings,
+  ProfileCreateOptions,
   PreparedProfileCreation,
 } from "@/services/profile/service";
-import { loadTemplateData } from "@/services/template-workbench/data";
-import type { TemplateDataDeps } from "@/services/template-workbench/data";
-import type { TemplateDataHandle } from "@/services/template-workbench/data-handle";
-import type { PlainTemplate } from "@/services/template/plain";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import {
   dialogFooter,
@@ -44,9 +35,13 @@ export interface ProfileCreationData {
   note: NoteTemplateContext;
   filename: object;
 }
+/**
+ * The Profile the dialog created, and the note it previewed: its `create`
+ * writes that note at the path the dialog showed.
+ */
 export interface CreatedProfile {
   profile: LiteratureNoteProfile;
-  preview: ProfileNotePreview;
+  preview: ProfileNoteDraft;
 }
 export interface CreateProfileOptions {
   indexedKey?: string;
@@ -55,83 +50,30 @@ export interface CreateProfileOptions {
 export type CreateProfile = (
   options?: CreateProfileOptions,
 ) => Promise<CreatedProfile | undefined>;
+
+/** What the creation dialog reads and runs while it is open. */
 export interface ProfileCreationDeps {
   app: App;
-  profile: Pick<PlainProfile, "profiles" | "resolveProfile" | "prepareCreate">;
-  template: Pick<PlainTemplate, "prepareLiteratureNoteTemplateSource">;
-  noteFeature: Pick<NoteFeatureHandle, "prepareProfileNote">;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
-  loadData: (options?: {
-    indexedKey?: string;
-  }) => Promise<ProfileCreationData | null>;
-}
-
-export type ProfileDialogServices = TemplateDataDeps & {
-  templateData: Pick<TemplateDataHandle, "verificationData">;
-  app: App;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
-  template: Pick<PlainTemplate, "prepareLiteratureNoteTemplateSource">;
-  profile: ProfileCreationDeps["profile"] & Pick<PlainProfile, "prepareImport">;
-  noteFeature: Pick<NoteFeatureHandle, "prepareProfileNote">;
-};
-
-export async function loadProfilePreviewData(
-  deps: ProfileDialogServices,
-  options: { indexedKey?: string } = {},
-): Promise<ProfileCreationData | null> {
-  if (!options.indexedKey) {
-    const data = await deps.templateData.verificationData({
-      annotation: false,
-    });
-    return data
-      ? { note: data.note as NoteTemplateContext, filename: data.filename }
-      : null;
-  }
-  const [note, filename] = await Promise.all([
-    loadTemplateData(deps, options.indexedKey, "note"),
-    loadTemplateData(deps, options.indexedKey, "filename"),
-  ]);
-  return note.kind === "data" && filename.kind === "data"
-    ? { note: note.data as NoteTemplateContext, filename: filename.data }
-    : null;
-}
-
-export function createProfileCreator(
-  deps: ProfileDialogServices,
-): CreateProfile {
-  return (options = {}) =>
-    createProfileDialog(
-      { ...deps, loadData: (options) => loadProfilePreviewData(deps, options) },
-      options,
-    );
-}
-
-export async function createProfileDialog(
-  deps: ProfileCreationDeps,
-  options: CreateProfileOptions = {},
-): Promise<CreatedProfile | undefined> {
-  const [data, styles] = await Promise.all([
-    deps.loadData({ indexedKey: options.indexedKey }).catch((error) => {
-      logger.warn("Profile creation preview data is unavailable", {
-        indexedKey: options.indexedKey,
-        error,
-      });
-      return null;
-    }),
-    deps.zoteroPref.dataDir ? listInstalledStyles(deps.zoteroPref.dataDir) : [],
-  ]);
-  const modal = new CreateProfileModal(deps, { ...options, data, styles });
-  modal.open();
-  const created = await modal.result;
-  if (created && !options.useForNote)
-    new BaseNotice(m.notice_profile_created({ label: created.profile.label }));
-  return created;
+  /** The default Profile, whose values the fields fall back to. */
+  base: ResolvedProfile;
+  /** The Profiles whose look a new one can copy. */
+  profiles: readonly LiteratureNoteProfile[];
+  prepareCreate(
+    options: ProfileCreateOptions,
+  ): Promise<PreparedProfileCreation>;
+  /**
+   * The note `profile` would create from the document `source`; absent when
+   * no item supplies preview data.
+   */
+  previewNote?(
+    profile: ResolvedProfile,
+    source: string,
+  ): Promise<ProfileNoteDraft>;
 }
 
 export class CreateProfileModal extends Modal {
   readonly #deps: ProfileCreationDeps;
   readonly #options: CreateProfileOptions & {
-    data: ProfileCreationData | null;
     styles: readonly InstalledCslStyle[];
   };
   readonly #decision = Promise.withResolvers<CreatedProfile | undefined>();
@@ -143,7 +85,6 @@ export class CreateProfileModal extends Modal {
   constructor(
     deps: ProfileCreationDeps,
     options: CreateProfileOptions & {
-      data: ProfileCreationData | null;
       styles: readonly InstalledCslStyle[];
     },
   ) {
@@ -155,14 +96,14 @@ export class CreateProfileModal extends Modal {
   override onOpen(): void {
     frameDialog(this, { wide: true });
     this.setTitle(m.settings_profile_add());
-    const base = this.#deps.profile.resolveProfile("default")!;
+    const base = this.#deps.base;
     const { controls, preview: previewEl } = twoColumns(this.contentEl);
     let label = "";
     let nameEdited = false;
     let look: ProfileSelector = "default";
     const bindings: ProfileBindings = {};
     let draft: PreparedProfileCreation | undefined;
-    let preview: ProfileNotePreview | undefined;
+    let preview: ProfileNoteDraft | undefined;
     new TextComponent(field(controls, m.settings_profile_name_name())).onChange(
       (value) => {
         label = value;
@@ -214,7 +155,7 @@ export class CreateProfileModal extends Modal {
         value: base.document ?? m.settings_profile_document_builtin(),
       }),
     );
-    for (const profile of this.#deps.profile.profiles)
+    for (const profile of this.#deps.profiles)
       lookControl.addOption(
         profile.id,
         m.settings_profile_copy_look({ document: profile.document }),
@@ -273,11 +214,16 @@ export class CreateProfileModal extends Modal {
       preview = undefined;
       panel.set(undefined);
       try {
-        const prepared = await this.#deps.profile.prepareCreate({
+        const prepared = await this.#deps.prepareCreate({
           label,
           look,
           bindings,
         });
+        if (revision !== this.#revision || this.#closed) return;
+        const note = await this.#deps.previewNote?.(
+          prepared.profile,
+          prepared.source,
+        );
         if (revision !== this.#revision || this.#closed) return;
         draft = prepared;
         const fields = {
@@ -292,15 +238,9 @@ export class CreateProfileModal extends Modal {
               })
             : "",
         );
-        if (this.#options.data) {
-          preview = this.#deps.noteFeature.prepareProfileNote({
-            profile: prepared.profile,
-            document: this.#deps.template.prepareLiteratureNoteTemplateSource(
-              prepared.source,
-            ),
-            ...this.#options.data,
-          });
-          panel.set(preview);
+        if (note) {
+          preview = note;
+          panel.set(note);
         }
         const problem =
           prepared.constraint?.message ??

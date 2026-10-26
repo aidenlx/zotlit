@@ -3,7 +3,11 @@ import { Context, Effect, Exit, Scope } from "effect";
 import { onTestFinished } from "vitest";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Notifier } from "@/lib/notifier";
+import { Vault } from "@/lib/obsidian-vault";
+import { Profile } from "@/services/profile/service";
+import { Template } from "@/services/template/service";
 
 import { makeSettingTab } from "./effect-tab";
 import type { SettingTab, SettingTabEnv, SettingTabShape } from "./effect-tab";
@@ -32,4 +36,49 @@ export function testSettingTab(
     makeSettingTab(update).pipe(Effect.provideContext(context)),
   );
   return { tab, notices: notifier.notices };
+}
+
+/**
+ * The Profile, Template and Vault reads of the Profile and Template rows:
+ * a loaded registry with no Profile, no excluded document, no partial and no
+ * saved Default document, unless a test overrides a member.
+ */
+export function profileRowServices(
+  overrides: {
+    profile?: Partial<Profile["Service"]>;
+    template?: Partial<Template["Service"]>;
+    vault?: Partial<Vault["Service"]>;
+  } = {},
+) {
+  return Context.make(
+    Profile,
+    stubService<Profile["Service"]>("Profile", {
+      loaded: Effect.succeed(true),
+      profiles: Effect.succeed([]),
+      diagnostics: Effect.succeed([]),
+      defaultDocumentPath: Effect.succeed(
+        "templates/zotlit-profile.default.md",
+      ),
+      ...overrides.profile,
+    }),
+  ).pipe(
+    Context.add(
+      Template,
+      stubService<Template["Service"]>("Template", {
+        loaded: Effect.succeed(true),
+        javascriptTemplatesEnabled: Effect.succeed(false),
+        getPartialDocuments: Effect.succeed([]),
+        getReservedPartialFiles: Effect.succeed([]),
+        getUnrecognizedFiles: Effect.succeed([]),
+        ...overrides.template,
+      }),
+    ),
+    Context.add(
+      Vault,
+      stubService<Vault["Service"]>("Vault", {
+        getFileByPath: () => Effect.succeed(null),
+        ...overrides.vault,
+      }),
+    ),
+  );
 }

@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect, Fiber, Layer } from "effect";
+import { Deferred, Effect, Fiber, Layer } from "effect";
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
 import { expect, vi } from "vitest";
@@ -150,7 +150,11 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const file = noteAt("Reading/Paper-7cx.md");
-      const create = vi.fn(async () => ({ outcome: "created" as const, file }));
+      let writes = 0;
+      const create = Effect.sync(() => {
+        writes += 1;
+        return { outcome: "created" as const, file };
+      });
       const createProfile = vi.fn(async () => ({
         profile: { ...BOOK_PROFILE, label: "Reading" },
         preview: { path: file.path, properties: {}, body: "Body", create },
@@ -166,7 +170,7 @@ it.effect(
         indexedKey: "ABCD2345",
         useForNote: true,
       });
-      expect(create).toHaveBeenCalledOnce();
+      expect(writes).toBe(1);
       expect(harness.feature.planCreations).toHaveBeenCalledOnce();
       expect(harness.feature.createNote).not.toHaveBeenCalled();
       expect(texts(harness)).toEqual([
@@ -175,6 +179,42 @@ it.effect(
           path: file.path,
         }),
       ]);
+    }),
+);
+
+it.effect(
+  "stops the New profile dialog's note write when the creation is interrupted",
+  () =>
+    Effect.gen(function* () {
+      const file = noteAt("Reading/Paper-7cx.md");
+      // The write waits once it starts; an interrupt that reaches it stops it.
+      const entered = yield* Deferred.make<void>();
+      let stopped = false;
+      const create = Deferred.succeed(entered, undefined).pipe(
+        Effect.andThen(Effect.never),
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            stopped = true;
+          }),
+        ),
+        Effect.as({ outcome: "created" as const, file }),
+      );
+      const createProfile = vi.fn(async () => ({
+        profile: { ...BOOK_PROFILE, label: "Reading" },
+        preview: { path: file.path, properties: {}, body: "Body", create },
+      }));
+      const harness = creation(
+        { selector: "default", source: "bound", shouldAsk: true },
+        [],
+        { createProfile },
+      );
+      pickerAnswers(async (options) => options.onNew?.());
+      const fiber = yield* run(harness).pipe(
+        Effect.forkChild({ startImmediately: true }),
+      );
+      yield* Deferred.await(entered);
+      yield* Fiber.interrupt(fiber);
+      expect(stopped).toBe(true);
     }),
 );
 
