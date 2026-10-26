@@ -1,5 +1,5 @@
 // Writes and conflicts: every command to Zotero, run one at a time per Annotation, and what its answer leaves behind.
-import { DateTime, Effect, FiberSet, Schema } from "effect";
+import { Cause, DateTime, Effect, Exit, Fiber, FiberSet, Schema } from "effect";
 
 import { parseAnnotationPosition, parseIndexedKey } from "@zotlit/db";
 import type { AnnotationPositionRaw } from "@zotlit/db";
@@ -199,12 +199,29 @@ const createAnnotation = Effect.fnUntraced(function* (
   core: CoreState,
   attachmentKey: string,
   create: { draft: Omit<AnnotationDraft, "parentKey">; group?: string },
-) {
-  return yield* counted(
-    core,
-    attachmentKey,
-    sendCreate(core, attachmentKey, create),
+): Effect.fn.Return<CreateOutcome, WriteReadError> {
+  // The create runs on the layer's Scope, as a command does. A close of the
+  // layer interrupts it: before Zotero answered the send, its outcome is
+  // unknown; after, the create keeps that answer.
+  const progress: { answer: CreateOutcome | null } = { answer: null };
+  const fiber = yield* FiberSet.run(
+    core.fibers,
+    counted(
+      core,
+      attachmentKey,
+      sendCreate(core, attachmentKey, { ...create, progress }),
+    ),
   );
+  const exit = yield* Fiber.await(fiber);
+  if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) {
+    return (
+      progress.answer ?? {
+        kind: "failed",
+        failure: { kind: "unknown-outcome" },
+      }
+    );
+  }
+  return yield* exit;
 });
 
 const sendCreate = Effect.fnUntraced(function* (
@@ -213,7 +230,16 @@ const sendCreate = Effect.fnUntraced(function* (
   {
     draft,
     group,
-  }: { draft: Omit<AnnotationDraft, "parentKey">; group?: string },
+    progress,
+  }: {
+    draft: Omit<AnnotationDraft, "parentKey">;
+    group?: string;
+    /**
+     * What Zotero answered the create, or `null` while no answer is read.
+     * Read only by {@link createAnnotation}.
+     */
+    progress: { answer: CreateOutcome | null };
+  },
 ): Effect.fn.Return<CreateOutcome, WriteReadError> {
   const parsed = parseIndexedKey(attachmentKey);
   if (!parsed) {
@@ -246,6 +272,17 @@ const sendCreate = Effect.fnUntraced(function* (
     headers: request.headers,
     body: request.body,
   });
+  const created =
+    "failure" in reply
+      ? reply
+      : readCreateResult(reply.value.text, {
+          parentKey: attachmentKey,
+          type: whole.type,
+        });
+  progress.answer =
+    "failure" in created
+      ? { kind: "failed", failure: created.failure }
+      : { kind: "created", annotationKey: created.value.key };
   if (!source || !(yield* sourceStillBound(core, attachmentKey, source))) {
     return { kind: "failed", failure: { kind: "server-changed" } };
   }
@@ -257,10 +294,6 @@ const sendCreate = Effect.fnUntraced(function* (
     return { kind: "failed", failure: reply.failure };
   }
 
-  const created = readCreateResult(reply.value.text, {
-    parentKey: attachmentKey,
-    type: whole.type,
-  });
   if ("failure" in created) {
     yield* refresh(core, attachmentKey);
     return { kind: "failed", failure: created.failure };
