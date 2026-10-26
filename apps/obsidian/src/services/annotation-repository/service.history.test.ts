@@ -1656,11 +1656,13 @@ it.effect("records an autosave that lands while a step runs beside it", () =>
     const seeded = zotero.heldOf("HRK7BG32")!.comment!;
     const gate = Promise.withResolvers<void>();
     const away = Promise.withResolvers<void>();
+    const autosaved = Promise.withResolvers<void>();
     let holdNext = false;
     const { service, adjustLayerClock } = yield* Effect.promise(() =>
       writable(stack, {
         ...zotero.answers,
         write: async (request) => {
+          if (request.body?.includes("Typed meanwhile")) autosaved.resolve();
           if (holdNext) {
             holdNext = false;
             away.resolve();
@@ -1683,6 +1685,8 @@ it.effect("records an autosave that lands while a step runs beside it", () =>
     // still away.
     yield* service.editTextField("comment", "HRK7BG32", "Typed meanwhile");
     yield* adjustLayerClock("1 second");
+    // The idle timer sent the autosave before the undo's write comes back.
+    yield* Effect.promise(() => autosaved.promise);
     gate.resolve();
     expect(yield* Fiber.join(undone)).toMatchObject({ kind: "stepped" });
     expect(zotero.held?.color).toBe("#2ea8e5");
