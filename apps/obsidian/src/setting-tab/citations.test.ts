@@ -9,6 +9,7 @@ import {
   Context,
   Deferred,
   Effect,
+  Exit,
   FileSystem,
   Layer,
   PlatformError,
@@ -49,17 +50,23 @@ import type { SettingTabContext } from "./context";
 
 /**
  * Style folder reads a case holds in flight, the folders it refuses to list,
- * and the folders read so far, by folder path.
+ * the folders read so far, and the reads whose end a case awaits, by folder
+ * path.
  */
 interface StyleReads {
   readonly held: Map<string, Deferred.Deferred<void>>;
   readonly denied: Set<string>;
   readonly started: Set<string>;
+  readonly ended: Map<
+    string,
+    Deferred.Deferred<Exit.Exit<string[], PlatformError.PlatformError>>
+  >;
 }
 
 /**
  * The Node file system, with each styles folder read going through `reads`: a
- * held read waits for its release, and a denied folder refuses to be listed.
+ * held read waits for its release, a denied folder refuses to be listed, and
+ * an awaited read reports how it ended.
  */
 const styleFileSystem = (reads: StyleReads) =>
   Layer.effect(
@@ -80,7 +87,12 @@ const styleFileSystem = (reads: StyleReads) =>
                 pathOrDescriptor: path,
               });
             return yield* fs.readDirectory(path, options);
-          }),
+          }).pipe(
+            Effect.onExit((exit) => {
+              const ended = reads.ended.get(path);
+              return ended ? Deferred.succeed(ended, exit) : Effect.void;
+            }),
+          ),
       }),
     ),
   ).pipe(Layer.provide(NodeFileSystem.layer));
@@ -281,6 +293,7 @@ describe("References style row", () => {
       held: new Map(),
       denied: new Set(),
       started: new Set(),
+      ended: new Map(),
     };
     const notifier = testNotifier();
     const snapshot: ZoteroPrefSnapshot = {
@@ -405,8 +418,13 @@ describe("References style row", () => {
 
         // The read of the folder in between stays in flight until released.
         const held = yield* Deferred.make<void>();
+        const ended =
+          yield* Deferred.make<
+            Exit.Exit<string[], PlatformError.PlatformError>
+          >();
         const secondStyles = join(second, "styles");
         row.reads.held.set(secondStyles, held);
+        row.reads.ended.set(secondStyles, ended);
         yield* row.moveDataFolder(second);
         yield* eventually(() =>
           expect(row.reads.started.has(secondStyles)).toBe(true),
@@ -415,7 +433,8 @@ describe("References style row", () => {
         yield* eventually(() => expect(row.titles()).toEqual(["Chicago"]));
 
         yield* Deferred.succeed(held, undefined);
-        yield* Effect.sleep("50 millis");
+        // The newer read ended the stale one, so its list never reaches the row.
+        expect(Exit.hasInterrupts(yield* Deferred.await(ended))).toBe(true);
         expect(row.titles()).toEqual(["Chicago"]);
       }),
   );
