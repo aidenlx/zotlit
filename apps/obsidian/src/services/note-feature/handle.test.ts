@@ -105,6 +105,10 @@ describe("bindNoteFeature", () => {
       source: "bound",
       shouldAsk: true,
     });
+    // A write runs on the captured services too, and fails as it would before.
+    await expect(h.handle.createNote(ITEM)).rejects.toBeInstanceOf(
+      ItemNotFound,
+    );
   });
 
   it("rejects a Profile note's create with what the create failed with", async () => {
