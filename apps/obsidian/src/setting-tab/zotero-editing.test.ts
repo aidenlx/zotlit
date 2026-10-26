@@ -1,12 +1,24 @@
-import { expect, it } from "vitest";
+// @vitest-environment happy-dom
+import { expect, it } from "@effect/vitest";
+import { Setting } from "@mock/obsidian";
+import { Context, DateTime, Effect, Stream } from "effect";
+import { TestClock } from "effect/testing";
+import type { Setting as ObsidianSetting, SettingGroup } from "obsidian";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { deadlineAfter } from "@/services/annotation-repository/__fixtures__/capability";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
+import { CapabilityNotices } from "@/services/annotation-repository/notices";
+import { AnnotationRepository } from "@/services/annotation-repository/service";
+import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
 
+import { scopedSettingTab } from "./__fixtures__";
+import type { SettingTabContext } from "./context";
+import { zoteroEditingRow } from "./zotero-editing";
 import { editingRowModel } from "./zotero-editing-model";
 
-const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
+const NOW = DateTime.makeUnsafe("2026-09-16T15:52:21Z");
 
 it("shows a manual connection check while the service retains its last result", () => {
   const model = editingRowModel({
@@ -60,6 +72,67 @@ it("redraws on a clock only while a cooldown runs", () => {
   expect(row({ kind: "writable" }).countsDown).toBe(false);
   expect(row({ kind: "authorizing" }).countsDown).toBe(false);
 });
+
+it.effect(
+  "counts a cooldown down each second on the Effect clock and stops when it ends",
+  () =>
+    Effect.gen(function* () {
+      let capability: EditingCapability = {
+        kind: "cooldown",
+        retryAfter: deadlineAfter(yield* DateTime.now, 3),
+      };
+      let reads = 0;
+      const { tab } = yield* scopedSettingTab(
+        Context.make(
+          AnnotationRepository,
+          stubService<AnnotationRepository["Service"]>("AnnotationRepository", {
+            capability: Effect.sync(() => {
+              reads++;
+              return capability;
+            }),
+            probe: Effect.void,
+            capabilityChanges: Stream.never,
+          }),
+        ).pipe(
+          Context.add(
+            ZoteroLocalApi,
+            stubService<ZoteroLocalApi["Service"]>("ZoteroLocalApi", {
+              remembered: Effect.succeed(false),
+            }),
+          ),
+          Context.add(
+            CapabilityNotices,
+            stubService<CapabilityNotices["Service"]>("CapabilityNotices", {}),
+          ),
+        ),
+      );
+      const item = zoteroEditingRow(
+        stubService<SettingTabContext>("SettingTabContext", { tab }),
+      );
+      if (!("render" in item) || !item.render)
+        throw new Error("Expected a render row");
+      const setting = new Setting(document.createElement("div"));
+      const cleanup = item.render(
+        setting as unknown as ObsidianSetting,
+        stubService<SettingGroup>("SettingGroup", {}),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(() => cleanup?.()));
+      const desc = () =>
+        (setting.desc as unknown as DocumentFragment).textContent;
+
+      yield* TestClock.adjust("0 millis");
+      expect(desc()).toContain(m.capability_cooldown_detail({ seconds: 3 }));
+      yield* TestClock.adjust("1 second");
+      expect(desc()).toContain(m.capability_cooldown_detail({ seconds: 2 }));
+
+      capability = { kind: "writable" };
+      yield* TestClock.adjust("1 second");
+      expect(desc()).toContain(m.capability_writable());
+      const settled = reads;
+      yield* TestClock.adjust("5 seconds");
+      expect(reads).toBe(settled);
+    }),
+);
 
 function row(capability: EditingCapability, remembered = false) {
   return editingRowModel({ capability, remembered, now: NOW });
