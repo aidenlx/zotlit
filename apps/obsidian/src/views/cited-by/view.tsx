@@ -7,35 +7,31 @@ import type { Root } from "react-dom/client";
 import * as m from "@/lib/i18n/generated/messages";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
-import type { PlainCitationIndex } from "@/services/citation-index/plain";
-import type {} from "@/services/citation-index/service";
 import { activeKeyAtom } from "@/services/note-index/atoms";
 
-import { CitedByActionsContext, createCitedByActions } from "./actions";
-import type { CitedByActions } from "./actions";
+import { revisionsAtom } from "./atoms";
 import { CitedBy } from "./CitedBy";
 import {
   CitedByModelContext,
+  dropExpansions,
   EMPTY_CITED_BY_NOTE_STATE,
   holdCitedByModel,
   makeCitedByModel,
+  readSavedLayout,
 } from "./model";
 import type { CitedByLayout } from "./model";
-import { isCitedBySortMode } from "./store";
 
 export const CITED_BY_VIEW_TYPE = "zotlit-cited-by";
 
 export interface CitedByViewDeps {
   app: App;
-  /** The plugin's view registry: the followed note and its Cited By. */
+  /** The plugin's view registry: the followed note, its Cited By and previews. */
   registry: ViewRegistryHandle;
-  citationIndex: Pick<PlainCitationIndex, "getParsedNote">;
 }
 
 export class CitedByView extends ItemView {
   readonly #deps: CitedByViewDeps;
   readonly #model = makeCitedByModel();
-  readonly #actions: CitedByActions;
   #release: (() => void) | null;
   #root: Root | null = null;
 
@@ -45,12 +41,6 @@ export class CitedByView extends ItemView {
     this.#deps = deps;
     // Obsidian sets the layout state before the view opens.
     this.#release = holdCitedByModel(deps.registry, this.#model);
-    this.#actions = createCitedByActions({
-      app: deps.app,
-      citationIndex: deps.citationIndex,
-      registry: deps.registry,
-      model: this.#model,
-    });
   }
 
   override getViewType(): string {
@@ -79,17 +69,10 @@ export class CitedByView extends ItemView {
     result: ViewStateResult,
   ): Promise<void> {
     await super.setState(state, result);
-    if (!state || typeof state !== "object") return;
-    const { search, searchVisible, moreContext, sort } = state as Record<
-      string,
-      unknown
-    >;
+    const saved = readSavedLayout(state);
     this.#deps.registry.update(this.#model.layout, (layout) => ({
       ...layout,
-      ...(typeof searchVisible === "boolean" && { searchVisible }),
-      ...(typeof search === "string" && { search }),
-      ...(typeof moreContext === "boolean" && { moreContext }),
-      ...(isCitedBySortMode(sort) && { sort }),
+      ...saved,
     }));
   }
 
@@ -100,9 +83,7 @@ export class CitedByView extends ItemView {
     this.#root.render(
       <ViewRegistryProvider registry={registry}>
         <CitedByModelContext value={this.#model}>
-          <CitedByActionsContext value={this.#actions}>
-            <CitedBy />
-          </CitedByActionsContext>
+          <CitedBy />
         </CitedByModelContext>
       </ViewRegistryProvider>,
     );
@@ -123,21 +104,18 @@ export class CitedByView extends ItemView {
         registry.set(this.#model.note, EMPTY_CITED_BY_NOTE_STATE),
       ),
     );
-
-    this.registerEvent(
-      app.metadataCache.on("changed", (file) => {
-        this.#actions.invalidatePreview(file.path);
-      }),
-    );
-    this.registerEvent(
-      app.vault.on("rename", (file, oldPath) => {
-        this.#actions.invalidatePreview(oldPath);
-        this.#actions.invalidatePreview(file.path);
-      }),
-    );
-    this.registerEvent(
-      app.vault.on("delete", (file) => {
-        this.#actions.invalidatePreview(file.path);
+    // An expansion holds offsets into the source it was made from, so a note
+    // that changed drops its expansions.
+    let revisions = registry.get(revisionsAtom);
+    this.register(
+      registry.subscribe(revisionsAtom, (next) => {
+        const changed = Object.keys(next).filter(
+          (path) => next[path] !== revisions[path],
+        );
+        revisions = next;
+        if (changed.length > 0) {
+          registry.update(this.#model.note, dropExpansions(changed));
+        }
       }),
     );
   }

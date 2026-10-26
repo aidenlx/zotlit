@@ -4,8 +4,6 @@ import type { App, Plugin } from "obsidian";
 import "./style.css";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
-import type { PlainCitationIndex } from "@/services/citation-index/plain";
-import type {} from "@/services/citation-index/service";
 
 import { CITED_BY_VIEW_TYPE, CitedByView } from "./view";
 import type { CitedByViewDeps } from "./view";
@@ -15,7 +13,6 @@ type CitedByPlugin = Pick<Plugin, "registerView" | "addCommand" | "app">;
 export interface CitedByRegistrationDeps {
   app: App;
   registry: ViewRegistryHandle;
-  citationIndex: Pick<PlainCitationIndex, "getParsedNote">;
 }
 
 export function registerCitedByView(
@@ -25,7 +22,6 @@ export function registerCitedByView(
   const viewDeps: CitedByViewDeps = {
     app: deps.app,
     registry: deps.registry,
-    citationIndex: deps.citationIndex,
   };
   plugin.registerView(
     CITED_BY_VIEW_TYPE,

@@ -1,6 +1,6 @@
 // A test host for the Cited By Sidebar: the plugin's view registry over
-// in-memory Obsidian sources and a Citation Index whose observers the test
-// drives.
+// in-memory Obsidian sources and a Citation Index whose observers and parses
+// the test drives.
 import { Effect, Layer, Queue, Stream } from "effect";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type { TFile } from "obsidian";
@@ -17,6 +17,8 @@ import type { CitedBySnapshot } from "@/services/citation-index/service";
 export interface CitedByHost {
   /** The view registry, with no idle delay: an unread observer stops at once. */
   readonly registry: AtomRegistry.AtomRegistry;
+  readonly vault: MemoryVault;
+  readonly metadataCache: MemoryMetadataCache;
   readonly workspace: MemoryWorkspace;
   /** Each key an observer started for, in order. */
   readonly started: readonly string[];
@@ -36,7 +38,14 @@ export interface CitedByHost {
   close(): Promise<void>;
 }
 
-export async function makeCitedByHost(): Promise<CitedByHost> {
+export interface CitedByHostOptions {
+  /** The Citation Index's parse of a citing note; the default fails. */
+  readonly getParsedNote?: CitationIndex["Service"]["getParsedNote"];
+}
+
+export async function makeCitedByHost(
+  options: CitedByHostOptions = {},
+): Promise<CitedByHost> {
   const vault = new MemoryVault();
   const metadataCache = new MemoryMetadataCache();
   const workspace = new MemoryWorkspace({ layoutReady: true });
@@ -48,6 +57,9 @@ export async function makeCitedByHost(): Promise<CitedByHost> {
     Layer.merge(
       layerHost({ vault, metadataCache, workspace }),
       Layer.mock(CitationIndex, {
+        getParsedNote:
+          options.getParsedNote ??
+          ((file) => Effect.die(new Error(`no parse for ${file.path}`))),
         citedBy: (key) =>
           Stream.callback<CitedBySnapshot>((queue) =>
             Effect.acquireRelease(
@@ -71,6 +83,8 @@ export async function makeCitedByHost(): Promise<CitedByHost> {
   const registry = makeViewRegistry(await runtime.context(), { idleTTL: 0 });
   return {
     registry,
+    vault,
+    metadataCache,
     workspace,
     started,
     stopped,

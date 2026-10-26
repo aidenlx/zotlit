@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { Menu } from "@mock/obsidian";
-import { TFile } from "obsidian";
+import { Effect } from "effect";
 import type { App, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -363,17 +363,25 @@ const CITING_PATHS = ["Notes/alpha.md", "Notes/beta.md"] as const;
 
 /** A Cited By Sidebar over two citing notes that share one source body. */
 async function makeHarness() {
-  const current = (host = await makeCitedByHost());
-  const { registry } = current;
+  const current = (host = await makeCitedByHost({
+    getParsedNote: () =>
+      Effect.succeed(new ParsedNote(CITING_BODY, scanNote(CITING_BODY))),
+  }));
+  const { registry, vault } = current;
   const note = { path: "Literature/Item.md", key: "ABCD2345" };
   const plain = { path: "Notes/Plain.md", key: null };
   // A duplicate Literature Note of the same Item, at a path one citing group
   // already uses, so activating it exercises both the same-key/different-path
   // seam and the "This note" label switch.
   const duplicate = { path: CITING_PATHS[0], key: "ABCD2345" };
-  const files = new Map<string, TFile>(
-    CITING_PATHS.map((path) => [path, makeFile(path)]),
-  );
+  for (const path of CITING_PATHS) {
+    const file = vault.add(path, CITING_BODY);
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    file.name = name;
+    file.basename = name.slice(0, -".md".length);
+    file.extension = "md";
+    file.stat = { ctime: 0, mtime: 1, size: CITING_BODY.length };
+  }
   const requestSaveLayout = Object.assign(
     vi.fn(() => requestSaveLayout),
     {
@@ -381,19 +389,11 @@ async function makeHarness() {
       run: () => Promise.resolve(),
     },
   );
-  const workspace = stubService<App["workspace"]>("Workspace", {
-    requestSaveLayout,
+  const app = stubService<App>("App", {
+    workspace: stubService<App["workspace"]>("Workspace", {
+      requestSaveLayout,
+    }),
   });
-  const metadataCache = stubService<App["metadataCache"]>("MetadataCache", {
-    getFileCache: () => ({}),
-    on: () => ({}),
-  });
-  const vault = stubService<App["vault"]>("Vault", {
-    getAbstractFileByPath: (path: string) => files.get(path) ?? null,
-    cachedRead: () => Promise.resolve(CITING_BODY),
-    on: () => ({}),
-  });
-  const app = stubService<App>("App", { workspace, metadataCache, vault });
   let followed: { path: string; key: string | null } = note;
   current.follow(note.path, note.key);
   /** Sends `snapshot` once the followed key's observer runs, and waits for it. */
@@ -406,14 +406,7 @@ async function makeHarness() {
 
   return {
     host: current,
-    deps: {
-      app,
-      registry,
-      citationIndex: {
-        getParsedNote: async () =>
-          new ParsedNote(CITING_BODY, scanNote(CITING_BODY)),
-      },
-    },
+    deps: { app, registry },
     note,
     plain,
     duplicate,
@@ -480,7 +473,7 @@ function citingGroup(path: string): CitedByGroup {
 
 /** Settles the preview reads one published snapshot starts. */
 async function settle(): Promise<void> {
-  for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+  for (let turn = 0; turn < 5; turn += 1) await yieldToMain();
 }
 
 function click(root: HTMLElement, selector: string): void {
@@ -505,15 +498,4 @@ function sourceLabels(root: HTMLElement): (string | null)[] {
   return [...root.querySelectorAll("[data-cited-by-source-label]")].map(
     (label) => label.textContent,
   );
-}
-
-function makeFile(path: string): TFile {
-  const file = new TFile();
-  const name = path.slice(path.lastIndexOf("/") + 1);
-  file.path = path;
-  file.name = name;
-  file.basename = name.slice(0, -3);
-  file.extension = "md";
-  file.stat = { ctime: 0, mtime: 1, size: 0 };
-  return file;
 }

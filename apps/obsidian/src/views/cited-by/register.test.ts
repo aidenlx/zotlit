@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
-import type { PlainCitationIndex } from "@/services/citation-index/plain";
 
 import { openCitedByView, registerCitedByView } from "./register";
 import { CITED_BY_VIEW_TYPE } from "./view";
@@ -37,7 +36,6 @@ describe("Cited By Sidebar registration", () => {
     registerCitedByView(plugin, {
       app,
       registry: stubService<ViewRegistryHandle>("ViewRegistry", {}),
-      citationIndex: stubService<PlainCitationIndex>("CitationIndex", {}),
     });
     expect(getRightLeaf).not.toHaveBeenCalled();
 

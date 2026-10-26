@@ -47,17 +47,37 @@ export interface SourceOutline {
 }
 
 export type CitedByPreview =
-  | { status: "loading"; mtime: number }
-  | { status: "unavailable"; mtime: number }
-  | {
-      status: "ready";
-      facts: ParsedNote;
-      mtime: number;
-      source: string;
-      /** Read together with {@link source}, so both describe one revision. */
-      outline: SourceOutline;
-      contexts: Readonly<Record<string, OccurrenceContext>>;
-    };
+  | { readonly status: "loading" }
+  | { readonly status: "unavailable" }
+  | ReadyPreview;
+
+/** One citing note, read once for every occurrence it holds. */
+export interface ReadyPreview {
+  readonly status: "ready";
+  readonly facts: ParsedNote;
+  readonly source: string;
+  /** Read together with {@link source}, so both describe one revision. */
+  readonly outline: SourceOutline;
+  /** The metadata cache entry read with the source. */
+  readonly cache: CachedMetadata | null;
+}
+
+/** The Citation Context of each occurrence of one citing note, by `occurrenceID`. */
+export function previewContexts(
+  preview: ReadyPreview,
+  occurrences: readonly CitationOccurrence[],
+): Readonly<Record<string, OccurrenceContext>> {
+  return Object.fromEntries(
+    occurrences.map((occurrence) => [
+      occurrenceID(occurrence),
+      citationContext(
+        preview.source,
+        preview.facts.currentOccurrence(occurrence),
+        preview.cache,
+      ),
+    ]),
+  );
+}
 
 /** The six Backlinks sort modes, in the pairs the sort menu groups them by. */
 export const CITED_BY_SORT_GROUPS = [
@@ -70,11 +90,6 @@ export const CITED_BY_SORT_GROUPS = [
 export type CitedBySortMode = (typeof CITED_BY_SORT_GROUPS)[number][number];
 
 export const DEFAULT_CITED_BY_SORT: CitedBySortMode = "alphabetical";
-
-/** Whether one value out of the workspace layout names a sort mode. */
-export function isCitedBySortMode(value: unknown): value is CitedBySortMode {
-  return CITED_BY_SORT_GROUPS.flat().includes(value as CitedBySortMode);
-}
 
 export const EMPTY_CITED_BY_SNAPSHOT: CitedBySnapshot = {
   groups: [],

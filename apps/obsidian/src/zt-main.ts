@@ -561,7 +561,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     registerCitedByView(this, {
       app: this.app,
       registry: services.runtime.runSync(ViewRegistry),
-      citationIndex: services.citationIndex,
     });
 
     registerPandocExport(this, {
