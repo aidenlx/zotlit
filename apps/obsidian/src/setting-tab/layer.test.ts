@@ -17,6 +17,8 @@ import type { WorkbenchConnection } from "@/services/local-bridge/service";
 import { LocalServer } from "@/services/local-server/service";
 import { PandocEngine } from "@/services/pandoc/service";
 import { Profile } from "@/services/profile/service";
+import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 import { Template } from "@/services/template/service";
 
@@ -38,10 +40,11 @@ const OFFERED: LanguagePackSituation = {
 
 /**
  * The tab layer over services whose change streams stay quiet but for the
- * Workbench Connection and the Language Pack, which the test moves. Counts
- * each rebuild of the tab.
+ * Workbench Connection, the Language Pack and the settings, which the test
+ * moves. Counts each rebuild of the tab.
  */
 const tabLayer = Effect.gen(function* () {
+  const settings = yield* SubscriptionRef.make<Settings>(defaults);
   const connection = yield* SubscriptionRef.make<WorkbenchConnection | null>(
     null,
   );
@@ -67,7 +70,9 @@ const tabLayer = Effect.gen(function* () {
   ).pipe(
     Context.add(
       PluginSettings,
-      stubService<PluginSettings["Service"]>("PluginSettings", quiet),
+      stubService<PluginSettings["Service"]>("PluginSettings", {
+        changes: SubscriptionRef.changes(settings),
+      }),
     ),
     Context.add(
       LocalServer,
@@ -126,7 +131,7 @@ const tabLayer = Effect.gen(function* () {
       ),
     ),
   );
-  return { connection, situation, rebuilds };
+  return { connection, situation, settings, rebuilds };
 });
 
 it.effect(
@@ -139,6 +144,44 @@ it.effect(
         yield* SubscriptionRef.set(connection, CONNECTION);
         yield* TestClock.adjust("20 millis");
         yield* SubscriptionRef.set(situation, OFFERED);
+        yield* TestClock.adjust("49 millis");
+        expect(rebuilds.count).toBe(0);
+
+        yield* TestClock.adjust("1 millis");
+        expect(rebuilds.count).toBe(1);
+        yield* TestClock.adjust("1 second");
+        expect(rebuilds.count).toBe(1);
+      }),
+    ),
+);
+
+it.effect(
+  "rebuilds once for reminder flag flips inside one settle window, and not for other settings",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { settings, rebuilds } = yield* tabLayer;
+        const flip = (
+          key: "release.migration-pending" | "note.template-conversion-pending",
+        ) =>
+          SubscriptionRef.update(settings, (current) => ({
+            ...current,
+            [key]: !current[key],
+          }));
+
+        // A setting no row's presence reads leaves the definitions alone.
+        yield* SubscriptionRef.update(settings, (current) => ({
+          ...current,
+          "log.to-file": !current["log.to-file"],
+        }));
+        yield* TestClock.adjust("1 second");
+        expect(rebuilds.count).toBe(0);
+
+        yield* flip("release.migration-pending");
+        yield* TestClock.adjust("10 millis");
+        yield* flip("note.template-conversion-pending");
+        yield* TestClock.adjust("10 millis");
+        yield* flip("release.migration-pending");
         yield* TestClock.adjust("49 millis");
         expect(rebuilds.count).toBe(0);
 
