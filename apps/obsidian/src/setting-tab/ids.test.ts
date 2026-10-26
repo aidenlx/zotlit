@@ -130,7 +130,6 @@ function ctx(): SettingTabContext {
       current: Effect.succeed(defaults),
       changes: Stream.empty,
     }),
-    customize: async () => {},
   });
 }
 

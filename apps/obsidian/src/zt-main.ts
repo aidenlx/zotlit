@@ -30,7 +30,6 @@ import {
   addCustomizeActions,
   customizeFileMenu,
 } from "./services/local-bridge/actions";
-import { createLaunchSheet } from "./services/local-bridge/launch-sheet";
 import { registerWorkbenchSavedNotice } from "./services/local-bridge/notices";
 import {
   addNoteFeatureActions,
@@ -72,11 +71,6 @@ import {
   registerTemplateDataExplorer,
 } from "./views/template-data-explorer/register";
 import {
-  profileCustomization,
-  saveProfileCustomization,
-} from "./views/template-workbench/preferences";
-import {
-  openNativeProfile,
   templateWorkbenchFileMenu,
   registerTemplateWorkbenchView,
 } from "./views/template-workbench/register";
@@ -241,37 +235,13 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     );
 
     // One Customize flow shared by every entry action.
-    const customize = services.bindCustomize({
-      webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-      pluginVersion: this.manifest.version,
-      confirmLaunch: createLaunchSheet(this.app),
-      openExternal: (url) => window.open(url),
-      preference: () => profileCustomization(this.app),
-      rememberPreference: (value) => saveProfileCustomization(this.app, value),
-      openNative: async ({ profileId, item, originatingNote }) => {
-        const entry = services.profile.profiles.find(
-          (profile) => profile.id === profileId,
-        );
-        const target =
-          profileId === "default"
-            ? services.profile
-            : entry && this.app.vault.getFileByPath(entry.path);
-        if (target)
-          await openNativeProfile(this.app, target, {
-            ...(item ? { itemIndexedKey: item.key } : {}),
-            originatingNote,
-            explainUnsupported: false,
-            customize: true,
-          });
-      },
-    });
+    const customize = services.customize;
 
     // The tab reads graph services through its layer's context and the rest
     // from the container, so it closes on the stack ahead of those services.
     stack.defer(
       startSettingTab(services.runtime, this, {
         webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-        customize,
       }),
     );
 

@@ -4,6 +4,7 @@ import type { FileSystemAdapter } from "obsidian";
 
 import { passAborted } from "@/lib/abort-error";
 import { cliRunner } from "@/lib/cli-command";
+import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
 import { effectBridge, exitOver, valueOr } from "@/lib/effect-bridge";
 import { fromInstant } from "@/lib/effect-clock";
@@ -23,6 +24,11 @@ import {
   annotationCardShown,
   revealAnnotationInView,
 } from "@/views/annot-view/register";
+import {
+  profileCustomization,
+  saveProfileCustomization,
+} from "@/views/template-workbench/preferences";
+import { openNativeProfile } from "@/views/template-workbench/register";
 import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
@@ -57,12 +63,9 @@ import { bindQuery } from "./item-query/handle";
 import { QueryService } from "./item-query/service";
 import type { LanguagePackStartup } from "./language-pack/service";
 import { plainLibraryScope } from "./library-scope/plain";
-import { bindCustomize } from "./local-bridge/customize";
-import type {
-  CustomizePorts,
-  CustomizeServices,
-} from "./local-bridge/customize";
+import { bindCustomize, Customize } from "./local-bridge/customize";
 import { bindLocalBridge } from "./local-bridge/handle";
+import { createLaunchSheet } from "./local-bridge/launch-sheet";
 import { LocalBridge } from "./local-bridge/service";
 import { LocalServer } from "./local-server/service";
 import { bindManagedBinary } from "./managed-binary/handle";
@@ -207,6 +210,22 @@ export async function buildServices(
             void revealAnnotationInView(plugin, annotationKey),
         },
         creation,
+        customize: {
+          webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
+          pluginVersion: plugin.manifest.version,
+          confirmLaunch: createLaunchSheet(plugin.app),
+          openExternal: (url) => window.open(url),
+          preference: () => profileCustomization(plugin.app),
+          rememberPreference: (value) =>
+            saveProfileCustomization(plugin.app, value),
+          openNative: ({ item, originatingNote }, target) =>
+            openNativeProfile(plugin.app, target, {
+              ...(item ? { itemIndexedKey: item.key } : {}),
+              originatingNote,
+              explainUnsupported: false,
+              customize: true,
+            }),
+        },
         protocol,
         excerpt: {
           openStore: () => openExcerptStore(plugin.app.appId),
@@ -367,11 +386,7 @@ export async function buildServices(
       localBridge: () => bindLocalBridge(bridge, runtime.runSync(LocalBridge)),
     })
     .useValue({
-      // zt-main hands in the launch sheet and the editors it opens.
-      bindCustomize: () => {
-        const context = runtime.runSync(Effect.context<CustomizeServices>());
-        return (ports: CustomizePorts) => bindCustomize(bridge, context, ports);
-      },
+      customize: () => bindCustomize(bridge, runtime.runSync(Customize)),
     })
     .useValue({
       templateData: () =>

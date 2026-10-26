@@ -3,19 +3,14 @@ import { Effect } from "effect";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { Notifier } from "@/lib/notifier";
-import { leaveSettingsFor } from "@/lib/plugin-host";
+import { PluginHost } from "@/lib/plugin-host";
 import type { ProfileSelector } from "@/lib/profile-stamp";
+import { Customize } from "@/services/local-bridge/customize";
 import { Profile, ProfileOperationError } from "@/services/profile/service";
-
-import type { SettingTabContext } from "./context";
 
 export const duplicateProfileToWorkbench = Effect.fn(
   "duplicateProfileToWorkbench",
-)(function* (
-  ctx: Pick<SettingTabContext, "customize">,
-  selector: ProfileSelector,
-  options: { label?: string } = {},
-) {
+)(function* (selector: ProfileSelector, options: { label?: string } = {}) {
   const profile = yield* Profile;
   const source = yield* profile.resolveProfile(selector);
   if (!source)
@@ -24,9 +19,8 @@ export const duplicateProfileToWorkbench = Effect.fn(
       cause: undefined,
     });
   const copy = yield* profile.duplicate(selector, options);
-  yield* leaveSettingsFor("customize", () =>
-    ctx.customize({ profileId: copy.id }),
-  );
+  yield* (yield* PluginHost).closeSettings;
+  yield* (yield* Customize).open({ profileId: copy.id });
   yield* (yield* Notifier).show(
     m.notice_profile_duplicated({
       label: source.label ?? m.settings_profile_default_name(),

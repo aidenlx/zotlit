@@ -8,11 +8,12 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { PluginHost } from "@/lib/plugin-host";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
+import { Customize } from "@/services/local-bridge/customize";
+import type { CustomizeRequest } from "@/services/local-bridge/customize";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { Profile } from "@/services/profile/service";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
 
-import type { SettingTabContext } from "./context";
 import { duplicateProfileToWorkbench } from "./duplicate-profile";
 
 const COPY: LiteratureNoteProfile = {
@@ -30,19 +31,18 @@ describe("Duplicate Profile workbench handoff", () => {
     (id) =>
       Effect.gen(function* () {
         const close = vi.fn<() => void>();
-        const customize = vi.fn<SettingTabContext["customize"]>(async () => {
+        const customize = vi.fn((_request: CustomizeRequest) => {
           expect(close).toHaveBeenCalledOnce();
         });
         const duplicate = vi.fn(() => Effect.succeed(COPY));
         const notifier = testNotifier();
-        const ctx = stubService<Pick<SettingTabContext, "customize">>(
-          "SettingTabContext",
-          { customize },
-        );
 
-        yield* duplicateProfileToWorkbench(ctx, id as ProfileSelector).pipe(
+        yield* duplicateProfileToWorkbench(id as ProfileSelector).pipe(
           Effect.provide(
             Layer.mergeAll(
+              Layer.mock(Customize, {
+                open: (request) => Effect.sync(() => customize(request)),
+              }),
               Layer.mock(Profile, {
                 resolveProfile: () =>
                   Effect.succeed({

@@ -89,6 +89,8 @@ import { layerLibraryScopeCli } from "./library-scope/cli";
 import { layerLibraryScopeNotices } from "./library-scope/notices";
 import { layerLibraryScope } from "./library-scope/service";
 import type { LibraryScope } from "./library-scope/service";
+import { layerCustomize } from "./local-bridge/customize";
+import type { Customize, CustomizePorts } from "./local-bridge/customize";
 import { layerLocalBridge } from "./local-bridge/service";
 import type { LocalBridge } from "./local-bridge/service";
 import { layerLocalServer } from "./local-server/service";
@@ -165,12 +167,15 @@ export function pluginLayer(
   {
     capabilityNotices,
     creation,
+    customize,
     excerpt,
     languagePack,
     protocol,
   }: {
     readonly capabilityNotices: CapabilityNoticePorts;
     readonly creation: InteractiveCreationPorts;
+    /** The launch sheet, the browser and the native editor Customize opens. */
+    readonly customize: CustomizePorts;
     /** The note import's modals and the Attachment opener the protocol handlers call. */
     readonly protocol: Pick<ProtocolDeps, "noteImportView" | "opener">;
     readonly excerpt: {
@@ -188,6 +193,7 @@ export function pluginLayer(
   | CapabilityNotices
   | AnnotationPopover
   | CitekeyEditor
+  | Customize
   | ItemLookup
   | QueryService
   | ExcerptDisplays
@@ -402,8 +408,11 @@ export function pluginLayer(
   ).pipe(Layer.provide(Layer.mergeAll(layerPluginHost(plugin), obsidian)));
   // The Note Feature plans creations through ZotLit Query, so it builds above
   // the other services. The citekey editor creates notes through it.
-  const noteFeature = layerCitekeyEditor(creation).pipe(
-    startingAs("CitekeyEditor"),
+  // Customize launches over the Local Bridge.
+  const noteFeature = Layer.mergeAll(
+    layerCitekeyEditor(creation).pipe(startingAs("CitekeyEditor")),
+    layerCustomize(customize).pipe(startingAs("Customize")),
+  ).pipe(
     Layer.provide(layerNotifier),
     Layer.provideMerge(
       layerNoteFeature.pipe(

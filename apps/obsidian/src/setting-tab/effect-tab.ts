@@ -27,6 +27,7 @@ import type { ExcerptDisplays } from "@/services/excerpt-image/display";
 import type { ExcerptImages } from "@/services/excerpt-image/layer";
 import type { LanguagePack } from "@/services/language-pack/service";
 import type { LibraryScope } from "@/services/library-scope/service";
+import type { Customize } from "@/services/local-bridge/customize";
 import type { LocalBridge } from "@/services/local-bridge/service";
 import type { LocalServer } from "@/services/local-server/service";
 import type { NoteFeature } from "@/services/note-feature/service";
@@ -60,6 +61,7 @@ export type SettingTabEnv =
   | ChineseSegmenter
   | AttachmentImport
   | LocalBridge
+  | Customize
   | LanguagePack
   | ExcerptImages
   | ExcerptDisplays

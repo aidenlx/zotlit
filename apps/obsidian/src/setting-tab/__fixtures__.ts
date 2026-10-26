@@ -18,6 +18,7 @@ import { ExcerptDisplays } from "@/services/excerpt-image/display";
 import { ExcerptImages } from "@/services/excerpt-image/layer";
 import { LanguagePack } from "@/services/language-pack/service";
 import { LibraryScope } from "@/services/library-scope/service";
+import { Customize } from "@/services/local-bridge/customize";
 import { LocalBridge } from "@/services/local-bridge/service";
 import { LocalServer } from "@/services/local-server/service";
 import { NoteFeature } from "@/services/note-feature/service";
@@ -59,6 +60,7 @@ export const unimplementedTabServices = Layer.mergeAll(
   Layer.mock(ChineseSegmenter)({}),
   Layer.mock(AttachmentImport)({}),
   Layer.mock(LocalBridge)({}),
+  Layer.mock(Customize)({}),
   // Services with plain members: a read of a member no test gave throws.
   Layer.succeed(
     LanguagePack,

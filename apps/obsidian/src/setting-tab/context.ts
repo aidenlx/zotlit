@@ -1,6 +1,5 @@
 import type { App, PluginManifest } from "obsidian";
 
-import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { Settings } from "@/services/settings/schema";
 import type { PluginSettings } from "@/services/settings/service";
 
@@ -37,6 +36,4 @@ export interface SettingTabContext {
     | "updateDefaultLiteratureNoteProfileBindings"
     | "changes"
   >;
-  /** The shared Customize flow the Template document row opens. */
-  customize: CustomizeAction;
 }
