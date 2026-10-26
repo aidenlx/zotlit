@@ -1,17 +1,15 @@
 import type { App, PaneType, Plugin } from "obsidian";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 
 import "./style.css";
 import { MENU_SECTION } from "@/lib/menu-section";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import type { FileMenuSegment } from "@/services/file-menu";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { PluginSettings } from "@/services/settings/service";
-import type { TemplateDataLoader } from "@/services/template-workbench/data";
 import type { PlainTemplate } from "@/services/template/plain";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import {
   activeTemplateWorkbench,
   openProfileExplorer,
@@ -25,25 +23,12 @@ type ExplorerPlugin = Pick<
 >;
 
 export interface ExplorerRegistrationDeps {
-  runtime: SubscriptionRuntime;
   app: App;
-  zoteroReads: Pick<
-    PlainZoteroReads,
-    | "acquireRead"
-    | "reads"
-    | "state"
-    | "changed"
-    | "degraded"
-    | "refresh-failed"
-    | "refreshing"
-    | "db-file-missing"
-    | "refresh-requested"
-  >;
+  registry: ViewRegistryHandle;
   itemLookup: ItemLookupHandle;
   settings: Pick<PluginSettings["Service"], "current" | "changes">;
   bridge: Pick<EffectBridge, "runSync">;
   templates: Pick<PlainTemplate, "javascriptTemplatesEnabled">;
-  templateData: TemplateDataLoader;
 }
 
 export function registerTemplateDataExplorer(

@@ -2,8 +2,9 @@
 import type { WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { createElement } from "react";
+import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import { WorkbenchHostProvider } from "@zotlit/workbench/ui";
@@ -12,31 +13,44 @@ import type { WorkbenchHost } from "@zotlit/workbench/ui";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
-import { loadTemplateData } from "@/services/template-workbench/data";
-import type {
-  TemplateDataDeps,
-  TemplateDataLoadResult,
-} from "@/services/template-workbench/data";
+import { ViewRegistryProvider } from "@/lib/view-atoms";
+import type { TemplateDataLoadResult } from "@/services/template-workbench/data";
 import { chooseWorkbenchAnnotation } from "@/views/template-workbench/selection";
 import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
+import { makeExplorerHost, waitFor } from "./__fixtures__";
+import type { ExplorerHost, ExplorerReads } from "./__fixtures__";
 import { ExplorerActionsContext } from "./actions";
 import type { ExplorerActions } from "./actions";
 import { Explorer } from "./Explorer";
 import {
   annotationIndexedKey,
-  ExplorerStoreProvider,
-  NativeExplorerSession,
-} from "./store";
+  ExplorerModelContext,
+  setCollapsedSections,
+  setFilter,
+  toggleNode,
+} from "./model";
+import type { ExplorerModel } from "./model";
 
-vi.mock("@/services/template-workbench/data", () => ({
-  loadTemplateData: vi.fn(),
-}));
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
-const deps = stubService<TemplateDataDeps>("TemplateDataDeps", {});
+const read = vi.fn<NonNullable<ExplorerReads["read"]>>();
+let host: ExplorerHost;
+beforeEach(async () => {
+  vi.resetAllMocks();
+  host = await makeExplorerHost({ read });
+});
+afterEach(() => host.close());
 const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
   updateHeader: vi.fn(),
 });
+/** Gives `child` the host's registry and one Explorer model. */
+function withModel(model: ExplorerModel, child: ReactNode) {
+  return createElement(
+    ViewRegistryProvider,
+    { registry: host.registry },
+    createElement(ExplorerModelContext, { value: model }, child),
+  );
+}
 function context(
   patch: Partial<TemplateAuthoringContext> = {},
 ): TemplateAuthoringContext {
@@ -56,19 +70,19 @@ function context(
 }
 describe("independent native Explorer", () => {
   it("keeps filter, collapse, and closed sections local across editor display changes", async () => {
-    vi.mocked(loadTemplateData).mockResolvedValue({
+    read.mockResolvedValue({
       kind: "data",
       data: { title: "Paper", tags: ["methods"] },
     });
-    using first = new NativeExplorerSession(deps);
-    using second = new NativeExplorerSession(deps);
+    using first = host.openSession();
+    using second = host.openSession();
     first.setContext(context());
     second.setContext(context());
-    await Promise.all([first.ready, second.ready]);
-    first.state.getState().toggleNode("tags");
-    first.state.getState().setFilter("methods");
-    first.state.getState().toggleNode("tags");
-    first.state.getState().setCollapsedSections(new Set(["record"]));
+    await Promise.all([first.ready(), second.ready()]);
+    first.apply(toggleNode("tags"));
+    first.apply(setFilter("methods"));
+    first.apply(toggleNode("tags"));
+    first.apply(setCollapsedSections(new Set(["record"])));
     first.setContext(
       context({
         advanced: true,
@@ -76,106 +90,98 @@ describe("independent native Explorer", () => {
         annotationId: SAMPLE_ANNOTATIONS[0]!.id,
       }),
     );
-    expect(first.state.getState().navigation.filterCollapsed.has("tags")).toBe(
-      true,
-    );
-    expect(first.state.getState().navigation.filterQuery).toBe("methods");
-    expect(second.state.getState().navigation.filterQuery).toBe("");
-    expect(first.state.getState().collapsedSections.has("record")).toBe(true);
-    expect(second.state.getState().collapsedSections.size).toBe(0);
-    first.state.getState().setFilter("");
-    expect(first.state.getState().navigation.expanded.has("tags")).toBe(true);
+    expect(first.state().navigation.filterCollapsed.has("tags")).toBe(true);
+    expect(first.state().navigation.filterQuery).toBe("methods");
+    expect(second.state().navigation.filterQuery).toBe("");
+    expect(first.state().collapsedSections.has("record")).toBe(true);
+    expect(second.state().collapsedSections.size).toBe(0);
+    first.apply(setFilter(""));
+    expect(first.state().navigation.expanded.has("tags")).toBe(true);
   });
   it("restores note expansion after annotation exploration and resets for a new Item", async () => {
-    vi.mocked(loadTemplateData).mockResolvedValue({
+    read.mockResolvedValue({
       kind: "data",
       data: { text: "Evidence" },
     });
-    using session = new NativeExplorerSession(deps);
+    using session = host.openSession();
     session.setContext(context());
-    await session.ready;
-    session.state.getState().toggleNode("annotations");
-    const item = session.state.getState().item;
+    await session.ready();
+    session.apply(toggleNode("annotations"));
+    const item = session.state().item;
     session.setTarget(item, "annotation", "ANNT2345");
-    await session.ready;
-    expect(session.state.getState().navigation.expanded.size).toBe(0);
+    await session.ready();
+    expect(session.state().navigation.expanded.size).toBe(0);
     session.setContext(context({ advanced: true }));
-    expect(session.state.getState().root).toBe("annotation");
+    expect(session.state().root).toBe("annotation");
     session.setTarget(item, "note");
-    await session.ready;
-    expect(
-      session.state.getState().navigation.expanded.has("annotations"),
-    ).toBe(true);
+    await session.ready();
+    expect(session.state().navigation.expanded.has("annotations")).toBe(true);
     session.setContext(context({ item: { id: "PAPER235", title: "Other" } }));
-    await session.ready;
-    expect(session.state.getState().navigation.expanded.size).toBe(0);
+    await session.ready();
+    expect(session.state().navigation.expanded.size).toBe(0);
   });
   it("rejects late results after a new Item and after disposal", async () => {
     let resolveOld!: (result: TemplateDataLoadResult) => void;
-    vi.mocked(loadTemplateData).mockImplementation(async (_deps, key) =>
+    read.mockImplementation(async (key) =>
       key === "PAPER234"
         ? new Promise((resolve) => {
             resolveOld = resolve;
           })
         : { kind: "data", data: { title: "Current" } },
     );
-    const session = new NativeExplorerSession(deps);
+    const session = host.openSession();
     session.setContext(context());
-    const old = session.ready;
+    await session.ready();
     session.setContext(context({ item: { id: "PAPER235", title: "Other" } }));
-    await session.ready;
+    await session.ready();
     resolveOld({ kind: "data", data: { title: "Obsolete" } });
-    await old;
-    expect(session.state.getState().data?.title).toBe("Current");
+    await session.ready();
+    expect(session.state().data?.title).toBe("Current");
     session.setContext(context());
-    const pending = session.ready;
+    await session.ready();
     session[Symbol.dispose]();
     resolveOld({ kind: "data", data: { title: "Closed" } });
-    await pending;
-    expect(session.state.getState().data).toBeNull();
-    expect(session.state.getState().context).toBeNull();
+    // The released model leaves the registry; a later read starts it empty.
+    await waitFor(() => {
+      expect(session.state().data).toBeNull();
+      expect(session.state().context).toBeNull();
+    });
   });
   it("distinguishes no Item, load failure, valid empty data, and a retry", async () => {
-    using session = new NativeExplorerSession(deps);
-    expect(session.state.getState().status).toBe("no-item");
-    vi.mocked(loadTemplateData).mockRejectedValueOnce(
-      new Error("Disconnected"),
-    );
+    using session = host.openSession();
+    expect(session.state().status).toBe("no-item");
+    read.mockRejectedValueOnce(new Error("Disconnected"));
     session.setContext(context());
-    expect(session.state.getState().status).toBe("loading");
-    await session.ready;
-    expect(session.state.getState().status).toBe("error");
-    expect(session.state.getState().error).toBe("Disconnected");
-    vi.mocked(loadTemplateData).mockResolvedValueOnce({
+    expect(session.state().status).toBe("loading");
+    await session.ready();
+    expect(session.state().status).toBe("error");
+    expect(session.state().error).toBe("Disconnected");
+    read.mockResolvedValueOnce({
       kind: "data",
       data: {},
     });
     session.refresh();
-    await session.ready;
-    expect(session.state.getState().status).toBe("empty");
-    expect(session.state.getState().data).toEqual({});
+    await session.ready();
+    expect(session.state().status).toBe("empty");
+    expect(session.state().data).toEqual({});
   });
   it("restores an annotation anchor within its Item's group Library", async () => {
-    vi.mocked(loadTemplateData).mockResolvedValue({
+    read.mockResolvedValue({
       kind: "data",
       data: { text: "Group annotation" },
     });
-    using session = new NativeExplorerSession(deps);
+    using session = host.openSession();
     session.setTarget(
       { id: "PAPER234g42", title: "Group paper" },
       "annotation",
       "ANNT2345",
     );
-    await session.ready;
-    expect(loadTemplateData).toHaveBeenLastCalledWith(
-      deps,
-      "ANNT2345g42",
-      "annotation",
-    );
-    expect(session.state.getState().status).toBe("ready");
+    await session.ready();
+    expect(read).toHaveBeenLastCalledWith("ANNT2345g42", "annotation");
+    expect(session.state().status).toBe("ready");
   });
   it("offers explicit Item selection without launching a picker on mount", async () => {
-    using session = new NativeExplorerSession(deps);
+    using session = host.openSession();
     const choose = vi.fn();
     using cleanup = new DisposableStack();
     const container = cleanup.adopt(document.createElement("div"), (element) =>
@@ -196,9 +202,8 @@ describe("independent native Explorer", () => {
               persistence: { read: () => null, write: () => {} },
             }),
           },
-          createElement(
-            ExplorerStoreProvider,
-            { value: session.state },
+          withModel(
+            session.model,
             createElement(
               ExplorerActionsContext,
               {
@@ -245,7 +250,7 @@ it("switches annotation data locally through the annotation chooser", async () =
     comment: "Check the method",
     tags: [],
   };
-  vi.mocked(loadTemplateData).mockImplementation(async (_deps, key, root) => ({
+  read.mockImplementation(async (key, root) => ({
     kind: "data",
     data:
       root === "note"
@@ -254,8 +259,8 @@ it("switches annotation data locally through the annotation chooser", async () =
           ? second
           : first,
   }));
-  using session = new NativeExplorerSession(deps);
-  using other = new NativeExplorerSession(deps);
+  using session = host.openSession();
+  using other = host.openSession();
   const authoring = context({
     item: { id: "PAPER234g42", title: "Group paper" },
     root: "annotation",
@@ -264,7 +269,7 @@ it("switches annotation data locally through the annotation chooser", async () =
   });
   session.setContext(authoring);
   other.setContext(authoring);
-  await Promise.all([session.ready, other.ready]);
+  await Promise.all([session.ready(), other.ready()]);
   const suggester = vi.fn(async (_request: unknown) => "ANNT2346g42");
   await using cleanup = new AsyncDisposableStack();
   const container = cleanup.adopt(document.createElement("div"), (element) =>
@@ -287,16 +292,15 @@ it("switches annotation data locally through the annotation chooser", async () =
             suggester,
           }),
         },
-        createElement(
-          ExplorerStoreProvider,
-          { value: session.state },
+        withModel(
+          session.model,
           createElement(Explorer, {
             explorer: { copy: async () => {} },
             lookup: { search: async () => [] },
             onSelectItem: (item) => session.setTarget(item, "note"),
             onSearchItem: () => {},
             onChooseAnnotation: async () => {
-              const state = session.state.getState();
+              const state = session.state();
               const id = await chooseWorkbenchAnnotation(
                 stubService<WorkbenchHost>("WorkbenchHost", { suggester }),
                 state.annotations ?? [],
@@ -306,11 +310,7 @@ it("switches annotation data locally through the annotation chooser", async () =
               if (id) session.setTarget(state.item, "annotation", id);
             },
             onSelectAnnotation: (id) =>
-              session.setTarget(
-                session.state.getState().item,
-                "annotation",
-                id,
-              ),
+              session.setTarget(session.state().item, "annotation", id),
           }),
         ),
       ),
@@ -323,15 +323,15 @@ it("switches annotation data locally through the annotation chooser", async () =
   await act(async () => {
     choose.click();
   });
-  await act(async () => session.ready);
+  await act(async () => session.ready());
   expect(suggester.mock.calls[0]?.[0]).toMatchObject({
     selected: "ANNT2345g42",
     groups: [{ options: [{ id: "ANNT2345g42" }, { id: "ANNT2346g42" }] }, {}],
   });
-  expect(session.state.getState().data?.comment).toBe("Check the method");
-  expect(session.state.getState().annotationId).toBe("ANNT2346g42");
-  expect(session.state.getState().context).toBe(authoring);
-  expect(other.state.getState().annotationId).toBe("ANNT2345");
+  expect(session.state().data?.comment).toBe("Check the method");
+  expect(session.state().annotationId).toBe("ANNT2346g42");
+  expect(session.state().context).toBe(authoring);
+  expect(other.state().annotationId).toBe("ANNT2345");
   suggester.mockResolvedValueOnce(SAMPLE_ANNOTATIONS[1]!.id);
   await act(async () => {
     container
@@ -340,14 +340,12 @@ it("switches annotation data locally through the annotation chooser", async () =
       )!
       .click();
   });
-  await act(async () => session.ready);
-  expect(session.state.getState().data?.text).toBe(
-    SAMPLE_ANNOTATIONS[1]!.root.text,
-  );
+  await act(async () => session.ready());
+  expect(session.state().data?.text).toBe(SAMPLE_ANNOTATIONS[1]!.root.text);
   session.setContext({ ...authoring, advanced: true });
-  expect(session.state.getState().annotationId).toBe(SAMPLE_ANNOTATIONS[1]!.id);
+  expect(session.state().annotationId).toBe(SAMPLE_ANNOTATIONS[1]!.id);
   await act(async () => session.setTarget(authoring.item, "note"));
-  await act(async () => session.ready);
+  await act(async () => session.ready());
   expect(
     container.querySelector(
       `[aria-label="${m.workbench_choose_annotation()}"]`,
@@ -357,7 +355,7 @@ it("switches annotation data locally through the annotation chooser", async () =
 
 it("discards annotation choices loaded for a superseded Item", async () => {
   let finish!: (value: TemplateDataLoadResult) => void;
-  vi.mocked(loadTemplateData).mockImplementation(async (_deps, key) =>
+  read.mockImplementation(async (key) =>
     key === "PAPER234"
       ? new Promise((resolve) => {
           finish = resolve;
@@ -369,11 +367,11 @@ it("discards annotation choices loaded for a superseded Item", async () => {
           },
         },
   );
-  using session = new NativeExplorerSession(deps);
+  using session = host.openSession();
   session.setContext(
     context({ root: "annotation", annotationId: SAMPLE_ANNOTATIONS[0]!.id }),
   );
-  const pending = session.ready;
+  await session.ready();
   session.setContext(
     context({
       item: { id: "PAPER235", title: "Next paper" },
@@ -381,10 +379,10 @@ it("discards annotation choices loaded for a superseded Item", async () => {
       annotationId: SAMPLE_ANNOTATIONS[0]!.id,
     }),
   );
-  await session.ready;
+  await session.ready();
   finish({ kind: "data", data: { annotations: [{ key: "OLD23456" }] } });
-  await pending;
-  expect(session.state.getState().annotations?.map(({ id }) => id)).toEqual([
+  await session.ready();
+  expect(session.state().annotations?.map(({ id }) => id)).toEqual([
     "NEXT2345",
   ]);
 });

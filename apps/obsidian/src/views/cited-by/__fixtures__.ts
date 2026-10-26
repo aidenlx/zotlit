@@ -9,6 +9,7 @@ import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import { layerUnreadViewServices } from "@/lib/__fixtures__/view-atoms";
 import { buildRuntime } from "@/lib/effect-layer";
 import { makeViewRegistry } from "@/lib/view-atoms";
 import { CitationIndex } from "@/services/citation-index/service";
@@ -54,7 +55,8 @@ export async function makeCitedByHost(
   const observers = new Map<string, (snapshot: CitedBySnapshot) => void>();
   const stack = new AsyncDisposableStack();
   const runtime = buildRuntime(
-    Layer.merge(
+    Layer.mergeAll(
+      layerUnreadViewServices,
       layerHost({ vault, metadataCache, workspace }),
       Layer.mock(CitationIndex, {
         getParsedNote:

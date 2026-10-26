@@ -8,8 +8,8 @@ import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import { layerUnreadViewServices } from "@/lib/__fixtures__/view-atoms";
 import { makeViewRegistry } from "@/lib/view-atoms";
-import { CitationIndex } from "@/services/citation-index/service";
 
 import { activeNoteAtom } from "./atoms";
 import type { ActiveNote } from "./atoms";
@@ -25,8 +25,8 @@ function host() {
     registry: Effect.map(
       Layer.build(
         Layer.merge(
+          layerUnreadViewServices,
           layerHost({ vault, metadataCache, workspace }),
-          Layer.mock(CitationIndex, {}),
         ),
       ),
       (context) => makeViewRegistry(context, { idleTTL: 0 }),

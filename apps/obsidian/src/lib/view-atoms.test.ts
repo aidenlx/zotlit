@@ -4,6 +4,7 @@ import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { expect } from "vitest";
 
 import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
+import { layerUnreadViewServices } from "@/lib/__fixtures__/view-atoms";
 import { CitationIndex } from "@/services/citation-index/service";
 
 import {
@@ -13,7 +14,11 @@ import {
   ViewRegistry,
 } from "./view-atoms";
 
-const layerServices = Layer.merge(layerHost(), Layer.mock(CitationIndex, {}));
+const layerServices = Layer.mergeAll(
+  layerUnreadViewServices,
+  layerHost(),
+  Layer.mock(CitationIndex, {}),
+);
 
 it.effect("held shows the fallback until the service Stream has a value", () =>
   Effect.gen(function* () {

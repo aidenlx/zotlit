@@ -22,13 +22,21 @@ import type { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
 import type { CitationIndex } from "@/services/citation-index/service";
+import type { TemplateDataReads } from "@/services/template-workbench/data-reads";
+import type { ZoteroReads } from "@/services/zotero-reads/service";
 
 /**
  * The services a view atom may read. The registry holds the plugin's whole
  * context; this union is the part view atoms are typed against. Add a service
  * here when a view atom first reads it.
  */
-export type ViewServices = CitationIndex | MetadataCache | Vault | Workspace;
+export type ViewServices =
+  | CitationIndex
+  | MetadataCache
+  | TemplateDataReads
+  | Vault
+  | Workspace
+  | ZoteroReads;
 
 /**
  * The plugin's services as a Layer; each registry seeds it. Kept alive: an
@@ -77,6 +85,9 @@ export function makeViewRegistry(
     initialValues: [[servicesLayer, Layer.succeedContext(context)]],
     scheduleTask,
     defaultIdleTTL: idleTTL,
+    // The registry's default, half the idle delay, with a floor: a zero
+    // resolution turns every node timeout into NaN.
+    timeoutResolution: Math.max(1, Math.round(idleTTL / 2)),
   });
 }
 

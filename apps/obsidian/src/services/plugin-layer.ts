@@ -25,6 +25,7 @@ import { layerViewRegistry } from "@/lib/view-atoms";
 import type { ViewRegistry } from "@/lib/view-atoms";
 import type { ZoteroHttp } from "@/lib/zotero-http";
 import { layerZoteroHttpNode } from "@/lib/zotero-http-node";
+import { layerTemplateDataReads } from "@/services/template-workbench/data-reads";
 import { openLibraryView } from "@/views/library/register";
 
 import { layerAnnotationLinkReading } from "./annotation-popover/reading";
@@ -386,7 +387,10 @@ export function pluginLayer(
       : Layer.empty,
     layerReleaseActions.pipe(startingAs("ReleaseActions")),
     layerTemplateWorkbenchCli.pipe(startingAs("TemplateWorkbenchCli")),
-    layerViewRegistry.pipe(startingAs("ViewRegistry")),
+    layerViewRegistry.pipe(
+      Layer.provide(layerTemplateDataReads),
+      startingAs("ViewRegistry"),
+    ),
     layerWikilinkEditor.pipe(startingAs("WikilinkEditor")),
     layerWikilinkReading.pipe(startingAs("WikilinkReading")),
   ).pipe(Layer.provide(Layer.mergeAll(layerPluginHost(plugin), obsidian)));

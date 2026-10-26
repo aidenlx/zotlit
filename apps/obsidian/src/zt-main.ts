@@ -510,14 +510,12 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     registerTemplateWorkbenchView(this, templateWorkbenchDeps);
 
     registerTemplateDataExplorer(this, {
-      runtime: services.runtime,
       bridge: services.bridge,
       app: this.app,
-      zoteroReads: services.zoteroReads,
+      registry: services.runtime.runSync(ViewRegistry),
       itemLookup: services.itemLookup,
       settings: services.settings,
       templates: services.template,
-      templateData: services.templateData,
     });
 
     registerNotePreview(this, {
