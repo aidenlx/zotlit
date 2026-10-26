@@ -75,7 +75,7 @@ import type {
   AnnotationRecord,
   AnnotationRepositoryCoreDeps,
   AnnotationSource,
-} from "./repository";
+} from "./service";
 import { layerAnnotationRepository, AnnotationRepository } from "./service";
 import type { GeometryEdit, TextField } from "./write";
 

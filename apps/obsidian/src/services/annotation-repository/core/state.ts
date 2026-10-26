@@ -30,8 +30,8 @@ interface CoreFibers {
 }
 
 /**
- * The dependencies and the state that the core's functions share.
- * Shared by the core's files until slice 15f removes the core.
+ * The dependencies and the state that the core's functions share. The
+ * repository layer builds it, and the layer's Scope owns its fibers.
  */
 class CoreState {
   readonly bridge;
