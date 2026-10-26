@@ -1,10 +1,19 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { it } from "@effect/vitest";
 import {
   DropdownComponent,
   ExtraButtonComponent,
   renderRow,
 } from "@mock/obsidian";
-import { Context, Effect, Layer, SubscriptionRef } from "effect";
+import {
+  Context,
+  Deferred,
+  Effect,
+  FileSystem,
+  Layer,
+  PlatformError,
+  SubscriptionRef,
+} from "effect";
 // @vitest-environment happy-dom
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -38,26 +47,43 @@ import {
 } from "./citations";
 import type { SettingTabContext } from "./context";
 
-/** Style folder reads a case holds in flight, and the folders read so far. */
-const styleReads = vi.hoisted(() => ({
-  held: new Map<string, Promise<void>>(),
-  started: new Set<string>(),
-}));
+/**
+ * Style folder reads a case holds in flight, the folders it refuses to list,
+ * and the folders read so far, by folder path.
+ */
+interface StyleReads {
+  readonly held: Map<string, Deferred.Deferred<void>>;
+  readonly denied: Set<string>;
+  readonly started: Set<string>;
+}
 
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs/promises")>();
-  return {
-    ...actual,
-    readdir: async (...args: Parameters<typeof actual.readdir>) => {
-      const [path] = args;
-      if (typeof path === "string") {
-        styleReads.started.add(path);
-        await styleReads.held.get(path);
-      }
-      return actual.readdir(...args);
-    },
-  };
-});
+/**
+ * The Node file system, with each styles folder read going through `reads`: a
+ * held read waits for its release, and a denied folder refuses to be listed.
+ */
+const styleFileSystem = (reads: StyleReads) =>
+  Layer.effect(
+    FileSystem.FileSystem,
+    Effect.map(FileSystem.FileSystem, (fs) =>
+      FileSystem.make({
+        ...fs,
+        readDirectory: (path, options) =>
+          Effect.gen(function* () {
+            reads.started.add(path);
+            const held = reads.held.get(path);
+            if (held) yield* Deferred.await(held);
+            if (reads.denied.has(path))
+              return yield* PlatformError.systemError({
+                _tag: "PermissionDenied",
+                module: "FileSystem",
+                method: "readDirectory",
+                pathOrDescriptor: path,
+              });
+            return yield* fs.readDirectory(path, options);
+          }),
+      }),
+    ),
+  ).pipe(Layer.provide(NodeFileSystem.layer));
 
 const APA = { id: "http://www.zotero.org/styles/apa", title: "APA" };
 const NATURE = { id: "http://www.zotero.org/styles/nature", title: "Nature" };
@@ -251,6 +277,11 @@ describe("References style row", () => {
       write?: PluginSettings["Service"]["updateDefaultLiteratureNoteProfileBindings"];
     } = {},
   ) {
+    const reads: StyleReads = {
+      held: new Map(),
+      denied: new Set(),
+      started: new Set(),
+    };
     const notifier = testNotifier();
     const snapshot: ZoteroPrefSnapshot = {
       state: "ready",
@@ -269,6 +300,7 @@ describe("References style row", () => {
     const services = yield* Layer.build(
       Layer.mergeAll(
         notifier.layer,
+        styleFileSystem(reads),
         Layer.mock(PluginSettings, {
           current: SubscriptionRef.get(stored),
           changes: SubscriptionRef.changes(stored),
@@ -292,10 +324,13 @@ describe("References style row", () => {
       (control) => control instanceof ExtraButtonComponent,
     );
     if (!dropdown || !refresh) throw new Error("Expected the style controls");
+    const paint = vi.spyOn(dropdown.selectEl, "replaceChildren");
     return {
       dropdown,
       refresh,
       notices: notifier.notices,
+      /** The styles folder reads, which a case holds or refuses. */
+      reads,
       /** The data folder the Zotero preferences resolve to. */
       moveDataFolder: (dir: string) =>
         SubscriptionRef.update(pref, (current) => ({
@@ -305,6 +340,8 @@ describe("References style row", () => {
         })),
       /** Settings as vault sync rewrites them while the tab stays open. */
       store: (next: Settings) => SubscriptionRef.set(stored, next),
+      /** How many times the row has filled the dropdown so far. */
+      paints: () => paint.mock.calls.length,
       /** The titles the dropdown offers after the embedded default. */
       titles: () => dropdown.options.slice(1).map(({ label }) => label),
     };
@@ -336,6 +373,23 @@ describe("References style row", () => {
     }),
   );
 
+  it.live("keeps the last list when a Refresh cannot read the folder", () =>
+    Effect.gen(function* () {
+      const dir = yield* dataFolder;
+      yield* install(dir, APA);
+      const row = yield* setup(dir);
+      yield* eventually(() => expect(row.titles()).toEqual(["APA"]));
+
+      row.reads.denied.add(join(dir, "styles"));
+      const painted = row.paints();
+      row.refresh.click();
+
+      // The row paints once the failed read has settled to a list.
+      yield* eventually(() => expect(row.paints()).toBe(painted + 1));
+      expect(row.titles()).toEqual(["APA"]);
+    }),
+  );
+
   it.live(
     "lists the newest data folder's styles when the folder moves twice",
     () =>
@@ -350,17 +404,17 @@ describe("References style row", () => {
         yield* eventually(() => expect(row.titles()).toEqual(["APA"]));
 
         // The read of the folder in between stays in flight until released.
-        const held = Promise.withResolvers<void>();
+        const held = yield* Deferred.make<void>();
         const secondStyles = join(second, "styles");
-        styleReads.held.set(secondStyles, held.promise);
+        row.reads.held.set(secondStyles, held);
         yield* row.moveDataFolder(second);
         yield* eventually(() =>
-          expect(styleReads.started.has(secondStyles)).toBe(true),
+          expect(row.reads.started.has(secondStyles)).toBe(true),
         );
         yield* row.moveDataFolder(third);
         yield* eventually(() => expect(row.titles()).toEqual(["Chicago"]));
 
-        held.resolve();
+        yield* Deferred.succeed(held, undefined);
         yield* Effect.sleep("50 millis");
         expect(row.titles()).toEqual(["Chicago"]);
       }),

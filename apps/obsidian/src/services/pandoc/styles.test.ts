@@ -1,12 +1,15 @@
 import "@mock/dom-parser";
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { Effect, FileSystem, Layer, PlatformError } from "effect";
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import { listInstalledStyles } from "./installed-styles";
 import {
   InstalledStyleCache,
-  listInstalledStyles,
+  listInstalledStylesOrNone,
   resolveInstalledStyle,
   styleHasEntryMarkers,
 } from "./styles";
@@ -52,6 +55,39 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     },
   };
 });
+
+/** A refusal shaped as the Node file system reports one. */
+const refused = (method: string, path: string) =>
+  PlatformError.systemError({
+    _tag: "PermissionDenied",
+    module: "FileSystem",
+    method,
+    pathOrDescriptor: path,
+  });
+
+/** The Node file system, refusing the folders and files a case denies. */
+const deniedFileSystem = Layer.effect(
+  FileSystem.FileSystem,
+  Effect.map(FileSystem.FileSystem, (fs) =>
+    FileSystem.make({
+      ...fs,
+      readDirectory: (path, options) =>
+        deniedDirs.has(basename(path))
+          ? Effect.fail(refused("readDirectory", path))
+          : fs.readDirectory(path, options),
+      readFile: (path) =>
+        deniedReads.has(basename(path))
+          ? Effect.fail(refused("readFile", path))
+          : fs.readFile(path),
+    }),
+  ),
+).pipe(Layer.provide(NodeFileSystem.layer));
+
+/** The installed-style list over the Node file system. */
+const listed = (dataDir: string) =>
+  Effect.runPromise(
+    listInstalledStyles(dataDir).pipe(Effect.provide(deniedFileSystem)),
+  );
 
 interface StyleFixture {
   id: string;
@@ -156,7 +192,7 @@ describe("listInstalledStyles", () => {
     });
     await library.writeStyle("notes.txt", { id: "not-a-style" });
 
-    await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([
+    await expect(listed(library.dataDir)).resolves.toEqual([
       {
         id: "http://www.zotero.org/styles/apa",
         title: "APA Style 7th edition",
@@ -180,7 +216,7 @@ describe("listInstalledStyles", () => {
       title: "APA",
     });
 
-    await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([
+    await expect(listed(library.dataDir)).resolves.toEqual([
       { id: "http://www.zotero.org/styles/apa", title: "APA" },
     ]);
   });
@@ -193,7 +229,7 @@ describe("listInstalledStyles", () => {
       parentId: "http://www.zotero.org/styles/uninstalled",
     });
 
-    await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([]);
+    await expect(listed(library.dataDir)).resolves.toEqual([]);
   });
 
   it("decodes entities in a title and falls back to the style ID", async () => {
@@ -206,7 +242,7 @@ describe("listInstalledStyles", () => {
       id: "http://www.zotero.org/styles/untitled",
     });
 
-    await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([
+    await expect(listed(library.dataDir)).resolves.toEqual([
       {
         id: "http://www.zotero.org/styles/ampersand",
         title: "Alcohol & Drug Education",
@@ -221,14 +257,14 @@ describe("listInstalledStyles", () => {
   it("lists nothing when Zotero installed no styles", async () => {
     await using library = await installStyles();
 
-    await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([]);
+    await expect(listed(library.dataDir)).resolves.toEqual([]);
   });
 
   it("lists nothing when the styles folder is empty", async () => {
     await using library = await installStyles();
     await mkdir(join(library.dataDir, "styles"), { recursive: true });
 
-    await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([]);
+    await expect(listed(library.dataDir)).resolves.toEqual([]);
   });
 
   it("skips a CSL file it cannot read", async () => {
@@ -243,12 +279,12 @@ describe("listInstalledStyles", () => {
     });
     deniedReads.add("nature.csl");
 
-    await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([
+    await expect(listed(library.dataDir)).resolves.toEqual([
       { id: "http://www.zotero.org/styles/apa", title: "APA" },
     ]);
   });
 
-  it("lists nothing when the styles folder cannot be read", async () => {
+  it("fails when the styles folder cannot be read", async () => {
     await using library = await installStyles();
     await library.writeStyle("apa.csl", {
       id: "http://www.zotero.org/styles/apa",
@@ -256,10 +292,13 @@ describe("listInstalledStyles", () => {
     });
     deniedDirs.add("styles");
 
-    await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([]);
+    await expect(listed(library.dataDir)).rejects.toMatchObject({
+      _tag: "PlatformError",
+      reason: { _tag: "PermissionDenied" },
+    });
   });
 
-  it("omits the dependents of a hidden folder it cannot read", async () => {
+  it("fails when the hidden styles folder cannot be read", async () => {
     await using library = await installStyles();
     await library.writeStyle("apa.csl", {
       id: "http://www.zotero.org/styles/apa",
@@ -277,9 +316,42 @@ describe("listInstalledStyles", () => {
     });
     deniedDirs.add("hidden");
 
-    await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([
+    await expect(listed(library.dataDir)).rejects.toMatchObject({
+      _tag: "PlatformError",
+      reason: { _tag: "PermissionDenied" },
+    });
+  });
+});
+
+describe("listInstalledStylesOrNone", () => {
+  it("skips a CSL file it cannot read", async () => {
+    await using library = await installStyles();
+    await library.writeStyle("apa.csl", {
+      id: "http://www.zotero.org/styles/apa",
+      title: "APA",
+    });
+    await library.writeStyle("nature.csl", {
+      id: "http://www.zotero.org/styles/nature",
+      title: "Nature",
+    });
+    deniedReads.add("nature.csl");
+
+    await expect(listInstalledStylesOrNone(library.dataDir)).resolves.toEqual([
       { id: "http://www.zotero.org/styles/apa", title: "APA" },
     ]);
+  });
+
+  it("lists nothing when the styles folder cannot be read", async () => {
+    await using library = await installStyles();
+    await library.writeStyle("apa.csl", {
+      id: "http://www.zotero.org/styles/apa",
+      title: "APA",
+    });
+    deniedDirs.add("styles");
+
+    await expect(listInstalledStylesOrNone(library.dataDir)).resolves.toEqual(
+      [],
+    );
   });
 });
 
@@ -417,7 +489,7 @@ describe("resolveInstalledStyle", () => {
       hidden: true,
     });
 
-    await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([
+    await expect(listed(library.dataDir)).resolves.toEqual([
       { id: NATURE_NEUROSCIENCE, title: "Nature Neuroscience" },
     ]);
     const style = await resolveInstalledStyle(library.dataDir, {
@@ -473,7 +545,7 @@ describe("resolveInstalledStyle", () => {
       ].join("\n"),
     );
 
-    await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([
+    await expect(listed(library.dataDir)).resolves.toEqual([
       { id: ID, title: "Encoded" },
     ]);
     await expect(

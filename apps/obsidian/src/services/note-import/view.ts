@@ -4,7 +4,6 @@ import type { App } from "obsidian";
 
 import { awaitConfirm } from "@/lib/confirm";
 import type { ConfirmOptions } from "@/lib/confirm";
-import type { LegacyPortError } from "@/lib/legacy-port";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { chooseBatchProfile } from "@/services/batch-profile-choice";
 import type {
@@ -26,16 +25,11 @@ export interface NoteImportView {
   confirm(options: ConfirmOptions): Effect.Effect<boolean>;
   /**
    * The user's Profile, or `undefined`; an interrupt closes the picker and
-   * the Profile dialog it opened. Fails where the installed styles cannot be
-   * listed.
+   * the Profile dialog it opened.
    */
   chooseProfile(
     options: BatchProfilePickerOptions,
-  ): Effect.Effect<
-    ProfileSelector | undefined,
-    LegacyPortError,
-    ProfileDialogServices
-  >;
+  ): Effect.Effect<ProfileSelector | undefined, never, ProfileDialogServices>;
 }
 
 export function createNoteImportView(

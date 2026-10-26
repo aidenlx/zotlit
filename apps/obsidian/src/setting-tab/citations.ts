@@ -12,9 +12,8 @@ import { ANNOTATION_SUGGESTER_ENABLED } from "@/lib/constants";
 import { recover } from "@/lib/effect-cause";
 import * as m from "@/lib/i18n/generated/messages";
 import { isLanguageTag } from "@/lib/language-tag";
-import { portCall } from "@/lib/legacy-port";
 import { GRAPH_CORE_PLUGIN_ID } from "@/services/graph-citations/install";
-import { listInstalledStyles } from "@/services/pandoc/styles";
+import { listInstalledStyles } from "@/services/pandoc/installed-styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { defaults } from "@/services/settings/schema";
 import type { HoverAction, Settings } from "@/services/settings/schema";
@@ -382,7 +381,7 @@ function renderReferencesStyleRow(
 
 /** The CSL styles installed in the current Zotero data directory. */
 const installedStyles = Effect.flatMap(zoteroDataDir, (dataDir) =>
-  portCall("list-styles", () => listInstalledStyles(dataDir)),
+  listInstalledStyles(dataDir),
 );
 
 export function referencesStyleDescription(missing: boolean): DocumentFragment {

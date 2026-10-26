@@ -8,9 +8,8 @@ import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
-import { portCall } from "@/lib/legacy-port";
 import { Notifier } from "@/lib/notifier";
-import { listInstalledStyles } from "@/services/pandoc/styles";
+import { listInstalledStyles } from "@/services/pandoc/installed-styles";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type {
   CreateProfileDialog,
@@ -61,13 +60,22 @@ export interface InteractiveCreationOptions extends CreationProfileSources {
 
 /**
  * The CSL styles installed in the Zotero data folder, for the Profile picker's
- * previews; none without a data folder.
+ * previews; none without a data folder or when its styles folder refuses to be
+ * read, so the picker still opens.
  */
 export const installedStyles = Effect.gen(function* () {
   const { dataDir } = yield* (yield* ZoteroPref).current;
-  return dataDir
-    ? yield* portCall("list-styles", () => listInstalledStyles(dataDir))
-    : [];
+  if (!dataDir) return [];
+  return yield* listInstalledStyles(dataDir).pipe(
+    Effect.catchTag("PlatformError", (error) =>
+      Effect.as(
+        Effect.logWarning("Cannot read the installed CSL styles", error).pipe(
+          logged,
+        ),
+        [],
+      ),
+    ),
+  );
 });
 
 /**
