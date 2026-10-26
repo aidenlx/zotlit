@@ -6,7 +6,13 @@ import type { Context } from "effect";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { makeViewRegistry } from "@/lib/view-atoms";
 import type { ViewServices } from "@/lib/view-atoms";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
 import { CitationIndex } from "@/services/citation-index/service";
+import { CitationText } from "@/services/citation-text/service";
+import { CitekeyEditor } from "@/services/citekey-editor/service";
+import { BibliographyRender } from "@/services/pandoc/render-cache";
+import { PandocEngine } from "@/services/pandoc/service";
+import { Profile } from "@/services/profile/service";
 import { TemplateDataReads } from "@/services/template-workbench/data-reads";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
@@ -16,6 +22,12 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
  */
 export const layerUnreadViewServices = Layer.mergeAll(
   Layer.mock(CitationIndex, {}),
+  Layer.mock(CitationLookup, {}),
+  Layer.mock(CitationText, {}),
+  Layer.mock(CitekeyEditor, {}),
+  Layer.mock(BibliographyRender, {}),
+  Layer.mock(PandocEngine, {}),
+  Layer.mock(Profile, {}),
   Layer.mock(TemplateDataReads, {}),
   Layer.mock(ZoteroReads, {
     reads: stubService<ZoteroReads["Service"]["reads"]>("ZoteroReadsApi", {}),

@@ -8,11 +8,7 @@ import type {
 import type { Inlines } from "@/services/pandoc/ast";
 
 import type { ReferenceEntry } from "./entries";
-import {
-  createReferencesStore,
-  minimalReferencesState,
-  referencesCopyState,
-} from "./store";
+import { minimalReferencesState, referencesCopyState } from "./state";
 
 const occurrence: CitationOccurrence = {
   kind: "citekey",
@@ -53,8 +49,7 @@ describe("minimalReferencesState", () => {
       { t: "Space" },
       { t: "Str", c: "book" },
     ];
-    const store = createReferencesStore();
-    store.setState({
+    const formatted = {
       entries: [
         {
           id: "BOOK0001",
@@ -74,10 +69,11 @@ describe("minimalReferencesState", () => {
         entrySerials: false,
       },
       formattingFailed: false,
-    });
+    };
 
-    store.setState(
-      minimalReferencesState({
+    const state = {
+      ...formatted,
+      ...minimalReferencesState({
         citations: citations.map((c) => ({
           ...c,
           outcome: { kind: "resolved", source },
@@ -85,9 +81,9 @@ describe("minimalReferencesState", () => {
         errors: [],
         formattingFailed: true,
       }),
-    );
+    };
 
-    expect(store.getState()).toMatchObject({
+    expect(state).toMatchObject({
       entries: [{ id: "BOOK0001", kind: "summary", source }],
       listMode: { kind: "minimal" },
       formattingFailed: true,

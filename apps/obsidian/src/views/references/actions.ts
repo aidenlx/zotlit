@@ -11,8 +11,10 @@ import type { ClipboardRepresentation } from "@/lib/clipboard";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
-import type { ReferenceSource } from "@/services/citation-index/service";
-import { revealMarkdownOccurrence } from "@/views/reveal-occurrence";
+import type {
+  CitationOccurrence,
+  ReferenceSource,
+} from "@/services/citation-index/service";
 
 import { toCopiedBibliography } from "./copied-bibliography";
 import type {
@@ -20,7 +22,7 @@ import type {
   CopiedBibliographyEntry,
 } from "./copied-bibliography";
 import type { ReferenceEntry } from "./entries";
-import type { ReferencesCopyTarget } from "./store";
+import type { ReferencesCopyTarget } from "./state";
 
 const logger = getLogger(["views", "references"]);
 
@@ -61,6 +63,12 @@ export interface ReferenceActionDeps {
   getSourcePath: () => string | null;
   /** Open the Literature Note of the Item an Indexed Key names, creating it first when it has none. */
   openIndexedKey: (indexedKey: string) => void;
+  openLinkText: (linkpath: string, sourcePath: string) => void;
+  nextOccurrence: (id: string, count: number) => number;
+  revealOccurrence: (
+    sourcePath: string,
+    occurrence: CitationOccurrence,
+  ) => void;
   onOpenEngineSettings: () => void;
   onChangeStyle: () => void;
   onDismissEngineHint: () => void;
@@ -80,20 +88,12 @@ export interface ReferenceActionDeps {
 export function createReferenceActions(
   deps: ReferenceActionDeps,
 ): ReferenceActions {
-  const cursors = new Map<string, number>();
-
   return {
     onSelect(entry) {
       const sourcePath = deps.getSourcePath();
       if (!sourcePath || entry.occurrences.length === 0) return;
-      const next =
-        ((cursors.get(entry.id) ?? -1) + 1) % entry.occurrences.length;
-      cursors.set(entry.id, next);
-      revealMarkdownOccurrence({
-        app: deps.app,
-        sourcePath,
-        occurrence: entry.occurrences[next]!,
-      });
+      const next = deps.nextOccurrence(entry.id, entry.occurrences.length);
+      deps.revealOccurrence(sourcePath, entry.occurrences[next]!);
     },
     onOpenNote(entry) {
       // An unresolved citekey reaches no note, an ambiguous one reaches
@@ -114,11 +114,7 @@ export function createReferenceActions(
         deps.openIndexedKey(entry.id);
         return;
       }
-      void deps.app.workspace.openLinkText(
-        entry.linkpath,
-        deps.getSourcePath() ?? "",
-        false,
-      );
+      deps.openLinkText(entry.linkpath, deps.getSourcePath() ?? "");
     },
     onOpenInZotero(source) {
       window.open(itemSelectUri(source.itemKey, source.groupID));

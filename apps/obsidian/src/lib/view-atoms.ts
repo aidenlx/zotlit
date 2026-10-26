@@ -22,7 +22,13 @@ import { scheduleBrowserTask } from "@/lib/browser-scheduler";
 import type { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { CitationIndex } from "@/services/citation-index/service";
+import type { CitationText } from "@/services/citation-text/service";
+import type { CitekeyEditor } from "@/services/citekey-editor/service";
+import type { BibliographyRender } from "@/services/pandoc/render-cache";
+import type { PandocEngine } from "@/services/pandoc/service";
+import type { Profile } from "@/services/profile/service";
 import type { TemplateDataReads } from "@/services/template-workbench/data-reads";
 import type { ZoteroReads } from "@/services/zotero-reads/service";
 
@@ -33,6 +39,12 @@ import type { ZoteroReads } from "@/services/zotero-reads/service";
  */
 export type ViewServices =
   | CitationIndex
+  | CitationLookup
+  | CitationText
+  | CitekeyEditor
+  | BibliographyRender
+  | PandocEngine
+  | Profile
   | MetadataCache
   | TemplateDataReads
   | Vault

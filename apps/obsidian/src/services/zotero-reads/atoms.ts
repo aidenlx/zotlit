@@ -23,3 +23,13 @@ export const zoteroRevisionAtom: Atom.Atom<number> = held(
   ),
   0,
 );
+
+/** Whether the current database can answer a read. */
+export const zoteroReadyAtom = held(
+  Stream.unwrap(
+    Effect.map(ZoteroReads, (reads) =>
+      Stream.map(reads.changes, (state) => state.state === "ready"),
+    ),
+  ),
+  false,
+);
