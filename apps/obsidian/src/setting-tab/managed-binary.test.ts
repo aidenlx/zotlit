@@ -2,6 +2,7 @@
 import { expect, it } from "@effect/vitest";
 import { ButtonComponent, Setting } from "@mock/obsidian";
 import { Context, Effect, Layer, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import type {
   Setting as ObsidianSetting,
   SettingDefinition,
@@ -13,6 +14,7 @@ import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
+import { eventually } from "@/services/language-pack/__fixtures__";
 import { ManagedBinaryError } from "@/services/managed-binary/platform";
 import type {
   ManagedBinaryApi,
@@ -20,7 +22,7 @@ import type {
 } from "@/services/managed-binary/service";
 import { PandocEngine } from "@/services/pandoc/service";
 
-import { testSettingTab } from "./__fixtures__";
+import { scopedSettingTab, testSettingTab } from "./__fixtures__";
 import { chineseSegmenterDefinition } from "./chinese-segmenter";
 import type { SettingsKey, SettingTabContext } from "./context";
 import { managedBinaryDefinition } from "./managed-binary";
@@ -78,7 +80,8 @@ function binary(
 const notifiedTab = Effect.gen(function* () {
   const notifier = testNotifier();
   const services = yield* Layer.build(notifier.layer);
-  return { tab: testSettingTab(services).tab, notices: notifier.notices };
+  const { tab } = yield* scopedSettingTab(services);
+  return { tab, notices: notifier.notices };
 });
 
 /** The rendered row, so a test reads the controls the user gets. */
@@ -128,12 +131,13 @@ describe("managedBinaryDefinition", () => {
         expect(install.text).toBe("Install");
 
         install.click();
-        yield* Effect.promise(() =>
-          vi.waitFor(() =>
-            expect(shown(notices)).toEqual(["Segmenter installed"]),
-          ),
+        yield* eventually(() =>
+          expect(shown(notices)).toEqual(["Segmenter installed"]),
         );
         expect(fake.install).toHaveBeenCalledOnce();
+        // The success notice stands for 2 s.
+        yield* TestClock.adjust("2 seconds");
+        expect(notices[0]?.hidden).toBe(true);
       }),
     ),
   );
@@ -153,11 +157,12 @@ describe("managedBinaryDefinition", () => {
         );
 
         button(render(row)).click();
-        yield* Effect.promise(() =>
-          vi.waitFor(() =>
-            expect(shown(notices)).toEqual(["Segmenter install failed"]),
-          ),
+        yield* eventually(() =>
+          expect(shown(notices)).toEqual(["Segmenter install failed"]),
         );
+        // The error notice stands for 4 s.
+        yield* TestClock.adjust("4 seconds");
+        expect(notices[0]?.hidden).toBe(true);
       }),
     ),
   );
@@ -182,10 +187,8 @@ describe("managedBinaryDefinition", () => {
         expect(uninstall.text).toBe("Uninstall");
 
         uninstall.click();
-        yield* Effect.promise(() =>
-          vi.waitFor(() =>
-            expect(shown(notices)).toEqual(["Segmenter removed"]),
-          ),
+        yield* eventually(() =>
+          expect(shown(notices)).toEqual(["Segmenter removed"]),
         );
         expect(fake.uninstall).toHaveBeenCalledOnce();
       }),

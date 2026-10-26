@@ -20,7 +20,7 @@ import { LanguagePack } from "@/services/language-pack/service";
 import { defaults } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 
-import { testSettingTab } from "./__fixtures__";
+import { scopedSettingTab } from "./__fixtures__";
 import type { SettingsKey, SettingTabContext } from "./context";
 import { resourcesGroup } from "./resources";
 
@@ -48,7 +48,7 @@ it.effect(
           ),
         );
         const ctx = stubService<SettingTabContext>("SettingTabContext", {
-          tab: testSettingTab(services).tab,
+          tab: (yield* scopedSettingTab(services)).tab,
           manifest: stubService<SettingTabContext["manifest"]>(
             "PluginManifest",
             { version: "2.0.0" },

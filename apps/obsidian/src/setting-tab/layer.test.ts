@@ -6,7 +6,6 @@ import type { App, Plugin, PluginManifest } from "obsidian";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import type { Notifier } from "@/lib/notifier";
 import { PluginHost } from "@/lib/plugin-host";
 import { AttachmentImport } from "@/services/attachment-import/service";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
@@ -21,7 +20,7 @@ import { Profile } from "@/services/profile/service";
 import { PluginSettings } from "@/services/settings/service";
 import { Template } from "@/services/template/service";
 
-import type { SettingTab, SettingTabEnv } from "./effect-tab";
+import { unimplementedTabServices } from "./__fixtures__";
 import { layerSettingTab } from "./layer";
 import type { SettingTabLegacy } from "./layer";
 
@@ -117,12 +116,12 @@ const tabLayer = Effect.gen(function* () {
   yield* Layer.build(
     layerSettingTab(stubService<SettingTabLegacy>("SettingTabLegacy", {})).pipe(
       Layer.provide(testNotifier().layer),
-      // The test gives only the services the tab layer itself reads.
+      // The test gives the services the tab layer itself reads; the rest
+      // stay unimplemented.
       Layer.provide(
-        Layer.succeedContext(
-          services as Context.Context<
-            Exclude<SettingTabEnv, SettingTab | Notifier> | PluginHost
-          >,
+        Layer.mergeAll(
+          unimplementedTabServices,
+          Layer.succeedContext(services),
         ),
       ),
     ),

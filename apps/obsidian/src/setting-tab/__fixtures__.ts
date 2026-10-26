@@ -34,7 +34,7 @@ import type { SettingTabShape } from "./effect-tab";
  * services replace these, and a member no test gave fails that Effect with an
  * unimplemented defect.
  */
-const unimplemented = Layer.mergeAll(
+export const unimplementedTabServices = Layer.mergeAll(
   Layer.mock(PluginSettings)({}),
   Layer.mock(Profile)({}),
   Layer.mock(Template)({}),
@@ -81,7 +81,7 @@ export const scopedSettingTab = Effect.fnUntraced(function* (
   const tab: SettingTabShape = yield* makeSettingTab(update).pipe(
     Effect.provideContext(services),
     Effect.provideService(Notifier, notifier.service),
-    Effect.provide(unimplemented),
+    Effect.provide(unimplementedTabServices),
   );
   return { tab, notices: notifier.notices };
 });
