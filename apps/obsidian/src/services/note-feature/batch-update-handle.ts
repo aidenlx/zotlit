@@ -14,16 +14,18 @@ import type {
 /**
  * The library-wide update over `context`, run through `bridge`. It resolves
  * with its outcome and rejects with what failed, as a read or a write does.
+ * The batch modal's callbacks run through `bridge` too.
  */
 export function bindBatchUpdate(
-  bridge: Pick<EffectBridge, "runPromise">,
+  bridge: Pick<EffectBridge, "runPromise" | "runPromiseExit">,
   context: Context.Context<BatchUpdateServices>,
-  ports: BatchUpdatePorts,
+  ports: Omit<BatchUpdatePorts, "bridge">,
 ): BatchUpdate {
+  const updatePorts: BatchUpdatePorts = { ...ports, bridge };
   return {
     runBatchUpdateAll: (target) =>
       bridge.runPromise(
-        Effect.provideContext(runBatchUpdateAll(ports, target), context),
+        Effect.provideContext(runBatchUpdateAll(updatePorts, target), context),
       ),
   };
 }

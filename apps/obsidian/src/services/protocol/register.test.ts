@@ -13,7 +13,7 @@ import { TFile } from "obsidian";
 import type { App, ObsidianProtocolData } from "obsidian";
 import { beforeEach, describe, expect, vi } from "vitest";
 
-import type { Attachment, getItemDisplayRefByID } from "@zotlit/db";
+import type { Attachment, getItemDisplayRefByID, Library } from "@zotlit/db";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { layerTestObsidianEnv } from "@/lib/__fixtures__/obsidian-env";
@@ -38,11 +38,6 @@ import {
   runBatchUpdateAll,
 } from "@/services/note-feature/update-batch";
 import type { BatchUpdateResult } from "@/services/note-feature/update-batch";
-import {
-  runBatchImport,
-  runBatchImportAll,
-} from "@/services/note-import/batch-import";
-import type { BatchImportResult } from "@/services/note-import/batch-import";
 import { NoteImporter } from "@/services/note-import/service";
 import type { NoteImportView } from "@/services/note-import/view";
 import { NoteIndex } from "@/services/note-index/service";
@@ -71,17 +66,6 @@ vi.mock("@/services/note-feature/update-batch", async (importOriginal) => {
     >()),
     runBatchUpdate: vi.fn(() => Effect.succeed({ outcome: "batch-modal" })),
     runBatchUpdateAll: vi.fn(() => Effect.succeed({ outcome: "batch-modal" })),
-  };
-});
-
-vi.mock("@/services/note-import/batch-import", async (importOriginal) => {
-  const { Effect } = await import("effect");
-  return {
-    ...(await importOriginal<
-      typeof import("@/services/note-import/batch-import")
-    >()),
-    runBatchImport: vi.fn(() => Effect.succeed({ outcome: "batch-modal" })),
-    runBatchImportAll: vi.fn(() => Effect.succeed({ outcome: "batch-modal" })),
   };
 });
 
@@ -127,10 +111,37 @@ const reads = {
     (_input: Parameters<ZoteroReadsApi["AttachmentsAt"]>[0]) =>
       Effect.succeed<readonly Attachment[]>([]),
   ),
+  /** My Library and the group "Reading group" (group 7, local id 12). */
+  Libraries: vi.fn((_input: Parameters<ZoteroReadsApi["Libraries"]>[0]) =>
+    Effect.succeed<Library[]>([
+      {
+        libraryID: 1,
+        version: 0,
+        clientVersion: null,
+        type: "user",
+        groupID: null,
+        name: null,
+      },
+      {
+        libraryID: 12,
+        version: 0,
+        clientVersion: null,
+        type: "group",
+        groupID: 7,
+        name: "Reading group",
+      },
+    ]),
+  ),
+  /** Two notes in every Library and collection a plan asks for. */
+  ScopeItemIDs: vi.fn((_input: Parameters<ZoteroReadsApi["ScopeItemIDs"]>[0]) =>
+    Effect.succeed<number[] | null>([5, 6]),
+  ),
 };
 const readsApi = readsAnswering({
   DisplayRefs: (input) => reads.DisplayRefs(input),
   AttachmentsAt: (input) => reads.AttachmentsAt(input),
+  Libraries: (input) => reads.Libraries(input),
+  ScopeItemIDs: (input) => reads.ScopeItemIDs(input),
 });
 
 /** Records the notices of the current case. */
@@ -182,8 +193,12 @@ const REF: ItemDisplayRef = {
 /** {@link REF} as a handler passes it on: the ref without the title. */
 const { title: _title, ...ITEM_REF } = REF;
 
+/** Opens the note import's batch modal; records what a link import opened. */
+const openBatchModal = vi.fn<NoteImportView["openBatchModal"]>();
 /** The note import's modals, which a link-started import receives. */
-const noteImportView = stubService<NoteImportView>("NoteImportView", {});
+const noteImportView = stubService<NoteImportView>("NoteImportView", {
+  openBatchModal: (options) => openBatchModal(options),
+});
 /** Note Feature, which a link-started import receives. */
 const noteFeature = stubService<ProtocolDeps["noteFeature"]>("NoteFeature", {});
 
@@ -219,6 +234,8 @@ interface Setup {
   readonly workspace?: MemoryWorkspace;
   /** Finds a vault file by path; `files` by default. */
   readonly getFileByPath?: (path: string) => Effect.Effect<TFile | null>;
+  /** Waits for the Note Index; done at once by default. */
+  readonly whenIndexed?: Effect.Effect<void>;
 }
 
 /** Register the handlers over the case's fakes; the case's Scope stops them. */
@@ -235,6 +252,8 @@ const register = Effect.fn("register")(function* (setup: Setup = {}) {
     webWorkbenchEnabled: true,
     noteImportView,
     noteFeature,
+    // A link import's modal callbacks would run here; no case drives them.
+    bridge: stubService<ProtocolDeps["bridge"]>("EffectBridge", {}),
     app: appStub(),
     ...setup.deps,
   });
@@ -256,18 +275,18 @@ const register = Effect.fn("register")(function* (setup: Setup = {}) {
           }),
         ),
         reads: readsApi,
+        snapshot: Effect.succeed(readsApi),
       }),
       Layer.mock(LocalServer, {
         updateManyRequests: setup.updateManyRequests ?? Stream.empty,
         importNotesRequests: setup.importNotesRequests ?? Stream.empty,
       }),
       Layer.mock(UseLedger, {}),
-      // The batch import and update are mocked; the handlers only carry
-      // these tags to them.
+      // A link import reads only these members before it opens its modal.
+      Layer.mock(NoteIndex, { whenIndexed: setup.whenIndexed ?? Effect.void }),
       Layer.mock(LibraryScope, {}),
       Layer.mock(MetadataCache, {}),
       Layer.mock(NoteImporter, {}),
-      Layer.mock(NoteIndex, {}),
       Layer.mock(PluginSettings, {}),
       Layer.mock(Profile, {}),
       Layer.mock(Vault, {
@@ -304,8 +323,9 @@ beforeEach(() => {
   notifier = testNotifier();
   vi.mocked(runBatchUpdate).mockClear();
   vi.mocked(runBatchUpdateAll).mockClear();
-  vi.mocked(runBatchImport).mockClear();
-  vi.mocked(runBatchImportAll).mockClear();
+  openBatchModal.mockReset();
+  reads.Libraries.mockClear();
+  reads.ScopeItemIDs.mockClear();
   reads.DisplayRefs.mockReset();
   reads.AttachmentsAt.mockReset();
   vi.mocked(openCompanionNote).mockClear();
@@ -555,9 +575,13 @@ describe("library-wide protocol links", () => {
         collection: "ABCD2345",
       });
 
-      expect(runBatchImportAll).toHaveBeenCalledExactlyOnceWith(
-        { view: noteImportView, noteFeature },
-        { groupID: 7, collectionKey: "ABCD2345" },
+      expect(reads.ScopeItemIDs).toHaveBeenCalledExactlyOnceWith({
+        kind: "notes",
+        libraryID: 12,
+        collectionKey: "ABCD2345",
+      });
+      expect(openBatchModal).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ total: 2 }),
       );
     }),
   );
@@ -570,9 +594,12 @@ describe("library-wide protocol links", () => {
 
         yield* dispatch("zotlit/import-all-notes");
 
-        expect(runBatchImportAll).toHaveBeenCalledExactlyOnceWith(
-          { view: noteImportView, noteFeature },
-          { groupID: 0, collectionKey: undefined },
+        expect(reads.ScopeItemIDs).toHaveBeenCalledExactlyOnceWith({
+          kind: "notes",
+          libraryID: 1,
+        });
+        expect(openBatchModal).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ total: 2 }),
         );
       }),
   );
@@ -874,9 +901,13 @@ describe("batch protocol links", () => {
 
       yield* dispatch("zotlit/import-note", { item: "8", mode: "child" });
 
-      expect(runBatchImport).toHaveBeenCalledExactlyOnceWith(
-        { view: noteImportView, noteFeature },
-        { mode: "child", itemIDs: [8] },
+      expect(openBatchModal).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          total: 1,
+          text: expect.objectContaining({
+            title: m.batch_import_child_title(),
+          }),
+        }),
       );
     }),
   );
@@ -887,37 +918,30 @@ describe("batch protocol links", () => {
 
       yield* dispatch("zotlit/import-notes", { items: "8,9", mode: "note" });
 
-      expect(runBatchImport).toHaveBeenCalledExactlyOnceWith(
-        { view: noteImportView, noteFeature },
-        { mode: "note", itemIDs: [8, 9] },
+      expect(openBatchModal).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          total: 2,
+          text: expect.objectContaining({ title: m.batch_import_title() }),
+        }),
       );
     }),
   );
 
-  it.effect("shows the title of the one note a link imported", () =>
+  it.effect("tells the user to open the database a link import needs", () =>
     Effect.gen(function* () {
-      vi.mocked(runBatchImport).mockReturnValueOnce(
-        Effect.succeed<BatchImportResult>({
-          outcome: "single",
-          write: "created",
-          title: "Methods",
-        }),
-      );
-      yield* register();
+      yield* register({ state: "loading" });
 
       yield* dispatch("zotlit/import-note", { item: "8", mode: "note" });
 
-      expect(shown()).toEqual([m.notice_imported_note({ title: "Methods" })]);
+      expect(shown()).toEqual([m.batch_update_db_unavailable()]);
       expect(notifier.notices[0]!.duration).toBe(2000);
+      expect(openBatchModal).not.toHaveBeenCalled();
     }),
   );
 
   it.effect("shows the import failure a link run ended with", () =>
     Effect.gen(function* () {
-      vi.mocked(runBatchImport).mockReturnValueOnce(
-        Effect.die(new Error("write failed")),
-      );
-      yield* register();
+      yield* register({ whenIndexed: Effect.die(new Error("index failed")) });
 
       yield* dispatch("zotlit/import-note", { item: "8", mode: "note" });
 
@@ -952,16 +976,18 @@ describe("requests pushed over the Local Server", () => {
     Effect.gen(function* () {
       const registration = yield* register({
         importNotesRequests: Stream.make<[ImportNotesRequest]>({
-          items: [7],
+          items: [7, 8],
           mode: "note",
         }),
       });
 
       yield* registration.idle;
 
-      expect(runBatchImport).toHaveBeenCalledExactlyOnceWith(
-        { view: noteImportView, noteFeature },
-        { mode: "note", itemIDs: [7] },
+      expect(openBatchModal).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          total: 2,
+          text: expect.objectContaining({ title: m.batch_import_title() }),
+        }),
       );
     }),
   );

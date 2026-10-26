@@ -1,7 +1,8 @@
-import { Deferred, Effect, Exit, Layer, Stream } from "effect";
+import { it } from "@effect/vitest";
+import { Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect";
 import { TFile } from "obsidian";
 import type { CachedMetadata } from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, vi } from "vitest";
 
 import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
 import type { ChildNote, Library, Note } from "@zotlit/db";
@@ -12,6 +13,7 @@ import { createFixtureSchema, rowInstant } from "@zotlit/db/test-utils";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
+import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -49,6 +51,7 @@ import type {
   FlatTask,
 } from "@/views/batch-modal";
 
+import { runBatchImport } from "./batch-import";
 import type { BatchImport, BatchImportPorts } from "./batch-import";
 import type { BatchImportServices } from "./batch-import";
 import { bindBatchImport } from "./batch-import-handle";
@@ -289,65 +292,83 @@ interface ImportDeps {
 }
 
 /**
+ * A case's Promise as the importer answers: a {@link NoteImportProfileError}
+ * it rejects with is the importer's typed failure, anything else a defect.
+ */
+const settled = <A>(call: () => Promise<A>) =>
+  Effect.promise(() => call()).pipe(
+    Effect.catchDefect((defect) =>
+      defect instanceof NoteImportProfileError
+        ? Effect.fail(defect)
+        : Effect.die(defect),
+    ),
+  );
+
+/**
  * The real {@link bindBatchImport}, as `build.ts` binds it, over services
  * that answer from `deps` at the time of each call. The case's resources
  * dispose the runtime.
  */
 function importOver(deps: ImportDeps): BatchImport {
-  const runtime = buildRuntime(
-    Layer.mergeAll(
-      Layer.mock(LibraryScope, {
-        resolveLibraries: () => Effect.sync(() => currentScope),
-      }),
-      Layer.mock(MetadataCache, {
-        fileCache: (file) =>
-          Effect.sync(() => deps.metadataCache.getFileCache(file)),
-      }),
-      Layer.mock(NoteImporter, {
-        importNote: (note, options) =>
-          Effect.promise(() => deps.noteImport.importNote(note, options)),
-        prepareExplicitImport: (note, options) =>
-          Effect.map(
-            Effect.promise(() =>
-              deps.noteImport.prepareExplicitImport(note, options),
-            ),
-            (prepared): PreparedExplicitImport => ({
-              ...prepared,
-              import: (current, runOptions) =>
-                Effect.promise(() => prepared.import(current, runOptions)),
-            }),
-          ),
-      }),
-      Layer.mock(NoteIndex, {
-        whenIndexed: Effect.promise(() => deps.noteIndex.whenIndexed()),
-        getImportedNoteByNoteKey: (noteKey) =>
-          Effect.sync(() => deps.noteIndex.getImportedNoteByNoteKey(noteKey)),
-      }),
-      Layer.mock(PluginSettings, {
-        current: Effect.suspend(() => deps.settings.current),
-        update: (patch) => deps.settings.update(patch),
-      }),
-      Layer.mock(Profile, {
-        profiles: Effect.sync(() => deps.profile.profiles),
-        resolveProfile: (selector) =>
-          Effect.sync(() => deps.profile.resolveProfile(selector)),
-      }),
-      Layer.mock(ZoteroReads, {
-        current: Effect.sync(() =>
-          stubService<ZoteroReadsState>("ZoteroReadsState", {
-            state: deps.dbState,
-          }),
-        ),
-        reads: deps.zoteroReads.reads,
-        snapshot: deps.zoteroReads.snapshot,
-      }),
-    ),
-    caseResources,
-  );
+  const runtime = buildRuntime(layerOver(deps), caseResources);
   return bindBatchImport(
     effectBridge(runtime),
     runtime.runSync(Effect.context<BatchImportServices>()),
-    { view: deps.view, noteFeature: deps.noteFeature },
+    portsOf(deps),
+  );
+}
+
+/** The ports a batch import takes, from the case's `deps`. */
+function portsOf(deps: ImportDeps): Omit<BatchImportPorts, "bridge"> {
+  return { view: deps.view, noteFeature: deps.noteFeature };
+}
+
+/** The services a batch import reads, answering from `deps` at each call. */
+function layerOver(deps: ImportDeps): Layer.Layer<BatchImportServices> {
+  return Layer.mergeAll(
+    Layer.mock(LibraryScope, {
+      resolveLibraries: () => Effect.sync(() => currentScope),
+    }),
+    Layer.mock(MetadataCache, {
+      fileCache: (file) =>
+        Effect.sync(() => deps.metadataCache.getFileCache(file)),
+    }),
+    Layer.mock(NoteImporter, {
+      importNote: (note, options) =>
+        settled(() => deps.noteImport.importNote(note, options)),
+      prepareExplicitImport: (note, options) =>
+        Effect.map(
+          settled(() => deps.noteImport.prepareExplicitImport(note, options)),
+          (prepared): PreparedExplicitImport => ({
+            ...prepared,
+            import: (current, runOptions) =>
+              settled(() => prepared.import(current, runOptions)),
+          }),
+        ),
+    }),
+    Layer.mock(NoteIndex, {
+      whenIndexed: Effect.promise(() => deps.noteIndex.whenIndexed()),
+      getImportedNoteByNoteKey: (noteKey) =>
+        Effect.sync(() => deps.noteIndex.getImportedNoteByNoteKey(noteKey)),
+    }),
+    Layer.mock(PluginSettings, {
+      current: Effect.suspend(() => deps.settings.current),
+      update: (patch) => deps.settings.update(patch),
+    }),
+    Layer.mock(Profile, {
+      profiles: Effect.sync(() => deps.profile.profiles),
+      resolveProfile: (selector) =>
+        Effect.sync(() => deps.profile.resolveProfile(selector)),
+    }),
+    Layer.mock(ZoteroReads, {
+      current: Effect.sync(() =>
+        stubService<ZoteroReadsState>("ZoteroReadsState", {
+          state: deps.dbState,
+        }),
+      ),
+      reads: deps.zoteroReads.reads,
+      snapshot: deps.zoteroReads.snapshot,
+    }),
   );
 }
 
@@ -414,7 +435,8 @@ function makeDeps(
       openBatchModal: (opts) => {
         openedModals.push(opts);
       },
-      confirm: confirmMock,
+      confirm: (options) =>
+        Effect.promise(async () => (await confirmMock(options)) === true),
       chooseProfile: vi.fn(),
     },
   };
@@ -571,7 +593,7 @@ it.each([true, false])(
       },
       { getFileCache: () => ({ frontmatter: { "zotlit-profile": stamp } }) },
     );
-    const error = new NoteImportProfileError(stamp, { path: file.path });
+    const error = NoteImportProfileError.unknown(stamp, { path: file.path });
     vi.mocked(deps.noteImport.prepareExplicitImport).mockRejectedValue(error);
     importNote.mockRejectedValue(error);
     seedNotes([1]);
@@ -698,6 +720,54 @@ describe("classify through the NoteRefs stream", () => {
       onProgress: () => abort.abort(),
       signal: abort.signal,
     });
+
+    await expect(classified).rejects.toThrow();
+    expect(interrupted).toBe(true);
+  });
+
+  it("interrupts a classify still running when the plugin unloads", async () => {
+    let interrupted = false;
+    const { deps } = makeDeps(
+      {},
+      {
+        wrap: (client) => ({
+          ...client,
+          NoteRefs: ((payload: object, options?: object) =>
+            Stream.concat(
+              (
+                client.NoteRefs as unknown as (
+                  payload: object,
+                  options?: object,
+                ) => Stream.Stream<unknown>
+              )(payload, options),
+              Stream.never,
+            ).pipe(
+              Stream.onExit((exit) =>
+                Effect.sync(() => {
+                  interrupted = Exit.hasInterrupts(exit);
+                }),
+              ),
+            )) as unknown as ZoteroReadsClient["NoteRefs"],
+        }),
+      },
+    );
+    seedNotes([1]);
+    // The plugin's runtime: unloading disposes it.
+    const plugin = new AsyncDisposableStack();
+    const runtime = buildRuntime(layerOver(deps), plugin);
+    await bindBatchImport(
+      effectBridge(runtime),
+      runtime.runSync(Effect.context<BatchImportServices>()),
+      portsOf(deps),
+    ).runBatchImport("note", [1, 2]);
+    const firstSlice = Promise.withResolvers<void>();
+
+    const classified = openedModals.at(-1)!.onClassify({
+      onProgress: () => firstSlice.resolve(),
+      signal: new AbortController().signal,
+    });
+    await firstSlice.promise;
+    await plugin.disposeAsync();
 
     await expect(classified).rejects.toThrow();
     expect(interrupted).toBe(true);
@@ -987,6 +1057,38 @@ describe("single note import (mode=note, 1 id)", () => {
     });
     expect(batchImportNotice(result)).toBe("Updated imported note Note 50.");
   });
+
+  it.effect("closes the overwrite confirm when the import is interrupted", () =>
+    Effect.gen(function* () {
+      seedNotes([50]);
+      const { deps, importNote } = makeDeps(
+        {},
+        { existing: [makeFile("Imported/Note 50.md")] },
+      );
+      const opened = yield* Deferred.make<void>();
+      const close = vi.fn();
+      deps.view.confirm = () =>
+        awaitModal<boolean>(() => {
+          Deferred.doneUnsafe(opened, Exit.void);
+          return { close };
+        });
+
+      // The single-note path opens no batch modal, so it runs nothing on the bridge.
+      const bridge = stubService<BatchImportPorts["bridge"]>(
+        "EffectBridge",
+        {},
+      );
+      const importing = yield* runBatchImport(
+        { ...portsOf(deps), bridge },
+        { mode: "note", itemIDs: [50] },
+      ).pipe(Effect.provide(layerOver(deps)), Effect.forkChild);
+      yield* Deferred.await(opened);
+      yield* Fiber.interrupt(importing);
+
+      expect(close).toHaveBeenCalledOnce();
+      expect(importNote).not.toHaveBeenCalled();
+    }),
+  );
 
   it("cancels when the overwrite confirm is declined", async () => {
     seedNotes([50]);
@@ -1401,7 +1503,7 @@ describe("runChildImportByKey", () => {
     expect(
       Reflect.apply(error as (...args: unknown[]) => string, null, [
         "fallback",
-        new NoteImportProfileError("missing-profile", {
+        NoteImportProfileError.unknown("missing-profile", {
           path: "Imported/Methods.md",
         }),
       ]),

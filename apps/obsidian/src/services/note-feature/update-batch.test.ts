@@ -13,6 +13,7 @@ import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
@@ -317,10 +318,14 @@ function makeDeps(
   return deps;
 }
 
-/** The ports a case's runs take: its Note Feature and the view port fakes. */
+/**
+ * The ports a case's runs take: its Note Feature, the view port fakes, and a
+ * bridge over the case's runtime for the modal's callbacks.
+ */
 function portsOf(deps: UpdateDeps): BatchUpdatePorts {
   return {
     app: stubService<App>("App", {}),
+    bridge: effectBridge(deps.runtime),
     view: {
       openBatchModal: (options) => {
         openedModals.push(options);
@@ -587,6 +592,8 @@ describe("one item without additional Profiles", () => {
           vi.fn<BatchUpdatePorts["noteFeature"]["createNote"]>();
         const ports: BatchUpdatePorts = {
           app: stubService<App>("App", {}),
+          // The single-update path opens no batch modal.
+          bridge: stubService<BatchUpdatePorts["bridge"]>("EffectBridge", {}),
           view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {}),
           noteFeature: stubService<BatchUpdatePorts["noteFeature"]>(
             "NoteFeature",
@@ -616,6 +623,8 @@ describe("one item without additional Profiles", () => {
       );
       const ports: BatchUpdatePorts = {
         app: stubService<App>("App", {}),
+        // The single-update path opens no batch modal.
+        bridge: stubService<BatchUpdatePorts["bridge"]>("EffectBridge", {}),
         view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {}),
         noteFeature: stubService<BatchUpdatePorts["noteFeature"]>(
           "NoteFeature",

@@ -29,10 +29,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
-import type {
-  ProfileSelector,
-  UnknownProfileDiagnostic,
-} from "@/lib/profile-stamp";
+import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { VaultError } from "@/lib/vault-errors";
 import type {
   AttachmentImport,
@@ -120,13 +117,15 @@ interface PrepareExplicitImportOptions {
 
 /**
  * What a note write fails with: the Profile it needs is unknown, its minted
- * path is taken, or a read or vault write failed. A legacy port's rejection
- * and a Template throw are defects that carry what was thrown.
+ * path is taken, Attachment Import or the excerpt preparation failed, or a
+ * read or vault write failed. A Template throw is a defect that carries what
+ * was thrown.
  */
 export type NoteImportError =
   | NoteImportProfileError
   | NoteImportMintError
   | NoteImportFolderError
+  | NoteImportPortError
   | Effect.Error<ReturnType<typeof readDisplayRef>>
   | VaultError;
 
@@ -221,37 +220,51 @@ const doImportNote = Effect.fnUntraced(function* (
   options: ImportNoteOptions,
 ) {
   const { existing, profile } = yield* explicitImportTarget(note, options);
-  // This write is its own initiating batch when nothing above owns a scope;
-  // the scope is released once the write settles.
-  return yield* Effect.scoped(
+  if (existing)
+    return yield* writeScoped(ctx, note, {
+      mode: { action: "overwrite", file: existing },
+      profile,
+      options,
+    });
+  const folder = yield* ensureImportFolder(
+    getProfileBinding(profile.settings, "note.import-folder"),
+  );
+  return yield* writeScoped(ctx, note, {
+    mode: { action: "create", path: yield* mintImportPath(folder, note) },
+    profile,
+    options,
+  });
+});
+
+/**
+ * Write `note` with the run inputs of `options`. The write is its own
+ * initiating batch when `options` names no outcome scope; that scope is
+ * released once the write settles.
+ */
+const writeScoped = (
+  ctx: Ctx,
+  note: Note,
+  {
+    mode,
+    profile,
+    options,
+  }: { mode: WriteMode; profile: ResolvedProfile; options: ImportNoteOptions },
+) =>
+  Effect.scoped(
     Effect.gen(function* () {
-      const run: RunContext = {
-        reads: options.reads,
-        settings: profile.settings,
-        attachmentFolderCache: options.attachmentFolderCache ?? new Map(),
-        profile,
-        reportExcerpts: options.reportExcerpts,
-        outcomes: yield* outcomeScope(options.outcomes),
-      };
-      if (existing) {
-        return yield* writeNote(ctx, note, {
-          mode: { action: "overwrite", file: existing },
-          run,
-        });
-      }
-      const folder = yield* ensureImportFolder(
-        getProfileBinding(run.settings, "note.import-folder"),
-      );
       return yield* writeNote(ctx, note, {
-        mode: {
-          action: "create",
-          path: yield* mintImportPath(folder, note),
+        mode,
+        run: {
+          reads: options.reads,
+          settings: profile.settings,
+          attachmentFolderCache: options.attachmentFolderCache ?? new Map(),
+          profile,
+          reportExcerpts: options.reportExcerpts,
+          outcomes: yield* outcomeScope(options.outcomes),
         },
-        run,
       });
     }),
   );
-});
 
 /** The batch's scope, or one this write owns until its Scope closes. */
 const outcomeScope = (provided: ExcerptOutcomeScope | undefined) =>
@@ -316,25 +329,13 @@ const prepareExplicitImport = Effect.fnUntraced(function* (
       yield* ensureImportFolder(
         getProfileBinding(profile.settings, "note.import-folder"),
       );
-    return yield* Effect.scoped(
-      Effect.gen(function* () {
-        return yield* writeNote(ctx, current, {
-          mode: existing
-            ? { action: "overwrite", file: existing }
-            : { action: "create", path },
-          run: {
-            reads: runOptions.reads,
-            settings: profile.settings,
-            attachmentFolderCache:
-              runOptions.attachmentFolderCache ?? new Map(),
-            profile,
-            reportExcerpts: runOptions.reportExcerpts,
-            // This write is its own initiating batch when nothing above owns it.
-            outcomes: yield* outcomeScope(runOptions.outcomes),
-          },
-        });
-      }),
-    );
+    return yield* writeScoped(ctx, current, {
+      mode: existing
+        ? { action: "overwrite", file: existing }
+        : { action: "create", path },
+      profile,
+      options: runOptions,
+    });
   });
   return { source, profile, path, importNow };
 });
@@ -362,22 +363,18 @@ const explicitImportTarget = Effect.fnUntraced(function* (
       profiles.resolveProfile(options.orphanProfile),
     );
     if (!profile)
-      return yield* Effect.fail(
-        new NoteImportProfileError(options.orphanProfile, {
-          indexedKey: note.indexedKey,
-        }),
-      );
+      return yield* NoteImportProfileError.unknown(options.orphanProfile, {
+        indexedKey: note.indexedKey,
+      });
     return { existing, profile, source, sourcePath: undefined };
   }
   const resolved = yield* profileRead(profiles.profileOf(file));
   if (!resolved.ok)
-    return yield* Effect.fail(
-      new NoteImportProfileError(resolved.stamped.stamp, {
-        path: file?.path,
-        indexedKey: note.indexedKey,
-        imported: existing !== undefined,
-      }),
-    );
+    return yield* NoteImportProfileError.unknown(resolved.stamped.stamp, {
+      path: file?.path,
+      indexedKey: note.indexedKey,
+      imported: existing !== undefined,
+    });
   return {
     existing,
     profile: resolved.profile,
@@ -404,7 +401,7 @@ const writeNote = Effect.fnUntraced(function* (
   let excerpts: PreparedExcerpts | undefined;
   if (note.note) {
     const html = note.note;
-    const batch = yield* Effect.promise(() =>
+    const batch = yield* portCall("attachment-prepare", () =>
       ctx.ports.attachmentImport.prepare(path, {
         folderCache: run.attachmentFolderCache,
       }),
@@ -433,7 +430,7 @@ const writeNote = Effect.fnUntraced(function* (
       excerpts = prepared;
       for (const annotation of annotations)
         prepared.annotationImageLink(annotation);
-      yield* Effect.promise(() => prepared.prepare());
+      yield* portCall("excerpt-prepare", () => prepared.prepare());
     }
     const sources = inputs.annotations;
     const { templates } = ctx;
@@ -506,7 +503,7 @@ const writeNote = Effect.fnUntraced(function* (
   if (excerpts) run.reportExcerpts?.(excerpts.summary());
   if (attachmentBatch) {
     const flushed = attachmentBatch;
-    const copied = yield* Effect.promise(() => flushed.flush());
+    const copied = yield* portCall("attachment-flush", () => flushed.flush());
     yield* Effect.logDebug("Imported note attachments").pipe(
       Effect.annotateLogs({
         path,
@@ -588,29 +585,78 @@ const readParseInputs = Effect.fnUntraced(function* (
   return inputs;
 });
 
-export class NoteImportProfileError extends Error {
-  readonly diagnostic: UnknownProfileDiagnostic;
-  readonly imported: boolean;
-
-  constructor(
+/** The Profile a note write needs is not installed. */
+export class NoteImportProfileError extends Schema.TaggedError<
+  NoteImportProfileError,
+  { readonly brand: unique symbol }
+>()("NoteImportProfileError", {
+  /** What the user can do: switch the note to an installed Profile. */
+  diagnostic: Schema.Struct({
+    code: Schema.Literal("unknown-literature-note-profile"),
+    hint: Schema.String,
+    recovery: Schema.Struct({ action: Schema.Literal("switch-profile") }),
+    stamp: Schema.String,
+    path: Schema.optional(Schema.String),
+    indexedKey: Schema.optional(Schema.String),
+  }),
+  /** `false` when the note is the Literature Note the import reads from. */
+  imported: Schema.Boolean,
+}) {
+  /** The error for the Profile `stamp` names, at the note `context` locates. */
+  static unknown(
     stamp: string,
     context: { path?: string; indexedKey?: string; imported?: boolean },
-  ) {
+  ): NoteImportProfileError {
     const { imported = true, ...diagnosticContext } = context;
-    const diagnostic = unknownProfileDiagnostic(stamp, diagnosticContext);
-    super(
-      imported
-        ? m.notice_imported_note_profile_unknown({
-            stamp,
-            target: context.path ?? context.indexedKey ?? stamp,
-          })
-        : m.notice_literature_note_profile_unknown({ stamp }),
-    );
-    this.name = "NoteImportProfileError";
-    this.diagnostic = diagnostic;
-    this.imported = imported;
+    return new NoteImportProfileError({
+      diagnostic: unknownProfileDiagnostic(stamp, diagnosticContext),
+      imported,
+    });
+  }
+
+  override get message(): string {
+    const { stamp, path, indexedKey } = this.diagnostic;
+    return this.imported
+      ? m.notice_imported_note_profile_unknown({
+          stamp,
+          target: path ?? indexedKey ?? stamp,
+        })
+      : m.notice_literature_note_profile_unknown({ stamp });
   }
 }
+
+/**
+ * Attachment Import or the excerpt preparation rejected during a note write,
+ * for example when a file copy fails. The message is the rejection's own.
+ */
+export class NoteImportPortError extends Schema.TaggedError<
+  NoteImportPortError,
+  { readonly brand: unique symbol }
+>()("NoteImportPortError", {
+  /** The step that rejected. */
+  step: Schema.Literals([
+    "attachment-prepare",
+    "excerpt-prepare",
+    "attachment-flush",
+  ]),
+  /** What the step rejected with. */
+  cause: Schema.Defect(),
+}) {
+  override get message(): string {
+    if (this.cause instanceof Error) return this.cause.message;
+    return typeof this.cause === "string" ? this.cause : "Unknown error";
+  }
+}
+
+/** A legacy port's Promise, its rejection a {@link NoteImportPortError}. */
+const portCall = <A>(
+  step: NoteImportPortError["step"],
+  call: () => Promise<A>,
+) =>
+  Effect.tryPromise({
+    try: call,
+    catch: (cause) => new NoteImportPortError({ step, cause }),
+  });
 
 /**
  * Mint a unique import path for a new imported note file. The path includes a

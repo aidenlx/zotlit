@@ -1,9 +1,10 @@
 import { it } from "@effect/vitest";
-import { Effect, Exit, Scope } from "effect";
+import { Effect, Exit, Fiber, Scope } from "effect";
 import { describe, expect } from "vitest";
 
 import { testNotifier } from "./__fixtures__/notifier";
-import { Notifier } from "./notifier";
+import { AbortError } from "./abort-error";
+import { Notifier, reportOutcome } from "./notifier";
 
 describe("Notifier test layer", () => {
   it.effect("records a shown notice with its duration until it hides", () =>
@@ -57,6 +58,73 @@ describe("Notifier test layer", () => {
       yield* Effect.scoped(
         Notifier.use((n) => n.progress).pipe(Effect.provide(notifier.layer)),
       );
+      expect(notifier.notices).toEqual([]);
+    }),
+  );
+});
+
+describe("reportOutcome", () => {
+  const copy = {
+    success: (result: string) =>
+      result === "" ? undefined : `Done: ${result}`,
+    error: (error: unknown) => `Failed: ${String(error)}`,
+  };
+
+  it.effect("shows the success message for 2 seconds", () =>
+    Effect.gen(function* () {
+      const notifier = testNotifier();
+      yield* reportOutcome(Effect.succeed("Methods"), copy).pipe(
+        Effect.provide(notifier.layer),
+      );
+      expect(notifier.notices).toEqual([
+        { messages: ["Done: Methods"], duration: 2000, hidden: false },
+      ]);
+    }),
+  );
+
+  it.effect("shows nothing for a result without a message", () =>
+    Effect.gen(function* () {
+      const notifier = testNotifier();
+      yield* reportOutcome(Effect.succeed(""), copy).pipe(
+        Effect.provide(notifier.layer),
+      );
+      expect(notifier.notices).toEqual([]);
+    }),
+  );
+
+  it.effect("shows the error message for 4 seconds", () =>
+    Effect.gen(function* () {
+      const notifier = testNotifier();
+      yield* reportOutcome(Effect.fail("disk full"), copy).pipe(
+        Effect.provide(notifier.layer),
+      );
+      expect(notifier.notices).toEqual([
+        { messages: ["Failed: disk full"], duration: 4000, hidden: false },
+      ]);
+    }),
+  );
+
+  it.effect("shows nothing when the task aborts", () =>
+    Effect.gen(function* () {
+      const notifier = testNotifier();
+      yield* reportOutcome(Effect.die(new AbortError("Cancelled")), copy).pipe(
+        Effect.provide(notifier.layer),
+      );
+      expect(notifier.notices).toEqual([]);
+    }),
+  );
+
+  it.effect("passes an interrupt on without a notice", () =>
+    Effect.gen(function* () {
+      const notifier = testNotifier();
+      const fiber = yield* reportOutcome(Effect.never, copy).pipe(
+        Effect.provide(notifier.layer),
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+      yield* Fiber.interrupt(fiber);
+      const exit = yield* Fiber.await(fiber);
+      expect(Exit.hasInterrupts(exit)).toBe(true);
       expect(notifier.notices).toEqual([]);
     }),
   );

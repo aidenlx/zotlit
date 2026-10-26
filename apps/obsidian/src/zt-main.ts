@@ -407,6 +407,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         noteFeature: services.noteFeature,
         noteImportView: services.noteImportView,
         opener: services.targetOpener,
+        bridge: services.bridge,
       }),
     );
 

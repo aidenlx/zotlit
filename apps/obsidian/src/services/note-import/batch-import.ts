@@ -1,12 +1,14 @@
 // Batch import runner for Zotero notes into standalone Markdown mirrors.
 import { distinct } from "@std/collections";
-import { Cause, Effect, Exit, Stream } from "effect";
+import { Cause, Effect, Stream } from "effect";
 import type { TFile } from "obsidian";
 
 import { parseIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
 import type { ChildNote, Note } from "@zotlit/db";
 import type { ImportMode } from "@zotlit/protocol";
 
+import { valueOr } from "@/lib/effect-bridge";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
@@ -56,7 +58,7 @@ import type {
 } from "@/views/batch-modal";
 
 import { importRunSummary } from "./batch-import-notices";
-import { NoteImporter, NoteImportProfileError } from "./service";
+import { NoteImporter } from "./service";
 import type { PreparedExplicitImport, WriteOutcome } from "./service";
 import type { NoteImportView } from "./view";
 
@@ -78,8 +80,9 @@ export type BatchImportServices =
 
 /**
  * The legacy values a batch import calls: the UI port for the classify,
- * confirm and Profile modals, and Note Feature's creation Profile and excerpt
- * report. Note Feature converts in a later slice.
+ * confirm and Profile modals, Note Feature's creation Profile and excerpt
+ * report, and the bridge the modal's callbacks enter Effect through. Note
+ * Feature converts in a later slice.
  */
 export interface BatchImportPorts {
   /** UI port for the classify/confirm modals; keeps `App` out of the runners. */
@@ -88,6 +91,8 @@ export interface BatchImportPorts {
     NoteFeature,
     "resolveCreationProfile" | "reportExcerptImages"
   >;
+  /** Runs the modal's callbacks; unload interrupts a run still going. */
+  readonly bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
 }
 
 /**
@@ -339,9 +344,7 @@ const prepareImportProfiles = Effect.fnUntraced(function* (
   const importer = yield* NoteImporter;
   const profiles = yield* Profile;
   const zoteroReads = yield* ZoteroReads;
-  const context = yield* Effect.context<never>();
-  const runSync = Effect.runSyncWith(context);
-  const runPromise = Effect.runPromiseWith(context);
+  const context = yield* Effect.context<BatchImportServices>();
   let selection: CreationProfileSelection = yield* Effect.promise(() =>
     ports.noteFeature.resolveCreationProfile(),
   );
@@ -351,28 +354,32 @@ const prepareImportProfiles = Effect.fnUntraced(function* (
     Effect.gen(function* () {
       const reads = yield* zoteroReads.snapshot;
       for (const action of actions) {
-        const exit = yield* Effect.exit(
-          importer.prepareExplicitImport(action.note, {
+        const unavailable = (error: unknown) =>
+          Effect.logDebug(
+            "Import preview unavailable; write will report the note diagnostic",
+          ).pipe(
+            Effect.annotateLogs({ noteKey: action.note.indexedKey, error }),
+            logged,
+          );
+        yield* importer
+          .prepareExplicitImport(action.note, {
             reads,
             orphanProfile: selection.selector,
-          }),
-        );
-        if (Exit.isSuccess(exit)) {
-          action.profilePlan = exit.value;
-          initial.set(action.note.itemID, exit.value);
-          continue;
-        }
-        if (Cause.hasInterruptsOnly(exit.cause))
-          return yield* Effect.failCause(exit.cause);
-        const error = Cause.squash(exit.cause);
-        if (error instanceof NoteImportProfileError)
-          action.unknownStamp = error.diagnostic.stamp;
-        yield* Effect.logDebug(
-          "Import preview unavailable; write will report the note diagnostic",
-        ).pipe(
-          Effect.annotateLogs({ noteKey: action.note.indexedKey, error }),
-          logged,
-        );
+          })
+          .pipe(
+            Effect.map((plan) => {
+              action.profilePlan = plan;
+              initial.set(action.note.itemID, plan);
+            }),
+            Effect.catchTag("NoteImportProfileError", (error) => {
+              action.unknownStamp = error.diagnostic.stamp;
+              return unavailable(error);
+            }),
+            Effect.catchCauseIf(
+              (cause) => !Cause.hasInterruptsOnly(cause),
+              (cause) => unavailable(Cause.squash(cause)),
+            ),
+          );
       }
     }),
   );
@@ -459,24 +466,42 @@ const prepareImportProfiles = Effect.fnUntraced(function* (
     },
     get label() {
       return (
-        runSync(profileRead(profiles.resolveProfile(selection.selector)))
-          ?.label ?? m.settings_profile_default_name()
+        ports.bridge.runSync(
+          Effect.provideContext(
+            profileRead(profiles.resolveProfile(selection.selector)),
+            context,
+          ),
+        )?.label ?? m.settings_profile_default_name()
       );
     },
     get source() {
       return selection.source;
     },
-    choose: () => runPromise(choose()),
+    choose: async () =>
+      valueOr(
+        await ports.bridge.runPromiseExit(
+          Effect.provideContext(choose(), context),
+        ),
+        undefined,
+      ),
   };
   return choice;
 });
 
 /**
  * The modal callbacks' runner: an Effect over the services this Effect runs
- * with, settled for a Promise caller as `runBatch` settles it.
+ * with, run through the bridge and settled for a Promise caller as
+ * `runBatch` settles it.
  */
-const modalRunner = Effect.gen(function* () {
-  return runBatchWith(yield* Effect.context<BatchImportServices>());
+const modalRunner = Effect.fnUntraced(function* (ports: BatchImportPorts) {
+  const context = yield* Effect.context<BatchImportServices>();
+  const run = runBatchWith((effect, options) =>
+    ports.bridge.runPromiseExit(effect, options),
+  );
+  return <A, E>(
+    effect: Effect.Effect<A, E, BatchImportServices>,
+    signal?: AbortSignal,
+  ) => run(Effect.provideContext(effect, context), signal);
 });
 
 // ---------------------------------------------------------------------------
@@ -488,7 +513,7 @@ const openNoteImportModal = Effect.fnUntraced(function* (
   itemIDs: readonly number[],
   unavailableLibraries: number,
 ) {
-  const run = yield* modalRunner;
+  const run = yield* modalRunner(ports);
   const profiles = yield* Profile;
   const ids = distinct(itemIDs);
   let runnableActions: ImportAction[] = [];
@@ -628,7 +653,7 @@ const openChildImportModal = Effect.fnUntraced(function* (
   ports: BatchImportPorts,
   parentItemIDs: readonly number[],
 ) {
-  const run = yield* modalRunner;
+  const run = yield* modalRunner(ports);
   const profiles = yield* Profile;
   const ids = distinct(parentItemIDs);
   let runnableActions: ImportAction[] = [];
@@ -770,14 +795,12 @@ const importSingleNote = Effect.fnUntraced(function* (
     ref.indexedKey,
   ))[0];
   if (existing) {
-    const yes = yield* Effect.promise(() =>
-      ports.view.confirm({
-        title: m.modal_import_overwrite_title(),
-        content: m.modal_import_overwrite_desc({ title }),
-        action: m.modal_import_overwrite_confirm(),
-        destructive: true,
-      }),
-    );
+    const yes = yield* ports.view.confirm({
+      title: m.modal_import_overwrite_title(),
+      content: m.modal_import_overwrite_desc({ title }),
+      action: m.modal_import_overwrite_confirm(),
+      destructive: true,
+    });
     if (!yes) return result({ outcome: "cancelled" });
   }
 
