@@ -13,7 +13,6 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { renderAnnotationSources } from "@/lib/annotation-render";
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
-import type { VaultSource } from "@/lib/obsidian-vault";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { attachmentImportFixture } from "@/services/attachment-import/__fixtures__";
 import { AttachmentCopyError } from "@/services/attachment-import/service";
@@ -247,7 +246,7 @@ const makeService = Effect.fnUntraced(function* (
   let current: Settings = defaults;
   const importer = yield* noteImporterOver({
     profile: profileReader(() => current, app.metadataCache),
-    vault: app.vault as unknown as VaultSource,
+    vault: app.vault,
     workspace: app.workspace,
     noteIndex: {
       getImportedNoteByNoteKey: () => options.existing ?? [],
