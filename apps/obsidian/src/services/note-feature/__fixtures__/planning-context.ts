@@ -5,7 +5,9 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import { QueryService } from "@/services/item-query/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { NoteIndex } from "@/services/note-index/service";
+import type { PlainProfile } from "@/services/profile/plain";
 import { Profile } from "@/services/profile/service";
 import { Template } from "@/services/template/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
@@ -16,12 +18,9 @@ import type { CreationPlanningServices } from "@/services/note-feature/creation-
 
 /** The plain deps the planning services read, as a Note Feature test holds them. */
 export interface PlanningSources {
-  profile: Pick<
-    NoteFeatureDeps["profile"],
-    "profiles" | "resolveProfile" | "profileOf"
-  >;
+  profile: Pick<PlainProfile, "profiles" | "resolveProfile" | "profileOf">;
   noteIndex: Pick<
-    NoteFeatureDeps["noteIndex"],
+    PlainNoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
   zoteroReads: Pick<PlainZoteroReads, "reads" | "snapshot">;
@@ -56,7 +55,9 @@ export function planningContext(
     Context.add(
       NoteIndex,
       stubService<NoteIndex["Service"]>("NoteIndex", {
-        whenIndexed: Effect.promise(() => sources.noteIndex.whenIndexed()),
+        whenIndexed: Effect.tryPromise(() =>
+          sources.noteIndex.whenIndexed(),
+        ).pipe(Effect.orDie),
         getNotesByItemKey: (key) =>
           Effect.sync(() => sources.noteIndex.getNotesByItemKey(key)),
         getImportedNoteByNoteKey: (key) =>

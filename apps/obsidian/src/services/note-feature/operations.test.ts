@@ -103,6 +103,7 @@ import {
 } from "@/services/zotero-reads/test-utils";
 
 import { planningContext } from "./__fixtures__/planning-context";
+import type { PlanningSources } from "./__fixtures__/planning-context";
 import type { NoteCitations } from "./citations-handle";
 import type { NoteFeatureDeps } from "./context";
 /**
@@ -121,11 +122,10 @@ type TestDeps = Omit<
   | "citations"
 > &
   Partial<
-    Pick<
-      NoteFeatureDeps,
-      "bridge" | "profile" | "vault" | "fileManager" | "citations"
-    >
+    Pick<NoteFeatureDeps, "bridge" | "vault" | "fileManager" | "citations">
   > & {
+    /** Creation planning reads the registry through the Profile tag. */
+    profile?: NoteFeatureDeps["profile"] & PlanningSources["profile"];
     app: NoteFeatureDeps["app"] & {
       fileManager: Pick<
         FileManagerSource,

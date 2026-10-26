@@ -78,7 +78,7 @@ interface NoteVaultApp {
  * template artifacts live in {@link PlainTemplate}.
  */
 export interface NoteFeatureDeps {
-  profile: Pick<PlainProfile, "profiles" | "resolveProfile" | "profileOf">;
+  profile: Pick<PlainProfile, "resolveProfile" | "profileOf">;
   app: NoteVaultApp;
   template: Pick<
     PlainTemplate,
