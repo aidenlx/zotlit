@@ -8,6 +8,8 @@ import type { Item, ItemFacets } from "@zotlit/db";
 import { toInstant } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
+import { portCall } from "@/lib/legacy-port";
+import type { LegacyPortError } from "@/lib/legacy-port";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { Vault } from "@/lib/obsidian-vault";
 import { DEFAULT_PROFILE, unknownProfileDiagnostic } from "@/lib/profile-stamp";
@@ -105,28 +107,6 @@ export class ManagedFrontmatterRefused extends Schema.TaggedError<
     return m.managed_frontmatter_refused_recovery();
   }
 }
-
-/**
- * A legacy Promise port rejected at `step`; `cause` holds its rejection.
- * A local copy of the shape of `lib/legacy-port.ts`, which 13a adds.
- */
-export class LegacyPortError extends Schema.TaggedError<
-  LegacyPortError,
-  { readonly brand: unique symbol }
->()("LegacyPortError", { step: Schema.String, cause: Schema.Defect() }) {
-  override get message(): string {
-    return this.cause instanceof Error
-      ? this.cause.message
-      : String(this.cause);
-  }
-}
-
-/** `call` as an Effect that fails with {@link LegacyPortError} on a rejection. */
-const portCall = <A>(step: string, call: () => Promise<A>) =>
-  Effect.tryPromise({
-    try: call,
-    catch: (cause) => new LegacyPortError({ step, cause }),
-  });
 
 /** {@link ProfileNotePreview} whose create runs on the services. */
 export type PreparedProfileNote = Omit<ProfileNotePreview, "create"> & {
@@ -548,7 +528,7 @@ const prepareProfileNote = Effect.fnUntraced(function* (
             message: m.notice_protocol_item_not_found(),
           });
         // Awaited inside the Snapshot's scope, which the create reads through.
-        return yield* portCall("create note", () =>
+        return yield* portCall("create-note", () =>
           create(item, { profile: profile.selector, preparedPath, reads }),
         );
       }),

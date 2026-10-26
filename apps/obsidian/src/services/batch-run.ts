@@ -19,7 +19,7 @@ export interface BatchClassifyControls {
    * the total passed at construction. */
   onProgress: (classified: number) => void;
   /** The modal's cancel; a Promise caller turns it into an interrupt with
-   * {@link runBatch}. */
+   * {@link runBatchWith}. */
   signal: AbortSignal;
 }
 
@@ -73,7 +73,7 @@ export interface BatchRunResult {
  * the caller's Snapshot so every request sees one database state. Each reply
  * slice advances the loading bar, and the caller's `processSlice` handles the
  * per-id logic. It cancels by interruption only: a Promise caller passes
- * {@link BatchClassifyControls.signal} to {@link runBatch}, which interrupts it.
+ * {@link BatchClassifyControls.signal} to {@link runBatchWith}, which interrupts it.
  *
  * @returns an Effect that fails with a read error.
  */
@@ -258,25 +258,11 @@ function profileRecovery(error: unknown): BatchFailure["recovery"] {
 }
 
 /**
- * Run an Effect-native batch operation from a Promise caller. This is the
- * caller boundary: typed failures and defects keep their identity, and an
- * aborted signal rejects with the signal's own abort reason.
- */
-export function runBatch<A, E>(
-  effect: Effect.Effect<A, E>,
-  signal?: AbortSignal,
-): Promise<A> {
-  // Every Effect here has R = never, so the default Effect runtime is enough.
-  return runBatchWith((run, options) => Effect.runPromiseExit(run, options))(
-    effect,
-    signal,
-  );
-}
-
-/**
- * {@link runBatch} through `runExit`, such as the bridge's `runPromiseExit`:
- * a modal callback runs a batch operation that unload interrupts. It settles
- * as {@link runBatch} settles; an unload rejects with the interrupt.
+ * Run an Effect-native batch operation from a Promise caller through
+ * `runExit`, such as the bridge's `runPromiseExit`: a modal callback runs a
+ * batch operation that unload interrupts. This is the caller boundary: typed
+ * failures and defects keep their identity, an aborted signal rejects with the
+ * signal's own abort reason, and an unload rejects with the interrupt.
  */
 export function runBatchWith(
   runExit: <A, E>(
@@ -300,7 +286,7 @@ export function runBatchWith(
 /**
  * The runners a batch modal's callbacks enter Effect through, over the
  * services this Effect runs with and through `bridge`, so unload interrupts
- * them. `run` settles as {@link runBatch} settles. `settle` resolves
+ * them. `run` settles as {@link runBatchWith} settles. `settle` resolves
  * `undefined` when unload interrupts it, for a choice the modal waits on.
  */
 export const modalRunner = Effect.fnUntraced(function* <R>(
