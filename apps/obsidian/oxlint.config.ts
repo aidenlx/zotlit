@@ -370,6 +370,17 @@ export default defineConfig({
       rules: { "zotlit-services/no-default-runtime": "off" },
     },
     {
+      files: ["src/services/**"],
+      excludeFiles: [
+        "**/*.test.{ts,tsx}",
+        "**/*.browser-test.ts",
+        "**/__fixtures__/**",
+        "**/__fixtures__.ts",
+        "**/test-harness.ts",
+      ],
+      rules: { "zotlit-services/scoped-runner": "error" },
+    },
+    {
       files: ["src/**/*.{ts,tsx}"],
       excludeFiles: [
         "**/*.test.ts",
