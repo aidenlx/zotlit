@@ -1,10 +1,9 @@
-import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
 
-import type { Item, ItemRef } from "@zotlit/db";
+import type { Item } from "@zotlit/db";
 
-import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
+import { LegacyPortError } from "@/lib/legacy-port";
 import { BaseNotice } from "@/lib/notice";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
 import type { ProfileSelector } from "@/lib/profile-stamp";
@@ -18,77 +17,7 @@ import type {
   UpdateResult,
   UpdateScope,
 } from "@/services/note-feature/operations";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
-import { itemKeyFromFrontmatter } from "@/services/note-index/service";
-import type { ProfileReader } from "@/services/profile/service";
-import type { PluginSettings } from "@/services/settings/service";
 import { InertTemplateError } from "@/services/template/errors";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
-
-/**
- * Dependencies for the batch runner's single-action create / update path.
- * Companion links use the separate interactive navigation flow.
- */
-export interface SingleUpdateDeps {
-  profile: ProfileReader;
-  app: App;
-  /**
-   * The database reads. A batch run opens its Snapshot here, and its note
-   * updates read through it.
-   */
-  zoteroReads: Pick<
-    PlainZoteroReads,
-    "acquireRead" | "reads" | "snapshot" | "state"
-  >;
-  settings: Pick<PluginSettings["Service"], "current" | "update">;
-  bridge: Pick<EffectBridge, "runSync">;
-  noteFeature: NoteFeature;
-  noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey" | "whenIndexed">;
-}
-
-/**
- * Update the existing literature note, or create + open one if none exists.
- * `scope` controls how much an existing note is refreshed (see {@link UpdateScope}).
- *
- * A `metadata` scope never creates: the whole point of the narrowing is to leave
- * the body alone, and `createNote` would write a full templated one. Missing
- * notes report and stop, leaving the full-scope action as the way to create.
- */
-export async function updateNote(
-  deps: SingleUpdateDeps,
-  ref: ItemRef,
-  {
-    scope = "full",
-    profile,
-  }: { scope?: UpdateScope; profile?: ProfileSelector } = {},
-): Promise<void> {
-  const file = resolveLiteratureNoteWithWarning(
-    deps.noteIndex.getNotesByItemKey(ref.indexedKey),
-  );
-
-  if (!file) {
-    if (scope === "metadata") {
-      new BaseNotice(m.notice_update_metadata_no_note());
-      return;
-    }
-    await createAndOpen(deps, ref, profile);
-    return;
-  }
-
-  const itemKey = itemKeyFromFrontmatter(
-    deps.app.metadataCache.getFileCache(file),
-  );
-  if (!itemKey) return;
-
-  void toast.promise(
-    deps.noteFeature.updateNote(file, {
-      indexedKey: itemKey,
-      scope,
-      profile,
-    }),
-    updateNoteToast(scope, { app: deps.app }),
-  );
-}
 
 /** Toast copy for a single-note update, framed by `scope`. A `metadata` update
  *  never touches the body, so it reports as "metadata updated" rather than the
@@ -134,29 +63,6 @@ export function updateNoteToast(
   };
 }
 
-/** Lazily resolve the full Item and create + open a new literature note. */
-export async function createAndOpen(
-  deps: SingleUpdateDeps,
-  ref: ItemRef,
-  profile?: ProfileSelector,
-): Promise<void> {
-  const { reads } = deps.zoteroReads;
-  const items = await Effect.runPromise(
-    reads.ItemsByIndexedKeys({ indexedKeys: [ref.indexedKey] }),
-  );
-  const item = items.get(ref.indexedKey);
-  if (!item) return;
-
-  const file = await createNoteWithToast(deps.noteFeature, item, {
-    profile,
-    app: deps.app,
-  });
-  if (!file) return;
-  await deps.app.workspace.openLinkText(file.path, "", false, {
-    active: true,
-  });
-}
-
 /**
  * Create a literature note for `item` behind the standard create toast. Returns
  * the created file, or `null` when creation failed — the toast already surfaced
@@ -171,6 +77,46 @@ export async function createNoteWithToast(
     () => noteFeature.createNote(item, { profile: options.profile }),
     { app: options.app },
   );
+}
+
+/**
+ * The notices a note update shows. The caller builds them over the `App` that
+ * their recovery actions open, so the update itself holds no `App`.
+ */
+export interface BatchUpdateNotices {
+  /** The single update's toast copy for `scope`. */
+  readonly updateToast: (
+    scope: UpdateScope,
+  ) => ReturnType<typeof updateNoteToast>;
+  /**
+   * Run one note create behind the standard create toast. Resolves with the
+   * created file, or `null` when the create wrote nothing; the toast already
+   * told the user.
+   */
+  readonly createWithToast: (
+    create: () => Promise<CreateNoteResult>,
+  ) => Promise<TFile | null>;
+  /** The batch modal's notice when its run fails. */
+  readonly runFailed: (error: unknown) => string | DocumentFragment;
+}
+
+/** The note update's notices, with recovery actions that open in `app`. */
+export function batchUpdateNotices(app: App): BatchUpdateNotices {
+  return {
+    updateToast: (scope) => updateNoteToast(scope, { app }),
+    createWithToast: (create) => createNoteTaskWithToast(create, { app }),
+    runFailed: (error) => {
+      // The modal hands back what the run failed with; a Note Feature
+      // rejection arrives as the port error around it.
+      const cause = error instanceof LegacyPortError ? error.cause : error;
+      return (
+        missingPartialNotice(cause, { app }) ??
+        (cause instanceof InertTemplateError
+          ? cause.message
+          : m.batch_update_run_failed())
+      );
+    },
+  };
 }
 
 /**
