@@ -23,7 +23,6 @@ import { registerFileLinkCapture } from "./services/attachment-open/capture";
 import { attachmentOpenFileMenu } from "./services/attachment-open/menu";
 import { buildServices } from "./services/build";
 import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
-import { registerAnnotationImageCli } from "./services/excerpt-image/register-cli";
 import { savedExcerptRequest } from "./services/excerpt-image/request";
 import { registerFileMenu } from "./services/file-menu";
 import { addGraphCitationsActions } from "./services/graph-citations/actions";
@@ -597,8 +596,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       app: this.app,
       citationIndex: services.citationIndex,
     });
-
-    registerAnnotationImageCli(this, services);
 
     registerPandocExport(this, {
       citationParse: services.citationParseService,

@@ -60,7 +60,7 @@ it.effect(
             publish: async () => {
               throw new Error("Zotero image must keep its original path");
             },
-            exists: async () => false,
+            exists: () => Effect.succeed(false),
           },
         ),
       );
@@ -102,7 +102,7 @@ it.effect.each(["rendered", "cache"] as const)(
               expect(bytes).toEqual(redPng);
               return "/temp/zotlit-excerpts/image.png";
             },
-            exists: async () => true,
+            exists: () => Effect.succeed(true),
           },
         ),
       );
@@ -148,7 +148,7 @@ it.effect.each(
           publish: async () => {
             throw new Error("No bytes");
           },
-          exists: async () => exists,
+          exists: () => Effect.succeed(exists),
         },
       ),
     );
@@ -176,7 +176,7 @@ it.effect("reports a failed read with the reader's own message", () =>
           publish: async () => {
             throw new Error("No bytes");
           },
-          exists: async () => false,
+          exists: () => Effect.succeed(false),
         },
       ),
     );
@@ -205,7 +205,7 @@ it.effect("aborts the render when the answer is interrupted", () =>
           publish: async () => {
             throw new Error("No bytes");
           },
-          exists: async () => false,
+          exists: () => Effect.succeed(false),
         },
       ),
     );

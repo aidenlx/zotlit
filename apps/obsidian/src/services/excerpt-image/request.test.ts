@@ -546,7 +546,7 @@ describe("Excerpt request for an Indexed Key", () => {
               publish: () => {
                 throw new Error("A non-image Annotation is never published");
               },
-              exists: async () => false,
+              exists: () => Effect.succeed(false),
             },
           ),
         );

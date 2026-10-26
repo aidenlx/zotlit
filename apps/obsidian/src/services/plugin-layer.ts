@@ -62,6 +62,7 @@ import type { ExcerptDisplays } from "./excerpt-image/display";
 import { layerExcerptImages } from "./excerpt-image/layer";
 import type { ExcerptImages } from "./excerpt-image/layer";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
+import { layerAnnotationImageCli } from "./excerpt-image/register-cli";
 import type { ExcerptStore } from "./excerpt-image/store";
 import { layerGraphCitations } from "./graph-citations/service";
 import type { GraphCitations } from "./graph-citations/service";
@@ -333,6 +334,7 @@ export function pluginLayer(
     ),
   );
   const registrations = Layer.mergeAll(
+    layerAnnotationImageCli.pipe(startingAs("AnnotationImageCli")),
     layerAnnotationLinkReading.pipe(startingAs("AnnotationLinkReading")),
     layerCitationsCli.pipe(startingAs("CitationsCli")),
     layerCitationStyleNotice.pipe(startingAs("CitationStyleNotice")),

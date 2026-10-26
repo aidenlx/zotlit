@@ -70,7 +70,7 @@ export async function run(): Promise<string[]> {
       );
       return "/temp/zotlit-excerpts/image.png";
     },
-    exists: async () => true,
+    exists: () => Effect.succeed(true),
   };
   for (const provenance of ["rendered", "cache", "zotero"] as const) {
     const answer = JSON.parse(
@@ -141,7 +141,7 @@ export async function run(): Promise<string[]> {
                 throw new DOMException("Deadline", "TimeoutError");
               return { kind: "unavailable" };
             },
-            exists: async () => code !== "file-unavailable",
+            exists: () => Effect.succeed(code !== "file-unavailable"),
           },
         ),
       ),
