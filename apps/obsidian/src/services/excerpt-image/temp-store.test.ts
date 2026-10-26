@@ -11,7 +11,15 @@ import {
   Layer,
   PlatformError,
 } from "effect";
-import { mkdtemp, readFile, readdir, rm, stat, utimes } from "node:fs/promises";
+import {
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, expect } from "vitest";
@@ -134,19 +142,16 @@ effectIt.effect("removes the staged file when the publish is interrupted", () =>
   Effect.gen(function* () {
     const directory = yield* testDirectory;
     const staged = yield* Deferred.make<void>();
-    // The staged file is written, and the publish then waits.
+    // The staged file is written, and the publish then waits in its link.
     const stalledAfterWrite = Layer.effect(
       FileSystem.FileSystem,
       Effect.map(FileSystem.FileSystem, (fs) =>
         FileSystem.make({
           ...fs,
-          writeFile: (path, data, options) =>
-            fs
-              .writeFile(path, data, options)
-              .pipe(
-                Effect.andThen(Deferred.succeed(staged, undefined)),
-                Effect.andThen(Effect.never),
-              ),
+          link: () =>
+            Deferred.succeed(staged, undefined).pipe(
+              Effect.andThen(Effect.never),
+            ),
         }),
       ),
     ).pipe(Layer.provide(NodeFileSystem.layer));
@@ -163,4 +168,49 @@ effectIt.effect("removes the staged file when the publish is interrupted", () =>
 
     expect(yield* Effect.promise(() => readdir(directory))).toEqual([]);
   }),
+);
+
+effectIt.effect(
+  "leaves no staged file when the publish is interrupted during its write",
+  () =>
+    Effect.gen(function* () {
+      const directory = yield* testDirectory;
+      const writing = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const written = Promise.withResolvers<void>();
+      // As a native write does, the write goes on after an interrupt stops
+      // waiting for it, and creates the staged file later.
+      const lateWrite = Layer.effect(
+        FileSystem.FileSystem,
+        Effect.map(FileSystem.FileSystem, (fs) =>
+          FileSystem.make({
+            ...fs,
+            writeFile: (path, data) =>
+              Effect.promise(async () => {
+                writing.resolve();
+                await release.promise;
+                await writeFile(path, data, { flag: "wx" });
+                written.resolve();
+              }),
+          }),
+        ),
+      ).pipe(Layer.provide(NodeFileSystem.layer));
+      const publishing = yield* Effect.forkChild(
+        publishExcerptPng("a".repeat(64), redPng, directory).pipe(
+          Effect.provide(lateWrite),
+        ),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(() => writing.promise);
+
+      const interrupting = yield* Effect.forkChild(
+        Fiber.interrupt(publishing),
+        { startImmediately: true },
+      );
+      release.resolve();
+      yield* Effect.promise(() => written.promise);
+      yield* Fiber.join(interrupting);
+
+      expect(yield* Effect.promise(() => readdir(directory))).toEqual([]);
+    }),
 );
