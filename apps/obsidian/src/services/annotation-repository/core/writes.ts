@@ -102,7 +102,10 @@ import type { CoreState } from "./state";
 /** The write failure a lock gives, with its Lock Reason. */
 type LockedFailure = Extract<WriteFailure, { kind: "locked" }>;
 
-/** Why a write's run answered no outcome: a read under it failed, or it threw. */
+/**
+ * Why a write's run answered no outcome: a read under it failed, or it threw.
+ * Its `cause` is a `WriteReadError` or a defect from the run.
+ */
 export class WriteRunFailed extends Schema.TaggedError<
   WriteRunFailed,
   { readonly brand: unique symbol }

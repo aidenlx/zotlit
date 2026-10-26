@@ -275,7 +275,7 @@ export type AnnotationRepositoryShape = {
   patchColors(
     annotationKeys: readonly string[],
     color: string,
-  ): Effect.Effect<MutationState[], WriteRunFailed>;
+  ): Effect.Effect<MutationState[]>;
   /**
    * Replace one Annotation's comment. An empty string clears it.
    *
@@ -324,7 +324,7 @@ export type AnnotationRepositoryShape = {
    */
   deleteAnnotations(
     annotationKeys: readonly string[],
-  ): Effect.Effect<MutationState[], WriteRunFailed>;
+  ): Effect.Effect<MutationState[]>;
   /**
    * Send one conflicted write again, against the value Zotero holds now — the
    * card's "Apply again", and its "Delete anyway". The user has seen both
