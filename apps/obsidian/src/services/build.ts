@@ -1,4 +1,3 @@
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { Effect } from "effect";
 import type { FileSystemAdapter } from "obsidian";
 
@@ -12,7 +11,6 @@ import { buildRuntime } from "@/lib/effect-layer";
 import { revealSetting } from "@/lib/open-settings";
 import { ZoteroHttp } from "@/lib/zotero-http";
 import { libraryTagNamesOf } from "@/services/database/library-tag-names";
-import type { CreateProfile } from "@/setting-tab/create-profile-modal";
 import type { ImportProfile } from "@/setting-tab/import-profile-modal";
 import {
   createProfileDialog,
@@ -139,22 +137,12 @@ export async function buildServices(
   >((resolve) => {
     bindMigration = resolve;
   });
-  // The note creation opens the setting tab's Profile dialogs. They run on
-  // the runtime, which the graph this holder goes into has yet to build.
-  let bindProfileDialogs!: (
-    dialogs: Pick<InteractiveCreationPorts, "createProfile" | "importProfile">,
-  ) => void;
-  const profileDialogs = new Promise<
-    Pick<InteractiveCreationPorts, "createProfile" | "importProfile">
-  >((resolve) => {
-    bindProfileDialogs = resolve;
-  });
+  // The note creation opens the setting tab's Profile dialogs, which run in
+  // the caller's fiber with the caller's services.
   const creation: InteractiveCreationPorts = {
     app: plugin.app,
-    createProfile: async (options) =>
-      (await profileDialogs).createProfile(options),
-    importProfile: async (options) =>
-      (await profileDialogs).importProfile(options),
+    createProfile: (options) => createProfileDialog(plugin.app, options),
+    importProfile: (options) => importProfileDialog(plugin.app, options),
   };
   // The protocol handlers open the note import's modals and the Attachment
   // opener, which the container builds after the graph.
@@ -421,44 +409,20 @@ export async function buildServices(
         }),
     })
     .useValue({
-      // Unload closes an open dialog, and the caller sees it dismissed.
-      createProfile: (): CreateProfile => {
+      // The Import profile command. Unload closes an open dialog, and the
+      // caller sees it dismissed.
+      importProfile: (): ImportProfile => {
         const runExit = exitOver(
           bridge,
           runtime.runSync(Effect.context<ProfileDialogServices>()),
         );
         return async (options) =>
-          valueOr(
-            await runExit(createProfileDialog(plugin.app, options)),
-            undefined,
-          );
+          valueOr(await runExit(creation.importProfile(options)), undefined);
       },
     })
     .useValue({
-      importProfile: ({ createProfile }): ImportProfile => {
-        const runExit = exitOver(
-          bridge,
-          runtime.runSync(Effect.context<ProfileDialogServices>()),
-        );
-        const importProfile: ImportProfile = async (options) =>
-          valueOr(
-            await runExit(
-              importProfileDialog(plugin.app, options).pipe(
-                Effect.provide(NodeFileSystem.layer),
-              ),
-            ),
-            undefined,
-          );
-        bindProfileDialogs({ createProfile, importProfile });
-        return importProfile;
-      },
-    })
-    .useValue({
-      noteImportView: ({ createProfile, importProfile, targetOpener }) => {
-        const noteImportView = createNoteImportView(plugin.app, {
-          createProfile,
-          importProfile,
-        });
+      noteImportView: ({ targetOpener }) => {
+        const noteImportView = createNoteImportView(plugin.app, creation);
         bindProtocolViews({ noteImportView, opener: targetOpener });
         return noteImportView;
       },

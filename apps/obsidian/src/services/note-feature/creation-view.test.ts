@@ -8,13 +8,16 @@ import type { Item } from "@zotlit/db";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { ProfileOperationError } from "@/services/profile/service";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
 import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
-import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
+import type { ProfilePick } from "@/views/quick-switch/profile-picker";
 
 import type { PlannedCreationProfile } from "./creation-planning";
 import { createdNoteNotice, createNoteInteractively } from "./creation-view";
@@ -34,9 +37,7 @@ type PickerOptions = Parameters<typeof openLiteratureNoteProfile>[1];
 
 /** The picker answers what `answer` gives for its options, as the user would. */
 function pickerAnswers(
-  answer: (
-    options: PickerOptions,
-  ) => Promise<LiteratureNoteProfileChoice | undefined>,
+  answer: (options: PickerOptions) => Promise<ProfilePick | undefined>,
 ) {
   vi.mocked(openLiteratureNoteProfile).mockImplementation(
     (_app, options, resolve) => {
@@ -108,6 +109,7 @@ function creation(
       ...ports,
     } satisfies InteractiveCreationPorts,
     layer: Layer.mergeAll(
+      unimplementedProfileDialogServices,
       Layer.mock(NoteFeature, feature),
       notifier.layer,
       Layer.mock(ZoteroPref, {
@@ -155,16 +157,18 @@ it.effect(
         writes += 1;
         return { outcome: "created" as const, file };
       });
-      const createProfile = vi.fn(async () => ({
-        profile: { ...BOOK_PROFILE, label: "Reading" },
-        preview: { path: file.path, properties: {}, body: "Body", create },
-      }));
+      const createProfile = vi.fn(() =>
+        Effect.succeed({
+          profile: { ...BOOK_PROFILE, label: "Reading" },
+          preview: { path: file.path, properties: {}, body: "Body", create },
+        }),
+      );
       const harness = creation(
         { selector: "default", source: "bound", shouldAsk: true },
         [],
         { createProfile },
       );
-      pickerAnswers(async (options) => options.onNew?.());
+      pickerAnswers(async () => ({ action: "new" }));
       expect(yield* run(harness)).toBe(file);
       expect(createProfile).toHaveBeenCalledWith({
         indexedKey: "ABCD2345",
@@ -199,16 +203,18 @@ it.effect(
         ),
         Effect.as({ outcome: "created" as const, file }),
       );
-      const createProfile = vi.fn(async () => ({
-        profile: { ...BOOK_PROFILE, label: "Reading" },
-        preview: { path: file.path, properties: {}, body: "Body", create },
-      }));
+      const createProfile = vi.fn(() =>
+        Effect.succeed({
+          profile: { ...BOOK_PROFILE, label: "Reading" },
+          preview: { path: file.path, properties: {}, body: "Body", create },
+        }),
+      );
       const harness = creation(
         { selector: "default", source: "bound", shouldAsk: true },
         [],
         { createProfile },
       );
-      pickerAnswers(async (options) => options.onNew?.());
+      pickerAnswers(async () => ({ action: "new" }));
       const fiber = yield* run(harness).pipe(
         Effect.forkChild({ startImmediately: true }),
       );
@@ -457,16 +463,13 @@ it.effect(
 
 it.effect("imports from the contextual picker without creating a note", () =>
   Effect.gen(function* () {
-    const importProfile = vi.fn(async () => undefined);
+    const importProfile = vi.fn(() => Effect.undefined);
     const harness = creation(
       { selector: "default", source: "bound", shouldAsk: true },
       [],
       { importProfile },
     );
-    pickerAnswers(async (options) => {
-      await options.onImport?.();
-      return undefined;
-    });
+    pickerAnswers(async () => ({ action: "import" }));
     expect(yield* run(harness)).toBeNull();
     expect(importProfile).toHaveBeenCalledWith({ indexedKey: "ABCD2345" });
     expect(harness.feature.createNote).not.toHaveBeenCalled();
@@ -491,6 +494,57 @@ it.effect("closes the picker when the creation is interrupted", () =>
     yield* Fiber.interrupt(fiber);
     expect(close).toHaveBeenCalledOnce();
   }),
+);
+
+it.effect.each(["new", "import"] as const)(
+  "closes the %s Profile dialog the picker opened when the creation is interrupted",
+  (action) =>
+    Effect.gen(function* () {
+      const opened = yield* Deferred.make<void>();
+      const close = vi.fn();
+      // The dialog stays open until something closes it.
+      const dialog = awaitModal<undefined>(() => {
+        Deferred.doneUnsafe(opened, Effect.void);
+        return { close };
+      });
+      const harness = creation(
+        { selector: "default", source: "bound", shouldAsk: true },
+        [],
+        { createProfile: () => dialog, importProfile: () => dialog },
+      );
+      pickerAnswers(async () => ({ action }));
+      const fiber = yield* run(harness).pipe(
+        Effect.forkChild({ startImmediately: true }),
+      );
+      yield* Deferred.await(opened);
+      yield* Fiber.interrupt(fiber);
+      expect(close).toHaveBeenCalledOnce();
+      expect(texts(harness)).toEqual([]);
+    }),
+);
+
+it.effect(
+  "tells the user when the New profile dialog fails, and creates no note",
+  () =>
+    Effect.gen(function* () {
+      const harness = creation(
+        { selector: "default", source: "bound", shouldAsk: true },
+        [],
+        {
+          createProfile: () =>
+            Effect.fail(
+              new ProfileOperationError({
+                message: "broken",
+                cause: undefined,
+              }),
+            ),
+        },
+      );
+      pickerAnswers(async () => ({ action: "new" }));
+      expect(yield* run(harness)).toBeNull();
+      expect(texts(harness)).toEqual([m.notice_profile_action_failed()]);
+      expect(harness.feature.createNote).not.toHaveBeenCalled();
+    }),
 );
 
 it.each([

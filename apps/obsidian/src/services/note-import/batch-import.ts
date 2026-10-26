@@ -51,6 +51,7 @@ import type { ZoteroPref } from "@/services/zotero-pref/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
+import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { FlatManifest, HierarchyManifest } from "@/views/batch-modal";
 import type {
   FlatTask,
@@ -69,7 +70,10 @@ const logged = withLogCategory("batch-import");
  * stop the queued remainder between items. */
 const IMPORT_CONCURRENCY = 16;
 
-/** The services a batch import reads through their tags. */
+/**
+ * The services a batch import reads through their tags, the Profile dialogs
+ * its Profile choice opens included.
+ */
 export type BatchImportServices =
   | LibraryScope
   | MetadataCache
@@ -78,6 +82,7 @@ export type BatchImportServices =
   | NoteIndex
   | PluginSettings
   | Profile
+  | ProfileDialogServices
   | ZoteroPref
   | ZoteroReads;
 

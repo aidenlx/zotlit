@@ -27,6 +27,7 @@ import { NoteFeature } from "@/services/note-feature/service";
 import type { ResolvedProfile } from "@/services/profile/bindings";
 import { Profile, ProfileOperationError } from "@/services/profile/service";
 import type {
+  LiteratureNoteProfile,
   PreparedProfileCreation,
   PreparedProfileImport,
   ProfileCreation,
@@ -61,7 +62,34 @@ export type ProfileDialogServices =
   | Vault
   | ZoteroPref
   | TemplateDataServices
-  | LibraryScope;
+  | LibraryScope
+  | FileSystem.FileSystem;
+
+/**
+ * The New profile dialog as the note creation and the batch Profile choice
+ * open it, in the caller's own fiber: an interrupt of the caller closes it.
+ * @see createProfileDialog
+ */
+export type CreateProfileDialog = (
+  options?: CreateProfileOptions,
+) => Effect.Effect<
+  CreatedProfile | undefined,
+  Effect.Error<ReturnType<typeof createProfileDialog>>,
+  ProfileDialogServices
+>;
+
+/**
+ * The Profile import dialog, as {@link CreateProfileDialog} opens it.
+ * @see importProfileDialog
+ */
+export type ImportProfileDialog = (options?: {
+  indexedKey?: string;
+  source?: ImportSource;
+}) => Effect.Effect<
+  LiteratureNoteProfile | undefined,
+  never,
+  ProfileDialogServices
+>;
 
 /** What a modal's callbacks run on. */
 type DialogServices = Profile | Template | NoteFeature;

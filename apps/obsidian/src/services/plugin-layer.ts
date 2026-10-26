@@ -1,6 +1,7 @@
 // The plugin's services that live in the Effect Layer graph, converted or bridged.
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { Layer } from "effect";
+import type { FileSystem } from "effect";
 import type { Plugin } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
@@ -230,6 +231,7 @@ export function pluginLayer(
   | Workspace
   | MetadataCache
   | ObsidianEnv
+  | FileSystem.FileSystem
 > {
   // The file manager decides its outcomes from the vault's cache.
   const fileManager = layerFileManager.pipe(Layer.provide(layerVault));
@@ -421,12 +423,13 @@ export function pluginLayer(
       ),
     ),
   );
-  // The Node file system, once for the whole graph: the temp sweeps read it.
+  // The Node file system, once for the whole graph: the temp sweeps read it,
+  // and so do the Profile dialogs that callers outside the graph open.
   // The Notifier is the one the layers share: the setting tab's Language Pack
   // toast shows through it.
   return registrations.pipe(
     Layer.provideMerge(noteFeature),
-    Layer.provide(NodeFileSystem.layer),
+    Layer.provideMerge(NodeFileSystem.layer),
     Layer.merge(layerNotifier),
   );
 }

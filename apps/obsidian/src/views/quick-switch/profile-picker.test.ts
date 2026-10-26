@@ -11,7 +11,10 @@ import type { ProfileId } from "@/lib/profile-stamp";
 import type { ProfilePreview } from "@/services/note-feature";
 
 import { openLiteratureNoteProfile } from "./profile-picker";
-import type { LiteratureNoteProfileChoice } from "./profile-picker";
+import type {
+  LiteratureNoteProfileChoice,
+  ProfilePick,
+} from "./profile-picker";
 
 const books = { id: "Bk3Qn7XvT2Lp" as ProfileId };
 /** The Default and Books rows, in that order. */
@@ -44,7 +47,7 @@ const emptyApp = stubService<App>("App", {
 function choose(
   app: App,
   options: Parameters<typeof openLiteratureNoteProfile>[1],
-): Promise<LiteratureNoteProfileChoice | undefined> {
+): Promise<ProfilePick | undefined> {
   return modalAnswer((settle) =>
     openLiteratureNoteProfile(app, options, settle),
   );
@@ -217,56 +220,34 @@ it("shows the rule behind a preselected choice and the problem that stopped auto
   await expect(stopped).resolves.toBeUndefined();
 });
 
-it("waits for the shared create dialog when New profile is chosen after native close", async () => {
+it("answers New profile when it is chosen after native close", async () => {
   using opened = vi.spyOn(SuggestModal.prototype, "open");
-  const created = Promise.withResolvers<
-    LiteratureNoteProfileChoice | undefined
-  >();
-  const onNew = vi.fn(() => created.promise);
-  const choice = choose(emptyApp, { previews: defaultAndBooks, onNew });
+  const choice = choose(emptyApp, { previews: defaultAndBooks });
   const modal = opened.mock
     .instances[0] as SuggestModal<LiteratureNoteProfileChoice>;
   const rows = await modal.getSuggestions("");
   modal.onClose();
   modal.onChooseSuggestion(rows.at(-1)!, {} as KeyboardEvent);
-  await Promise.resolve();
-  expect(onNew).toHaveBeenCalledOnce();
-  created.resolve({ id: books.id, label: "New reading profile" });
-  await expect(choice).resolves.toEqual({
-    id: books.id,
-    label: "New reading profile",
-  });
+  await expect(choice).resolves.toEqual({ action: "new" });
 });
 
-it("imports from the secondary action without choosing a Profile or starting creation", async () => {
+it("answers Import from the secondary action without choosing a Profile or New profile", async () => {
   using opened = vi.spyOn(SuggestModal.prototype, "open");
-  const onImport = vi.fn(async () => {});
-  const onNew = vi.fn(async () => undefined);
-  const choice = choose(emptyApp, {
-    previews: defaultAndBooks,
-    onImport,
-    onNew,
-  });
+  const choice = choose(emptyApp, { previews: defaultAndBooks });
   const modal = opened.mock
     .instances[0] as SuggestModal<LiteratureNoteProfileChoice>;
   const rows = await modal.getSuggestions("");
   const el = document.createElement("div");
   modal.renderSuggestion(rows.at(-1)!, el);
   el.querySelector("button")!.click();
-  await expect(choice).resolves.toBeUndefined();
-  expect(onImport).toHaveBeenCalledOnce();
-  expect(onNew).not.toHaveBeenCalled();
+  await expect(choice).resolves.toEqual({ action: "import" });
 });
 
 it("imports from Enter on the focused secondary action, before the list takes the highlighted row", async () => {
   using opened = vi.spyOn(SuggestModal.prototype, "open");
-  const onImport = vi.fn(async () => {});
-  const onNew = vi.fn(async () => undefined);
   const app = keymapApp();
   const choice = choose(stubService<App>("App", app), {
     previews: defaultAndBooks,
-    onImport,
-    onNew,
   });
   const modal = opened.mock
     .instances[0] as SuggestModal<LiteratureNoteProfileChoice>;
@@ -291,9 +272,7 @@ it("imports from Enter on the focused secondary action, before the list takes th
   expect(app.scopes[0]).not.toBe(modal.scope);
   expect(pressTop(app, { key: "Enter" }, button).defaultPrevented).toBe(true);
 
-  await expect(choice).resolves.toBeUndefined();
-  expect(onImport).toHaveBeenCalledOnce();
-  expect(onNew).not.toHaveBeenCalled();
+  await expect(choice).resolves.toEqual({ action: "import" });
   // Closing the modal gives the Scope back.
   expect(app.scopes).toEqual([]);
 });

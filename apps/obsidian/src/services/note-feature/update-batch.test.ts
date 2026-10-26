@@ -65,6 +65,7 @@ import {
   recordCalls,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
+import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
 import type {
   BatchModalOptions,
   BatchProfileChoice,
@@ -325,6 +326,7 @@ function makeDeps(
       getNotesByItemKey: () => [],
     },
     layer: Layer.mergeAll(
+      unimplementedProfileDialogServices,
       Layer.mock(LibraryScope, {
         resolveLibraries: () => Effect.sync(() => currentScope),
       }),
@@ -1040,6 +1042,7 @@ describe("one item without additional Profiles", () => {
         ),
     });
     const layer = Layer.mergeAll(
+      unimplementedProfileDialogServices,
       Layer.mock(NoteFeature, feature),
       Layer.mock(LibraryScope, {}),
       Layer.mock(MetadataCache, {

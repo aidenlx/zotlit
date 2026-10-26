@@ -3,6 +3,7 @@ import {
   Context,
   Effect,
   Fiber,
+  FileSystem,
   Layer,
   Logger,
   Queue,
@@ -34,10 +35,12 @@ import type {
 import { NoteFeature } from "@/services/note-feature/service";
 import { createNoteHost } from "@/services/note-index/__fixtures__";
 import { layerNoteIndex } from "@/services/note-index/service";
+import { Profile } from "@/services/profile/service";
 import {
   layerPluginSettings,
   PluginSettings,
 } from "@/services/settings/service";
+import { Template } from "@/services/template/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { layerRcRef } from "@/services/zotero-reads/connection";
@@ -137,6 +140,13 @@ const openEditor = Effect.fnUntraced(function* ({
     }).pipe(
       Layer.provide(
         Layer.mergeAll(
+          // The Profile dialogs' own services: no case opens a dialog.
+          Layer.mock(Profile, {}),
+          Layer.mock(Template, {}),
+          Layer.succeed(
+            FileSystem.FileSystem,
+            stubService<FileSystem.FileSystem>("FileSystem", {}),
+          ),
           Layer.mock(NoteFeature, { planCreations }),
           testNotifier().layer,
           Layer.mock(ZoteroPref, {
