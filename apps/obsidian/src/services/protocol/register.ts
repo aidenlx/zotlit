@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Exit, Fiber, FiberSet, Scope } from "effect";
+import { Cause, Data, Effect, Fiber, FiberSet, Scope } from "effect";
 import type { ManagedRuntime } from "effect";
 import type { ObsidianProtocolData, PaneType, Plugin } from "obsidian";
 
@@ -27,15 +27,14 @@ import {
 } from "@zotlit/protocol";
 import type { ProtocolAction } from "@zotlit/protocol";
 
-import { AbortError } from "@/lib/abort-error";
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import type { AttachmentReader } from "@/lib/attachment-open";
 import { logAndContinue, withLogCategory } from "@/lib/effect-log";
 import { openScope } from "@/lib/effect-scope";
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import { Notifier } from "@/lib/notifier";
-import type { NoticeMessage } from "@/lib/notifier";
+import { Notifier, reportOutcome } from "@/lib/notifier";
+import type { NoticeMessage, OutcomeCopy } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -232,40 +231,16 @@ function importPorts(deps: ProtocolDeps) {
   return { view: deps.noteImportView, noteFeature: deps.noteFeature };
 }
 
-/**
- * Run a note import and show its outcome as `toast.promise` does without a
- * loading message: the success message for 2 s, or the error message for 4 s
- * with the error logged. An abort shows nothing. The notice does not hold
- * the run, and an interrupt ends the run without a notice.
- */
-const withImportNotice = Effect.fnUntraced(function* <A, E, R>(
-  effect: Effect.Effect<A, E, R>,
-  copy: {
-    success: (result: A) => NoticeMessage | undefined;
-    error: (message: string, error: unknown) => NoticeMessage | undefined;
-  },
-) {
-  const notifier = yield* Notifier;
-  const exit = yield* Effect.exit(effect);
-  if (Exit.isSuccess(exit)) {
-    const message = copy.success(exit.value);
-    if (message) yield* notifier.show(message, { duration: 2000 });
-    return;
-  }
-  if (Cause.hasInterruptsOnly(exit.cause))
-    return yield* Effect.failCause(exit.cause);
-  const error = Cause.squash(exit.cause);
-  if (AbortError.test(error)) return;
-  const message = copy.error(toast.formatErrorMessage(error), error);
-  yield* Effect.logError("Toast reported error").pipe(
-    Effect.annotateLogs({
-      message: typeof message === "string" ? message : message?.textContent,
-      error,
-    }),
-    withLogCategory("toast"),
-  );
-  if (message) yield* notifier.show(message, { duration: 4000 });
-});
+/** The outcome notice of a note import, from its toast copy. */
+function importNotices<A>(copy: {
+  success: (result: A) => NoticeMessage | undefined;
+  error: (message: string, error: unknown) => NoticeMessage | undefined;
+}): OutcomeCopy<A> {
+  return {
+    success: copy.success,
+    error: (error) => copy.error(toast.formatErrorMessage(error), error),
+  };
+}
 
 /** The registered handlers, while their Scope holds them. */
 export interface ProtocolRegistration {
@@ -295,12 +270,12 @@ const updateManyRequested = Effect.fn("protocol.updateManyRequested")(
 
 const importNotesRequested = Effect.fn("protocol.importNotesRequested")(
   function* (event: ImportNotesRequest, deps: ProtocolDeps) {
-    yield* withImportNotice(
+    yield* reportOutcome(
       runBatchImport(importPorts(deps), {
         mode: event.mode,
         itemIDs: event.items,
       }),
-      batchImportToast({ app: deps.app }),
+      importNotices(batchImportToast({ app: deps.app })),
     );
   },
   logAndContinue("Pushed batch import failed", "protocol"),
@@ -420,12 +395,12 @@ const handleImportProtocol = Effect.fn("protocol.handleImportProtocol")(
     });
     if (!query) return;
 
-    yield* withImportNotice(
+    yield* reportOutcome(
       runBatchImport(importPorts(deps), {
         mode: query.mode,
         itemIDs: [query.item],
       }),
-      batchImportToast({ app: deps.app }),
+      importNotices(batchImportToast({ app: deps.app })),
     );
   },
 );
@@ -440,12 +415,12 @@ const handleImportManyProtocol = Effect.fn("protocol.handleImportManyProtocol")(
     });
     if (!query) return;
 
-    yield* withImportNotice(
+    yield* reportOutcome(
       runBatchImport(importPorts(deps), {
         mode: query.mode,
         itemIDs: query.items,
       }),
-      batchImportToast({ app: deps.app }),
+      importNotices(batchImportToast({ app: deps.app })),
     );
   },
 );
@@ -550,12 +525,12 @@ const handleImportAllNotesProtocol = Effect.fn(
   });
   if (!query) return;
 
-  yield* withImportNotice(
+  yield* reportOutcome(
     runBatchImportAll(importPorts(deps), {
       groupID: query.groupID,
       collectionKey: query.collectionKey,
     }),
-    batchImportAllToast({ app: deps.app }),
+    importNotices(batchImportAllToast({ app: deps.app })),
   );
 });
 
