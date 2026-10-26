@@ -6,7 +6,6 @@ import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type {} from "@/services/citation-index/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import type { ExcerptImageService } from "@/services/excerpt-image/service";
-import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { LocalBridgeHandle } from "@/services/local-bridge/handle";
 import type { LocalServer } from "@/services/local-server/service";
@@ -14,8 +13,6 @@ import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
 import type { Release } from "@/services/release/service";
 import type { Settings } from "@/services/settings/schema";
 import type { PluginSettings } from "@/services/settings/service";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import type { SettingTabShape } from "./effect-tab";
 
@@ -82,49 +79,6 @@ export interface SettingTabContext {
     | "update"
     | "updateDefaultLiteratureNoteProfileBindings"
     | "changes"
-  >;
-  db: Pick<
-    PlainZoteroReads,
-    | "refresh"
-    | "state"
-    | "error"
-    | "changed"
-    | "degraded"
-    | "refresh-failed"
-    | "refreshing"
-    | "db-file-missing"
-    | "refresh-requested"
-    | "activeReadMode"
-  >;
-  /** The live Library Scope the Library scope rows read and repair. */
-  libraryScope: Pick<
-    PlainLibraryScope,
-    | "current"
-    | "effective"
-    | "invalid"
-    | "libraries"
-    | "changed"
-    | "libraries-changed"
-  >;
-  zoteroPref: Pick<
-    PlainZoteroPref,
-    | "state"
-    | "resolvedProfileDir"
-    | "profileDirOverride"
-    | "dataDirOverride"
-    | "dataDir"
-    | "databasePath"
-    | "sourceId"
-    | "baseAttachmentPath"
-    | "httpPort"
-    | "get"
-    | "changed"
-    | "data-dir-changed"
-    | "resolved-changed"
-    | "setProfileDir"
-    | "setDataDir"
-    | "companionInstalled"
-    | "listProfiles"
   >;
   /** The one loopback listener, read by the Local server rows. */
   localServer: LocalServerActions;

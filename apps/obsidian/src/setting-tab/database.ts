@@ -9,7 +9,7 @@ import type {
 
 import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
-import { Notifier } from "@/lib/notifier";
+import { withProgress } from "@/lib/notifier";
 import type {
   ConfiguredReadMode,
   EffectiveReadMode,
@@ -19,7 +19,10 @@ import {
   PREFS_FILENAME,
 } from "@/services/zotero-pref/prefs-file";
 import { ZoteroPref } from "@/services/zotero-pref/service";
-import type { ZoteroProfileInfo } from "@/services/zotero-pref/service";
+import type {
+  ZoteroPrefSnapshot,
+  ZoteroProfileInfo,
+} from "@/services/zotero-pref/service";
 import {
   changed,
   degraded,
@@ -193,20 +196,16 @@ function renderDatabaseFileRow(
     Effect.gen(function* () {
       const reads = yield* ZoteroReads;
       const pref = yield* ZoteroPref;
-      const notifier = yield* Notifier;
+      // The progress notice reports a failed refresh and logs it, so the
+      // runner has no failure left to show a second notice for.
+      const refresh = withProgress(reads.refresh, {
+        loading: m.notice_db_refreshing(),
+        success: m.notice_db_refreshed(),
+        error: m.notice_db_refresh_failed(),
+      }).pipe(Effect.ignore);
 
       refreshButton?.onClick(
-        () =>
-          void ctx.tab.run(
-            Effect.scoped(
-              Effect.gen(function* () {
-                const progress = yield* notifier.progress;
-                yield* progress.setMessage(m.notice_db_refreshing());
-                yield* reads.refresh;
-              }),
-            ).pipe(Effect.andThen(notifier.show(m.notice_db_refreshed()))),
-            m.notice_db_refresh_failed(),
-          ),
+        () => void ctx.tab.run(refresh, m.notice_db_refresh_failed()),
       );
 
       // Events miss the loading→ready/degraded transition (T14 contract), so
@@ -301,8 +300,6 @@ function renderReadModeRow(
   setting: Setting,
   ctx: SettingTabContext,
 ): () => void {
-  const stack = new DisposableStack();
-
   const desc = createFragment();
   desc.append(m.settings_db_read_mode_desc());
   const options = createEl("ul");
@@ -336,8 +333,7 @@ function renderReadModeRow(
     }
   };
 
-  const applyActiveMode = (): void => {
-    const mode = ctx.db.activeReadMode;
+  const applyActiveMode = (mode: EffectiveReadMode | null): void => {
     activeMode.textContent = mode
       ? m.settings_db_active_read_mode({ mode: modeLabel(mode) })
       : "";
@@ -359,29 +355,42 @@ function renderReadModeRow(
       });
   });
 
-  applyActiveMode();
-  stack.defer(ctx.tab.mount(paintEach(ctx.db["changed"], applyActiveMode)));
-  stack.defer(ctx.tab.mount(paintEach(ctx.db["degraded"], applyActiveMode)));
-  stack.defer(
-    ctx.tab.mount(paintEach(ctx.db["refresh-failed"], applyActiveMode)),
+  // The active mode is read again after each change, degrade, or failed
+  // refresh, as the reads report the mode their current connection settled on.
+  return ctx.tab.mount(
+    Effect.gen(function* () {
+      const reads = yield* ZoteroReads;
+      const activeReadMode = Effect.map(
+        reads.current,
+        (state) => state.activeReadMode,
+      );
+      applyActiveMode(yield* activeReadMode);
+      yield* paintEach(
+        reads.events.pipe(
+          Stream.filter(
+            (event) =>
+              event._tag === "changed" ||
+              event._tag === "degraded" ||
+              event._tag === "refresh-failed",
+          ),
+          Stream.mapEffect(() => activeReadMode),
+        ),
+        applyActiveMode,
+      );
+    }),
   );
-
-  return () => stack.dispose();
 }
 
 /**
  * Profile picker row: a dropdown listing the `profiles.ini` profiles, plus an
  * "auto-detect default" entry (first) and a "choose folder" entry (last) that
  * opens a folder dialog. The description shows the resolved `prefs.js` path and
- * an inline loading / failed-to-read status from {@link PlainZoteroPref}.
+ * an inline loading / failed-to-read status from {@link ZoteroPref}.
  */
 function renderProfileDirRow(
   setting: Setting,
   ctx: SettingTabContext,
 ): () => void {
-  const stack = new DisposableStack();
-  const pref = ctx.zoteroPref;
-
   const desc = createFragment();
   desc.append(m.settings_db_profile_dir_desc());
   appendDeviceOverrideNote(desc);
@@ -397,11 +406,16 @@ function renderProfileDirRow(
   let dropdown: DropdownComponent | undefined;
   let profiles: readonly ZoteroProfileInfo[] = [];
 
-  const selectedValue = (): string => pref.profileDirOverride ?? PICKER_AUTO;
+  const selectedValue = (snapshot: ZoteroPrefSnapshot): string =>
+    snapshot.profileDirOverride ?? PICKER_AUTO;
+  const setProfileDir = (dir: string | null): void =>
+    void ctx.tab.run(
+      ZoteroPref.use((pref) => pref.setProfileDir(dir)),
+      m.notice_db_profile_dir_failed(),
+    );
 
-  const repopulate = (): void => {
+  const repopulate = (current: string): void => {
     if (!dropdown) return;
-    const current = selectedValue();
     dropdown.selectEl.replaceChildren();
     dropdown.addOption(PICKER_AUTO, m.settings_db_profile_auto());
     for (const p of profiles) dropdown.addOption(p.dir, profileLabel(p));
@@ -417,26 +431,27 @@ function renderProfileDirRow(
     dropdown = d;
     d.onChange((value) => {
       if (value === PICKER_BROWSE) {
-        d.setValue(selectedValue()); // browse isn't itself a saved choice
+        const snapshot = ctx.tab.sync(currentPref);
+        d.setValue(selectedValue(snapshot)); // browse isn't itself a saved choice
         void browseForDir({
           title: m.settings_db_profile_dir_dialog_title(),
-          startPath: pref.profileDirOverride ?? getZoteroProfilesRoot(),
-          onPick: (path) => pref.setProfileDir(path),
+          startPath: snapshot.profileDirOverride ?? getZoteroProfilesRoot(),
+          onPick: setProfileDir,
         });
       } else if (value === PICKER_AUTO) {
-        pref.setProfileDir(null);
+        setProfileDir(null);
       } else {
-        pref.setProfileDir(value);
+        setProfileDir(value);
       }
     });
-    repopulate();
+    repopulate(selectedValue(ctx.tab.sync(currentPref)));
   });
 
-  const applyStatus = (): void => {
-    const dir = pref.resolvedProfileDir;
+  const applyStatus = (snapshot: ZoteroPrefSnapshot): void => {
+    const dir = snapshot.resolvedProfileDir;
     pathCode.textContent = dir ? join(dir, PREFS_FILENAME) : "";
 
-    const state = pref.state;
+    const state = snapshot.state;
     const text =
       state === "loading"
         ? m.settings_db_status_loading()
@@ -456,23 +471,33 @@ function renderProfileDirRow(
     }
   };
 
-  applyStatus();
-  void pref.listProfiles().then((list) => {
-    if (!dropdown?.selectEl.isConnected) return;
-    profiles = list;
-    repopulate();
-  });
-
-  stack.defer(
-    ctx.tab.mount(
-      paintEach(pref["changed"], () => {
-        applyStatus();
-        if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
-      }),
-    ),
+  return ctx.tab.mount(
+    Effect.gen(function* () {
+      const pref = yield* ZoteroPref;
+      const loadProfiles = Effect.gen(function* () {
+        profiles = yield* pref.listProfiles;
+        repopulate(selectedValue(yield* pref.current));
+      });
+      // The current snapshot, then the snapshot current when the preferences
+      // were read again. A queued snapshot can name a profile the user has
+      // since replaced, and the override alone moves no `prefs`.
+      const prefsChanges = paintEach(
+        pref.changes.pipe(
+          Stream.changesWith((a, b) => a.prefs === b.prefs),
+          Stream.mapEffect(() => pref.current),
+        ),
+        (snapshot) => {
+          applyStatus(snapshot);
+          const current = selectedValue(snapshot);
+          if (dropdown && dropdown.getValue() !== current) repopulate(current);
+        },
+      );
+      yield* Effect.all([loadProfiles, prefsChanges], {
+        concurrency: "unbounded",
+        discard: true,
+      });
+    }),
   );
-
-  return () => stack.dispose();
 }
 
 function profileLabel(p: ZoteroProfileInfo): string {
@@ -488,16 +513,13 @@ function extractErrorMessage(err: Error): string {
 
 /**
  * Advanced data-directory override (auto-detect / a chosen folder). Wins over
- * the profile-derived data dir in {@link PlainZoteroPref.dataDir}; the resolved
- * path is echoed live so the user sees the effective value either way.
+ * the profile-derived data dir in {@link ZoteroPrefSnapshot.dataDir}; the
+ * resolved path is echoed live so the user sees the effective value either way.
  */
 function renderDataDirRow(
   setting: Setting,
   ctx: SettingTabContext,
 ): () => void {
-  const stack = new DisposableStack();
-  const pref = ctx.zoteroPref;
-
   const desc = createFragment();
   desc.append(m.settings_db_data_dir_desc());
   appendDeviceOverrideNote(desc);
@@ -507,11 +529,16 @@ function renderDataDirRow(
 
   let dropdown: DropdownComponent | undefined;
 
-  const selectedValue = (): string => pref.dataDirOverride ?? PICKER_AUTO;
+  const selectedValue = (snapshot: ZoteroPrefSnapshot): string =>
+    snapshot.dataDirOverride ?? PICKER_AUTO;
+  const setDataDir = (dir: string | null): void =>
+    void ctx.tab.run(
+      ZoteroPref.use((pref) => pref.setDataDir(dir)),
+      m.notice_db_data_dir_failed(),
+    );
 
-  const repopulate = (): void => {
+  const repopulate = (current: string): void => {
     if (!dropdown) return;
-    const current = selectedValue();
     dropdown.selectEl.replaceChildren();
     dropdown.addOption(PICKER_AUTO, m.settings_db_data_dir_auto());
     if (current !== PICKER_AUTO) dropdown.addOption(current, current);
@@ -519,47 +546,40 @@ function renderDataDirRow(
     dropdown.setValue(current);
   };
 
-  const applyPath = (): void => {
-    pathCode.textContent = pref.dataDir;
-  };
-
   setting.setDesc(desc).addDropdown((d) => {
     dropdown = d;
     d.onChange((value) => {
       if (value === PICKER_BROWSE) {
-        d.setValue(selectedValue()); // browse isn't itself a saved choice
+        const snapshot = ctx.tab.sync(currentPref);
+        d.setValue(selectedValue(snapshot)); // browse isn't itself a saved choice
         void browseForDir({
           title: m.settings_db_data_dir_dialog_title(),
-          startPath: pref.dataDirOverride ?? undefined,
-          onPick: (path) => pref.setDataDir(path),
+          startPath: snapshot.dataDirOverride ?? undefined,
+          onPick: setDataDir,
         });
       } else if (value === PICKER_AUTO) {
-        pref.setDataDir(null);
+        setDataDir(null);
       } else {
-        pref.setDataDir(value);
+        setDataDir(value);
       }
     });
-    repopulate();
+    repopulate(selectedValue(ctx.tab.sync(currentPref)));
   });
 
-  applyPath();
-
-  stack.defer(ctx.tab.mount(paintEach(pref["changed"], applyPath)));
-  stack.defer(
-    ctx.tab.mount(
-      paintEach(pref["data-dir-changed"], () => {
-        applyPath();
-        if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
+  return ctx.tab.mount(
+    ZoteroPref.use((pref) =>
+      paintEach(pathChanges(pref), (snapshot) => {
+        pathCode.textContent = snapshot.dataDir;
+        const current = selectedValue(snapshot);
+        if (dropdown && dropdown.getValue() !== current) repopulate(current);
       }),
     ),
   );
-
-  return () => stack.dispose();
 }
 
 /**
  * Live echo of the resolved profile dir, data dir, and computed
- * {@link PlainZoteroPref.sourceId}. Live updates are accepted only from a
+ * {@link ZoteroPrefSnapshot.sourceId}. Live updates are accepted only from a
  * Zotero install whose own profile + data dir hash to this same id, so showing
  * all three makes a mismatch diagnosable instead of silent.
  */
@@ -567,9 +587,6 @@ function renderSourceIdRow(
   setting: Setting,
   ctx: SettingTabContext,
 ): () => void {
-  const stack = new DisposableStack();
-  const pref = ctx.zoteroPref;
-
   const desc = createFragment();
   desc.append(m.settings_db_source_id_desc());
   const profileLine = appendLabeledCode(
@@ -579,21 +596,44 @@ function renderSourceIdRow(
   const dataLine = appendLabeledCode(desc, m.settings_db_source_id_data());
   const idLine = appendLabeledCode(desc, m.settings_db_source_id_value());
 
-  const refresh = (): void => {
-    profileLine.textContent = pref.resolvedProfileDir ?? "—";
-    dataLine.textContent = pref.dataDir;
-    idLine.textContent = pref.sourceId ?? "—";
-  };
-
   setting.setDesc(desc);
-  refresh();
 
-  stack.defer(ctx.tab.mount(paintEach(ctx.settings.changes, () => refresh())));
-  stack.defer(ctx.tab.mount(paintEach(pref["changed"], refresh)));
-  stack.defer(ctx.tab.mount(paintEach(pref["data-dir-changed"], refresh)));
-
-  return () => stack.dispose();
+  return ctx.tab.mount(
+    ZoteroPref.use((pref) =>
+      paintEach(
+        Stream.merge(
+          pathChanges(pref),
+          ctx.settings.changes.pipe(Stream.mapEffect(() => pref.current)),
+        ),
+        (snapshot) => {
+          profileLine.textContent = snapshot.resolvedProfileDir ?? "—";
+          dataLine.textContent = snapshot.dataDir;
+          idLine.textContent = snapshot.sourceId ?? "—";
+        },
+      ),
+    ),
+  );
 }
+
+/** The preference snapshot a row reads on a user's choice. */
+const currentPref = ZoteroPref.use((pref) => pref.current);
+
+/** The Zotero data directory the styles and attachments resolve against now. */
+export const zoteroDataDir = Effect.map(
+  currentPref,
+  (snapshot) => snapshot.dataDir,
+);
+
+/**
+ * The current snapshot, then each one whose preferences were read again or
+ * whose data directory override moved: the paths derive from both.
+ */
+const pathChanges = (pref: Pick<ZoteroPref["Service"], "changes">) =>
+  pref.changes.pipe(
+    Stream.changesWith(
+      (a, b) => a.prefs === b.prefs && a.dataDirOverride === b.dataDirOverride,
+    ),
+  );
 
 /** Append a `label: <code/>` line to `frag`, returning the `<code>` to fill in. */
 function appendLabeledCode(frag: DocumentFragment, label: string): HTMLElement {

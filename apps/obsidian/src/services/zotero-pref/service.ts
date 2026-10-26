@@ -22,6 +22,7 @@ import { pathToFileURL } from "node:url";
 import { sourceIdFromUris } from "@zotlit/protocol";
 
 import { COMPANION_ADDON_ID, ZOTERO_DB_FILENAME } from "@/lib/constants";
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
 import { systemCallError } from "@/lib/errno";
@@ -296,11 +297,13 @@ export const layerZoteroPref = Layer.effect(
             isDefault: p.isDefault,
           })),
         ),
-        Effect.catchCause((error) =>
-          Effect.logWarning("Failed to list Zotero profiles").pipe(
-            Effect.annotateLogs({ error }),
-            Effect.as<ZoteroProfileInfo[]>([]),
-          ),
+        // A setting row that closes mid-read interrupts the list: no failure.
+        recover(
+          (error) =>
+            Effect.logWarning("Failed to list Zotero profiles").pipe(
+              Effect.annotateLogs({ error }),
+            ),
+          Effect.succeed<ZoteroProfileInfo[]>([]),
         ),
         withLogCategory("zotero-pref"),
         Effect.withSpan("ZoteroPref.listProfiles"),

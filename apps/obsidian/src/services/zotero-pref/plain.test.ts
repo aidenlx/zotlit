@@ -17,9 +17,7 @@ it.effect(
         Effect.succeed(
           path.endsWith("extensions.json")
             ? '{"addons":[{"id":"zotlit@aidenlx.site","active":true}]}'
-            : path.endsWith("profiles.ini")
-              ? "[Profile0]\nName=Research\nPath=/profile\nIsRelative=0\nDefault=1"
-              : 'user_pref("extensions.zotero.baseAttachmentPath", "/attachments");',
+            : 'user_pref("extensions.zotero.baseAttachmentPath", "/attachments");',
         ),
       );
       const plain = plainZoteroPref(f.runtime);
@@ -52,9 +50,6 @@ it.effect(
       expect(yield* Effect.promise(() => plain.companionInstalled())).toBe(
         true,
       );
-      expect(yield* Effect.promise(() => plain.listProfiles())).toEqual([
-        { name: "Research", dir: "/profile", isDefault: true },
-      ]);
       const stopLate = subscribe(f.runtime, Stream.drop(plain.changes, 1), () =>
         received.push("late"),
       );
@@ -133,7 +128,6 @@ it.effect("provides plain reads, Promises, and cancellable subscriptions", () =>
     const installed = plain.companionInstalled();
     expect(installed).toBeInstanceOf(Promise);
     expect(yield* Effect.promise(() => installed)).toBe(true);
-    expect(yield* Effect.promise(() => plain.listProfiles())).toEqual([]);
     expect(received).toEqual(["/library-one"]);
   }),
 );

@@ -272,9 +272,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     stack.defer(
       startSettingTab(services.runtime, this, {
         webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-        db: services.zoteroReads,
-        libraryScope: services.libraryScope,
-        zoteroPref: services.zoteroPref,
         localServer: services.localServer,
         localBridge: services.localBridge,
         customize,
