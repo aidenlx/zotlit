@@ -1,13 +1,13 @@
 // What a Citation Popover entry can do: reach its Literature Note, its Zotero Item, and its Attachments.
 
 import { Keymap } from "obsidian";
-import type { App } from "obsidian";
 import type { MouseEvent } from "react";
 
 import { itemSelectUri } from "@zotlit/db";
 
 import { openAttachments, zoteroAttachmentReader } from "@/lib/attachment-open";
 import type { MenuAnchor } from "@/lib/menu";
+import type { WorkspaceEventHost } from "@/lib/obsidian-workspace";
 import type { NavigationPane } from "@/services/citekey-navigation";
 
 import type { CitationEntryBlock } from "./blocks";
@@ -30,8 +30,8 @@ export interface CitationPopoverActions {
 }
 
 export interface CitationPopoverActionDeps {
-  /** Hosts the Attachment picker. */
-  app: App;
+  /** Raises the Attachment menu on its workspace. */
+  host: WorkspaceEventHost;
   /** The open-or-create flow the hovering surface carries. */
   open: (block: CitationEntryBlock, pane: NavigationPane) => void;
   /** Hide the popover the entries are shown in. */
@@ -43,7 +43,7 @@ export interface CitationPopoverActionDeps {
 }
 
 export function createCitationPopoverActions({
-  app,
+  host,
   open,
   hide,
   switchProfile,
@@ -104,7 +104,7 @@ export function createCitationPopoverActions({
         });
         openAttachments(current.attachments, {
           reader: zoteroAttachmentReader,
-          app,
+          host,
           event,
           anchor,
         });

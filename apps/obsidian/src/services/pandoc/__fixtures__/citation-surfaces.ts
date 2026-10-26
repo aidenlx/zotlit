@@ -37,6 +37,7 @@ import {
   createCitationIndexHarness,
   GROUP_LIBRARY_ID,
   groupLibrary,
+  harnessApp,
   KEY_A,
   KEY_B,
   LibraryScopeStub,
@@ -387,7 +388,7 @@ export async function openCitationVault({
     citationTextFixture({
       openDocuments: new OpenDocumentsStub(),
       profile: profileReader(profileSettings, harness.metadataCache),
-      app: harness.app,
+      host: harness.host,
       citationIndex: harness.index,
       citationLookup: harness.lookup,
       noteIndex: harness.noteIndex,
@@ -427,7 +428,7 @@ export async function openCitationVault({
 
   const popover = stack.use(citationPopoverFixture({
     profile: profileReader(profileSettings, harness.metadataCache),
-    app: {
+    host: {
       metadataCache: harness.metadataCache,
       vault: MemoryVault.with({
         getFileByPath: (path: string) =>
@@ -591,15 +592,14 @@ export async function openCitationVault({
  * The workspace the sidebar follows: one active note, and no leaf ever moving
  * away from it.
  */
-function sidebarApp({ app, draft }: CitationIndexHarness): App {
-  return stubService<App>("App", {
-    metadataCache: app.metadataCache,
-    vault: app.vault,
-    workspace: stubService<Workspace>("Workspace", {
+function sidebarApp({ host, draft }: CitationIndexHarness): App {
+  return harnessApp(
+    host,
+    stubService<Workspace>("Workspace", {
       getActiveFile: () => draft,
       on: () => stubService<EventRef>("EventRef", {}),
     }),
-  });
+  );
 }
 
 /**

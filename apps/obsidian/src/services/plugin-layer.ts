@@ -8,6 +8,7 @@ import { layerRequestUrlHttpClient } from "@/lib/http-client";
 import { layerNotifier } from "@/lib/notifier";
 import type { Notifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { layerDeviceStorage } from "@/lib/obsidian-device-storage";
 import type { ObsidianEnv } from "@/lib/obsidian-env";
 import { layerObsidianEnv } from "@/lib/obsidian-env";
 import { layerFileManager } from "@/lib/obsidian-file-manager";
@@ -191,6 +192,7 @@ export function pluginLayer(
   const obsidian = Layer.mergeAll(
     layerNotifier,
     layerObsidianEnv,
+    layerDeviceStorage,
     layerMetadataCache,
     fileManager,
     layerWorkspace,

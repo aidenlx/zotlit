@@ -126,7 +126,7 @@ export function createReferenceActions(
     onOpenAttachment(source, event) {
       openAttachments(source.attachments, {
         reader: zoteroAttachmentReader,
-        app: deps.app,
+        host: deps.app,
         event,
       });
     },

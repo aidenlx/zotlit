@@ -44,8 +44,18 @@ export class MemoryWorkspace implements WorkspaceSource {
   }[] = [];
   /** The pane of each `getLeaf` call, in order. */
   readonly leafRequests: (PaneType | boolean | undefined)[] = [];
+  /**
+   * As Obsidian's debounced active-leaf events: `run` opens each file
+   * {@link deferOpen} held, now.
+   */
+  readonly requestActiveLeafEvents = {
+    run: (): void => {
+      for (const file of this.#deferred.splice(0)) this.open(file);
+    },
+  };
   readonly #listeners = new Map<string, Set<Callback>>();
   readonly #readyCallbacks: (() => void)[] = [];
+  readonly #deferred: TFile[] = [];
   #layoutReady: boolean;
 
   /** `layoutReady: true` is a plugin enabled at runtime; the default is startup. */
@@ -131,6 +141,11 @@ export class MemoryWorkspace implements WorkspaceSource {
   open(file: TFile | null): void {
     this.activeFile = file;
     this.trigger("file-open", file);
+  }
+
+  /** Hold an open of `file`, as Obsidian defers it, until `requestActiveLeafEvents.run()`. */
+  deferOpen(file: TFile): void {
+    this.#deferred.push(file);
   }
 
   on(name: string, callback: Callback): EventRef {

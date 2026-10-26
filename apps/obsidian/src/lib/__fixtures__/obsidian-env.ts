@@ -11,6 +11,7 @@ export interface TestObsidianEnvOptions {
   readonly language?: string;
   readonly vaultName?: string;
   readonly basePath?: string;
+  readonly appId?: string;
 }
 
 /** The environment of a desktop app (or a phone app with `mobile`) on a neutral OS. */
@@ -39,6 +40,7 @@ export function testObsidianEnv(
     language: options.language ?? "en",
     vaultName: options.vaultName ?? "Vault",
     basePath: options.basePath ?? "/vault",
+    appId: options.appId ?? "test-app-id",
   });
 }
 

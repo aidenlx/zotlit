@@ -112,13 +112,14 @@ it.effect("completes layoutReady inside Obsidian's callback", () =>
   }),
 );
 
-it.effect("owns the file-open listener until the layer closes", () =>
+it.effect("owns one listener per event name until the layer closes", () =>
   Effect.gen(function* () {
     const source = new MemoryWorkspace();
+    const names = ["file-open", "layout-change"];
     const { scope } = yield* open(layerWorkspaceFrom(source));
-    expect(source.listenerCount("file-open")).toBe(1);
+    expect(names.map((name) => source.listenerCount(name))).toEqual([1, 1]);
     yield* Scope.close(scope, Exit.void);
-    expect(source.listenerCount("file-open")).toBe(0);
+    expect(names.map((name) => source.listenerCount(name))).toEqual([0, 0]);
   }),
 );
 
@@ -205,22 +206,41 @@ it.effect("logs a failed menu handler and keeps the menu", () =>
   }),
 );
 
-it.effect("streams each file-open from when the consumer starts", () =>
+it.effect(
+  "streams each file-open and layout-change from when the consumer starts",
+  () =>
+    Effect.gen(function* () {
+      const source = new MemoryWorkspace();
+      source.activeFile = file("a.md");
+      const { workspace } = yield* open(layerWorkspaceFrom(source));
+      const opened = yield* workspace.changes.pipe(
+        Stream.map((event) =>
+          event._tag === "file-open"
+            ? `${event._tag} ${event.file?.path ?? null}`
+            : event._tag,
+        ),
+        Stream.take(3),
+        Stream.runCollect,
+        Effect.forkChild({ startImmediately: true }),
+      );
+      source.open(file("b.md"));
+      source.trigger("layout-change");
+      source.open(null);
+      expect(yield* Fiber.join(opened)).toEqual([
+        "file-open b.md",
+        "layout-change",
+        "file-open null",
+      ]);
+    }),
+);
+
+it.effect("delivers a deferred file-open on requestActiveLeafEvents", () =>
   Effect.gen(function* () {
     const source = new MemoryWorkspace();
-    source.activeFile = file("a.md");
     const { workspace } = yield* open(layerWorkspaceFrom(source));
-    const opened = yield* workspace.changes.pipe(
-      Stream.map((event) => `${event._tag} ${event.file?.path ?? null}`),
-      Stream.take(2),
-      Stream.runCollect,
-      Effect.forkChild({ startImmediately: true }),
-    );
-    source.open(file("b.md"));
-    source.open(null);
-    expect(yield* Fiber.join(opened)).toEqual([
-      "file-open b.md",
-      "file-open null",
-    ]);
+    source.deferOpen(file("a.md"));
+    expect(source.getActiveFile()).toBeNull();
+    yield* workspace.requestActiveLeafEvents;
+    expect(source.getActiveFile()?.path).toBe("a.md");
   }),
 );

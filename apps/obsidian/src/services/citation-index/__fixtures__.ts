@@ -1,9 +1,10 @@
 /** The real Citation Lookup layer over already-owned consumer fixture dependencies. */
 import type { Scope } from "effect";
 import { Context, Effect, Layer, Stream } from "effect";
-import type { App } from "obsidian";
 
-import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
+import { layerTestObsidianEnv } from "@/lib/__fixtures__/obsidian-env";
+import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
+import type { HostSources } from "@/lib/__fixtures__/obsidian-host-app";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
 import type { ParseClient } from "@/services/citation-parse/client";
@@ -203,7 +204,7 @@ async function openLookup(
 /** Citation Index layer over the existing host/process test boundaries. */
 export function citationIndexFixture(
   deps: {
-    app: App;
+    host: HostSources;
     db: Pick<PlainZoteroReads, "state" | "acquireRead">;
     libraryScope: Pick<PlainLibraryScope, "current">;
     noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey">;
@@ -222,7 +223,8 @@ export function citationIndexFixture(
     layerCitationIndex(deps.openStore).pipe(
       Layer.provide(
         Layer.mergeAll(
-          layerHostApp(deps.app),
+          layerHost(deps.host),
+          layerTestObsidianEnv(),
           Layer.succeed(
             ZoteroReads,
             stubService<ZoteroReads["Service"]>("ZoteroReads", {

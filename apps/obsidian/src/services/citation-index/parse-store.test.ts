@@ -1,9 +1,6 @@
 import "fake-indexeddb/auto";
 import { openDB, deleteDB } from "idb";
-import type { App } from "obsidian";
 import { expect, it } from "vitest";
-
-import { stubService } from "@/lib/__fixtures__/service-stub";
 
 import { openCitekeyStore } from "./store";
 import { createCitationIndexHarness, makeFile } from "./test-harness";
@@ -34,7 +31,7 @@ it("discards schema v1 once, then restores current records without a read (#1691
   legacy.close();
   const options = {
     notes: false,
-    openStore: () => openCitekeyStore(stubService<App>("App", { appId })),
+    openStore: () => openCitekeyStore(appId),
   };
   try {
     {

@@ -45,6 +45,7 @@ export type VaultSource = Pick<
   | "getFileByPath"
   | "getFolderByPath"
   | "getAbstractFileByPath"
+  | "getMarkdownFiles"
 > &
   ObsidianEventEmitter;
 
@@ -77,6 +78,8 @@ export interface VaultShape {
   getFolderByPath(path: string): Effect.Effect<TFolder | null>;
   /** The file or folder at `path` in the vault cache (case-sensitive), `null` when there is none. */
   getAbstractFileByPath(path: string): Effect.Effect<TAbstractFile | null>;
+  /** Every Markdown file in the vault now, in Obsidian's order. */
+  readonly getMarkdownFiles: Effect.Effect<TFile[]>;
   /** Each vault event, in Obsidian's order, from when the consumer's Stream starts. */
   readonly changes: Stream.Stream<VaultEvent>;
 }
@@ -145,6 +148,9 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
     ),
     getAbstractFileByPath: Effect.fn("Vault.getAbstractFileByPath")((path) =>
       Effect.sync(() => source.getAbstractFileByPath(path)),
+    ),
+    getMarkdownFiles: Effect.sync(() => source.getMarkdownFiles()).pipe(
+      Effect.withSpan("Vault.getMarkdownFiles"),
     ),
     changes: events.stream,
   });

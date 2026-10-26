@@ -72,7 +72,7 @@ function harness() {
   const textReads: AbortSignal[] = [];
   const db = reads();
   const popover = citationPopoverFixture({
-    app: {
+    host: {
       vault: MemoryVault.with({ getFileByPath: (path: string) => ({ path }) }),
     },
     db,

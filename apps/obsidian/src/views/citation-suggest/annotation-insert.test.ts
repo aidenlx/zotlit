@@ -9,10 +9,12 @@ import { TFile } from "obsidian";
 import type { App, Editor, MarkdownFileInfo } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import type { HostSources } from "@/lib/__fixtures__/obsidian-host-app";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { setup as repositorySetup } from "@/services/annotation-repository/__fixtures__";
 import type { NoteFeature } from "@/services/note-feature";
-import { buildUseLedger, fakeApp } from "@/services/use-ledger/__fixtures__";
+import { buildUseLedger, ledgerHost } from "@/services/use-ledger/__fixtures__";
 import { stateEditor } from "@/views/annot-view/__fixtures__/editor";
 
 import { insertAnnotation } from "./annotation-insert";
@@ -32,19 +34,23 @@ const hit: AnnotationHit = {
   citationKey: "rougier2014",
 };
 
-/** Obsidian's workspace and per-vault storage, the host the insert runs in. */
-function host(): App {
-  let stored: unknown;
-  const app = fakeApp({
-    load: () => stored,
-    save: (_key, value) => {
-      stored = structuredClone(value);
-    },
+/**
+ * Obsidian's workspace and per-vault storage, the host the insert runs in: the
+ * Use Ledger reads the sources, the insert the app's workspace events.
+ */
+function host(): { sources: HostSources; app: App } {
+  const workspace = new MemoryWorkspace();
+  const sources = ledgerHost({ workspace });
+  const app = stubService<App>("App", {
+    workspace: stubService<App["workspace"]>("Workspace", {
+      on: (name: string, callback: (...data: never[]) => unknown) =>
+        workspace.on(name, (...data: unknown[]) =>
+          Reflect.apply(callback, undefined, data),
+        ),
+      offref: (ref) => workspace.offref(ref),
+    }),
   });
-  Object.assign(app, {
-    fileManager: stubService<App["fileManager"]>("FileManager", {}),
-  });
-  return app;
+  return { sources, app };
 }
 
 /**
@@ -59,8 +65,8 @@ async function harness(
   { whileRendering }: { whileRendering?: (cm: EditorView) => void } = {},
 ) {
   const { service: repository, bridge } = await repositorySetup(stack);
-  const app = host();
-  const useLedger = buildUseLedger(app, stack);
+  const { sources, app } = host();
+  const useLedger = buildUseLedger(sources, stack);
   const cm = stateEditor({ doc });
   stack.defer(() => cm.destroy());
   const editor = stubService<Editor>("Editor", {

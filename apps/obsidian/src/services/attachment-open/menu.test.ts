@@ -174,7 +174,7 @@ describe("Literature Note attachment-open file menu", () => {
     await vi.waitFor(() =>
       expect(openAttachments).toHaveBeenCalledExactlyOnceWith(openable, {
         reader: expect.anything(),
-        app: expect.anything(),
+        host: expect.anything(),
         event: expect.anything(),
         anchor: undefined,
       }),
@@ -198,7 +198,7 @@ describe("Literature Note attachment-open file menu", () => {
     await vi.waitFor(() =>
       expect(openAttachments).toHaveBeenCalledExactlyOnceWith([], {
         reader: expect.anything(),
-        app: expect.anything(),
+        host: expect.anything(),
         event: expect.anything(),
         anchor: undefined,
       }),

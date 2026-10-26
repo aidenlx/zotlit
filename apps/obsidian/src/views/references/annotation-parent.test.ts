@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { Effect, Layer, Stream } from "effect";
-import type { EventRef, WorkspaceLeaf } from "obsidian";
+import type { EventRef, Workspace, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import {
   beforeEach as beforeStreamTest,
@@ -16,6 +16,7 @@ import {
 } from "@/services/citation-index/__fixtures__/annotations";
 import {
   createCitationIndexHarness,
+  harnessApp,
   KEY_A,
 } from "@/services/citation-index/test-harness";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
@@ -50,9 +51,14 @@ it("#1704 refreshes an Annotation Citation's parent in References after a databa
       settings: { "citation.annotation-citations": true },
     },
   );
-  const { app, draft, index, lookup, db, libraryScope } = harness;
-  app.workspace.getActiveFile = () => draft;
-  app.workspace.on = () => stubService<EventRef>("EventRef", {});
+  const { draft, index, lookup, db, libraryScope } = harness;
+  const app = harnessApp(
+    harness.host,
+    stubService<Workspace>("Workspace", {
+      getActiveFile: () => draft,
+      on: () => stubService<EventRef>("EventRef", {}),
+    }),
+  );
   const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
     updateHeader: vi.fn(),
   });

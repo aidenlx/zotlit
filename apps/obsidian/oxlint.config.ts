@@ -284,14 +284,9 @@ export default defineConfig({
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
-      // No tag member yet: `vault.getMarkdownFiles`. citation-index/service.ts
-      // also calls `vault.getFileByPath` and `vault.cachedRead`, which the
-      // Vault tag has.
-      files: [
-        "src/services/citation-index/service.ts",
-        "src/services/note-index/service.ts",
-        "src/services/template-workbench/inspect.ts",
-      ],
+      // Calls `vault.getMarkdownFiles` on the App, which the Vault tag now
+      // has.
+      files: ["src/services/template-workbench/inspect.ts"],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
@@ -313,29 +308,23 @@ export default defineConfig({
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
-      // No tag member yet: `metadataCache.getCache`. Both files also call
+      // No tag member yet: `metadataCache.getCache`. The file also calls
       // `metadataCache.getFirstLinkpathDest` (the MetadataCache tag's
-      // `firstLinkpathDest`), and citation-text/service.ts calls
-      // `vault.getFileByPath`, which the Vault tag has.
-      files: [
-        "src/services/citation-text/service.ts",
-        "src/views/query-view/table-notes.ts",
-      ],
+      // `firstLinkpathDest`) and `vault.getFileByPath`, which the Vault tag
+      // has.
+      files: ["src/views/query-view/table-notes.ts"],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
-      // No tag member yet: `workspace.requestActiveLeafEvents` (use-ledger),
-      // the side splits (library/view.ts), and the raw workspace that the
-      // editor lookup takes (library/view.ts, library/item-actions.ts).
-      files: [
-        "src/services/use-ledger/service.ts",
-        "src/views/library/item-actions.ts",
-        "src/views/library/view.ts",
-      ],
+      // No tag member yet: the side splits (library/view.ts), and the raw
+      // workspace that the editor lookup takes (library/view.ts,
+      // library/item-actions.ts).
+      files: ["src/views/library/item-actions.ts", "src/views/library/view.ts"],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
-      // No tag event yet: the workspace's `layout-change`.
+      // Listens to the workspace's `layout-change` on the App; the Workspace
+      // tag's `changes` now carries it.
       files: ["src/views/welcome/register.ts"],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
@@ -347,7 +336,6 @@ export default defineConfig({
       // in `parsedCache` through a local alias, which the rule does not see.
       files: [
         "src/services/build.ts",
-        "src/services/citation-popover/service.tsx",
         "src/services/note-feature/operations.ts",
         "src/services/pandoc/register.ts",
         "src/services/template-workbench/data.ts",

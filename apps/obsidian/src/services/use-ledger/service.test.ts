@@ -1,15 +1,25 @@
 import { it } from "@effect/vitest";
-import { Effect, Exit, Fiber, Logger, Queue, Scope, Stream } from "effect";
+import {
+  Effect,
+  Exit,
+  Fiber,
+  Logger,
+  Option,
+  Queue,
+  Scope,
+  Stream,
+} from "effect";
 import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
-import { expect, vi } from "vitest";
+import { expect } from "vitest";
 
+import { MemoryDeviceStorage } from "@/lib/__fixtures__/obsidian-device-storage";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { LogCategory } from "@/lib/effect-log";
 
-import { fakeApp, useLedgerOf } from "./__fixtures__";
+import { ledgerHost, useLedgerOf } from "./__fixtures__";
 
 const itemKey = (n: number) =>
   n
@@ -19,20 +29,31 @@ const itemKey = (n: number) =>
     .join("")
     .padStart(8, "A");
 
+/** Device storage whose read throws, as a corrupt saved ledger would. */
+class UnreadableStorage extends MemoryDeviceStorage {
+  override loadLocalStorage(): unknown {
+    throw new SyntaxError("Unexpected token");
+  }
+}
+
+/** Device storage whose write throws, as a full quota would. */
+class FullStorage extends MemoryDeviceStorage {
+  override saveLocalStorage(): void {
+    throw new DOMException(
+      "The quota has been exceeded.",
+      "QuotaExceededError",
+    );
+  }
+}
+
 // Failure modes: the cap drops a recently used Item, an update consumes a
 // second slot, or reloading restores entries already dropped by the cap.
 it.effect("keeps the 300 most recently used Items across reloads", () =>
   Effect.gen(function* () {
-    let stored: unknown;
-    const app = fakeApp({
-      load: () => stored,
-      save: (_key, value) => {
-        stored = structuredClone(value);
-      },
-    });
+    const host = ledgerHost();
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const ledger = yield* useLedgerOf(app);
+        const ledger = yield* useLedgerOf(host);
         for (let item = 0; item < 300; item++) {
           yield* TestClock.adjust(1);
           yield* ledger.record(itemKey(item), "opened");
@@ -52,7 +73,7 @@ it.effect("keeps the 300 most recently used Items across reloads", () =>
       }),
     );
 
-    const reloaded = yield* useLedgerOf(app);
+    const reloaded = yield* useLedgerOf(host);
     expect(Object.keys(yield* reloaded.current)).toHaveLength(300);
     expect(yield* reloaded.get("AAAAAAAB")).toBeUndefined();
     expect((yield* reloaded.get("AAAAAAAA"))?.instant.epochMilliseconds).toBe(
@@ -65,28 +86,25 @@ it.effect("keeps the 300 most recently used Items across reloads", () =>
 // from the one earlier versions wrote.
 it.effect("saves each instant in the ISO form it has always had", () =>
   Effect.gen(function* () {
-    let stored: unknown;
-    const app = fakeApp({
-      load: () => stored,
-      save: (_key, value) => {
-        stored = structuredClone(value);
-      },
-    });
+    const host = ledgerHost();
+    const storage = host.deviceStorage;
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const ledger = yield* useLedgerOf(app);
+        const ledger = yield* useLedgerOf(host);
         yield* TestClock.adjust(1000);
         yield* ledger.record("AAAAAAAA", "opened");
         yield* TestClock.adjust(120);
         yield* ledger.record("AAAAAAAB", "cited");
       }),
     );
-    expect(stored).toEqual({
+    // Earlier versions saved under this key; a renamed key loses every Use.
+    expect([...storage.values.keys()]).toEqual(["zotlit-use-ledger"]);
+    expect(storage.loadLocalStorage("zotlit-use-ledger")).toEqual({
       AAAAAAAA: { instant: "1970-01-01T00:00:01Z", kind: "opened" },
       AAAAAAAB: { instant: "1970-01-01T00:00:01.12Z", kind: "cited" },
     });
 
-    const reloaded = yield* useLedgerOf(app);
+    const reloaded = yield* useLedgerOf(host);
     expect((yield* reloaded.get("AAAAAAAB"))?.instant.epochMilliseconds).toBe(
       1120,
     );
@@ -99,17 +117,11 @@ it.effect(
   "stops recording and releases its listeners when its scope closes",
   () =>
     Effect.gen(function* () {
-      const save = vi.fn();
       const metadataCache = new MemoryMetadataCache();
       const workspace = new MemoryWorkspace();
-      const app = fakeApp({
-        load: () => undefined,
-        save,
-        workspace,
-        metadataCache,
-      });
+      const host = ledgerHost({ workspace, metadataCache });
 
-      const ledger = yield* Effect.scoped(useLedgerOf(app));
+      const ledger = yield* Effect.scoped(useLedgerOf(host));
       yield* ledger.record("AAAAAAAA", "opened");
 
       // The workspace and metadata cache listeners close with the ledger and
@@ -117,7 +129,7 @@ it.effect(
       expect(workspace.listenerCount("file-open")).toBe(0);
       expect(metadataCache.listenerCount("changed")).toBe(0);
       expect(yield* ledger.current).toEqual({});
-      expect(save).not.toHaveBeenCalled();
+      expect(host.deviceStorage.values.size).toBe(0);
     }),
 );
 
@@ -131,18 +143,33 @@ it.effect(
       const capture = Logger.make(({ logLevel, fiber }) => {
         logged.push({ level: logLevel, category: fiber.getRef(LogCategory) });
       });
-      const app = fakeApp({
-        load: () => {
-          throw new SyntaxError("Unexpected token");
-        },
-      });
+      const host = ledgerHost({ deviceStorage: new UnreadableStorage() });
 
-      const ledger = yield* useLedgerOf(app).pipe(
+      const ledger = yield* useLedgerOf(host).pipe(
         Effect.provide(Logger.layer([capture])),
       );
 
       expect(yield* ledger.current).toEqual({});
       expect(logged).toEqual([{ level: "Warn", category: ["use-ledger"] }]);
+    }),
+);
+
+// Failure modes: a failed save kills the caller as a defect, so no caller
+// can recover from it, or the failed Use stays in the ledger.
+it.effect(
+  "fails a record whose save throws with the storage failure and keeps the ledger",
+  () =>
+    Effect.gen(function* () {
+      const host = ledgerHost({ deviceStorage: new FullStorage() });
+      const ledger = yield* useLedgerOf(host);
+
+      const exit = yield* Effect.exit(ledger.record("AAAAAAAA", "opened"));
+
+      expect(Option.getOrUndefined(Exit.findErrorOption(exit))).toMatchObject({
+        _tag: "DeviceStorageError",
+        operation: "saveLocalStorage",
+      });
+      expect(yield* ledger.current).toEqual({});
     }),
 );
 
@@ -158,9 +185,7 @@ it.effect("records an opened Item note only once the layout is ready", () =>
     metadataCache.setCache(note.path, {
       frontmatter: { [FIELD_ZOTERO_KEY]: "AAAAAAAA" },
     });
-    const ledger = yield* useLedgerOf(
-      fakeApp({ load: () => undefined, workspace, metadataCache }),
-    );
+    const ledger = yield* useLedgerOf(ledgerHost({ workspace, metadataCache }));
 
     workspace.open(note);
     expect(yield* ledger.get("AAAAAAAA")).toBeUndefined();
@@ -178,18 +203,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const metadataCache = new MemoryMetadataCache();
-      const deferred: TFile[] = [];
-      const workspace = Object.assign(
-        new MemoryWorkspace({ layoutReady: true }),
-        {
-          // Obsidian's debounced active-leaf events: `run` delivers now.
-          requestActiveLeafEvents: {
-            run: () => {
-              for (const file of deferred.splice(0)) workspace.open(file);
-            },
-          },
-        },
-      );
+      const workspace = new MemoryWorkspace({ layoutReady: true });
       const note = new TFile();
       note.path = "Paper.md";
       note.extension = "md";
@@ -197,11 +211,11 @@ it.effect(
         frontmatter: { [FIELD_ZOTERO_KEY]: "AAAAAAAA" },
       });
       const ledger = yield* useLedgerOf(
-        fakeApp({ load: () => undefined, workspace, metadataCache }),
+        ledgerHost({ workspace, metadataCache }),
       );
 
       yield* TestClock.adjust(1);
-      deferred.push(note);
+      workspace.deferOpen(note);
       yield* ledger.withoutNoteUse(
         note,
         Effect.gen(function* () {
@@ -222,9 +236,9 @@ it.effect(
   "changes replays the current Uses, delivers updates and ends when the scope closes",
   () =>
     Effect.gen(function* () {
-      const app = fakeApp({ load: () => undefined, save: () => {} });
+      const host = ledgerHost();
       const scope = yield* Scope.make();
-      const ledger = yield* useLedgerOf(app).pipe(Scope.provide(scope));
+      const ledger = yield* useLedgerOf(host).pipe(Scope.provide(scope));
       const delivered = yield* Queue.unbounded<number>();
       const listening = yield* Stream.runForEach(ledger.changes, (entries) =>
         Queue.offer(delivered, Object.keys(entries).length),

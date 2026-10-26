@@ -6,7 +6,7 @@ import { describe, expect, vi } from "vitest";
 
 import type { Item } from "@zotlit/db";
 
-import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
+import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
@@ -146,7 +146,7 @@ const openEditor = Effect.fnUntraced(function* ({
           saveData: () => Promise.resolve(),
         }),
       ),
-      Layer.provide(layerHostApp(host.app)),
+      Layer.provide(layerHost(host)),
     ),
   );
   const editor = Context.get(context, CitekeyEditor);

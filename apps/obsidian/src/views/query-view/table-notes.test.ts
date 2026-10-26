@@ -108,7 +108,7 @@ async function setup(
     ),
     { enabledAtRuntime: scanned },
   );
-  const noteIndex = buildNoteIndex(host.app, owned);
+  const noteIndex = buildNoteIndex(host, owned);
   if (scanned) await noteIndex.whenIndexed();
   const typesChanged = new Set<(name: string) => void>();
   const getCache = vi.fn((path: string) => host.metadataCache.getCache(path));

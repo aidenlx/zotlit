@@ -1,14 +1,20 @@
 // The Citation Popover: document citation entries and source-less works under the vault presentation.
 import { Cause, Context, Effect, Layer } from "effect";
-import type { App, HoverParent, TFile } from "obsidian";
+import type {
+  HoverParent,
+  MetadataCache as ObsidianMetadataCache,
+  TFile,
+} from "obsidian";
 import type { ReactNode } from "react";
 
 import { scopedBridge, valueOr } from "@/lib/effect-bridge";
 import { bridgeLog, withLogCategory } from "@/lib/effect-log";
 import { filterTag } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import { Vault } from "@/lib/obsidian-vault";
+import { Workspace, workspaceTrigger } from "@/lib/obsidian-workspace";
+import type { WorkspaceEventHost } from "@/lib/obsidian-workspace";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
 import {
   describeCandidates,
@@ -74,7 +80,12 @@ import type { HoverVisit } from "./visits";
 
 /** What one popover read reaches outside Effect. */
 interface PopoverReads {
-  app: App;
+  /** The workspace the popover raises its menu and Profile switch events on. */
+  host: WorkspaceEventHost;
+  /** The vault's file at `path`, `null` when it holds none. */
+  fileAt(path: string): TFile | null;
+  /** The metadata cache reads the hovered note's Citation Presentation takes. */
+  metadataCache: Pick<ObsidianMetadataCache, "getFileCache">;
   db: {
     readonly state: ZoteroReadsState["state"];
     readonly reads: ZoteroReadsApi;
@@ -194,7 +205,8 @@ interface PopoverRead {
 export const layerCitationPopover: Layer.Layer<
   CitationPopover,
   never,
-  | ObsidianApp
+  | Vault
+  | Workspace
   | MetadataCache
   | ZoteroReads
   | CitationLookup
@@ -206,7 +218,8 @@ export const layerCitationPopover: Layer.Layer<
 > = Layer.effect(
   CitationPopover,
   Effect.gen(function* () {
-    const app = yield* ObsidianApp;
+    const vault = yield* Vault;
+    const workspace = yield* Workspace;
     const metadata = yield* MetadataCache;
     const reads = yield* ZoteroReads;
     const lookup = yield* CitationLookup;
@@ -242,7 +255,11 @@ export const layerCitationPopover: Layer.Layer<
     const lookupReleased = () =>
       new DOMException("Citation Lookup released", "AbortError");
     const deps: PopoverReads = {
-      app,
+      host: { workspace: workspaceTrigger(workspace, bridge.runSync) },
+      fileAt: (path) => bridge.runSync(vault.getFileByPath(path)),
+      metadataCache: {
+        getFileCache: (file) => bridge.runSync(metadata.fileCache(file)),
+      },
       db: {
         get state() {
           return bridge.runSync(reads.current).state;
@@ -415,7 +432,7 @@ async function fill(
     return;
   }
   const actions = createCitationPopoverActions({
-    app: deps.app,
+    host: deps.host,
     open: (block, pane) => {
       if ("work" in request) {
         if (read.indexedKey) request.open(read.indexedKey, pane);
@@ -452,7 +469,7 @@ async function fill(
           }
         : undefined,
     hide: () => popover.hide(),
-    switchProfile: (path) => requestProfileSwitch(deps.app, path),
+    switchProfile: (path) => requestProfileSwitch(deps.host, path),
     log: deps.log,
   });
   visit.state.content = (
@@ -572,7 +589,7 @@ async function readBlocks(
   request: CitationHoverRequest,
   signal: AbortSignal,
 ): Promise<PopoverRead> {
-  const file = deps.app.vault.getFileByPath(request.sourcePath);
+  const file = deps.fileAt(request.sourcePath);
   if (!file) {
     deps.log("debug", "Hovered citation sits in no note", {
       path: request.sourcePath,
@@ -599,7 +616,7 @@ async function readBlocks(
   // References Sidebar of that note shows — including nothing formatted at all
   // where the note's declared style or language cannot be rendered with.
   const presented = documentCitationPresentation(
-    documentPresentation(deps.app.metadataCache, file, deps.profile),
+    documentPresentation(deps.metadataCache, file, deps.profile),
     deps.vaultPresentation(),
     { citations, works: sources },
   );

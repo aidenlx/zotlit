@@ -38,6 +38,11 @@ export class MemoryVault implements VaultSource {
     return this.files.get(path) ?? this.folders.get(path) ?? null;
   }
 
+  /** As Obsidian: the files whose extension is `md`. */
+  getMarkdownFiles(): TFile[] {
+    return [...this.files.values()].filter((file) => file.extension === "md");
+  }
+
   async read(file: TFile): Promise<string> {
     const text = this.contents.get(file.path);
     if (text === undefined) throw new Error(`ENOENT: ${file.path}`);
