@@ -178,22 +178,6 @@ export function excerptInputs(reads: ExcerptRequestReads, parentKey: string) {
 }
 
 /**
- * {@link excerptInputs} for a caller outside Effect.
- *
- * @throws where the database cannot answer.
- */
-export function readExcerptInputs(
-  reads: ExcerptRequestReads,
-  parentKey: string,
-): Promise<{
-  identity: ZoteroDatabaseIdentity;
-  sources: AnnotationSources;
-  attachment: Attachment | null;
-}> {
-  return Effect.runPromise(excerptInputs(reads, parentKey));
-}
-
-/**
  * {@link excerptRequest} over database facts already read: the database's
  * identity and the Annotation's parent attachment, `null` where the database
  * holds none.

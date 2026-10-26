@@ -1408,7 +1408,6 @@ describe("createNote", () => {
       app,
       template: {
         renderManagedContent: () => "",
-        loaded: true,
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
         renderFilename<T extends object>(data: T): string {
@@ -1554,7 +1553,6 @@ describe("createNote", () => {
       app,
       template: {
         renderManagedContent: () => "",
-        loaded: true,
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
         renderFilename: () => "Root",
@@ -2391,7 +2389,6 @@ function makeUpdateHarness(options: {
 
   const template: TestDeps["template"] = {
     renderManagedContent: () => renderContent(),
-    loaded: true,
     frontmatterFields: options.frontmatterFields ?? [],
     getLiteratureNoteTemplate: () => undefined,
     renderFilename: () => "",

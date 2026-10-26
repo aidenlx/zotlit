@@ -372,7 +372,6 @@ export default defineConfig({
         "src/services/citation-index/sources.ts",
         "src/services/database/reap-temps.ts",
         "src/services/excerpt-image/prepare.ts",
-        "src/services/excerpt-image/request.ts",
         "src/services/note-feature/creation-planning.ts",
         "src/services/note-feature/note-reads.ts",
         "src/services/note-feature/write-pipeline.ts",

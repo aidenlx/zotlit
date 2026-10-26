@@ -88,7 +88,6 @@ async function realCreate(
     profile: profileReader(current, host.metadataCache),
     app,
     template: stubService<NoteFeatureDeps["template"]>("Template", {
-      loaded: true,
       frontmatterFields: [],
       getLiteratureNoteTemplate: () => document,
       renderFilename: (data: object) => document.renderFilename(data),
