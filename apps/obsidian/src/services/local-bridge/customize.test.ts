@@ -69,6 +69,8 @@ interface Harness {
   update: ReturnType<typeof vi.fn>;
   opened: string[];
   sheets: LaunchSheetDetails[];
+  /** The sheets taken away without an answer. */
+  closedSheets: LaunchSheetDetails[];
   launches: unknown[];
   openedFiles: string[];
 }
@@ -77,8 +79,8 @@ interface Options {
   webWorkbenchEnabled?: boolean;
   settings?: Partial<Settings>;
   source?: string;
-  /** What the sheet answers; `null` is Cancel. */
-  consent?: LaunchConsent | null;
+  /** What the sheet answers; `null` is Cancel, and `"held"` never answers. */
+  consent?: LaunchConsent | null | "held";
   effectivePort?: number | null;
   /** The listener binds once the flow turns the server on; `false` keeps it silent. */
   serverStarts?: boolean;
@@ -105,6 +107,7 @@ const harness = Effect.fnUntraced(function* ({
   const device = new Map<string, unknown>();
   const opened: string[] = [];
   const sheets: LaunchSheetDetails[] = [];
+  const closedSheets: LaunchSheetDetails[] = [];
   const launches: unknown[] = [];
   const openedFiles: string[] = [];
   const update = vi.fn((patch: Partial<Settings>) => {
@@ -174,9 +177,10 @@ const harness = Effect.fnUntraced(function* ({
       customize(request, {
         webWorkbenchEnabled,
         pluginVersion: PLUGIN_VERSION,
-        confirmLaunch: (details) => {
+        confirmLaunch: (details, settle) => {
           sheets.push(details);
-          return Promise.resolve(consent);
+          if (consent !== "held") settle(consent);
+          return { close: () => closedSheets.push(details) };
         },
         openExternal: (url) => opened.push(url),
         openNative: async () => {
@@ -191,6 +195,7 @@ const harness = Effect.fnUntraced(function* ({
     update,
     opened,
     sheets,
+    closedSheets,
     launches,
     openedFiles,
   };
@@ -295,6 +300,27 @@ describe("the Customize flow", () => {
       expect(stuck.opened).toEqual([]);
       // The tick is not honoured for a launch that never happened.
       expect(profileCustomization(deviceOf(stuck))).toBe("ask");
+    }),
+  );
+
+  it.effect("closes the open sheet when the flow is interrupted", () =>
+    Effect.gen(function* () {
+      const held = yield* harness({
+        settings: { "server.enabled": false },
+        consent: "held",
+        effectivePort: null,
+      });
+
+      const launch = yield* Effect.forkChild(
+        held.customize({ profileId: "default" }),
+        { startImmediately: true },
+      );
+      expect(held.sheets).toHaveLength(1);
+      yield* Fiber.interrupt(launch);
+
+      expect(held.closedSheets).toEqual(held.sheets);
+      expect(held.opened).toEqual([]);
+      expect(held.update).not.toHaveBeenCalled();
     }),
   );
 
