@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { expect, it } from "@effect/vitest";
-import { renderRow } from "@mock/obsidian";
-import { Context, DateTime, Effect, Queue, Stream } from "effect";
+import { ButtonComponent, renderRow } from "@mock/obsidian";
+import { Context, DateTime, Deferred, Effect, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -173,6 +173,59 @@ it.effect(
       yield* TestClock.adjust("0 millis");
       expect(reads).toBe(2);
     }),
+);
+
+it.effect("keeps the check running when it is pressed again", () =>
+  Effect.gen(function* () {
+    const gate = yield* Deferred.make<void>();
+    const { tab } = yield* scopedSettingTab(
+      Context.make(
+        AnnotationRepository,
+        stubService<AnnotationRepository["Service"]>("AnnotationRepository", {
+          capability: Effect.succeed({
+            kind: "read-only",
+            reason: "local-api-disabled",
+          }),
+          probe: Deferred.await(gate),
+          capabilityChanges: Stream.never,
+        }),
+      ).pipe(
+        Context.add(
+          ZoteroLocalApi,
+          stubService<ZoteroLocalApi["Service"]>("ZoteroLocalApi", {
+            remembered: Effect.succeed(false),
+          }),
+        ),
+        Context.add(
+          CapabilityNotices,
+          stubService<CapabilityNotices["Service"]>("CapabilityNotices", {}),
+        ),
+      ),
+    );
+    const setting = renderRow(
+      zoteroEditingRow(
+        stubService<SettingTabContext>("SettingTabContext", { tab }),
+      ),
+    );
+    yield* Effect.addFinalizer(() => Effect.sync(() => setting.cleanup?.()));
+    const check = setting.components.find(
+      (control): control is ButtonComponent =>
+        control instanceof ButtonComponent &&
+        control.text === m.settings_zotero_editing_check(),
+    )!;
+    const status = () =>
+      (setting.desc as unknown as DocumentFragment).querySelector(
+        '[role="status"]',
+      )?.textContent;
+    yield* TestClock.adjust("0 millis");
+
+    check.click();
+    yield* TestClock.adjust("0 millis");
+    expect(status()).toBe(m.capability_probing());
+    check.click();
+    yield* TestClock.adjust("0 millis");
+    expect(status()).toBe(m.capability_probing());
+  }),
 );
 
 function row(capability: EditingCapability, remembered = false) {

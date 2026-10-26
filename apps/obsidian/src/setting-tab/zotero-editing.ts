@@ -109,8 +109,7 @@ function renderEditingRow(
         return model.countsDown;
       });
 
-      const check = Effect.gen(function* () {
-        if (checking) return;
+      const runCheck = Effect.gen(function* () {
         checking = true;
         yield* apply;
         yield* repository.probe;
@@ -132,6 +131,8 @@ function renderEditingRow(
           }),
         ),
       );
+      // A check already running keeps its own status and cleanup.
+      const check = Effect.suspend(() => (checking ? Effect.void : runCheck));
 
       checkButton?.onClick(
         () => void ctx.tab.run(check, m.settings_zotero_editing_check_failed()),
