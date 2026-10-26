@@ -6,10 +6,14 @@ import * as Atom from "effect/reactivity/Atom";
 import { viewRuntime } from "@/lib/view-atoms";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 
-/** A command stays mounted until its owner closes; interruption settles its Promise. */
+/**
+ * A command stays mounted until its owner closes; interruption settles its
+ * Promise. A new run interrupts the last one unless `concurrent`.
+ */
 export function makeWorkbenchCommand<I, A, E>(
   registry: ViewRegistryHandle,
   run: (input: I) => Effect.Effect<A, E, ViewServices>,
+  options?: { readonly concurrent?: boolean },
 ) {
   const atom = viewRuntime.fn(
     (input: {
@@ -25,6 +29,7 @@ export function makeWorkbenchCommand<I, A, E>(
           }),
         ),
       ),
+    options,
   );
   const release = registry.mount(atom);
   let closed = false;
@@ -49,6 +54,7 @@ export function makeWorkbenchCommand<I, A, E>(
 export function makeWorkbenchTask<A, E>(
   registry: ViewRegistryHandle,
   run: () => Effect.Effect<A, E, ViewServices>,
+  options?: { readonly concurrent?: boolean },
 ) {
-  return makeWorkbenchCommand<void, A, E>(registry, run);
+  return makeWorkbenchCommand<void, A, E>(registry, run, options);
 }

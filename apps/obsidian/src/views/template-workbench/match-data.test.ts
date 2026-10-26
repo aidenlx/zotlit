@@ -97,6 +97,16 @@ it("includes Libraries outside the chosen paper and keeps automatic Tags and dir
       kind: "result",
       matched,
     });
+  // The Workbench shows the Match pane twice; overlapping tests both answer.
+  await expect(
+    Promise.all([
+      data.matches("BKKKK222", "true"),
+      data.matches("BKKKK222", "false"),
+    ]),
+  ).resolves.toEqual([
+    { kind: "result", matched: true },
+    { kind: "result", matched: false },
+  ]);
   await expect(data.matches("ABSENT22", "true")).resolves.toEqual({
     kind: "missing",
   });

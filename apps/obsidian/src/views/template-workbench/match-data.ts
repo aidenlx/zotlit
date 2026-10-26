@@ -29,57 +29,76 @@ import { getSampleItem } from "./selection-data";
 export function createMatchData(
   registry: ViewRegistryHandle,
 ): WorkbenchHost["matchData"] & Disposable {
-  const tags = makeWorkbenchTask(registry, () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const reads = yield* (yield* ZoteroReads).snapshot;
-        return [...(yield* reads.TagNames({}))];
-      }),
-    ),
+  // The Workbench shows the Match pane twice, and each copy reads at once.
+  const shared = { concurrent: true };
+  const tags = makeWorkbenchTask(
+    registry,
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const reads = yield* (yield* ZoteroReads).snapshot;
+          return [...(yield* reads.TagNames({}))];
+        }),
+      ),
+
+    shared,
   );
-  const collections = makeWorkbenchTask(registry, () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const reads = yield* (yield* ZoteroReads).snapshot;
-        const libraries = resolveLibraryScope(yield* reads.Libraries({}), {
-          mode: "all",
-        }).available;
-        const paths = yield* reads.CollectionPaths({
-          libraryIDs: libraries.map(({ libraryID }) => libraryID),
-        });
-        return paths.map((path) => [...path]);
-      }),
-    ),
+  const collections = makeWorkbenchTask(
+    registry,
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const reads = yield* (yield* ZoteroReads).snapshot;
+          const libraries = resolveLibraryScope(yield* reads.Libraries({}), {
+            mode: "all",
+          }).available;
+          const paths = yield* reads.CollectionPaths({
+            libraryIDs: libraries.map(({ libraryID }) => libraryID),
+          });
+          return paths.map((path) => [...path]);
+        }),
+      ),
+
+    shared,
   );
-  const libraries = makeWorkbenchTask(registry, () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const reads = yield* (yield* ZoteroReads).snapshot;
-        return resolveLibraryScope(yield* reads.Libraries({}), {
-          mode: "all",
-        }).available.map((library) => ({
-          id: selectorKey(library.selector) as WorkbenchLibrary["id"],
-          ...(library.name === null ? {} : { name: library.name }),
-        }));
-      }),
-    ),
+  const libraries = makeWorkbenchTask(
+    registry,
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const reads = yield* (yield* ZoteroReads).snapshot;
+          return resolveLibraryScope(yield* reads.Libraries({}), {
+            mode: "all",
+          }).available.map((library) => ({
+            id: selectorKey(library.selector) as WorkbenchLibrary["id"],
+            ...(library.name === null ? {} : { name: library.name }),
+          }));
+        }),
+      ),
+
+    shared,
   );
   const matches = makeWorkbenchCommand(
     registry,
     (input: { indexedKey: string; filter: string }) =>
       testMatch(input.indexedKey, input.filter),
+    shared,
   );
-  const customFields = makeWorkbenchCommand(registry, (signal: AbortSignal) =>
-    Effect.raceFirst(
-      Effect.gen(function* () {
-        return yield* (yield* QueryService).customFieldNames;
-      }),
-      Effect.callback<never>((resume) => {
-        const abort = () => resume(Effect.interrupt);
-        signal.addEventListener("abort", abort, { once: true });
-        return Effect.sync(() => signal.removeEventListener("abort", abort));
-      }),
-    ),
+  const customFields = makeWorkbenchCommand(
+    registry,
+    (signal: AbortSignal) =>
+      Effect.raceFirst(
+        Effect.gen(function* () {
+          return yield* (yield* QueryService).customFieldNames;
+        }),
+        Effect.callback<never>((resume) => {
+          const abort = () => resume(Effect.interrupt);
+          signal.addEventListener("abort", abort, { once: true });
+          return Effect.sync(() => signal.removeEventListener("abort", abort));
+        }),
+      ),
+
+    shared,
   );
   return {
     tags: () => tags.run(),
