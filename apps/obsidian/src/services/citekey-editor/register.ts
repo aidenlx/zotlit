@@ -5,7 +5,7 @@ import type { Extension } from "@codemirror/state";
 import { Effect, Layer, Stream } from "effect";
 
 import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
-import { scopedBridge, valueOr } from "@/lib/effect-bridge";
+import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
@@ -63,9 +63,7 @@ export const layerCitekeyEditorExtension = Layer.effectDiscard(
       workspace: workspaceTrigger(workspace, run),
       // Unload interrupts a pending open or popover.
       open: (citekey, pane) =>
-        void bridge
-          .runPromiseExit(editor.openCitekey(citekey, pane))
-          .then((exit) => valueOr(exit, undefined)),
+        bridge.runAndForget(editor.openCitekey(citekey, pane)),
       showPopover: (request) => run(citationPopover.show(request)),
       hoverPreferences: () => treatment.hover,
       hoverNotePath: (citekey, answer) =>
@@ -78,9 +76,7 @@ export const layerCitekeyEditorExtension = Layer.effectDiscard(
     // A Durable Annotation Link shows its Annotation on every hover.
     const annotationLinkHover = annotationLinkHoverExtension({
       showAnnotation: (request) =>
-        void bridge
-          .runPromiseExit(annotationPopover.show(request))
-          .then((exit) => valueOr(exit, undefined)),
+        bridge.runAndForget(annotationPopover.show(request)),
     });
 
     /**

@@ -1,10 +1,11 @@
 // The Annotation Popover as an Effect service.
 import { Context, Effect, Layer } from "effect";
 
-import { scopedBridge } from "@/lib/effect-bridge";
+import { scopedBridge, valueOr } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { AnnotationRepository } from "@/services/annotation-repository/service";
+import type { AnnotationList } from "@/services/annotation-repository/service";
 import { ExcerptDisplays } from "@/services/excerpt-image/display";
 import { savedExcerptRequestOver } from "@/services/excerpt-image/request";
 import { ZoteroPref } from "@/services/zotero-pref/service";
@@ -52,6 +53,15 @@ export const layerAnnotationPopover: Layer.Layer<
         () =>
           new AnnotationPopoverCore({
             annotations: repository,
+            read: (attachmentKey) =>
+              bridge
+                .runPromiseExit(repository.read(attachmentKey))
+                .then((exit) =>
+                  valueOr<AnnotationList | null | undefined, never>(
+                    exit,
+                    undefined,
+                  ),
+                ),
             bridge,
             excerptDisplay,
             excerptRequest: savedExcerptRequestOver({ reads, pref, bridge }),
