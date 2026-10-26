@@ -372,16 +372,20 @@ export const materializeExcerpt = Effect.fnUntraced(function* (options: {
           }),
         );
         yield* assertCurrent;
-        yield* fs.link(temporary, destination).pipe(
-          Effect.andThen(
-            Effect.sync(() => {
-              created = true;
-            }),
-          ),
-          Effect.catchReason(
-            "PlatformError",
-            "AlreadyExists",
-            () => Effect.void,
+        // The link and its flag are one step: an interrupt between them would
+        // keep bytes that no rollback knows this call created.
+        yield* Effect.uninterruptible(
+          fs.link(temporary, destination).pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                created = true;
+              }),
+            ),
+            Effect.catchReason(
+              "PlatformError",
+              "AlreadyExists",
+              () => Effect.void,
+            ),
           ),
         );
         const actual = yield* fs.readFile(destination);
