@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { it } from "@effect/vitest";
 import { Effect, Fiber, Layer, SubscriptionRef } from "effect";
+import type { Context, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
 import { describe, expect, vi } from "vitest";
@@ -12,6 +13,7 @@ import type {
   LiteratureNoteTemplatePartial,
 } from "@zotlit/templates/literature-note-pack";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { layerTestObsidianEnv } from "@/lib/__fixtures__/obsidian-env";
 import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
@@ -28,9 +30,11 @@ import {
   saveProfileCustomization,
 } from "@/views/template-workbench/preferences";
 
-import { customize } from "./customize";
+import { bindCustomize, customize } from "./customize";
 import type {
+  CustomizePorts,
   CustomizeRequest,
+  CustomizeServices,
   LaunchConsent,
   LaunchSheetDetails,
 } from "./customize";
@@ -64,6 +68,14 @@ const LAUNCH_URL =
 
 interface Harness {
   customize(request: CustomizeRequest): Effect.Effect<void, unknown>;
+  /** The flow's services, for a run through {@link bindCustomize}. */
+  services: Effect.Effect<
+    Context.Context<CustomizeServices>,
+    never,
+    Scope.Scope
+  >;
+  /** The ports the flow runs with. */
+  ports: CustomizePorts;
   device: Map<string, unknown>;
   settings: Settings;
   update: ReturnType<typeof vi.fn>;
@@ -172,24 +184,26 @@ const harness = Effect.fnUntraced(function* ({
   );
 
   const deviceStore = deviceOfMap(device);
+  const ports: CustomizePorts = {
+    webWorkbenchEnabled,
+    pluginVersion: PLUGIN_VERSION,
+    confirmLaunch: (details, settle) => {
+      sheets.push(details);
+      if (consent !== "held") settle(consent);
+      return { close: () => closedSheets.push(details) };
+    },
+    openExternal: (url) => opened.push(url),
+    openNative: async () => {
+      openedFiles.push("templates/zotlit-profile.default.md");
+    },
+    preference: () => profileCustomization(deviceStore),
+    rememberPreference: (value) => saveProfileCustomization(deviceStore, value),
+  };
   const built: Harness = {
     customize: (request) =>
-      customize(request, {
-        webWorkbenchEnabled,
-        pluginVersion: PLUGIN_VERSION,
-        confirmLaunch: (details, settle) => {
-          sheets.push(details);
-          if (consent !== "held") settle(consent);
-          return { close: () => closedSheets.push(details) };
-        },
-        openExternal: (url) => opened.push(url),
-        openNative: async () => {
-          openedFiles.push("templates/zotlit-profile.default.md");
-        },
-        preference: () => profileCustomization(deviceStore),
-        rememberPreference: (value) =>
-          saveProfileCustomization(deviceStore, value),
-      }).pipe(Effect.provide(layer)),
+      customize(request, ports).pipe(Effect.provide(layer)),
+    services: Layer.build(layer),
+    ports,
     device,
     settings,
     update,
@@ -317,6 +331,27 @@ describe("the Customize flow", () => {
       );
       expect(held.sheets).toHaveLength(1);
       yield* Fiber.interrupt(launch);
+
+      expect(held.closedSheets).toEqual(held.sheets);
+      expect(held.opened).toEqual([]);
+      expect(held.update).not.toHaveBeenCalled();
+    }),
+  );
+
+  it.effect("closes the open sheet when the plugin unloads", () =>
+    Effect.gen(function* () {
+      const held = yield* harness({
+        settings: { "server.enabled": false },
+        consent: "held",
+        effectivePort: null,
+      });
+      const bridge = openTestBridge();
+      const action = bindCustomize(bridge, yield* held.services, held.ports);
+
+      void action({ profileId: "default" });
+      yield* Effect.yieldNow;
+      expect(held.sheets).toHaveLength(1);
+      yield* Effect.promise(() => bridge[Symbol.asyncDispose]());
 
       expect(held.closedSheets).toEqual(held.sheets);
       expect(held.opened).toEqual([]);

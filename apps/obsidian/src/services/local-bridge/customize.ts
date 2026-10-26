@@ -9,6 +9,7 @@ import type { Context } from "effect";
 import type { CachedMetadata, TFile } from "obsidian";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
+import { valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { awaitModal } from "@/lib/effect-modal";
@@ -115,20 +116,23 @@ export type CustomizeAction = (request: CustomizeRequest) => Promise<void>;
 
 /**
  * The Customize flow for callers outside Effect: the entry actions, the
- * setting tab and the Workbench view. A run rejects with what failed.
+ * setting tab and the Workbench view. A run rejects with what failed. Unload
+ * interrupts a run, which closes an open launch sheet, and the run resolves.
  */
 export function bindCustomize(
-  bridge: Pick<EffectBridge, "runPromise">,
+  bridge: Pick<EffectBridge, "runPromiseExit">,
   context: Context.Context<CustomizeServices>,
   ports: CustomizePorts,
 ): CustomizeAction {
   return (request) =>
-    bridge.runPromise(
-      customize(request, ports).pipe(
-        Effect.mapError(({ cause }) => cause),
-        Effect.provideContext(context),
-      ),
-    );
+    bridge
+      .runPromiseExit(
+        customize(request, ports).pipe(
+          Effect.mapError(({ cause }) => cause),
+          Effect.provideContext(context),
+        ),
+      )
+      .then((exit) => valueOr(exit, undefined));
 }
 
 const portError = (cause: unknown) => new CustomizePortError({ cause });
