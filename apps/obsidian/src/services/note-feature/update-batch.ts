@@ -374,10 +374,19 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
   const runBatch = runBatchWith((effect, options) =>
     ports.bridge.runPromiseExit(effect, options),
   );
+  // The modal reads a Note Feature rejection as Note Feature rejected it.
   const run = <A, E>(
     effect: Effect.Effect<A, E, BatchUpdateServices>,
     signal?: AbortSignal,
-  ) => runBatch(Effect.provideContext(effect, context), signal);
+  ) =>
+    runBatch(
+      Effect.provideContext(effect, context).pipe(
+        Effect.mapError((error) =>
+          error instanceof NoteUpdatePortError ? error.cause : error,
+        ),
+      ),
+      signal,
+    );
   const profiles = yield* Profile;
   let actions: BatchAction[] = [];
   let plans: ReadonlyMap<string, CreationPlan> = new Map();
@@ -414,7 +423,7 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
       selectors.every((id) => prepared.some((entry) => entry.selector === id))
     )
       return;
-    plans = yield* Effect.promise(() =>
+    plans = yield* portCall("plan-creations", () =>
       ports.noteFeature.planCreations(
         creations().map((action) => action.indexedKey),
         { headless: profile },
@@ -500,7 +509,7 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
     if (profilesEnabled && creations().length > 0) {
       // Each Item keeps its own result and prepared destination. Overlap
       // rows need a choice; the fallback also covers unmatched Items.
-      plans = yield* Effect.promise((signal) =>
+      plans = yield* portCall("plan-creations", (signal) =>
         ports.noteFeature.planCreations(
           creations().map((action) => action.indexedKey),
           { headless: profile, signal },
@@ -890,7 +899,11 @@ const executeBatchActions = Effect.fnUntraced(function* (
         onTaskFailed: (task, error) => {
           failures.push({ itemID: task.itemID, error });
         },
-        haltOn: (error) => error instanceof InertTemplateError,
+        // A template that cannot render reaches the run as the cause of
+        // the write's rejection.
+        haltOn: (error) =>
+          error instanceof NoteUpdatePortError &&
+          error.cause instanceof InertTemplateError,
       });
     }),
   );
@@ -931,7 +944,7 @@ const runAction = Effect.fnUntraced(function* (
     });
 
   if (action.kind === "update") {
-    const updated = yield* Effect.promise(() =>
+    const updated = yield* portCall("write-update", () =>
       ports.noteFeature.writeNoteUpdate(action.file, {
         reportExcerpts: run.reportExcerpts,
         reads: run.reads,
@@ -965,7 +978,7 @@ const runAction = Effect.fnUntraced(function* (
         ),
       );
     return yield* batchCreateOutcome(
-      yield* Effect.promise(() =>
+      yield* portCall("create-note", () =>
         prepared.create({
           reportExcerpts: run.reportExcerpts,
           outcomes: run.outcomes,
@@ -975,7 +988,7 @@ const runAction = Effect.fnUntraced(function* (
     );
   }
   return yield* batchCreateOutcome(
-    yield* Effect.promise(() =>
+    yield* portCall("create-note", () =>
       ports.noteFeature.createNote(item, {
         reportExcerpts: run.reportExcerpts,
         profile: action.selection?.selector ?? run.profile,
@@ -994,6 +1007,35 @@ class BatchRowRefused extends Schema.TaggedError<
   BatchRowRefused,
   { readonly brand: unique symbol }
 >()("BatchRowRefused", { message: Schema.String }) {}
+
+/**
+ * A Note Feature step that rejected, such as a note write that failed on a
+ * file error. The message is the rejection's own.
+ */
+export class NoteUpdatePortError extends Schema.TaggedError<
+  NoteUpdatePortError,
+  { readonly brand: unique symbol }
+>()("NoteUpdatePortError", {
+  /** The step that rejected. */
+  step: Schema.Literals(["plan-creations", "write-update", "create-note"]),
+  /** What the step rejected with. */
+  cause: Schema.Defect(),
+}) {
+  override get message(): string {
+    if (this.cause instanceof Error) return this.cause.message;
+    return typeof this.cause === "string" ? this.cause : "Unknown error";
+  }
+}
+
+/** A Note Feature Promise, its rejection a {@link NoteUpdatePortError}. */
+const portCall = <A>(
+  step: NoteUpdatePortError["step"],
+  call: (signal: AbortSignal) => Promise<A>,
+) =>
+  Effect.tryPromise({
+    try: call,
+    catch: (cause) => new NoteUpdatePortError({ step, cause }),
+  });
 
 export class BatchUpdateRefusedError extends Error {
   readonly diagnostic: NoteOperationDiagnostic;

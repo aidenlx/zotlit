@@ -1,6 +1,16 @@
 import { it } from "@effect/vitest";
-import { DateTime, Deferred, Effect, Exit, Layer, Stream } from "effect";
+import {
+  DateTime,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Option,
+  Stream,
+} from "effect";
 import type { ManagedRuntime } from "effect";
+import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
 import { beforeEach, describe, expect, vi } from "vitest";
@@ -13,6 +23,7 @@ import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
@@ -36,6 +47,7 @@ import { Profile } from "@/services/profile/service";
 import type { ProfileReader } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
+import { InertTemplateError } from "@/services/template/errors";
 import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
@@ -58,6 +70,7 @@ import type {
   CreationPlan,
   CreationProfileSelection,
   PreparedCreationProfile,
+  UpdateResult,
 } from "./operations";
 import {
   batchCreateOutcome,
@@ -499,6 +512,75 @@ describe("classify through the DisplayRefs stream", () => {
   });
 });
 
+describe("a write that rejects", () => {
+  it("halts the run on an inert template, without a failure row, and shows the template's message", async () => {
+    const deps = makeDeps("ready");
+    const inert = new InertTemplateError("Inert message");
+    deps.noteFeature.createNote = () => Promise.reject(inert);
+    itemsIn(
+      new Map([
+        [1, USER_LIBRARY_ID],
+        [2, USER_LIBRARY_ID],
+      ]),
+    );
+    const onItemSettled = vi.fn();
+
+    await runBatchUpdate(deps, [1, 2]);
+    const modal = openedModals.at(-1)!;
+    await modal.onClassify({
+      onProgress: vi.fn(),
+      signal: new AbortController().signal,
+    });
+    const run = modal.onRun({
+      onItemSettled,
+      stop: Deferred.makeUnsafe<void>(),
+    });
+
+    const error: unknown = await run.then(
+      () => expect.unreachable("the run halts"),
+      (reason: unknown) => reason,
+    );
+    expect(onItemSettled).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: "failed" }),
+    );
+    const { runFailed } = modal.text;
+    expect(typeof runFailed === "function" ? runFailed(error) : runFailed).toBe(
+      "Inert message",
+    );
+  });
+
+  it("reports any other rejection as the row's failure, with its message", async () => {
+    const deps = makeDeps("ready");
+    deps.noteFeature.createNote = () => Promise.reject(new Error("disk full"));
+    itemsIn(
+      new Map([
+        [1, USER_LIBRARY_ID],
+        [2, USER_LIBRARY_ID],
+      ]),
+    );
+    const onItemSettled = vi.fn();
+
+    await runBatchUpdate(deps, [1, 2]);
+    const modal = openedModals.at(-1)!;
+    await modal.onClassify({
+      onProgress: vi.fn(),
+      signal: new AbortController().signal,
+    });
+    const result = await modal.onRun({
+      onItemSettled,
+      stop: Deferred.makeUnsafe<void>(),
+    });
+
+    expect(result).toMatchObject({ failed: 2 });
+    expect(onItemSettled).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "failed",
+        failure: expect.objectContaining({ message: "disk full" }),
+      }),
+    );
+  });
+});
+
 describe("batchCreateOutcome", () => {
   it.effect(
     "preserves a create refusal as a failed-row error with its diagnostic",
@@ -537,10 +619,13 @@ describe("one item without additional Profiles", () => {
   };
 
   /**
-   * The services the one-item path reads, over an Item `ITEM1` with no
-   * Literature Note; `notifier` records the notices.
+   * The services the one-item path reads, over an Item `ITEM1` with `note` as
+   * its Literature Note, or none; `notifier` records the notices.
    */
-  function oneItemServices(notifier: ReturnType<typeof testNotifier>) {
+  function oneItemServices(
+    notifier: ReturnType<typeof testNotifier>,
+    note?: TFile,
+  ) {
     const opened: string[] = [];
     const reads = readsAnswering({
       DisplayRefs: () => Stream.make([{ itemID: 1, ref: REF }]),
@@ -556,13 +641,16 @@ describe("one item without additional Profiles", () => {
     });
     const layer = Layer.mergeAll(
       Layer.mock(LibraryScope, {}),
-      Layer.mock(MetadataCache, {}),
+      Layer.mock(MetadataCache, {
+        fileCache: () =>
+          Effect.succeed({ frontmatter: { [FIELD_ZOTERO_KEY]: "ABCD2345" } }),
+      }),
       Layer.mock(Workspace, {
         openLinkText: (path) => Effect.sync(() => void opened.push(path)),
       }),
       Layer.mock(NoteIndex, {
         whenIndexed: Effect.void,
-        getNotesByItemKey: () => Effect.succeed([]),
+        getNotesByItemKey: () => Effect.succeed(note ? [note] : []),
       }),
       notifier.layer,
       Layer.mock(PluginSettings, {}),
@@ -612,6 +700,51 @@ describe("one item without additional Profiles", () => {
           notifier.notices.map(({ messages: [message] }) => message),
         ).toEqual([m.notice_update_metadata_no_note()]);
       }),
+  );
+
+  it.effect("returns only after the note update has settled", () =>
+    Effect.gen(function* () {
+      const note = noteAt("Literature/Item.md");
+      const { layer } = oneItemServices(testNotifier(), note);
+      const called = yield* Deferred.make<void>();
+      const written = Promise.withResolvers<UpdateResult>();
+      const updateNote = vi.fn<BatchUpdatePorts["noteFeature"]["updateNote"]>(
+        () => {
+          Deferred.doneUnsafe(called, Exit.void);
+          return written.promise;
+        },
+      );
+      const ports: BatchUpdatePorts = {
+        app: stubService<App>("App", {}),
+        // The single-update path opens no batch modal.
+        bridge: stubService<BatchUpdatePorts["bridge"]>("EffectBridge", {}),
+        view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {}),
+        noteFeature: stubService<BatchUpdatePorts["noteFeature"]>(
+          "NoteFeature",
+          { updateNote },
+        ),
+      };
+
+      const run = yield* runBatchUpdateEffect(ports, [1], {
+        scope: "full",
+      }).pipe(Effect.provide(layer), Effect.forkChild);
+      yield* Deferred.await(called);
+      // While the write is pending, the run does not end.
+      const early = yield* Fiber.await(run).pipe(
+        Effect.timeoutOption("1 second"),
+        Effect.forkChild,
+      );
+      yield* TestClock.adjust("1 second");
+
+      expect(updateNote).toHaveBeenCalledExactlyOnceWith(note, {
+        indexedKey: "ABCD2345",
+        scope: "full",
+        profile: undefined,
+      });
+      expect(Option.isNone(yield* Fiber.join(early))).toBe(true);
+      written.resolve({ bodyUpdated: true, duplicateRegionCount: 0 });
+      expect(yield* Fiber.join(run)).toEqual({ outcome: "single-update" });
+    }),
   );
 
   it.effect("creates and opens a note when the full scope finds none", () =>
