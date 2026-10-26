@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { Effect, Stream } from "effect";
+import { Context, Effect, Stream } from "effect";
 import type {
   App,
   SettingDefinitionItem,
@@ -14,8 +14,9 @@ import { expect, it, vi } from "vitest";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
+import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 import type { LocalServer } from "@/services/local-server/service";
-import type { ManagedBinaryApi } from "@/services/managed-binary/service";
+import { PandocEngine } from "@/services/pandoc/service";
 import { defaults } from "@/services/settings/schema";
 
 import { testSettingTab } from "./__fixtures__";
@@ -36,7 +37,23 @@ vi.mock("@/views/template-workbench/register", () => ({
 
 function ctx(): SettingTabContext {
   return stubService<SettingTabContext>("SettingTabContext", {
-    tab: testSettingTab().tab,
+    tab: testSettingTab(
+      Context.make(
+        PandocEngine,
+        stubService<PandocEngine["Service"]>("PandocEngine", {
+          getStatus: Effect.succeed({ kind: "absent" }),
+          changes: Stream.empty,
+        }),
+      ).pipe(
+        Context.add(
+          ChineseSegmenter,
+          stubService<ChineseSegmenter["Service"]>("ChineseSegmenter", {
+            getStatus: Effect.succeed({ kind: "absent" }),
+            changes: Stream.empty,
+          }),
+        ),
+      ),
+    ).tab,
     webWorkbenchEnabled: true,
     app: stubService<SettingTabContext["app"]>("App", {
       vault: stubService<SettingTabContext["app"]["vault"]>("Vault", {
@@ -110,28 +127,6 @@ function ctx(): SettingTabContext {
       getUnrecognizedFiles: () => [],
     }),
     release: stubService<SettingTabContext["release"]>("Release", {}),
-    pandocEngine: {
-      binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
-        "PandocEngine",
-        {
-          getStatus: Effect.succeed({ kind: "absent" }),
-          changes: Stream.empty,
-        },
-      ),
-      runSync: Effect.runSync,
-      runPromise: Effect.runPromise,
-    },
-    chineseSegmenter: {
-      binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
-        "ChineseSegmenter",
-        {
-          getStatus: Effect.succeed({ kind: "absent" }),
-          changes: Stream.empty,
-        },
-      ),
-      runSync: Effect.runSync,
-      runPromise: Effect.runPromise,
-    },
     languagePack: stubService<SettingTabContext["languagePack"]>(
       "LanguagePack",
       {

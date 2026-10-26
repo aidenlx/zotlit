@@ -1,14 +1,28 @@
 // Install and uninstall controls for one device-wide Managed Binary.
 
+import { Effect } from "effect";
 import type { Setting, SettingDefinition } from "obsidian";
 
-import * as toast from "@/lib/toast";
+import * as m from "@/lib/i18n/generated/messages";
+import { reportOutcome, withProgress } from "@/lib/notifier";
 import type {
+  ManagedBinaryApi,
   ManagedBinaryFailure,
   ManagedBinaryStatus,
 } from "@/services/managed-binary/service";
 
-import type { ManagedBinaryActions, SettingsKey } from "./context";
+import type { SettingsKey } from "./context";
+import type { SettingTabEnv, SettingTabShape } from "./effect-tab";
+
+/** The binary's service as the row reads it: its tag, or a fake in a test. */
+export type ManagedBinaryTag = Effect.Effect<
+  Pick<
+    ManagedBinaryApi<Disposable | AsyncDisposable>,
+    "getStatus" | "install" | "uninstall"
+  >,
+  never,
+  SettingTabEnv
+>;
 
 /** The words one binary's row carries, already in the user's language. */
 export interface ManagedBinaryCopy {
@@ -44,15 +58,16 @@ export interface ManagedBinaryCopy {
  * moves it. The download is device-wide, so uninstall reaches every vault.
  */
 export function managedBinaryDefinition(
-  binary: ManagedBinaryActions,
+  tab: SettingTabShape,
+  binary: ManagedBinaryTag,
   copy: ManagedBinaryCopy,
 ): SettingDefinition<SettingsKey> {
-  const status = binary.runSync(binary.binary.getStatus);
+  const status = tab.sync(Effect.flatMap(binary, (api) => api.getStatus));
   return {
     id: copy.id,
     name: copy.name,
     desc: `${copy.desc} ${statusSentence(status, copy)}`,
-    render: (setting) => renderActions(setting, status, { binary, copy }),
+    render: (setting) => renderActions(setting, status, { tab, binary, copy }),
   };
 }
 
@@ -90,7 +105,15 @@ function failureSentence(
 function renderActions(
   setting: Setting,
   status: ManagedBinaryStatus,
-  { binary, copy }: { binary: ManagedBinaryActions; copy: ManagedBinaryCopy },
+  {
+    tab,
+    binary,
+    copy,
+  }: {
+    tab: SettingTabShape;
+    binary: ManagedBinaryTag;
+    copy: ManagedBinaryCopy;
+  },
 ): void {
   if (status.kind === "installed") {
     setting.addButton((btn) =>
@@ -101,10 +124,16 @@ function renderActions(
           // See the blur comment in resources.ts: the reconciler skips
           // re-rendering the row that holds document.activeElement.
           btn.buttonEl.blur();
-          void toast.promise(binary.runPromise(binary.binary.uninstall), {
-            success: copy.notices.removed,
-            error: copy.notices.removeFailed,
-          });
+          void tab.run(
+            reportOutcome(
+              Effect.flatMap(binary, (api) => api.uninstall),
+              {
+                success: () => copy.notices.removed,
+                error: () => copy.notices.removeFailed,
+              },
+            ),
+            m.settings_failed_binary_uninstall(),
+          );
         }),
     );
     return;
@@ -117,11 +146,18 @@ function renderActions(
       .setDisabled(status.kind === "installing")
       .onClick(() => {
         btn.buttonEl.blur();
-        void toast.promise(binary.runPromise(binary.binary.install), {
-          loading: copy.notices.downloading,
-          success: copy.notices.installed,
-          error: copy.notices.installFailed,
-        });
+        // The progress notice reports a failure, so the run drops it.
+        void tab.run(
+          withProgress(
+            Effect.flatMap(binary, (api) => api.install),
+            {
+              loading: copy.notices.downloading,
+              success: copy.notices.installed,
+              error: copy.notices.installFailed,
+            },
+          ).pipe(Effect.ignore),
+          m.settings_failed_binary_install(),
+        );
       }),
   );
 }

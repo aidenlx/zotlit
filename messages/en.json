@@ -2914,5 +2914,7 @@
   "query_view_filter_all_views": "All views",
   "query_view_filter_this_view": "This view",
   "query_view_filter_other_dataset": "The filters for all views apply only to views that show the same kind of rows as the first view.",
-  "query_view_filter_error": "The filter has an error. The view shows the last results."
+  "query_view_filter_error": "The filter has an error. The view shows the last results.",
+  "settings_failed_binary_install": "Cannot install the download",
+  "settings_failed_binary_uninstall": "Cannot remove the download"
 }

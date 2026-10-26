@@ -10,7 +10,6 @@ import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { LocalBridgeHandle } from "@/services/local-bridge/handle";
 import type { LocalServer } from "@/services/local-server/service";
-import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
 import type { PlainProfile } from "@/services/profile/plain";
 import type { Release } from "@/services/release/service";
 import type { Settings } from "@/services/settings/schema";
@@ -32,12 +31,6 @@ export type SettingsControlKey = SettingsKey | ProfileControlKey;
 export type ReleaseTabActions = Pick<
   Release["Service"],
   "openReleaseNote" | "acknowledgeMigration"
->;
-
-/** The Managed Binary surface the setting tab needs: report, watch, and move its status. */
-export type ManagedBinaryActions = Pick<
-  ManagedBinaryHandle,
-  "binary" | "runSync" | "runPromise"
 >;
 
 /** The Local Server surface the setting tab needs: the bound port and its edges. */
@@ -187,10 +180,6 @@ export interface SettingTabContext {
     | "materializeCitationTemplate"
     | "compile-status-changed"
   >;
-  /** The device-wide Pandoc engine binary, installed and uninstalled from here. */
-  pandocEngine: ManagedBinaryActions;
-  /** The device-wide Chinese Segmenter binary, installed and uninstalled from here. */
-  chineseSegmenter: ManagedBinaryActions;
   languagePack: LanguagePackLifecycle;
   /** Rebuild the tab's definitions (e.g. after a list mutation or eject). */
   requestUpdate: () => void;

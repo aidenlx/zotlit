@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
-import { Effect } from "effect";
+import { Context, Effect } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
-import type { ManagedBinaryApi } from "@/services/managed-binary/service";
+import { PandocEngine } from "@/services/pandoc/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -25,23 +25,24 @@ beforeAll(() => {
     document.createElement(tag)) as typeof createEl;
 });
 
+/** The tab over a Pandoc engine that is not installed. */
+const pandocTab = () =>
+  testSettingTab(
+    Context.make(
+      PandocEngine,
+      stubService<PandocEngine["Service"]>("PandocEngine", {
+        getStatus: Effect.succeed({ kind: "absent" }),
+      }),
+    ),
+  ).tab;
+
 describe("hover settings", () => {
   /** The Hover group's rows for a given saved hover action. */
   const hoverRows = (settings: Settings) => {
     const ctx = {
-      tab: testSettingTab().tab,
+      tab: pandocTab(),
       app: { internalPlugins: { getEnabledPluginById: () => null } },
       settings: { current: Effect.succeed(settings) },
-      pandocEngine: {
-        binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
-          "PandocEngine",
-          {
-            getStatus: Effect.succeed({ kind: "absent" }),
-          },
-        ),
-        runSync: Effect.runSync,
-        runPromise: Effect.runPromise,
-      },
       manifest: { version: "test" },
       template: { loaded: false },
     } as unknown as SettingTabContext;
@@ -72,19 +73,9 @@ describe("hover settings", () => {
 describe("citation source settings", () => {
   it("offers each citation syntax as a source", () => {
     const ctx = {
-      tab: testSettingTab().tab,
+      tab: pandocTab(),
       app: { internalPlugins: { getEnabledPluginById: () => null } },
       settings: { current: Effect.succeed(defaults) },
-      pandocEngine: {
-        binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
-          "PandocEngine",
-          {
-            getStatus: Effect.succeed({ kind: "absent" }),
-          },
-        ),
-        runSync: Effect.runSync,
-        runPromise: Effect.runPromise,
-      },
       manifest: { version: "test" },
       template: { loaded: false },
     } as unknown as SettingTabContext;

@@ -2750,5 +2750,7 @@
   "query_view_filter_all_views": "所有视图",
   "query_view_filter_this_view": "此视图",
   "query_view_filter_other_dataset": "所有视图的筛选条件只适用于与第一个视图显示同类行的视图。",
-  "query_view_filter_error": "筛选条件有错误。视图显示上一次的结果。"
+  "query_view_filter_error": "筛选条件有错误。视图显示上一次的结果。",
+  "settings_failed_binary_install": "无法安装该下载组件",
+  "settings_failed_binary_uninstall": "无法移除该下载组件"
 }

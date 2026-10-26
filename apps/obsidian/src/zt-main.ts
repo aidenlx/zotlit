@@ -286,8 +286,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         excerptDisplay: services.excerptDisplay,
         template: services.template,
         release: services.release,
-        pandocEngine: services.pandocEngine,
-        chineseSegmenter: services.chineseSegmenter,
         languagePack: services.languagePack,
       }),
     );
