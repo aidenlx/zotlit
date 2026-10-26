@@ -33,7 +33,7 @@ import type {
 } from "@/services/excerpt-image/service";
 import { NoteIndex } from "@/services/note-index/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
-import { Profile } from "@/services/profile/service";
+import { Profile, ProfileOperationError } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 import { Template, templateFailure } from "@/services/template/service";
@@ -153,6 +153,7 @@ async function openFixture(mode: string) {
     }),
   );
   const reader = profileReader(settings);
+  let profileFailure: ProfileOperationError | null = null;
   const zoteroPref = Effect.runSync(
     SubscriptionRef.make(zoteroPrefAt("/zotero")),
   );
@@ -167,7 +168,10 @@ async function openFixture(mode: string) {
     }),
     Layer.mock(PluginSettings, { current: Effect.succeed(settings) }),
     Layer.mock(Profile, {
-      profileOf: (file) => Effect.sync(() => reader.profileOf(file)),
+      profileOf: (file) =>
+        profileFailure
+          ? Effect.fail(profileFailure)
+          : Effect.sync(() => reader.profileOf(file)),
     }),
     Layer.mock(NoteIndex, { getNotesByItemKey: () => Effect.succeed([]) }),
     Layer.mock(Template, {
@@ -201,6 +205,9 @@ async function openFixture(mode: string) {
       prepareAnnotationInsert(singleExcerpt, options).pipe(
         Effect.provide(layer),
       ),
+    failProfile: (failure: ProfileOperationError) => {
+      profileFailure = failure;
+    },
     invalidate: () => {
       valid = false;
     },
@@ -295,6 +302,8 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const f = yield* fixture("success");
+      // The resolver stands in for a legacy Promise port, so it runs the
+      // Effect that moves the data directory on the test's context.
       const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
       f.resolver.resolve.mockImplementation(async () => {
         await runPromise(
@@ -484,4 +493,19 @@ it.effect("fails with the preparation's rejection, its message kept", () =>
     });
     expect(f.render).not.toHaveBeenCalled();
   }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "fails with the Profile store's typed error when it cannot read the note's Profile",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("disabled");
+      const failure = new ProfileOperationError({
+        message: "The Profile registry is not readable",
+        cause: new Error("The Profile registry is not readable"),
+      });
+      f.failProfile(failure);
+      expect(yield* Effect.flip(f.insert())).toBe(failure);
+      expect(f.render).not.toHaveBeenCalled();
+    }).pipe(Effect.scoped),
 );

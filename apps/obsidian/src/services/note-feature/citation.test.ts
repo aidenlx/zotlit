@@ -50,9 +50,9 @@ describe("renderCitation", () => {
   // can't await the Template; the `loaded` gate answers null so a cold-start
   // citation insert shows "still loading" instead of a failure.
   it.effect.each([
-    ["the template", { template: false }],
-    ["the Profiles", { profile: false }],
-  ] as const)("answers null while %s are not loaded", ([, loaded]) =>
+    ["the template is", { template: false }],
+    ["the Profiles are", { profile: false }],
+  ] as const)("answers null while %s not loaded", ([, loaded]) =>
     Effect.gen(function* () {
       const render = vi.fn(() => "");
       const result = yield* renderCitation(
