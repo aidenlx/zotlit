@@ -1,18 +1,23 @@
 // @vitest-environment happy-dom
+import { it as effectIt } from "@effect/vitest";
 import { renderRow } from "@mock/obsidian";
 import type { DropdownComponent, TextComponent } from "@mock/obsidian";
 import { Context, Effect } from "effect";
 import type { SettingDefinitionItem } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { eventually } from "@/lib/__fixtures__/eventually";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { highlightEmoji } from "@/lib/highlight-mapping";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
-import { PluginSettings } from "@/services/settings/service";
+import {
+  PluginSettings,
+  SettingsMutationError,
+} from "@/services/settings/service";
 
-import { testSettingTab } from "./__fixtures__";
+import { scopedSettingTab, testSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
 import { highlightMappingItems } from "./note-import";
 
@@ -131,3 +136,38 @@ describe("highlight mapping page", () => {
     expect(emoji()).toBe("👩‍🔬");
   });
 });
+
+effectIt.effect("shows a failed mapping save in a notice", () =>
+  Effect.gen(function* () {
+    const settings = stubService<PluginSettings["Service"]>("PluginSettings", {
+      current: Effect.succeed(defaults),
+      update: () =>
+        Effect.fail(
+          new SettingsMutationError({
+            message: "Settings are read-only",
+            cause: null,
+          }),
+        ),
+    });
+    const { tab, notices } = yield* scopedSettingTab(
+      Context.make(PluginSettings, settings),
+    );
+    const requestUpdate = vi.fn<() => void>();
+    const ctx = stubService<SettingTabContext>("SettingTabContext", {
+      tab,
+      requestUpdate,
+    });
+    const blue = highlightMappingItems(ctx).find(
+      (entry) => "name" in entry && entry.name === m.annot_view_color_blue(),
+    )!;
+    const dropdown = renderRow(blue).components[0] as DropdownComponent;
+
+    dropdown.choose("mark");
+    yield* eventually(() =>
+      expect(notices.map(({ messages }) => messages[0])).toEqual([
+        `${m.settings_failed_save()}: Settings are read-only`,
+      ]),
+    );
+    expect(requestUpdate).not.toHaveBeenCalled();
+  }),
+);

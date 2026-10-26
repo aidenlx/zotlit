@@ -2,6 +2,7 @@
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
+import { eventually } from "@/lib/__fixtures__/eventually";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type {
@@ -11,6 +12,7 @@ import type {
 } from "@/services/library-scope/scope";
 import { LibraryScope } from "@/services/library-scope/service";
 import { defaults } from "@/services/settings/schema";
+import { SettingsMutationError } from "@/services/settings/service";
 
 import { scopedSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
@@ -35,7 +37,10 @@ interface ScopeState {
 }
 
 /** The Library scope rows over the scope the test names. */
-const setup = Effect.fn("setup")(function* (state: ScopeState) {
+const setup = Effect.fn("setup")(function* (
+  state: ScopeState,
+  failure?: SettingsMutationError,
+) {
   const saved: Parameters<SettingTabContext["settings"]["update"]>[0][] = [];
   let updates = 0;
   const services = yield* Layer.build(
@@ -46,18 +51,21 @@ const setup = Effect.fn("setup")(function* (state: ScopeState) {
       libraries: Effect.succeed(state.libraries ?? []),
     }),
   );
+  const { tab, notices } = yield* scopedSettingTab(services);
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    tab: (yield* scopedSettingTab(services)).tab,
+    tab,
     settings: stubService<SettingTabContext["settings"]>("Settings", {
       update: (patch) =>
-        Effect.sync(() => {
-          saved.push(patch);
-          return defaults;
-        }),
+        failure
+          ? Effect.fail(failure)
+          : Effect.sync(() => {
+              saved.push(patch);
+              return defaults;
+            }),
     }),
     requestUpdate: () => void (updates += 1),
   });
-  return { ctx, saved, updates: () => updates };
+  return { ctx, saved, updates: () => updates, notices };
 });
 
 const resolved = (
@@ -143,4 +151,32 @@ it.effect(
       ]);
       expect(updates()).toBe(1);
     }),
+);
+
+it.effect("shows a failed scope save in a notice and keeps the rows", () =>
+  Effect.gen(function* () {
+    const { ctx, updates, notices } = yield* setup(
+      {
+        effective: {
+          mode: "selected",
+          libraries: [{ type: "personal" }, { type: "group", groupID: 7 }],
+        },
+        current: resolved([MY_LIBRARY, LAB_GROUP]),
+        libraries: [MY_LIBRARY, LAB_GROUP],
+      },
+      new SettingsMutationError({
+        message: "Settings are read-only",
+        cause: null,
+      }),
+    );
+    const list = selectedLibrariesList(ctx);
+
+    yield* Effect.promise(async () => list.onDelete?.(1));
+    yield* eventually(() =>
+      expect(notices.map(({ messages }) => messages[0])).toEqual([
+        `${m.settings_failed_save()}: Settings are read-only`,
+      ]),
+    );
+    expect(updates()).toBe(0);
+  }),
 );

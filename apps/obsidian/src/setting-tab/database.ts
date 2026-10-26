@@ -345,10 +345,11 @@ function renderReadModeRow(
       .addOption("immutable", modeLabel("immutable"))
       .setValue(ctx.tab.sync(ctx.settings.current)["zotero.read-mode"])
       .onChange((value) => {
-        ctx.tab.sync(
+        void ctx.tab.run(
           ctx.settings.update({
             "zotero.read-mode": value as ConfiguredReadMode,
           }),
+          m.settings_failed_save(),
         );
       });
   });

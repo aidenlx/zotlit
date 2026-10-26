@@ -1,5 +1,6 @@
 // The Imported notes page: how imported notes render, and the shared highlight
 // output mappings every Profile uses.
+import { Effect } from "effect";
 import type { SettingDefinitionItem } from "obsidian";
 
 import type { AnnotationColorName } from "@zotlit/db";
@@ -97,10 +98,14 @@ export function highlightMappingItems(
                 .addOption("custom", m.settings_note_import_highlight_custom())
                 .setValue(current().output)
                 .onChange((output) => {
-                  updateMapping(ctx, color, {
-                    output: output as HighlightMapping["output"],
-                  });
-                  ctx.requestUpdate();
+                  void ctx.tab.run(
+                    updateMapping(color, {
+                      output: output as HighlightMapping["output"],
+                    }).pipe(
+                      Effect.andThen(Effect.sync(() => ctx.requestUpdate())),
+                    ),
+                    m.settings_failed_save(),
+                  );
                 });
             });
           },
@@ -121,7 +126,10 @@ export function highlightMappingItems(
             showError(current().customEmoji);
             setting.addText((text) => {
               text.setValue(current().customEmoji).onChange((customEmoji) => {
-                updateMapping(ctx, color, { customEmoji });
+                void ctx.tab.run(
+                  updateMapping(color, { customEmoji }),
+                  m.settings_failed_save(),
+                );
                 showError(customEmoji);
               });
             });
@@ -132,22 +140,20 @@ export function highlightMappingItems(
   );
 }
 
+/** Save `patch` over the mapping of `color`. */
 function updateMapping(
-  ctx: SettingTabContext,
   color: AnnotationColorName,
   patch: Partial<HighlightMapping>,
-): void {
-  ctx.tab.sync(
-    PluginSettings.use((service) =>
-      service.update((settings) => {
-        const mappings = settings["note.import-highlight-mappings"];
-        return {
-          "note.import-highlight-mappings": {
-            ...mappings,
-            [color]: { ...getHighlightMapping(mappings, color), ...patch },
-          },
-        };
-      }),
-    ),
+) {
+  return PluginSettings.use((service) =>
+    service.update((settings) => {
+      const mappings = settings["note.import-highlight-mappings"];
+      return {
+        "note.import-highlight-mappings": {
+          ...mappings,
+          [color]: { ...getHighlightMapping(mappings, color), ...patch },
+        },
+      };
+    }),
   );
 }

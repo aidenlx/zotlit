@@ -12,6 +12,7 @@ import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
+import { SettingsMutationError } from "@/services/settings/service";
 import type {
   ZoteroPrefSnapshot,
   ZoteroProfileInfo,
@@ -62,6 +63,8 @@ const READS: ZoteroReadsState = {
  */
 const setup = Effect.fn("setup")(function* (
   refresh: ZoteroReads["Service"]["refresh"] = Effect.void,
+  update: SettingTabContext["settings"]["update"] = () =>
+    Effect.succeed(defaults),
 ) {
   const notifier = testNotifier();
   const pref = yield* SubscriptionRef.make(SNAPSHOT);
@@ -104,6 +107,7 @@ const setup = Effect.fn("setup")(function* (
     settings: stubService<SettingTabContext["settings"]>("Settings", {
       current: Effect.succeed(defaults),
       changes: Stream.empty,
+      update,
     }),
   });
   return { ctx, pref, reads, events, writes, notices: notifier.notices };
@@ -285,6 +289,27 @@ it.effect("reports a refresh from the database row as it ends", () =>
     row.button!.click();
     yield* settle;
     expect(messages(notices)).toEqual([m.notice_db_refreshed()]);
+  }),
+);
+
+it.effect("shows a failed read mode save in a notice", () =>
+  Effect.gen(function* () {
+    const { ctx, notices } = yield* setup(Effect.void, () =>
+      Effect.fail(
+        new SettingsMutationError({
+          message: "Settings are read-only",
+          cause: null,
+        }),
+      ),
+    );
+    const row = yield* render(ctx, "settings_db_read_mode");
+    yield* settle;
+
+    row.dropdown!.choose("immutable");
+    yield* settle;
+    expect(messages(notices)).toEqual([
+      `${m.settings_failed_save()}: Settings are read-only`,
+    ]);
   }),
 );
 
