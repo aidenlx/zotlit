@@ -133,7 +133,8 @@ it.effect.each(["share", "import"] as const)(
   "#1705: preparing a Profile %s with unchanged templates keeps held renders",
   (operation) =>
     Effect.gen(function* () {
-      const { profile } = yield* profileRuntimeOf(createTemplateHost());
+      const { profile, profileService } =
+        yield* profileRuntimeOf(createTemplateHost());
       const harness = yield* harnessOf({}, undefined, profile);
       const changes: unknown[] = [];
       subscribe(profile.runtime, profile["changed"], () =>
@@ -143,15 +144,11 @@ it.effect.each(["share", "import"] as const)(
       const before = yield* Effect.promise(() =>
         harness.cache.readBibliography(items),
       );
-      yield* Effect.promise(async () => {
-        if (operation === "share") await profile.prepareShare("default");
-        else
-          await profile.prepareImport(
-            profile
-              .getBuiltInSource()
-              .replace("id: default", "id: Bk3Qn7XvT2Lp"),
-          );
-      });
+      if (operation === "share") yield* profileService.prepareShare("default");
+      else
+        yield* profileService.prepareImport(
+          profile.getBuiltInSource().replace("id: default", "id: Bk3Qn7XvT2Lp"),
+        );
       yield* TestClock.adjust(0);
       expect(changes).toEqual([]);
       expect(harness.invalidations).toEqual([]);
@@ -181,26 +178,41 @@ it.effect(
     }),
 );
 
-it.effect.each(["engine-absent", "style-missing"] as const)(
-  "#1705: released reads retain the %s outcome",
-  (reason) =>
-    Effect.gen(function* () {
-      const h = yield* harnessOf(
-        reason === "style-missing" ? { "citation.references-style": APA } : {},
-      );
-      if (reason === "engine-absent")
-        h.pandocEngine.setStatus({ kind: "absent" });
-      yield* Effect.promise(() => h.cache.runtime.dispose());
-      yield* Effect.promise(() =>
-        expect(h.cache.render([item("alpha")])).resolves.toEqual({
-          kind: "unavailable",
-          reason,
-        }),
-      );
-      yield* Effect.promise(() =>
-        expect(h.cache.readBibliography([item("alpha")])).resolves.toBeNull(),
-      );
-    }),
+it.effect("#1705: released reads retain the engine-absent outcome", () =>
+  Effect.gen(function* () {
+    const h = yield* harnessOf();
+    h.pandocEngine.setStatus({ kind: "absent" });
+    yield* Effect.promise(() => h.cache.runtime.dispose());
+    yield* Effect.promise(() =>
+      expect(h.cache.render([item("alpha")])).resolves.toEqual({
+        kind: "unavailable",
+        reason: "engine-absent",
+      }),
+    );
+    yield* Effect.promise(() =>
+      expect(h.cache.readBibliography([item("alpha")])).resolves.toBeNull(),
+    );
+  }),
+);
+
+// A read that must wait for the style finds the runtime closed: unload stops
+// it, so a render answers unavailable and a held read rejects.
+it.effect("a read that waits after unload ends at once", () =>
+  Effect.gen(function* () {
+    const h = yield* harnessOf({ "citation.references-style": APA });
+    yield* Effect.promise(() => h.cache.runtime.dispose());
+    yield* Effect.promise(() =>
+      expect(h.cache.render([item("alpha")])).resolves.toEqual({
+        kind: "unavailable",
+        reason: "failed",
+      }),
+    );
+    yield* Effect.promise(() =>
+      expect(h.cache.readBibliography([item("alpha")])).rejects.toMatchObject({
+        name: "AbortError",
+      }),
+    );
+  }),
 );
 
 it.effect(
@@ -267,16 +279,19 @@ it.effect(
     Effect.gen(function* () {
       const path = "templates/zotlit-partial.summary.md";
       const host = createTemplateHost({ [path]: "Original summary" });
-      const { profile } = yield* profileRuntimeOf(host);
+      const { profile, profileService } = yield* profileRuntimeOf(host);
       const harness = yield* harnessOf({}, undefined, profile);
       const items = [item("alpha")];
       yield* Effect.promise(() => harness.cache.readBibliography(items));
       host.vault.modifyFile(path, "Updated summary");
-      const preparing = profile.prepareShare("default");
+      const preparing = yield* Effect.forkChild(
+        profileService.prepareShare("default"),
+        { startImmediately: true },
+      );
       yield* TestClock.adjust(500);
-      const plan = yield* Effect.promise(() => preparing);
+      const plan = yield* Fiber.join(preparing);
       expect(
-        plan.render({
+        yield* plan.render({
           version: "1.0.0",
           author: "",
           description: "",
@@ -430,9 +445,7 @@ class DatabaseStub {
 
 class ZoteroPrefStub {
   readonly #events = testEvent<void>();
-  readonly changed = Stream.empty;
-  readonly "data-dir-changed" = Stream.empty;
-  readonly "resolved-changed" = this.#events.stream;
+  readonly moves = this.#events.stream;
   constructor(readonly dataDir = "/nowhere/zotlit-render-cache") {}
   resolvedChanged() {
     this.#events.emit();

@@ -21,6 +21,7 @@ import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
 import type { ReadsAnswers } from "@/services/zotero-reads/__fixtures__";
 import { ZoteroReads } from "@/services/zotero-reads/service";
+import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
 import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
 
@@ -88,6 +89,7 @@ function flowLayer({
   feature,
 }: FlowServices) {
   return Layer.mergeAll(
+    unimplementedProfileDialogServices,
     Layer.mock(NoteFeature, feature),
     layerWorkspaceFrom(workspace),
     notifier.layer,

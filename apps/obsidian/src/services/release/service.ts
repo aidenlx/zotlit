@@ -4,6 +4,7 @@ import { Cause, Context, Deferred, Effect, Layer } from "effect";
 import { TFile } from "obsidian";
 
 import { DOCS_COMPANION } from "@/lib/constants";
+import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import * as m from "@/lib/i18n/generated/messages";
@@ -78,7 +79,7 @@ export function layerRelease(options: {
       const notifier = yield* Notifier;
       const checked = yield* Deferred.make<void>();
       const events = yield* obsidianEvents<{ layoutReady: [] }>();
-      const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+      const bridge = yield* scopedBridge;
       let stopped = false;
 
       const hasV1Templates = (folderPath: string): Effect.Effect<boolean> =>
@@ -176,7 +177,7 @@ export function layerRelease(options: {
             renderer.addAction((button) => {
               button
                 .setButtonText(m.notice_update_see_whats_new())
-                .onClick(() => void runPromise(openReleaseNote));
+                .onClick(() => bridge.runAndForget(openReleaseNote));
             });
             renderer.addAction((button) => {
               button

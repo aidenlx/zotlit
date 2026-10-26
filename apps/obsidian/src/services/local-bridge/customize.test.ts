@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { it } from "@effect/vitest";
-import { Effect, Fiber, Layer, SubscriptionRef } from "effect";
-import type { Context, Scope } from "effect";
+import { Context, Effect, Fiber, Layer, SubscriptionRef } from "effect";
+import type { Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
 import { describe, expect, vi } from "vitest";
@@ -18,9 +18,13 @@ import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { layerTestObsidianEnv } from "@/lib/__fixtures__/obsidian-env";
 import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import * as m from "@/lib/i18n/generated/messages";
+import type { ProfileId } from "@/lib/profile-stamp";
 import { LocalServer } from "@/services/local-server/service";
-import { Profile } from "@/services/profile/service";
+import { Profile, ProfileOperationError } from "@/services/profile/service";
+import type { LiteratureNoteProfile } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -30,13 +34,18 @@ import {
   saveProfileCustomization,
 } from "@/views/template-workbench/preferences";
 
-import { bindCustomize, customize } from "./customize";
+import {
+  bindCustomize,
+  Customize,
+  customize,
+  layerCustomize,
+} from "./customize";
 import type {
   CustomizePorts,
   CustomizeRequest,
-  CustomizeServices,
   LaunchConsent,
   LaunchSheetDetails,
+  NativeProfileTarget,
 } from "./customize";
 import { LocalBridge } from "./service";
 
@@ -63,17 +72,15 @@ const CALLING_PROFILE = LIQUID_PROFILE.replace(
 /** The build the unsupported check reads a Profile against. */
 const PLUGIN_VERSION = "2.3.0";
 
+const DEFAULT_DOCUMENT = "templates/zotlit-profile.default.md";
+
 const LAUNCH_URL =
   "https://zotlit.aidenlx.site/workbench#zotlit-connect=abc&port=9091";
 
 interface Harness {
   customize(request: CustomizeRequest): Effect.Effect<void, unknown>;
-  /** The flow's services, for a run through {@link bindCustomize}. */
-  services: Effect.Effect<
-    Context.Context<CustomizeServices>,
-    never,
-    Scope.Scope
-  >;
+  /** The flow as its layer builds it, for a run through {@link bindCustomize}. */
+  service: Effect.Effect<Customize["Service"], never, Scope.Scope>;
   /** The ports the flow runs with. */
   ports: CustomizePorts;
   device: Map<string, unknown>;
@@ -99,6 +106,10 @@ interface Options {
   /** What the template folder holds. */
   partials?: readonly LiteratureNoteTemplatePartial[];
   activeNote?: { basename: string; itemKey: string | null } | null;
+  /** The Profiles the registry holds; the vault holds each one's file. */
+  profiles?: readonly LiteratureNoteProfile[];
+  /** The vault holds a saved Default Profile document that does not parse. */
+  invalidDefault?: boolean;
 }
 
 const harness = Effect.fnUntraced(function* ({
@@ -110,6 +121,8 @@ const harness = Effect.fnUntraced(function* ({
   serverStarts = true,
   partials = [],
   activeNote = null,
+  profiles = [],
+  invalidDefault = false,
 }: Options = {}) {
   const settings: Settings = {
     ...defaults,
@@ -141,8 +154,12 @@ const harness = Effect.fnUntraced(function* ({
     });
   }
 
+  const vault = new MemoryVault();
+  for (const { path } of profiles) vault.add(path);
+  if (invalidDefault) vault.add(DEFAULT_DOCUMENT);
+
   const layer = Layer.mergeAll(
-    layerHost({ workspace, metadataCache }),
+    layerHost({ workspace, metadataCache, vault }),
     layerTestObsidianEnv({ vaultName: "Research" }),
     testNotifier().layer,
     Layer.mock(PluginSettings, {
@@ -160,8 +177,17 @@ const harness = Effect.fnUntraced(function* ({
         }),
     }),
     Layer.mock(Profile, {
-      profiles: Effect.succeed([]),
-      getSource: () => Effect.succeed(source),
+      profiles: Effect.succeed(profiles),
+      defaultDocumentPath: Effect.succeed(DEFAULT_DOCUMENT),
+      getSource: () =>
+        invalidDefault
+          ? Effect.fail(
+              new ProfileOperationError({
+                message: "The Default Profile does not parse",
+                cause: undefined,
+              }),
+            )
+          : Effect.succeed(source),
     }),
     Layer.mock(Template, {
       exportLiteratureNotePackSource: (draft, options) =>
@@ -193,8 +219,10 @@ const harness = Effect.fnUntraced(function* ({
       return { close: () => closedSheets.push(details) };
     },
     openExternal: (url) => opened.push(url),
-    openNative: async () => {
-      openedFiles.push("templates/zotlit-profile.default.md");
+    openNative: async (_request, target: NativeProfileTarget) => {
+      openedFiles.push(
+        target instanceof TFile ? target.path : target.defaultDocumentPath,
+      );
     },
     preference: () => profileCustomization(deviceStore),
     rememberPreference: (value) => saveProfileCustomization(deviceStore, value),
@@ -202,7 +230,9 @@ const harness = Effect.fnUntraced(function* ({
   const built: Harness = {
     customize: (request) =>
       customize(request, ports).pipe(Effect.provide(layer)),
-    services: Layer.build(layer),
+    service: Layer.build(layerCustomize(ports).pipe(Layer.provide(layer))).pipe(
+      Effect.map((context) => Context.get(context, Customize)),
+    ),
     ports,
     device,
     settings,
@@ -220,6 +250,44 @@ const harness = Effect.fnUntraced(function* ({
 const serverOn = () => harness({ settings: { "server.enabled": true } });
 
 describe("the Customize flow", () => {
+  it.effect("opens a named Profile's own document in the native editor", () =>
+    Effect.gen(function* () {
+      const books: LiteratureNoteProfile = {
+        id: "Bk3Qn7XvT2Lp" as ProfileId,
+        label: "Books",
+        document: "zotlit-profile.books.md",
+        path: "templates/zotlit-profile.books.md",
+        bindings: {},
+        match: { state: "absent", summary: m.profile_match_absent() },
+      };
+      const local = yield* harness({
+        webWorkbenchEnabled: false,
+        profiles: [books],
+      });
+
+      yield* local.customize({ profileId: books.id });
+      yield* local.customize({ profileId: "Zz9Zz9Zz9Zz9" as ProfileId });
+
+      // A Profile the registry does not hold opens nothing.
+      expect(local.openedFiles).toEqual([books.path]);
+    }),
+  );
+
+  it.effect(
+    "opens a saved Default Profile that does not parse, so it can be repaired",
+    () =>
+      Effect.gen(function* () {
+        const local = yield* harness({
+          webWorkbenchEnabled: false,
+          invalidDefault: true,
+        });
+
+        yield* local.customize({ profileId: "default" });
+
+        expect(local.openedFiles).toEqual([DEFAULT_DOCUMENT]);
+      }),
+  );
+
   it.effect(
     "opens locally when the build gate is off despite persisted web access",
     () =>
@@ -346,7 +414,7 @@ describe("the Customize flow", () => {
         effectivePort: null,
       });
       const bridge = openTestBridge();
-      const action = bindCustomize(bridge, yield* held.services, held.ports);
+      const action = bindCustomize(bridge, yield* held.service);
 
       void action({ profileId: "default" });
       yield* Effect.yieldNow;

@@ -12,6 +12,7 @@ import type { AnnotationPositionRaw } from "@zotlit/db";
 import type { PdfPosition, PdfTextStructure } from "@zotlit/pdf-structure";
 
 import { dispatchKey } from "@/lib/__fixtures__/keymap";
+import { passAborted } from "@/lib/abort-error";
 import { withRecentColor } from "@/lib/annotation-colors";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { toInstant } from "@/lib/effect-clock";
@@ -875,7 +876,7 @@ export async function readerOverZotero(
   stack.defer(
     repository.listen("annotations-changed", (attachmentKey) => {
       draw(repository.peek(attachmentKey)?.value);
-      void repository.read(attachmentKey).then(draw);
+      void repository.read(attachmentKey).then(draw).catch(passAborted);
     }),
   );
   return { ...reader, ...zoteroSide };

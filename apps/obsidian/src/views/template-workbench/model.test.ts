@@ -7,6 +7,7 @@ import type { App } from "obsidian";
 import { vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { AbortError } from "@/lib/abort-error";
 import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
 import { fileProfileAtom } from "@/services/profile/atoms";
 import { defaultBindingsAtom } from "@/services/settings/atoms";
@@ -84,7 +85,7 @@ it.effect("interrupts the selected Item read when its leaf closes", () =>
     yield* Effect.promise(() =>
       waitFor(() => expect(cancelled).toEqual(["MAIN2345"])),
     );
-    expect(yield* Effect.promise(() => read)).toBeInstanceOf(Error);
+    expect(yield* Effect.promise(() => read)).toBeInstanceOf(AbortError);
   }),
 );
 
@@ -217,6 +218,9 @@ it.effect("settles a command closed in the same turn as its gesture", () =>
     const command = makeWorkbenchTask(host.registry, () => Effect.never);
     const result = command.run().catch((error: unknown) => error);
     command[Symbol.dispose]();
-    expect(yield* Effect.promise(() => result)).toBeInstanceOf(Error);
+    expect(yield* Effect.promise(() => result)).toBeInstanceOf(AbortError);
+    yield* Effect.promise(() =>
+      expect(command.run()).rejects.toBeInstanceOf(AbortError),
+    );
   }),
 );

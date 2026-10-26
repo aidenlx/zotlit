@@ -11,14 +11,13 @@ import {
 import * as m from "@/lib/i18n/generated/messages";
 import { ViewRegistry } from "@/lib/view-atoms";
 
+import { passAborted } from "./lib/abort-error";
 import { startI18n } from "./lib/i18n";
 import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
-import { openSettingsTab } from "./lib/open-settings";
 import { addAnnotationHistoryActions } from "./services/annotation-repository/actions";
 import type { HistorySurface } from "./services/annotation-repository/actions";
 import { annotationHistoryFileMenu } from "./services/annotation-repository/menu";
-import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
 import { addAttachmentOpenActions } from "./services/attachment-open/actions";
 import { registerFileLinkCapture } from "./services/attachment-open/capture";
 import { attachmentOpenFileMenu } from "./services/attachment-open/menu";
@@ -32,7 +31,6 @@ import {
   addCustomizeActions,
   customizeFileMenu,
 } from "./services/local-bridge/actions";
-import { createLaunchSheet } from "./services/local-bridge/launch-sheet";
 import { registerWorkbenchSavedNotice } from "./services/local-bridge/notices";
 import {
   addNoteFeatureActions,
@@ -40,7 +38,6 @@ import {
 } from "./services/note-feature/actions";
 import { addProfileActions } from "./services/profile/actions";
 import { ServiceStartupFailed } from "./services/startup-failure";
-import { startSettingTab } from "./setting-tab/layer";
 import { createCommentRenderer } from "./views/annot-view/comment-render";
 import { registerAnnotView } from "./views/annot-view/register";
 import { AnnotationView } from "./views/annot-view/view";
@@ -74,11 +71,6 @@ import {
   registerTemplateDataExplorer,
 } from "./views/template-data-explorer/register";
 import {
-  profileCustomization,
-  saveProfileCustomization,
-} from "./views/template-workbench/preferences";
-import {
-  openNativeProfile,
   templateWorkbenchFileMenu,
   registerTemplateWorkbenchView,
 } from "./views/template-workbench/register";
@@ -243,55 +235,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     );
 
     // One Customize flow shared by every entry action.
-    const customize = services.bindCustomize({
-      webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-      pluginVersion: this.manifest.version,
-      confirmLaunch: createLaunchSheet(this.app),
-      openExternal: (url) => window.open(url),
-      preference: () => profileCustomization(this.app),
-      rememberPreference: (value) => saveProfileCustomization(this.app, value),
-      openNative: async ({ profileId, item, originatingNote }) => {
-        const entry = services.profile.profiles.find(
-          (profile) => profile.id === profileId,
-        );
-        const target =
-          profileId === "default"
-            ? services.runtime.runSync(ViewRegistry)
-            : entry && this.app.vault.getFileByPath(entry.path);
-        if (target)
-          await openNativeProfile(this.app, target, {
-            ...(item ? { itemIndexedKey: item.key } : {}),
-            originatingNote,
-            explainUnsupported: false,
-            customize: true,
-          });
-      },
-    });
-
-    // The tab reads graph services through its layer's context and the rest
-    // from the container, so it closes on the stack ahead of those services.
-    stack.defer(
-      startSettingTab(services.runtime, this, {
-        webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-        importProfile: services.importProfile,
-        profile: services.profile,
-        db: services.zoteroReads,
-        libraryScope: services.libraryScope,
-        zoteroPref: services.zoteroPref,
-        localServer: services.localServer,
-        localBridge: services.localBridge,
-        customize,
-        attachmentImport: services.attachmentImport,
-        citationIndex: services.citationIndex,
-        excerptImage: services.excerptImage,
-        excerptDisplay: services.excerptDisplay,
-        template: services.template,
-        release: services.release,
-        pandocEngine: services.pandocEngine,
-        chineseSegmenter: services.chineseSegmenter,
-        languagePack: services.languagePack,
-      }),
-    );
+    const customize = services.customize;
 
     const customizeDeps = {
       settings: services.settings,
@@ -327,7 +271,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     );
     const noteFeatureDeps = {
       app: this.app,
-      noteFeature: services.noteFeature,
       noteActions: services.noteActions,
       batchImport: services.batchImport,
     };
@@ -390,7 +333,8 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       annotations: services.annotationRepository,
       bridge: services.bridge,
       excerptDisplay: services.excerptDisplay,
-      allowEditing: () => void services.capabilityNotices.allowEditing(),
+      allowEditing: () =>
+        void services.capabilityNotices.allowEditing().catch(passAborted),
       reportBlockedGesture: (attachmentKey) =>
         services.capabilityNotices.reportBlockedGesture(attachmentKey),
       libraryTagNames: services.libraryTagNames,
@@ -592,18 +536,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       bridge: services.bridge,
     });
 
-    stack.defer(
-      registerAttachmentSkipNotice({
-        attachmentImport: services.attachmentImport,
-        openSettings: () => {
-          openSettingsTab(this.app, this.manifest.id, [
-            "settings_page_attachments",
-            "settings_attachment_approved",
-          ]);
-        },
-      }),
-    );
-
     // The companion's Freshness Signal means the database changed and its
     // Checkpoint attempt has settled; feed it into the same coalesced refresh
     // lane as the filesystem watchers.
@@ -611,30 +543,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       services.bridge.subscribe(services.localServer.dbUpdated, () => {
         services.zoteroReads.notifyExternalChange();
       }),
-    );
-
-    // A saved pixel edit revalidates its Excerpt Image wherever the image
-    // stands: the card that shows the Annotation, and — with no card on screen —
-    // the device-local image the store already holds for it. One subscriber
-    // covers every surface that can save an edit. Each request reads the
-    // database first, so only the newest edit of an Annotation is revalidated:
-    // an older read that lands late would cancel the newer replacement.
-    const latestEdit = new Map<string, symbol>();
-    stack.defer(
-      services.bridge.subscribe(
-        services.annotationRepository.excerptPixelsChanged,
-        ({ record, source }) => {
-          const edit = Symbol(record.key);
-          latestEdit.set(record.key, edit);
-          void services
-            .excerptRequest({ annotation: record, source })
-            .then((request) => {
-              if (latestEdit.get(record.key) !== edit) return;
-              latestEdit.delete(record.key);
-              if (request) services.excerptDisplay.revalidate(request);
-            });
-        },
-      ),
     );
 
     this.#services = services;

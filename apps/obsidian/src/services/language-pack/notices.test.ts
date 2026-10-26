@@ -1,15 +1,16 @@
 // @vitest-environment happy-dom
 import { it } from "@effect/vitest";
 import { ButtonComponent, controlsOf } from "@mock/obsidian";
-import { Effect, Layer, Stream } from "effect";
+import { Deferred, Effect, Exit, Layer, Scope, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect } from "vitest";
 
+import { eventually } from "@/lib/__fixtures__/eventually";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import type { RecordedNotice } from "@/lib/__fixtures__/notifier";
 import * as m from "@/lib/i18n/generated/messages";
 
-import { CHINESE_PACK, eventually, fakeDevice, startOn } from "./__fixtures__";
+import { CHINESE_PACK, fakeDevice, startOn } from "./__fixtures__";
 import type { FakeDevice } from "./__fixtures__";
 import { layerLanguagePackNotices } from "./notices";
 import { LanguagePack } from "./service";
@@ -100,6 +101,44 @@ describe("Language Pack startup notices", () => {
 
       expect(notices[0]?.hidden).toBe(true);
       expect(device.storage.get("zotlit:i18n:consent:zh-CN")).toBe("declined");
+    }),
+  );
+
+  it.effect("interrupts a pending decline when the plugin unloads", () =>
+    Effect.gen(function* () {
+      const pack = yield* startOn(fakeDevice(), { language: "zh" });
+      const started = yield* Deferred.make<void>();
+      let interrupted = false;
+      const notifier = testNotifier();
+      const scope = yield* Scope.fork(yield* Scope.Scope);
+      yield* Layer.buildWithScope(
+        layerLanguagePackNotices.pipe(
+          Layer.provide(
+            Layer.succeed(
+              LanguagePack,
+              LanguagePack.of({
+                ...pack,
+                decline: Deferred.succeed(started, undefined).pipe(
+                  Effect.andThen(Effect.never),
+                  Effect.onInterrupt(() =>
+                    Effect.sync(() => {
+                      interrupted = true;
+                    }),
+                  ),
+                ),
+              }),
+            ),
+          ),
+          Layer.provide(notifier.layer),
+        ),
+        scope,
+      );
+
+      buttonsOf(notifier.notices[0])[0]!.click();
+      yield* Deferred.await(started);
+      yield* Scope.close(scope, Exit.void);
+
+      expect(interrupted).toBe(true);
     }),
   );
 

@@ -3,6 +3,7 @@
 import { Cause, Effect, Exit } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 
+import { AbortError } from "@/lib/abort-error";
 import { viewRuntime } from "@/lib/view-atoms";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 
@@ -25,7 +26,12 @@ export function makeWorkbenchCommand<I, A, E>(
         Effect.onExit((exit) =>
           Effect.sync(() => {
             if (Exit.isSuccess(exit)) input.resolve(exit.value);
-            else input.reject(Cause.squash(exit.cause));
+            else
+              input.reject(
+                Cause.hasInterruptsOnly(exit.cause)
+                  ? new AbortError()
+                  : Cause.squash(exit.cause),
+              );
           }),
         ),
       ),
@@ -37,7 +43,7 @@ export function makeWorkbenchCommand<I, A, E>(
     atom,
     run: (value: I): Promise<A> =>
       closed
-        ? Promise.reject(new Error("Workbench command closed"))
+        ? Promise.reject(new AbortError("Workbench command closed"))
         : new Promise((resolve, reject) =>
             registry.set(atom, { value, resolve, reject }),
           ),

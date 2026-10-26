@@ -1,3 +1,4 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { configureSync, resetSync } from "@logtape/logtape";
 import "@mock/dom-parser";
 import type { LogRecord } from "@logtape/logtape";
@@ -216,6 +217,7 @@ async function harness(
   const runtime = buildRuntime(
     Layer.mergeAll(
       host,
+      NodeFileSystem.layer,
       layerZoteroReads(inProcessClient(layerRcRef(sharedClientOpener(sqlite)))),
       Layer.mock(PluginSettings, {
         current: Effect.sync(() => ({

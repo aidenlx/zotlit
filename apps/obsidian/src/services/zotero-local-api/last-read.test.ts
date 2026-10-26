@@ -4,6 +4,7 @@ import { TestClock } from "effect/testing";
 import { expect, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { AbortError } from "@/lib/abort-error";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
@@ -292,7 +293,7 @@ it("interrupts a read write-back in flight when the client is disposed", async (
   await vi.waitFor(() => expect(requests).toHaveLength(2));
 
   await disposable[Symbol.asyncDispose]();
-  await writing;
+  await expect(writing).rejects.toBeInstanceOf(AbortError);
   read.resolve(attachment());
 
   expect(requests.filter(({ method }) => method === "PATCH")).toEqual([]);

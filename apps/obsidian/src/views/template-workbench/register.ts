@@ -10,7 +10,10 @@ import { BaseNotice } from "@/lib/notice";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
 import type { FileMenuSegment } from "@/services/file-menu";
-import type { CustomizeAction } from "@/services/local-bridge/customize";
+import type {
+  CustomizeAction,
+  NativeProfileTarget,
+} from "@/services/local-bridge/customize";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import {
   profileStateAtom,
@@ -331,7 +334,7 @@ function activeLeafFor(
 /** Open a Profile file or the built-in Default draft in the native editor. */
 export async function openNativeProfile(
   app: App,
-  target: TFile | ViewRegistryHandle,
+  target: NativeProfileTarget | ViewRegistryHandle,
   options: {
     leaf?: WorkspaceLeaf;
     itemIndexedKey?: string;
@@ -345,7 +348,9 @@ export async function openNativeProfile(
   const path =
     target instanceof TFile
       ? target.path
-      : target.get(profileStateAtom)?.defaultDocumentPath;
+      : "get" in target
+        ? target.get(profileStateAtom)?.defaultDocumentPath
+        : target.defaultDocumentPath;
   const file =
     target instanceof TFile
       ? target
@@ -355,6 +360,7 @@ export async function openNativeProfile(
   let source: string;
   if (file) source = await app.vault.cachedRead(file);
   else if (target instanceof TFile) return;
+  else if (!("get" in target)) source = await target.getSource("default");
   else {
     using command = makeDefaultSourceCommand(target);
     source = await command.run();

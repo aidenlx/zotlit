@@ -97,6 +97,7 @@ import type {
 } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
+import { AbortError } from "@/lib/abort-error";
 import { AppContext } from "@/lib/app-context";
 import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
@@ -460,10 +461,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         return { outcome: "unavailable", name: origin.file.basename };
       if (error === changed)
         return { outcome: "not-ready", name: origin.file.basename };
-      logger.error("Failed to update originating note at {path}", {
-        path: origin.file.path,
-        error,
-      });
+      if (!AbortError.test(error))
+        logger.error("Failed to update originating note at {path}", {
+          path: origin.file.path,
+          error,
+        });
       return { outcome: "failed", name: origin.file.basename, error };
     }
   }
@@ -1884,7 +1886,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       await openWorkbenchLayout(this.app, this);
     })()
       .catch((error: unknown) => {
-        if (this.#closed) return;
+        if (this.#closed || AbortError.test(error)) return;
         logger.error("Failed to customize Default Profile at {path}", {
           path,
           error,
@@ -1907,7 +1909,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.#stylesUnavailable = false;
       this.#mount();
     } catch (error) {
-      if (this.#closed) return;
+      if (this.#closed || AbortError.test(error)) return;
       logger.warn("Failed to read Template Workbench citation styles", {
         error,
       });
@@ -2025,6 +2027,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         rememberTemplateItem(this.app, indexedKey);
       return true;
     } catch (error) {
+      if (AbortError.test(error)) return false;
       logger.warn("Failed to restore Template Workbench Item {indexedKey}", {
         indexedKey,
         error,

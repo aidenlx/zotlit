@@ -87,6 +87,21 @@ export async function createSharedPartial(
   }
 }
 
+/**
+ * Open the name prompt alone, for a caller that creates the partial itself.
+ * `settle` gets the accepted name, or `null` when the prompt closes.
+ */
+export function openNewPartialPrompt(
+  app: App,
+  taken: readonly string[],
+  settle: (name: string | null) => void,
+): Modal {
+  const modal = new NewPartialModal(app, taken, "");
+  void modal.result.then(settle);
+  modal.open();
+  return modal;
+}
+
 /** The refusal as the prompt words it, under the name field. */
 function refusalText(refusal: PartialNameRefusal, name: string): string {
   switch (refusal) {
