@@ -109,7 +109,7 @@
   "obsidian": {
     "id": "zotlit",
     "name": "ZotLit",
-    "minAppVersion": "1.14.4",
+    "minAppVersion": "1.14.5",
     "minElectronVersion": "43.0.0",
     "isDesktopOnly": true,
     "fundingUrl": {
