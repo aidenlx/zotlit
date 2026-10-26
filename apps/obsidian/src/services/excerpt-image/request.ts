@@ -38,6 +38,23 @@ export type ExcerptRequestReads = Pick<
 >;
 
 /**
+ * A legacy Promise port rejected at `step`; `cause` is the rejection. A local
+ * stand-in for `lib/legacy-port.ts`, which the stack's 13a slice adds.
+ */
+class LegacyPortError extends Data.TaggedError("LegacyPortError")<{
+  readonly step: string;
+  readonly cause: unknown;
+  readonly message: string;
+}> {}
+
+const legacyPortError = (step: string, cause: unknown) =>
+  new LegacyPortError({
+    step,
+    cause,
+    message: cause instanceof Error ? cause.message : String(cause),
+  });
+
+/**
  * The file inputs one saved Annotation resolves through, or `null` where nothing
  * can: no Annotation Source, another Zotero data directory, or a database that
  * cannot answer.
@@ -68,7 +85,10 @@ export function savedExcerptRequest(options: {
       source,
       paths,
       snapshot: Effect.acquireDisposable(
-        Effect.tryPromise(() => options.zoteroReads.acquireRead()),
+        Effect.tryPromise({
+          try: () => options.zoteroReads.acquireRead(),
+          catch: (cause) => legacyPortError("acquire-read", cause),
+        }),
       ).pipe(Effect.map(({ reads }) => reads)),
       dataDir: Effect.sync(() => options.paths.dataDir),
     }),
@@ -148,13 +168,13 @@ function readSavedExcerptRequest<E>(options: {
     Effect.scoped,
     // Whatever stops the read, as a throw from a reader, resolves to nothing.
     Effect.catchCause((cause) => {
-      const error = Cause.squash(cause);
+      if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
       return Effect.logDebug(
         "No excerpt request: the database did not answer",
       ).pipe(
         Effect.annotateLogs({
           annotationKey: annotation.key,
-          error: error instanceof Cause.UnknownError ? error.cause : error,
+          error: Cause.squash(cause),
         }),
         Effect.as(null),
       );
