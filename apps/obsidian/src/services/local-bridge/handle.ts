@@ -9,7 +9,7 @@ export interface LocalBridgeHandle {
    * Follow each connected Save that wrote a Profile's document in this vault
    * until the returned function stops it, or the runtime closes.
    */
-  on(event: "profile-saved", callback: (profileId: string) => void): () => void;
+  onProfileSaved(callback: (profileId: string) => void): () => void;
 }
 
 /** The Local Bridge over `bridge`. */
@@ -18,6 +18,6 @@ export function bindLocalBridge(
   service: LocalBridge["Service"],
 ): LocalBridgeHandle {
   return {
-    on: (_event, callback) => bridge.subscribe(service.saved, callback),
+    onProfileSaved: (callback) => bridge.subscribe(service.saved, callback),
   };
 }

@@ -357,7 +357,7 @@ it("tells the setting tab of each connection change, and only of a change", asyn
 it("announces a Save that landed in the vault", async () => {
   await using bridge = await harness();
   const saved: string[] = [];
-  const off = bridge.handle.on("profile-saved", (profileId) =>
+  const off = bridge.handle.onProfileSaved((profileId) =>
     saved.push(profileId),
   );
   const credential = await bridge.connect();

@@ -3,7 +3,7 @@
 // callbacks run on a runner the dialog's Scope owns, so an interrupt closes
 // the modal and stops the work its callbacks started.
 
-import { Cause, Effect, Exit, FiberSet, FileSystem, Schema } from "effect";
+import { Cause, Effect, Exit, FiberSet, FileSystem } from "effect";
 import { basename } from "node:path";
 import type { App } from "obsidian";
 
@@ -21,6 +21,7 @@ import { PluginHost } from "@/lib/plugin-host";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { requireDialog } from "@/lib/require";
 import type { LibraryScope } from "@/services/library-scope/service";
+import { ProfileDocumentMissingError } from "@/services/local-bridge/reads";
 import { installedStyles } from "@/services/note-feature/creation-view";
 import { NoteFeature } from "@/services/note-feature/service";
 import type { ResolvedProfile } from "@/services/profile/bindings";
@@ -80,16 +81,6 @@ interface DialogModal<A> extends ClosableModal {
   readonly result: Promise<A>;
   /** The close the dialog's Scope calls, when it differs from the user's. */
   teardown?(): void;
-}
-
-/** A Profile document the dialog created is not in the vault. */
-export class ProfileDocumentMissing extends Schema.TaggedError<
-  ProfileDocumentMissing,
-  { readonly brand: unique symbol }
->()("ProfileDocumentMissing", { path: Schema.String }) {
-  override get message(): string {
-    return m.notice_profile_action_failed();
-  }
 }
 
 /**
@@ -394,7 +385,11 @@ export const addProfileDestination = Effect.fn("addProfileDestination")(
     if (!created) return;
     yield* (yield* PluginHost).closeSettings;
     const file = yield* (yield* Vault).getFileByPath(created.path);
-    if (!file) return yield* new ProfileDocumentMissing({ path: created.path });
+    if (!file)
+      return yield* new ProfileDocumentMissingError({
+        profileId: created.id,
+        message: m.notice_profile_action_failed(),
+      });
     yield* portCall("open-template-workbench", () =>
       openTemplateWorkbench(app, file, { tab: "name", customize: true }),
     );

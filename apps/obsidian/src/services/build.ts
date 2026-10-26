@@ -93,8 +93,8 @@ import { plainQueryClients } from "./query-client/plain";
 import { Release } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import { PluginSettings } from "./settings/service";
+import type { TemplateDataServices } from "./template-workbench/data";
 import { bindTemplateData } from "./template-workbench/data-handle";
-import type { TemplateDataHandleServices } from "./template-workbench/data-handle";
 import type { TemplateMigrationOptions } from "./template/migration";
 import { plainTemplate, plainTemplateMigration } from "./template/plain";
 import { plainUseLedger } from "./use-ledger/plain";
@@ -388,7 +388,7 @@ export async function buildServices(
       templateData: () =>
         bindTemplateData(
           bridge,
-          runtime.runSync(Effect.context<TemplateDataHandleServices>()),
+          runtime.runSync(Effect.context<TemplateDataServices>()),
         ),
     })
     .useValue({
