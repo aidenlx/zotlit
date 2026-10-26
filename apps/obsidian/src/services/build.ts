@@ -297,13 +297,15 @@ export async function buildServices(
         reader = new PdfAnnotationEditor({
           recordRead: ({ attachmentKey, itemKey, serverID, instant }) => {
             useLedger.record(itemKey, "read", instant);
-            void writeReadUse(
-              {
-                reads: zoteroReadsService,
-                bridge,
-                api: zoteroLocalApi,
-              },
-              { attachmentKey, instant: fromInstant(instant), serverID },
+            void bridge.runPromiseExit(
+              writeReadUse({
+                attachmentKey,
+                instant: fromInstant(instant),
+                serverID,
+              }).pipe(
+                Effect.provideService(ZoteroReads, zoteroReadsService),
+                Effect.provideService(ZoteroLocalApi, zoteroLocalApi),
+              ),
             );
           },
           app: plugin.app,
