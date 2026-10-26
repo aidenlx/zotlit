@@ -5,6 +5,7 @@ import type * as Atom from "effect/reactivity/Atom";
 import { held } from "@/lib/view-atoms";
 
 import { changed } from "./events";
+import type { ZoteroReadsState } from "./service";
 import { ZoteroReads } from "./service";
 
 /**
@@ -23,3 +24,16 @@ export const zoteroRevisionAtom: Atom.Atom<number> = held(
   ),
   0,
 );
+
+/** The current database condition, including a missing file found during startup. */
+export const zoteroStateAtom: Atom.Atom<ZoteroReadsState> =
+  held<ZoteroReadsState>(
+    Stream.unwrap(Effect.map(ZoteroReads, (reads) => reads.changes)),
+    {
+      state: "loading",
+      error: null,
+      moved: false,
+      dbFileMissing: false,
+      activeReadMode: null,
+    },
+  );

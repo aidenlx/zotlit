@@ -3,59 +3,54 @@
 // Zotero data directory this device does not have.
 //
 // @see apps/obsidian/docs/adr/0077-the-library-view-is-the-first-screen.md
-import { Stream } from "effect";
+import { Effect } from "effect";
 import type { App, Plugin } from "obsidian";
 
-import type { EffectBridge } from "@/lib/effect-bridge";
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import type { PlainQueryClients } from "@/services/query-client/plain";
-import type { PluginSettings } from "@/services/settings/service";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import { viewRuntime } from "@/lib/view-atoms";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import { zoteroStateAtom } from "@/services/zotero-reads/atoms";
 import { openLibraryView } from "@/views/library/register";
 import { LIBRARY_VIEW_TYPE } from "@/views/library/view";
 
-import { holdConnectionReadout } from "./connection";
+import {
+  dismissWelcomeCommand,
+  keepWelcomeCommand,
+  openReleaseNoteCommand,
+} from "./atoms";
+import { connectionLifecycleAtom } from "./connection";
 import { notFoundNoticeChange } from "./not-found-notice";
 import type { NotFoundSignal } from "./not-found-notice";
+import { holdSetupCommands } from "./setup-actions";
 
 export interface WelcomeRegistrationDeps {
-  runtime: SubscriptionRuntime;
-  reads: Pick<
-    PlainZoteroReads,
-    | "changed"
-    | "degraded"
-    | "refresh-failed"
-    | "refreshing"
-    | "db-file-missing"
-    | "refresh-requested"
-    | "changes"
-    | "dbFileMissing"
-  >;
-  queries: Pick<PlainQueryClients, "invalidate">;
-  settings: Pick<PluginSettings["Service"], "update">;
-  bridge: Pick<EffectBridge, "runSync">;
+  registry: ViewRegistryHandle;
 }
+
+const openWelcomeCommand = viewRuntime.fn((app: App) =>
+  Effect.promise(() => openWelcomeView(app)),
+);
 
 export function registerWelcomeView(
   plugin: Pick<Plugin, "addCommand" | "app" | "register">,
   deps: WelcomeRegistrationDeps,
 ): void {
-  plugin.register(
-    holdConnectionReadout({
-      runtime: deps.runtime,
-      reads: deps.reads,
-      queries: deps.queries,
-    }),
-  );
+  const { registry } = deps;
+  plugin.register(registry.mount(connectionLifecycleAtom));
+  for (const command of [
+    keepWelcomeCommand,
+    dismissWelcomeCommand,
+    openReleaseNoteCommand,
+    openWelcomeCommand,
+  ])
+    plugin.register(registry.mount(command));
+  plugin.register(holdSetupCommands(registry));
 
   plugin.addCommand({
     id: "open-welcome-view",
     name: m.command_open_welcome_name(),
-    callback: () =>
-      void openWelcomeView(plugin.app, deps.settings, deps.bridge),
+    callback: () => registry.set(openWelcomeCommand, plugin.app),
   });
 
   // The missing-file state survives startup, so a view registered after the
@@ -78,15 +73,18 @@ export function registerWelcomeView(
         void openLibraryView(plugin.app);
       });
   };
-  let missing = deps.reads.dbFileMissing;
+  let missing = false;
   plugin.register(
-    subscribe(deps.runtime, Stream.drop(deps.reads.changes, 1), (state) => {
-      if (state.dbFileMissing === missing) return;
-      missing = state.dbFileMissing;
-      apply(missing ? "db-file-missing" : "changed");
-    }),
+    registry.subscribe(
+      zoteroStateAtom,
+      (state) => {
+        if (state.dbFileMissing === missing) return;
+        missing = state.dbFileMissing;
+        apply(missing ? "db-file-missing" : "changed");
+      },
+      { immediate: true },
+    ),
   );
-  if (missing) apply("db-file-missing");
   const layout = plugin.app.workspace.on("layout-change", () =>
     apply("layout-change"),
   );
@@ -110,12 +108,7 @@ function notFoundNotice(locate: () => void): BaseNotice {
 }
 
 /** Show the Welcome View banner again, above the Library View brought forward. */
-export async function openWelcomeView(
-  app: App,
-  settings: Pick<PluginSettings["Service"], "update">,
-  bridge: Pick<EffectBridge, "runSync">,
-): Promise<void> {
-  bridge.runSync(settings.update({ "welcome.dismissed": false }));
+export async function openWelcomeView(app: App): Promise<void> {
   const view = await openLibraryView(app);
   view?.welcome.request();
 }

@@ -10,7 +10,7 @@ import {
   setMockPlatform,
   TextComponent,
 } from "@mock/obsidian";
-import { Effect, Stream } from "effect";
+import { Effect, Layer, Stream } from "effect";
 import type { App, WorkspaceItem, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -24,6 +24,7 @@ import {
   createObsidianHost,
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
+import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
@@ -42,16 +43,19 @@ import type {
 } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
-import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { buildSettings } from "@/services/settings/__fixtures__";
+import { PluginSettings } from "@/services/settings/service";
 import type { UseKind } from "@/services/use-ledger/service";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsEvent } from "@/services/zotero-reads/service";
 import { stubbedReads } from "@/services/zotero-reads/test-utils";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import {
   fakeQuery,
   requested,
 } from "@/views/query-view/__fixtures__/query-run";
+import { makeWelcomeHost } from "@/views/welcome/__fixtures__";
 import { openWelcomeView } from "@/views/welcome/register";
 
 import { holdNow, useAt } from "./__fixtures__";
@@ -479,13 +483,10 @@ async function pluginData(stored?: unknown) {
   vi.spyOn(sourceReads.reads, "ConnectionReadout").mockImplementation(() =>
     Effect.succeed({ itemCount: 8 }),
   );
-  const readApi = stubService<LibraryViewDeps["welcome"]["reads"]["reads"]>(
-    "ZoteroReads",
-    {
-      CollectionPaths: sourceReads.reads.CollectionPaths,
-      ConnectionReadout: sourceReads.reads.ConnectionReadout,
-    },
-  );
+  const readApi = stubService<ZoteroReads["Service"]["reads"]>("ZoteroReads", {
+    CollectionPaths: sourceReads.reads.CollectionPaths,
+    ConnectionReadout: sourceReads.reads.ConnectionReadout,
+  });
   const readsDeps = stubService<LibraryViewDeps["reads"]>("ZoteroReads", {
     ...reads.streams,
     get state() {
@@ -593,6 +594,47 @@ async function pluginData(stored?: unknown) {
     }),
   });
   const runtime = testRuntime();
+  const current = Effect.sync(() => ({
+    ...database_,
+    dbFileMissing: false,
+    activeReadMode: null,
+  }));
+  const events = Stream.mergeAll<ZoteroReadsEvent, never, never>(
+    [
+      Stream.map(reads.streams.changed!, () => ({ _tag: "changed" as const })),
+      Stream.map(reads.streams.degraded!, () => ({
+        _tag: "degraded" as const,
+        error: database_.error!,
+      })),
+      Stream.map(reads.streams["refresh-failed"]!, () => ({
+        _tag: "refresh-failed" as const,
+        error: database_.error!,
+        moved: database_.moved,
+      })),
+      Stream.map(reads.streams["db-file-missing"]!, () => ({
+        _tag: "db-file-missing" as const,
+      })),
+    ],
+    { concurrency: "unbounded" },
+  );
+  const welcomeHost = cleanup.use(
+    await makeWelcomeHost({
+      services: Layer.mergeAll(
+        layerHost({ vault: app.vault }),
+        Layer.succeed(PluginSettings, settings),
+        Layer.mock(ZoteroReads, {
+          current,
+          reads: readApi,
+          changes: Stream.concat(
+            Stream.fromEffect(current),
+            Stream.mapEffect(events, () => current),
+          ),
+          events,
+        }),
+      ),
+    }),
+  );
+
   const deps = stubService<LibraryViewDeps>("LibraryViewDeps", {
     runtime,
     bridge: effectBridge(runtime),
@@ -642,42 +684,7 @@ async function pluginData(stored?: unknown) {
     reportBlockedGesture: vi.fn(),
     items,
     settings,
-    welcome: stubService<LibraryViewDeps["welcome"]>("WelcomeDeps", {
-      runtime: testRuntime(),
-      bridge: effectBridge(testRuntime()),
-      app,
-      reads: stubService<LibraryViewDeps["welcome"]["reads"]>("ZoteroReads", {
-        ...reads.streams,
-        get state() {
-          return database_.state;
-        },
-        get error() {
-          return database_.error;
-        },
-        get moved() {
-          return database_.moved;
-        },
-        get dbFileMissing() {
-          return false;
-        },
-        get activeReadMode() {
-          return null;
-        },
-        reads: readApi,
-      }),
-      queries: queryClientsFixture(),
-      zoteroPref: { dataDir: "/Zotero" },
-      settings,
-      setupActions,
-      templateMigration: { convert: vi.fn(), retryCleanup: vi.fn() },
-      release: {
-        version: "2.2.0",
-        openReleaseNote: Effect.void,
-        hasV1Templates: () => Effect.succeed(false),
-        acknowledgeMigration: Effect.void,
-        acknowledgeUpdate: Effect.void,
-      },
-    }),
+    welcome: { registry: welcomeHost.registry, setupActions },
     literatureNotes,
     opener: { open: () => Promise.resolve({ kind: "reader" as const }) },
   });
@@ -2189,10 +2196,11 @@ it("leaves the search box unfocused when the command brings the tab forward unde
  * Hold the banner's connection readout until the returned call lands it, as
  * on a first launch, where Zotero's database is still loading.
  */
-function holdReadout(deps: LibraryViewDeps) {
+async function holdReadout(deps: LibraryViewDeps) {
   const ready = Promise.withResolvers<{ itemCount: number }>();
-  Object.assign(deps.welcome.reads, {
-    reads: { ConnectionReadout: () => Effect.promise(() => ready.promise) },
+  await using lease = await deps.reads.acquireRead();
+  Object.assign(lease.reads, {
+    ConnectionReadout: () => Effect.promise(() => ready.promise),
   });
   return async (view: LibraryView) => {
     await act(async () => {
@@ -2205,7 +2213,7 @@ function holdReadout(deps: LibraryViewDeps) {
 
 it("leaves the search box unfocused when the command brings the tab forward before the banner's readout lands, and the banner comes to show", async () => {
   const { deps } = await pluginData();
-  const land = holdReadout(deps);
+  const land = await holdReadout(deps);
   const view = await openTab(deps);
   await bringForward(view);
   await land(view);
@@ -2216,7 +2224,7 @@ it("leaves the search box unfocused when the command brings the tab forward befo
 it("has the search box focused once the banner's readout lands where no banner comes to show", async () => {
   const { deps, host } = await pluginData();
   host.vault.addFile("literatures/Paper.md", "");
-  const land = holdReadout(deps);
+  const land = await holdReadout(deps);
   const view = await openTab(deps);
   await bringForward(view);
   await land(view);
@@ -2227,7 +2235,7 @@ it("has the search box focused once the banner's readout lands where no banner c
 it("leaves the cursor where the researcher moved it while the banner's readout was pending", async () => {
   const { deps, host } = await pluginData();
   host.vault.addFile("literatures/Paper.md", "");
-  const land = holdReadout(deps);
+  const land = await holdReadout(deps);
   const view = await openTab(deps);
   await bringForward(view);
   const elsewhere = document.body.createEl("input");
@@ -2550,7 +2558,7 @@ describe("Welcome View banner once setup is complete", () => {
   }
 
   it("shows the setup steps on Open welcome view", async () => {
-    const { view, settings } = await setUp();
+    const { view } = await setUp();
     const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
       view,
       updateHeader: () => {},
@@ -2564,8 +2572,6 @@ describe("Welcome View banner once setup is complete", () => {
             revealLeaf: () => Promise.resolve(),
           }),
         }),
-        settings,
-        settings.bridge,
       ),
     );
     expect(banner(view)).toContain(m.welcome_step_connect_title());

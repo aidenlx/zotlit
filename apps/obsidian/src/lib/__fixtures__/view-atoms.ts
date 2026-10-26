@@ -7,7 +7,12 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { makeViewRegistry } from "@/lib/view-atoms";
 import type { ViewServices } from "@/lib/view-atoms";
 import { CitationIndex } from "@/services/citation-index/service";
+import { QueryClients } from "@/services/query-client/service";
+import { Release } from "@/services/release/service";
+import { PluginSettings } from "@/services/settings/service";
 import { TemplateDataReads } from "@/services/template-workbench/data-reads";
+import { TemplateMigration } from "@/services/template/migration";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 /**
@@ -16,6 +21,13 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
  */
 export const layerUnreadViewServices = Layer.mergeAll(
   Layer.mock(CitationIndex, {}),
+  Layer.mock(PluginSettings, {}),
+  Layer.mock(Release, { version: "" }),
+  Layer.mock(QueryClients, {
+    client: stubService<QueryClients["Service"]["client"]>("QueryClient", {}),
+  }),
+  Layer.mock(TemplateMigration, {}),
+  Layer.mock(ZoteroPref, {}),
   Layer.mock(TemplateDataReads, {}),
   Layer.mock(ZoteroReads, {
     reads: stubService<ZoteroReads["Service"]["reads"]>("ZoteroReadsApi", {}),

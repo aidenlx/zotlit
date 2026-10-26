@@ -5,15 +5,14 @@ import type { App } from "obsidian";
 import { afterEach, expect, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import * as m from "@/lib/i18n/generated/messages";
-import { queryClientsOf } from "@/services/query-client/__fixtures__";
-import { settingsRuntimeOf } from "@/services/settings/__fixtures__";
 import { readsFixture } from "@/services/zotero-reads/__fixtures__";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import { layerSource } from "@/services/zotero-reads/source";
 import { inProcessClient } from "@/services/zotero-reads/test-utils";
 
+import { makeWelcomeHost, waitFor } from "./__fixtures__";
 import { registerWelcomeView } from "./register";
 
 // The Obsidian host renders and removes notices in its document.
@@ -84,10 +83,12 @@ it.effect(
           for (const callback of callbacks.toReversed()) callback();
         }),
       );
-      const queries = yield* queryClientsOf();
-      const { settings, bridge } = yield* settingsRuntimeOf({
-        plugin: { loadData: async () => null, saveData: async () => {} },
-      });
+      const views = yield* Effect.acquireRelease(
+        Effect.promise(() =>
+          makeWelcomeHost({ services: Layer.succeed(ZoteroReads, service) }),
+        ),
+        (views) => Effect.promise(() => views.close()),
+      );
       registerWelcomeView(
         {
           app: host.app as unknown as App,
@@ -96,10 +97,14 @@ it.effect(
             callbacks.push(callback);
           },
         },
-        { runtime: testRuntime(), reads: plain, queries, settings, bridge },
+        { registry: views.registry },
       );
-      expect(document.body.textContent).toContain(
-        m.notice_db_not_found_on_device(),
+      yield* Effect.promise(() =>
+        waitFor(() =>
+          expect(document.body.textContent).toContain(
+            m.notice_db_not_found_on_device(),
+          ),
+        ),
       );
       expect(plain.dbFileMissing).toBe(true);
       expect(yield* Stream.runHead(service.changes)).toMatchObject({
