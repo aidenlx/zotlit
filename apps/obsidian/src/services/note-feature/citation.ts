@@ -1,3 +1,4 @@
+// Renders the Citation Template for the citation suggester; null until the template loads.
 import type { CitationVariant, CiteRef } from "@zotlit/db";
 
 import type { NoteFeatureDeps } from "./context";

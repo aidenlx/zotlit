@@ -1,3 +1,4 @@
+// The Note Feature writes: create, update, overwrite, rewrite and Profile switch.
 import { DateTime, Effect } from "effect";
 import { getFrontMatterInfo } from "obsidian";
 import type { CachedMetadata, TFile } from "obsidian";

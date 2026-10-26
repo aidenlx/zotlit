@@ -1,3 +1,4 @@
+// The result, diagnostic and option types of the Note Feature operations.
 import type { TFile } from "obsidian";
 
 import type { Item, NoteTemplateContext } from "@zotlit/db";

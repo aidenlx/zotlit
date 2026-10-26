@@ -1,3 +1,4 @@
+// The refusals a Note Feature operation returns instead of writing a note.
 import type { TFile } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";

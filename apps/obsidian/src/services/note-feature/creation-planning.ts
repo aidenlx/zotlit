@@ -1,3 +1,4 @@
+// Creation planning and Profile selection: which Profile a new or switched note gets, and its preview.
 import { DateTime, Effect } from "effect";
 import type { TFile } from "obsidian";
 
