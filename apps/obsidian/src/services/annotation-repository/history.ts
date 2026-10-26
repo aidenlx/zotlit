@@ -1,6 +1,8 @@
 // The Annotation History: one Attachment's own confirmed edits, held as the
 // History Steps an undo walks back and a redo walks forward again.
 
+import { DateTime, Duration } from "effect";
+
 import type {
   AnnotationPosition,
   ResolvedAnnotationTypeName,
@@ -116,7 +118,7 @@ export interface HistoryJoin {
   /** The input a run of edits comes from, which only its own kind joins. */
   input: "keyboard";
   /** When the edit was made, which the join window is measured across. */
-  at: Temporal.Instant;
+  at: DateTime.Utc;
 }
 
 /** What one History Step did to one Annotation. */
@@ -414,7 +416,9 @@ function joins(standing: FieldHistoryStep, made: FieldHistoryStep): boolean {
   const [next] = made.changes;
   if (standing.changes.length !== 1 || made.changes.length !== 1) return false;
   if (!held || !next || held.annotationKey !== next.annotationKey) return false;
-  const since = standing.join.at.until(made.join.at).total("milliseconds");
+  const since = Duration.toMillis(
+    DateTime.distance(standing.join.at, made.join.at),
+  );
   return since >= 0 && since < JOIN_WINDOW_MS;
 }
 

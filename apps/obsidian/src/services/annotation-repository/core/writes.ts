@@ -16,7 +16,6 @@ import type { AnnotationPositionRaw } from "@zotlit/db";
 
 import { valueOr } from "@/lib/effect-bridge";
 import { recover } from "@/lib/effect-cause";
-import { toInstant } from "@/lib/effect-clock";
 import { contentOf } from "@/services/annotation-repository/history";
 import type {
   HistoryJoin,
@@ -461,7 +460,7 @@ const patchGeometry = Effect.fnUntraced(function* (
     request: (target, record) => geometryPatch(target, record.type, edit),
     propose: (record) => proposedGeometry(record, edit),
     ...(input === "keyboard" && {
-      join: { input, at: toInstant(yield* DateTime.now) },
+      join: { input, at: yield* DateTime.now },
     }),
   });
 });
