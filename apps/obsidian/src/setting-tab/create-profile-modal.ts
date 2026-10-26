@@ -67,10 +67,7 @@ export type ProfileDialogServices = TemplateDataDeps & {
   templateData: Pick<TemplateDataHandle, "verificationData">;
   app: App;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
-  template: Pick<
-    PlainTemplate,
-    "render" | "renderCitation" | "prepareLiteratureNoteTemplateSource"
-  >;
+  template: Pick<PlainTemplate, "prepareLiteratureNoteTemplateSource">;
   profile: ProfileCreationDeps["profile"] & Pick<PlainProfile, "prepareImport">;
   noteFeature: Pick<NoteFeature, "prepareProfileNote">;
 };

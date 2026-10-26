@@ -88,7 +88,7 @@ const diagnostics = `(()=>{
  */
 const requester = `
   const services=app.plugins.plugins.zotlit.services;
-  const list=await services.annotationRepository.read(${JSON.stringify(attachment.key)});
+  const list=await services.bridge.runPromise(services.annotationRepository.read(${JSON.stringify(attachment.key)}));
   if(!list)throw new Error('The Fixture Attachment has no Annotations');
   const requestFor=key=>{
     const annotation=list.annotations.find(candidate=>candidate.key===key);
@@ -515,7 +515,7 @@ export async function verifyReaderBackedExcerpts(
   );
   const templateBinding = await evalJson<{ enabled: boolean }>(
     vaultId,
-    `(()=>{const settings=app.plugins.plugins.zotlit.services.settings;return JSON.stringify({enabled:settings.current['note.default-profile'].bindings['note.import-annotations-as-template']});})()`,
+    `(()=>{const {settings,bridge}=app.plugins.plugins.zotlit.services;return JSON.stringify({enabled:bridge.runSync(settings.current)['note.default-profile'].bindings['note.import-annotations-as-template']});})()`,
   );
   const settleImport = importSettlement(vaultId);
   // The import overwrites a note the Fixture wrote and turns a setting on, so
@@ -535,7 +535,7 @@ export async function verifyReaderBackedExcerpts(
       await settleImport();
       await obEval(
         vaultId,
-        `(()=>{app.plugins.plugins.zotlit.services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':${templateBinding.enabled}});return true;})()`,
+        `(()=>{app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':${templateBinding.enabled}}));return true;})()`,
       );
     }),
   );
@@ -607,7 +607,7 @@ export async function verifyReaderBackedExcerpts(
       `(async()=>{
         const services=app.plugins.plugins.zotlit.services;
         const memory=()=>{try{const value=process.memoryUsage();return {rss:value.rss,heapUsed:value.heapUsed,heapTotal:value.heapTotal};}catch(error){return String(error);}};
-        services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':true});
+        services.bridge.runSync(services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':true}));
         const state=app.__zotlitExcerptImport={settled:false,startedAt:performance.now(),settledAt:null,before:${diagnostics},memoryBefore:memory(),memoryAfter:null,after:null,result:null,error:null};
         await services.noteIndex.whenIndexed();
         void services.batchImport.runBatchImport('note',[${noteItem.itemID}]).then((result)=>{state.after=${diagnostics};state.result=result;},(error)=>{state.after=${diagnostics};state.error=error?.stack??String(error);}).finally(()=>{state.memoryAfter=memory();state.settledAt=performance.now();state.settled=true;});
@@ -1139,11 +1139,10 @@ export async function verifySavedEditDisplay(
   }>(
     vaultId,
     `(async()=>{
-      const repository=app.plugins.plugins.zotlit.services.annotationRepository;
-      await repository.ready;
-      const list=await repository.read(${JSON.stringify(attachment.key)});
+      const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;
+      const list=await bridge.runPromise(repository.read(${JSON.stringify(attachment.key)}));
       const record=list?.annotations?.find(annotation=>annotation.key===${JSON.stringify(target.key)})??null;
-      return JSON.stringify({capability:repository.capabilityFor(${JSON.stringify(attachment.key)}),record:record&&{color:record.color,comment:record.comment}});
+      return JSON.stringify({capability:bridge.runSync(repository.capabilityFor(${JSON.stringify(attachment.key)})),record:record&&{color:record.color,comment:record.comment}});
     })()`,
   );
   if (card.capability.kind !== "writable") {
@@ -1188,10 +1187,10 @@ export async function verifySavedEditDisplay(
       await obEval(
         vaultId,
         `(async()=>{
-        const repository=${repository};
-        const comment=await repository.patchComment(${JSON.stringify(target.key)},${JSON.stringify(card.record!.comment ?? "")});
+        const repository=${repository},bridge=app.plugins.plugins.zotlit.services.bridge;
+        const comment=await bridge.runPromise(repository.patchComment(${JSON.stringify(target.key)},${JSON.stringify(card.record!.comment ?? "")}));
         if(comment.kind!=='idle')throw new Error('The saved comment was not restored');
-        const color=await repository.patchColor(${JSON.stringify(target.key)},${JSON.stringify(card.record!.color ?? editedColor)});
+        const color=await bridge.runPromise(repository.patchColor(${JSON.stringify(target.key)},${JSON.stringify(card.record!.color ?? editedColor)}));
         if(color.kind!=='idle')throw new Error('The saved colour was not restored');
         return true;
       })()`,
@@ -1245,7 +1244,7 @@ export async function verifySavedEditDisplay(
   ).toBe("true");
   const saved = await evalJson<{ kind: string }>(
     vaultId,
-    `(async()=>{const outcome=await app.plugins.plugins.zotlit.services.annotationRepository.patchColor(${JSON.stringify(target.key)},${JSON.stringify(editedColor)});return JSON.stringify(outcome);})()`,
+    `(async()=>{const outcome=await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.patchColor(${JSON.stringify(target.key)},${JSON.stringify(editedColor)}));return JSON.stringify(outcome);})()`,
   );
   expect(saved).toMatchObject({ kind: "idle" });
   expect(
@@ -1334,9 +1333,9 @@ export async function verifySavedEditDisplay(
   }>(
     vaultId,
     `(async()=>{
-      const repository=app.plugins.plugins.zotlit.services.annotationRepository;
+      const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;
       const before=${diagnostics};
-      const outcome=await repository.patchComment(${JSON.stringify(target.key)},${JSON.stringify(editedComment)});
+      const outcome=await bridge.runPromise(repository.patchComment(${JSON.stringify(target.key)},${JSON.stringify(editedComment)}));
       const after=${diagnostics};
       return JSON.stringify({before,after,outcome});
     })()`,
