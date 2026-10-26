@@ -774,14 +774,12 @@ const importSingleNote = Effect.fnUntraced(function* (
     ref.indexedKey,
   ))[0];
   if (existing) {
-    const yes = yield* Effect.promise(() =>
-      ports.view.confirm({
-        title: m.modal_import_overwrite_title(),
-        content: m.modal_import_overwrite_desc({ title }),
-        action: m.modal_import_overwrite_confirm(),
-        destructive: true,
-      }),
-    );
+    const yes = yield* ports.view.confirm({
+      title: m.modal_import_overwrite_title(),
+      content: m.modal_import_overwrite_desc({ title }),
+      action: m.modal_import_overwrite_confirm(),
+      destructive: true,
+    });
     if (!yes) return result({ outcome: "cancelled" });
   }
 
