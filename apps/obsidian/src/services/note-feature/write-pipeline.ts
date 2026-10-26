@@ -329,6 +329,7 @@ const writeNewNote = Effect.fnUntraced(function* <E>(
       if (excerptImages)
         yield* portCall("excerpt-prepare", () => excerptImages.prepare());
       const template = yield* syncTemplate;
+      const now = toInstant(yield* DateTime.now);
       const composed = yield* Effect.try({
         try: () =>
           composeLiteratureNote(
@@ -338,6 +339,7 @@ const writeNewNote = Effect.fnUntraced(function* <E>(
               itemKey: item.indexedKey,
               profile: options.profile,
               document: options.document,
+              now,
             },
           ),
         catch: (cause) => new NoteWriteAborted({ path, cause }),

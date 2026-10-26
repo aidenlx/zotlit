@@ -1,4 +1,5 @@
-import { Effect, Fiber } from "effect";
+import { DateTime, Effect, Fiber } from "effect";
+import { TestClock } from "effect/testing";
 import {
   mkdir,
   mkdtemp,
@@ -178,6 +179,24 @@ function createNoteFeature(deps: TestDeps) {
       know(item);
       return runtime.runFork(
         Effect.flatMap(NoteFeature, (service) => service.createNote(item)),
+      );
+    },
+    /** Create on the runtime under a TestClock set to `millis`. */
+    createNoteAt: (
+      item: Item,
+      options: Parameters<NoteFeatureHandle["createNote"]>[1],
+      millis: number,
+    ) => {
+      know(item);
+      return runtime.runPromise(
+        TestClock.setTime(millis).pipe(
+          Effect.andThen(
+            Effect.flatMap(NoteFeature, (service) =>
+              service.createNote(item, options),
+            ),
+          ),
+          Effect.provide(TestClock.layer()),
+        ),
       );
     },
     /** Interrupt `fiber`, and settle once it has ended. */
@@ -1839,6 +1858,51 @@ describe("createNote", () => {
     const file = createdFile(result);
     expect(file.path).toBe("Literature/Converted-Root.md");
     expect(document.renderForCreate).toHaveBeenCalledOnce();
+  });
+
+  it("reads a created note's Managed Frontmatter `now` from the Effect clock", async () => {
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
+    const item = makeCreateGateItem();
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
+    const app = makeApp();
+    const document = makeDocumentTemplate({
+      createBody: formatManagedRegion("BODY"),
+      filename: `Clock-Root${filenameSuffix()}`,
+      frontmatter: compileDocumentFrontmatter([
+        { key: "created", merge: "replace", value: { $eval: "now" } },
+      ]),
+    });
+    const feature = createNoteFeature({
+      app,
+      template: {
+        ...makeTemplate(),
+        getLiteratureNoteTemplate: (reference) =>
+          reference === "clock.md" ? document : undefined,
+      },
+      ...makeDbDeps(),
+      noteIndex: {
+        getImportedNoteByNoteKey: () => [],
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings({
+        profiles: [{ id: profileId, label: "Clock", document: "clock.md" }],
+      }),
+      attachmentImport: blockedAttachmentImport,
+    });
+
+    const file = createdFile(
+      await feature.createNoteAt(
+        item,
+        { profile: profileId },
+        DateTime.toEpochMillis(DateTime.makeUnsafe("2024-03-01T08:00:00Z")),
+      ),
+    );
+
+    expect(app.vault.contents.get(file.path)).toContain(
+      "created: 2024-03-01T08:00:00Z",
+    );
   });
 
   it("creates a Profile note from its document body, filename, and frontmatter", async () => {
