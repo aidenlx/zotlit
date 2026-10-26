@@ -1,10 +1,11 @@
 import { it } from "@effect/vitest";
-import { DateTime, Effect } from "effect";
+import { DateTime, Effect, Layer } from "effect";
 import { TestClock } from "effect/testing";
 import { expect, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 import {
   ATTACHMENT_KEY,
@@ -354,7 +355,8 @@ function readUseServices({
   writeLastRead?: ZoteroLocalApi["Service"]["writeLastRead"];
 } = {}) {
   const snapshots = vi.fn();
-  const reads = stubService<ZoteroReads["Service"]>("ZoteroReads", {
+  const reads = Layer.mock(ZoteroReads, {
+    reads: stubService<ZoteroReadsApi>("Reads", {}),
     snapshot:
       snapshot ??
       Effect.sync(() => {
@@ -373,15 +375,12 @@ function readUseServices({
         );
       }),
   });
-  const api = stubService<ZoteroLocalApi["Service"]>("ZoteroLocalApi", {
+  const api = Layer.mock(ZoteroLocalApi, {
     state: Effect.succeed(state),
     writeLastRead,
   });
   const run = (target: Parameters<typeof writeReadUse>[0]) =>
-    writeReadUse(target).pipe(
-      Effect.provideService(ZoteroReads, reads),
-      Effect.provideService(ZoteroLocalApi, api),
-    );
+    writeReadUse(target).pipe(Effect.provide(Layer.mergeAll(reads, api)));
   return { run, snapshots, writeLastRead };
 }
 
