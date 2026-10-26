@@ -23,8 +23,6 @@ import type { ReadsAnswers } from "@/services/zotero-reads/__fixtures__";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
-import { layerPromiseNoteFeature } from "./__fixtures__/promise-note-feature";
-import type { PromiseNoteFeature } from "./__fixtures__/promise-note-feature";
 import { companionNoteNotice, openCompanionNote } from "./index";
 import type {
   CompanionNoteDeps,
@@ -33,6 +31,7 @@ import type {
   PreparedCreationProfile,
 } from "./index";
 import type { CreationPlan } from "./operations";
+import { NoteFeature } from "./service";
 
 vi.mock("@/views/quick-switch/profile-picker", () => ({
   chooseLiteratureNoteProfile: vi.fn(),
@@ -65,7 +64,7 @@ interface FlowServices {
   /** Records each notice the flow shows. */
   readonly notifier: ReturnType<typeof testNotifier>;
   /** Answers the Note Feature's lookups and updates. */
-  readonly feature: Partial<PromiseNoteFeature>;
+  readonly feature: Partial<NoteFeature["Service"]>;
 }
 
 function flowLayer({
@@ -76,9 +75,7 @@ function flowLayer({
   feature,
 }: FlowServices) {
   return Layer.mergeAll(
-    layerPromiseNoteFeature(() =>
-      stubService<PromiseNoteFeature>("NoteFeature", feature),
-    ),
+    Layer.mock(NoteFeature, feature),
     layerWorkspaceFrom(workspace),
     notifier.layer,
     Layer.mock(UseLedger, {
@@ -140,13 +137,12 @@ function creationHarness(selection: CreationProfileSelection) {
     ),
   };
   const feature = {
-    resolveCompanionNote: vi.fn(async (): Promise<CompanionNoteTarget> => ({
-      outcome: "create",
-    })),
-    updateNote: vi.fn(async () => ({
-      bodyUpdated: true,
-      duplicateRegionCount: 0,
-    })),
+    resolveCompanionNote: vi.fn<NoteFeature["Service"]["resolveCompanionNote"]>(
+      () => Effect.succeed({ outcome: "create" }),
+    ),
+    updateNote: vi.fn<NoteFeature["Service"]["updateNote"]>(() =>
+      Effect.succeed({ bodyUpdated: true, duplicateRegionCount: 0 }),
+    ),
   };
   const workspace = new MemoryWorkspace({ layoutReady: true });
   const excluded: string[] = [];
@@ -344,7 +340,9 @@ it.effect(
         outcome: "refused" as const,
         diagnostic: unknownProfileDiagnostic(PAPERS),
       };
-      vi.mocked(harness.feature.resolveCompanionNote).mockResolvedValue(target);
+      harness.feature.resolveCompanionNote.mockReturnValue(
+        Effect.succeed(target),
+      );
       yield* openCompanionNote(harness.deps, REF, {
         action: "open",
         profile: PAPERS,
@@ -367,10 +365,9 @@ it.effect("opens a matching existing note and updates under its stamp", () =>
       source: "headless",
       shouldAsk: true,
     });
-    vi.mocked(harness.feature.resolveCompanionNote).mockResolvedValue({
-      outcome: "existing",
-      files: [harness.file],
-    });
+    harness.feature.resolveCompanionNote.mockReturnValue(
+      Effect.succeed({ outcome: "existing", files: [harness.file] }),
+    );
     yield* openCompanionNote(harness.deps, REF, {
       action: "update",
       profile: BOOKS,
@@ -403,7 +400,9 @@ it.effect(
           path: harness.file.path,
         }),
       };
-      vi.mocked(harness.feature.resolveCompanionNote).mockResolvedValue(target);
+      harness.feature.resolveCompanionNote.mockReturnValue(
+        Effect.succeed(target),
+      );
       yield* openCompanionNote(harness.deps, REF, {
         action: "update",
         profile: "default",
@@ -433,10 +432,9 @@ it.effect.each(["tab"] as const)(
         source: "headless",
         shouldAsk: false,
       });
-      vi.mocked(harness.feature.resolveCompanionNote).mockResolvedValue({
-        outcome: "existing",
-        files: [harness.file],
-      });
+      harness.feature.resolveCompanionNote.mockReturnValue(
+        Effect.succeed({ outcome: "existing", files: [harness.file] }),
+      );
       yield* openCompanionNote(harness.deps, REF, {
         action: "open",
         paneType,
@@ -488,9 +486,11 @@ it.effect.each(["open", "update"] as const)(
         files: [file] as [TFile],
         keptProfile: { selector: BOOKS, label: "Books" },
       };
-      const updateNote = vi.fn();
+      const updateNote = vi.fn<NoteFeature["Service"]["updateNote"]>();
       const createNote = vi.fn();
-      const resolveCompanionNote = vi.fn(async () => target);
+      const resolveCompanionNote = vi.fn<
+        NoteFeature["Service"]["resolveCompanionNote"]
+      >(() => Effect.succeed(target));
       const deps: CompanionNoteDeps = {
         createProfile: vi.fn(),
         importProfile: vi.fn(),

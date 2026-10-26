@@ -1,5 +1,14 @@
 import { it } from "@effect/vitest";
-import { Context, Effect, Fiber, Layer, Queue, Stream } from "effect";
+import {
+  Context,
+  Effect,
+  Fiber,
+  Layer,
+  Logger,
+  Queue,
+  References,
+  Stream,
+} from "effect";
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
 import { describe, expect, vi } from "vitest";
@@ -238,6 +247,48 @@ describe("CitekeyEditor note creation", () => {
       expect(workspace.opened).toEqual([]);
       expect(events).toEqual([]);
     }),
+  );
+
+  it.effect(
+    "logs a rejected creation and opens nothing, as a cancelled one",
+    () =>
+      Effect.gen(function* () {
+        const refused = new Error("Template threw");
+        const { editor, workspace, events } = yield* openEditor({
+          resolutions: { paper2024: { kind: "unique", item: paper } },
+          works: [{ itemID: paper.itemID, key: paper.key }],
+          createNote: () => Promise.reject(refused),
+        });
+        const errors: {
+          message: unknown;
+          annotations: Readonly<Record<string, unknown>>;
+        }[] = [];
+        const logs = Logger.layer([
+          Logger.make(({ logLevel, message, fiber }) => {
+            if (logLevel !== "Error") return;
+            errors.push({
+              message: Array.isArray(message) ? message[0] : message,
+              annotations: fiber.getRef(References.CurrentLogAnnotations),
+            });
+          }),
+        ]);
+
+        yield* editor
+          .openCitekey("paper2024", false)
+          .pipe(Effect.provide(logs));
+
+        expect(workspace.opened).toEqual([]);
+        expect(events).toEqual([]);
+        expect(errors).toEqual([
+          {
+            message: "Cannot create the citekey note",
+            annotations: expect.objectContaining({
+              indexedKey: "PAPER234",
+              error: refused,
+            }),
+          },
+        ]);
+      }),
   );
 
   it.effect(
