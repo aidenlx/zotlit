@@ -13,11 +13,9 @@ import * as m from "@/lib/i18n/generated/messages";
 import { startI18n } from "./lib/i18n";
 import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
-import { openSettingsTab } from "./lib/open-settings";
 import { addAnnotationHistoryActions } from "./services/annotation-repository/actions";
 import type { HistorySurface } from "./services/annotation-repository/actions";
 import { annotationHistoryFileMenu } from "./services/annotation-repository/menu";
-import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
 import { addAttachmentOpenActions } from "./services/attachment-open/actions";
 import { registerFileLinkCapture } from "./services/attachment-open/capture";
 import { attachmentOpenFileMenu } from "./services/attachment-open/menu";
@@ -625,18 +623,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       settings: services.settings,
       bridge: services.bridge,
     });
-
-    stack.defer(
-      registerAttachmentSkipNotice({
-        attachmentImport: services.attachmentImport,
-        openSettings: () => {
-          openSettingsTab(this.app, this.manifest.id, [
-            "settings_page_attachments",
-            "settings_attachment_approved",
-          ]);
-        },
-      }),
-    );
 
     // The companion's Freshness Signal means the database changed and its
     // Checkpoint attempt has settled; feed it into the same coalesced refresh

@@ -1,8 +1,8 @@
 // Attachment Import for callers outside Effect: the setting tab's approved
-// folders and the skipped-sources notice.
+// folders.
 import type { EffectBridge } from "@/lib/effect-bridge";
 
-import type { AttachmentImport, AttachmentSkipSummary } from "./service";
+import type { AttachmentImport } from "./service";
 
 /** The edge handle `build.ts` binds; see {@link bindAttachmentImport}. */
 export interface AttachmentImportHandle {
@@ -11,8 +11,6 @@ export interface AttachmentImportHandle {
   /** The canonical path stored, or `null` when `folder` does not resolve. */
   approveFolder(folder: string): Promise<string | null>;
   revokeFolder(folder: string): Promise<void>;
-  /** Follow each pooled skip summary until the returned function stops it, or the runtime closes. */
-  onSkipped(callback: (summary: AttachmentSkipSummary) => void): () => void;
 }
 
 /**
@@ -20,7 +18,7 @@ export interface AttachmentImportHandle {
  * run after release fails as the bridge does.
  */
 export function bindAttachmentImport(
-  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">,
+  bridge: Pick<EffectBridge, "runSync" | "runPromise">,
   service: AttachmentImport["Service"],
 ): AttachmentImportHandle {
   return {
@@ -29,6 +27,5 @@ export function bindAttachmentImport(
     },
     approveFolder: (folder) => bridge.runPromise(service.approveFolder(folder)),
     revokeFolder: (folder) => bridge.runPromise(service.revokeFolder(folder)),
-    onSkipped: (callback) => bridge.subscribe(service.skipped, callback),
   };
 }

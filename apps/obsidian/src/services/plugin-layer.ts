@@ -20,6 +20,7 @@ import { layerVault } from "@/lib/obsidian-vault";
 import type { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
 import { layerWorkspace } from "@/lib/obsidian-workspace";
+import { openSettingsTab } from "@/lib/open-settings";
 import { layerPluginHost } from "@/lib/plugin-host";
 import type { ZoteroHttp } from "@/lib/zotero-http";
 import { layerZoteroHttpNode } from "@/lib/zotero-http-node";
@@ -35,6 +36,7 @@ import type {
 } from "./annotation-repository/notices";
 import { layerAnnotationRepository } from "./annotation-repository/service";
 import type { AnnotationRepository } from "./annotation-repository/service";
+import { layerAttachmentSkipNotice } from "./attachment-import/notices";
 import { layerAttachmentImport } from "./attachment-import/service";
 import type { AttachmentImport } from "./attachment-import/service";
 import { layerAttachmentResolver } from "./attachment-resolver/service";
@@ -355,6 +357,14 @@ export function pluginLayer(
   );
   const registrations = Layer.mergeAll(
     layerAnnotationImageCli.pipe(startingAs("AnnotationImageCli")),
+    layerAttachmentSkipNotice({
+      openSettings: () => {
+        openSettingsTab(plugin.app, plugin.manifest.id, [
+          "settings_page_attachments",
+          "settings_attachment_approved",
+        ]);
+      },
+    }).pipe(startingAs("AttachmentSkipNotice")),
     layerAnnotationLinkReading.pipe(startingAs("AnnotationLinkReading")),
     layerCitationsCli.pipe(startingAs("CitationsCli")),
     layerCitationStyleNotice.pipe(startingAs("CitationStyleNotice")),
