@@ -124,7 +124,7 @@ export function capabilityOf(
   attachmentKey: string,
   field: "kind" | "reason",
 ): string {
-  return `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();return String(repository.capabilityFor(${JSON.stringify(attachmentKey)}).${field});})()`;
+  return `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);return String(bridge.runSync(repository.capabilityFor(${JSON.stringify(attachmentKey)})).${field});})()`;
 }
 
 /**
@@ -358,7 +358,7 @@ export async function watchExcerptPixels(
 ): Promise<AsyncDisposable & { keys(): Promise<string[]> }> {
   await obEval(
     vaultId,
-    "(function(){window.__ztPixelsOff?.();window.__ztPixels=[];window.__ztPixelsOff=app.plugins.plugins.zotlit.services.annotationRepository.on('excerpt-pixels-changed',(record)=>window.__ztPixels.push(record.key));return true;})()",
+    "(function(){window.__ztPixelsOff?.();window.__ztPixels=[];window.__ztPixelsOff=app.plugins.plugins.zotlit.services.bridge.subscribe(app.plugins.plugins.zotlit.services.annotationRepository.excerptPixelsChanged,({record})=>window.__ztPixels.push(record.key));return true;})()",
   );
   return {
     async keys() {

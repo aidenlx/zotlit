@@ -44,7 +44,7 @@ const openExtension = Effect.fnUntraced(function* (
   workspace.openMarkdownEditor("other.md");
   const text = testEvent<CitationTextEvent>();
   const lookup = testEvent<CitationLookupState>();
-  const scope = yield* Scope.make();
+  const scope = yield* Scope.fork(yield* Scope.Scope);
   yield* Layer.buildWithScope(
     layerCitekeyEditorExtension.pipe(
       Layer.provide(

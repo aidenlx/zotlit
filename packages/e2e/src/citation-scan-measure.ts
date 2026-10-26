@@ -36,7 +36,6 @@ export async function measureCitationScan(vaultId: string) {
         `(async()=>{
         await using cleanup=new AsyncDisposableStack();
         const index=app.plugins.plugins.zotlit.services.citationIndex;
-        await index.ready;
         if(await index.waitUntilSettled(15000)!=='settled')throw Error('Citation backfill did not settle');
         const client=require('@electron/remote').getCurrentWebContents().debugger;
         const attached=client.isAttached();if(!attached)client.attach('1.3');

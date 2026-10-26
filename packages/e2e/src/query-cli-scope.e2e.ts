@@ -31,7 +31,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // unload also flushes pending settings.
     await obEval(
       run.vaultId,
-      "app.plugins.plugins.zotlit.services.settings.flush().then(()=>true)",
+      "app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.settings.flush).then(()=>true)",
     );
 
     // Rewrite the e2e vault's own copy — the shared Fixture layout's vault
@@ -124,7 +124,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     {
       // The load spawned one database worker, and it serves.
       expect(
-        await obEval(run.vaultId, workers("String(record.spawned.length)")),
+        await obEval(
+          run.vaultId,
+          workers(
+            "String(record.spawned.filter(function(entry){return entry.name==='zotlit-zotero-reads';}).length)",
+          ),
+        ),
       ).toBe("1");
       expect(
         await obEvalUntil(

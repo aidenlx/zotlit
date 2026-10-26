@@ -151,6 +151,20 @@ async function openMatchEditor(): Promise<void> {
 }
 
 async function mainSettings() {
+  // A researcher's click in the dialog focuses the main window, and a sheet
+  // that click opens takes Obsidian's active window; a press moves no
+  // emulated focus, so move it from a popout before the dialog opens.
+  await obEval(run.vaultId, "window.focus();true");
+  await expect
+    .poll(
+      () =>
+        obEval(
+          run.vaultId,
+          "String(activeWindow===window&&document.hasFocus())",
+        ),
+      { timeout: 5000 },
+    )
+    .toBe("true");
   await obEval(
     run.vaultId,
     "app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();app.setting.openTabById('zotlit');true",
