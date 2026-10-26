@@ -157,10 +157,11 @@ type QueuedCommand = WriteAttempt & {
   /** Set on the second send of a tag write, after its `412` re-read. */
   reapplied?: true;
   /**
-   * Set once Zotero took the send. A close of the layer after that interrupts
-   * only the read-back, so the write keeps its answer.
+   * What Zotero answered the send, or `null` while no answer is read. A close
+   * of the layer after the answer interrupts only the reads that follow, so
+   * the write keeps it. Read only by the `mutationFn` edge.
    */
-  progress?: { accepted: boolean };
+  progress?: { answer: MutationState | null };
 };
 
 /** Why a write's reads failed under it. */
@@ -654,14 +655,14 @@ const command = Effect.fnUntraced(function* (
     // Zotero runs on this device, so no write waits for an online event.
     networkMode: "always",
     mutationFn: () => {
-      // A close of the layer interrupts the write: before Zotero took the
-      // send, its outcome is unknown; after, the write was saved.
+      // A close of the layer interrupts the write: before Zotero answered the
+      // send, its outcome is unknown; after, the write keeps that answer.
       const send = async () => {
-        const progress = { accepted: false };
+        const progress: { answer: MutationState | null } = { answer: null };
         const exit = await core.bridge.runPromiseExit(
           runCommand(core, annotationKey, { ...queued, progress }),
         );
-        return valueOr(exit, progress.accepted ? IDLE : UNKNOWN_OUTCOME);
+        return valueOr(exit, progress.answer ?? UNKNOWN_OUTCOME);
       };
       return command.run ? command.run(send, mutation) : send();
     },
@@ -769,14 +770,17 @@ const runCommand: (
       held.record,
     );
     const source = yield* compatibleApiSource(core, held.attachmentKey);
+    // A second send (a tag write applied again) starts with no answer.
+    if (command.progress) command.progress.answer = null;
     const reply = yield* core.localApi.authorizedSend(path, {
       library,
       method,
       headers,
       body,
     });
-    if (command.progress && !("failure" in reply)) {
-      command.progress.accepted = true;
+    if (command.progress) {
+      command.progress.answer =
+        "failure" in reply ? { kind: "failed", failure: reply.failure } : IDLE;
     }
     if (
       !source ||
