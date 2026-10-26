@@ -48,6 +48,7 @@ import type { LiteratureNoteProfile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 import { InertTemplateError } from "@/services/template/errors";
+import type { ZoteroPref } from "@/services/zotero-pref/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type { ItemDisplayRef } from "@/services/zotero-reads/display-ref";
 import { ZoteroReads } from "@/services/zotero-reads/service";
@@ -95,6 +96,7 @@ export type BatchUpdateServices =
   | PluginSettings
   | Profile
   | Workspace
+  | ZoteroPref
   | ZoteroReads;
 
 /**

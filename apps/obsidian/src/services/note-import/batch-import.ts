@@ -45,6 +45,7 @@ import { lastmodFromFrontmatter } from "@/services/note-index/parse";
 import { NoteIndex } from "@/services/note-index/service";
 import { Profile } from "@/services/profile/service";
 import { PluginSettings } from "@/services/settings/service";
+import type { ZoteroPref } from "@/services/zotero-pref/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
@@ -74,6 +75,7 @@ export type BatchImportServices =
   | NoteIndex
   | PluginSettings
   | Profile
+  | ZoteroPref
   | ZoteroReads;
 
 /**
