@@ -1,6 +1,6 @@
 // One Annotation reached through the Local API and the database must reuse pixels.
 import { it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Deferred, Effect } from "effect";
 import { join } from "node:path";
 import { describe, expect, vi } from "vitest";
 
@@ -323,6 +323,58 @@ describe("Saved excerpt request", () => {
         yield* Effect.promise(() => bridge[Symbol.asyncDispose]());
 
         expect(yield* Effect.promise(() => pending)).toBeNull();
+      }),
+  );
+
+  it.effect(
+    "interrupts a read under the Snapshot and resolves to nothing where unload stops it",
+    () =>
+      Effect.gen(function* () {
+        const db = yield* fixtureDb();
+        const bridge = openTestBridge();
+        const started = yield* Deferred.make<void>();
+        let interrupted = false;
+        let released = false;
+        // The Snapshot is taken; its identity read starts and never answers.
+        const reads = new Proxy(db.reads, {
+          get(target, key, receiver) {
+            return key === "DatabaseIdentity"
+              ? () =>
+                  Deferred.succeed(started, undefined).pipe(
+                    Effect.andThen(Effect.never),
+                    Effect.onInterrupt(() =>
+                      Effect.sync(() => {
+                        interrupted = true;
+                      }),
+                    ),
+                  )
+              : Reflect.get(target, key, receiver);
+          },
+        });
+        const requestOver = savedExcerptRequestOver({
+          reads: stubService<ZoteroReads["Service"]>("ZoteroReads", {
+            snapshot: Effect.acquireRelease(Effect.succeed(reads), () =>
+              Effect.sync(() => {
+                released = true;
+              }),
+            ),
+          }),
+          pref: stubService<ZoteroPref["Service"]>("ZoteroPref", {
+            current: Effect.succeed({
+              dataDir: paths.dataDir,
+              baseAttachmentPath: paths.baseAttachmentPath,
+            } as ZoteroPrefSnapshot),
+          }),
+          bridge,
+        });
+
+        const pending = requestOver({ annotation, source: apiSource });
+        yield* Deferred.await(started);
+        yield* Effect.promise(() => bridge[Symbol.asyncDispose]());
+
+        expect(yield* Effect.promise(() => pending)).toBeNull();
+        expect(interrupted).toBe(true);
+        expect(released).toBe(true);
       }),
   );
 });
