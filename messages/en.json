@@ -51,6 +51,8 @@
   "notice_db_refreshing": "Refreshing Zotero database…",
   "notice_db_refreshed": "Zotero database refreshed.",
   "notice_db_refresh_failed": "Failed to refresh Zotero database.",
+  "notice_db_profile_dir_failed": "Failed to set the Zotero profile folder.",
+  "notice_db_data_dir_failed": "Failed to set the Zotero data folder.",
   "notice_db_not_found_on_device": "Zotero wasn't found on this device.",
   "notice_db_not_found_action": "Set up connection",
   "notice_library_scope_invalid": "Library scope is invalid",

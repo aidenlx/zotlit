@@ -14,9 +14,11 @@ import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { defaults } from "@/services/settings/schema";
 import type { HoverAction } from "@/services/settings/schema";
+import { resolvedChanged, ZoteroPref } from "@/services/zotero-pref/service";
 import { annotationTriggerError } from "@/views/citation-suggest/annotation-trigger";
 
 import type { SettingsKey, SettingTabContext } from "./context";
+import { zoteroDataDir } from "./database";
 import { paintEach } from "./effect-tab";
 import { pandocEngineDefinition } from "./pandoc-engine";
 import { pandocIntegrationDefinition } from "./pandoc-integration";
@@ -315,7 +317,7 @@ function renderReferencesStyleRow(
   let latestRead = 0;
   const reload = (): void => {
     const read = ++latestRead;
-    void listInstalledStyles(ctx.zoteroPref.dataDir).then((installed) => {
+    void listInstalledStyles(ctx.tab.sync(zoteroDataDir)).then((installed) => {
       if (disposed || read !== latestRead) return;
       styles = installed;
       stylesLoaded = true;
@@ -346,7 +348,9 @@ function renderReferencesStyleRow(
 
   reload();
   stack.defer(
-    ctx.tab.mount(paintEach(ctx.zoteroPref["resolved-changed"], reload)),
+    ctx.tab.mount(
+      ZoteroPref.use((pref) => paintEach(resolvedChanged(pref), reload)),
+    ),
   );
   stack.defer(
     ctx.tab.mount(

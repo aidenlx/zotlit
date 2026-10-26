@@ -22,6 +22,7 @@ import type {
   SettingsControlKey,
   SettingTabContext,
 } from "./context";
+import { zoteroDataDir } from "./database";
 export {
   createProfileCreator,
   loadProfilePreviewData,
@@ -355,10 +356,10 @@ async function deleteProfile(
 ): Promise<void> {
   await runAction(async () => {
     const plan = await ctx.profile.prepareDelete(id);
+    const dataDir = ctx.tab.sync(zoteroDataDir);
     const styles =
-      plan.literatureNotes.length + plan.importedNotes.length &&
-      ctx.zoteroPref.dataDir
-        ? await listInstalledStyles(ctx.zoteroPref.dataDir)
+      plan.literatureNotes.length + plan.importedNotes.length && dataDir
+        ? await listInstalledStyles(dataDir)
         : [];
     const consent = await confirmProfileDeletion(ctx.app, { plan, styles });
     if (consent)

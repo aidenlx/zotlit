@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { Effect, Stream } from "effect";
+import { Context, Effect, Stream } from "effect";
 import type {
   App,
   SettingDefinitionItem,
@@ -14,6 +14,7 @@ import { expect, it, vi } from "vitest";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
+import { LibraryScope } from "@/services/library-scope/service";
 import type { LocalServer } from "@/services/local-server/service";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { defaults } from "@/services/settings/schema";
@@ -36,7 +37,21 @@ vi.mock("@/views/template-workbench/register", () => ({
 
 function ctx(): SettingTabContext {
   return stubService<SettingTabContext>("SettingTabContext", {
-    tab: testSettingTab().tab,
+    tab: testSettingTab(
+      Context.make(
+        LibraryScope,
+        LibraryScope.of({
+          state: Effect.die("unread"),
+          changes: Stream.empty,
+          current: Effect.succeed(null),
+          effective: Effect.succeed({ mode: "all" }),
+          invalid: Effect.succeed(false),
+          libraries: Effect.succeed([]),
+          libraryRows: Effect.succeed(null),
+          resolveLibraries: () => Effect.die("unread"),
+        }),
+      ),
+    ).tab,
     webWorkbenchEnabled: true,
     app: stubService<SettingTabContext["app"]>("App", {
       vault: stubService<SettingTabContext["app"]["vault"]>("Vault", {
@@ -66,19 +81,6 @@ function ctx(): SettingTabContext {
       profiles: [],
       diagnostics: [],
       defaultDocumentPath: "templates/zotlit-profile.default.md",
-    }),
-    db: stubService<SettingTabContext["db"]>("ZoteroReads", {}),
-    libraryScope: stubService<SettingTabContext["libraryScope"]>(
-      "LibraryScope",
-      {
-        effective: { mode: "all" },
-        current: null,
-        invalid: false,
-      },
-    ),
-    zoteroPref: stubService<SettingTabContext["zoteroPref"]>("ZoteroPref", {
-      databasePath: "",
-      dataDir: undefined,
     }),
     localServer: stubService<LocalServer["Service"]>("LocalServer", {
       effectivePort: Effect.succeed(null),
