@@ -3,7 +3,6 @@ import type { App, TFile } from "obsidian";
 
 import type { ItemRef } from "@zotlit/db";
 
-import { valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
@@ -20,7 +19,7 @@ import type { BatchProfileCount } from "@/services/batch-profile-summary";
 import {
   classifyStream,
   executeBatchRun,
-  runBatchWith,
+  modalRunner,
 } from "@/services/batch-run";
 import type {
   BatchClassifyControls,
@@ -371,14 +370,7 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
     profilesEnabled: boolean;
   },
 ) {
-  const context = yield* Effect.context<BatchUpdateServices>();
-  const runBatch = runBatchWith((effect, options) =>
-    ports.bridge.runPromiseExit(effect, options),
-  );
-  const run = <A, E>(
-    effect: Effect.Effect<A, E, BatchUpdateServices>,
-    signal?: AbortSignal,
-  ) => runBatch(Effect.provideContext(effect, context), signal);
+  const { run, settle } = yield* modalRunner<BatchUpdateServices>(ports.bridge);
   const profiles = yield* Profile;
   let actions: BatchAction[] = [];
   let plans: ReadonlyMap<string, CreationPlan> = new Map();
@@ -477,13 +469,7 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
     get source() {
       return rows()[0]?.selection?.source ?? "bound";
     },
-    choose: async () =>
-      valueOr(
-        await ports.bridge.runPromiseExit(
-          Effect.provideContext(choose(scope, rows), context),
-        ),
-        undefined,
-      ),
+    choose: () => settle(choose(scope, rows)),
   });
   const classify = Effect.fnUntraced(function* (
     controls: BatchClassifyControls,

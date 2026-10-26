@@ -2,6 +2,8 @@
 import { Cause, Deferred, Effect, Exit, Option, Ref, Stream } from "effect";
 
 import { AbortError } from "@/lib/abort-error";
+import { valueOr } from "@/lib/effect-bridge";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { settleAtEdge } from "@/lib/signal-edge";
 import { formatErrorMessage } from "@/lib/toast";
 
@@ -294,3 +296,29 @@ export function runBatchWith(
     return settleAtEdge(exit, signal);
   };
 }
+
+/**
+ * The runners a batch modal's callbacks enter Effect through, over the
+ * services this Effect runs with and through `bridge`, so unload interrupts
+ * them. `run` settles as {@link runBatch} settles. `settle` resolves
+ * `undefined` when unload interrupts it, for a choice the modal waits on.
+ */
+export const modalRunner = Effect.fnUntraced(function* <R>(
+  bridge: Pick<EffectBridge, "runPromiseExit">,
+) {
+  const context = yield* Effect.context<R>();
+  const runExit = runBatchWith((effect, options) =>
+    bridge.runPromiseExit(effect, options),
+  );
+  return {
+    run: <A, E>(effect: Effect.Effect<A, E, R>, signal?: AbortSignal) =>
+      runExit(Effect.provideContext(effect, context), signal),
+    settle: async <A, E>(
+      effect: Effect.Effect<A, E, R>,
+    ): Promise<A | undefined> =>
+      valueOr<A | undefined, E>(
+        await bridge.runPromiseExit(Effect.provideContext(effect, context)),
+        undefined,
+      ),
+  };
+});
