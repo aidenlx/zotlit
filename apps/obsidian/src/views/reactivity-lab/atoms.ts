@@ -1,7 +1,6 @@
 // PROTOTYPE (proto/view-reactivity) — throwaway. Static atoms over the lab's
 // service Streams; in production each would sit beside its service, e.g.
 // `services/settings/atoms.ts`.
-import { make as scoped } from "@effect/atom-react";
 import { Option, Stream } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
@@ -45,14 +44,3 @@ export const readCitedByOnceCommand = viewRuntime.fn((key: string) =>
   readCitedByOnce(key),
 );
 export const openNoteCommand = viewRuntime.fn((path: string) => openNote(path));
-
-// --- View-local state: one instance per leaf ----------------------------
-
-export interface LabUiState {
-  readonly search: string;
-  readonly collapsed: ReadonlySet<string>;
-}
-
-export const LabUi = scoped(() =>
-  Atom.make({ search: "", collapsed: new Set() } as LabUiState),
-);

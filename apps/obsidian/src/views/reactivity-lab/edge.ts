@@ -65,6 +65,9 @@ export function makeViewRegistry(
   });
 }
 
+/** The registry type, so Obsidian adapter files need no Effect import. */
+export type ViewRegistryHandle = AtomRegistry.AtomRegistry;
+
 export function ViewRegistry(props: {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly children?: ReactNode;

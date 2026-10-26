@@ -244,3 +244,105 @@ Run them one at a time: parallel runs drive the same leaf.
   });
 })();
 ```
+
+## view-features.js
+
+Self-contained; opens its own lab leaf on the Atom tab.
+
+```js
+// View features on the Atom tab: saved state, save requests, header action,
+// pane menu, view Scope, per-leaf isolation, model release on close.
+(async () => {
+  const wait = (ms) => new Promise((r) => window.setTimeout(r, ms));
+  const T = "zotlit-reactivity-lab";
+  const out = {};
+  const main = app.workspace.getLeavesOfType("markdown")[0] ?? app.workspace.getLeaf(false);
+  await main.openFile(app.vault.getAbstractFileByPath("literatures/wangMutationalClinicalSpectrum2020a.md"));
+  for (const l of app.workspace.getLeavesOfType(T)) l.detach();
+  const leaf = app.workspace.getLeaf("split");
+  await leaf.setViewState({ type: T, active: true });
+  await wait(1500);
+  const view = () => leaf.view;
+  const el = () => view().contentEl;
+  const registry = view().deps.registry;
+
+  // Count save requests.
+  let saves = 0;
+  const original = app.workspace.requestSaveLayout;
+  app.workspace.requestSaveLayout = function (...args) { saves++; return original.apply(this, args); };
+
+  // 1. Filter typed in React → saved state.
+  const input = el().querySelector('input[type="search"]');
+  input.value = "parity";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  await wait(300);
+  // 2. Header action click → sort flips; icon label follows.
+  const action = view().containerEl.querySelector('.view-action[aria-label^="Sort"]');
+  out.actionLabelBefore = action?.getAttribute("aria-label");
+  action.click();
+  await wait(300);
+  out.actionLabelAfter = action.getAttribute("aria-label");
+  out.flavorShowsSort = /sort: count/.test(el().innerText);
+  out.viewState = leaf.getViewState().state;
+  out.saveRequests = saves;
+
+  // 3. Pane menu reads the model; its item writes it.
+  view().containerEl.querySelector('.view-action[aria-label="More options"]').click();
+  await wait(400);
+  const menuEl = document.querySelector(".menu");
+  const rows = [...menuEl.querySelectorAll(".menu-item")];
+  out.menuItems = rows
+    .map((r) => ({ title: r.innerText.trim(), checked: r.querySelector(".menu-item-icon.mod-checked, .mod-checked") != null || r.classList.contains("mod-checked"), disabled: r.classList.contains("is-disabled") }))
+    .filter((i) => /Sort by|Clear filter/.test(i.title));
+  rows.find((r) => r.innerText.trim() === "Clear filter").click();
+  await wait(400);
+  out.afterClearInput = el().querySelector('input[type="search"]').value;
+  input.value = "parity";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  await wait(300);
+
+  // 4. View Scope: Obsidian pushes it while the leaf is active.
+  app.workspace.setActiveLeaf(leaf, { focus: true });
+  await wait(300);
+  out.scopeIsActive = app.keymap.getRootScope ? undefined : undefined;
+  out.viewScopeOnStack = app.keymap.scope === view().scope;
+  const handler = view().scope.keys.find((k) => k.key?.toLowerCase() === "s");
+  out.scopeKey = handler ? `${handler.modifiers}+${handler.key}` : null;
+  handler.func(new KeyboardEvent("keydown"), handler);
+  await wait(300);
+  out.sortAfterHotkey = registry.get(view().model.layout).sort;
+
+  // 5. Round trip: rebuild the view from its saved state.
+  const savedBefore = leaf.getViewState().state;
+  await leaf.rebuildView();
+  await wait(1200);
+  out.rebuilt = {
+    sameInstance: false,
+    savedBefore,
+    layout: registry.get(view().model.layout),
+    inputValue: el().querySelector('input[type="search"]')?.value,
+  };
+
+  // 6. Two leaves: separate models.
+  const second = app.workspace.getLeaf("split");
+  await second.setViewState({ type: T, active: false });
+  await second.loadIfDeferred();
+  await wait(1200);
+  out.secondLeaf = {
+    layout: registry.get(second.view.model.layout),
+    inputValue: second.view.contentEl.querySelector('input[type="search"]')?.value,
+  };
+
+  // 7. Close: model atoms leave the registry after the idle TTL.
+  const layoutAtom = second.view.model.layout;
+  const has = () => [...registry.getNodes().keys()].includes(layoutAtom);
+  out.secondModelInRegistry = has();
+  second.detach();
+  await wait(1200);
+  out.secondModelAfterClose = has();
+
+  app.workspace.requestSaveLayout = original;
+  out.ephemeral = leaf.getEphemeralState();
+  return JSON.stringify(out, null, 1);
+})()
+```

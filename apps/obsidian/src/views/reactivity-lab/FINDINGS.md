@@ -102,13 +102,9 @@ for service state and commands:
    Untested: run the same disable walk before you choose that seat.
 3. Static atoms next to each service (`services/<name>/atoms.ts`): a state atom
    per state member, a `viewRuntime.fn` per command.
-4. Keep view-local state owned by the view. The lab shows `ScopedAtom` keeps
-   per-leaf state separate, but a `ScopedAtom` instance is born inside React
-   context, so the `ItemView` class cannot reach it for `getState()` /
-   `setState()` layout persistence (Cited By's `LAYOUT_KEYS`). Untested. Two
-   ways that fit: the existing view-owned zustand store, or a writable atom
-   that the `ItemView` creates, passes down, and reads with `registry.get` /
-   `registry.set` for layout state.
+4. The `ItemView` owns a per-leaf view model (`view-model.ts`): atoms it
+   creates, mounts on the shared registry from construction to `onClose`,
+   and passes to React through context. See "View features" below.
 5. Start with settings (52 consumers), as #1710 already plans.
 
 Costs to accept:
@@ -129,3 +125,60 @@ Costs to accept:
   `effect/reactivity` and atom-react call site. A second reason to keep those
   calls inside `lib/view-atoms.ts` and the `atoms.ts` files: views would then
   import only the module's own hooks, and the warnings stay in one place.
+
+## View features (second walk, Atom tab)
+
+The `ItemView` class is the Obsidian adapter. Obsidian calls these features
+synchronously on the class, and `registry.get` / `set` / `subscribe` are
+synchronous, so each one maps to one call:
+
+| Feature | Shape in the lab | Walk result |
+|---|---|---|
+| Saved state (`getState` / `setState`) | `model.layout` atom; `setState` decodes with Effect `Schema` and writes the atom; `getState` reads it | Filter and sort survive `leaf.rebuildView()` |
+| Save request | `registry.subscribe(model.layout, requestSaveLayout)` | 2 calls for 2 changes |
+| Ephemeral state | DOM-owned (`scrollTop`), read from the DOM; not an atom | `getEphemeralState()` returns it |
+| Header action (`addAction`) | click: `registry.update(model.layout)`; icon and label follow `registry.subscribe(..., { immediate: true })` | "Sort: path" → "Sort: count" |
+| Pane menu (`onPaneMenu`) | builds items from `registry.get`; items write the model | "Sort by citations" checked; "Clear filter" cleared the input |
+| View hotkey (`view.scope`) | `new Scope(app.scope)` + handler writing the model | Handler flips the sort. Obsidian's push on focus not seen: the window had no OS focus |
+| Per-leaf state | one model per `ItemView` | second leaf starts empty |
+| Release | model atoms mounted from the constructor, released in `onClose` | closed leaf's model leaves the registry |
+
+The model is mounted from the constructor because Obsidian can call `setState`
+before `onOpen`, and an unmounted atom loses its value after the idle TTL.
+
+**Nested key layers (sketch, not run).** For a popup or suggester inside a view
+that claims keys while it is open, the Effect-native shape is a resource whose
+lifetime is an atom's mount, instead of manual push and pop on each exit path:
+
+```ts
+const keyLayer = (keys: ReadonlyArray<KeyBinding>) =>
+  Effect.acquireRelease(
+    Effect.gen(function* () {
+      const run = Effect.runSyncWith(yield* Effect.context<LabServices>());
+      const scope = new Scope(app.scope);
+      for (const k of keys)
+        scope.register(k.modifiers, k.key, () => (run(k.handle), false));
+      app.keymap.pushScope(scope);
+      return scope;
+    }),
+    (scope) => Effect.sync(() => app.keymap.popScope(scope)),
+  );
+// popup component: useAtomMount(viewRuntime.atom(keyLayer(bindings)))
+```
+
+The layer is pushed while the popup is mounted and popped on every exit
+(unmount, plugin unload, registry dispose) by the finalizer.
+
+## A Layer or Service per ItemView?
+
+Not by default. The lab view needed none for any feature above:
+`Component.register` already gives a per-view lifetime, and the plugin-level
+atoms give the services. A per-view service would have one real adapter, the
+`ItemView` itself, so it is a hypothetical seam.
+
+It pays for a view that runs long-lived Effects owned by the leaf, not by a
+reader: a per-leaf query session with cancel (Query View), or a workbench
+session (Template Workbench). There, give the view an Effect `Scope`
+(`Scope.make()` in `onOpen`, `Effect.forkIn(scope)`, `Scope.close` in
+`onClose`). Add a per-view Layer only when several of those Effects share
+per-leaf resources (leaf, model, cancellation) and need a test fake.
