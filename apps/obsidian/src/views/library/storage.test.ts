@@ -18,6 +18,7 @@ import type { QueryViewOutcome } from "@/services/item-query/query-view";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import { PluginSettings } from "@/services/settings/service";
+import { makeQueryHost } from "@/views/query-view/__fixtures__/host";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 import { QueryView } from "@/views/query-view/view";
@@ -127,6 +128,7 @@ async function openLibrary() {
     libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
       changed: Stream.empty,
       "libraries-changed": Stream.empty,
+      current: null,
     }),
     query: fakeQuery(() => Promise.resolve(EMPTY)),
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
@@ -148,6 +150,8 @@ async function openLibrary() {
     reportBlockedGesture: vi.fn(),
     literatureNotes: noLiteratureNotes(),
   });
+  const queryHost = cleanup.use(await makeQueryHost(deps));
+  deps.registry = queryHost.registry;
   // The view's text is the toolbar's, which the storage takes changes from.
   const toolbar = { text: (): string | null => null };
   const host = cleanup.use(

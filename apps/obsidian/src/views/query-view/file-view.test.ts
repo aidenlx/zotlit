@@ -67,9 +67,7 @@ async function openTab() {
       requestSaveLayout: debounce(() => Promise.resolve(), 0),
     }) as unknown as App["workspace"],
   });
-  const queryHost = cleanup.use(await makeQueryHost());
   const deps = stubService<QueryViewDeps>("QueryViewDeps", {
-    registry: queryHost.registry,
     runtime,
     bridge: effectBridge(runtime),
     app,
@@ -84,6 +82,7 @@ async function openTab() {
     libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
       changed: Stream.empty,
       "libraries-changed": Stream.empty,
+      current: null,
     }),
     query: fakeQuery(() => Promise.resolve(EMPTY)),
     cardFocus: stubService<QueryViewDeps["cardFocus"]>("QueryCardFocus", {
@@ -111,6 +110,8 @@ async function openTab() {
     ),
     literatureNotes: noLiteratureNotes(),
   });
+  const queryHost = cleanup.use(await makeQueryHost(deps));
+  deps.registry = queryHost.registry;
   const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
     updateHeader: vi.fn(),
   });

@@ -21,9 +21,9 @@ import {
 } from "@/services/note-index/__fixtures__";
 import { stubbedReads } from "@/services/zotero-reads/test-utils";
 
+import { makeNotesHost } from "./__fixtures__/notes-host";
+import type { NotesHostDeps as LiteratureNotesDeps } from "./__fixtures__/notes-host";
 import { openTextFileView } from "./__fixtures__/open-text-view";
-import { literatureNotes } from "./table-notes";
-import type { LiteratureNotesDeps } from "./table-notes";
 
 vi.mock("@/views/annot-view/register", () => ({
   activateAnnotView: vi.fn(),
@@ -117,7 +117,8 @@ async function setup(
     host.metadataCache.change(file, cache({ properties }));
     await noteIndex.whenSettled();
   };
-  return { notes: literatureNotes(deps), host, getCache, setType, write };
+  const notesHost = owned.use(await makeNotesHost(deps));
+  return { notes: notesHost.notes, host, getCache, setType, write };
 }
 
 describe("literatureNotes vault properties", () => {
@@ -425,6 +426,7 @@ describe("literatureNotes vault property writes", () => {
         { createNoteInteractively: createNote, replacedKeys },
       ),
     });
+    const notesHost = owned.use(await makeNotesHost(deps));
     return {
       host,
       replaced,
@@ -433,7 +435,7 @@ describe("literatureNotes vault property writes", () => {
       changed: (of: "profile" | "template") => {
         sources[of].emit();
       },
-      notes: literatureNotes(deps),
+      notes: notesHost.notes,
       createNote,
     };
   }
@@ -674,7 +676,7 @@ describe("literatureNotes vault property writes", () => {
       // The field is set to the replace strategy.
       replaced["A.md"] = ["status"];
       changed(of);
-      expect(listener).toHaveBeenCalled();
+      await vi.waitFor(() => expect(listener).toHaveBeenCalled());
       notes.managed("ITEMAAAA", "status", null);
       await vi.waitFor(() =>
         expect(notes.managed("ITEMAAAA", "status", null)).toBe(true),

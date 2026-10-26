@@ -398,13 +398,13 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
       literatureNotes: literatureNotes({
-        runtime: services.runtime,
+        registry: services.runtime.runSync(ViewRegistry),
         app: this.app,
-        noteFeature: services.noteFeature,
-        noteIndex: services.noteIndex,
-        profile: services.profile,
-        template: services.template,
-        zoteroReads: services.zoteroReads,
+        creation: {
+          app: this.app,
+          createProfile: services.createProfile,
+          importProfile: services.importProfile,
+        },
       }),
       opener: services.targetOpener,
     };

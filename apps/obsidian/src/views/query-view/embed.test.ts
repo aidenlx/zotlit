@@ -90,9 +90,7 @@ async function setup() {
     Promise.resolve(EMPTY),
   );
   const runtime = testRuntime();
-  const queryHost = cleanup.use(await makeQueryHost());
   const deps = stubService<QueryViewDeps>("QueryViewDeps", {
-    registry: queryHost.registry,
     runtime,
     bridge: effectBridge(runtime),
     app,
@@ -107,6 +105,7 @@ async function setup() {
     libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
       changed: Stream.empty,
       "libraries-changed": Stream.empty,
+      current: null,
     }),
     query: fakeQuery(run),
     cardFocus: new QueryCardFocus(app),
@@ -132,6 +131,8 @@ async function setup() {
     ),
     literatureNotes: noLiteratureNotes(),
   });
+  const queryHost = cleanup.use(await makeQueryHost(deps));
+  deps.registry = queryHost.registry;
 
   /** Embed the Query File in `sourcePath` as Obsidian does, and load it. */
   async function embed(

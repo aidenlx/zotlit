@@ -109,9 +109,7 @@ async function setup(kind: HostKind) {
     Promise.resolve(EMPTY),
   );
   const runtime = testRuntime();
-  const queryHost = cleanup.use(await makeQueryHost());
   const deps = stubService<QueryViewDeps>("QueryViewDeps", {
-    registry: queryHost.registry,
     runtime,
     bridge: effectBridge(runtime),
     app,
@@ -126,6 +124,7 @@ async function setup(kind: HostKind) {
     libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
       changed: Stream.empty,
       "libraries-changed": Stream.empty,
+      current: null,
     }),
     query: fakeQuery(run),
     cardFocus,
@@ -151,6 +150,8 @@ async function setup(kind: HostKind) {
     ),
     literatureNotes: noLiteratureNotes(),
   });
+  const queryHost = cleanup.use(await makeQueryHost(deps));
+  deps.registry = queryHost.registry;
 
   type Plugin = Parameters<typeof registerQueryBlock>[0];
   type Processor = Parameters<Plugin["registerMarkdownCodeBlockProcessor"]>[1];

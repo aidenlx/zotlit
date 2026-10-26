@@ -7,23 +7,27 @@
 import { useSyncExternalStore } from "react";
 import type { DragEvent, FocusEvent, HTMLAttributes, MouseEvent } from "react";
 
+type ItemSelection = { readonly key: string | null };
+
 /** What the host does on the gestures over one Item row. */
 export interface ItemRowGestures {
   /** The Indexed Key of the selected row; `null` for none. */
   readonly selection: {
     getState(): { readonly key: string | null };
     getInitialState(): { readonly key: string | null };
-    setState(
-      state:
-        | { readonly key: string | null }
-        | Partial<{ readonly key: string | null }>
-        | ((state: {
-            readonly key: string | null;
-          }) =>
-            | { readonly key: string | null }
-            | Partial<{ readonly key: string | null }>),
-      replace?: boolean,
-    ): void;
+    setState: {
+      (
+        partial:
+          | ItemSelection
+          | Partial<ItemSelection>
+          | ((state: ItemSelection) => ItemSelection | Partial<ItemSelection>),
+        replace?: false,
+      ): void;
+      (
+        state: ItemSelection | ((state: ItemSelection) => ItemSelection),
+        replace: true,
+      ): void;
+    };
     subscribe(
       listener: (
         state: { readonly key: string | null },

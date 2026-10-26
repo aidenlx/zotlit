@@ -37,14 +37,18 @@ import type {
   AnnotationRecord,
 } from "@/services/annotation-repository/service";
 import { IDLE } from "@/services/annotation-repository/write";
+import { queryRevisionAtom } from "@/services/item-query/atoms";
 import type {
   QueryViewOutcome,
   QueryViewRequest,
   QueryViewRow,
 } from "@/services/item-query/query-view";
+import { libraryAvailabilityRevisionAtom } from "@/services/library-scope/atoms";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
+import { zoteroRevisionAtom } from "@/services/zotero-reads/atoms";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
+import { waitFor } from "@/views/template-data-explorer/__fixtures__";
 
 // @vitest-environment happy-dom
 import { makeQueryHost } from "./__fixtures__/host";
@@ -193,7 +197,9 @@ async function mount(
     creation = "created",
     values = {},
     notePaths = [],
+    queryRead,
   }: {
+    queryRead?: QueryViewDeps["query"]["run"];
     notes?: Record<string, string>;
     /** The frontmatter of each note, by path. */
     frontmatter?: Record<string, Record<string, unknown>>;
@@ -249,10 +255,13 @@ async function mount(
   const held: string[][] = [];
   const released: string[][] = [];
   // As ZotLit Query does, each row carries only the fields the request names.
-  const run = vi.fn((request: QueryViewRequest, _signal: AbortSignal) =>
-    Promise.resolve(requested(answers.shift() ?? result([]), request)),
+  const run = vi.fn((request: QueryViewRequest, signal: AbortSignal) =>
+    queryRead
+      ? queryRead(request, signal)
+      : Promise.resolve(requested(answers.shift() ?? result([]), request)),
   );
   const notesChanged = emitter();
+  const activity = emitter();
   const literatureNotes = {
     find: (itemKey: string) => {
       const path = notes[itemKey];
@@ -347,9 +356,7 @@ async function mount(
       },
     },
   );
-  const queryHost = cleanup.use(await makeQueryHost());
   const deps = stubService<QueryViewDeps>("QueryViewDeps", {
-    registry: queryHost.registry,
     runtime,
     bridge: effectBridge(runtime),
     app: editorApp(),
@@ -370,7 +377,7 @@ async function mount(
         unavailable: [],
       },
     }),
-    query: fakeQuery(run),
+    query: { ...fakeQuery(run), on: activity.on },
     annotations: stubService<QueryViewDeps["annotations"]>("Annotations", {
       ...annotations,
       read: () => Effect.succeed(list),
@@ -419,6 +426,8 @@ async function mount(
     literatureNotes,
     opener: stubService<QueryViewDeps["opener"]>("TargetOpener", readers),
   });
+  const queryHost = cleanup.use(await makeQueryHost(deps));
+  deps.registry = queryHost.registry;
   const save = vi.fn((_text: string) => {});
   const onSelectView = vi.fn((_name: string) => {});
   const scope = new Scope();
@@ -450,6 +459,11 @@ async function mount(
   view.load();
   await act(() => view.render(el));
   cleanup.defer(() => act(() => view.unload()));
+  await waitFor(() => expect(reads.subscribers("changed")).toBeGreaterThan(0));
+  await waitFor(() =>
+    expect(libraryScope.subscribers("libraries-changed")).toBeGreaterThan(0),
+  );
+  await waitFor(() => expect(queryHost.querySubscribers()).toBeGreaterThan(0));
   const settle = () =>
     act(async () => {
       await view.settled;
@@ -462,8 +476,35 @@ async function mount(
     /** The Scope the host gives the view for its keys. */
     scope,
     run,
-    reads,
-    libraryScope,
+    changeUses: async () => {
+      const before = view.registry.get(queryRevisionAtom);
+      activity.emit("changed");
+      await waitFor(() =>
+        expect(view.registry.get(queryRevisionAtom)).toBeGreaterThan(before),
+      );
+    },
+    reads: {
+      ...reads,
+      emit: async (...args: Parameters<typeof reads.emit>) => {
+        const before = view.registry.get(zoteroRevisionAtom);
+        reads.emit(...args);
+        await waitFor(() =>
+          expect(view.registry.get(zoteroRevisionAtom)).toBeGreaterThan(before),
+        );
+      },
+    },
+    libraryScope: {
+      ...libraryScope,
+      emit: async (...args: Parameters<typeof libraryScope.emit>) => {
+        const before = view.registry.get(libraryAvailabilityRevisionAtom);
+        libraryScope.emit(...args);
+        await waitFor(() =>
+          expect(
+            view.registry.get(libraryAvailabilityRevisionAtom),
+          ).toBeGreaterThan(before),
+        );
+      },
+    },
     repository,
     /** Change what the repository holds for the Attachment. */
     setList: (next: AnnotationList) => {
@@ -528,9 +569,9 @@ it("runs again on a database change and a Library Scope change", async () => {
   const { view, run, reads, libraryScope, settle } = await mount([]);
   await act(() => view.setText(FILE));
   await settle();
-  reads.emit("changed");
+  await reads.emit("changed");
   await settle();
-  libraryScope.emit("libraries-changed");
+  await libraryScope.emit("libraries-changed");
   await settle();
   expect(run).toHaveBeenCalledTimes(3);
 });
@@ -605,7 +646,7 @@ it("keeps a new Annotation on screen when a run from its list change has not rea
   expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTBBB", "ANNOTCCC"]);
 
   // The database change that brings it runs the view, and its rows hold it.
-  reads.emit("changed");
+  await reads.emit("changed");
   await settle();
   expect(run).toHaveBeenCalledTimes(4);
   expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTBBB", "ANNOTCCC"]);
@@ -2310,7 +2351,7 @@ it("expands an Item row into its Attachments, and an Attachment row into its Ann
       '[data-query-expand="item:ITEMAAAA"]',
     )!.click();
   });
-  await act(async () => {});
+  await settle();
   expect(run.mock.calls[1]![0]).toMatchObject({
     from: "attachments",
     filter: 'item.indexedKey == "ITEMAAAA"',
@@ -2320,7 +2361,7 @@ it("expands an Item row into its Attachments, and an Attachment row into its Ann
       '[data-query-expand="attachment:PDFAAAAA"]',
     )!.click();
   });
-  await act(async () => {});
+  await settle();
   expect(run.mock.calls[2]![0]).toMatchObject({
     from: "annotations",
     filter: 'attachment.indexedKey == "PDFAAAAA"',
@@ -3734,7 +3775,7 @@ it("expands a Papers row into its Attachments, Child Notes and Literature Note, 
       '[data-query-expand="item:ITEMAAAA"]',
     )!.click();
   });
-  await act(async () => {});
+  await settle();
   expect(run.mock.calls[1]![0]).toMatchObject({
     from: "attachments",
     filter: 'item.indexedKey == "ITEMAAAA"',
@@ -3744,7 +3785,7 @@ it("expands a Papers row into its Attachments, Child Notes and Literature Note, 
       '[data-query-expand="attachment:PDFAAAAA"]',
     )!.click();
   });
-  await act(async () => {});
+  await settle();
   expect(children()).toEqual([
     ["attachment", "Rougier et al. - 2014.pdf"],
     ["annotation", "Rule 1: know your audiencePage 3"],
@@ -5985,4 +6026,61 @@ ${sort}`;
         ?.hasAttribute("data-sort-unused"),
     ).toBe(false);
   });
+});
+
+it("interrupts a query read when its host closes", async () => {
+  const started: AbortSignal[] = [];
+  const cancelled: AbortSignal[] = [];
+  const { view } = await mount([], undefined, {
+    queryRead: (_request, signal) =>
+      new Promise<QueryViewOutcome>((resolve) => {
+        started.push(signal);
+        signal.addEventListener(
+          "abort",
+          () => {
+            cancelled.push(signal);
+            resolve({ kind: "cancelled" });
+          },
+          { once: true },
+        );
+      }),
+  });
+  await act(() => view.setText(FILE));
+  await waitFor(() => expect(started).toHaveLength(1));
+  await act(() => view.unload());
+  await waitFor(() => expect(cancelled).toEqual(started));
+});
+
+it.each(["items", "annotations"] as const)(
+  "reloads %s only when the changed Uses can affect its rows",
+  async (from) => {
+    const { view, run, changeUses, settle } = await mount([]);
+    await act(() =>
+      view.setText(
+        `views:\n  - name: Rows\n    type: ${from === "items" ? "table" : "annotations"}\n    from: ${from}\n`,
+      ),
+    );
+    await settle();
+    expect(run).toHaveBeenCalledTimes(1);
+    await changeUses();
+    await settle();
+    expect(run).toHaveBeenCalledTimes(from === "items" ? 2 : 1);
+  },
+);
+
+it("finishes a pending save without updating a closed host", async () => {
+  const saving = Promise.withResolvers<void>();
+  const { view, settle } = await mount([], undefined, {
+    write: () => saving.promise,
+  });
+  await act(() => view.setText(FILE));
+  await settle();
+  await act(() => view.document.editView({ limit: 2 }));
+  const changed = vi.fn();
+  cleanup.defer(view.state.subscribe(changed));
+  await act(() => view.unload());
+  changed.mockClear();
+  saving.reject(new Error("Could not save"));
+  await view.flush();
+  expect(changed).not.toHaveBeenCalled();
 });

@@ -1,4 +1,5 @@
 // Per-host Query View state, held in the plugin registry, and its pure transitions.
+import { Option, Schema } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 import { useMemo, useSyncExternalStore } from "react";
 
@@ -19,13 +20,27 @@ export const INITIAL_QUERY_STATE: QueryViewState = {
 
 export const makeQueryViewModel = () => ({
   state: Atom.make(INITIAL_QUERY_STATE),
+  wanted: Atom.make<string | null>(null),
 });
 export type QueryViewModel = ReturnType<typeof makeQueryViewModel>;
 
 export const holdQueryViewModel = (
   registry: ViewRegistryHandle,
   model: QueryViewModel,
-): (() => void) => registry.mount(model.state);
+): (() => void) => {
+  const releases = [registry.mount(model.state), registry.mount(model.wanted)];
+  return () => {
+    for (const release of releases) release();
+  };
+};
+
+const savedQueryView = Schema.Struct({ view: Schema.optional(Schema.String) });
+export const readSavedQueryViewName = (state: unknown): string | null =>
+  Option.getOrNull(
+    Option.flatMap(Schema.decodeUnknownOption(savedQueryView)(state), (saved) =>
+      Option.fromNullishOr(saved.view),
+    ),
+  );
 
 export const patchQueryState =
   (
@@ -47,6 +62,17 @@ export function queryStateHandle(
   registry: ViewRegistryHandle,
   model: QueryViewModel,
 ) {
+  function setState(
+    patch:
+      | QueryViewState
+      | Partial<QueryViewState>
+      | ((state: QueryViewState) => QueryViewState | Partial<QueryViewState>),
+    replace?: false,
+  ): void;
+  function setState(
+    state: QueryViewState | ((state: QueryViewState) => QueryViewState),
+    replace: true,
+  ): void;
   function setState(
     patch:
       | QueryViewState
@@ -79,6 +105,7 @@ export function queryStateHandle(
   };
 }
 
+/** Host-owned controls also read this model outside the Query View root, so the hook uses its registry directly. */
 export function useQueryViewState<T>(
   view: QueryView,
   selector: (state: QueryViewState) => T,
