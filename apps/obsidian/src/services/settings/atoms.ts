@@ -4,6 +4,7 @@ import { Effect, Stream } from "effect";
 import { held } from "@/lib/view-atoms";
 
 import { PluginSettings } from "./service";
+
 export const templateFolderAtom = held(
   Stream.unwrap(
     Effect.map(PluginSettings, (service) =>

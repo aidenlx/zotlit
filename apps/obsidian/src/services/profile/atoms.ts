@@ -5,6 +5,7 @@ import { held } from "@/lib/view-atoms";
 
 import { Profile } from "./service";
 import type { LiteratureNoteProfile } from "./service";
+
 export const profilesAtom = held(
   Stream.unwrap(
     Effect.map(Profile, (service) =>

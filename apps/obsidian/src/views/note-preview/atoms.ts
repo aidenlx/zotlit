@@ -13,9 +13,4 @@ export const makeBuiltInSourceCommand = () =>
 
 /** The shared Workbench chooser owns its modal and search session. */
 export const makeChoiceCommand = (choose: () => Promise<void>) =>
-  viewRuntime.fn(() =>
-    Effect.tryPromise((signal) => {
-      void signal;
-      return choose();
-    }),
-  );
+  viewRuntime.fn(() => Effect.tryPromise(() => choose()));

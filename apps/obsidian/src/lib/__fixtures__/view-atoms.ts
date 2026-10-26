@@ -2,21 +2,22 @@
 // whole. Each member dies when called.
 import { Effect, Layer } from "effect";
 import type { Context } from "effect";
+
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { FileManager } from "@/lib/obsidian-file-manager";
 import { makeViewRegistry } from "@/lib/view-atoms";
 import type { ViewServices } from "@/lib/view-atoms";
-import { CitationIndex } from "@/services/citation-index/service";
-import { TemplateDataReads } from "@/services/template-workbench/data-reads";
-import { ZoteroReads } from "@/services/zotero-reads/service";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
+import { CitationIndex } from "@/services/citation-index/service";
 import { CitationParse } from "@/services/citation-parse/service";
+import { NoteIndex } from "@/services/note-index/service";
 import { BibliographyRender } from "@/services/pandoc/render-cache";
 import { Profile } from "@/services/profile/service";
 import { PluginSettings } from "@/services/settings/service";
+import { TemplateDataReads } from "@/services/template-workbench/data-reads";
 import { Template } from "@/services/template/service";
-import { NoteIndex } from "@/services/note-index/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
-import { FileManager } from "@/lib/obsidian-file-manager";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 
 /**
  * Every view service outside the Obsidian host tags, as an empty mock. Merge

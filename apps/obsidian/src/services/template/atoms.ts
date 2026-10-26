@@ -3,6 +3,7 @@ import { Effect, Stream } from "effect";
 
 import { held } from "@/lib/view-atoms";
 import { Template } from "@/services/template/service";
+
 export const templateRevisionAtom = held(
   Stream.unwrap(
     Effect.gen(function* () {
