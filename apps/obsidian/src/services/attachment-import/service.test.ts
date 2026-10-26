@@ -429,7 +429,7 @@ describe("AttachmentImport", () => {
         const error = yield* Effect.flip(batch.flush);
 
         expect(error).toMatchObject({
-          _tag: "AttachmentFolderError",
+          _tag: "VaultFolderBlockedError",
           path: "Taken",
         });
         expect(copyAttachments).not.toHaveBeenCalled();

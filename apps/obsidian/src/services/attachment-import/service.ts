@@ -24,7 +24,7 @@ import {
   sep,
 } from "node:path";
 import { dirname as noteDirname } from "node:path/posix";
-import { normalizePath, TFile, TFolder } from "obsidian";
+import { normalizePath } from "obsidian";
 
 import type { TemplateLink } from "@zotlit/db";
 import { normalizeFilename } from "@zotlit/templates";
@@ -45,7 +45,8 @@ import type { DeviceStorageError } from "@/lib/obsidian-device-storage";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { FileManager } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
-import type { VaultError } from "@/lib/vault-errors";
+import type { VaultError, VaultFolderBlockedError } from "@/lib/vault-errors";
+import { ensureVaultFolder } from "@/lib/vault-folder";
 import { PluginSettings } from "@/services/settings/service";
 import { resolvedChanged, ZoteroPref } from "@/services/zotero-pref/service";
 
@@ -106,19 +107,6 @@ export interface ResolveLinkOptions {
 export interface AttachmentImportResult
   extends AttachmentCopyResult, AttachmentSkipCounts {}
 
-/** A file, not a folder, holds the attachment folder's path. */
-export class AttachmentFolderError extends Schema.TaggedError<
-  AttachmentFolderError,
-  { readonly brand: unique symbol }
->()("AttachmentFolderError", {
-  /** The attachment folder's vault path. */
-  path: Schema.String,
-}) {
-  override get message(): string {
-    return `Cannot create folder; a file exists at "${this.path}"`;
-  }
-}
-
 /** The copy of confirmed sources failed; `cause` holds what it threw. */
 export class AttachmentCopyError extends Schema.TaggedError<
   AttachmentCopyError,
@@ -132,7 +120,7 @@ export class AttachmentCopyError extends Schema.TaggedError<
 export type AttachmentFlushError =
   | PlatformError.PlatformError
   | SystemCallError
-  | AttachmentFolderError
+  | VaultFolderBlockedError
   | AttachmentCopyError
   | VaultError;
 
@@ -345,15 +333,6 @@ export const layerAttachmentImport = (
       );
       yield* rebuildRoots;
 
-      const ensureFolder = Effect.fnUntraced(function* (folderPath: string) {
-        if (folderPath === "/") return;
-        const existing = yield* vault.getAbstractFileByPath(folderPath);
-        if (existing instanceof TFolder) return;
-        if (existing instanceof TFile)
-          return yield* new AttachmentFolderError({ path: folderPath });
-        yield* vault.createFolder(folderPath);
-      });
-
       const makeBatch = (input: {
         readonly notePath: string;
         readonly folderPath: string | null;
@@ -505,7 +484,9 @@ export const layerAttachmentImport = (
                 // confirmation; copyAttachments writes straight to dest and
                 // never makes the parent.
                 if (confirmation.confirmed.length > 0 && folderPath) {
-                  yield* ensureFolder(folderPath);
+                  yield* ensureVaultFolder(folderPath).pipe(
+                    Effect.provideService(Vault, vault),
+                  );
                 }
                 const copies = yield* Effect.tryPromise({
                   try: () => copyAttachments(confirmation.confirmed),

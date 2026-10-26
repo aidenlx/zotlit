@@ -1,6 +1,7 @@
 // Materializes Zotero Child Notes into flat Markdown mirrors on command.
 import { Context, Effect, Layer, Schema, Semaphore } from "effect";
-import { normalizePath, stringifyYaml, TFile, TFolder } from "obsidian";
+import { normalizePath, stringifyYaml } from "obsidian";
+import type { TFile } from "obsidian";
 
 import type {
   AnnotationSources,
@@ -32,7 +33,8 @@ import { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import type { VaultError } from "@/lib/vault-errors";
+import type { VaultError, VaultFolderBlockedError } from "@/lib/vault-errors";
+import { ensureVaultFolder } from "@/lib/vault-folder";
 import { AttachmentImport } from "@/services/attachment-import/service";
 import type {
   AttachmentFlushError,
@@ -125,7 +127,7 @@ interface PrepareExplicitImportOptions {
 export type NoteImportError =
   | NoteImportProfileError
   | NoteImportMintError
-  | NoteImportFolderError
+  | VaultFolderBlockedError
   | LegacyPortError
   | AttachmentFlushError
   | Effect.Error<ReturnType<typeof readDisplayRef>>
@@ -660,13 +662,7 @@ const ensureImportFolder = Effect.fnUntraced(function* (
   importFolderSetting: string,
 ) {
   const folder = normalizeFolderPath(normalizePath(importFolderSetting));
-  if (folder === "/") return folder;
-  const vault = yield* Vault;
-  const existing = yield* vault.getAbstractFileByPath(folder);
-  if (existing instanceof TFolder) return folder;
-  if (existing instanceof TFile)
-    return yield* new NoteImportFolderError({ path: folder });
-  yield* vault.createFolder(folder);
+  yield* ensureVaultFolder(folder);
   return folder;
 });
 
@@ -683,18 +679,5 @@ export class NoteImportMintError extends Schema.TaggedError<
 }) {
   override get message(): string {
     return `Imported note path collided with an existing file: ${this.path}`;
-  }
-}
-
-/** A file, not a folder, holds the import folder's path. */
-export class NoteImportFolderError extends Schema.TaggedError<
-  NoteImportFolderError,
-  { readonly brand: unique symbol }
->()("NoteImportFolderError", {
-  /** The import folder's vault path. */
-  path: Schema.String,
-}) {
-  override get message(): string {
-    return `Cannot create folder; a file exists at "${this.path}"`;
   }
 }
