@@ -53,7 +53,6 @@ import {
 import { diskImageHost } from "./__fixtures__/disk-image-host";
 import { noteImporterOver } from "./__fixtures__/importer";
 import type { ImporterFakes } from "./__fixtures__/importer";
-import { NoteImportPortError } from "./service";
 
 const paragraph = (key: string, image: string) =>
   `<p><img data-attachment-key="${image}" data-annotation="${encodeURIComponent(JSON.stringify({ attachmentURI: "http://zotero.org/users/local/LOCAL/items/RGRPDF24", annotationKey: key }))}"></p>`;
@@ -309,9 +308,9 @@ it.effect(
           recursive: true,
         }),
       );
-      expect(yield* Effect.flip(f.import())).toBeInstanceOf(
-        NoteImportPortError,
-      );
+      expect(yield* Effect.flip(f.import())).toMatchObject({
+        _tag: "LegacyPortError",
+      });
       const content = yield* Effect.promise(() => f.app.vault.read(f.note()));
       expect(content).toContain("Keep this prose.");
       expect(content).not.toContain("zotlit-excerpt-");

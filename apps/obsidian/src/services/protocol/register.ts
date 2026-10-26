@@ -676,7 +676,7 @@ class ImportedProfileMissing extends Data.TaggedError(
 const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
   function* (deps: ProtocolDeps, paneType: PaneType | undefined) {
     yield* Effect.logDebug("Opening clipboard Profile import");
-    const profile = yield* Effect.tryPromise(() =>
+    const profile = yield* portCall("import-profile", () =>
       deps.importProfile({ source: "clipboard" }),
     );
     if (!profile) {
@@ -691,7 +691,7 @@ const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
     const options = paneType
       ? { leaf: yield* (yield* Workspace).getLeaf(paneType) }
       : {};
-    yield* Effect.tryPromise(() =>
+    yield* portCall("open-template-workbench", () =>
       openTemplateWorkbench(deps.app, file, options),
     );
     yield* Effect.logDebug("Opened imported Profile in editor").pipe(

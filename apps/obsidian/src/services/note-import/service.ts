@@ -26,10 +26,13 @@ import { processLiveText } from "@/lib/effect-live-text";
 import { withLogCategory } from "@/lib/effect-log";
 import { joinFolderPath, normalizeFolderPath } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
+import { portCall } from "@/lib/legacy-port";
+import type { LegacyPortError } from "@/lib/legacy-port";
 import { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
+import { formatErrorMessage } from "@/lib/toast";
 import type { VaultError } from "@/lib/vault-errors";
 import type {
   AttachmentImport,
@@ -123,7 +126,7 @@ export type NoteImportError =
   | NoteImportProfileError
   | NoteImportMintError
   | NoteImportFolderError
-  | NoteImportPortError
+  | LegacyPortError
   | NoteImportParseError
   | Effect.Error<ReturnType<typeof readDisplayRef>>
   | ProfileOperationError
@@ -626,29 +629,6 @@ export class NoteImportProfileError extends Schema.TaggedError<
 }
 
 /**
- * Attachment Import or the excerpt preparation rejected during a note write,
- * for example when a file copy fails. The message is the rejection's own.
- */
-export class NoteImportPortError extends Schema.TaggedError<
-  NoteImportPortError,
-  { readonly brand: unique symbol }
->()("NoteImportPortError", {
-  /** The step that rejected. */
-  step: Schema.Literals([
-    "attachment-prepare",
-    "excerpt-prepare",
-    "attachment-flush",
-  ]),
-  /** What the step rejected with. */
-  cause: Schema.Defect(),
-}) {
-  override get message(): string {
-    if (this.cause instanceof Error) return this.cause.message;
-    return typeof this.cause === "string" ? this.cause : "Unknown error";
-  }
-}
-
-/**
  * The note conversion threw, for example when the Citation Template or the
  * annotation Template fails. The message is the throw's own.
  */
@@ -660,20 +640,9 @@ export class NoteImportParseError extends Schema.TaggedError<
   cause: Schema.Defect(),
 }) {
   override get message(): string {
-    if (this.cause instanceof Error) return this.cause.message;
-    return typeof this.cause === "string" ? this.cause : "Unknown error";
+    return formatErrorMessage(this.cause);
   }
 }
-
-/** A legacy port's Promise, its rejection a {@link NoteImportPortError}. */
-const portCall = <A>(
-  step: NoteImportPortError["step"],
-  call: () => Promise<A>,
-) =>
-  Effect.tryPromise({
-    try: call,
-    catch: (cause) => new NoteImportPortError({ step, cause }),
-  });
 
 /**
  * Mint a unique import path for a new imported note file. The path includes a
