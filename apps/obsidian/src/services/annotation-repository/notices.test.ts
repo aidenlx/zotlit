@@ -2,12 +2,18 @@ import { Effect, Stream } from "effect";
 import { afterAll, expect, it, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import type { LocalApiResult } from "@/services/zotero-local-api/service";
+import type {
+  LocalApiFailure,
+  LocalApiResult,
+} from "@/services/zotero-local-api/service";
 
+import type { EditingCapability } from "./capability";
 import type { CapabilityNotice } from "./capability-notices";
 import { CapabilityNotices } from "./notices";
 import { IDLE } from "./write";
+import type { MutationState, WriteConflict } from "./write";
 
 const bridge = openTestBridge();
 afterAll(() => bridge[Symbol.asyncDispose]());
@@ -156,4 +162,166 @@ it("stays silent after Deny, which the capability's own status reports", async (
   await notices.allowEditing();
 
   expect(shown).toEqual([]);
+});
+
+const ATTACHMENT = "ABCD2345";
+const ANNOTATION = "EFGH2345";
+const CLOSED: EditingCapability = {
+  kind: "read-only",
+  reason: "zotero-unavailable",
+};
+const CONFLICT: MutationState = {
+  kind: "conflict",
+  conflict: {} as WriteConflict,
+};
+
+/**
+ * The notices listening to the repository and the Local API, with every
+ * notice caught where the screen would show it and each event sent by hand.
+ */
+function watching(options: { cardShown?: boolean } = {}) {
+  const shown: { notice: CapabilityNotice; runAction: () => void }[] = [];
+  const ran: string[] = [];
+  let capability: EditingCapability = CLOSED;
+  let mutation: MutationState = IDLE;
+  const events = {
+    capabilityChanges: testEvent<void>(),
+    annotationChanged: testEvent<string>(),
+    writeConflicts: testEvent<{
+      annotationKey: string;
+      attachmentKey: string;
+    }>(),
+    writeRefusals: testEvent<{ failure: LocalApiFailure; library: string }>(),
+    serverChanges: testEvent<string>(),
+    writeRefusalsRetired: testEvent<void>(),
+  };
+  const notices = new CapabilityNotices({
+    capabilities: {
+      capabilityFor: () => Effect.sync(() => capability),
+      mutationFor: () => Effect.sync(() => mutation),
+      capabilityChanges: events.capabilityChanges.stream,
+      annotationChanged: events.annotationChanged.stream,
+      writeConflicts: events.writeConflicts.stream,
+      probe: Effect.void,
+    },
+    bridge,
+    writes: {
+      authorize: Effect.succeed({ value: undefined }),
+      writeRefusals: events.writeRefusals.stream,
+      serverChanges: events.serverChanges.stream,
+      writeRefusalsRetired: events.writeRefusalsRetired.stream,
+    },
+    openEditingSettings: () => ran.push("open"),
+    cardShown: () => options.cardShown ?? false,
+    revealAnnotation: (annotationKey) => ran.push(`reveal ${annotationKey}`),
+    showNotice: (notice, runAction) => shown.push({ notice, runAction }),
+  });
+  return {
+    notices,
+    shown,
+    ran,
+    events,
+    titles: () => shown.map(({ notice }) => notice.title),
+    setCapability: (next: EditingCapability) => {
+      capability = next;
+    },
+    setMutation: (next: MutationState) => {
+      mutation = next;
+    },
+  };
+}
+
+it("says why a gesture is blocked once per episode, and opens the settings row from its button", async () => {
+  const seam = watching();
+  await using _notices = seam.notices;
+  await seam.notices.ready;
+
+  seam.notices.reportBlockedGesture(ATTACHMENT);
+  seam.notices.reportBlockedGesture(ATTACHMENT);
+  expect(seam.shown.map(({ notice }) => notice.action)).toEqual([
+    m.notice_capability_open_settings(),
+  ]);
+
+  seam.shown[0]!.runAction();
+  expect(seam.ran).toEqual(["open"]);
+
+  // Editing works again, which closes the episode: the next block speaks.
+  seam.setCapability({ kind: "writable" });
+  seam.events.capabilityChanges.emit();
+  seam.setCapability(CLOSED);
+  seam.notices.reportBlockedGesture(ATTACHMENT);
+  expect(seam.shown).toHaveLength(2);
+});
+
+it("says a write conflict once while it stands on a card no view shows, and reveals the card", async () => {
+  const seam = watching();
+  await using _notices = seam.notices;
+  await seam.notices.ready;
+  const conflict = { annotationKey: ANNOTATION, attachmentKey: ATTACHMENT };
+
+  seam.events.writeConflicts.emit(conflict);
+  seam.setMutation(CONFLICT);
+  seam.events.annotationChanged.emit(ANNOTATION);
+  seam.events.writeConflicts.emit(conflict);
+  expect(seam.titles()).toEqual([m.notice_write_conflict()]);
+
+  seam.shown[0]!.runAction();
+  expect(seam.ran).toEqual([`reveal ${ANNOTATION}`]);
+
+  // The card settled, so the next conflict on it is news.
+  seam.setMutation(IDLE);
+  seam.events.annotationChanged.emit(ANNOTATION);
+  seam.events.writeConflicts.emit(conflict);
+  expect(seam.titles()).toEqual([
+    m.notice_write_conflict(),
+    m.notice_write_conflict(),
+  ]);
+});
+
+it("leaves a write conflict to the view that shows its card", async () => {
+  const seam = watching({ cardShown: true });
+  await using _notices = seam.notices;
+  await seam.notices.ready;
+
+  seam.events.writeConflicts.emit({
+    annotationKey: ANNOTATION,
+    attachmentKey: ATTACHMENT,
+  });
+
+  expect(seam.shown).toEqual([]);
+});
+
+it("says a read-only library once until a probe retires the refusals", async () => {
+  const seam = watching();
+  await using _notices = seam.notices;
+  await seam.notices.ready;
+  const refusal = {
+    failure: { kind: "library-read-only" } as const,
+    library: "users/0",
+  };
+
+  seam.events.writeRefusals.emit(refusal);
+  seam.events.writeRefusals.emit(refusal);
+  expect(seam.titles()).toEqual([m.notice_write_not_saved()]);
+  seam.shown[0]!.runAction();
+  expect(seam.ran).toEqual(["open"]);
+
+  seam.events.writeRefusalsRetired.emit();
+  seam.events.writeRefusals.emit(refusal);
+  expect(seam.shown).toHaveLength(2);
+});
+
+it("says a changed Zotero database once per database", async () => {
+  const seam = watching();
+  await using _notices = seam.notices;
+  await seam.notices.ready;
+
+  seam.events.serverChanges.emit("server-a");
+  seam.events.serverChanges.emit("server-a");
+  seam.events.serverChanges.emit("server-b");
+
+  expect(seam.titles()).toEqual([
+    m.notice_write_not_saved(),
+    m.notice_write_not_saved(),
+  ]);
 });
