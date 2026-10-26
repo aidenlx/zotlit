@@ -71,15 +71,36 @@ export function chooseLiteratureNoteProfile(
   const profiles = "previews" in profilesOrOptions ? [] : profilesOrOptions;
   const selectedOptions =
     "previews" in profilesOrOptions ? profilesOrOptions : options;
-  return modalAnswer<LiteratureNoteProfileChoice | undefined>((resolve) => {
-    const modal = new LiteratureNoteProfileModal(app, profiles, {
-      resolve,
-      ...selectedOptions,
-      preselected: selectedOptions.preselected ?? DEFAULT_PROFILE,
-    });
-    modal.open();
-    return modal;
+  return modalAnswer<LiteratureNoteProfileChoice | undefined>((resolve) =>
+    openPicker(app, profiles, { resolve, ...selectedOptions }),
+  );
+}
+
+/**
+ * Open the picker over `options.previews`, for a caller that waits on it with
+ * `awaitModal`. `resolve` gets the choice, or `undefined` when it closes.
+ */
+export function openLiteratureNoteProfile(
+  app: App,
+  options: ProfilePickerOptions & { previews: readonly ProfilePreview[] },
+  resolve: (choice: LiteratureNoteProfileChoice | undefined) => void,
+): { close(): void } {
+  return openPicker(app, [], { resolve, ...options });
+}
+
+function openPicker(
+  app: App,
+  profiles: readonly LiteratureNoteProfile[],
+  options: ProfilePickerOptions & {
+    resolve: (choice: LiteratureNoteProfileChoice | undefined) => void;
+  },
+): LiteratureNoteProfileModal {
+  const modal = new LiteratureNoteProfileModal(app, profiles, {
+    ...options,
+    preselected: options.preselected ?? DEFAULT_PROFILE,
   });
+  modal.open();
+  return modal;
 }
 
 class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {

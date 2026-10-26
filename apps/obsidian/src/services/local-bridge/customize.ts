@@ -9,8 +9,11 @@ import type { Context } from "effect";
 import type { CachedMetadata, TFile } from "obsidian";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
+import { valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
+import { awaitModal } from "@/lib/effect-modal";
+import type { ClosableModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
 import { Notifier } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
@@ -64,10 +67,14 @@ export interface LaunchConsent {
   readonly remember: boolean;
 }
 
-/** The sheet as the flow uses it: `null` means Cancel, and nothing happens. */
+/**
+ * The sheet as the flow uses it: it opens the sheet and returns it, and
+ * `settle` gets the answer. `null` means Cancel, and nothing happens.
+ */
 export type ConfirmLaunch = (
   details: LaunchSheetDetails,
-) => Promise<LaunchConsent | null>;
+  settle: (consent: LaunchConsent | null) => void,
+) => ClosableModal;
 
 /** What the flow reaches outside the services: the build, the UI and the device. */
 export interface CustomizePorts {
@@ -109,20 +116,23 @@ export type CustomizeAction = (request: CustomizeRequest) => Promise<void>;
 
 /**
  * The Customize flow for callers outside Effect: the entry actions, the
- * setting tab and the Workbench view. A run rejects with what failed.
+ * setting tab and the Workbench view. A run rejects with what failed. Unload
+ * interrupts a run, which closes an open launch sheet, and the run resolves.
  */
 export function bindCustomize(
-  bridge: Pick<EffectBridge, "runPromise">,
+  bridge: Pick<EffectBridge, "runPromiseExit">,
   context: Context.Context<CustomizeServices>,
   ports: CustomizePorts,
 ): CustomizeAction {
   return (request) =>
-    bridge.runPromise(
-      customize(request, ports).pipe(
-        Effect.mapError(({ cause }) => cause),
-        Effect.provideContext(context),
-      ),
-    );
+    bridge
+      .runPromiseExit(
+        customize(request, ports).pipe(
+          Effect.mapError(({ cause }) => cause),
+          Effect.provideContext(context),
+        ),
+      )
+      .then((exit) => valueOr(exit, undefined));
 }
 
 const portError = (cause: unknown) => new CustomizePortError({ cause });
@@ -181,7 +191,10 @@ export const customize = Effect.fn("LocalBridge.customize")(function* (
       turnServerOn,
       turnWorkbenchOn,
     };
-    const consent = yield* port(() => ports.confirmLaunch(details));
+    // An interrupt takes the sheet away.
+    const consent = yield* awaitModal<LaunchConsent | null>((settle) =>
+      ports.confirmLaunch(details, settle),
+    );
     if (consent === null) return;
     if (consent.destination === "native") {
       yield* openNative;

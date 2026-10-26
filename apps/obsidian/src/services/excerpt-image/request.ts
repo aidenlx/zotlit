@@ -1,4 +1,4 @@
-import { Data, Effect } from "effect";
+import { Cause, Data, Effect } from "effect";
 import type { Scope } from "effect";
 
 import {
@@ -17,18 +17,19 @@ import type {
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 
+import { valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
+import { portCall } from "@/lib/legacy-port";
 import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
-import type { ZoteroPref } from "@/services/zotero-pref/service";
-import { acquireReadLease } from "@/services/zotero-reads/lease";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
-import type { ZoteroReads } from "@/services/zotero-reads/service";
 
 import type { ExcerptRequest } from "./contract";
 
@@ -55,27 +56,23 @@ export function savedExcerptRequest(options: {
   /** Runs the read on the plugin's runtime, so its log reaches the plugin logger. */
   bridge: Pick<EffectBridge, "runPromise">;
 }): Promise<ExcerptRequest | null> {
-  // The paths as they stand each time the request reads them: before the read
-  // and again after it, so a data directory that moves during the read
-  // resolves to nothing.
-  const paths = Effect.sync((): AttachmentPathContext => ({
+  const { annotation, source, sourceScope } = options;
+  // The paths as they stand now: a request belongs to the data directory its
+  // source was read from, whatever the settings become during the read.
+  const paths: AttachmentPathContext = {
     dataDir: options.paths.dataDir,
     baseAttachmentPath: options.paths.baseAttachmentPath,
-  }));
-  if (!options.source || options.sourceScope !== options.paths.dataDir)
-    return Promise.resolve(null);
+  };
+  if (!source || sourceScope !== paths.dataDir) return Promise.resolve(null);
   return options.bridge.runPromise(
-    resolveSavedExcerptRequest({
-      annotation: options.annotation,
-      source: options.source,
-      sourceScope: options.sourceScope,
-      snapshot: Effect.map(
-        Effect.acquireDisposable(
-          Effect.tryPromise(() => options.zoteroReads.acquireRead()),
-        ),
-        (lease) => lease.reads,
-      ),
+    readSavedExcerptRequest({
+      annotation,
+      source,
       paths,
+      snapshot: Effect.acquireDisposable(
+        portCall("acquire-read", () => options.zoteroReads.acquireRead()),
+      ).pipe(Effect.map(({ reads }) => reads)),
+      dataDir: Effect.sync(() => options.paths.dataDir),
     }).pipe(
       // A caller outside Effect gets nothing for a read the runtime stopped,
       // as for one the database could not answer.
@@ -118,39 +115,90 @@ export function resolveSavedExcerptRequest<E>(options: {
   );
 }
 
-/** `savedExcerptRequest` over the Effect services, for a layer's own callbacks. */
+/**
+ * The file inputs one saved Annotation resolves through, under the paths of
+ * the active source, or `null` where nothing can: no Annotation Source, a data
+ * directory that moves during the read, or a database that cannot answer.
+ */
+export function savedExcerptRequestFor(input: {
+  annotation: AnnotationRecord;
+  source: AnnotationSource | null;
+}): Effect.Effect<ExcerptRequest | null, never, ZoteroReads | ZoteroPref> {
+  const { annotation, source } = input;
+  return Effect.gen(function* () {
+    if (!source) return null;
+    const reads = yield* ZoteroReads;
+    const pref = yield* ZoteroPref;
+    const { dataDir, baseAttachmentPath } = yield* pref.current;
+    return yield* readSavedExcerptRequest({
+      annotation,
+      source,
+      paths: { dataDir, baseAttachmentPath },
+      snapshot: reads.snapshot,
+      dataDir: Effect.map(pref.current, (current) => current.dataDir),
+    });
+  });
+}
+
+/**
+ * {@link savedExcerptRequestFor} for Promise callers: the pixel-edit
+ * revalidation in `zt-main.ts`, and the Annotation Repository and Annotation
+ * Popover cores. Unload interrupts a pending read, which then resolves to
+ * `null`.
+ */
 export function savedExcerptRequestOver(services: {
-  readonly reads: Pick<ZoteroReads["Service"], "snapshot">;
-  readonly pref: Pick<ZoteroPref["Service"], "current">;
-  readonly bridge: Pick<
-    EffectBridge,
-    "runSync" | "runPromise" | "runPromiseExit" | "closed"
-  >;
+  readonly reads: ZoteroReads["Service"];
+  readonly pref: ZoteroPref["Service"];
+  readonly bridge: Pick<EffectBridge, "runPromiseExit">;
 }): (input: {
   annotation: AnnotationRecord;
   source: AnnotationSource | null;
 }) => Promise<ExcerptRequest | null> {
-  return ({ annotation, source }) => {
-    const pref = services.bridge.runSync(services.pref.current);
-    return savedExcerptRequest({
-      annotation,
-      source,
-      sourceScope: pref.dataDir,
-      bridge: services.bridge,
-      zoteroReads: {
-        acquireRead: () => acquireReadLease(services.reads, services.bridge),
-      },
-      paths: {
-        get dataDir() {
-          return services.bridge.runSync(services.pref.current).dataDir;
-        },
-        get baseAttachmentPath() {
-          return services.bridge.runSync(services.pref.current)
-            .baseAttachmentPath;
-        },
-      },
-    });
-  };
+  return async (input) =>
+    valueOr(
+      await services.bridge.runPromiseExit(
+        savedExcerptRequestFor(input).pipe(
+          Effect.provideService(ZoteroReads, services.reads),
+          Effect.provideService(ZoteroPref, services.pref),
+        ),
+      ),
+      null,
+    );
+}
+
+/**
+ * The request of a saved Annotation under `paths`, read from one Snapshot so
+ * the identity and the attachment come from one database; `null` where the
+ * data directory moves away from `paths` during the read, or the read fails.
+ */
+function readSavedExcerptRequest<E>(options: {
+  annotation: AnnotationRecord;
+  source: AnnotationSource;
+  paths: AttachmentPathContext;
+  snapshot: Effect.Effect<ExcerptRequestReads, E, Scope.Scope>;
+  /** The data directory as it stands now. */
+  dataDir: Effect.Effect<string>;
+}): Effect.Effect<ExcerptRequest | null> {
+  const { annotation, source, paths } = options;
+  return Effect.gen(function* () {
+    const reads = yield* options.snapshot;
+    const request = yield* excerptRequest({ annotation, source, reads, paths });
+    return (yield* options.dataDir) === paths.dataDir ? request : null;
+  }).pipe(
+    Effect.scoped,
+    // Whatever stops the read, as a throw from a reader, resolves to nothing.
+    recover(
+      (cause) =>
+        Effect.logDebug("No excerpt request: the database did not answer").pipe(
+          Effect.annotateLogs({
+            annotationKey: annotation.key,
+            error: Cause.squash(cause),
+          }),
+        ),
+      Effect.succeed(null),
+    ),
+    withLogCategory("excerpt-image"),
+  );
 }
 
 /**
@@ -199,22 +247,6 @@ export function excerptInputs(reads: ExcerptRequestReads, parentKey: string) {
       }),
     ),
   );
-}
-
-/**
- * {@link excerptInputs} for a caller outside Effect.
- *
- * @throws where the database cannot answer.
- */
-export function readExcerptInputs(
-  reads: ExcerptRequestReads,
-  parentKey: string,
-): Promise<{
-  identity: ZoteroDatabaseIdentity;
-  sources: AnnotationSources;
-  attachment: Attachment | null;
-}> {
-  return Effect.runPromise(excerptInputs(reads, parentKey));
 }
 
 /**

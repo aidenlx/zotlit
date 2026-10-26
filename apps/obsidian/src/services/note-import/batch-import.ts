@@ -7,7 +7,6 @@ import { parseIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
 import type { ChildNote, Note } from "@zotlit/db";
 import type { ImportMode } from "@zotlit/protocol";
 
-import { valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
@@ -19,7 +18,7 @@ import type { BatchProfileCount } from "@/services/batch-profile-summary";
 import {
   classifyStream,
   executeBatchRun,
-  runBatchWith,
+  modalRunner,
 } from "@/services/batch-run";
 import type {
   BatchClassifyControls,
@@ -46,7 +45,7 @@ import { lastmodFromFrontmatter } from "@/services/note-index/parse";
 import { NoteIndex } from "@/services/note-index/service";
 import { Profile } from "@/services/profile/service";
 import { PluginSettings } from "@/services/settings/service";
-import { profileRead } from "@/services/template-workbench/sync-template";
+import type { ZoteroPref } from "@/services/zotero-pref/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
@@ -76,6 +75,7 @@ export type BatchImportServices =
   | NoteIndex
   | PluginSettings
   | Profile
+  | ZoteroPref
   | ZoteroReads;
 
 /**
@@ -345,6 +345,7 @@ const prepareImportProfiles = Effect.fnUntraced(function* (
   const profiles = yield* Profile;
   const zoteroReads = yield* ZoteroReads;
   const context = yield* Effect.context<BatchImportServices>();
+  const { settle } = yield* modalRunner<BatchImportServices>(ports.bridge);
   let selection: CreationProfileSelection = yield* Effect.promise(() =>
     ports.noteFeature.resolveCreationProfile(),
   );
@@ -426,7 +427,7 @@ const prepareImportProfiles = Effect.fnUntraced(function* (
     const previews: ProfilePreview[] = [];
     const selectors: ProfileSelector[] = [
       DEFAULT_PROFILE,
-      ...(yield* profileRead(profiles.profiles)).map(({ id }) => id),
+      ...(yield* profiles.profiles).map(({ id }) => id),
     ];
     for (const selector of selectors) {
       const plan = (yield* plansFor(selector)).get(first.note.itemID)!;
@@ -439,9 +440,11 @@ const prepareImportProfiles = Effect.fnUntraced(function* (
         path: plan.path,
       });
     }
-    const chosen = yield* Effect.promise(() =>
-      ports.view.chooseProfile({ selection, previews, indexedKey }),
-    );
+    const chosen = yield* ports.view.chooseProfile({
+      selection,
+      previews,
+      indexedKey,
+    });
     if (chosen === undefined) return;
     const plans = yield* plansFor(chosen);
     for (const action of orphans) {
@@ -468,7 +471,7 @@ const prepareImportProfiles = Effect.fnUntraced(function* (
       return (
         ports.bridge.runSync(
           Effect.provideContext(
-            profileRead(profiles.resolveProfile(selection.selector)),
+            profiles.resolveProfile(selection.selector),
             context,
           ),
         )?.label ?? m.settings_profile_default_name()
@@ -477,31 +480,9 @@ const prepareImportProfiles = Effect.fnUntraced(function* (
     get source() {
       return selection.source;
     },
-    choose: async () =>
-      valueOr(
-        await ports.bridge.runPromiseExit(
-          Effect.provideContext(choose(), context),
-        ),
-        undefined,
-      ),
+    choose: () => settle(choose()),
   };
   return choice;
-});
-
-/**
- * The modal callbacks' runner: an Effect over the services this Effect runs
- * with, run through the bridge and settled for a Promise caller as
- * `runBatch` settles it.
- */
-const modalRunner = Effect.fnUntraced(function* (ports: BatchImportPorts) {
-  const context = yield* Effect.context<BatchImportServices>();
-  const run = runBatchWith((effect, options) =>
-    ports.bridge.runPromiseExit(effect, options),
-  );
-  return <A, E>(
-    effect: Effect.Effect<A, E, BatchImportServices>,
-    signal?: AbortSignal,
-  ) => run(Effect.provideContext(effect, context), signal);
 });
 
 // ---------------------------------------------------------------------------
@@ -513,7 +494,7 @@ const openNoteImportModal = Effect.fnUntraced(function* (
   itemIDs: readonly number[],
   unavailableLibraries: number,
 ) {
-  const run = yield* modalRunner(ports);
+  const { run } = yield* modalRunner<BatchImportServices>(ports.bridge);
   const profiles = yield* Profile;
   const ids = distinct(itemIDs);
   let runnableActions: ImportAction[] = [];
@@ -525,7 +506,7 @@ const openNoteImportModal = Effect.fnUntraced(function* (
     controls: BatchClassifyControls,
   ) {
     const classified = yield* classifyNoteImport(ids, controls);
-    profilesEnabled = (yield* profileRead(profiles.profiles)).length > 0;
+    profilesEnabled = (yield* profiles.profiles).length > 0;
     if (profilesEnabled)
       profileChoice = yield* prepareImportProfiles(ports, classified.actions);
     runnableActions = classified.actions.filter(needsImport);
@@ -653,7 +634,7 @@ const openChildImportModal = Effect.fnUntraced(function* (
   ports: BatchImportPorts,
   parentItemIDs: readonly number[],
 ) {
-  const run = yield* modalRunner(ports);
+  const { run } = yield* modalRunner<BatchImportServices>(ports.bridge);
   const profiles = yield* Profile;
   const ids = distinct(parentItemIDs);
   let runnableActions: ImportAction[] = [];
@@ -665,7 +646,7 @@ const openChildImportModal = Effect.fnUntraced(function* (
   ) {
     const parents = yield* classifyChildImport(ids, controls);
     const allActions = parents.flatMap((parent) => parent.actions);
-    profilesEnabled = (yield* profileRead(profiles.profiles)).length > 0;
+    profilesEnabled = (yield* profiles.profiles).length > 0;
     if (profilesEnabled)
       profileChoice = yield* prepareImportProfiles(ports, allActions);
     runnableActions = allActions.filter(needsImport);

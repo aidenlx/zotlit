@@ -1,13 +1,14 @@
 // The Language Pack's edges outside Effect: its start in `onload`, ahead of
 // the service graph, and the setting tab's handle on it.
 
-import { Effect, Stream } from "effect";
+import { Effect, Layer, Stream } from "effect";
 import type { App } from "obsidian";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { runtimeServices } from "@/lib/effect-services";
 import { Notifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { layerDeviceStorage } from "@/lib/obsidian-device-storage";
 import { layerObsidianEnv } from "@/lib/obsidian-env";
 import { toastLanguagePackInstall } from "@/services/language-pack/notices";
 import {
@@ -32,7 +33,7 @@ export function startI18n(
 ): LanguagePackStartup {
   return Effect.runSyncWith(runtimeServices)(
     startLanguagePack(pluginVersion).pipe(
-      Effect.provide(layerObsidianEnv),
+      Effect.provide(Layer.merge(layerObsidianEnv, layerDeviceStorage)),
       Effect.provideService(ObsidianApp, app),
     ),
   );

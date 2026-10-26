@@ -80,11 +80,13 @@ async function open() {
     ran,
     asked,
     dispose: () => stack.disposeAsync(),
+    [Symbol.asyncDispose]: () => stack.disposeAsync(),
   };
 }
 
 it("resolves each gesture once its work is done", async () => {
-  const { handle, notifier, ran, asked, dispose } = await open();
+  await using opened = await open();
+  const { handle, notifier, ran, asked } = opened;
 
   await handle.showEditingCapability();
   expect(ran).toEqual(["probe", "open"]);
@@ -95,8 +97,6 @@ it("resolves each gesture once its work is done", async () => {
 
   handle.reportBlockedGesture("ABCD2345");
   expect(notifier.notices).toHaveLength(2);
-
-  await dispose();
 });
 
 it("settles as the bridge does after the runtime is disposed, and a notice's button does nothing", async () => {

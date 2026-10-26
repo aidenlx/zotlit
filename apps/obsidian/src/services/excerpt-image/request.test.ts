@@ -1,6 +1,6 @@
 // One Annotation reached through the Local API and the database must reuse pixels.
 import { it } from "@effect/vitest";
-import { Effect, Exit } from "effect";
+import { Deferred, Effect, Exit } from "effect";
 import { join } from "node:path";
 import { describe, expect, vi } from "vitest";
 
@@ -14,13 +14,12 @@ import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
-import type {
-  ZoteroReads,
-  ZoteroReadsApi,
-} from "@/services/zotero-reads/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -34,6 +33,7 @@ import {
   excerptRequestForKey,
   resolveSavedExcerptRequest,
   savedExcerptRequest,
+  savedExcerptRequestFor,
   savedExcerptRequestOver,
 } from "./request";
 import { ExcerptImageService, excerptKey, excerptRequest } from "./service";
@@ -135,6 +135,39 @@ const serviceOf = (
   );
 
 describe("Saved excerpt request", () => {
+  it.effect(
+    "reads the request through the tags, and nothing without a source",
+    () =>
+      Effect.gen(function* () {
+        const db = yield* fixtureDb();
+        const read = (source: AnnotationSource | null) =>
+          savedExcerptRequestFor({ annotation, source }).pipe(
+            Effect.provideService(
+              ZoteroReads,
+              stubService<ZoteroReads["Service"]>("ZoteroReads", {
+                snapshot: Effect.succeed(db.reads),
+              }),
+            ),
+            Effect.provideService(
+              ZoteroPref,
+              stubService<ZoteroPref["Service"]>("ZoteroPref", {
+                current: Effect.succeed(
+                  stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", paths),
+                ),
+              }),
+            ),
+          );
+
+        expect(yield* read(apiSource)).toMatchObject({
+          annotation: { key: ANNOTATION },
+          source: apiSource,
+          attachmentKey: ATTACHMENT,
+          sourceScope: paths.dataDir,
+        });
+        expect(yield* read(null)).toBeNull();
+      }),
+  );
+
   it.effect("builds the same request over the Effect services", () =>
     Effect.gen(function* () {
       const db = yield* fixtureDb();
@@ -146,12 +179,12 @@ describe("Saved excerpt request", () => {
       });
       const requestOver = savedExcerptRequestOver({
         reads,
-        pref: {
+        pref: stubService<ZoteroPref["Service"]>("ZoteroPref", {
           current: Effect.succeed({
             dataDir: paths.dataDir,
             baseAttachmentPath: paths.baseAttachmentPath,
           } as ZoteroPrefSnapshot),
-        },
+        }),
         bridge,
       });
 
@@ -249,7 +282,7 @@ describe("Saved excerpt request", () => {
               return db.reads;
             }),
           }),
-          pref: {
+          pref: stubService<ZoteroPref["Service"]>("ZoteroPref", {
             current: Effect.sync(
               () =>
                 ({
@@ -257,7 +290,7 @@ describe("Saved excerpt request", () => {
                   baseAttachmentPath: paths.baseAttachmentPath,
                 }) as ZoteroPrefSnapshot,
             ),
-          },
+          }),
           bridge,
         });
 
@@ -266,6 +299,83 @@ describe("Saved excerpt request", () => {
             requestOver({ annotation, source: apiSource }),
           ),
         ).toBeNull();
+      }),
+  );
+
+  it.effect(
+    "resolves to nothing through the Effect services where unload stops the read",
+    () =>
+      Effect.gen(function* () {
+        const bridge = openTestBridge();
+        const requestOver = savedExcerptRequestOver({
+          reads: stubService<ZoteroReads["Service"]>("ZoteroReads", {
+            snapshot: Effect.never,
+          }),
+          pref: stubService<ZoteroPref["Service"]>("ZoteroPref", {
+            current: Effect.succeed({
+              dataDir: paths.dataDir,
+              baseAttachmentPath: paths.baseAttachmentPath,
+            } as ZoteroPrefSnapshot),
+          }),
+          bridge,
+        });
+
+        const pending = requestOver({ annotation, source: apiSource });
+        yield* Effect.promise(() => bridge[Symbol.asyncDispose]());
+
+        expect(yield* Effect.promise(() => pending)).toBeNull();
+      }),
+  );
+
+  it.effect(
+    "interrupts a read under the Snapshot and resolves to nothing where unload stops it",
+    () =>
+      Effect.gen(function* () {
+        const db = yield* fixtureDb();
+        const bridge = openTestBridge();
+        const started = yield* Deferred.make<void>();
+        let interrupted = false;
+        let released = false;
+        // The Snapshot is taken; its identity read starts and never answers.
+        const reads = new Proxy(db.reads, {
+          get(target, key, receiver) {
+            return key === "DatabaseIdentity"
+              ? () =>
+                  Deferred.succeed(started, undefined).pipe(
+                    Effect.andThen(Effect.never),
+                    Effect.onInterrupt(() =>
+                      Effect.sync(() => {
+                        interrupted = true;
+                      }),
+                    ),
+                  )
+              : Reflect.get(target, key, receiver);
+          },
+        });
+        const requestOver = savedExcerptRequestOver({
+          reads: stubService<ZoteroReads["Service"]>("ZoteroReads", {
+            snapshot: Effect.acquireRelease(Effect.succeed(reads), () =>
+              Effect.sync(() => {
+                released = true;
+              }),
+            ),
+          }),
+          pref: stubService<ZoteroPref["Service"]>("ZoteroPref", {
+            current: Effect.succeed({
+              dataDir: paths.dataDir,
+              baseAttachmentPath: paths.baseAttachmentPath,
+            } as ZoteroPrefSnapshot),
+          }),
+          bridge,
+        });
+
+        const pending = requestOver({ annotation, source: apiSource });
+        yield* Deferred.await(started);
+        yield* Effect.promise(() => bridge[Symbol.asyncDispose]());
+
+        expect(yield* Effect.promise(() => pending)).toBeNull();
+        expect(interrupted).toBe(true);
+        expect(released).toBe(true);
       }),
   );
 });
@@ -547,7 +657,7 @@ describe("Excerpt request for an Indexed Key", () => {
               publish: () => {
                 throw new Error("A non-image Annotation is never published");
               },
-              exists: async () => false,
+              exists: () => Effect.succeed(false),
             },
           ),
         );

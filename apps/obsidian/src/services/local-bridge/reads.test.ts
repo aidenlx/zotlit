@@ -1,7 +1,7 @@
 import { configureSync, resetSync } from "@logtape/logtape";
 import "@mock/dom-parser";
 import type { LogRecord } from "@logtape/logtape";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Scope } from "effect";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -143,6 +143,8 @@ async function harness(
     immutable?: "owned" | "previous" | "foreign";
     reference?: "embed" | "link";
     shifted?: boolean;
+    /** What the Note Index's first full scan waits on; settled by default. */
+    whenIndexed?: Effect.Effect<void>;
   } = {},
 ): Promise<Harness> {
   await using stack = new AsyncDisposableStack();
@@ -222,7 +224,7 @@ async function harness(
         })),
       }),
       Layer.mock(NoteIndex, {
-        whenIndexed: Effect.void,
+        whenIndexed: options.whenIndexed ?? Effect.void,
         getNotesByItemKey: (indexedKey: string) =>
           Effect.sync(() =>
             indexedKey === ITEM.key ? notesAt(ITEM_NOTE_PATH) : [],
@@ -254,7 +256,7 @@ async function harness(
     makeLocalBridgeReads({
       installationId: INSTALLATION_ID,
       vault: VAULT_NAME,
-    }),
+    }).pipe(Scope.provide(runtime.scope)),
   );
 
   const sessions = new BridgeSessions(() => {});
@@ -624,6 +626,28 @@ it("refuses a Profile this vault no longer holds", async () => {
   await expect(res.json()).resolves.toEqual({
     error: { code: "document-missing", message: expect.any(String) },
   });
+});
+
+it("ends a pending selected-item read when the plugin unloads", async () => {
+  const started = Promise.withResolvers<void>();
+  const bridge = await harness({
+    whenIndexed: Effect.sync(() => started.resolve()).pipe(
+      Effect.andThen(Effect.never),
+    ),
+  });
+  const pending = bridge.request(LOCAL_BRIDGE_PATHS.selectedItem, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  await started.promise;
+
+  await bridge[Symbol.asyncDispose]();
+
+  const answered = await Promise.race([
+    pending.then((res) => res.status),
+    new Promise((resolve) => setTimeout(resolve, 200, "still pending")),
+  ]);
+  expect(answered).toBe(500);
 });
 
 it("logs the operation and never the source, the snapshot, or the credential", async () => {

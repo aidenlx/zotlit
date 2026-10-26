@@ -193,7 +193,7 @@ class CoreState {
     this.refreshes = refreshes;
     this.idleSaves = idleSaves;
     this.burstSaves = burstSaves;
-    this.databaseRows = databaseRowsResolver(db);
+    this.databaseRows = databaseRowsResolver(db, fibers);
   }
 
   readonly publish;

@@ -15,6 +15,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import * as toast from "@/lib/toast";
 import type { AttachmentOpenDeps } from "@/services/attachment-open/actions";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { captureInsertion } from "@/views/annot-view/async-insert";
 import { getInsertionEditor } from "@/views/annot-view/drag-insert";
 import {
@@ -35,6 +36,7 @@ const logger = getLogger(["library-view", "item-actions"]);
 export type ItemActionsDeps = NoteResultDeps &
   AttachmentOpenDeps &
   Pick<CitationSuggestDeps, "citationLookup" | "useLedger"> & {
+    reads: Pick<PlainZoteroReads, "acquireRead">;
     noteFeature: CitationSuggestDeps["noteFeature"];
     /** Show a short message to the researcher. */
     notify: (message: string) => void;
