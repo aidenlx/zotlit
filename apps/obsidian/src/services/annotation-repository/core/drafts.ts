@@ -14,7 +14,7 @@ import type {
   TextField,
 } from "@/services/annotation-repository/write";
 
-import { demandedSource } from "./bridge";
+import { awaitRead, demandedSource } from "./bridge";
 import {
   clearTextTimers,
   draftFor,
@@ -45,7 +45,13 @@ import {
   settle,
 } from "./outcomes";
 import type { CoreState } from "./state";
-import { command, lockRefusal, writeBlocked, writeText } from "./writes";
+import {
+  command,
+  lockRefusal,
+  UNKNOWN_OUTCOME,
+  writeBlocked,
+  writeText,
+} from "./writes";
 
 const logger = getLogger("annotation-repository");
 
@@ -163,7 +169,8 @@ function editTextField(
   );
   if (capability.kind !== "writable") return standing ?? null;
   // A lock takes no keystroke either: a draft already standing is held.
-  if (lockRefusal(core, annotationKey, field)) return standing ?? null;
+  if (core.bridge.runSync(lockRefusal(core, annotationKey, field)))
+    return standing ?? null;
   const baseline =
     standing?.baseline ?? TEXT_FIELD_SPECS[field].valueOf(held!.record) ?? "";
   const draft = standing
@@ -233,11 +240,11 @@ function submitTextField(
     if (capability.kind !== "writable")
       return Promise.resolve({
         kind: "failed",
-        failure: writeBlocked(core, draft.attachmentKey)!,
+        failure: core.bridge.runSync(writeBlocked(core, draft.attachmentKey))!,
       });
   }
   // A lock refuses the draft before it turns pending, queued or not.
-  const locked = lockRefusal(core, annotationKey, field);
+  const locked = core.bridge.runSync(lockRefusal(core, annotationKey, field));
   if (locked) return Promise.resolve({ kind: "failed", failure: locked });
   const submittedText = draft.text;
   setDraft(core, field, { ...draft, state: { kind: "pending" } });
@@ -251,32 +258,39 @@ async function sendText(
   { submittedText, automatic }: { submittedText: string; automatic: boolean },
 ): Promise<MutationState> {
   const id = indexedID(serverID, annotationKey);
-  return await writeText(core, field, annotationKey, {
-    value: submittedText,
-    // The draft takes the save's outcome before the next write on the
-    // Annotation starts, so a save queued behind a failed one is held.
-    run: async (send, own) => {
-      if (textSuperseded(core, field, own, { annotationKey, id, automatic })) {
-        logger.debug("A queued text save stood down", {
-          annotationKey,
-          field,
-        });
-        return { kind: "pending", write: field };
-      }
-      const outcome = await send();
-      const current = core.drafts[field].get(id);
-      if (current && current.state.kind !== "conflict") {
-        applyTextWriteDecision(core, field, {
-          annotationKey,
-          current,
-          submittedText,
-          outcome,
-          own,
-        });
-      }
-      return outcome;
-    },
-  });
+  return await awaitRead(
+    core,
+    writeText(core, annotationKey, {
+      field,
+      value: submittedText,
+      // The draft takes the save's outcome before the next write on the
+      // Annotation starts, so a save queued behind a failed one is held.
+      run: async (send, own) => {
+        if (
+          textSuperseded(core, field, own, { annotationKey, id, automatic })
+        ) {
+          logger.debug("A queued text save stood down", {
+            annotationKey,
+            field,
+          });
+          return { kind: "pending", write: field };
+        }
+        const outcome = await send();
+        const current = core.drafts[field].get(id);
+        if (current && current.state.kind !== "conflict") {
+          applyTextWriteDecision(core, field, {
+            annotationKey,
+            current,
+            submittedText,
+            outcome,
+            own,
+          });
+        }
+        return outcome;
+      },
+    }),
+    UNKNOWN_OUTCOME,
+  );
 }
 
 /**
@@ -339,7 +353,7 @@ function retryTextDraft(
   const saving = savingText(core, field, annotationKey);
   if (saving) return answerOf(core, saving);
   // The draft and its Write Conflict stay as they stand.
-  const locked = lockRefusal(core, annotationKey, field);
+  const locked = core.bridge.runSync(lockRefusal(core, annotationKey, field));
   if (locked) return Promise.resolve({ kind: "failed", failure: locked });
   return resendText(core, field, annotationKey, draft);
 }
@@ -373,17 +387,19 @@ async function resendText(
   const submittedText = draft.text;
   const id = indexedID(draft.serverID, annotationKey);
   setDraft(core, field, { ...draft, state: { kind: "pending" } });
-  let outcome = await writeText(core, field, annotationKey, {
-    value: submittedText,
-  });
+  const resend = () =>
+    awaitRead(
+      core,
+      writeText(core, annotationKey, { field, value: submittedText }),
+      UNKNOWN_OUTCOME,
+    );
+  let outcome = await resend();
   if (
     outcome.kind === "conflict" &&
     outcome.conflict.write === field &&
     sameText(outcome.conflict.fresh, reviewed)
   ) {
-    outcome = await writeText(core, field, annotationKey, {
-      value: submittedText,
-    });
+    outcome = await resend();
   }
   const current = core.drafts[field].get(id);
   if (!current) return outcome;
@@ -473,7 +489,7 @@ function editTags(
   // adds the text still typed, which the held draft keeps for Save tags.
   const refused =
     capability.kind !== "writable" ||
-    !!lockRefusal(core, annotationKey, "tags");
+    !!core.bridge.runSync(lockRefusal(core, annotationKey, "tags"));
   if (refused && (!standing || names === undefined)) return standing;
   const draft: TagDraft = standing
     ? {
@@ -535,8 +551,8 @@ async function submitTags(
     return IDLE;
   }
   const blocked =
-    writeBlocked(core, draft.attachmentKey) ??
-    lockRefusal(core, annotationKey, "tags");
+    core.bridge.runSync(writeBlocked(core, draft.attachmentKey)) ??
+    core.bridge.runSync(lockRefusal(core, annotationKey, "tags"));
   if (blocked) {
     setDraft(core, "tags", {
       ...draft,
@@ -552,14 +568,18 @@ async function submitTags(
     added: change.added.length,
     removed: change.removed.length,
   });
-  const outcome = await command(core, annotationKey, {
-    write: "tags",
-    session: true,
-    request: (target, record) =>
-      tagsPatch(target, mergeTags(annotationTags(record), change)),
-    propose: (record) =>
-      proposedTags(mergeTags(annotationTags(record), change)),
-  });
+  const outcome = await awaitRead(
+    core,
+    command(core, annotationKey, {
+      write: "tags",
+      session: true,
+      request: (target, record) =>
+        tagsPatch(target, mergeTags(annotationTags(record), change)),
+      propose: (record) =>
+        proposedTags(mergeTags(annotationTags(record), change)),
+    }),
+    UNKNOWN_OUTCOME,
+  );
   const current = core.drafts.tags.get(
     indexedID(draft.serverID, annotationKey),
   );

@@ -366,10 +366,7 @@ export type AnnotationRepositoryEvent =
     };
 
 export interface AnnotationRepositoryCoreDeps {
-  bridge: Pick<
-    EffectBridge,
-    "runSync" | "runPromise" | "runPromiseExit" | "subscribe" | "closed"
-  >;
+  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit" | "subscribe">;
   db: Pick<ZoteroReads["Service"], "snapshot" | "events" | "refresh">;
   queryClient: Pick<
     QueryClients["Service"],

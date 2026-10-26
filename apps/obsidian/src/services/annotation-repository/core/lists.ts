@@ -1369,6 +1369,7 @@ function toRecord(
 }
 
 export {
+  recover,
   read,
   hold,
   refresh,

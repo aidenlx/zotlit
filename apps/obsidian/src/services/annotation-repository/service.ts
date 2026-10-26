@@ -24,6 +24,14 @@ import { changed } from "@/services/zotero-reads/events";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import {
+  canRedo,
+  canUndo,
+  closeHistory,
+  openHistory,
+  redo,
+  undo,
+} from "./core/history-steps";
+import {
   capability,
   capabilityFor,
   dropDatabasePartition,
@@ -35,7 +43,19 @@ import {
   refreshLocks,
   sourceMoved,
 } from "./core/lists";
+import { mutationFor } from "./core/outcomes";
 import { CoreState } from "./core/state";
+import {
+  createAnnotation,
+  deleteAnnotation,
+  deleteAnnotations,
+  discardConflict,
+  patchColor,
+  patchColors,
+  patchComment,
+  patchGeometry,
+  retryWrite,
+} from "./core/writes";
 import { AnnotationRepositoryCore } from "./repository";
 import type {
   AnnotationDraft,
@@ -54,6 +74,8 @@ import type {
   TagDraft,
   TextField,
   TextFieldDraft,
+  WriteReadError,
+  WriteRunFailed,
 } from "./repository";
 
 export * from "./repository";
@@ -217,7 +239,7 @@ export type AnnotationRepositoryShape = {
     attachmentKey: string,
     draft: Omit<AnnotationDraft, "parentKey">,
     options?: { group?: string },
-  ): Effect.Effect<CreateOutcome>;
+  ): Effect.Effect<CreateOutcome, WriteReadError>;
   /**
    * Recolour one Annotation, of whatever type: Zotero's colour setter is one
    * rule for all six, so an ink stroke recolours like a highlight.
@@ -228,7 +250,7 @@ export type AnnotationRepositoryShape = {
   patchColor(
     annotationKey: string,
     color: string,
-  ): Effect.Effect<MutationState>;
+  ): Effect.Effect<MutationState, WriteRunFailed>;
   /**
    * Recolour a group of Annotations in Zotero, from one gesture on the Card
    * Selection. Each Annotation goes out as a request of its own and keeps its
@@ -244,7 +266,7 @@ export type AnnotationRepositoryShape = {
   patchColors(
     annotationKeys: readonly string[],
     color: string,
-  ): Effect.Effect<MutationState[]>;
+  ): Effect.Effect<MutationState[], WriteRunFailed>;
   /**
    * Replace one Annotation's comment. An empty string clears it.
    *
@@ -253,7 +275,7 @@ export type AnnotationRepositoryShape = {
   patchComment(
     annotationKey: string,
     comment: string,
-  ): Effect.Effect<MutationState>;
+  ): Effect.Effect<MutationState, WriteRunFailed>;
   /**
    * Save one Geometry Edit: the new position, the Sort Index recomputed from
    * it, and for a highlight or underline the quoted text. The record Zotero
@@ -269,7 +291,7 @@ export type AnnotationRepositoryShape = {
     annotationKey: string,
     edit: GeometryEdit,
     input: GeometryInput,
-  ): Effect.Effect<MutationState>;
+  ): Effect.Effect<MutationState, WriteRunFailed>;
   /**
    * Erase one Annotation in Zotero. The record leaves the Attachment's list
    * only once Zotero has answered, so the card and the Annotation Mark stand
@@ -277,7 +299,9 @@ export type AnnotationRepositoryShape = {
    *
    * @param annotationKey the Annotation's Indexed Key.
    */
-  deleteAnnotation(annotationKey: string): Effect.Effect<MutationState>;
+  deleteAnnotation(
+    annotationKey: string,
+  ): Effect.Effect<MutationState, WriteRunFailed>;
   /**
    * Erase a group of Annotations in Zotero, from one gesture on the Card
    * Selection. Each Annotation goes out as a request of its own and keeps its
@@ -291,7 +315,7 @@ export type AnnotationRepositoryShape = {
    */
   deleteAnnotations(
     annotationKeys: readonly string[],
-  ): Effect.Effect<MutationState[]>;
+  ): Effect.Effect<MutationState[], WriteRunFailed>;
   /**
    * Send one conflicted write again, against the value Zotero holds now — the
    * card's "Apply again", and its "Delete anyway". The user has seen both
@@ -302,7 +326,9 @@ export type AnnotationRepositoryShape = {
    * @returns what the second write left, which is `idle` where it landed and
    *   another conflict where Zotero moved again.
    */
-  retryWrite(annotationKey: string): Effect.Effect<MutationState>;
+  retryWrite(
+    annotationKey: string,
+  ): Effect.Effect<MutationState, WriteRunFailed>;
   /**
    * Leave Zotero's copy as it stands, from the card's "Discard". The card goes
    * back to what the last read answered; nothing is sent.
@@ -347,9 +373,13 @@ export type AnnotationRepositoryShape = {
    *
    * @param attachmentKey the Attachment's Indexed Key.
    */
-  undo(attachmentKey: string): Effect.Effect<HistoryOutcome>;
+  undo(
+    attachmentKey: string,
+  ): Effect.Effect<HistoryOutcome, WriteRunFailed | WriteReadError>;
   /** Step one undone edit forward again. */
-  redo(attachmentKey: string): Effect.Effect<HistoryOutcome>;
+  redo(
+    attachmentKey: string,
+  ): Effect.Effect<HistoryOutcome, WriteRunFailed | WriteReadError>;
   readonly annotationsChanged: Stream.Stream<string>;
   readonly excerptPixelsChanged: Stream.Stream<{
     record: AnnotationRecord;
@@ -467,7 +497,8 @@ export function layerAnnotationRepository(options: {
           Effect.withSpan("AnnotationRepository.probe"),
         ),
         mutationFor: Effect.fn("AnnotationRepository.mutationFor")(
-          (annotationKey) => Effect.sync(() => core.mutationFor(annotationKey)),
+          (annotationKey) =>
+            Effect.sync(() => mutationFor(shared, annotationKey)),
         ),
         // Untraced: the annotation view reads it once per changed Annotation.
         annotationState: Effect.fnUntraced(function* (annotationKey) {
@@ -515,62 +546,64 @@ export function layerAnnotationRepository(options: {
         ),
         createAnnotation: Effect.fn("AnnotationRepository.createAnnotation")(
           (attachmentKey, draft, createOptions) =>
-            Effect.promise(() =>
-              core.createAnnotation(attachmentKey, draft, createOptions),
-            ),
+            createAnnotation(shared, attachmentKey, {
+              draft,
+              ...createOptions,
+            }).pipe(inRepository),
         ),
         patchColor: Effect.fn("AnnotationRepository.patchColor")(
           (annotationKey, color) =>
-            Effect.promise(() => core.patchColor(annotationKey, color)),
+            patchColor(shared, annotationKey, color).pipe(inRepository),
         ),
         patchColors: Effect.fn("AnnotationRepository.patchColors")(
           (annotationKeys, color) =>
-            Effect.promise(() => core.patchColors(annotationKeys, color)),
+            patchColors(shared, annotationKeys, color).pipe(inRepository),
         ),
         patchComment: Effect.fn("AnnotationRepository.patchComment")(
           (annotationKey, comment) =>
-            Effect.promise(() => core.patchComment(annotationKey, comment)),
+            patchComment(shared, annotationKey, comment).pipe(inRepository),
         ),
         patchGeometry: Effect.fn("AnnotationRepository.patchGeometry")(
           (annotationKey, edit, input) =>
-            Effect.promise(() =>
-              core.patchGeometry(annotationKey, edit, input),
+            patchGeometry(shared, annotationKey, { edit, input }).pipe(
+              inRepository,
             ),
         ),
         deleteAnnotation: Effect.fn("AnnotationRepository.deleteAnnotation")(
           (annotationKey) =>
-            Effect.promise(() => core.deleteAnnotation(annotationKey)),
+            deleteAnnotation(shared, annotationKey).pipe(inRepository),
         ),
         deleteAnnotations: Effect.fn("AnnotationRepository.deleteAnnotations")(
           (annotationKeys) =>
-            Effect.promise(() => core.deleteAnnotations(annotationKeys)),
+            deleteAnnotations(shared, annotationKeys).pipe(inRepository),
         ),
         retryWrite: Effect.fn("AnnotationRepository.retryWrite")(
           (annotationKey) =>
-            Effect.promise(() => core.retryWrite(annotationKey)),
+            retryWrite(shared, annotationKey).pipe(inRepository),
         ),
         discardConflict: Effect.fn("AnnotationRepository.discardConflict")(
           (annotationKey) =>
-            Effect.sync(() => core.discardConflict(annotationKey)),
+            discardConflict(shared, annotationKey).pipe(inRepository),
         ),
         openHistory: Effect.fn("AnnotationRepository.openHistory")(
-          (attachmentKey) => Effect.sync(() => core.openHistory(attachmentKey)),
+          (attachmentKey) =>
+            openHistory(shared, attachmentKey).pipe(inRepository),
         ),
         closeHistory: Effect.fn("AnnotationRepository.closeHistory")(
           (attachmentKey) =>
-            Effect.sync(() => core.closeHistory(attachmentKey)),
+            closeHistory(shared, attachmentKey).pipe(inRepository),
         ),
         canUndo: Effect.fn("AnnotationRepository.canUndo")((attachmentKey) =>
-          Effect.sync(() => core.canUndo(attachmentKey)),
+          Effect.sync(() => canUndo(shared, attachmentKey)),
         ),
         canRedo: Effect.fn("AnnotationRepository.canRedo")((attachmentKey) =>
-          Effect.sync(() => core.canRedo(attachmentKey)),
+          Effect.sync(() => canRedo(shared, attachmentKey)),
         ),
         undo: Effect.fn("AnnotationRepository.undo")((attachmentKey) =>
-          Effect.promise(() => core.undo(attachmentKey)),
+          undo(shared, attachmentKey).pipe(inRepository),
         ),
         redo: Effect.fn("AnnotationRepository.redo")((attachmentKey) =>
-          Effect.promise(() => core.redo(attachmentKey)),
+          redo(shared, attachmentKey).pipe(inRepository),
         ),
         annotationsChanged: byTag("annotations-changed").pipe(
           Stream.map(({ attachmentKey }) => attachmentKey),
