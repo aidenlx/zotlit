@@ -1133,48 +1133,99 @@ it.effect("runs a color and delete on one Annotation one at a time", () =>
   }),
 );
 
-it.effect("does not start a queued command after repository unload", () =>
-  Effect.gen(function* () {
-    const stack = yield* scopedStack;
-    const first = Promise.withResolvers<Response>();
-    const { repository, service, requests } = yield* Effect.promise(() =>
-      writable(stack, {
-        write: () => first.promise,
-        item: () =>
-          annotationItem(
-            afterWrite("PUPR5FG5", { color: "#ff6666", version: 20 }),
-          ),
-      }),
-    );
-    const sent = requests.length;
+it.effect(
+  "answers a send in flight at repository unload with an unknown outcome, and does not start the queued command",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const first = Promise.withResolvers<Response>();
+      const { repository, service, requests } = yield* Effect.promise(() =>
+        writable(stack, {
+          write: () => first.promise,
+          item: () =>
+            annotationItem(
+              afterWrite("PUPR5FG5", { color: "#ff6666", version: 20 }),
+            ),
+        }),
+      );
+      const sent = requests.length;
 
-    const color = yield* Effect.forkChild(
-      service.patchColor("PUPR5FG5", "#ff6666"),
-      { startImmediately: true },
-    );
-    const queued = yield* Effect.forkChild(
-      service.patchComment("PUPR5FG5", "do not send"),
-      { startImmediately: true },
-    );
-    yield* Effect.promise(() =>
-      vi.waitFor(() =>
-        expect(
-          requests.slice(sent).filter(({ method }) => method === "PATCH"),
-        ).toHaveLength(1),
-      ),
-    );
-    yield* Effect.promise(() => repository[Symbol.asyncDispose]());
-    first.resolve(writeAccepted());
+      const color = yield* Effect.forkChild(
+        service.patchColor("PUPR5FG5", "#ff6666"),
+        { startImmediately: true },
+      );
+      const queued = yield* Effect.forkChild(
+        service.patchComment("PUPR5FG5", "do not send"),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(() =>
+        vi.waitFor(() =>
+          expect(
+            requests.slice(sent).filter(({ method }) => method === "PATCH"),
+          ).toHaveLength(1),
+        ),
+      );
+      yield* Effect.promise(() => repository[Symbol.asyncDispose]());
+      first.resolve(writeAccepted());
 
-    yield* Fiber.join(color);
-    expect(yield* Fiber.join(queued)).toEqual({
-      kind: "failed",
-      failure: { kind: "unknown-outcome" },
-    });
-    expect(
-      requests.slice(sent).filter(({ method }) => method === "PATCH"),
-    ).toHaveLength(1);
-  }),
+      // The unload interrupts the send, so ZotLit cannot say whether Zotero
+      // saved it.
+      expect(yield* Fiber.join(color)).toEqual({
+        kind: "failed",
+        failure: { kind: "unknown-outcome" },
+      });
+      expect(yield* Fiber.join(queued)).toEqual({
+        kind: "failed",
+        failure: { kind: "unknown-outcome" },
+      });
+      expect(
+        requests.slice(sent).filter(({ method }) => method === "PATCH"),
+      ).toHaveLength(1);
+    }),
+);
+
+it.effect(
+  "keeps the answer of a send Zotero accepted before repository unload",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const readBack = Promise.withResolvers<Response>();
+      const reading = Promise.withResolvers<void>();
+      let holdReadBack = false;
+      const { repository, service } = yield* Effect.promise(() =>
+        writable(stack, {
+          write: () => {
+            holdReadBack = true;
+            return writeAccepted(20);
+          },
+          item: () => {
+            if (!holdReadBack) {
+              return annotationItem(
+                afterWrite("PUPR5FG5", { color: "#ff6666", version: 20 }),
+              );
+            }
+            reading.resolve();
+            return readBack.promise;
+          },
+        }),
+      );
+
+      const color = yield* Effect.forkChild(
+        service.patchColor("PUPR5FG5", "#ff6666"),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(() => reading.promise);
+      yield* Effect.promise(() => repository[Symbol.asyncDispose]());
+      readBack.resolve(
+        annotationItem(
+          afterWrite("PUPR5FG5", { color: "#ff6666", version: 20 }),
+        ),
+      );
+
+      // Zotero took the write before the unload; only the read-back after it
+      // stops, so the write keeps its answer.
+      expect(yield* Fiber.join(color)).toEqual({ kind: "idle" });
+    }),
 );
 
 it.effect("accepts a write completion after the same database refreshes", () =>
@@ -1417,39 +1468,6 @@ it.effect(
       expect(yield* service.mutationFor("PUPR5FG5")).toEqual({
         kind: "failed",
         failure: { kind: "server-changed" },
-      });
-    }),
-);
-
-it.effect(
-  "answers a write in flight when the repository closes with an unknown outcome",
-  () =>
-    Effect.gen(function* () {
-      const stack = yield* scopedStack;
-      const reply = Promise.withResolvers<Response>();
-      const sending = Promise.withResolvers<void>();
-      const { repository, service } = yield* Effect.promise(() =>
-        writable(stack, {
-          write: () => {
-            sending.resolve();
-            return reply.promise;
-          },
-        }),
-      );
-
-      const running = yield* Effect.forkChild(
-        service.patchColor("PUPR5FG5", "#ff6666"),
-        { startImmediately: true },
-      );
-      yield* Effect.promise(() => sending.promise);
-      yield* Effect.promise(() => repository[Symbol.asyncDispose]());
-      reply.resolve(writeAccepted());
-
-      // The close interrupts the write, so ZotLit cannot say whether Zotero
-      // saved it.
-      expect(yield* Fiber.join(running)).toEqual({
-        kind: "failed",
-        failure: { kind: "unknown-outcome" },
       });
     }),
 );
