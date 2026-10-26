@@ -345,6 +345,15 @@ export async function setup(
   };
 }
 
+/**
+ * The stack an `it.effect` case builds its harness on: {@link setup} and
+ * {@link writable} add to it, and the case's Scope disposes it.
+ */
+export const scopedStack = Effect.acquireRelease(
+  Effect.sync(() => new AsyncDisposableStack()),
+  (stack) => Effect.promise(() => stack.disposeAsync()),
+);
+
 type FixtureEvents = {
   "annotations-changed": (attachmentKey: string) => void;
   "excerpt-pixels-changed": (

@@ -384,7 +384,8 @@ export function layerAnnotationRepository(options: {
       const queries = yield* QueryClients;
       const api = yield* ZoteroLocalApi;
       const pref = yield* ZoteroPref;
-      const now = instantClock(yield* Clock.Clock);
+      const clock = yield* Clock.Clock;
+      const now = instantClock(clock);
       const bridge = yield* scopedBridge;
       const bus = yield* PubSub.unbounded<AnnotationRepositoryEvent>();
       yield* Effect.addFinalizer(() => PubSub.shutdown(bus));
@@ -433,7 +434,13 @@ export function layerAnnotationRepository(options: {
         ),
       );
       yield* forkEach(api.changes, () => sourceMoved(shared));
-      const inRepository = withLogCategory("annotation-repository");
+      // The repository's reads log under its category and read the time from
+      // the layer's Clock, whichever fiber calls them.
+      const inRepository = <A, E>(effect: Effect.Effect<A, E>) =>
+        effect.pipe(
+          Effect.provideService(Clock.Clock, clock),
+          withLogCategory("annotation-repository"),
+        );
       const events = Stream.fromPubSub(bus);
       const byTag = <T extends AnnotationRepositoryEvent["_tag"]>(tag: T) =>
         filterTag(events, tag);
