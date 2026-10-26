@@ -17,6 +17,7 @@ import type { ItemFields } from "@zotlit/zotero-types";
 import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
@@ -35,6 +36,7 @@ import {
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
+import type { NoteCitations } from "./citations-handle";
 import type { NoteFeatureDeps } from "./context";
 import { createNoteFeature } from "./operations";
 import type { CreationPlanOptions } from "./operations";
@@ -288,6 +290,7 @@ async function harness(
   );
   const deps: NoteFeatureDeps = {
     app,
+    citations: stubService<NoteCitations>("NoteCitations", {}),
     vault: vaultOver(app.vault as unknown as VaultSource),
     fileManager: { renameFile: () => Effect.void },
     bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },

@@ -35,7 +35,6 @@ import type {
   ExcerptPreparation,
   PreparedExcerpts,
 } from "@/services/excerpt-image/prepare";
-import type { prepareSingleExcerpt } from "@/services/excerpt-image/prepare-single";
 import type { QueryHandle } from "@/services/item-query/handle";
 import { childNoteLink } from "@/services/note-import/child-note-link";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
@@ -49,6 +48,7 @@ import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
+import type { NoteCitations } from "./citations-handle";
 import { resolveFreeNotePath } from "./filename";
 
 const logger = getLogger("note-feature");
@@ -88,8 +88,6 @@ export interface NoteFeatureDeps {
     | "loaded"
     | "render"
     | "renderManagedContent"
-    | "renderCitation"
-    | "renderProfileAnnotation"
     | "renderFilename"
     | "frontmatterFields"
     | "getLiteratureNoteTemplate"
@@ -114,12 +112,8 @@ export interface NoteFeatureDeps {
   fileManager: Pick<FileManagerTag["Service"], "renameFile">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
   excerptImages?: ExcerptPreparation;
-  singleExcerpt?: (
-    options: Omit<
-      Parameters<typeof prepareSingleExcerpt>[0],
-      "app" | "resolver"
-    >,
-  ) => ReturnType<typeof prepareSingleExcerpt>;
+  /** The citation renders and the annotation insert, over the bridge. */
+  citations: NoteCitations;
 }
 
 interface NoteTarget {

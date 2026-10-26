@@ -1,17 +1,25 @@
 // "Copy citation" renders an Annotation's page-pinned citation from one ZoteroReads read.
-import { describe, expect, it, vi } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect, Layer } from "effect";
+import { describe, expect, vi } from "vitest";
 
 import { citekeysToCiteTemplateData } from "@zotlit/db";
+import type { CiteRef } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { inlineCitation } from "@zotlit/templates";
-import defaultCitation from "@zotlit/templates/defaults/citation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 
-import type { PlainTemplate } from "@/services/template/plain";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { CITATION_TEMPLATE_SOURCE } from "@/services/template/defaults";
+import { Template } from "@/services/template/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { layerRcRef } from "@/services/zotero-reads/connection";
+import { layerZoteroReads } from "@/services/zotero-reads/service";
 import {
-  inProcessReadsService,
+  inProcessClient,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
@@ -48,86 +56,116 @@ function seed(citekey: string | null) {
   `;
 }
 
+type RenderCitation = (
+  refs: readonly CiteRef[],
+  variant: "main" | "alt",
+) => string;
+
 function citationTemplate(
-  source = defaultCitation,
+  source = CITATION_TEMPLATE_SOURCE,
   language: TemplateLanguage = "liquid",
-): Pick<PlainTemplate, "renderCitation"> {
+): RenderCitation {
   const facade = new TemplateFacade();
   facade.define("citation", source, language);
-  return {
-    renderCitation: (refs, variant) =>
-      inlineCitation(
-        facade.render("citation", citekeysToCiteTemplateData(refs, variant)),
-      ),
-  };
+  return (refs, variant) =>
+    inlineCitation(
+      facade.render("citation", citekeysToCiteTemplateData(refs, variant)),
+    );
 }
 
-async function render(
+/** {@link renderAnnotationCitation} over a fixture database seeded by {@link seed}. */
+const render = Effect.fn(function* (
   annotationKey: string,
-  options: {
-    citekey?: string | null;
-    template?: Pick<PlainTemplate, "renderCitation">;
-  } = {},
+  options: { citekey?: string | null; template?: RenderCitation } = {},
 ) {
-  await using stack = new AsyncDisposableStack();
-  const client = stack.adopt(createClient(":memory:"), (db) =>
-    db.$client.close(),
+  const client = yield* Effect.acquireRelease(
+    Effect.sync(() => {
+      const db = createClient(":memory:");
+      createFixtureSchema(db.$client);
+      db.$client.exec(
+        seed(options.citekey === undefined ? "Hensher2011" : options.citekey),
+      );
+      return db;
+    }),
+    (db) => Effect.sync(() => db.$client.close()),
   );
-  createFixtureSchema(client.$client);
-  client.$client.exec(
-    seed(options.citekey === undefined ? "Hensher2011" : options.citekey),
+  const template = options.template ?? citationTemplate();
+  return yield* renderAnnotationCitation(annotationKey).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        layerZoteroReads(
+          inProcessClient(layerRcRef(sharedClientOpener(client))),
+        ),
+        Layer.mock(Template, {
+          renderCitation: (refs, variant) =>
+            Effect.sync(() => template(refs, variant)),
+        }),
+        Layer.mock(ZoteroPref, {
+          current: Effect.succeed(
+            stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
+              dataDir: "/zotero",
+              baseAttachmentPath: null,
+            }),
+          ),
+        }),
+      ),
+    ),
   );
-  const zoteroReads = stack.use(
-    inProcessReadsService(sharedClientOpener(client)),
-  );
-  return await renderAnnotationCitation(
-    {
-      template: options.template ?? citationTemplate(),
-      zoteroReads,
-      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-    },
-    annotationKey,
-  );
-}
+}, Effect.scoped);
 
 describe("renderAnnotationCitation", () => {
-  it("produces a page-pinned Pandoc cite from the parent item and page label", async () => {
-    expect(await render("ANNT2345")).toEqual({
-      kind: "citation",
-      text: expect.stringContaining("[@Hensher2011, {p. 62}]"),
-    });
-  });
+  it.effect(
+    "produces a page-pinned Pandoc cite from the parent item and page label",
+    () =>
+      Effect.gen(function* () {
+        expect(yield* render("ANNT2345")).toEqual({
+          kind: "citation",
+          text: expect.stringContaining("[@Hensher2011, {p. 62}]"),
+        });
+      }),
+  );
 
-  it("routes the citation through the user's Citation Template with the page as locator", async () => {
-    const template = citationTemplate(
-      "<%= zt.citations.map(c => `{{${c.item.citationKey}|${c.locator}}}`).join('') %>",
-      "eta",
-    );
-    const renderCitation = vi.spyOn(template, "renderCitation");
+  it.effect(
+    "routes the citation through the user's Citation Template with the page as locator",
+    () =>
+      Effect.gen(function* () {
+        const template = vi.fn(
+          citationTemplate(
+            "<%= zt.citations.map(c => `{{${c.item.citationKey}|${c.locator}}}`).join('') %>",
+            "eta",
+          ),
+        );
 
-    expect(await render("ANNT2345", { template })).toEqual({
-      kind: "citation",
-      text: expect.stringContaining("{{Hensher2011|62}}"),
-    });
-    expect(renderCitation).toHaveBeenCalledWith(
-      [
-        expect.objectContaining({
-          citationKey: "Hensher2011",
-          label: "page",
-          locator: "62",
-        }),
-      ],
-      "main",
-    );
-  });
+        expect(yield* render("ANNT2345", { template })).toEqual({
+          kind: "citation",
+          text: expect.stringContaining("{{Hensher2011|62}}"),
+        });
+        expect(template).toHaveBeenCalledWith(
+          [
+            expect.objectContaining({
+              citationKey: "Hensher2011",
+              label: "page",
+              locator: "62",
+            }),
+          ],
+          "main",
+        );
+      }),
+  );
 
-  it("answers no citation key when the parent item has none", async () => {
-    expect(await render("ANNT2345", { citekey: null })).toEqual({
-      kind: "no-citation-key",
-    });
-  });
+  it.effect("answers no citation key when the parent item has none", () =>
+    Effect.gen(function* () {
+      expect(yield* render("ANNT2345", { citekey: null })).toEqual({
+        kind: "no-citation-key",
+      });
+    }),
+  );
 
-  it("answers not in the database for an Annotation the database does not hold", async () => {
-    expect(await render("MISS2345")).toEqual({ kind: "not-in-database" });
-  });
+  it.effect(
+    "answers not in the database for an Annotation the database does not hold",
+    () =>
+      Effect.gen(function* () {
+        expect(yield* render("MISS2345")).toEqual({ kind: "not-in-database" });
+      }),
+  );
 });
