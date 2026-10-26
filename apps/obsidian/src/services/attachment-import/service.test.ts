@@ -1,6 +1,7 @@
 import { it } from "@effect/vitest";
 import { Effect, Fiber, Stream } from "effect";
 import { TestClock } from "effect/testing";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import {
   mkdir,
   mkdtemp,
@@ -26,6 +27,17 @@ vi.mock("@/lib/copy-attachments", () => ({
     missing: 0,
   })),
 }));
+
+/** Whether the temp file system finds a folder by a name in another letter case. */
+const TEMP_FOLDS_CASE = (() => {
+  const probe = mkdtempSync(join(tmpdir(), "zotlit-case-probe-"));
+  try {
+    mkdirSync(join(probe, "Probe"));
+    return existsSync(join(probe, "probe"));
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+})();
 
 /** A Zotero data directory on disk; the canonical roots resolve against it. */
 let dataDir: string;
@@ -611,6 +623,22 @@ describe("AttachmentImport approved folders", () => {
         expect(batch.decide(inElsewhere, "linked-absolute").approved).toBe(
           false,
         );
+      }),
+  );
+
+  it.effect.skipIf(!TEMP_FOLDS_CASE)(
+    "keeps one record for one folder approved in two letter cases",
+    () =>
+      Effect.gen(function* () {
+        const { service } = yield* makeService();
+        const folder = join(dataDir, "CaseDir");
+        yield* Effect.promise(() => mkdir(folder));
+
+        expect(yield* service.approveFolder(folder)).toBe(folder);
+        expect(yield* service.approveFolder(join(dataDir, "casedir"))).toBe(
+          folder,
+        );
+        expect(yield* service.approvedFolders).toEqual([folder]);
       }),
   );
 

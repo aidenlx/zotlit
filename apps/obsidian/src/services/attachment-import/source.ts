@@ -2,10 +2,10 @@
 // decision taken against it while rendering, and the copy-time confirmation
 // that catches what a string cannot express (ADR 0019).
 
-import { Effect, FileSystem } from "effect";
-import type { PlatformError, Scope } from "effect";
+import { Effect, FileSystem, PlatformError } from "effect";
+import type { Scope } from "effect";
 import { constants } from "node:fs";
-import { open } from "node:fs/promises";
+import { open, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 
 import { isCaseInsensitivePlatform } from "@zotlit/db/path";
@@ -23,6 +23,42 @@ const OPEN_CONFIRMED =
   process.platform === "win32"
     ? constants.O_RDONLY
     : constants.O_RDONLY | constants.O_NOFOLLOW;
+
+/**
+ * Resolve `path` through every symbolic link with the native `realpath`, which
+ * returns the letter case and long form stored on disk; `FileSystem.realPath`
+ * keeps the case it was given. Two spellings of one folder then give one
+ * canonical path, so one folder approved twice is one record. A failure is the
+ * `PlatformError` `FileSystem` would give: `NotFound`, or `BadResource` with
+ * the errno in `cause`.
+ */
+const nativeRealPath = (
+  path: string,
+): Effect.Effect<string, PlatformError.PlatformError> =>
+  Effect.tryPromise({
+    try: () => realpath(path),
+    catch: (cause) =>
+      PlatformError.systemError({
+        _tag: realPathReason(cause),
+        module: "FileSystem",
+        method: "realPath",
+        syscall: "realpath",
+        pathOrDescriptor: path,
+        cause,
+      }),
+  });
+
+function realPathReason(cause: unknown): PlatformError.SystemErrorTag {
+  if (isErrno(cause, "ENOENT")) return "NotFound";
+  if (
+    isErrno(cause, "ENOTDIR") ||
+    isErrno(cause, "ELOOP") ||
+    isErrno(cause, "EISDIR")
+  )
+    return "BadResource";
+  if (isErrno(cause, "EACCES")) return "PermissionDenied";
+  return "Unknown";
+}
 
 /**
  * Where an approved source's bytes came from. It selects the copy strategy:
@@ -234,7 +270,7 @@ export const confirmSource = Effect.fnUntraced(function* (
 > {
   const fs = yield* FileSystem.FileSystem;
   const located = yield* Effect.gen(function* () {
-    const canonical = yield* fs.realPath(source.path);
+    const canonical = yield* nativeRealPath(source.path);
     const { type } = yield* fs.stat(canonical);
     return { canonical, type };
   }).pipe(
@@ -256,7 +292,8 @@ export const confirmSource = Effect.fnUntraced(function* (
   if (!readsFromDescriptor(source.origin)) {
     return { status: "confirmed", source: { kind: "path", path: canonical } };
   }
-  // FileSystem opens without `O_NOFOLLOW`, so the descriptor comes from Node.
+  // FileSystem opens without `O_NOFOLLOW`, so the descriptor comes from Node,
+  // as the canonical path does (see `nativeRealPath`).
   return yield* Effect.acquireRelease(
     Effect.tryPromise({
       try: () => open(canonical, OPEN_CONFIRMED),
@@ -388,12 +425,8 @@ const approvedRoot = (folder: string) =>
  * resolve. Also how an approved folder is reduced to the canonical form the
  * record holds.
  */
-export const canonicalize = (
-  path: string,
-): Effect.Effect<string | null, never, FileSystem.FileSystem> =>
-  FileSystem.FileSystem.use((fs) => fs.realPath(path)).pipe(
-    Effect.orElseSucceed(() => null),
-  );
+export const canonicalize = (path: string): Effect.Effect<string | null> =>
+  nativeRealPath(path).pipe(Effect.orElseSucceed(() => null));
 
 function fold(path: string, caseInsensitive: boolean): string {
   return caseInsensitive ? path.toLowerCase() : path;

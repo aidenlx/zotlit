@@ -285,7 +285,7 @@ export const layerAttachmentImport = (
             },
             platform,
           );
-        }).pipe(Effect.provideService(FileSystem.FileSystem, fs)),
+        }),
       );
 
       const pending = yield* Ref.make(NO_SKIPS);
@@ -536,9 +536,7 @@ export const layerAttachmentImport = (
         approvedFoldersChanges: SubscriptionRef.changes(approved),
         approveFolder: Effect.fn("AttachmentImport.approveFolder")(
           function* (folder) {
-            const canonical = yield* canonicalize(folder).pipe(
-              Effect.provideService(FileSystem.FileSystem, fs),
-            );
+            const canonical = yield* canonicalize(folder);
             if (canonical === null) {
               yield* Effect.logWarning(
                 "Ignored an approved folder that does not resolve",
