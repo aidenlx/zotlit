@@ -1,5 +1,5 @@
 // Concurrent classify/execute primitives for batch runs, and the Promise edge the batch modal calls.
-import { Cause, Deferred, Effect, Exit, Ref, Stream } from "effect";
+import { Cause, Deferred, Effect, Exit, Option, Ref, Stream } from "effect";
 
 import { AbortError } from "@/lib/abort-error";
 import { settleAtEdge } from "@/lib/signal-edge";
@@ -131,12 +131,12 @@ export type RunOutcome = "created" | "updated" | "skipped";
  *
  * @param opts.onTaskFailed Optional per-failure callback (non-abort only),
  *   called after the task is reported as failed; use for structured logging.
- * @param opts.haltOn Marks an error as configuration-level rather than
+ * @param opts.haltOn Marks a typed failure as configuration-level rather than
  *   per-item: the first task to fail with a matching error halts the whole run
  *   instead of reporting a failure row (and repeating the same message for
  *   every remaining item). Tasks that haven't started yet short-circuit once
  *   the halt is recorded; the Effect fails with that error once all in-flight
- *   tasks settle.
+ *   tasks settle. A defect never halts the run.
  *
  * @returns an Effect that fails with a task error or the first halting error.
  */
@@ -146,7 +146,7 @@ export function executeBatchRun<T extends BatchRunTask, E>(opts: {
   concurrency: number;
   run: (task: T) => Effect.Effect<RunOutcome, E>;
   onTaskFailed?: (task: T, error: unknown) => void;
-  haltOn?: (error: unknown) => boolean;
+  haltOn?: (error: E) => boolean;
 }): Effect.Effect<BatchRunResult, E> {
   const { tasks, controls, concurrency, run, onTaskFailed, haltOn } = opts;
 
@@ -172,7 +172,8 @@ export function executeBatchRun<T extends BatchRunTask, E>(opts: {
               const exit = yield* Effect.exit(run(task));
               if (Exit.isFailure(exit)) {
                 const error = Cause.squash(exit.cause);
-                if (haltOn?.(error)) {
+                const failure = Cause.findErrorOption(exit.cause);
+                if (haltOn && Option.isSome(failure) && haltOn(failure.value)) {
                   yield* Ref.update(halt, (current) => current ?? exit.cause);
                   return yield* Effect.interrupt;
                 }

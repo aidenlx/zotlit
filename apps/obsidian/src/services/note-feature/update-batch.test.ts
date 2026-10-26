@@ -540,6 +540,7 @@ describe("a write that rejects", () => {
       () => expect.unreachable("the run halts"),
       (reason: unknown) => reason,
     );
+    expect(error).toMatchObject({ _tag: "LegacyPortError", cause: inert });
     expect(onItemSettled).not.toHaveBeenCalledWith(
       expect.objectContaining({ status: "failed" }),
     );
@@ -600,6 +601,7 @@ describe("batchCreateOutcome", () => {
 
         expect(error).toBeInstanceOf(BatchCreateRefusedError);
         expect(error).toMatchObject({
+          _tag: "BatchCreateRefusedError",
           message:
             "Multiple literature notes use this Zotero key: Literature/Newer.md, Archive/Older.md; resolve the duplicates before you create another note.",
           diagnostic: refusal.diagnostic,

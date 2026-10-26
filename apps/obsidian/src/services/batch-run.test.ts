@@ -264,9 +264,11 @@ describe("executeBatchRun", () => {
   );
 
   it.effect.each([
-    new BatchUpdateRefusedError(
-      unknownProfileDiagnostic("Missing", { path: "Reading/Paper.md" }),
-    ),
+    new BatchUpdateRefusedError({
+      diagnostic: unknownProfileDiagnostic("Missing", {
+        path: "Reading/Paper.md",
+      }),
+    }),
     NoteImportProfileError.unknown("Missing", { path: "Reading/Paper.md" }),
   ])("keeps note recovery on a per-item Profile failure: $name", (error) =>
     Effect.gen(function* () {
@@ -439,9 +441,35 @@ describe("a task that awaits a rejected Promise", () => {
     }),
   );
 
-  it("rejects a halted run with the rejection itself through runBatch", async () => {
+  it.effect("never halts the run on a defect", () =>
+    Effect.gen(function* () {
+      const { controls, settled } = makeRunControls();
+      const failure = new Error("bad config");
+
+      const result = yield* executeBatchRun({
+        tasks: [task(1)],
+        controls,
+        concurrency: 1,
+        run: () => Effect.promise(() => Promise.reject(failure)),
+        haltOn: () => true,
+      });
+
+      expect(result).toMatchObject({ failed: 1 });
+      expect(settled).toEqual([
+        {
+          id: 1,
+          status: "failed",
+          failure: { label: "Item 1", message: "bad config" },
+        },
+      ]);
+    }),
+  );
+});
+
+describe("a halted run through runBatch", () => {
+  it("rejects with the halting failure itself", async () => {
     const { controls } = makeRunControls();
-    const failure = new Error("bad config");
+    const failure = new WriteFailed({ message: "bad config" });
     const onTaskFailed = vi.fn();
 
     await expect(
@@ -450,7 +478,7 @@ describe("a task that awaits a rejected Promise", () => {
           tasks: [task(1)],
           controls,
           concurrency: 4,
-          run: () => Effect.promise(() => Promise.reject(failure)),
+          run: () => Effect.fail(failure),
           onTaskFailed,
           haltOn: (error) => error === failure,
         }),

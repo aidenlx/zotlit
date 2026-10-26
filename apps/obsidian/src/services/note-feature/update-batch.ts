@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Predicate, Schema } from "effect";
 import type { App, TFile } from "obsidian";
 
 import type { ItemRef } from "@zotlit/db";
@@ -259,9 +259,9 @@ export const runBatchUpdate = Effect.fn("runBatchUpdate")(function* (
     profile !== undefined &&
     !(yield* profileRead(profiles.resolveProfile(profile)))
   ) {
-    return yield* Effect.fail(
-      new BatchUpdateRefusedError(unknownProfileDiagnostic(profile)),
-    );
+    return yield* new BatchUpdateRefusedError({
+      diagnostic: unknownProfileDiagnostic(profile),
+    });
   }
   const profilesEnabled = (yield* profileRead(profiles.profiles)).length > 0;
   if (restIDs.length === 0 && !profilesEnabled) {
@@ -375,19 +375,10 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
   const runBatch = runBatchWith((effect, options) =>
     ports.bridge.runPromiseExit(effect, options),
   );
-  // The modal reads a Note Feature rejection as Note Feature rejected it.
   const run = <A, E>(
     effect: Effect.Effect<A, E, BatchUpdateServices>,
     signal?: AbortSignal,
-  ) =>
-    runBatch(
-      Effect.provideContext(effect, context).pipe(
-        Effect.mapError((error) =>
-          error instanceof LegacyPortError ? error.cause : error,
-        ),
-      ),
-      signal,
-    );
+  ) => runBatch(Effect.provideContext(effect, context), signal);
   const profiles = yield* Profile;
   let actions: BatchAction[] = [];
   let plans: ReadonlyMap<string, CreationPlan> = new Map();
@@ -566,11 +557,17 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
         title: m.batch_update_title(),
         loadingLabel: m.batch_update_loading_label(),
         loadFailed: m.batch_update_load_failed(),
-        runFailed: (error) =>
-          missingPartialNotice(error, { app: ports.app }) ??
-          (error instanceof InertTemplateError
-            ? error.message
-            : m.batch_update_run_failed()),
+        runFailed: (error) => {
+          // The plain modal shell hands back what the run failed with; a
+          // Note Feature rejection arrives as the port error around it.
+          const cause = error instanceof LegacyPortError ? error.cause : error;
+          return (
+            missingPartialNotice(cause, { app: ports.app }) ??
+            (cause instanceof InertTemplateError
+              ? cause.message
+              : m.batch_update_run_failed())
+          );
+        },
         progressLabel: m.batch_update_progress_label(),
         confirmIntro: ({ actionable, notFound }) =>
           withUnavailableLibraries(
@@ -903,7 +900,7 @@ const executeBatchActions = Effect.fnUntraced(function* (
         // A template that cannot render reaches the run as the cause of
         // the write's rejection.
         haltOn: (error) =>
-          error instanceof LegacyPortError &&
+          error._tag === "LegacyPortError" &&
           error.cause instanceof InertTemplateError,
       });
     }),
@@ -956,9 +953,9 @@ const runAction = Effect.fnUntraced(function* (
       }),
     );
     if (updated.diagnostic) {
-      return yield* Effect.fail(
-        new BatchUpdateRefusedError(updated.diagnostic),
-      );
+      return yield* new BatchUpdateRefusedError({
+        diagnostic: updated.diagnostic,
+      });
     }
     const outcome: RunOutcome = "updated";
     return outcome;
@@ -973,11 +970,9 @@ const runAction = Effect.fnUntraced(function* (
   if (prepared) {
     // The selection stays frozen; only its availability is checked again.
     if (!(yield* profileRead(run.profiles.resolveProfile(prepared.selector))))
-      return yield* Effect.fail(
-        new BatchUpdateRefusedError(
-          unknownProfileDiagnostic(prepared.selector),
-        ),
-      );
+      return yield* new BatchUpdateRefusedError({
+        diagnostic: unknownProfileDiagnostic(prepared.selector),
+      });
     return yield* batchCreateOutcome(
       yield* portCall("create-note", () =>
         prepared.create({
@@ -1009,23 +1004,37 @@ class BatchRowRefused extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("BatchRowRefused", { message: Schema.String }) {}
 
-export class BatchUpdateRefusedError extends Error {
-  readonly diagnostic: NoteOperationDiagnostic;
-
-  constructor(diagnostic: NoteOperationDiagnostic) {
-    super(noteOperationDiagnosticNotice(diagnostic));
-    this.name = "BatchUpdateRefusedError";
-    this.diagnostic = diagnostic;
+/** Note Feature refused a note update; the diagnostic says why. */
+export class BatchUpdateRefusedError extends Schema.TaggedError<
+  BatchUpdateRefusedError,
+  { readonly brand: unique symbol }
+>()("BatchUpdateRefusedError", {
+  /** Why the update wrote nothing, and what the user can do. */
+  diagnostic: Schema.declare(
+    (input: unknown): input is NoteOperationDiagnostic =>
+      Predicate.isObject(input),
+  ),
+}) {
+  override get message(): string {
+    return noteOperationDiagnosticNotice(this.diagnostic);
   }
 }
 
-export class BatchCreateRefusedError extends Error {
-  readonly diagnostic: CreateNoteDiagnostic;
-
-  constructor(result: Extract<CreateNoteResult, { outcome: "refused" }>) {
-    super(createNoteNotice(result));
-    this.name = "BatchCreateRefusedError";
-    this.diagnostic = result.diagnostic;
+/** Note Feature refused a note create; the diagnostic says why. */
+export class BatchCreateRefusedError extends Schema.TaggedError<
+  BatchCreateRefusedError,
+  { readonly brand: unique symbol }
+>()("BatchCreateRefusedError", {
+  /** Why the create wrote nothing, and what the user can do. */
+  diagnostic: Schema.declare((input: unknown): input is CreateNoteDiagnostic =>
+    Predicate.isObject(input),
+  ),
+}) {
+  override get message(): string {
+    return createNoteNotice({
+      outcome: "refused",
+      diagnostic: this.diagnostic,
+    });
   }
 }
 
@@ -1034,7 +1043,9 @@ export function batchCreateOutcome(
   result: CreateNoteResult,
 ): Effect.Effect<"created", BatchCreateRefusedError> {
   return result.outcome === "refused"
-    ? Effect.fail(new BatchCreateRefusedError(result))
+    ? Effect.fail(
+        new BatchCreateRefusedError({ diagnostic: result.diagnostic }),
+      )
     : Effect.succeed("created");
 }
 
