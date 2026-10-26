@@ -1,6 +1,6 @@
 // One Annotation reached through the Local API and the database must reuse pixels.
 import { it } from "@effect/vitest";
-import { Deferred, Effect } from "effect";
+import { Deferred, Effect, Exit } from "effect";
 import { join } from "node:path";
 import { describe, expect, vi } from "vitest";
 
@@ -700,6 +700,43 @@ describe("Excerpt request for an Indexed Key", () => {
 
       expect(failure).toBeInstanceOf(ExcerptSourceUnavailable);
       expect(failure).toMatchObject({ message: "database disk is locked" });
+    }),
+  );
+});
+
+describe("savedExcerptRequestFor", () => {
+  const resolve = (snapshot: Effect.Effect<never, DbUnavailable>) =>
+    savedExcerptRequestFor({ annotation, source: databaseSource }).pipe(
+      Effect.provideService(
+        ZoteroReads,
+        stubService<ZoteroReads["Service"]>("ZoteroReads", { snapshot }),
+      ),
+      Effect.provideService(
+        ZoteroPref,
+        stubService<ZoteroPref["Service"]>("ZoteroPref", {
+          current: Effect.succeed(
+            stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", paths),
+          ),
+        }),
+      ),
+    );
+
+  it.effect("answers null where the database cannot answer", () =>
+    Effect.gen(function* () {
+      expect(
+        yield* resolve(
+          Effect.fail(
+            new DbUnavailable({ message: "database disk is locked" }),
+          ),
+        ),
+      ).toBeNull();
+    }),
+  );
+
+  it.effect("lets an interrupt through rather than answering null", () =>
+    Effect.gen(function* () {
+      const exit = yield* Effect.exit(resolve(Effect.interrupt));
+      expect(Exit.hasInterrupts(exit)).toBe(true);
     }),
   );
 });

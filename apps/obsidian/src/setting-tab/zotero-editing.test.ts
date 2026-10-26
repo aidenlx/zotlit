@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { deadlineAfter } from "@/services/annotation-repository/__fixtures__/capability";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 
 import { editingRowModel } from "./zotero-editing";
@@ -54,7 +55,7 @@ it("offers 'Forget authorization' only while this device remembers one", () => {
 
 it("redraws on a clock only while a cooldown runs", () => {
   expect(
-    row({ kind: "cooldown", retryAfter: NOW.add({ seconds: 30 }) }).countsDown,
+    row({ kind: "cooldown", retryAfter: deadlineAfter(NOW, 30) }).countsDown,
   ).toBe(true);
   expect(row({ kind: "writable" }).countsDown).toBe(false);
   expect(row({ kind: "authorizing" }).countsDown).toBe(false);

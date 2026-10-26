@@ -25,6 +25,7 @@ import type ZotLitPlugin from "@/zt-main";
 
 import { AnnotationPopover } from "./annotation-popover/service";
 import { CapabilityNotices } from "./annotation-repository/notices";
+import { bindCapabilityNotices } from "./annotation-repository/notices-handle";
 import { AnnotationRepository } from "./annotation-repository/service";
 import { bindAttachmentImport } from "./attachment-import/handle";
 import { AttachmentImport } from "./attachment-import/service";
@@ -195,6 +196,18 @@ export async function buildServices(
         openPrompt: async () => (await migrationActions).openPrompt(),
       },
       {
+        capabilityNotices: {
+          openEditingSettings: () =>
+            revealSetting(
+              plugin.app,
+              plugin.manifest.id,
+              "settings_zotero_editing",
+            ),
+          cardShown: (annotationKey) =>
+            annotationCardShown(plugin.app, annotationKey),
+          revealAnnotation: (annotationKey) =>
+            void revealAnnotationInView(plugin, annotationKey),
+        },
         creation,
         protocol,
         excerpt: {
@@ -304,23 +317,9 @@ export async function buildServices(
     .useValue({
       annotationRepository: () => runtime.runSync(AnnotationRepository),
     })
-    .use({
-      capabilityNotices: ({ annotationRepository }) =>
-        new CapabilityNotices({
-          capabilities: annotationRepository,
-          bridge,
-          writes: zoteroLocalApiService,
-          openEditingSettings: () =>
-            revealSetting(
-              plugin.app,
-              plugin.manifest.id,
-              "settings_zotero_editing",
-            ),
-          cardShown: (annotationKey) =>
-            annotationCardShown(plugin.app, annotationKey),
-          revealAnnotation: (annotationKey) =>
-            void revealAnnotationInView(plugin, annotationKey),
-        }),
+    .useValue({
+      capabilityNotices: () =>
+        bindCapabilityNotices(bridge, runtime.runSync(CapabilityNotices)),
     })
     .use({
       pdfAnnotationEditor: ({
@@ -336,13 +335,15 @@ export async function buildServices(
         reader = new PdfAnnotationEditor({
           recordRead: ({ attachmentKey, itemKey, serverID, instant }) => {
             useLedger.record(itemKey, "read", instant);
-            void writeReadUse(
-              {
-                reads: zoteroReadsService,
-                bridge,
-                api: zoteroLocalApi,
-              },
-              { attachmentKey, instant: fromInstant(instant), serverID },
+            void bridge.runPromiseExit(
+              writeReadUse({
+                attachmentKey,
+                instant: fromInstant(instant),
+                serverID,
+              }).pipe(
+                Effect.provideService(ZoteroReads, zoteroReadsService),
+                Effect.provideService(ZoteroLocalApi, zoteroLocalApi),
+              ),
             );
           },
           app: plugin.app,
