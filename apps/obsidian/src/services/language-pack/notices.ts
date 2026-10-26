@@ -124,8 +124,11 @@ const showInstallOffer = Effect.gen(function* () {
           .setButtonText(m.notice_language_pack_decline_action())
           .onClick(() => {
             run(
-              pack.decline.pipe(
-                logAndContinue("Language Pack decline failed", "i18n"),
+              Effect.forkIn(
+                pack.decline.pipe(
+                  logAndContinue("Language Pack decline failed", "i18n"),
+                ),
+                scope,
               ),
             );
           });

@@ -614,17 +614,20 @@ describe("CitationIndex", () => {
     }),
   );
 
-  it.effect("settles whenIndexed when disposal precedes the backfill", () =>
+  it.effect("stops whenIndexed when disposal precedes the backfill", () =>
     Effect.promise(async () => {
       const { index, closeIndex } = await makeHarness({
         "draft.md": "As @doe2024 wrote.",
       });
-      const waiting = index.whenIndexed();
+      const aborted = { name: "AbortError" };
+      const waiting = expect(index.whenIndexed()).rejects.toMatchObject(
+        aborted,
+      );
 
       await closeIndex();
 
-      await expect(waiting).resolves.toBeUndefined();
-      await expect(index.whenIndexed()).resolves.toBeUndefined();
+      await waiting;
+      await expect(index.whenIndexed()).rejects.toMatchObject(aborted);
     }),
   );
 

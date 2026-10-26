@@ -299,23 +299,24 @@ async function harness(
     noteIndex,
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     attachmentImport: {
-      prepare: async () => ({
-        decide: (path, origin) => ({
-          approved: false,
-          path,
-          origin,
-          reason: "no-trusted-root",
+      prepare: () =>
+        Effect.succeed({
+          decide: (path, origin) => ({
+            approved: false,
+            path,
+            origin,
+            reason: "no-trusted-root",
+          }),
+          resolveLink: () => () => "",
+          discard: Effect.void,
+          flush: Effect.succeed({
+            copied: 0,
+            skipped: 0,
+            missing: 0,
+            blocked: 0,
+            refused: 0,
+          }),
         }),
-        resolveLink: () => () => "",
-        discard: () => undefined,
-        flush: async () => ({
-          copied: 0,
-          skipped: 0,
-          missing: 0,
-          blocked: 0,
-          refused: 0,
-        }),
-      }),
     },
   };
   const { service } = noteFeatureHandle(deps, stack, { query });

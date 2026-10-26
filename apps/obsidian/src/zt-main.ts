@@ -10,14 +10,13 @@ import {
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 
+import { passAborted } from "./lib/abort-error";
 import { startI18n } from "./lib/i18n";
 import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
-import { openSettingsTab } from "./lib/open-settings";
 import { addAnnotationHistoryActions } from "./services/annotation-repository/actions";
 import type { HistorySurface } from "./services/annotation-repository/actions";
 import { annotationHistoryFileMenu } from "./services/annotation-repository/menu";
-import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
 import { addAttachmentOpenActions } from "./services/attachment-open/actions";
 import { registerFileLinkCapture } from "./services/attachment-open/capture";
 import { attachmentOpenFileMenu } from "./services/attachment-open/menu";
@@ -323,7 +322,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     );
     const noteFeatureDeps = {
       app: this.app,
-      noteFeature: services.noteFeature,
       noteActions: services.noteActions,
       batchImport: services.batchImport,
     };
@@ -386,7 +384,8 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       annotations: services.annotationRepository,
       bridge: services.bridge,
       excerptDisplay: services.excerptDisplay,
-      allowEditing: () => void services.capabilityNotices.allowEditing(),
+      allowEditing: () =>
+        void services.capabilityNotices.allowEditing().catch(passAborted),
       reportBlockedGesture: (attachmentKey) =>
         services.capabilityNotices.reportBlockedGesture(attachmentKey),
       libraryTagNames: services.libraryTagNames,
@@ -615,18 +614,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       bridge: services.bridge,
     });
 
-    stack.defer(
-      registerAttachmentSkipNotice({
-        attachmentImport: services.attachmentImport,
-        openSettings: () => {
-          openSettingsTab(this.app, this.manifest.id, [
-            "settings_page_attachments",
-            "settings_attachment_approved",
-          ]);
-        },
-      }),
-    );
-
     // The companion's Freshness Signal means the database changed and its
     // Checkpoint attempt has settled; feed it into the same coalesced refresh
     // lane as the filesystem watchers.
@@ -634,30 +621,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       services.bridge.subscribe(services.localServer.dbUpdated, () => {
         services.zoteroReads.notifyExternalChange();
       }),
-    );
-
-    // A saved pixel edit revalidates its Excerpt Image wherever the image
-    // stands: the card that shows the Annotation, and — with no card on screen —
-    // the device-local image the store already holds for it. One subscriber
-    // covers every surface that can save an edit. Each request reads the
-    // database first, so only the newest edit of an Annotation is revalidated:
-    // an older read that lands late would cancel the newer replacement.
-    const latestEdit = new Map<string, symbol>();
-    stack.defer(
-      services.bridge.subscribe(
-        services.annotationRepository.excerptPixelsChanged,
-        ({ record, source }) => {
-          const edit = Symbol(record.key);
-          latestEdit.set(record.key, edit);
-          void services
-            .excerptRequest({ annotation: record, source })
-            .then((request) => {
-              if (latestEdit.get(record.key) !== edit) return;
-              latestEdit.delete(record.key);
-              if (request) services.excerptDisplay.revalidate(request);
-            });
-        },
-      ),
     );
 
     this.#services = services;

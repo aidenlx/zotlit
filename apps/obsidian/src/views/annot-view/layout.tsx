@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
+import { AbortError, passAborted } from "@/lib/abort-error";
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { AppContext } from "@/lib/app-context";
 import { registerKeymap } from "@/lib/disposables";
@@ -636,7 +637,9 @@ export class AnnotationsLayout extends Component {
   /** Revalidate every Attachment shown, without waiting for the answer. */
   revalidate(): void {
     for (const key of this.#shown)
-      void this.#deps.bridge.runPromise(this.#deps.annotations.refresh(key));
+      void this.#deps.bridge
+        .runPromise(this.#deps.annotations.refresh(key))
+        .catch(passAborted);
   }
 
   /**
@@ -674,7 +677,7 @@ export class AnnotationsLayout extends Component {
         return true;
       })
       .catch((error: unknown) => {
-        if (!current()) return false;
+        if (!current() || AbortError.test(error)) return false;
         logger.warn("Failed to read the annotations of an attachment", {
           attachmentKey,
           error,
@@ -1120,34 +1123,36 @@ export class AnnotationsLayout extends Component {
         : this.#deps.bridge.runPromise(
             this.#deps.annotations.redo(attachmentKey),
           );
-    void stepping.then((outcome) => {
-      // The layout can unload while the step is away, and an unloaded one
-      // neither scrolls nor speaks.
-      if (this.#closed) return;
-      const notice = historyOutcomeNotice(outcome, Temporal.Now.instant());
-      if (notice !== null) new BaseNotice(notice);
-      switch (outcome.kind) {
-        case "stepped":
-          return this.scrollToCard([outcome.annotationKey]);
-        case "removed":
-          // The step took its Annotations off the Attachment, so the layout
-          // has no card left to bring into view. The reader that holds the
-          // PDF lands on the page they sat on.
-          return;
-        case "blocked":
-          this.#deps.reportBlockedGesture(attachmentKey);
-          return;
-        case "changed":
-        case "failed":
-        case "locked":
-        case "idle":
-          return;
-        default:
-          // A new outcome must be answered here rather than fall through.
-          outcome satisfies never;
-          return;
-      }
-    });
+    void stepping
+      .then((outcome) => {
+        // The layout can unload while the step is away, and an unloaded one
+        // neither scrolls nor speaks.
+        if (this.#closed) return;
+        const notice = historyOutcomeNotice(outcome, Temporal.Now.instant());
+        if (notice !== null) new BaseNotice(notice);
+        switch (outcome.kind) {
+          case "stepped":
+            return this.scrollToCard([outcome.annotationKey]);
+          case "removed":
+            // The step took its Annotations off the Attachment, so the layout
+            // has no card left to bring into view. The reader that holds the
+            // PDF lands on the page they sat on.
+            return;
+          case "blocked":
+            this.#deps.reportBlockedGesture(attachmentKey);
+            return;
+          case "changed":
+          case "failed":
+          case "locked":
+          case "idle":
+            return;
+          default:
+            // A new outcome must be answered here rather than fall through.
+            outcome satisfies never;
+            return;
+        }
+      })
+      .catch(passAborted);
   }
 
   // #endregion
@@ -1420,12 +1425,14 @@ export class AnnotationsLayout extends Component {
         { automatic: true },
       ),
     );
-    void submitting.then((outcome) => {
-      if (outcome.kind === "failed")
-        new BaseNotice(
-          writeFailureMessage(outcome.failure, Temporal.Now.instant()),
-        );
-    });
+    void submitting
+      .then((outcome) => {
+        if (outcome.kind === "failed")
+          new BaseNotice(
+            writeFailureMessage(outcome.failure, Temporal.Now.instant()),
+          );
+      })
+      .catch(passAborted);
   }
 
   /**

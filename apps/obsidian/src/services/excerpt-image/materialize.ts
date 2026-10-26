@@ -1,3 +1,4 @@
+// Writes immutable excerpt assets and verifies their bytes before exposing a link.
 import {
   Cause,
   Effect,
@@ -7,7 +8,6 @@ import {
   Schema,
   Semaphore,
 } from "effect";
-// Writes immutable excerpt assets and verifies their bytes before exposing a link.
 import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, join, relative, isAbsolute, sep } from "node:path";
 

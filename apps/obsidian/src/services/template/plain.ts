@@ -1,6 +1,9 @@
 import { Cause, Effect, Exit } from "effect";
 import type { ManagedRuntime, Stream } from "effect";
 
+import { effectBridge } from "@/lib/effect-bridge";
+import type { EffectBridge } from "@/lib/effect-bridge";
+
 import { plainTemplateError } from "./errors";
 import { TemplateMigration } from "./migration";
 import type { LiteratureNoteTemplateMigrationResult } from "./migration";
@@ -13,28 +16,34 @@ export type PlainTemplate = TemplateOperations & {
   readonly status: TemplateStatus;
 };
 
+/**
+ * Runs `effect` on the bridge: the value, the failure's plain cause, or the
+ * unload's `AbortError`.
+ */
+function plainRun<A>(
+  bridge: Pick<EffectBridge, "runPromise">,
+  effect: Effect.Effect<A, unknown>,
+): Promise<A> {
+  return bridge.runPromise(effect).catch((error: unknown) => {
+    throw plainTemplateError(error);
+  });
+}
+
 export function plainTemplate(
   runtime: ManagedRuntime.ManagedRuntime<Template, never>,
 ): PlainTemplate {
   const service = runtime.runSync(Template.use(Effect.succeed));
-  // The layer owns pending operations. Retain its context for calls racing unload.
-  const context = runtime.runSync(Effect.context<never>());
-  const released = {
-    runSync: Effect.runSyncWith(context),
-    runPromiseExit: Effect.runPromiseExitWith(context),
-  };
+  // Unload stops a pending call, which then rejects with an `AbortError`; a
+  // write the layer started still finishes its step.
+  const bridge = effectBridge(runtime);
   const read = <A>(effect: Effect.Effect<A, unknown>): A => {
-    const exit = released.runSync(Effect.exit(effect));
+    const exit = bridge.runSync(Effect.exit(effect));
     if (Exit.isFailure(exit))
       throw plainTemplateError(Cause.squash(exit.cause));
     return exit.value;
   };
-  const run = async <A>(effect: Effect.Effect<A, unknown>): Promise<A> => {
-    const exit = await released.runPromiseExit(effect);
-    if (Exit.isFailure(exit))
-      throw plainTemplateError(Cause.squash(exit.cause));
-    return exit.value;
-  };
+  const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> =>
+    plainRun(bridge, effect);
   return {
     get status() {
       return read(service.status);
@@ -133,15 +142,9 @@ export function plainTemplateMigration(
   runtime: ManagedRuntime.ManagedRuntime<TemplateMigration, never>,
 ): PlainTemplateMigration {
   const service = runtime.runSync(TemplateMigration.use(Effect.succeed));
-  const run = Effect.runPromiseExitWith(
-    runtime.runSync(Effect.context<never>()),
-  );
-  const execute = async <A>(effect: Effect.Effect<A, unknown>): Promise<A> => {
-    const exit = await run(effect);
-    if (Exit.isFailure(exit))
-      throw plainTemplateError(Cause.squash(exit.cause));
-    return exit.value;
-  };
+  const bridge = effectBridge(runtime);
+  const execute = <A>(effect: Effect.Effect<A, unknown>): Promise<A> =>
+    plainRun(bridge, effect);
   return {
     whenSettled: () => execute(service.whenSettled),
     convert: () => execute(service.convert),

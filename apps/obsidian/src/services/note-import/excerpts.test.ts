@@ -30,8 +30,6 @@ import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw
 import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import type { MetadataCacheSource } from "@/lib/obsidian-metadata-cache";
-import type { VaultSource } from "@/lib/obsidian-vault";
 import { AttachmentCopyError } from "@/services/attachment-import/service";
 import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import { bluePng, redPng } from "@/services/excerpt-image/__fixtures__/png";
@@ -150,7 +148,7 @@ async function setupFixture(mode = "normal") {
           }),
   );
   const fakes: ImporterFakes = {
-    vault: host.app.vault as unknown as VaultSource,
+    vault: host.app.vault,
     workspace: host.app.workspace,
     profile: profileReader(settings),
     noteIndex: {
@@ -176,7 +174,7 @@ async function setupFixture(mode = "normal") {
         }),
       }),
       fileManager: app.fileManager,
-      metadataCache: app.metadataCache as unknown as MetadataCacheSource,
+      metadataCache: app.metadataCache,
     },
   };
   const { reads } = await stack.use(

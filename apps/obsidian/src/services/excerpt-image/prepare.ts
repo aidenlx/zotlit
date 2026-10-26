@@ -13,7 +13,8 @@ import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 
 import { withLogCategory } from "@/lib/effect-log";
 import { portCall } from "@/lib/legacy-port";
-import { FileManager } from "@/lib/obsidian-file-manager";
+import { markdownLinker } from "@/lib/obsidian-file-manager";
+import type { FileManager } from "@/lib/obsidian-file-manager";
 import type { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
@@ -177,17 +178,10 @@ export const layerExcerptPreparation = Layer.effect(
   Effect.gen(function* () {
     const context = yield* Effect.context<ExcerptPreparationServices>();
     const gate = yield* makePublicationGate;
-    const run = Effect.runSyncWith(context);
+    const link = yield* markdownLinker;
     const markdownLinkFrom =
       (notePath: string) => (file: TFile, subpath?: string, alias?: string) =>
-        run(
-          Effect.flatMap(FileManager, (fileManager) =>
-            fileManager.generateMarkdownLink(file, notePath, {
-              subpath,
-              alias,
-            }),
-          ),
-        );
+        link(file, notePath, { subpath, alias });
     return ExcerptPreparation.of({
       forNote: Effect.fn("ExcerptPreparation.forNote")(function* (options) {
         const { dataDir, baseAttachmentPath } = yield* (yield* ZoteroPref)

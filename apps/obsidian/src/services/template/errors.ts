@@ -4,7 +4,7 @@
 // a Template failed, as offsets into the source it read.
 
 import { regex } from "arkregex";
-import { Schema } from "effect";
+import { Predicate, Schema } from "effect";
 
 import { MissingTemplateError } from "@zotlit/templates/facade";
 import {
@@ -37,6 +37,12 @@ export class InertTemplateError extends Error {
     this.templateName = templateName;
   }
 }
+
+/** Whether `error` is an inert Template's refusal, by its tag. */
+export const isInertTemplateError = (
+  error: unknown,
+): error is InertTemplateError =>
+  Predicate.isTagged(error, "InertTemplateError");
 
 /**
  * Thrown when a name breaks the Shared Partial rule every entry point shares:

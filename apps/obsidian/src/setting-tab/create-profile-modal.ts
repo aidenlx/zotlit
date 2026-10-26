@@ -4,6 +4,7 @@ import type { App } from "obsidian";
 
 import type { NoteTemplateContext } from "@zotlit/db";
 
+import { AbortError } from "@/lib/abort-error";
 import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -112,10 +113,11 @@ export async function createProfileDialog(
 ): Promise<CreatedProfile | undefined> {
   const [data, styles] = await Promise.all([
     deps.loadData({ indexedKey: options.indexedKey }).catch((error) => {
-      logger.warn("Profile creation preview data is unavailable", {
-        indexedKey: options.indexedKey,
-        error,
-      });
+      if (!AbortError.test(error))
+        logger.warn("Profile creation preview data is unavailable", {
+          indexedKey: options.indexedKey,
+          error,
+        });
       return null;
     }),
     deps.zoteroPref.dataDir ? listInstalledStyles(deps.zoteroPref.dataDir) : [],
