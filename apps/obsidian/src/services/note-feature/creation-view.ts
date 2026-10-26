@@ -32,8 +32,8 @@ import { createWithNotice } from "./update-single";
 const logged = withLogCategory("note-feature");
 
 /**
- * The legacy values the interactive creation opens: the Profile dialogs of
- * the setting tab (ticket 16), and the App the picker and the notices'
+ * The values the interactive creation opens: the Profile dialogs of the
+ * setting tab, as Promise ports, and the App the picker and the notices'
  * recovery actions open in.
  */
 export interface InteractiveCreationPorts {

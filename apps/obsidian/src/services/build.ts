@@ -141,8 +141,8 @@ export async function buildServices(
   >((resolve) => {
     bindMigration = resolve;
   });
-  // The note creation opens the setting tab's Profile dialogs, which the
-  // container builds after the graph (ticket 16 converts them).
+  // The note creation opens the setting tab's Profile dialogs. They run on
+  // the runtime, which the graph this holder goes into has yet to build.
   let bindProfileDialogs!: (
     dialogs: Pick<InteractiveCreationPorts, "createProfile" | "importProfile">,
   ) => void;
