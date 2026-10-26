@@ -552,7 +552,18 @@ export const layerAttachmentImport = (
         rootsChanges: SubscriptionRef.changes(roots),
         approveFolder: Effect.fn("AttachmentImport.approveFolder")(
           function* (folder) {
-            const canonical = yield* canonicalize(folder);
+            const canonical = yield* canonicalize(folder).pipe(
+              Effect.catchTag("PlatformError", (error) =>
+                Effect.logWarning(
+                  "Ignored an approved folder that cannot be read",
+                ).pipe(
+                  Effect.annotateLogs({ reason: error.reason._tag }),
+                  logged,
+                  Effect.as(undefined),
+                ),
+              ),
+            );
+            if (canonical === undefined) return null;
             if (canonical === null) {
               yield* Effect.logWarning(
                 "Ignored an approved folder that does not resolve",
