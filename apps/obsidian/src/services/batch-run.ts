@@ -1,5 +1,6 @@
 // Snapshot-pinned batch write runner over the concurrent classify/execute primitives.
 import { Cause, Deferred, Effect, Exit, Ref, Schema, Stream } from "effect";
+import type { Context } from "effect";
 
 import { AbortError } from "@/lib/abort-error";
 import { settleAtEdge } from "@/lib/signal-edge";
@@ -336,4 +337,27 @@ export async function runBatch<A, E>(
     Exit.mapError(exit, (error) => taskFailure(error)),
     signal,
   );
+}
+
+/**
+ * {@link runBatch} over the services of `context`: a modal callback runs a
+ * batch operation that reads service tags. It settles as {@link runBatch}
+ * settles.
+ */
+export function runBatchWith<R>(context: Context.Context<R>) {
+  const run = Effect.runPromiseExitWith(context);
+  return async <A, E>(
+    effect: Effect.Effect<A, E, R>,
+    signal?: AbortSignal,
+  ): Promise<A> => {
+    signal?.throwIfAborted();
+    const exit = await run(
+      effect,
+      signal === undefined ? undefined : { signal },
+    );
+    return settleAtEdge(
+      Exit.mapError(exit, (error) => taskFailure(error)),
+      signal,
+    );
+  };
 }

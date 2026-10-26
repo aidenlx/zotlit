@@ -72,10 +72,8 @@ import { LocalServer } from "./local-server/service";
 import { bindManagedBinary } from "./managed-binary/handle";
 import { createNoteFeature } from "./note-feature";
 import type { NoteFeature } from "./note-feature";
-import { createBatchImport } from "./note-import/batch-import";
-import type { BatchImport } from "./note-import/batch-import";
-import { promiseNoteImporter } from "./note-import/batch-import";
-import { NoteImporter } from "./note-import/service";
+import type { BatchImportServices } from "./note-import/batch-import";
+import { bindBatchImport } from "./note-import/batch-import-handle";
 import type { NoteImportPorts } from "./note-import/service";
 import { createNoteImportView } from "./note-import/view";
 import { plainNoteIndex } from "./note-index/plain";
@@ -369,7 +367,7 @@ export async function buildServices(
       },
     })
     .useValue({
-      noteImport: ({ zoteroPref, attachmentImport, excerptImage }) => {
+      noteImportPorts: ({ zoteroPref, attachmentImport, excerptImage }) => {
         noteImportPorts = {
           attachmentImport,
           excerptImages: (options) =>
@@ -382,7 +380,7 @@ export async function buildServices(
               },
             })(options),
         };
-        return promiseNoteImporter(bridge, runtime.runSync(NoteImporter));
+        return noteImportPorts;
       },
     })
     .useValue({
@@ -480,34 +478,20 @@ export async function buildServices(
         }),
     })
     .useValue({
-      batchImport: ({
-        profile,
-        noteFeature,
-        createProfile,
-        importProfile,
-        zoteroPref,
-        zoteroReads,
-        settings,
-        batchScope,
-        noteImport,
-        noteIndex,
-      }): BatchImport =>
-        createBatchImport({
-          view: createNoteImportView(plugin.app, {
-            createProfile,
-            importProfile,
-            zoteroPref,
-          }),
-          profile,
-          noteFeature,
-          zoteroReads,
-          settings,
-          bridge,
-          batchScope,
-          noteImport,
-          noteIndex,
-          metadataCache: plugin.app.metadataCache,
+      noteImportView: ({ createProfile, importProfile, zoteroPref }) =>
+        createNoteImportView(plugin.app, {
+          createProfile,
+          importProfile,
+          zoteroPref,
         }),
+    })
+    .useValue({
+      batchImport: ({ noteFeature, noteImportView }) =>
+        bindBatchImport(
+          bridge,
+          runtime.runSync(Effect.context<BatchImportServices>()),
+          { view: noteImportView, noteFeature },
+        ),
     })
     .useValue({
       citationLookup: () => plainCitationLookup(runtime),

@@ -1,5 +1,6 @@
-import { Deferred, Effect, Exit, Stream } from "effect";
+import { Deferred, Effect, Exit, Layer, Stream } from "effect";
 import { TFile } from "obsidian";
+import type { CachedMetadata } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
@@ -8,9 +9,12 @@ import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema, rowInstant } from "@zotlit/db/test-utils";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { effectBridge } from "@/lib/effect-bridge";
+import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { ProfileId } from "@/lib/profile-stamp";
-import { batchScopeOver } from "@/services/__fixtures__/batch-scope";
 import { excerptReuseProbe } from "@/services/excerpt-image/__fixtures__/reuse";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type {
@@ -19,16 +23,22 @@ import type {
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 import { selectorOf } from "@/services/library-scope/scope";
+import { LibraryScope } from "@/services/library-scope/service";
+import { NoteIndex } from "@/services/note-index/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
+import { Profile } from "@/services/profile/service";
+import type { ProfileReader } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
-import type { PluginSettings } from "@/services/settings/service";
+import { PluginSettings } from "@/services/settings/service";
 import { ProfileAnnotationError } from "@/services/template/service";
+import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsState } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
-  withState,
   recordCalls,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
@@ -39,15 +49,21 @@ import type {
   FlatTask,
 } from "@/views/batch-modal";
 
-import { createBatchImport } from "./batch-import";
-import type { NoteImportDeps } from "./batch-import";
-import type { PromiseNoteImporter as NoteImporter } from "./batch-import";
+import type { BatchImport, BatchImportPorts } from "./batch-import";
+import type { BatchImportServices } from "./batch-import";
+import { bindBatchImport } from "./batch-import-handle";
 import {
   batchImportNotice,
   batchImportToast,
   childImportToast,
 } from "./batch-import-notices";
-import { NoteImportProfileError } from "./service";
+import { NoteImporter, NoteImportProfileError } from "./service";
+import type {
+  ImportNoteOptions,
+  PreparedExplicitImport,
+  WriteOutcome,
+} from "./service";
+import type { NoteImportView } from "./view";
 
 /** Captured options of every batch modal the runner opened via its view port. */
 const openedModals: BatchModalOptions[] = [];
@@ -242,6 +258,99 @@ function scopeOf(
 /** The Library Scope every fixture resolves, unless a test replaces it. */
 let currentScope: ResolvedLibraryScope = scopeOf([PERSONAL_LIBRARY]);
 
+/** A prepared import whose write a case states as a Promise. */
+type PromisePreparedImport = Omit<PreparedExplicitImport, "import"> & {
+  import(note: Note, options: ImportNoteOptions): Promise<WriteOutcome>;
+};
+
+/** The note importer as a case states it: its writes as Promises. */
+interface PromiseNoteImporter {
+  prepareExplicitImport: (
+    note: ChildNote,
+    options: Parameters<NoteImporter["Service"]["prepareExplicitImport"]>[1],
+  ) => Promise<PromisePreparedImport>;
+  importNote: (note: Note, options: ImportNoteOptions) => Promise<WriteOutcome>;
+}
+
+/** What a case gives the batch import, in the plain shapes it states them in. */
+interface ImportDeps {
+  noteFeature: BatchImportPorts["noteFeature"];
+  view: NoteImportView;
+  profile: ProfileReader;
+  zoteroReads: TestReads;
+  dbState: ZoteroReadsState["state"];
+  settings: Pick<PluginSettings["Service"], "current" | "update">;
+  noteImport: PromiseNoteImporter;
+  noteIndex: {
+    whenIndexed(): Promise<void>;
+    getImportedNoteByNoteKey(noteKey: string): TFile[];
+  };
+  metadataCache: { getFileCache(file: TFile): CachedMetadata | null };
+}
+
+/**
+ * The real {@link bindBatchImport}, as `build.ts` binds it, over services
+ * that answer from `deps` at the time of each call. The case's resources
+ * dispose the runtime.
+ */
+function importOver(deps: ImportDeps): BatchImport {
+  const runtime = buildRuntime(
+    Layer.mergeAll(
+      Layer.mock(LibraryScope, {
+        resolveLibraries: () => Effect.sync(() => currentScope),
+      }),
+      Layer.mock(MetadataCache, {
+        fileCache: (file) =>
+          Effect.sync(() => deps.metadataCache.getFileCache(file)),
+      }),
+      Layer.mock(NoteImporter, {
+        importNote: (note, options) =>
+          Effect.promise(() => deps.noteImport.importNote(note, options)),
+        prepareExplicitImport: (note, options) =>
+          Effect.map(
+            Effect.promise(() =>
+              deps.noteImport.prepareExplicitImport(note, options),
+            ),
+            (prepared): PreparedExplicitImport => ({
+              ...prepared,
+              import: (current, runOptions) =>
+                Effect.promise(() => prepared.import(current, runOptions)),
+            }),
+          ),
+      }),
+      Layer.mock(NoteIndex, {
+        whenIndexed: Effect.promise(() => deps.noteIndex.whenIndexed()),
+        getImportedNoteByNoteKey: (noteKey) =>
+          Effect.sync(() => deps.noteIndex.getImportedNoteByNoteKey(noteKey)),
+      }),
+      Layer.mock(PluginSettings, {
+        current: Effect.suspend(() => deps.settings.current),
+        update: (patch) => deps.settings.update(patch),
+      }),
+      Layer.mock(Profile, {
+        profiles: Effect.sync(() => deps.profile.profiles),
+        resolveProfile: (selector) =>
+          Effect.sync(() => deps.profile.resolveProfile(selector)),
+      }),
+      Layer.mock(ZoteroReads, {
+        current: Effect.sync(() =>
+          stubService<ZoteroReadsState>("ZoteroReadsState", {
+            state: deps.dbState,
+          }),
+        ),
+        reads: deps.zoteroReads.reads,
+        snapshot: deps.zoteroReads.snapshot,
+      }),
+    ),
+    caseResources,
+  );
+  return bindBatchImport(
+    effectBridge(runtime),
+    runtime.runSync(Effect.context<BatchImportServices>()),
+    { view: deps.view, noteFeature: deps.noteFeature },
+  );
+}
+
 function makeDeps(
   settings: Partial<Settings>,
   options: {
@@ -254,19 +363,16 @@ function makeDeps(
     wrap?: (client: ZoteroReadsClient) => ZoteroReadsClient;
   } = {},
 ): {
-  deps: NoteImportDeps;
+  deps: ImportDeps;
   importNote: ReturnType<typeof vi.fn>;
 } {
   const importNote = vi.fn(
     async () => options.importNoteResult ?? ("created" as const),
   );
-  const zoteroReads = withState(
-    caseResources.use(
-      inProcessReadsService(sharedClientOpener(db), { wrap: options.wrap }),
-    ),
-    options.dbState ?? "ready",
+  const zoteroReads = caseResources.use(
+    inProcessReadsService(sharedClientOpener(db), { wrap: options.wrap }),
   );
-  const deps: NoteImportDeps = {
+  const deps: ImportDeps = {
     profile: profileReader(),
     noteFeature: {
       reportExcerptImages: vi.fn(),
@@ -277,6 +383,7 @@ function makeDeps(
       }),
     },
     zoteroReads,
+    dbState: options.dbState ?? "ready",
     settings: {
       current: Effect.succeed({ ...defaults, ...settings }),
       update: ((patch) =>
@@ -288,11 +395,10 @@ function makeDeps(
             : patch),
         })) as PluginSettings["Service"]["update"],
     },
-    bridge: { runSync: Effect.runSync },
-    batchScope: batchScopeOver(zoteroReads, () => currentScope, caseResources),
     noteImport: {
       importNote,
-      prepareExplicitImport: vi.fn<NoteImporter["prepareExplicitImport"]>(),
+      prepareExplicitImport:
+        vi.fn<PromiseNoteImporter["prepareExplicitImport"]>(),
     },
     noteIndex: {
       whenIndexed: async () => {},
@@ -365,7 +471,7 @@ it("lets the batch chip change only orphans while existing and parent stamps rem
     .spyOn(deps.view, "chooseProfile")
     .mockResolvedValue(books);
   using settingsUpdate = vi.spyOn(deps.settings, "update");
-  await createBatchImport(deps).runBatchImport("note", [1, 2, 3]);
+  await importOver(deps).runBatchImport("note", [1, 2, 3]);
   const options = openedModals.at(-1)!;
   const manifest = (await options.onClassify(classifyControls())) as any;
   const choice = manifest.options.groups.find(
@@ -432,7 +538,7 @@ it("keeps parent-only imports read-only without a settings write", async () => {
   );
   using chooseProfile = vi.spyOn(deps.view, "chooseProfile");
   using settingsUpdate = vi.spyOn(deps.settings, "update");
-  await createBatchImport(deps).runBatchImport("child", [10]);
+  await importOver(deps).runBatchImport("child", [10]);
   const options = openedModals.at(-1)!;
   const manifest = (await options.onClassify(classifyControls())) as any;
   expect(manifest.options.parents[0].profileChoice).toBeUndefined();
@@ -469,7 +575,7 @@ it.each([true, false])(
     vi.mocked(deps.noteImport.prepareExplicitImport).mockRejectedValue(error);
     importNote.mockRejectedValue(error);
     seedNotes([1]);
-    await createBatchImport(deps).runBatchImport("note", [1, 2]);
+    await importOver(deps).runBatchImport("note", [1, 2]);
     const options = openedModals.at(-1)!;
     const manifest = (await options.onClassify(classifyControls())) as any;
     expect(manifest.options.tasks).toMatchObject([{ id: 1 }]);
@@ -524,7 +630,7 @@ describe("classify through the NoteRefs stream", () => {
     seedNotes([1, 2]);
     const progress: number[] = [];
 
-    await createBatchImport(deps).runBatchImport("note", [1, 2, 3]);
+    await importOver(deps).runBatchImport("note", [1, 2, 3]);
     const modal = openedModals.at(-1)!;
     const manifest = (await modal.onClassify({
       onProgress: (classified) => progress.push(classified),
@@ -587,7 +693,7 @@ describe("classify through the NoteRefs stream", () => {
     seedNotes([1]);
     const abort = new AbortController();
 
-    await createBatchImport(deps).runBatchImport("note", [1, 2]);
+    await importOver(deps).runBatchImport("note", [1, 2]);
     const classified = openedModals.at(-1)!.onClassify({
       onProgress: () => abort.abort(),
       signal: abort.signal,
@@ -604,7 +710,7 @@ describe("runBatchImportAll", () => {
   it("returns db-unavailable when the database is closed", async () => {
     const { deps } = makeDeps({}, { dbState: "loading" });
 
-    await expect(createBatchImport(deps).runBatchImportAll()).resolves.toEqual({
+    await expect(importOver(deps).runBatchImportAll()).resolves.toEqual({
       outcome: "db-unavailable",
     });
     expect(openedModals).toHaveLength(0);
@@ -615,7 +721,7 @@ describe("runBatchImportAll", () => {
     const recorded = recordCalls(["ScopeItemIDs"]);
     const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
-    await expect(createBatchImport(deps).runBatchImportAll()).resolves.toEqual({
+    await expect(importOver(deps).runBatchImportAll()).resolves.toEqual({
       outcome: "no-library-in-scope",
     });
     expect(recorded.calls).toEqual([]);
@@ -629,7 +735,7 @@ describe("runBatchImportAll", () => {
     const recorded = recordCalls(["ScopeItemIDs"]);
     const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
-    const result = await createBatchImport(deps).runBatchImportAll();
+    const result = await importOver(deps).runBatchImportAll();
 
     expect(result).toEqual({ outcome: "batch-modal" });
     expect(recorded.calls.map(({ payload }) => payload.libraryID)).toEqual([
@@ -655,7 +761,7 @@ describe("runBatchImportAll", () => {
     seedNotes([50, 51]);
     const { deps } = makeDeps({});
 
-    await createBatchImport(deps).runBatchImportAll();
+    await importOver(deps).runBatchImportAll();
 
     const { manifest } = await driveLastModal();
     expect(
@@ -674,7 +780,7 @@ describe("runBatchImportAll", () => {
     seedNotes([50, 51]);
     const { deps } = makeDeps({});
 
-    await createBatchImport(deps).runBatchImportAll();
+    await importOver(deps).runBatchImportAll();
 
     const opts = openedModals.at(-1)!;
     await driveLastModal();
@@ -688,7 +794,7 @@ describe("runBatchImportAll", () => {
     seedNotes([51], { libraryID: GROUP_LIBRARY.libraryID });
     const { deps } = makeDeps({});
 
-    const result = await createBatchImport(deps).runBatchImportAll();
+    const result = await importOver(deps).runBatchImportAll();
 
     expect(result).toMatchObject({ outcome: "single" });
     expect(openedModals).toHaveLength(0);
@@ -701,7 +807,7 @@ describe("runBatchImportAll", () => {
       const recorded = recordCalls(["ScopeItemIDs"]);
       const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
-      const result = await createBatchImport(deps).runBatchImportAll({
+      const result = await importOver(deps).runBatchImportAll({
         groupID: 7,
       });
 
@@ -717,7 +823,7 @@ describe("runBatchImportAll", () => {
       const recorded = recordCalls(["ScopeItemIDs"]);
       const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
-      await createBatchImport(deps).runBatchImportAll({ groupID: 0 });
+      await importOver(deps).runBatchImportAll({ groupID: 0 });
 
       expect(recorded.calls).toMatchObject([
         { payload: { libraryID: USER_LIBRARY_ID } },
@@ -729,7 +835,7 @@ describe("runBatchImportAll", () => {
       const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
       await expect(
-        createBatchImport(deps).runBatchImportAll({ groupID: 99 }),
+        importOver(deps).runBatchImportAll({ groupID: 99 }),
       ).resolves.toEqual({ outcome: "unavailable-target" });
       expect(recorded.calls).toEqual([]);
       expect(openedModals).toHaveLength(0);
@@ -744,7 +850,7 @@ describe("runBatchImportAll", () => {
       const recorded = recordCalls(["ScopeItemIDs"]);
       const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
-      const result = await createBatchImport(deps).runBatchImportAll({
+      const result = await importOver(deps).runBatchImportAll({
         groupID: 7,
         collectionKey: COLLECTION,
       });
@@ -765,7 +871,7 @@ describe("runBatchImportAll", () => {
       const { deps } = makeDeps({});
 
       await expect(
-        createBatchImport(deps).runBatchImportAll({
+        importOver(deps).runBatchImportAll({
           groupID: 0,
           collectionKey: COLLECTION,
         }),
@@ -778,7 +884,7 @@ describe("runBatchImportAll", () => {
       const { deps } = makeDeps({});
 
       await expect(
-        createBatchImport(deps).runBatchImportAll({
+        importOver(deps).runBatchImportAll({
           groupID: 0,
           collectionKey: COLLECTION,
         }),
@@ -792,7 +898,7 @@ describe("runBatchImport routing", () => {
   it("returns db-unavailable when the database is closed", async () => {
     const { deps, importNote } = makeDeps({}, { dbState: "loading" });
     await expect(
-      createBatchImport(deps).runBatchImport("note", [50]),
+      importOver(deps).runBatchImport("note", [50]),
     ).resolves.toEqual({
       outcome: "db-unavailable",
     });
@@ -802,9 +908,7 @@ describe("runBatchImport routing", () => {
 
   it("returns empty-selection for no ids", async () => {
     const { deps } = makeDeps({});
-    await expect(
-      createBatchImport(deps).runBatchImport("note", []),
-    ).resolves.toEqual({
+    await expect(importOver(deps).runBatchImport("note", [])).resolves.toEqual({
       outcome: "empty-selection",
     });
   });
@@ -813,10 +917,7 @@ describe("runBatchImport routing", () => {
     seedNotes([50, 51]);
     const { deps, importNote } = makeDeps({});
 
-    const result = await createBatchImport(deps).runBatchImport(
-      "note",
-      [50, 51],
-    );
+    const result = await importOver(deps).runBatchImport("note", [50, 51]);
 
     expect(result).toEqual({ outcome: "batch-modal" });
     expect(openedModals).toHaveLength(1);
@@ -827,7 +928,7 @@ describe("runBatchImport routing", () => {
     seedNotes([50]);
     const { deps } = makeDeps({});
 
-    const result = await createBatchImport(deps).runBatchImport("child", [
+    const result = await importOver(deps).runBatchImport("child", [
       PARENT_ITEM_ID,
     ]);
 
@@ -841,7 +942,7 @@ describe("single note import (mode=note, 1 id)", () => {
     seedNotes([50]);
     const { deps, importNote } = makeDeps({});
 
-    const result = await createBatchImport(deps).runBatchImport("note", [50]);
+    const result = await importOver(deps).runBatchImport("note", [50]);
 
     expect(openedModals).toHaveLength(0);
     expect(importNote).toHaveBeenCalledTimes(1);
@@ -860,7 +961,7 @@ describe("single note import (mode=note, 1 id)", () => {
   it("reports not-found when the single id does not resolve", async () => {
     const { deps, importNote } = makeDeps({});
 
-    const result = await createBatchImport(deps).runBatchImport("note", [99]);
+    const result = await importOver(deps).runBatchImport("note", [99]);
 
     expect(result).toEqual({ outcome: "not-found", count: 1 });
     expect(importNote).not.toHaveBeenCalled();
@@ -875,7 +976,7 @@ describe("single note import (mode=note, 1 id)", () => {
       { existing: [target], importNoteResult: "overwritten" },
     );
 
-    const result = await createBatchImport(deps).runBatchImport("note", [50]);
+    const result = await importOver(deps).runBatchImport("note", [50]);
 
     expect(confirmMock).toHaveBeenCalledTimes(1);
     expect(importNote.mock.calls[0]![1]).toMatchObject({ targetFile: target });
@@ -895,7 +996,7 @@ describe("single note import (mode=note, 1 id)", () => {
       { existing: [makeFile("Imported/Note 50.md")] },
     );
 
-    const result = await createBatchImport(deps).runBatchImport("note", [50]);
+    const result = await importOver(deps).runBatchImport("note", [50]);
 
     expect(result).toEqual({ outcome: "cancelled" });
     expect(importNote).not.toHaveBeenCalled();
@@ -915,7 +1016,7 @@ describe("note-mode modal classify + run", () => {
       options.reportExcerpts?.({ zotero: 1, unchecked: 0, unavailable: 0 });
       return "created";
     };
-    const importing = createBatchImport(deps).runBatchImport("note", [50]);
+    const importing = importOver(deps).runBatchImport("note", [50]);
     await started.promise;
     expect(deps.noteFeature.reportExcerptImages).not.toHaveBeenCalled();
     finish.resolve();
@@ -941,7 +1042,7 @@ describe("note-mode modal classify + run", () => {
       options.reportExcerpts?.({ zotero: 1, unchecked: 0, unavailable: 0 });
       return "created";
     };
-    await createBatchImport(deps).runBatchImport("note", [50, 51]);
+    await importOver(deps).runBatchImport("note", [50, 51]);
     const options = openedModals.at(-1)!;
     await options.onClassify(classifyControls());
     const stop = Deferred.makeUnsafe<void>();
@@ -982,7 +1083,7 @@ describe("note-mode modal classify + run", () => {
       );
       return "created";
     };
-    await createBatchImport(deps).runBatchImport("note", [50, 51, 52]);
+    await importOver(deps).runBatchImport("note", [50, 51, 52]);
     await driveLastModal();
     expect(
       deps.noteFeature.reportExcerptImages,
@@ -1009,7 +1110,7 @@ describe("note-mode modal classify + run", () => {
       return "created" as const;
     });
 
-    await createBatchImport(deps).runBatchImport("note", [50, 51, 52]);
+    await importOver(deps).runBatchImport("note", [50, 51, 52]);
     await driveLastModal();
 
     // One run is one batch: every note resolves through one scope, and the
@@ -1028,7 +1129,7 @@ describe("note-mode modal classify + run", () => {
     seedNotes([50, 51]);
     const { deps, importNote } = makeDeps({});
 
-    await createBatchImport(deps).runBatchImport("note", [50, 51]);
+    await importOver(deps).runBatchImport("note", [50, 51]);
     await driveLastModal();
 
     expect(importNote).toHaveBeenCalledTimes(2);
@@ -1045,7 +1146,7 @@ describe("note-mode modal classify + run", () => {
     const recorded = recordCalls(["NoteRefs"]);
     const { deps, importNote } = makeDeps({}, { wrap: recorded.wrap });
 
-    await createBatchImport(deps).runBatchImport("note", [50, 50]);
+    await importOver(deps).runBatchImport("note", [50, 50]);
     const { manifest } = await driveLastModal();
 
     expect(recorded.calls[0]!.payload.itemIDs).toEqual([50]);
@@ -1057,7 +1158,7 @@ describe("note-mode modal classify + run", () => {
     seedNotes([50]);
     const { deps, importNote } = makeDeps({});
 
-    await createBatchImport(deps).runBatchImport("note", [50, 99]);
+    await importOver(deps).runBatchImport("note", [50, 99]);
     const { manifest } = await driveLastModal();
 
     expect(manifest.options.notFound).toHaveLength(1);
@@ -1072,7 +1173,7 @@ describe("note-mode modal classify + run", () => {
     db.$client.exec("insert into deletedItems (itemID) values (60)");
     const { deps, importNote } = makeDeps({});
 
-    await createBatchImport(deps).runBatchImport("note", [50, 60, 99]);
+    await importOver(deps).runBatchImport("note", [50, 60, 99]);
     const { manifest } = await driveLastModal();
 
     expect(manifest.options.notFound).toEqual(
@@ -1093,7 +1194,7 @@ describe("note-mode modal classify + run", () => {
       { existing: [target], importNoteResult: "overwritten" },
     );
 
-    await createBatchImport(deps).runBatchImport("note", [50, 51]);
+    await importOver(deps).runBatchImport("note", [50, 51]);
     const { manifest } = await driveLastModal();
 
     expect(manifest.options.tasks[0]).toMatchObject({ kind: "1:overwrite" });
@@ -1104,7 +1205,7 @@ describe("note-mode modal classify + run", () => {
     seedNotes([50]);
     const { deps, importNote } = makeDeps({});
 
-    await createBatchImport(deps).runBatchImport("note", [50, 51]);
+    await importOver(deps).runBatchImport("note", [50, 51]);
     const options = openedModals.at(-1)!;
     await options.onClassify(classifyControls());
     // The note leaves Zotero between classify and the write.
@@ -1138,7 +1239,7 @@ describe("up-to-date classification", () => {
     deps.noteIndex.getImportedNoteByNoteKey = (key) =>
       key === ref50.indexedKey ? [target] : [];
 
-    await createBatchImport(deps).runBatchImport("note", [50, 51]);
+    await importOver(deps).runBatchImport("note", [50, 51]);
     const { manifest } = await driveLastModal();
 
     expect(manifest.options.tasks).toHaveLength(1);
@@ -1159,7 +1260,7 @@ describe("up-to-date classification", () => {
     deps.noteIndex.getImportedNoteByNoteKey = (key) =>
       key === ref50.indexedKey ? [target] : [];
 
-    await createBatchImport(deps).runBatchImport("note", [50, 51]);
+    await importOver(deps).runBatchImport("note", [50, 51]);
     const { manifest } = await driveLastModal();
 
     expect(manifest.options.tasks[0]).toMatchObject({ kind: "1:overwrite" });
@@ -1183,7 +1284,7 @@ describe("up-to-date classification", () => {
     deps.noteIndex.getImportedNoteByNoteKey = (key) =>
       key === ref50.indexedKey ? [target] : [];
 
-    await createBatchImport(deps).runBatchImport("note", [50, 51]);
+    await importOver(deps).runBatchImport("note", [50, 51]);
     const { manifest } = await driveLastModal();
 
     expect(manifest.options.tasks[0]).toMatchObject({ kind: "1:overwrite" });
@@ -1195,7 +1296,7 @@ describe("up-to-date classification", () => {
     seedNotes([50, 51]);
     const { deps, importNote } = makeDeps({});
 
-    await createBatchImport(deps).runBatchImport("note", [50, 51]);
+    await importOver(deps).runBatchImport("note", [50, 51]);
     const { manifest } = await driveLastModal();
 
     expect(manifest.options.tasks).toHaveLength(2);
@@ -1211,7 +1312,7 @@ describe("child-mode modal classify", () => {
     seedNotes([50, 51]);
     const { deps, importNote } = makeDeps({});
 
-    await createBatchImport(deps).runBatchImport("child", [PARENT_ITEM_ID]);
+    await importOver(deps).runBatchImport("child", [PARENT_ITEM_ID]);
     const { manifest } = await driveLastModal();
 
     expect(manifest.options.parents).toHaveLength(1);
@@ -1225,7 +1326,7 @@ describe("child-mode modal classify", () => {
   it("builds an empty tree when no child notes exist", async () => {
     const { deps, importNote } = makeDeps({});
 
-    await createBatchImport(deps).runBatchImport("child", [PARENT_ITEM_ID]);
+    await importOver(deps).runBatchImport("child", [PARENT_ITEM_ID]);
     const { manifest } = await driveLastModal();
 
     expect(manifest.options.parents).toHaveLength(0);
@@ -1238,9 +1339,7 @@ describe("runChildImportByKey", () => {
     const { deps } = makeDeps({}, { dbState: "loading" });
 
     await expect(
-      createBatchImport(deps).runChildImportByKey(
-        formatIndexedKey("ABCD2345", null),
-      ),
+      importOver(deps).runChildImportByKey(formatIndexedKey("ABCD2345", null)),
     ).resolves.toEqual({ outcome: "db-unavailable" });
   });
 
@@ -1248,9 +1347,7 @@ describe("runChildImportByKey", () => {
     const { deps } = makeDeps({});
 
     await expect(
-      createBatchImport(deps).runChildImportByKey(
-        formatIndexedKey("MISSING1", null),
-      ),
+      importOver(deps).runChildImportByKey(formatIndexedKey("MISSING1", null)),
     ).resolves.toBeNull();
   });
 
@@ -1262,7 +1359,7 @@ describe("runChildImportByKey", () => {
     seedNotes([50], { parentItemID: 7 });
     const { deps, importNote } = makeDeps({});
 
-    const result = await createBatchImport(deps).runChildImportByKey(
+    const result = await importOver(deps).runChildImportByKey(
       formatIndexedKey("ABCD2345", null),
     );
 
@@ -1287,9 +1384,7 @@ describe("runChildImportByKey", () => {
     );
 
     await expect(
-      createBatchImport(deps).runChildImportByKey(
-        formatIndexedKey("ABCD2345", null),
-      ),
+      importOver(deps).runChildImportByKey(formatIndexedKey("ABCD2345", null)),
     ).rejects.toThrow("sqlite read failed");
   });
 
@@ -1347,7 +1442,7 @@ describe("reimportNoteByKey", () => {
       });
       return "overwritten";
     };
-    await createBatchImport(deps).reimportNoteByKey(
+    await importOver(deps).reimportNoteByKey(
       note.indexedKey,
       makeFile("Imported/Clicked.md"),
     );
@@ -1365,7 +1460,7 @@ describe("reimportNoteByKey", () => {
     const { deps } = makeDeps({}, { dbState: "loading" });
 
     await expect(
-      createBatchImport(deps).reimportNoteByKey(
+      importOver(deps).reimportNoteByKey(
         formatIndexedKey("ABCD2345", null),
         makeFile("Imported/Clicked.md"),
       ),
@@ -1376,7 +1471,7 @@ describe("reimportNoteByKey", () => {
     const { deps } = makeDeps({});
 
     await expect(
-      createBatchImport(deps).reimportNoteByKey(
+      importOver(deps).reimportNoteByKey(
         formatIndexedKey("GONE1234", null),
         makeFile("Imported/Clicked.md"),
       ),
@@ -1393,7 +1488,7 @@ describe("reimportNoteByKey", () => {
     );
 
     await expect(
-      createBatchImport(deps).reimportNoteByKey(note.indexedKey, targetFile),
+      importOver(deps).reimportNoteByKey(note.indexedKey, targetFile),
     ).resolves.toEqual({ outcome: "overwritten" });
 
     expect(importNote.mock.calls[0]![1]).toMatchObject({ targetFile });

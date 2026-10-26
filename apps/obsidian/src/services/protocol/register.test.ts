@@ -21,10 +21,12 @@ import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { openAttachments } from "@/lib/attachment-open";
 import * as m from "@/lib/i18n/generated/messages";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import { toObsidianOpenableAttachments } from "@/services/attachment-open/resolve";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
+import { LibraryScope } from "@/services/library-scope/service";
 import { LocalServer } from "@/services/local-server/service";
 import type {
   ImportNotesRequest,
@@ -35,7 +37,16 @@ import {
   runBatchUpdate,
   runBatchUpdateAll,
 } from "@/services/note-feature/update-batch";
+import {
+  runBatchImport,
+  runBatchImportAll,
+} from "@/services/note-import/batch-import";
 import type { BatchImportResult } from "@/services/note-import/batch-import";
+import { NoteImporter } from "@/services/note-import/service";
+import type { NoteImportView } from "@/services/note-import/view";
+import { NoteIndex } from "@/services/note-index/service";
+import { Profile } from "@/services/profile/service";
+import { PluginSettings } from "@/services/settings/service";
 import { UseLedger } from "@/services/use-ledger/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
@@ -55,6 +66,17 @@ vi.mock("@/services/note-feature/update-batch", () => ({
   runBatchUpdate: vi.fn(async () => ({ outcome: "batch-modal" })),
   runBatchUpdateAll: vi.fn(async () => ({ outcome: "batch-modal" })),
 }));
+
+vi.mock("@/services/note-import/batch-import", async (importOriginal) => {
+  const { Effect } = await import("effect");
+  return {
+    ...(await importOriginal<
+      typeof import("@/services/note-import/batch-import")
+    >()),
+    runBatchImport: vi.fn(() => Effect.succeed({ outcome: "batch-modal" })),
+    runBatchImportAll: vi.fn(() => Effect.succeed({ outcome: "batch-modal" })),
+  };
+});
 
 vi.mock("@/services/note-feature", async (importOriginal) => {
   const { Effect } = await import("effect");
@@ -153,9 +175,10 @@ const REF: ItemDisplayRef = {
 /** {@link REF} as a handler passes it on: the ref without the title. */
 const { title: _title, ...ITEM_REF } = REF;
 
-const runBatchImportAll = vi.fn(async (): Promise<BatchImportResult> => ({
-  outcome: "batch-modal",
-}));
+/** The note import's modals, which a link-started import receives. */
+const noteImportView = stubService<NoteImportView>("NoteImportView", {});
+/** Note Feature, which a link-started import receives. */
+const noteFeature = stubService<ProtocolDeps["noteFeature"]>("NoteFeature", {});
 
 /** Protocol handlers registered by the plugin, keyed by their action id. */
 const handlers = new Map<string, (data: ObsidianProtocolData) => unknown>();
@@ -203,7 +226,8 @@ const register = Effect.fn("register")(function* (setup: Setup = {}) {
   };
   const deps = stubService<ProtocolDeps>("ProtocolDeps", {
     webWorkbenchEnabled: true,
-    batchImport: { runBatchImport: vi.fn(), runBatchImportAll },
+    noteImportView,
+    noteFeature,
     app: appStub(),
     ...setup.deps,
   });
@@ -231,6 +255,13 @@ const register = Effect.fn("register")(function* (setup: Setup = {}) {
         importNotesRequests: setup.importNotesRequests ?? Stream.empty,
       }),
       Layer.mock(UseLedger, {}),
+      // The batch import is mocked; the handlers only carry these tags to it.
+      Layer.mock(LibraryScope, {}),
+      Layer.mock(MetadataCache, {}),
+      Layer.mock(NoteImporter, {}),
+      Layer.mock(NoteIndex, {}),
+      Layer.mock(PluginSettings, {}),
+      Layer.mock(Profile, {}),
       Layer.mock(Vault, {
         getFileByPath:
           setup.getFileByPath ??
@@ -265,7 +296,8 @@ beforeEach(() => {
   notifier = testNotifier();
   vi.mocked(runBatchUpdate).mockClear();
   vi.mocked(runBatchUpdateAll).mockClear();
-  runBatchImportAll.mockClear();
+  vi.mocked(runBatchImport).mockClear();
+  vi.mocked(runBatchImportAll).mockClear();
   reads.DisplayRefs.mockReset();
   reads.AttachmentsAt.mockReset();
   vi.mocked(openCompanionNote).mockClear();
@@ -515,10 +547,10 @@ describe("library-wide protocol links", () => {
         collection: "ABCD2345",
       });
 
-      expect(runBatchImportAll).toHaveBeenCalledExactlyOnceWith({
-        groupID: 7,
-        collectionKey: "ABCD2345",
-      });
+      expect(runBatchImportAll).toHaveBeenCalledExactlyOnceWith(
+        { view: noteImportView, noteFeature },
+        { groupID: 7, collectionKey: "ABCD2345" },
+      );
     }),
   );
 
@@ -530,10 +562,10 @@ describe("library-wide protocol links", () => {
 
         yield* dispatch("zotlit/import-all-notes");
 
-        expect(runBatchImportAll).toHaveBeenCalledExactlyOnceWith({
-          groupID: 0,
-          collectionKey: undefined,
-        });
+        expect(runBatchImportAll).toHaveBeenCalledExactlyOnceWith(
+          { view: noteImportView, noteFeature },
+          { groupID: 0, collectionKey: undefined },
+        );
       }),
   );
 });
@@ -801,31 +833,59 @@ describe("batch protocol links", () => {
 
   it.effect("imports the one item an import-note link names", () =>
     Effect.gen(function* () {
-      const runBatchImport = vi.fn(async (): Promise<BatchImportResult> => ({
-        outcome: "batch-modal",
-      }));
-      yield* register({
-        deps: { batchImport: { runBatchImport, runBatchImportAll } },
-      });
+      yield* register();
 
       yield* dispatch("zotlit/import-note", { item: "8", mode: "child" });
 
-      expect(runBatchImport).toHaveBeenCalledExactlyOnceWith("child", [8]);
+      expect(runBatchImport).toHaveBeenCalledExactlyOnceWith(
+        { view: noteImportView, noteFeature },
+        { mode: "child", itemIDs: [8] },
+      );
     }),
   );
 
   it.effect("imports the items an import-notes link names", () =>
     Effect.gen(function* () {
-      const runBatchImport = vi.fn(async (): Promise<BatchImportResult> => ({
-        outcome: "batch-modal",
-      }));
-      yield* register({
-        deps: { batchImport: { runBatchImport, runBatchImportAll } },
-      });
+      yield* register();
 
       yield* dispatch("zotlit/import-notes", { items: "8,9", mode: "note" });
 
-      expect(runBatchImport).toHaveBeenCalledExactlyOnceWith("note", [8, 9]);
+      expect(runBatchImport).toHaveBeenCalledExactlyOnceWith(
+        { view: noteImportView, noteFeature },
+        { mode: "note", itemIDs: [8, 9] },
+      );
+    }),
+  );
+
+  it.effect("shows the title of the one note a link imported", () =>
+    Effect.gen(function* () {
+      vi.mocked(runBatchImport).mockReturnValueOnce(
+        Effect.succeed<BatchImportResult>({
+          outcome: "single",
+          write: "created",
+          title: "Methods",
+        }),
+      );
+      yield* register();
+
+      yield* dispatch("zotlit/import-note", { item: "8", mode: "note" });
+
+      expect(shown()).toEqual([m.notice_imported_note({ title: "Methods" })]);
+      expect(notifier.notices[0]!.duration).toBe(2000);
+    }),
+  );
+
+  it.effect("shows the import failure a link run ended with", () =>
+    Effect.gen(function* () {
+      vi.mocked(runBatchImport).mockReturnValueOnce(
+        Effect.die(new Error("write failed")),
+      );
+      yield* register();
+
+      yield* dispatch("zotlit/import-note", { item: "8", mode: "note" });
+
+      expect(shown()).toEqual([m.batch_import_failed()]);
+      expect(notifier.notices[0]!.duration).toBe(4000);
     }),
   );
 });
@@ -853,11 +913,7 @@ describe("requests pushed over the Local Server", () => {
 
   it.effect("runs a pushed batch import", () =>
     Effect.gen(function* () {
-      const runBatchImport = vi.fn<
-        ProtocolDeps["batchImport"]["runBatchImport"]
-      >(async () => ({ outcome: "batch-modal" }));
       const registration = yield* register({
-        deps: { batchImport: { runBatchImport, runBatchImportAll } },
         importNotesRequests: Stream.make<[ImportNotesRequest]>({
           items: [7],
           mode: "note",
@@ -866,7 +922,10 @@ describe("requests pushed over the Local Server", () => {
 
       yield* registration.idle;
 
-      expect(runBatchImport).toHaveBeenCalledExactlyOnceWith("note", [7]);
+      expect(runBatchImport).toHaveBeenCalledExactlyOnceWith(
+        { view: noteImportView, noteFeature },
+        { mode: "note", itemIDs: [7] },
+      );
     }),
   );
 

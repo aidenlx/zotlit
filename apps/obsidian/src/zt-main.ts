@@ -425,7 +425,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         zoteroPref: services.zoteroPref,
         noteFeature: services.noteFeature,
         noteIndex: services.noteIndex,
-        batchImport: services.batchImport,
+        noteImportView: services.noteImportView,
         bridge: services.bridge,
         opener: services.targetOpener,
       }),

@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Fiber, FiberSet, Scope } from "effect";
+import { Cause, Data, Effect, Exit, Fiber, FiberSet, Scope } from "effect";
 import type { ManagedRuntime } from "effect";
 import type { ObsidianProtocolData, PaneType, Plugin } from "obsidian";
 
@@ -27,6 +27,7 @@ import {
 } from "@zotlit/protocol";
 import type { ProtocolAction } from "@zotlit/protocol";
 
+import { AbortError } from "@/lib/abort-error";
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import type { AttachmentReader } from "@/lib/attachment-open";
 import { logAndContinue, withLogCategory } from "@/lib/effect-log";
@@ -34,6 +35,7 @@ import { openScope } from "@/lib/effect-scope";
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { Notifier } from "@/lib/notifier";
+import type { NoticeMessage } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -64,11 +66,16 @@ import type {
   BatchUpdateResult,
 } from "@/services/note-feature/update-batch";
 import { noteOperationDiagnosticNotice } from "@/services/note-feature/update-single";
-import type { BatchImport } from "@/services/note-import/batch-import";
+import {
+  runBatchImport,
+  runBatchImportAll,
+} from "@/services/note-import/batch-import";
+import type { BatchImportServices } from "@/services/note-import/batch-import";
 import {
   batchImportAllToast,
   batchImportToast,
 } from "@/services/note-import/batch-import-notices";
+import type { NoteImportView } from "@/services/note-import/view";
 import type { UseLedger } from "@/services/use-ledger/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
@@ -78,6 +85,7 @@ import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 /** The services a protocol handler reads through their tags. */
 export type ProtocolServices =
+  | BatchImportServices
   | LocalServer
   | Notifier
   | ObsidianEnv
@@ -88,15 +96,16 @@ export type ProtocolServices =
   | ZoteroReads;
 
 /**
- * The legacy values the handlers still hold. Note Feature, batch import, the
- * Profile factories and the Attachment opener convert in later slices, and the
- * batch runners still take the whole {@link BatchUpdateDeps} bundle, plain
- * adapters included. The bundle plans a library-wide run through the
+ * The legacy values the handlers still hold. Note Feature, the Profile
+ * factories and the Attachment opener convert in later slices, and the batch
+ * update runners still take the whole {@link BatchUpdateDeps} bundle, plain
+ * adapters included. The bundle plans a library-wide update through the
  * `batchScope` edge handle.
  */
 export interface ProtocolDeps extends BatchUpdateDeps {
   webWorkbenchEnabled: boolean;
-  batchImport: Pick<BatchImport, "runBatchImport" | "runBatchImportAll">;
+  /** The note import's classify, confirm and Profile modals. */
+  noteImportView: NoteImportView;
   /** Opens the Attachment `open-attachment` names. */
   opener: Pick<TargetOpener, "open">;
 }
@@ -115,7 +124,7 @@ export interface ProtocolDeps extends BatchUpdateDeps {
  * fails is logged. Every handler run and every run of a request the Local
  * Server pushes is a fiber of the current Scope: closing it stops the pushed
  * requests and interrupts the runs still going. A legacy Promise a run waits
- * on (Note Feature, batch import, a view opener) still runs to its end.
+ * on (Note Feature, a batch update, a view opener) still runs to its end.
  */
 export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
   function* (
@@ -218,6 +227,46 @@ export function startProtocolHandlers(
   return { [Symbol.asyncDispose]: close };
 }
 
+/** The ports a batch import takes, from the handlers' legacy values. */
+function importPorts(deps: ProtocolDeps) {
+  return { view: deps.noteImportView, noteFeature: deps.noteFeature };
+}
+
+/**
+ * Run a note import and show its outcome as `toast.promise` does without a
+ * loading message: the success message for 2 s, or the error message for 4 s
+ * with the error logged. An abort shows nothing. The notice does not hold
+ * the run, and an interrupt ends the run without a notice.
+ */
+const withImportNotice = Effect.fnUntraced(function* <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  copy: {
+    success: (result: A) => NoticeMessage | undefined;
+    error: (message: string, error: unknown) => NoticeMessage | undefined;
+  },
+) {
+  const notifier = yield* Notifier;
+  const exit = yield* Effect.exit(effect);
+  if (Exit.isSuccess(exit)) {
+    const message = copy.success(exit.value);
+    if (message) yield* notifier.show(message, { duration: 2000 });
+    return;
+  }
+  if (Cause.hasInterruptsOnly(exit.cause))
+    return yield* Effect.failCause(exit.cause);
+  const error = Cause.squash(exit.cause);
+  if (AbortError.test(error)) return;
+  const message = copy.error(toast.formatErrorMessage(error), error);
+  yield* Effect.logError("Toast reported error").pipe(
+    Effect.annotateLogs({
+      message: typeof message === "string" ? message : message?.textContent,
+      error,
+    }),
+    withLogCategory("toast"),
+  );
+  if (message) yield* notifier.show(message, { duration: 4000 });
+});
+
 /** The registered handlers, while their Scope holds them. */
 export interface ProtocolRegistration {
   /**
@@ -246,11 +295,12 @@ const updateManyRequested = Effect.fn("protocol.updateManyRequested")(
 
 const importNotesRequested = Effect.fn("protocol.importNotesRequested")(
   function* (event: ImportNotesRequest, deps: ProtocolDeps) {
-    yield* Effect.promise(() =>
-      toast.promise(
-        deps.batchImport.runBatchImport(event.mode, event.items),
-        batchImportToast({ app: deps.app }),
-      ),
+    yield* withImportNotice(
+      runBatchImport(importPorts(deps), {
+        mode: event.mode,
+        itemIDs: event.items,
+      }),
+      batchImportToast({ app: deps.app }),
     );
   },
   logAndContinue("Pushed batch import failed", "protocol"),
@@ -370,11 +420,12 @@ const handleImportProtocol = Effect.fn("protocol.handleImportProtocol")(
     });
     if (!query) return;
 
-    yield* Effect.promise(() =>
-      toast.promise(
-        deps.batchImport.runBatchImport(query.mode, [query.item]),
-        batchImportToast({ app: deps.app }),
-      ),
+    yield* withImportNotice(
+      runBatchImport(importPorts(deps), {
+        mode: query.mode,
+        itemIDs: [query.item],
+      }),
+      batchImportToast({ app: deps.app }),
     );
   },
 );
@@ -389,11 +440,12 @@ const handleImportManyProtocol = Effect.fn("protocol.handleImportManyProtocol")(
     });
     if (!query) return;
 
-    yield* Effect.promise(() =>
-      toast.promise(
-        deps.batchImport.runBatchImport(query.mode, query.items),
-        batchImportToast({ app: deps.app }),
-      ),
+    yield* withImportNotice(
+      runBatchImport(importPorts(deps), {
+        mode: query.mode,
+        itemIDs: query.items,
+      }),
+      batchImportToast({ app: deps.app }),
     );
   },
 );
@@ -498,14 +550,12 @@ const handleImportAllNotesProtocol = Effect.fn(
   });
   if (!query) return;
 
-  yield* Effect.promise(() =>
-    toast.promise(
-      deps.batchImport.runBatchImportAll({
-        groupID: query.groupID,
-        collectionKey: query.collectionKey,
-      }),
-      batchImportAllToast({ app: deps.app }),
-    ),
+  yield* withImportNotice(
+    runBatchImportAll(importPorts(deps), {
+      groupID: query.groupID,
+      collectionKey: query.collectionKey,
+    }),
+    batchImportAllToast({ app: deps.app }),
   );
 });
 
