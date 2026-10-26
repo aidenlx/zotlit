@@ -182,8 +182,6 @@ export function plainCitationIndex(
     citedByOmittedSyntaxes: (
       ...args: Parameters<typeof service.citedByOmittedSyntaxes>
     ) => invoke(service.citedByOmittedSyntaxes(...args)),
-    reset: (...args: Parameters<typeof service.reset>) =>
-      invoke(service.reset(...args)),
     waitUntilSettled: (...args: Parameters<typeof service.waitUntilSettled>) =>
       invoke(service.waitUntilSettled(...args)),
     readAnnotationUses: service.readAnnotationUses,
