@@ -2,6 +2,7 @@
 import { Modal, TextComponent } from "obsidian";
 import type { App } from "obsidian";
 
+import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import type {
   LiteratureNoteProfile,
@@ -10,7 +11,6 @@ import type {
 } from "@/services/profile/service";
 
 import {
-  DialogClosed,
   dialogFooter,
   field,
   footerButton,
@@ -77,7 +77,7 @@ export class ProfileDestinationModal extends Modal {
         this.#decision.resolve(profile);
         this.close();
       } catch (error) {
-        if (error instanceof DialogClosed) return;
+        if (AbortError.test(error)) return;
         reason.set(
           Error.isError(error)
             ? error.message

@@ -10,6 +10,7 @@ import type { App } from "obsidian";
 
 import type { NoteTemplateContext } from "@zotlit/db";
 
+import { AbortError } from "@/lib/abort-error";
 import { recover } from "@/lib/effect-cause";
 import { awaitModal } from "@/lib/effect-modal";
 import type { ClosableModal } from "@/lib/effect-modal";
@@ -48,7 +49,6 @@ import type {
 import { ImportProfileModal, ImportSourceModal } from "./import-profile-modal";
 import type { ImportSource } from "./import-profile-modal";
 import { ProfileDestinationModal } from "./profile-destination-modal";
-import { DialogClosed } from "./profile-dialog";
 import { ShareProfileModal } from "./share-profile-modal";
 import type { ShareDestination } from "./share-profile-modal";
 
@@ -68,7 +68,7 @@ type DialogServices = Profile | Template | NoteFeature;
 
 /**
  * Runs a modal callback's Effect on the dialog's runner. It rejects with
- * {@link DialogClosed} when the dialog's Scope stops the Effect.
+ * an `AbortError` when the dialog's Scope stops the Effect.
  */
 type DialogRun<R = DialogServices> = <A, E>(
   effect: Effect.Effect<A, E, R>,
@@ -109,7 +109,7 @@ function runDialog<A, R = DialogServices>(
           runFork(effect).addObserver((exit) => {
             if (Exit.isSuccess(exit)) resolve(exit.value);
             else if (Cause.hasInterruptsOnly(exit.cause))
-              reject(new DialogClosed());
+              reject(new AbortError());
             else reject(Cause.squash(exit.cause));
           }),
         );

@@ -6,6 +6,7 @@ import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -16,7 +17,6 @@ import { defaults } from "@/services/settings/schema";
 
 import { CreateProfileModal } from "./create-profile-modal";
 import type { ProfileCreationDeps } from "./create-profile-modal";
-import { DialogClosed } from "./profile-dialog";
 
 const id = "Bk3Qn7XvT2Lp" as ProfileId;
 function fixture() {
@@ -190,7 +190,7 @@ it("says nothing when the dialog's Scope stops the save", async () => {
       );
     })?.[0];
   const f = fixture();
-  f.create.mockRejectedValueOnce(new DialogClosed());
+  f.create.mockRejectedValueOnce(new AbortError());
   const modal = new CreateProfileModal(f.deps, { styles: [] });
   modal.contentEl = document.createElement("div");
   modal.onOpen();
