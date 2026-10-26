@@ -6,7 +6,7 @@
 // the document reference names this Connection's Profile, the draft is a Liquid
 // Profile this build can run, it parses and compiles, its dependencies resolve
 // in this vault, and the vault still holds the revision the page loaded.
-import { Effect } from "effect";
+import { Effect, FiberSet } from "effect";
 
 import { TemplateFacade } from "@zotlit/templates/facade";
 import { LiteratureNotePackError } from "@zotlit/templates/literature-note-pack";
@@ -43,15 +43,17 @@ export interface LocalBridgeSave {
 /**
  * The Save for the HTTP routes, run over the services of the layer that makes
  * it. `onSaved` runs once a Save has landed in the vault, never on a refusal.
+ *
+ * Each Save runs on a `FiberSet` of the caller's Scope, in a fiber that starts
+ * uninterruptible: a layer close stops a Save during its checks, and waits for
+ * a Save that has started writing, which keeps its answer and its `onSaved`.
  */
 export const makeLocalBridgeSave = Effect.fnUntraced(function* (options: {
   /** This build's version, which a Profile's `minAppVersion` is read against. */
   readonly pluginVersion: string;
   onSaved(profileId: string): Effect.Effect<void>;
 }) {
-  const run = Effect.runPromiseWith(
-    yield* Effect.context<Profile | Template>(),
-  );
+  const run = yield* FiberSet.makeRuntimePromise<Profile | Template>();
   const save: LocalBridgeSave = {
     saveSelectedProfile: (profileId, request) =>
       run(
@@ -62,43 +64,61 @@ export const makeLocalBridgeSave = Effect.fnUntraced(function* (options: {
               : Effect.void,
           ),
         ),
+        { uninterruptible: true },
       ),
   };
   return save;
 });
 
-/** Check one Save against the boundary, then write it through the Profile. */
+/**
+ * Check one Save against the boundary, then write it through the Profile.
+ * Only the checks are interruptible, so in an uninterruptible fiber a write
+ * that has started finishes.
+ */
 export const saveSelectedProfile = Effect.fn("LocalBridge.saveSelectedProfile")(
   function* (
     profileId: string,
     request: SaveSelectedProfileRequest,
     pluginVersion: string,
   ) {
-    // The reference the page holds is the Profile id and nothing else, so a
-    // draft for another Profile cannot reach this Connection's document.
-    if (request.reference !== profileId) {
-      const refused: LocalBridgeSaveOutcome = { state: "reference-refused" };
-      return refused;
-    }
-    const profiles = yield* Profile;
-    const selector = profileSelector(profileId);
-    if (!selector || !(yield* profiles.resolveProfile(selector))) {
-      return yield* profileDocumentMissing(profileId);
-    }
-    const refusal = yield* sourceRefusal(
-      request.source,
-      profileId,
-      pluginVersion,
+    const checked = yield* Effect.interruptible(
+      checkSave(profileId, request, pluginVersion),
     );
-    if (refusal) return refusal;
-    const write: LocalBridgeSaveOutcome = yield* profiles.saveSource(
-      selector,
+    if (checked.refusal !== undefined) return checked.refusal;
+    const write: LocalBridgeSaveOutcome = yield* (yield* Profile).saveSource(
+      checked.selector,
       request.source,
       request.expected,
     );
     return write;
   },
 );
+
+/** The refusal one Save earns, or the Profile its write goes to. */
+const checkSave = Effect.fnUntraced(function* (
+  profileId: string,
+  request: SaveSelectedProfileRequest,
+  pluginVersion: string,
+) {
+  // The reference the page holds is the Profile id and nothing else, so a
+  // draft for another Profile cannot reach this Connection's document.
+  if (request.reference !== profileId) {
+    const refused: LocalBridgeSaveOutcome = { state: "reference-refused" };
+    return { refusal: refused };
+  }
+  const profiles = yield* Profile;
+  const selector = profileSelector(profileId);
+  if (!selector || !(yield* profiles.resolveProfile(selector))) {
+    return yield* profileDocumentMissing(profileId);
+  }
+  const refusal = yield* sourceRefusal(
+    request.source,
+    profileId,
+    pluginVersion,
+  );
+  if (refusal) return { refusal };
+  return { refusal: undefined, selector };
+});
 
 /**
  * The refusal this draft earns, or `undefined` for one the vault accepts. A

@@ -432,7 +432,7 @@ async function signalDatabaseUpdated(vaultId: string): Promise<void> {
   const server = JSON.parse(
     await obEval(
       vaultId,
-      "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.settings.current;return JSON.stringify({hostname:settings['server.hostname'],port:services.localServer.effectivePort,sourceId:services.zoteroPref.sourceId});})()",
+      "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.bridge.runSync(services.settings.current);return JSON.stringify({hostname:settings['server.hostname'],port:services.bridge.runSync(services.localServer.effectivePort),sourceId:services.zoteroPref.sourceId});})()",
     ),
   ) as { hostname: string; port: number; sourceId: string };
   const response = await fetch(

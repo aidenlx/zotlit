@@ -47,8 +47,8 @@ import { Profile } from "@/services/profile/service";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
-import { profileRead } from "@/services/template-workbench/sync-template";
 import { InertTemplateError } from "@/services/template/errors";
+import type { ZoteroPref } from "@/services/zotero-pref/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type { ItemDisplayRef } from "@/services/zotero-reads/display-ref";
 import { ZoteroReads } from "@/services/zotero-reads/service";
@@ -96,6 +96,7 @@ export type BatchUpdateServices =
   | PluginSettings
   | Profile
   | Workspace
+  | ZoteroPref
   | ZoteroReads;
 
 /**
@@ -252,15 +253,12 @@ export const runBatchUpdate = Effect.fn("runBatchUpdate")(function* (
 
   yield* (yield* NoteIndex).whenIndexed;
   const profiles = yield* Profile;
-  if (
-    profile !== undefined &&
-    !(yield* profileRead(profiles.resolveProfile(profile)))
-  ) {
+  if (profile !== undefined && !(yield* profiles.resolveProfile(profile))) {
     return yield* new BatchUpdateRefusedError({
       diagnostic: unknownProfileDiagnostic(profile),
     });
   }
-  const profilesEnabled = (yield* profileRead(profiles.profiles)).length > 0;
+  const profilesEnabled = (yield* profiles.profiles).length > 0;
   if (restIDs.length === 0 && !profilesEnabled) {
     // Single id: hand the lightweight ref to updateNote, which owns the full
     // item load on the create path — no need to hydrate it here.
@@ -390,7 +388,7 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
     action.selection = selection;
     action.profile = selection.problem
       ? undefined
-      : yield* profileRead(profiles.resolveProfile(selection.selector));
+      : yield* profiles.resolveProfile(selection.selector);
     action.prepared =
       action.profile &&
       plans
@@ -422,7 +420,7 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
     if (!first) return;
     yield* ensurePlans(
       first.indexedKey,
-      (yield* profileRead(profiles.profiles)).map(({ id }) => id),
+      (yield* profiles.profiles).map(({ id }) => id),
     );
     const chosen = yield* ports.view.chooseProfile({
       indexedKey: first.indexedKey,
@@ -739,16 +737,14 @@ const classifyActions = Effect.fnUntraced(function* (
           libraryID: ref.libraryID,
         };
         if (file) {
-          const stamped = yield* profileRead(profiles.profileOf(file));
+          const stamped = yield* profiles.profileOf(file);
           if (
             profilesEnabled &&
             stamped.ok &&
             profile !== undefined &&
             stamped.profile.selector !== profile
           ) {
-            const requested = (yield* profileRead(
-              profiles.resolveProfile(profile),
-            ))!;
+            const requested = (yield* profiles.resolveProfile(profile))!;
             kept.push({
               label,
               profile: profileLabel(stamped.profile),
@@ -943,7 +939,7 @@ const runAction = Effect.fnUntraced(function* (
   const prepared = action.prepared;
   if (prepared) {
     // The selection stays frozen; only its availability is checked again.
-    if (!(yield* profileRead(run.profiles.resolveProfile(prepared.selector))))
+    if (!(yield* run.profiles.resolveProfile(prepared.selector)))
       return yield* new BatchUpdateRefusedError({
         diagnostic: unknownProfileDiagnostic(prepared.selector),
       });

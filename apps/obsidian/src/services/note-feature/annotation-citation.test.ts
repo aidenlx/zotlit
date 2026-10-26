@@ -13,7 +13,8 @@ import type { TemplateLanguage } from "@zotlit/templates/facade";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { CITATION_TEMPLATE_SOURCE } from "@/services/template/defaults";
-import { Template } from "@/services/template/service";
+import { TemplateRenderError } from "@/services/template/errors";
+import { Template, templateFailure } from "@/services/template/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { layerRcRef } from "@/services/zotero-reads/connection";
@@ -98,7 +99,10 @@ const render = Effect.fn(function* (
         ),
         Layer.mock(Template, {
           renderCitation: (refs, variant) =>
-            Effect.sync(() => template(refs, variant)),
+            Effect.try({
+              try: () => template(refs, variant),
+              catch: templateFailure,
+            }),
         }),
         Layer.mock(ZoteroPref, {
           current: Effect.succeed(
@@ -151,6 +155,21 @@ describe("renderAnnotationCitation", () => {
           "main",
         );
       }),
+  );
+
+  it.effect("fails with the Citation Template's render failure", () =>
+    Effect.gen(function* () {
+      const failure = new TemplateRenderError({
+        message: "The Citation Template failed",
+        cause: new Error("The Citation Template failed"),
+      });
+      const template = () => {
+        throw failure;
+      };
+      expect(yield* Effect.flip(render("ANNT2345", { template }))).toBe(
+        failure,
+      );
+    }),
   );
 
   it.effect("answers no citation key when the parent item has none", () =>
