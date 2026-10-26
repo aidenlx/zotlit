@@ -33,11 +33,20 @@ afterEach(async () => {
   for (const bridge of bridges.splice(0)) await bridge[Symbol.asyncDispose]();
 });
 
-function setup(enabled: boolean): {
+/**
+ * @param open what an open runs after it records the call; it ends at once
+ *   unless a case names a longer open.
+ */
+function setup(
+  enabled: boolean,
+  open: Effect.Effect<void> = Effect.void,
+): {
   plugin: ReturnType<typeof createMockPlugin>;
   opened: [citekey: string, pane: NavigationPane][];
   /** Run one command's check callback; `checking` asks palette visibility. */
   run: (id: string, editor: Editor, checking: boolean) => boolean;
+  /** Close the bridge, as unload does. */
+  unload: () => Promise<void>;
 } {
   const opened: [string, NavigationPane][] = [];
   const plugin = createMockPlugin();
@@ -49,7 +58,7 @@ function setup(enabled: boolean): {
       openCitekey: vi.fn((citekey: string, pane: NavigationPane) =>
         Effect.sync(() => {
           opened.push([citekey, pane]);
-        }),
+        }).pipe(Effect.andThen(open)),
       ),
     },
     bridge,
@@ -57,6 +66,9 @@ function setup(enabled: boolean): {
   return {
     plugin,
     opened,
+    unload: async () => {
+      await bridge[Symbol.asyncDispose]();
+    },
     run: (id, editor, checking) =>
       plugin.commands
         .get(id)
@@ -88,6 +100,26 @@ describe("addCitekeyEditorActions", () => {
       ["doe2024", "split"],
       ["doe2024", "window"],
     ]);
+  });
+
+  it("interrupts a pending open when the plugin unloads", async () => {
+    let interrupted = false;
+    const { opened, run, unload } = setup(
+      true,
+      Effect.never.pipe(
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            interrupted = true;
+          }),
+        ),
+      ),
+    );
+
+    run("open-citekey", editorAt("See @doe2024 here.", 8), false);
+    expect(opened).toEqual([["doe2024", false]]);
+    await unload();
+
+    expect(interrupted).toBe(true);
   });
 
   it("leaves the palette while the cursor is off a citekey", () => {

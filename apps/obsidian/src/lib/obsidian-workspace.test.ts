@@ -65,6 +65,24 @@ it.effect("reads the live layer's workspace from ObsidianApp", () =>
   }),
 );
 
+it.effect("fails openLinkText with OpenLinkFailed when Obsidian rejects", () =>
+  Effect.gen(function* () {
+    const source = new MemoryWorkspace();
+    const error = new Error("No leaf");
+    source.openLinkText = () => Promise.reject(error);
+    const { workspace } = yield* open(layerWorkspaceFrom(source));
+
+    const failure = yield* Effect.flip(workspace.openLinkText("a.md", ""));
+
+    expect(failure).toMatchObject({
+      _tag: "OpenLinkFailed",
+      linktext: "a.md",
+      message: "No leaf",
+      cause: error,
+    });
+  }),
+);
+
 it.effect("completes layoutReady at once when the layout is ready", () =>
   Effect.gen(function* () {
     const source = new MemoryWorkspace({ layoutReady: true });

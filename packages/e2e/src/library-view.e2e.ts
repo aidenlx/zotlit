@@ -55,19 +55,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     const stored = await obEval(
       run.vaultId,
-      "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['library.document'])",
+      "JSON.stringify(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['library.document'])",
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         run.vaultId,
-        `(async()=>{const settings=app.plugins.plugins.zotlit.services.settings;settings.update({'library.document':${stored}});await settings.flush();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        `(async()=>{const {settings,bridge}=app.plugins.plugins.zotlit.services;bridge.runSync(settings.update({'library.document':${stored}}));await bridge.runPromise(settings.flush);await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
       );
     });
     // The view opens on My Library; a new view's Recent has a case of its own.
     await obEval(
       run.vaultId,
-      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=app.plugins.plugins.zotlit.services.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}});await settings.flush();return true;})()`,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const {settings,bridge}=app.plugins.plugins.zotlit.services;bridge.runSync(settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}}));await bridge.runPromise(settings.flush);return true;})()`,
     );
 
     /** What the Library View shows once its query settled, or `null` while no tab holds it. */
@@ -188,7 +188,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         run.vaultId,
-        "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['library.document']?.sort)",
+        "JSON.stringify(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['library.document']?.sort)",
         {
           expected: JSON.stringify([
             { property: "dateModified", direction: "ASC" },
@@ -265,13 +265,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,scope:${services}.settings.current[${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}]??null})`,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.bridge.runSync(${services}.settings.current)['library.document']??null,scope:${services}.bridge.runSync(${services}.settings.current)[${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}]??null})`,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:saved.scope});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':saved.document,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:saved.scope}));await bridge.runPromise(settings.flush);await app.workspace.changeLayout(saved.layout);return true;})()`,
       );
     });
     // No Library View Document yet; the Library Scope holds My Library and
@@ -291,7 +291,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       });
     await obEval(
       run.vaultId,
-      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':null,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:${scope([personal, shared])}});await settings.flush();return true;})()`,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':null,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:${scope([personal, shared])}}));await bridge.runPromise(settings.flush);return true;})()`,
     );
 
     // The seed's oracle: the Items of the Libraries in scope, by Indexed
@@ -424,7 +424,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // Another Library Scope changes what Recent lists.
     await obEval(
       run.vaultId,
-      `(async()=>{const settings=${services}.settings;settings.update({${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:${scope([personal])}});await settings.flush();return true;})()`,
+      `(async()=>{const {settings,bridge}=${services};bridge.runSync(settings.update({${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:${scope([personal])}}));await bridge.runPromise(settings.flush);return true;})()`,
     );
     const narrowed = await shownWhen(listing(size([personal])));
     expectRecent(narrowed, [personal], -1);
@@ -451,7 +451,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const saved = (doc: object) =>
       obEvalUntil(
         run.vaultId,
-        `JSON.stringify(${services}.settings.current['library.document'],['node','kind','library','type','path','sort','property','direction'])`,
+        `JSON.stringify(${services}.bridge.runSync(${services}.settings.current)['library.document'],['node','kind','library','type','path','sort','property','direction'])`,
         { expected: JSON.stringify(doc) },
       );
     expect(
@@ -548,19 +548,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null})`,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.bridge.runSync(${services}.settings.current)['library.document']??null})`,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':saved.document}));await bridge.runPromise(settings.flush);await app.workspace.changeLayout(saved.layout);return true;})()`,
       );
     });
     // A new Library View opens on Recent, whose sort is last change first.
     await obEval(
       run.vaultId,
-      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':null});await settings.flush();app.commands.executeCommandById('zotlit:open-library-view');return true;})()`,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':null}));await bridge.runPromise(settings.flush);app.commands.executeCommandById('zotlit:open-library-view');return true;})()`,
     );
     // The heading draws the Sort control in a React root of its own; the
     // property Select's popup opens its Chooser there, with its search and
@@ -575,7 +575,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         run.vaultId,
-        `JSON.stringify(${services}.settings.current['library.document']?.sort)`,
+        `JSON.stringify(${services}.bridge.runSync(${services}.settings.current)['library.document']?.sort)`,
         {
           expected: JSON.stringify([{ property: "title", direction: "DESC" }]),
         },
@@ -587,19 +587,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,scope:${services}.settings.current[${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}]??null})`,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.bridge.runSync(${services}.settings.current)['library.document']??null,scope:${services}.bridge.runSync(${services}.settings.current)[${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}]??null})`,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:saved.scope});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':saved.document,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:saved.scope}));await bridge.runPromise(settings.flush);await app.workspace.changeLayout(saved.layout);return true;})()`,
       );
     });
     // The Library Scope holds My Library alone; the tree opens on My Library.
     await obEval(
       run.vaultId,
-      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)},${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:{mode:'selected',libraries:[{type:'personal'}]}});await settings.flush();return true;})()`,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)},${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:{mode:'selected',libraries:[{type:'personal'}]}}));await bridge.runPromise(settings.flush);return true;})()`,
     );
 
     // The seed's oracle: each Library's Items, and the Items a Collection
@@ -829,7 +829,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         run.vaultId,
-        "String(!window.__ztBeforeReload&&!!app.plugins.plugins.zotlit?.services?.settings?.current&&app.workspace.layoutReady)",
+        "String(!window.__ztBeforeReload&&!!app.plugins.plugins.zotlit?.services?.bridge.runSync(app.plugins.plugins.zotlit?.services?.settings?.current)&&app.workspace.layoutReady)",
         { expected: "true", tries: 120 },
       ),
     ).toBe(true);
@@ -854,13 +854,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,scope:${services}.settings.current[${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}]??null,dismissed:${services}.settings.current['welcome.dismissed'],requested:${services}.settings.current['welcome.requested']})`,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.bridge.runSync(${services}.settings.current)['library.document']??null,scope:${services}.bridge.runSync(${services}.settings.current)[${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}]??null,dismissed:${services}.bridge.runSync(${services}.settings.current)['welcome.dismissed'],requested:${services}.bridge.runSync(${services}.settings.current)['welcome.requested']})`,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:saved.scope,'welcome.dismissed':saved.dismissed,'welcome.requested':saved.requested});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':saved.document,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:saved.scope,'welcome.dismissed':saved.dismissed,'welcome.requested':saved.requested}));await bridge.runPromise(settings.flush);await app.workspace.changeLayout(saved.layout);return true;})()`,
       );
     });
     await suite.wideWindow(cleanup);
@@ -872,7 +872,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // My Library alone, with the banner put away.
     await obEval(
       run.vaultId,
-      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)},${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:{mode:'selected',libraries:[{type:'personal'}]},'welcome.dismissed':true,'welcome.requested':false});await settings.flush();await app.commands.executeCommandById('zotlit:open-library-view');return true;})()`,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)},${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:{mode:'selected',libraries:[{type:'personal'}]},'welcome.dismissed':true,'welcome.requested':false}));await bridge.runPromise(settings.flush);await app.commands.executeCommandById('zotlit:open-library-view');return true;})()`,
     );
     const help = run.m.library_view_help_action();
     const keptWhen = (ready: (kept: Kept) => boolean) =>
@@ -949,13 +949,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),dismissed:${services}.settings.current['welcome.dismissed'],requested:${services}.settings.current['welcome.requested']})`,
+      `JSON.stringify({layout:app.workspace.getLayout(),dismissed:${services}.bridge.runSync(${services}.settings.current)['welcome.dismissed'],requested:${services}.bridge.runSync(${services}.settings.current)['welcome.requested']})`,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'welcome.dismissed':saved.dismissed,'welcome.requested':saved.requested});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const {settings,bridge}=${services};bridge.runSync(settings.update({'welcome.dismissed':saved.dismissed,'welcome.requested':saved.requested}));await bridge.runPromise(settings.flush);await app.workspace.changeLayout(saved.layout);return true;})()`,
       );
     });
     const help = run.m.library_view_help_action();
@@ -977,7 +977,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEval(
         run.vaultId,
-        `JSON.stringify({dismissed:${services}.settings.current['welcome.dismissed'],requested:${services}.settings.current['welcome.requested'],action:!!${helpAction}})`,
+        `JSON.stringify({dismissed:${services}.bridge.runSync(${services}.settings.current)['welcome.dismissed'],requested:${services}.bridge.runSync(${services}.settings.current)['welcome.requested'],action:!!${helpAction}})`,
       ),
     ).toBe(JSON.stringify({ dismissed: true, requested: false, action: true }));
   });
@@ -986,13 +986,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,dismissed:${services}.settings.current['welcome.dismissed'],requested:${services}.settings.current['welcome.requested']})`,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.bridge.runSync(${services}.settings.current)['library.document']??null,dismissed:${services}.bridge.runSync(${services}.settings.current)['welcome.dismissed'],requested:${services}.bridge.runSync(${services}.settings.current)['welcome.requested']})`,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document,'welcome.dismissed':saved.dismissed,'welcome.requested':saved.requested});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':saved.document,'welcome.dismissed':saved.dismissed,'welcome.requested':saved.requested}));await bridge.runPromise(settings.flush);await app.workspace.changeLayout(saved.layout);return true;})()`,
       );
     });
     await suite.wideWindow(cleanup);
@@ -1020,7 +1020,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       stored: number | null;
       label: string | null;
     }
-    const readWidth = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.query)return 'null';await view.query.settled;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const el=view.contentEl;const card=el.querySelector('[data-library-card]');const edge=card.querySelector('[data-library-card-resizer]');const num=n=>Number(edge.getAttribute(n));return JSON.stringify({phase:view.query.state.getState().phase,shown:!card.hidden&&card.checkVisibility(),width:Math.round(card.getBoundingClientRect().width),list:Math.round(el.querySelector('[data-library-search-row]').parentElement.getBoundingClientRect().width),pane:Math.round(card.parentElement.parentElement.getBoundingClientRect().width),overlay:getComputedStyle(card).position==='absolute',now:num('aria-valuenow'),min:num('aria-valuemin'),max:num('aria-valuemax'),stored:${services}.settings.current['library.document']?.cardWidth??null,label:edge.getAttribute('aria-label')});})()`;
+    const readWidth = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.query)return 'null';await view.query.settled;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const el=view.contentEl;const card=el.querySelector('[data-library-card]');const edge=card.querySelector('[data-library-card-resizer]');const num=n=>Number(edge.getAttribute(n));return JSON.stringify({phase:view.query.state.getState().phase,shown:!card.hidden&&card.checkVisibility(),width:Math.round(card.getBoundingClientRect().width),list:Math.round(el.querySelector('[data-library-search-row]').parentElement.getBoundingClientRect().width),pane:Math.round(card.parentElement.parentElement.getBoundingClientRect().width),overlay:getComputedStyle(card).position==='absolute',now:num('aria-valuenow'),min:num('aria-valuemin'),max:num('aria-valuemax'),stored:${services}.bridge.runSync(${services}.settings.current)['library.document']?.cardWidth??null,label:edge.getAttribute('aria-label')});})()`;
     const widthWhen = (ready: (shown: CardWidth) => boolean) =>
       obReadUntil<CardWidth>(run.vaultId, readWidth, {
         ready,
@@ -1036,7 +1036,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // My Library with no width kept, and its first paper selected.
     await obEval(
       run.vaultId,
-      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)},'welcome.dismissed':true,'welcome.requested':false});await settings.flush();await app.commands.executeCommandById('zotlit:open-library-view');const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});const el=leaf.view.contentEl;const row=await until('rows',()=>el.querySelector('[data-query-item-row]'),20000);press(row,'first paper');await until('card',()=>{const card=el.querySelector('[data-library-card]');return !card.hidden&&card.checkVisibility();},5000);return true;})()`,
+      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)},'welcome.dismissed':true,'welcome.requested':false}));await bridge.runPromise(settings.flush);await app.commands.executeCommandById('zotlit:open-library-view');const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});const el=leaf.view.contentEl;const row=await until('rows',()=>el.querySelector('[data-query-item-row]'),20000);press(row,'first paper');await until('card',()=>{const card=el.querySelector('[data-library-card]');return !card.hidden&&card.checkVisibility();},5000);return true;})()`,
     );
     const first = await widthWhen((shown) => shown.shown);
     // The default 24rem, said on its edge, which names what it does.
@@ -1128,13 +1128,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,dismissed:${services}.settings.current['welcome.dismissed'],requested:${services}.settings.current['welcome.requested']})`,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.bridge.runSync(${services}.settings.current)['library.document']??null,dismissed:${services}.bridge.runSync(${services}.settings.current)['welcome.dismissed'],requested:${services}.bridge.runSync(${services}.settings.current)['welcome.requested']})`,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document,'welcome.dismissed':saved.dismissed,'welcome.requested':saved.requested});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':saved.document,'welcome.dismissed':saved.dismissed,'welcome.requested':saved.requested}));await bridge.runPromise(settings.flush);await app.workspace.changeLayout(saved.layout);return true;})()`,
       );
     });
     await suite.wideWindow(cleanup);
@@ -1161,7 +1161,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       kept: string | null;
     }
     const view = `app.workspace.getLeavesOfType('zotlit-library')[0]?.view`;
-    const readClosed = `(async()=>{const view=${view};if(!view?.query)return 'null';await view.query.settled;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const el=view.contentEl;const card=el.querySelector('[data-library-card]');const doc=${services}.settings.current['library.document'];return JSON.stringify({phase:view.query.state.getState().phase,shown:!card.hidden&&card.checkVisibility(),width:Math.round(card.getBoundingClientRect().width),list:Math.round(el.querySelector('[data-library-search-row]').parentElement.getBoundingClientRect().width),selected:view.selection.getState().key,focused:activeDocument.activeElement?.getAttribute('data-query-item-row')??null,stored:doc?.cardWidth??null,closed:doc?.cardClosed??null,kept:doc?.selected??null});})()`;
+    const readClosed = `(async()=>{const view=${view};if(!view?.query)return 'null';await view.query.settled;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const el=view.contentEl;const card=el.querySelector('[data-library-card]');const doc=${services}.bridge.runSync(${services}.settings.current)['library.document'];return JSON.stringify({phase:view.query.state.getState().phase,shown:!card.hidden&&card.checkVisibility(),width:Math.round(card.getBoundingClientRect().width),list:Math.round(el.querySelector('[data-library-search-row]').parentElement.getBoundingClientRect().width),selected:view.selection.getState().key,focused:activeDocument.activeElement?.getAttribute('data-query-item-row')??null,stored:doc?.cardWidth??null,closed:doc?.cardClosed??null,kept:doc?.selected??null});})()`;
     const closedWhen = (ready: (shown: CardClosed) => boolean) =>
       obReadUntil<CardClosed>(run.vaultId, readClosed, {
         ready,
@@ -1194,7 +1194,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // My Library with the card 400px wide, and its first paper selected.
     await obEval(
       run.vaultId,
-      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify({ ...MY_LIBRARY_DOCUMENT, cardWidth: 400 })},'welcome.dismissed':true,'welcome.requested':false});await settings.flush();await app.commands.executeCommandById('zotlit:open-library-view');const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});const el=leaf.view.contentEl;const row=await until('rows',()=>el.querySelector('[data-query-item-row]'),20000);press(row,'first paper');await until('card',()=>{const card=el.querySelector('[data-library-card]');return !card.hidden&&card.checkVisibility();},5000);return true;})()`,
+      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':${JSON.stringify({ ...MY_LIBRARY_DOCUMENT, cardWidth: 400 })},'welcome.dismissed':true,'welcome.requested':false}));await bridge.runPromise(settings.flush);await app.commands.executeCommandById('zotlit:open-library-view');const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});const el=leaf.view.contentEl;const row=await until('rows',()=>el.querySelector('[data-query-item-row]'),20000);press(row,'first paper');await until('card',()=>{const card=el.querySelector('[data-library-card]');return !card.hidden&&card.checkVisibility();},5000);return true;})()`,
     );
     const first = await rowKey(0);
     const second = await rowKey(1);
@@ -1289,20 +1289,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     const stored = await obEval(
       run.vaultId,
-      "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['library.document'])",
+      "JSON.stringify(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['library.document'])",
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         run.vaultId,
-        `(async()=>{const settings=app.plugins.plugins.zotlit.services.settings;settings.update({'library.document':${stored}});await settings.flush();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        `(async()=>{const {settings,bridge}=app.plugins.plugins.zotlit.services;bridge.runSync(settings.update({'library.document':${stored}}));await bridge.runPromise(settings.flush);await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
       );
     });
     // My Library on the Papers Layout, which a new Library View opens on
     // (the Recent case checks that default).
     await obEval(
       run.vaultId,
-      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=app.plugins.plugins.zotlit.services.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}});await settings.flush();return true;})()`,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const {settings,bridge}=app.plugins.plugins.zotlit.services;bridge.runSync(settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}}));await bridge.runPromise(settings.flush);return true;})()`,
     );
 
     /** What the Library View shows once its query settled, or `null` while no tab holds it. */
@@ -1542,20 +1542,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null})`,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.bridge.runSync(${services}.settings.current)['library.document']??null})`,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':saved.document}));await bridge.runPromise(settings.flush);await app.workspace.changeLayout(saved.layout);return true;})()`,
       );
     });
     // My Library: more papers than the pane holds.
     await suite.wideWindow(cleanup);
     await obEval(
       run.vaultId,
-      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}});await settings.flush();app.commands.executeCommandById('zotlit:open-library-view');await until('library',()=>app.workspace.getLeavesOfType('zotlit-library')[0]);return true;})()`,
+      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}}));await bridge.runPromise(settings.flush);app.commands.executeCommandById('zotlit:open-library-view');await until('library',()=>app.workspace.getLeavesOfType('zotlit-library')[0]);return true;})()`,
     );
 
     interface Pane {
@@ -1610,13 +1610,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const path = "query-files/Expanding.zotquery";
     const snapshot = await obEval(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null})`,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.bridge.runSync(${services}.settings.current)['library.document']??null})`,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();await app.workspace.changeLayout(saved.layout);const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':saved.document}));await bridge.runPromise(settings.flush);await app.workspace.changeLayout(saved.layout);const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
       );
     });
     await suite.wideWindow(cleanup);
@@ -1726,7 +1726,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The Library View in a tab, on Papers.
     await obEval(
       run.vaultId,
-      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}});await settings.flush();app.commands.executeCommandById('zotlit:open-library-view');await until('library',()=>app.workspace.getLeavesOfType('zotlit-library')[0],10000);return true;})()`,
+      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}}));await bridge.runPromise(settings.flush);app.commands.executeCommandById('zotlit:open-library-view');await until('library',()=>app.workspace.getLeavesOfType('zotlit-library')[0],10000);return true;})()`,
     );
     const library = "app.workspace.getLeavesOfType('zotlit-library')[0].view";
     const papersRow = "li[data-query-papers-row]";

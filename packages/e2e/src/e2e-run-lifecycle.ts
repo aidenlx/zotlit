@@ -39,23 +39,23 @@ async function bootstrap(): Promise<void> {
   const serverPort = await availableLoopbackPort();
   await obEval(
     run.vaultId,
-    `app.plugins.plugins.zotlit.services.settings.update({'server.enabled':false,'server.port':${serverPort}});true`,
+    `app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'server.enabled':false,'server.port':${serverPort}}));true`,
   );
   expect(
     await obEvalUntil(
       run.vaultId,
-      `String(!app.plugins.plugins.zotlit.services.localServer.available&&app.plugins.plugins.zotlit.services.settings.current['server.port']===${serverPort})`,
+      `String(!app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.localServer.available)&&app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['server.port']===${serverPort})`,
       { expected: "true" },
     ),
   ).toBe(true);
   await obEval(
     run.vaultId,
-    "app.plugins.plugins.zotlit.services.settings.update({'server.enabled':true});true",
+    "app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'server.enabled':true}));true",
   );
   expect(
     await obEvalUntil(
       run.vaultId,
-      `String(app.plugins.plugins.zotlit.services.localServer.available&&app.plugins.plugins.zotlit.services.settings.current['server.port']===${serverPort})`,
+      `String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.localServer.available)&&app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['server.port']===${serverPort})`,
       { expected: "true" },
     ),
   ).toBe(true);

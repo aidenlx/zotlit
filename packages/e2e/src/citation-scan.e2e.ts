@@ -26,10 +26,10 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
         const services=app.plugins.plugins.zotlit.services;
         const layout=app.workspace.getLayout();
         cleanup.defer(()=>app.workspace.changeLayout(layout));
-        const settings=services.settings.current;
+        const settings=services.bridge.runSync(services.settings.current);
         const keys=['citation.pandoc-citations','citation.wikilink-citations','citation.annotation-citations','attachment.import'];
-        cleanup.defer(()=>services.settings.update(Object.fromEntries(keys.map(key=>[key,settings[key]]))));
-        services.settings.update(Object.fromEntries(keys.map(key=>[key,key!=='attachment.import'])));
+        cleanup.defer(()=>services.bridge.runSync(services.settings.update(Object.fromEntries(keys.map(key=>[key,settings[key]])))));
+        services.bridge.runSync(services.settings.update(Object.fromEntries(keys.map(key=>[key,key!=='attachment.import']))));
         const profilePath=services.profile.defaultDocumentPath;
         const existing=app.vault.getFileByPath(profilePath);
         const original=existing?await app.vault.read(existing):services.profile.getBuiltInSource();

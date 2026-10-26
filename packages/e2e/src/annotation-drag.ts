@@ -18,7 +18,7 @@ export async function verifyAnnotationDrag(
       s.original=services.noteFeature.prepareAnnotationInsert;
       s.link=app.fileManager.generateMarkdownLink;
       app.fileManager.generateMarkdownLink=function(file,...args){if(file.name?.startsWith('zotlit-excerpt-')&&!app.vault.getFileByPath(file.path))throw new Error('Excerpt link rendered before vault registration');return s.link.call(this,file,...args);};
-      s.importEnabled=services.settings.current['attachment.import'];services.settings.update({'attachment.import':true});
+      s.importEnabled=services.bridge.runSync(services.settings.current)['attachment.import'];services.bridge.runSync(services.settings.update({'attachment.import':true}));
       const file=app.vault.getFileByPath('Drag-${sourceHost}-${targetHost}.md')??await app.vault.create('Drag-${sourceHost}-${targetHost}.md','LEFT RIGHT');s.file=file;
       s.targetLeaf=app.workspace.getLeaf('tab');await s.targetLeaf.openFile(file);${targetHost === "popout" ? "app.workspace.moveLeafToPopout(s.targetLeaf);" : ""}
       s.editor=s.targetLeaf.view.editor;s.editor.setValue('LEFT RIGHT');
@@ -179,7 +179,7 @@ export async function verifyAnnotationDrag(
   } finally {
     await obEval(
       vaultId,
-      `(async()=>{const s=${state};if(!s)return true;try{s.release?.();if(s.original)s.services.noteFeature.prepareAnnotationInsert=s.original;if(s.link)app.fileManager.generateMarkdownLink=s.link;if(s.editor?.cm&&s.posAtCoords)s.editor.cm.posAtCoords=s.posAtCoords;if(s.importEnabled!==undefined)s.services.settings.update({'attachment.import':s.importEnabled});}finally{try{if(s.layout)await app.workspace.changeLayout(s.layout);}finally{delete app.__zotlitDragTrial;}}return true;})()`,
+      `(async()=>{const s=${state};if(!s)return true;try{s.release?.();if(s.original)s.services.noteFeature.prepareAnnotationInsert=s.original;if(s.link)app.fileManager.generateMarkdownLink=s.link;if(s.editor?.cm&&s.posAtCoords)s.editor.cm.posAtCoords=s.posAtCoords;if(s.importEnabled!==undefined)s.services.bridge.runSync(s.services.settings.update({'attachment.import':s.importEnabled}));}finally{try{if(s.layout)await app.workspace.changeLayout(s.layout);}finally{delete app.__zotlitDragTrial;}}return true;})()`,
     );
   }
 }
