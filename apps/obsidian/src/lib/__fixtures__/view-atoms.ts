@@ -1,11 +1,12 @@
 // The view services a test host leaves unread, so its registry context is
 // whole. Each member dies when called.
-import { Effect, Layer } from "effect";
+import { Effect, FileSystem, Layer } from "effect";
 import type { Context } from "effect";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Notifier } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
+import { FileManager } from "@/lib/obsidian-file-manager";
 import { makeViewRegistry } from "@/lib/view-atoms";
 import type { ViewServices } from "@/lib/view-atoms";
 import { CapabilityNotices } from "@/services/annotation-repository/notices";
@@ -47,6 +48,11 @@ export const layerUnreadViewServices = Layer.mergeAll(
   Layer.mock(LocalServer, {}),
   Layer.mock(CitationIndex, {}),
   Layer.mock(CitationLookup, {}),
+  Layer.mock(FileManager, {}),
+  Layer.succeed(
+    FileSystem.FileSystem,
+    stubService<FileSystem.FileSystem>("FileSystem", {}),
+  ),
   Layer.mock(
     ObsidianEnv,
     stubService<ObsidianEnv["Service"]>("ObsidianEnv", {}),

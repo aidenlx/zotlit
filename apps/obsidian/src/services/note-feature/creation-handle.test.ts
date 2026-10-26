@@ -13,6 +13,7 @@ import { effectBridge } from "@/lib/effect-bridge";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
 
 import { bindNoteCreation } from "./creation-handle";
 import type { NoteCreationServices } from "./creation-handle";
@@ -25,6 +26,7 @@ const FILE = Object.assign(new TFile(), { path: "Literature/Paper.md" });
 function handleOver(planCreations: NoteFeature["Service"]["planCreations"]) {
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
+      unimplementedProfileDialogServices,
       Layer.mock(NoteFeature, {
         planCreations,
         createNote: () => Effect.succeed({ outcome: "created", file: FILE }),

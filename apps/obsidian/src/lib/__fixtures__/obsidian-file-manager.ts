@@ -1,7 +1,7 @@
 // An in-memory file manager for tests. The test drives it; the tag's own layer
 // runs over it (`layerFileManagerFrom`, or `layerHostApp` from
 // ./obsidian-host-app). It copies the shape of ./obsidian-metadata-cache.
-import type { TFile } from "obsidian";
+import type { TAbstractFile, TFile } from "obsidian";
 
 import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { Effect } from "effect";
@@ -23,7 +23,7 @@ export class MemoryFileManager implements FileManagerSource {
   readonly frontmatter = new Map<string, Record<string, unknown>>();
   /** Every rename, in call order. */
   readonly renames: { from: string; to: string }[] = [];
-  /** The next `processFrontMatter` or `renameFile` rejects with this. */
+  /** The next `processFrontMatter`, `renameFile` or `trashFile` rejects with this. */
   failNext: unknown = undefined;
 
   #reject(): Promise<never> | undefined {
@@ -69,6 +69,14 @@ export class MemoryFileManager implements FileManagerSource {
   /** The attachment's name at the vault root, as Obsidian's default setting. */
   async getAvailablePathForAttachment(filename: string): Promise<string> {
     return filename;
+  }
+
+  /** Every file moved to the trash, in call order. */
+  readonly trashed: TAbstractFile[] = [];
+
+  async trashFile(file: TAbstractFile): Promise<void> {
+    await this.#reject();
+    this.trashed.push(file);
   }
 }
 

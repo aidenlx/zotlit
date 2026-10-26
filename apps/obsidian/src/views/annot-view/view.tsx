@@ -8,6 +8,7 @@ import type {
 import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 import type { AnnotViewAttachment } from "@zotlit/db";
 
+import { passAborted } from "@/lib/abort-error";
 import { registerMigratingWindowEvent } from "@/lib/disposables";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
@@ -277,7 +278,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
         onPinItem: () => this.#pickItemToPin(),
         onUnpin: () => this.#unpin(),
         onEnableLiveUpdates: () => this.#enableLiveUpdates(),
-        onOpenPdf: () => void this.#openPdf(),
+        onOpenPdf: () => void this.#openPdf().catch(passAborted),
         fillViewMenu: (menu) => this.#fillViewMenu(menu),
         onExploreAnnotation: (annotationKey) => {
           if (!this.#itemKey) return;

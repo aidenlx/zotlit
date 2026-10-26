@@ -13,6 +13,7 @@ import type { Editor, MarkdownFileInfo, PaneType, TFile } from "obsidian";
 import { itemSelectUri, parseIndexedKey } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
+import { AbortError } from "@/lib/abort-error";
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
@@ -47,7 +48,7 @@ export const libraryItemCommand = viewRuntime.fn(
     request.effect.pipe(
       Effect.onExit((exit) =>
         Effect.sync(() => {
-          if (Exit.isFailure(exit))
+          if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
             request.result.reject(Cause.squash(exit.cause));
           else request.result.resolve();
         }),
@@ -66,7 +67,11 @@ export const openLibraryTargetCommand = viewRuntime.fn(
       Effect.onExit((exit) =>
         Effect.sync(() => {
           if (Exit.isFailure(exit))
-            request.result.reject(Cause.squash(exit.cause));
+            request.result.reject(
+              Cause.hasInterruptsOnly(exit.cause)
+                ? new AbortError()
+                : Cause.squash(exit.cause),
+            );
           else request.result.resolve(exit.value);
         }),
       ),

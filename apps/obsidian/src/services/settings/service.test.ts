@@ -1679,6 +1679,43 @@ describe("PluginSettings persistence", () => {
   );
 
   it.effect(
+    "finishes the unload save when the runtime closes during it, and hands it over",
+    () =>
+      Effect.gen(function* () {
+        const plugin = new PluginStub();
+        const handoff = {};
+        const { service: before } = yield* makeService({ plugin, handoff });
+        yield* Effect.promise(() => before.loaded);
+        const started = Promise.withResolvers<void>();
+        let finishWrite!: () => void;
+        vi.spyOn(plugin, "saveData").mockImplementationOnce(
+          (data) =>
+            new Promise<void>((resolve) => {
+              started.resolve();
+              finishWrite = () => {
+                plugin.__data = data;
+                resolve();
+              };
+            }),
+        );
+        before.update({ "citation.at-trigger": true });
+        before.release();
+        yield* Effect.promise(() => started.promise);
+        let closed = false;
+        const closing = before.runtime.dispose().then(() => {
+          closed = true;
+        });
+        yield* Effect.yieldNow;
+        expect(closed).toBe(false);
+        finishWrite();
+        yield* Effect.promise(() => closing);
+        expect(plugin.__data).toMatchObject({ "citation.at-trigger": true });
+        const { service: after } = yield* makeService({ plugin, handoff });
+        expect(after.current?.["citation.at-trigger"]).toBe(true);
+      }),
+  );
+
+  it.effect(
     "hands the next instance a change made after the unload began, as a closing view saves its state",
     () =>
       Effect.gen(function* () {

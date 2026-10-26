@@ -1,6 +1,7 @@
 // The plugin's services that live in the Effect Layer graph, converted or bridged.
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { Layer } from "effect";
+import type { FileSystem } from "effect";
 import type { Plugin } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
@@ -20,6 +21,7 @@ import { layerVault } from "@/lib/obsidian-vault";
 import type { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
 import { layerWorkspace } from "@/lib/obsidian-workspace";
+import { openSettingsTab } from "@/lib/open-settings";
 import { layerPluginHost } from "@/lib/plugin-host";
 import { layerViewRegistry } from "@/lib/view-atoms";
 import type { ViewRegistry } from "@/lib/view-atoms";
@@ -27,6 +29,7 @@ import type { ZoteroHttp } from "@/lib/zotero-http";
 import { layerZoteroHttpNode } from "@/lib/zotero-http-node";
 import { layerAnnotationNoteActions } from "@/services/note-feature/view-actions";
 import { layerTemplateDataReads } from "@/services/template-workbench/data-reads";
+import { layerSettingTab } from "@/setting-tab/layer";
 import { openLibraryView } from "@/views/library/register";
 
 import { layerAnnotationLinkReading } from "./annotation-popover/reading";
@@ -39,6 +42,7 @@ import type {
 } from "./annotation-repository/notices";
 import { layerAnnotationRepository } from "./annotation-repository/service";
 import type { AnnotationRepository } from "./annotation-repository/service";
+import { layerAttachmentSkipNotice } from "./attachment-import/notices";
 import { layerAttachmentImport } from "./attachment-import/service";
 import type { AttachmentImport } from "./attachment-import/service";
 import { layerAttachmentResolver } from "./attachment-resolver/service";
@@ -71,6 +75,7 @@ import { layerExcerptPreparation } from "./excerpt-image/prepare";
 import type { ExcerptPreparation } from "./excerpt-image/prepare";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
 import { layerAnnotationImageCli } from "./excerpt-image/register-cli";
+import { layerExcerptRevalidation } from "./excerpt-image/revalidation";
 import type { ExcerptStore } from "./excerpt-image/store";
 import { layerGraphCitations } from "./graph-citations/service";
 import type { GraphCitations } from "./graph-citations/service";
@@ -90,6 +95,8 @@ import { layerLibraryScopeCli } from "./library-scope/cli";
 import { layerLibraryScopeNotices } from "./library-scope/notices";
 import { layerLibraryScope } from "./library-scope/service";
 import type { LibraryScope } from "./library-scope/service";
+import { layerCustomize } from "./local-bridge/customize";
+import type { Customize, CustomizePorts } from "./local-bridge/customize";
 import { layerLocalBridge } from "./local-bridge/service";
 import type { LocalBridge } from "./local-bridge/service";
 import { layerLocalServer } from "./local-server/service";
@@ -97,6 +104,7 @@ import type { LocalServer } from "./local-server/service";
 import { layerLogging, layerLogOutput } from "./log/service";
 import { layerManagedBinaryPlatform } from "./managed-binary/service";
 import type { InteractiveCreationPorts } from "./note-feature/creation-view";
+import { layerNoteFeatureNotices } from "./note-feature/notices";
 import { layerNoteFeature } from "./note-feature/service";
 import type { NoteFeature } from "./note-feature/service";
 import { layerNoteImporter } from "./note-import/service";
@@ -165,12 +173,15 @@ export function pluginLayer(
   {
     capabilityNotices,
     creation,
+    customize,
     excerpt,
     languagePack,
     protocol,
   }: {
     readonly capabilityNotices: CapabilityNoticePorts;
     readonly creation: InteractiveCreationPorts;
+    /** The launch sheet, the browser and the native editor Customize opens. */
+    readonly customize: CustomizePorts;
     /** The note import's modals and the Attachment opener the protocol handlers call. */
     readonly protocol: Pick<ProtocolDeps, "noteImportView" | "opener">;
     readonly excerpt: {
@@ -188,6 +199,7 @@ export function pluginLayer(
   | CapabilityNotices
   | AnnotationPopover
   | CitekeyEditor
+  | Customize
   | ItemLookup
   | QueryService
   | ExcerptDisplays
@@ -225,6 +237,7 @@ export function pluginLayer(
   | Workspace
   | MetadataCache
   | ObsidianEnv
+  | FileSystem.FileSystem
 > {
   // The file manager decides its outcomes from the vault's cache.
   const fileManager = layerFileManager.pipe(Layer.provide(layerVault));
@@ -360,6 +373,14 @@ export function pluginLayer(
   );
   const registrations = Layer.mergeAll(
     layerAnnotationImageCli.pipe(startingAs("AnnotationImageCli")),
+    layerAttachmentSkipNotice({
+      openSettings: () => {
+        openSettingsTab(plugin.app, plugin.manifest.id, [
+          "settings_page_attachments",
+          "settings_attachment_approved",
+        ]);
+      },
+    }).pipe(startingAs("AttachmentSkipNotice")),
     layerAnnotationLinkReading.pipe(startingAs("AnnotationLinkReading")),
     layerCitationsCli.pipe(startingAs("CitationsCli")),
     layerCitationStyleNotice.pipe(startingAs("CitationStyleNotice")),
@@ -369,10 +390,12 @@ export function pluginLayer(
     layerCitekeyEditorNotices.pipe(startingAs("CitekeyEditorNotices")),
     layerCitekeyReading.pipe(startingAs("CitekeyReading")),
     layerDatabaseActions.pipe(startingAs("DatabaseActions")),
+    layerExcerptRevalidation.pipe(startingAs("ExcerptRevalidation")),
     layerGraphCitations.pipe(startingAs("GraphCitations")),
     layerLanguagePackNotices.pipe(startingAs("LanguagePackNotices")),
     layerLibraryScopeCli.pipe(startingAs("LibraryScopeCli")),
     layerLibraryScopeNotices.pipe(startingAs("LibraryScopeNotices")),
+    layerNoteFeatureNotices.pipe(startingAs("NoteFeatureNotices")),
     layerPandocResolve.pipe(startingAs("PandocResolve")),
     layerProtocolHandlers({
       ...creation,
@@ -387,6 +410,9 @@ export function pluginLayer(
       ? layerQueryMeasureCli.pipe(startingAs("QueryMeasureCli"))
       : Layer.empty,
     layerReleaseActions.pipe(startingAs("ReleaseActions")),
+    layerSettingTab({ webWorkbenchEnabled: WEB_WORKBENCH_ENABLED }).pipe(
+      startingAs("SettingTab"),
+    ),
     layerTemplateWorkbenchCli.pipe(startingAs("TemplateWorkbenchCli")),
     layerViewRegistry.pipe(
       Layer.provide(
@@ -396,11 +422,18 @@ export function pluginLayer(
     ),
     layerWikilinkEditor.pipe(startingAs("WikilinkEditor")),
     layerWikilinkReading.pipe(startingAs("WikilinkReading")),
-  ).pipe(Layer.provide(Layer.mergeAll(layerPluginHost(plugin), obsidian)));
+  ).pipe(
+    Layer.provide(
+      Layer.mergeAll(layerPluginHost(plugin), obsidian, layerNotifier),
+    ),
+  );
   // The Note Feature plans creations through ZotLit Query, so it builds above
   // the other services. The citekey editor creates notes through it.
-  const noteFeature = layerCitekeyEditor(creation).pipe(
-    startingAs("CitekeyEditor"),
+  // Customize launches over the Local Bridge.
+  const noteFeature = Layer.mergeAll(
+    layerCitekeyEditor(creation).pipe(startingAs("CitekeyEditor")),
+    layerCustomize(customize).pipe(startingAs("Customize")),
+  ).pipe(
     Layer.provide(layerNotifier),
     Layer.provideMerge(
       layerNoteFeature.pipe(
@@ -409,12 +442,13 @@ export function pluginLayer(
       ),
     ),
   );
-  // The Node file system, once for the whole graph: the temp sweeps read it.
+  // The Node file system, once for the whole graph: the temp sweeps read it,
+  // and so do the Profile dialogs that callers outside the graph open.
   // The Notifier is the one the layers share: the setting tab's Language Pack
   // toast shows through it.
   return registrations.pipe(
     Layer.provideMerge(noteFeature),
-    Layer.provide(NodeFileSystem.layer),
+    Layer.provideMerge(NodeFileSystem.layer),
     Layer.merge(layerNotifier),
   );
 }

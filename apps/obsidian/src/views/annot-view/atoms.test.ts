@@ -2,6 +2,7 @@ import { expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 
+import { AbortError } from "@/lib/abort-error";
 import { CapabilityNotices } from "@/services/annotation-repository/notices";
 import type { AnnotationCitation } from "@/services/note-feature/annotation-citation";
 import type { AnnotationInsertRequest } from "@/services/note-feature/citations-handle";
@@ -299,6 +300,37 @@ it.effect("copies two card citations at the same time", () =>
   }),
 );
 
+it.effect(
+  "ends a pending citation with AbortError when the plugin unloads",
+  () =>
+    Effect.gen(function* () {
+      const started = Promise.withResolvers<void>();
+      const host = yield* Effect.acquireDisposable(
+        Effect.sync(() =>
+          makeAnnotHost({
+            notes: {
+              citation: () =>
+                Effect.gen(function* () {
+                  started.resolve();
+                  return yield* Effect.never;
+                }),
+            },
+          }),
+        ),
+      );
+      const answer = Promise.withResolvers<AnnotationCitation>();
+      const aborted = answer.promise.catch(AbortError.test);
+      host.registry.set(copyCitationCommand, {
+        key: "FIRSTAAA",
+        resolve: answer.resolve,
+        reject: answer.reject,
+      });
+      yield* Effect.promise(() => started.promise);
+      host.registry.dispose();
+      expect(yield* Effect.promise(() => aborted)).toBe(true);
+    }),
+);
+
 it.effect("prepares two captured inserts at the same time", () =>
   Effect.gen(function* () {
     const first = Promise.withResolvers<null>();
@@ -361,7 +393,7 @@ it.effect("interrupts an insert when its leaf releases the command", () =>
     const command = makePrepareInsertCommand();
     const release = host.registry.mount(command);
     const answer = Promise.withResolvers<AnnotationInsert | null>();
-    const result = answer.promise.catch(() => "cancelled");
+    const result = answer.promise.catch(AbortError.test);
     const signal = yield* Effect.abortSignal;
     host.registry.set(command, {
       input: insertInput("FIRSTAAA", signal),
@@ -371,7 +403,7 @@ it.effect("interrupts an insert when its leaf releases the command", () =>
     yield* Effect.promise(() => started.promise);
     release();
     yield* Effect.promise(() => cancelled.promise);
-    expect(yield* Effect.promise(() => result)).toBe("cancelled");
+    expect(yield* Effect.promise(() => result)).toBe(true);
   }),
 );
 

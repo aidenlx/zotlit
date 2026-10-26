@@ -5,6 +5,7 @@ import * as Atom from "effect/reactivity/Atom";
 
 import { isChildItemFields } from "@zotlit/db";
 
+import { AbortError } from "@/lib/abort-error";
 import { withLogCategory } from "@/lib/effect-log";
 import { itemSummary } from "@/lib/item-summary";
 import { viewRuntime } from "@/lib/view-atoms";
@@ -227,15 +228,17 @@ export const annotationWriteCommand = Atom.keepAlive(
           }
         }
       }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning(
-            "Annotation write failed",
-            Cause.squash(cause),
-          ).pipe(
-            Effect.as<readonly MutationState[]>([
-              { kind: "failed", failure: { kind: "unknown-outcome" } },
-            ]),
-          ),
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterruptsOnly(cause),
+          (cause) =>
+            Effect.logWarning(
+              "Annotation write failed",
+              Cause.squash(cause),
+            ).pipe(
+              Effect.as<readonly MutationState[]>([
+                { kind: "failed", failure: { kind: "unknown-outcome" } },
+              ]),
+            ),
         ),
         Effect.tap((states) => Effect.sync(() => request.complete(states))),
         withLogCategory("annot-view"),
@@ -383,7 +386,12 @@ export const copyCitationCommand = viewRuntime.fn(
       Effect.onExit((exit) =>
         Effect.sync(() => {
           if (exit._tag === "Success") request.resolve(exit.value);
-          else request.reject(plainTemplateError(Cause.squash(exit.cause)));
+          else
+            request.reject(
+              Cause.hasInterruptsOnly(exit.cause)
+                ? new AbortError()
+                : plainTemplateError(Cause.squash(exit.cause)),
+            );
         }),
       ),
     ),
@@ -422,7 +430,9 @@ export const makePrepareInsertCommand = () =>
               request.reject(
                 request.input.signal.aborted
                   ? request.input.signal.reason
-                  : plainTemplateError(Cause.squash(exit.cause)),
+                  : Cause.hasInterruptsOnly(exit.cause)
+                    ? new AbortError()
+                    : plainTemplateError(Cause.squash(exit.cause)),
               );
           }),
         ),

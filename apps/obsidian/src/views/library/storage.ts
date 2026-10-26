@@ -39,7 +39,8 @@ const flushDocumentCommand = viewRuntime.fn(
     PluginSettings.use((settings) => settings.flush).pipe(
       Effect.onExit((exit) =>
         Effect.sync(() => {
-          if (Exit.isFailure(exit)) result.reject(Cause.squash(exit.cause));
+          if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
+            result.reject(Cause.squash(exit.cause));
           else result.resolve();
         }),
       ),

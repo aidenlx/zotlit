@@ -20,8 +20,9 @@ import type { CitationPresentationChoice } from "./presentation";
 /** The styles Zotero has installed while one dialog is open. */
 const zotero = vi.hoisted(() => ({ styles: [] as InstalledCslStyle[] }));
 
-vi.mock("@/services/pandoc/styles", () => ({
-  listInstalledStyles: () => Promise.resolve(zotero.styles),
+vi.mock("@/services/pandoc/styles", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/services/pandoc/styles")>()),
+  listInstalledStylesOrNone: () => Promise.resolve(zotero.styles),
 }));
 
 const APA = { id: "http://www.zotero.org/styles/apa", title: "APA 7th" };

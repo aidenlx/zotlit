@@ -1,40 +1,61 @@
 import { Cause, Effect, Exit } from "effect";
 import type { ManagedRuntime, Stream } from "effect";
 
+import { effectBridge } from "@/lib/effect-bridge";
+import type { EffectBridge } from "@/lib/effect-bridge";
+
 import { plainTemplateError } from "./errors";
 import { TemplateMigration } from "./migration";
 import type { LiteratureNoteTemplateMigrationResult } from "./migration";
 import { Template } from "./service";
 import type { TemplateOperations, TemplateStatus } from "./service";
 
-export type PlainTemplate = TemplateOperations & {
+/** The Template members views, legacy services and e2e still read. */
+export type PlainTemplate = Omit<
+  TemplateOperations,
+  | "getUnrecognizedFiles"
+  | "restoreCitationTemplate"
+  | "deletePartial"
+  | "setJavascriptTemplatesEnabled"
+  | "renderFilename"
+  | "renderManagedContent"
+  | "renderProfileAnnotation"
+  | "getCitationTemplateStatus"
+  | "getReservedPartialFiles"
+> & {
   readonly changes: Stream.Stream<TemplateStatus>;
   readonly "compile-status-changed": Stream.Stream<void>;
   readonly status: TemplateStatus;
 };
 
+/**
+ * Runs `effect` on the bridge: the value, the failure's plain cause, or the
+ * unload's `AbortError`.
+ */
+function plainRun<A>(
+  bridge: Pick<EffectBridge, "runPromise">,
+  effect: Effect.Effect<A, unknown>,
+): Promise<A> {
+  return bridge.runPromise(effect).catch((error: unknown) => {
+    throw plainTemplateError(error);
+  });
+}
+
 export function plainTemplate(
   runtime: ManagedRuntime.ManagedRuntime<Template, never>,
 ): PlainTemplate {
   const service = runtime.runSync(Template.use(Effect.succeed));
-  // The layer owns pending operations. Retain its context for calls racing unload.
-  const context = runtime.runSync(Effect.context<never>());
-  const released = {
-    runSync: Effect.runSyncWith(context),
-    runPromiseExit: Effect.runPromiseExitWith(context),
-  };
+  // Unload stops a pending call, which then rejects with an `AbortError`; a
+  // write the layer started still finishes its step.
+  const bridge = effectBridge(runtime);
   const read = <A>(effect: Effect.Effect<A, unknown>): A => {
-    const exit = released.runSync(Effect.exit(effect));
+    const exit = bridge.runSync(Effect.exit(effect));
     if (Exit.isFailure(exit))
       throw plainTemplateError(Cause.squash(exit.cause));
     return exit.value;
   };
-  const run = async <A>(effect: Effect.Effect<A, unknown>): Promise<A> => {
-    const exit = await released.runPromiseExit(effect);
-    if (Exit.isFailure(exit))
-      throw plainTemplateError(Cause.squash(exit.cause));
-    return exit.value;
-  };
+  const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> =>
+    plainRun(bridge, effect);
   return {
     get status() {
       return read(service.status);
@@ -56,17 +77,12 @@ export function plainTemplate(
     get loaded() {
       return read(service.loaded);
     },
-    getUnrecognizedFiles: () => read(service.getUnrecognizedFiles),
     getTemplateFileStatuses: () => read(service.getTemplateFileStatuses),
-    getCitationTemplateStatus: () => read(service.getCitationTemplateStatus),
     materializeCitationTemplate: () => run(service.materializeCitationTemplate),
-    restoreCitationTemplate: () => run(service.restoreCitationTemplate),
     getLiteratureNoteTemplate: (reference) =>
       read(service.getLiteratureNoteTemplate(reference)),
     prepareLiteratureNoteTemplateSource: (source) =>
       read(service.prepareLiteratureNoteTemplateSource(source)),
-    renderProfileAnnotation: (data, options) =>
-      read(service.renderProfileAnnotation(data, options)),
     getLiteratureNoteTemplateStatuses: () =>
       read(service.getLiteratureNoteTemplateStatuses),
     renderLiteratureNoteTemplateSource: (source, data) =>
@@ -84,7 +100,6 @@ export function plainTemplate(
     evaluateFrontmatterFields: (fields, zt) =>
       read(service.evaluateFrontmatterFields(fields, zt)),
     render: (name, data) => read(service.render(name, data)),
-    renderManagedContent: (data) => read(service.renderManagedContent(data)),
     renderCitation: (refs, variant) =>
       read(service.renderCitation(refs, variant)),
     renderCitationData: (data) => read(service.renderCitationData(data)),
@@ -95,14 +110,11 @@ export function plainTemplate(
     planPartialUnpack: (bundled) => read(service.planPartialUnpack(bundled)),
     unpackPartials: (plan, options) =>
       run(service.unpackPartials(plan, options)),
-    getReservedPartialFiles: () => read(service.getReservedPartialFiles),
     createPartial: (name, options) => run(service.createPartial(name, options)),
-    deletePartial: (name) => run(service.deletePartial(name)),
     renderPartialSource: (source, data, options) =>
       read(service.renderPartialSource(source, data, options)),
     renderCitationSource: (source, data) =>
       read(service.renderCitationSource(source, data)),
-    renderFilename: (data) => read(service.renderFilename(data)),
     analyzeRootVariables: (name) => read(service.analyzeRootVariables(name)),
     getTemplateSource: (name) => run(service.getTemplateSource(name)),
     getLegacyLiteratureNoteTemplateFiles: () =>
@@ -114,8 +126,6 @@ export function plainTemplate(
       run(service.convertLegacyLiteratureNoteTemplates(data)),
     validateFrontmatterExpr: (expr, language) =>
       read(service.validateFrontmatterExpr(expr, language)),
-    setJavascriptTemplatesEnabled: (enabled) =>
-      run(service.setJavascriptTemplatesEnabled(enabled)),
     changes: service.changes,
     "compile-status-changed": service.compileEvents,
   };
@@ -133,15 +143,9 @@ export function plainTemplateMigration(
   runtime: ManagedRuntime.ManagedRuntime<TemplateMigration, never>,
 ): PlainTemplateMigration {
   const service = runtime.runSync(TemplateMigration.use(Effect.succeed));
-  const run = Effect.runPromiseExitWith(
-    runtime.runSync(Effect.context<never>()),
-  );
-  const execute = async <A>(effect: Effect.Effect<A, unknown>): Promise<A> => {
-    const exit = await run(effect);
-    if (Exit.isFailure(exit))
-      throw plainTemplateError(Cause.squash(exit.cause));
-    return exit.value;
-  };
+  const bridge = effectBridge(runtime);
+  const execute = <A>(effect: Effect.Effect<A, unknown>): Promise<A> =>
+    plainRun(bridge, effect);
   return {
     whenSettled: () => execute(service.whenSettled),
     convert: () => execute(service.convert),

@@ -9,6 +9,7 @@ import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { profileOver } from "@/services/profile/__fixtures__";
 import { plainProfile } from "@/services/profile/plain";
+import { Profile } from "@/services/profile/service";
 
 export async function profileServiceFixture(
   files: Record<string, string> = {},
@@ -23,6 +24,7 @@ export async function profileServiceFixture(
   const bridge = effectBridge(runtime);
   const template = plainTemplate(runtime);
   const profile = plainProfile(runtime);
+  const profileService = runtime.runSync(Profile);
   const libraryScope = await buildLibraryScope({ settings,
     reads: reads ?? ({
       reads: { Libraries: () => Effect.succeed([{ libraryID: 1, type: "user", version: 0, clientVersion: null, groupID: null, name: null }]) },
@@ -31,7 +33,7 @@ export async function profileServiceFixture(
   }, stack);
   const cleanup = stack.move();
   return {
-    runtime, bridge, app: host.app, vault: host.vault, settings, template, profile, libraryScope, host,
+    runtime, bridge, app: host.app, vault: host.vault, settings, template, profile, profileService, libraryScope, host,
     indexNotes: () => host.metadataCache.announceAll(),
     [Symbol.asyncDispose]: () => cleanup.disposeAsync(),
   };

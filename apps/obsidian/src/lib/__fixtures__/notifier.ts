@@ -1,5 +1,5 @@
 // An in-memory Notifier: records each notice in place of drawing it.
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Queue } from "effect";
 import { noticeFibers, Notifier } from "@/lib/notifier";
 import type { NoticeMessage } from "@/lib/notifier";
 
@@ -62,4 +62,24 @@ export function testNotifier() {
     /** The notices, with tracked notices on a FiberSet of the layer's Scope. */
     layer: Layer.effect(Notifier, noticeFibers(base)),
   };
+}
+
+/**
+ * The Notifier `service` as a layer that offers to `shown` after each notice
+ * it shows: the completion signal of a case that waits for a notice.
+ */
+export function layerSignalling(
+  service: Notifier["Service"],
+  shown: Queue.Queue<void>,
+): Layer.Layer<Notifier> {
+  return Layer.succeed(
+    Notifier,
+    Notifier.of({
+      ...service,
+      show: (message, options) =>
+        service
+          .show(message, options)
+          .pipe(Effect.tap(Queue.offer(shown, undefined))),
+    }),
+  );
 }

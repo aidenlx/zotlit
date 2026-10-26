@@ -11,7 +11,7 @@
 // stops once no leaf reads it.
 import { RegistryContext } from "@effect/atom-react";
 import { Context, Effect, Layer, Option } from "effect";
-import type { Stream } from "effect";
+import type { FileSystem, Stream } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
@@ -21,6 +21,7 @@ import type { ReactNode } from "react";
 import { scheduleBrowserTask } from "@/lib/browser-scheduler";
 import type { Notifier } from "@/lib/notifier";
 import type { ObsidianEnv } from "@/lib/obsidian-env";
+import type { FileManager } from "@/lib/obsidian-file-manager";
 import type { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
@@ -32,8 +33,8 @@ import type { ExcerptDisplays } from "@/services/excerpt-image/display";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { QueryService } from "@/services/item-query/service";
 import type { LibraryScope } from "@/services/library-scope/service";
-import type { NoteFeature } from "@/services/note-feature/service";
 import type { LocalServer } from "@/services/local-server/service";
+import type { NoteFeature } from "@/services/note-feature/service";
 import type { AnnotationNoteActions } from "@/services/note-feature/view-actions";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { Profile } from "@/services/profile/service";
@@ -60,6 +61,8 @@ export type ViewServices =
   | LocalServer
   | CitationIndex
   | CitationLookup
+  | FileManager
+  | FileSystem.FileSystem
   | ObsidianEnv
   | ItemLookup
   | NoteIndex

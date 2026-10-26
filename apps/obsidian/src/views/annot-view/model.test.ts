@@ -1,6 +1,4 @@
-import { describe, expect, it } from "vitest";
-
-import { yieldToMain } from "@/lib/yield-to-main";
+import { describe, expect, it, vi } from "vitest";
 
 import { makeAnnotHost } from "./__fixtures__/host";
 import {
@@ -63,7 +61,7 @@ describe("the Annotation View model", () => {
     registry.update(held.state, pinItem("ITEMAAAA"));
     registry.update(unheld.state, pinItem("ITEMAAAA"));
     // An unread atom is removed on a later task and drops its state.
-    await waitFor(() =>
+    await vi.waitFor(() =>
       expect(registry.getNodes().has(unheld.cards)).toBe(false),
     );
     expect(registry.get(unheld.state).pinnedItemKey).toBeNull();
@@ -72,16 +70,3 @@ describe("the Annotation View model", () => {
     release();
   });
 });
-
-/** Retries `assertion` across host turns until it holds. */
-async function waitFor(assertion: () => void): Promise<void> {
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      assertion();
-      return;
-    } catch (error) {
-      if (attempt === 999) throw error;
-      await yieldToMain();
-    }
-  }
-}

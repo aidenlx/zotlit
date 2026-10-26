@@ -7,6 +7,8 @@ import { Effect, Layer } from "effect";
 import type { Scope } from "effect";
 import type { App } from "obsidian";
 
+import { AbortError } from "@/lib/abort-error";
+import { scopedBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -38,11 +40,11 @@ export const layerCitationTemplateActions: Layer.Layer<
   Effect.gen(function* () {
     const host = yield* PluginHost;
     const template = yield* Template;
-    const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+    const bridge = yield* scopedBridge;
     yield* addCitationTemplateActions(host, {
       template: {
         materializeCitationTemplate: () =>
-          runPromise(template.materializeCitationTemplate),
+          bridge.runPromise(template.materializeCitationTemplate),
       },
     });
   }),
@@ -75,6 +77,7 @@ export async function openCitationTemplate(
     const file = await template.materializeCitationTemplate();
     await openTemplateWorkbench(app, file, { explainUnsupported: false });
   } catch (error) {
+    if (AbortError.test(error)) return;
     logger.error("Failed to open the citation text", { error });
     new BaseNotice(m.notice_citation_text_open_failed());
   }

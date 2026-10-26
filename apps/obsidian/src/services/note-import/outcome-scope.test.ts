@@ -30,8 +30,6 @@ import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw
 import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import type { MetadataCacheSource } from "@/lib/obsidian-metadata-cache";
-import type { VaultSource } from "@/lib/obsidian-vault";
 import { bluePng } from "@/services/excerpt-image/__fixtures__/png";
 import { PNG_FORMAT } from "@/services/excerpt-image/format";
 import type { ExcerptImage } from "@/services/excerpt-image/format";
@@ -162,7 +160,7 @@ async function setupFixture(
   /** Every scope the import writer handed to its excerpt preparation. */
   const scopes: (ExcerptOutcomeScope | undefined)[] = [];
   const fakes: ImporterFakes = {
-    vault: host.app.vault as unknown as VaultSource,
+    vault: host.app.vault,
     workspace: host.app.workspace,
     profile: profileReader(settings),
     noteIndex: {
@@ -189,7 +187,7 @@ async function setupFixture(
         resolve: (request, signal) => service.resolve(request, signal),
       },
       fileManager: app.fileManager,
-      metadataCache: app.metadataCache as unknown as MetadataCacheSource,
+      metadataCache: app.metadataCache,
     },
   };
   const { reads } = await stack.use(

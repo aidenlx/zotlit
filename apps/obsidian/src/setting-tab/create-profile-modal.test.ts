@@ -1,19 +1,22 @@
 // @vitest-environment happy-dom
 import { ButtonComponent, TextComponent, controlsOf } from "@mock/obsidian";
+import { Effect } from "effect";
+import { TFile } from "obsidian";
 import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
-import type { NoteTemplateContext } from "@zotlit/db";
-
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
 import type { ProfileId } from "@/lib/profile-stamp";
+import type { ProfileNoteDraft } from "@/services/note-feature/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { PreparedProfileCreation } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 
-import { CreateProfileModal } from "./profiles";
-import type { ProfileCreationData, ProfileCreationDeps } from "./profiles";
+import { CreateProfileModal } from "./create-profile-modal";
+import type { ProfileCreationDeps } from "./create-profile-modal";
 
 const id = "Bk3Qn7XvT2Lp" as ProfileId;
 function fixture() {
@@ -42,48 +45,29 @@ function fixture() {
     create,
   };
   const prepareCreate = vi.fn(async () => draft);
-  const preview = {
+  // The note write the dialog hands over; the dialog itself never runs it.
+  const writes = { count: 0 };
+  const preview: ProfileNoteDraft = {
     path: "Reading/Paper-7cx.md",
     properties: {
       "zotero-key": "ABCD2345",
       "zotlit-profile": "Reading (Bk3Qn7XvT2Lp)",
     },
     body: "# Paper\nDefault look marker.",
-    create: vi.fn(),
+    create: Effect.sync(() => {
+      writes.count += 1;
+      return { outcome: "created" as const, file: new TFile() };
+    }),
   };
   const reader = profileReader();
-  const deps = stubService<ProfileCreationDeps>("ProfileCreationDeps", {
+  const deps: ProfileCreationDeps = {
     app: stubService<App>("App", {}),
-    profile: stubService<ProfileCreationDeps["profile"]>("Profile", {
-      profiles: reader.profiles,
-      resolveProfile: reader.resolveProfile,
-      prepareCreate,
-    }),
-    template: stubService<ProfileCreationDeps["template"]>("Template", {
-      prepareLiteratureNoteTemplateSource: () =>
-        stubService<
-          ReturnType<
-            ProfileCreationDeps["template"]["prepareLiteratureNoteTemplateSource"]
-          >
-        >("TemplateDocument", {}),
-    }),
-    noteFeature: stubService<ProfileCreationDeps["noteFeature"]>(
-      "NoteFeatureHandle",
-      { prepareProfileNote: () => preview },
-    ),
-    zoteroPref: stubService<ProfileCreationDeps["zoteroPref"]>("ZoteroPref", {
-      dataDir: undefined,
-    }),
-    loadData: async () => null,
-  });
-  return { deps, draft, create, prepareCreate, preview };
-}
-
-function previewData(): ProfileCreationData {
-  return {
-    note: stubService<NoteTemplateContext>("NoteTemplateContext", {}),
-    filename: {},
+    base: reader.resolveProfile("default")!,
+    profiles: reader.profiles,
+    prepareCreate,
+    previewNote: async () => preview,
   };
+  return { deps, draft, create, prepareCreate, preview, writes };
 }
 
 it("shows the preview while asking for a name, refuses a colliding label, then enables a name with no other difference", async () => {
@@ -105,10 +89,7 @@ it("shows the preview while asking for a name, refuses a colliding label, then e
     ...inheritsAll,
     constraint: { kind: "invalid-name", message: "ASK_FOR_NAME" },
   });
-  const modal = new CreateProfileModal(f.deps, {
-    data: previewData(),
-    styles: [],
-  });
+  const modal = new CreateProfileModal(f.deps, { styles: [] });
   modal.contentEl = document.createElement("div");
   modal.onOpen();
   const status = () => modal.contentEl.querySelector('[role="status"]')!;
@@ -169,11 +150,7 @@ it.each([false, true])(
         return button instanceof ButtonComponent && button.text === saveLabel;
       })?.[0];
     const f = fixture();
-    const modal = new CreateProfileModal(f.deps, {
-      data: previewData(),
-      styles: [],
-      useForNote,
-    });
+    const modal = new CreateProfileModal(f.deps, { styles: [], useForNote });
     modal.contentEl = document.createElement("div");
     modal.onOpen();
     await vi.waitFor(() => expect(saveDisabled()).toBe(false));
@@ -186,7 +163,7 @@ it.each([false, true])(
       preview: f.preview,
     });
     expect(f.create).toHaveBeenCalledOnce();
-    expect(f.preview.create).not.toHaveBeenCalled();
+    expect(f.writes.count).toBe(0);
     // The created Profile is handed to the caller's operation alone; besides
     // Cancel, the dialog offers no action that keeps it for a later note.
     expect(
@@ -199,3 +176,35 @@ it.each([false, true])(
     ).toEqual([m.modal_cancel()]);
   },
 );
+
+it("says nothing when the dialog's Scope stops the save", async () => {
+  using label = vi.spyOn(ButtonComponent.prototype, "setButtonText");
+  using disabled = vi.spyOn(ButtonComponent.prototype, "setDisabled");
+  using failed = vi.spyOn(getLogger(["setting-tab", "profiles"]), "error");
+  const saveDisabled = () =>
+    disabled.mock.calls.findLast((_, index) => {
+      const button = disabled.mock.instances[index];
+      return (
+        button instanceof ButtonComponent &&
+        button.text === m.settings_profile_add()
+      );
+    })?.[0];
+  const f = fixture();
+  f.create.mockRejectedValueOnce(new AbortError());
+  const modal = new CreateProfileModal(f.deps, { styles: [] });
+  modal.contentEl = document.createElement("div");
+  modal.onOpen();
+  await vi.waitFor(() => expect(saveDisabled()).toBe(false));
+  label.mock.instances
+    .filter((button) => button instanceof ButtonComponent)
+    .find((button) => button.text === m.settings_profile_add())!
+    .click();
+  await vi.waitFor(() => expect(f.create).toHaveBeenCalledOnce());
+  // The modal waited on the save first, so its catch has run once this one
+  // does.
+  await f.create.mock.results[0]!.value.catch(() => {});
+  expect(failed).not.toHaveBeenCalled();
+  expect(modal.contentEl.querySelector('[role="status"]')!.textContent).toBe(
+    "",
+  );
+});

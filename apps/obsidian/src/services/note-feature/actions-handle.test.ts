@@ -20,6 +20,7 @@ import { PluginSettings } from "@/services/settings/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
+import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
 
 import { bindNoteActions } from "./actions-handle";
 import type { NoteActionServices } from "./actions-view";
@@ -35,6 +36,7 @@ function actionsOver(updateNote: NoteFeature["Service"]["updateNote"]) {
   const notifier = testNotifier();
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
+      unimplementedProfileDialogServices,
       Layer.mock(NoteFeature, { updateNote }),
       notifier.layer,
       Layer.mock(LibraryScope, {}),

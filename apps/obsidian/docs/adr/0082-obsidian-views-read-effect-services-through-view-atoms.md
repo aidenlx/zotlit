@@ -41,6 +41,8 @@ Each of these broke the first migrations.
 
 - **Scheduler.** `makeViewRegistry` schedules atom work with `scheduleBrowserTask` (`src/lib/browser-scheduler.ts`). React's `scheduleTask` from `@effect/atom-react` picks `setImmediate` in Electron and can starve the renderer.
 - **Commands run while held.** A `viewRuntime.fn` command runs only while its atom is mounted: the view holds it with `registry.mount` and calls it with `registry.set`. A command one leaf owns is made per leaf; a shared command started from a second leaf interrupts the first leaf's run.
+- **Concurrent commands.** A new run of a `viewRuntime.fn` command interrupts the last one. Give a command `{ concurrent: true }` when several callers run it at the same time, such as two React copies of one pane or one call per row, and keep latest-wins where a new request replaces the old one. A test of a concurrent command runs two calls at once.
+- **Family keys.** `Atom.family` hashes an object key by structure. Key a family by a string, such as a file's path, and resolve the object inside the atom: a `TFile` links to its folder and back, and hashing it overflows the stack.
 - **Writable atoms live while held.** An unmounted writable atom drops its state. A view holds its model from the constructor, because Obsidian calls `setState` before `onOpen`, and again with `??=` in `onOpen` after a close.
 - **Failure before the previous value.** `AsyncResult.value` returns the previous success from a Failure. Check `AsyncResult.isFailure` first when a failed read must show.
 - **Interruptible reads.** `Effect.tryPromise` interrupts its Promise only when the try function takes the `signal` parameter. A test fake that ignores the signal holds a shared permit after its leaf closes.
