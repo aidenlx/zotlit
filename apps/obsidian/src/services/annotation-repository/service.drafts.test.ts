@@ -1,6 +1,6 @@
 // The Annotation Repository's drafts: comment, Quoted Text and tag drafts, their autosave, and how reads reconcile them.
 import { it } from "@effect/vitest";
-import { Effect, Exit, Fiber } from "effect";
+import { Deferred, Effect, Exit, Fiber } from "effect";
 import { expect, vi } from "vitest";
 
 import { AbortError } from "@/lib/abort-error";
@@ -36,13 +36,32 @@ import {
   writable,
   zoteroLibrary,
   colorOf,
+  collect,
   eventually,
   settledDraft,
   scopedStack,
   zoteroTagging,
   TAGGED,
 } from "./__fixtures__";
-import type { AnnotationList } from "./service";
+import type { AnnotationList, AnnotationRepository } from "./service";
+
+/** The first Annotation an announcement shows `hidden` or `gone`. */
+const firstAnnotation = Effect.fnUntraced(function* (
+  service: AnnotationRepository["Service"],
+  flag: "hidden" | "gone",
+) {
+  const found = yield* Deferred.make<string>();
+  yield* collect(service.annotationChanged, (key) =>
+    service
+      .annotationState(key)
+      .pipe(
+        Effect.andThen((state) =>
+          state[flag] ? Deferred.succeed(found, key) : Effect.void,
+        ),
+      ),
+  );
+  return found;
+});
 
 it.effect(
   "names comment drafts by Zotero database as well as Annotation key",
@@ -86,18 +105,19 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       const zotero = zoteroLibrary();
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, zotero.answers),
       );
       const seen: { mutation: string; comment: string | null }[] = [];
-      stack.defer(
-        repository.listen("annotation-changed", (key) => {
-          const state = repository.annotationState(key);
-          seen.push({
-            mutation: state.mutation.kind,
-            comment: state.textDrafts.comment?.text ?? null,
-          });
-        }),
+      yield* collect(service.annotationChanged, (key) =>
+        service.annotationState(key).pipe(
+          Effect.map((state) =>
+            seen.push({
+              mutation: state.mutation.kind,
+              comment: state.textDrafts.comment?.text ?? null,
+            }),
+          ),
+        ),
       );
       const release = zotero.holdWrites();
 
@@ -127,15 +147,15 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       const zotero = zoteroLibrary();
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, zotero.answers),
       );
       yield* service.editTextField("comment", "K3JRFLFQ", "Worth citing");
       const announced: string[] = [];
-      stack.defer(
-        repository.listen("annotation-changed", (key) => {
-          if (repository.annotationState(key).gone) announced.push(key);
-        }),
+      yield* collect(service.annotationChanged, (key) =>
+        service
+          .annotationState(key)
+          .pipe(Effect.map(({ gone }) => gone && announced.push(key))),
       );
 
       zotero.eraseInZotero("PUPR5FG5");
@@ -284,13 +304,7 @@ it.effect("hides an old database draft and cancels its save schedule", () =>
     );
     yield* service.editTextField("comment", "PUPR5FG5", "First database");
     yield* adjustLayerClock("500 millis");
-    const hidden = new Promise<string>((resolve) => {
-      stack.defer(
-        repository.listen("annotation-changed", (key) => {
-          if (repository.annotationState(key).hidden) resolve(key);
-        }),
-      );
-    });
+    const hidden = yield* firstAnnotation(service, "hidden");
 
     answering = false;
     const lost = nextChange(repository);
@@ -302,7 +316,7 @@ it.effect("hides an old database draft and cancels its save schedule", () =>
     );
     dbEvents.emit("changed");
     yield* service.read("RGRPDF24");
-    expect(yield* Effect.promise(() => hidden)).toBe("PUPR5FG5");
+    expect(yield* Deferred.await(hidden)).toBe("PUPR5FG5");
 
     answering = true;
     prefEvents.emit("resolved-changed");
@@ -1274,24 +1288,18 @@ it.effect("discards a draft only when its own source confirms deletion", () =>
   Effect.gen(function* () {
     const stack = yield* scopedStack;
     let records = ROUGIER_ANNOTATIONS;
-    const { service, repository } = yield* Effect.promise(() =>
+    const { service } = yield* Effect.promise(() =>
       writable(stack, {
         children: () => annotationPage(records),
       }),
     );
     yield* service.editTextField("comment", "PUPR5FG5", "Unsaved");
-    const deleted = new Promise<string>((resolve) => {
-      stack.defer(
-        repository.listen("annotation-changed", (key) => {
-          if (repository.annotationState(key).gone) resolve(key);
-        }),
-      );
-    });
+    const deleted = yield* firstAnnotation(service, "gone");
     records = records.filter(({ key }) => key !== "PUPR5FG5");
 
     yield* service.refresh("RGRPDF24");
 
-    expect(yield* Effect.promise(() => deleted)).toBe("PUPR5FG5");
+    expect(yield* Deferred.await(deleted)).toBe("PUPR5FG5");
     expect(yield* service.textDraftFor("comment", "PUPR5FG5")).toBeNull();
   }),
 );
@@ -1321,13 +1329,7 @@ it.effect(
         "PUPR5FG5",
         "Never recreate this annotation",
       );
-      const deleted = new Promise<string>((resolve) => {
-        stack.defer(
-          repository.listen("annotation-changed", (key) => {
-            if (repository.annotationState(key).gone) resolve(key);
-          }),
-        );
-      });
+      const deleted = yield* firstAnnotation(service, "gone");
 
       answering = false;
       const lost = nextChange(repository);
@@ -1341,7 +1343,7 @@ it.effect(
       dbEvents.emit("changed");
 
       const list = yield* service.read("RGRPDF24");
-      expect(yield* Effect.promise(() => deleted)).toBe("PUPR5FG5");
+      expect(yield* Deferred.await(deleted)).toBe("PUPR5FG5");
       yield* adjustLayerClock("20 seconds");
 
       expect(list?.source).toMatchObject({
@@ -1384,7 +1386,7 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       const answer = Promise.withResolvers<Response>();
-      const { service, repository } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, {
           write: () => answer.promise,
           item: () =>
@@ -1397,10 +1399,12 @@ it.effect(
         list?.annotations.find(({ key }) => key === "PUPR5FG5")?.comment ??
         null;
       const drawn: (string | null)[] = [];
-      stack.defer(
-        repository.listen("annotations-changed", (key) => {
-          drawn.push(commentOf(repository.peek(key)?.value ?? null));
-        }),
+      yield* collect(service.annotationsChanged, (key) =>
+        service
+          .peek(key)
+          .pipe(
+            Effect.map((list) => drawn.push(commentOf(list?.value ?? null))),
+          ),
       );
       const before = commentOf(
         (yield* service.peek("RGRPDF24"))?.value ?? null,
@@ -1654,8 +1658,8 @@ it.effect("draws nothing while an automatic comment save is in flight", () =>
     yield* service.editTextField("comment", "PUPR5FG5", "typed");
     const resting = drawn();
     const frames: unknown[] = [];
-    stack.defer(
-      repository.listen("annotation-changed", () => frames.push(drawn())),
+    yield* collect(service.annotationChanged, () =>
+      Effect.sync(() => frames.push(drawn())),
     );
 
     yield* adjustLayerClock("1 second");
@@ -1834,11 +1838,13 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
-      const { service, repository } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, zotero.answers),
       );
       let conflicts = 0;
-      stack.defer(repository.listen("write-conflict", () => (conflicts += 1)));
+      yield* collect(service.writeConflicts, () =>
+        Effect.sync(() => (conflicts += 1)),
+      );
 
       yield* service.editTags("PUPR5FG5", ["review", "nlp", "figure"]);
       // Zotero moves under the session, and ZotLit has not read it yet.
@@ -1865,12 +1871,12 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
-      const { service, repository } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, zotero.answers),
       );
       const announced: string[] = [];
-      stack.defer(
-        repository.listen("annotation-changed", (key) => announced.push(key)),
+      yield* collect(service.annotationChanged, (key) =>
+        Effect.sync(() => announced.push(key)),
       );
 
       // The Mark Popup starts the session; the card opens onto the same draft.
@@ -1900,11 +1906,13 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
-      const { service, repository, adjustLayerClock } = yield* Effect.promise(
-        () => writable(stack, zotero.answers),
+      const { service, adjustLayerClock } = yield* Effect.promise(() =>
+        writable(stack, zotero.answers),
       );
       let conflicts = 0;
-      stack.defer(repository.listen("write-conflict", () => (conflicts += 1)));
+      yield* collect(service.writeConflicts, () =>
+        Effect.sync(() => (conflicts += 1)),
+      );
 
       // Both editors are open on one Annotation; the tag session ends first.
       yield* service.editTextField("comment", "PUPR5FG5", "Worth citing");
@@ -1980,11 +1988,13 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
-      const { service, repository, requests } = yield* Effect.promise(() =>
+      const { service, requests } = yield* Effect.promise(() =>
         writable(stack, zotero.answers),
       );
       let conflicts = 0;
-      stack.defer(repository.listen("write-conflict", () => (conflicts += 1)));
+      yield* collect(service.writeConflicts, () =>
+        Effect.sync(() => (conflicts += 1)),
+      );
       const patches = (from: number) =>
         requests.slice(from).filter(({ method }) => method === "PATCH");
 
@@ -2080,11 +2090,13 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
-      const { service, repository, requests } = yield* Effect.promise(() =>
+      const { service, requests } = yield* Effect.promise(() =>
         writable(stack, zotero.answers),
       );
       let conflicts = 0;
-      stack.defer(repository.listen("write-conflict", () => (conflicts += 1)));
+      yield* collect(service.writeConflicts, () =>
+        Effect.sync(() => (conflicts += 1)),
+      );
       yield* service.editTextField("text", "PUPR5FG5", "Same words");
       zotero.changeInZotero({ text: "Same words" });
       const sent = requests.length;
@@ -2171,7 +2183,7 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
-      const { service, repository } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, zotero.answers),
       );
       const release = zotero.holdWrites();
@@ -2216,12 +2228,12 @@ it.effect(
       // The draft leaves only once the confirmed record stands, so the editor
       // closes onto the new chips rather than the old ones.
       let tagsWhenClosed: readonly string[] | undefined;
-      stack.defer(
-        repository.listen("annotation-changed", () => {
-          if (repository.tagDraftFor("PUPR5FG5")) return;
-          tagsWhenClosed = repository
-            .peek("RGRPDF24")
-            ?.value.annotations.find(({ key }) => key === "PUPR5FG5")?.tags;
+      yield* collect(service.annotationChanged, () =>
+        Effect.gen(function* () {
+          if (yield* service.tagDraftFor("PUPR5FG5")) return;
+          tagsWhenClosed = (yield* service.peek(
+            "RGRPDF24",
+          ))?.value.annotations.find(({ key }) => key === "PUPR5FG5")?.tags;
         }),
       );
       release();
@@ -2250,13 +2262,7 @@ it.effect("hides an old database's tag draft when the database switches", () =>
         ),
       );
     yield* service.editTags("PUPR5FG5", ["figure"]);
-    const hidden = new Promise<string>((resolve) => {
-      stack.defer(
-        repository.listen("annotation-changed", (key) => {
-          if (repository.annotationState(key).hidden) resolve(key);
-        }),
-      );
-    });
+    const hidden = yield* firstAnnotation(service, "hidden");
 
     // With the Local API gone, the draft is found by the database it was made
     // in, so the switch itself must hide it.
@@ -2271,7 +2277,7 @@ it.effect("hides an old database's tag draft when the database switches", () =>
     dbEvents.emit("changed");
     yield* service.read("RGRPDF24");
 
-    expect(yield* Effect.promise(() => hidden)).toBe("PUPR5FG5");
+    expect(yield* Deferred.await(hidden)).toBe("PUPR5FG5");
     expect(yield* service.tagDraftFor("PUPR5FG5")).toBeNull();
   }),
 );
@@ -2446,17 +2452,17 @@ it.effect("discards a tag draft when deletion is confirmed in Zotero", () =>
   Effect.gen(function* () {
     const stack = yield* scopedStack;
     let records = ROUGIER_ANNOTATIONS;
-    const { service, repository } = yield* Effect.promise(() =>
+    const { service } = yield* Effect.promise(() =>
       writable(stack, {
         children: () => annotationPage(records),
       }),
     );
     yield* service.editTags("PUPR5FG5", ["figure"]);
     const deleted: string[] = [];
-    stack.defer(
-      repository.listen("annotation-changed", (key) => {
-        if (repository.annotationState(key).gone) deleted.push(key);
-      }),
+    yield* collect(service.annotationChanged, (key) =>
+      service
+        .annotationState(key)
+        .pipe(Effect.map(({ gone }) => gone && deleted.push(key))),
     );
     records = records.filter(({ key }) => key !== "PUPR5FG5");
 
