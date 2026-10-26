@@ -45,6 +45,11 @@ export function capabilityReason(capability: EditingCapability): string {
     : capability.kind;
 }
 
+/** Whether two cooldown deadlines are the same instant, for plain code. */
+export function sameDeadline(a: DateTime.Utc, b: DateTime.Utc): boolean {
+  return DateTime.Equivalence(a, b);
+}
+
 /**
  * The capability one Annotation Source leaves for one Attachment.
  *
