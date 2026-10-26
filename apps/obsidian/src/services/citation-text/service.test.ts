@@ -1551,7 +1551,11 @@ describe("CitationText staleness", () => {
       () =>
         Effect.promise(async () => {
           const workspace = new MemoryWorkspace();
-          const h = await makeHarness({ body: "Blah [@alpha].", workspace });
+          await using cleanup = new AsyncDisposableStack();
+          const h = cleanup.adopt(
+            await makeHarness({ body: "Blah [@alpha].", workspace }),
+            (h) => h.dispose(),
+          );
           const observers = () =>
             h.queryClient.client
               .getQueryCache()
@@ -1567,7 +1571,6 @@ describe("CitationText staleness", () => {
           workspace.leaves.delete("markdown");
           workspace.open(null);
           await vi.waitFor(() => expect(observers()).toBe(0));
-          await h.dispose();
         }),
     );
 
@@ -1576,7 +1579,11 @@ describe("CitationText staleness", () => {
       () =>
         Effect.promise(async () => {
           const workspace = new MemoryWorkspace();
-          const h = await makeHarness({ body: "Blah [@alpha].", workspace });
+          await using cleanup = new AsyncDisposableStack();
+          const h = cleanup.adopt(
+            await makeHarness({ body: "Blah [@alpha].", workspace }),
+            (h) => h.dispose(),
+          );
           const observers = () =>
             h.queryClient.client
               .getQueryCache()
@@ -1590,7 +1597,6 @@ describe("CitationText staleness", () => {
           // The rename alone tells the layer: Obsidian sends no layout change for it.
           h.vault.rename(view.file!, "renamed.md");
           await vi.waitFor(() => expect(observers()).toBe(0));
-          await h.dispose();
         }),
     );
   });
