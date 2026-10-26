@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { DropdownComponent, Setting } from "@mock/obsidian";
-import { Effect, Stream } from "effect";
+import { Context, Effect, Stream } from "effect";
 import type {
   Setting as ObsidianSetting,
   SettingDefinitionItem,
@@ -10,33 +10,49 @@ import { expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
-import type { LocalServer } from "@/services/local-server/service";
+import { LocalBridge } from "@/services/local-bridge/service";
+import { LocalServer } from "@/services/local-server/service";
 import { defaults } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 
 import { testSettingTab } from "./__fixtures__";
 import { advancedPageItems, clearExcerptCache } from "./advanced";
 import type { SettingsKey, SettingTabContext } from "./context";
 
 function items(overrides: Partial<SettingTabContext> = {}) {
+  const settings = { ...defaults, "log.to-file": false };
+  const services = Context.make(
+    PluginSettings,
+    stubService<PluginSettings["Service"]>("PluginSettings", {
+      current: Effect.succeed(settings),
+    }),
+  ).pipe(
+    Context.add(
+      LocalServer,
+      stubService<LocalServer["Service"]>("LocalServer", {
+        effectivePort: Effect.succeed(null),
+        effectivePortChanges: Stream.empty,
+      }),
+    ),
+    Context.add(
+      LocalBridge,
+      stubService<LocalBridge["Service"]>("LocalBridge", {
+        connection: Effect.succeed(null),
+      }),
+    ),
+  );
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    tab: testSettingTab().tab,
+    tab: testSettingTab(services).tab,
     webWorkbenchEnabled: true,
     app: stubService<SettingTabContext["app"]>("App", {
       loadLocalStorage: () => null,
       saveLocalStorage: () => {},
     }),
     settings: stubService<SettingTabContext["settings"]>("Settings", {
-      current: Effect.succeed({ ...defaults, "log.to-file": false }),
+      current: Effect.succeed(settings),
     }),
     template: stubService<SettingTabContext["template"]>("Template", {
       loaded: false,
-    }),
-    localServer: stubService<LocalServer["Service"]>("LocalServer", {
-      effectivePort: Effect.succeed(null),
-      effectivePortChanges: Stream.empty,
-    }),
-    localBridge: stubService<SettingTabContext["localBridge"]>("LocalBridge", {
-      connection: null,
     }),
     ...overrides,
   });

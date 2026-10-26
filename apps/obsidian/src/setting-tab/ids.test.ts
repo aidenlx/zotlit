@@ -16,9 +16,11 @@ import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
 import { AttachmentImport } from "@/services/attachment-import/service";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
-import type { LocalServer } from "@/services/local-server/service";
+import { LocalBridge } from "@/services/local-bridge/service";
+import { LocalServer } from "@/services/local-server/service";
 import { PandocEngine } from "@/services/pandoc/service";
 import { defaults } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 
 import { testSettingTab } from "./__fixtures__";
 import { advancedPageItems } from "./advanced";
@@ -46,6 +48,26 @@ function ctx(): SettingTabContext {
           changes: Stream.empty,
         }),
       ).pipe(
+        Context.add(
+          PluginSettings,
+          stubService<PluginSettings["Service"]>("PluginSettings", {
+            current: Effect.succeed(defaults),
+            changes: Stream.empty,
+          }),
+        ),
+        Context.add(
+          LocalServer,
+          stubService<LocalServer["Service"]>("LocalServer", {
+            effectivePort: Effect.succeed(null),
+            effectivePortChanges: Stream.empty,
+          }),
+        ),
+        Context.add(
+          LocalBridge,
+          stubService<LocalBridge["Service"]>("LocalBridge", {
+            connection: Effect.succeed(null),
+          }),
+        ),
         Context.add(
           AttachmentImport,
           stubService<AttachmentImport["Service"]>("AttachmentImport", {
@@ -103,15 +125,6 @@ function ctx(): SettingTabContext {
     zoteroPref: stubService<SettingTabContext["zoteroPref"]>("ZoteroPref", {
       databasePath: "",
       dataDir: undefined,
-    }),
-    localServer: stubService<LocalServer["Service"]>("LocalServer", {
-      effectivePort: Effect.succeed(null),
-      effectivePortChanges: Stream.empty,
-    }),
-    localBridge: stubService<SettingTabContext["localBridge"]>("LocalBridge", {
-      connection: null,
-      disconnect: () => {},
-      on: () => () => {},
     }),
     customize: async () => {},
     citationIndex: stubService<SettingTabContext["citationIndex"]>(

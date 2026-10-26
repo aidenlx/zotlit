@@ -277,8 +277,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         db: services.zoteroReads,
         libraryScope: services.libraryScope,
         zoteroPref: services.zoteroPref,
-        localServer: services.localServer,
-        localBridge: services.localBridge,
         customize,
         citationIndex: services.citationIndex,
         excerptImage: services.excerptImage,

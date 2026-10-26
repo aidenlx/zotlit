@@ -2918,5 +2918,6 @@
   "settings_failed_binary_install": "Cannot install the download",
   "settings_failed_binary_uninstall": "Cannot remove the download",
   "settings_failed_approve_folder": "Cannot approve the folder",
-  "settings_failed_revoke_folder": "Cannot remove the approved folder"
+  "settings_failed_revoke_folder": "Cannot remove the approved folder",
+  "settings_failed_workbench_disconnect": "Cannot end the Workbench connection"
 }

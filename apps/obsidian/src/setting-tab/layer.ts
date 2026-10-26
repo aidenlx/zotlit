@@ -12,6 +12,7 @@ import { layerPluginHost, PluginHost } from "@/lib/plugin-host";
 import { AttachmentImport } from "@/services/attachment-import/service";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 import { LibraryScope, scopeChanges } from "@/services/library-scope/service";
+import { LocalBridge } from "@/services/local-bridge/service";
 import { LocalServer } from "@/services/local-server/service";
 import { PandocEngine } from "@/services/pandoc/service";
 import { Profile } from "@/services/profile/service";
@@ -79,11 +80,14 @@ export function layerSettingTab(legacy: SettingTabLegacy) {
       const chineseSegmenter = yield* ChineseSegmenter;
       const libraryScope = yield* LibraryScope;
       const attachmentImport = yield* AttachmentImport;
+      const localBridge = yield* LocalBridge;
       yield* forkEach(
         Stream.mergeAll(
           [
             // The Local server rows name the port the listener bound.
             signal(Stream.drop(localServer.effectivePortChanges, 1)),
+            // The Workbench Connection row stands only while a connection does.
+            signal(Stream.drop(localBridge.changes, 1)),
             signal(Stream.drop(profile.changes, 1)),
             template.compileEvents,
             signal(Stream.drop(pandocEngine.changes, 1)),
@@ -107,12 +111,7 @@ export function layerSettingTab(legacy: SettingTabLegacy) {
         () => service.update,
       );
 
-      // The Workbench Connection row and the Language Pack rows follow
-      // services that are not tags yet.
-      yield* Effect.acquireRelease(
-        Effect.sync(() => legacy.localBridge.on("connection", requestUpdate)),
-        (off) => Effect.sync(off),
-      );
+      // The Language Pack rows follow a service that is not a tag yet.
       yield* Effect.acquireRelease(
         Effect.sync(() => legacy.languagePack.subscribe(requestUpdate)),
         (off) => Effect.sync(off),

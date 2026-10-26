@@ -20,6 +20,7 @@ import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { LibraryScope } from "@/services/library-scope/service";
+import type { LocalBridge } from "@/services/local-bridge/service";
 import type { LocalServer } from "@/services/local-server/service";
 import type { PandocEngine } from "@/services/pandoc/service";
 import type { Profile } from "@/services/profile/service";
@@ -48,7 +49,8 @@ export type SettingTabEnv =
   | CitationIndex
   | PandocEngine
   | ChineseSegmenter
-  | AttachmentImport;
+  | AttachmentImport
+  | LocalBridge;
 
 export interface SettingTabShape {
   /**

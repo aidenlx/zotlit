@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { ButtonComponent, Setting } from "@mock/obsidian";
-import { Effect, Stream } from "effect";
+import { Context, Effect, Stream } from "effect";
 import type {
   Setting as ObsidianSetting,
   SettingDefinitionItem,
@@ -11,10 +11,12 @@ import { expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { LocalBridge } from "@/services/local-bridge/service";
 import type { WorkbenchConnection } from "@/services/local-bridge/service";
-import type { LocalServer } from "@/services/local-server/service";
+import { LocalServer } from "@/services/local-server/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 
 import { testSettingTab } from "./__fixtures__";
 import type { SettingsKey, SettingTabContext } from "./context";
@@ -32,21 +34,30 @@ function setup({
   disconnect = () => {},
 }: Options = {}) {
   const current: Settings = { ...defaults, ...settings };
-  const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    tab: testSettingTab().tab,
-    webWorkbenchEnabled: true,
-    settings: stubService<SettingTabContext["settings"]>("Settings", {
+  const services = Context.make(
+    PluginSettings,
+    stubService<PluginSettings["Service"]>("PluginSettings", {
       current: Effect.succeed(current),
     }),
-    localServer: stubService<LocalServer["Service"]>("LocalServer", {
-      effectivePort: Effect.succeed(null),
-      effectivePortChanges: Stream.empty,
-    }),
-    localBridge: stubService<SettingTabContext["localBridge"]>("LocalBridge", {
-      connection,
-      disconnect,
-      on: () => () => {},
-    }),
+  ).pipe(
+    Context.add(
+      LocalServer,
+      stubService<LocalServer["Service"]>("LocalServer", {
+        effectivePort: Effect.succeed(null),
+        effectivePortChanges: Stream.empty,
+      }),
+    ),
+    Context.add(
+      LocalBridge,
+      stubService<LocalBridge["Service"]>("LocalBridge", {
+        connection: Effect.succeed(connection),
+        disconnect: Effect.sync(disconnect),
+      }),
+    ),
+  );
+  const ctx = stubService<SettingTabContext>("SettingTabContext", {
+    tab: testSettingTab(services).tab,
+    webWorkbenchEnabled: true,
   });
   return localServerItems(ctx);
 }
@@ -90,7 +101,7 @@ const CONNECTION: WorkbenchConnection = {
   item: { key: "IANNP5A2", title: "Why research findings are false" },
 };
 
-it("ends the connected workbench session", () => {
+it("ends the connected workbench session", async () => {
   const disconnect = vi.fn();
   const items = setup({
     settings: { "server.enabled": true },
@@ -104,5 +115,5 @@ it("ends the connected workbench session", () => {
   )!;
   expect(button.text).toBe(m.settings_local_server_workbench_disconnect());
   button.click();
-  expect(disconnect).toHaveBeenCalledTimes(1);
+  await vi.waitFor(() => expect(disconnect).toHaveBeenCalledTimes(1));
 });

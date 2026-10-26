@@ -2754,5 +2754,6 @@
   "settings_failed_binary_install": "无法安装该下载组件",
   "settings_failed_binary_uninstall": "无法移除该下载组件",
   "settings_failed_approve_folder": "无法批准该文件夹",
-  "settings_failed_revoke_folder": "无法移除已批准的文件夹"
+  "settings_failed_revoke_folder": "无法移除已批准的文件夹",
+  "settings_failed_workbench_disconnect": "无法结束 Workbench 连接"
 }
