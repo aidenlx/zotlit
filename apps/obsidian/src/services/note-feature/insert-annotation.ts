@@ -1,5 +1,5 @@
 // Renders the captured card once, after its final image outcome is durable.
-import { Effect, Ref, Schema, Stream } from "effect";
+import { Effect, Ref, Stream } from "effect";
 
 import {
   annotationOpenUri,
@@ -11,6 +11,7 @@ import {
   annotationCitation,
   buildAnnotationResolvers,
 } from "@/lib/annotation-render";
+import { portCall } from "@/lib/legacy-port";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type {
   AnnotationRecord,
@@ -54,32 +55,6 @@ export interface AnnotationInsert {
 export type SingleExcerpt = (
   options: Omit<Parameters<typeof prepareSingleExcerpt>[0], "app" | "resolver">,
 ) => ReturnType<typeof prepareSingleExcerpt>;
-
-/**
- * A legacy Promise port rejected, such as the single-excerpt preparation when
- * a file write fails. The message is the rejection's own.
- */
-export class LegacyPortError extends Schema.TaggedError<
-  LegacyPortError,
-  { readonly brand: unique symbol }
->()("LegacyPortError", {
-  /** The port step that rejected. */
-  step: Schema.String,
-  /** What the port rejected with. */
-  cause: Schema.Defect(),
-}) {
-  override get message(): string {
-    if (this.cause instanceof Error) return this.cause.message;
-    return typeof this.cause === "string" ? this.cause : "Unknown error";
-  }
-}
-
-/** A legacy port's Promise, its rejection a {@link LegacyPortError}. */
-const portCall = <A>(step: string, call: (signal: AbortSignal) => Promise<A>) =>
-  Effect.tryPromise({
-    try: call,
-    catch: (cause) => new LegacyPortError({ step, cause }),
-  });
 
 /**
  * Render the captured card through the annotation template of its parent
