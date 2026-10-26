@@ -1,6 +1,6 @@
 // The Annotation Repository's drafts: comment, Quoted Text and tag drafts, their autosave, and how reads reconcile them.
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Exit, Fiber } from "effect";
+import { Deferred, Effect, Exit, Fiber, Logger } from "effect";
 import { expect, vi } from "vitest";
 
 import { AbortError } from "@/lib/abort-error";
@@ -950,6 +950,50 @@ it.effect(
         kind: "failed",
         failure: { kind: "unknown-outcome" },
       });
+    }),
+);
+
+it.effect(
+  "logs an automatic save that fails, and leaves no rejection unhandled",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const reply = Promise.withResolvers<Response>();
+      const sending = Promise.withResolvers<void>();
+      const { service, acquireRead, dbEvents, adjustLayerClock } =
+        yield* Effect.promise(() =>
+          writable(stack, {
+            write: () => {
+              sending.resolve();
+              return reply.promise;
+            },
+          }),
+        );
+      const warnings: unknown[] = [];
+      const collector = Logger.make(({ message, logLevel }) => {
+        if (logLevel === "Warn") warnings.push(...[message].flat());
+      });
+
+      // The timers and the save they start run with the loggers of the edit.
+      yield* service
+        .editTextField("comment", "PUPR5FG5", "Saved on its own")
+        .pipe(
+          Effect.provideService(Logger.CurrentLoggers, new Set([collector])),
+        );
+      yield* adjustLayerClock("1 second");
+      yield* Effect.promise(() => sending.promise);
+      // The database changes under the send, and its new read fails, so the
+      // save fails with WriteRunFailed and no caller waits on it.
+      dbEvents.emit("changed");
+      acquireRead.mockRejectedValueOnce(new Error("database gone"));
+      reply.resolve(writeAccepted(20));
+
+      expect(
+        yield* eventually(
+          Effect.succeed(warnings),
+          (logged) => logged.length > 0,
+        ),
+      ).toEqual(["An automatic text save failed"]);
     }),
 );
 
