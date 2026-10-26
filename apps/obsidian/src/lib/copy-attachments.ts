@@ -100,7 +100,7 @@ const copyAttachment = ({
     yield* writeCopy(source, dest, sourceInfo);
     return "copied" as const;
   }).pipe(
-    Effect.catchReason("PlatformError", "NotFound", (error) =>
+    Effect.catchReason("PlatformError", "NotFound", (_reason, error) =>
       Effect.logWarning("Skipped attachment with missing source").pipe(
         Effect.annotateLogs({ dest, error }),
         logged,
