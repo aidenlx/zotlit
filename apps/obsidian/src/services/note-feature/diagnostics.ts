@@ -1,8 +1,9 @@
 // The refusals a Note Feature operation returns instead of writing a note.
+import { Effect } from "effect";
 import type { TFile } from "obsidian";
 
+import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type {
   ProfileId,
@@ -10,6 +11,7 @@ import type {
   UnknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
 
+import type { ComposeWarn } from "./compose";
 import type { ManagedFrontmatterPreparationFailure } from "./frontmatter";
 import type {
   CreateNoteResult,
@@ -20,7 +22,19 @@ import type {
   UpdateResult,
 } from "./types";
 
-const logger = getLogger("note-feature");
+const logged = withLogCategory("note-feature");
+
+/**
+ * The composition's warnings, logged through Effect's logger from inside a
+ * render's synchronous callback.
+ */
+export const composeWarn: Effect.Effect<ComposeWarn> = Effect.gen(function* () {
+  const run = Effect.runSyncWith(yield* Effect.context<never>());
+  return (message, annotations) =>
+    run(
+      Effect.logWarning(message).pipe(Effect.annotateLogs(annotations), logged),
+    );
+});
 
 /** Result for an update that intentionally leaves the body region untouched. */
 const NO_BODY_UPDATE: UpdateResult = {
@@ -50,21 +64,25 @@ function refusedCreate(
   };
 }
 
-/** Map one Managed Frontmatter refusal to the diagnostic a caller reports. */
-function frontmatterRefusal(
+/**
+ * Map one Managed Frontmatter refusal to the diagnostic a caller reports, and
+ * log each field whose evaluation failed.
+ */
+const frontmatterRefusal = Effect.fnUntraced(function* (
   failures: readonly ManagedFrontmatterPreparationFailure[],
   input: {
     itemKey: string;
     diagnosticContext: { path?: string; indexedKey?: string };
   },
-): ManagedFrontmatterRefusalDiagnostic {
-  const mapped = failures.map(({ key: field, reason, error }) => {
+) {
+  for (const { key, reason, error } of failures)
+    if (reason === "evaluation")
+      yield* Effect.logWarning("Managed Frontmatter field failed").pipe(
+        Effect.annotateLogs({ key, itemKey: input.itemKey, error }),
+        logged,
+      );
+  const mapped = failures.map(({ key: field, reason }) => {
     if (reason === "evaluation") {
-      logger.warn("Managed Frontmatter field failed", {
-        key: field,
-        itemKey: input.itemKey,
-        error,
-      });
       return {
         field,
         message: m.managed_frontmatter_eval_failure({ field }),
@@ -80,13 +98,14 @@ function frontmatterRefusal(
     ManagedFrontmatterFailureDiagnostic,
     ...ManagedFrontmatterFailureDiagnostic[],
   ];
-  return {
+  const diagnostic: ManagedFrontmatterRefusalDiagnostic = {
     code: "managed-frontmatter-refused",
     hint: m.managed_frontmatter_refused_recovery(),
     failures: mapped,
     ...input.diagnosticContext,
   };
-}
+  return diagnostic;
+});
 
 function refusedUnknownProfile(
   stamp: string,

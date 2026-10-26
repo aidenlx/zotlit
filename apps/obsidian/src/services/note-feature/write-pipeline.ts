@@ -66,6 +66,7 @@ import type { ComposeFrontmatterInput, ComposeNoteDeps } from "./compose";
 import { buildNoteResolvers, itemFacets } from "./context";
 import type { NoteResolverServices } from "./context";
 import {
+  composeWarn,
   frontmatterRefusal,
   NO_BODY_UPDATE,
   refusedCreate,
@@ -336,11 +337,12 @@ const writeNewNote = Effect.fnUntraced(function* <E>(
       const context = buildNoteContextFromSource(options.source, resolvers);
       yield* excerptImages.prepare;
       const template = yield* syncTemplate;
+      const warn = yield* composeWarn;
       const now = toInstant(yield* DateTime.now);
       const composed = yield* Effect.try({
         try: () =>
           composeLiteratureNote(
-            { template, events: composeEvents(ctx) },
+            { template, warn, events: composeEvents(ctx) },
             {
               context,
               itemKey: item.indexedKey,
@@ -354,7 +356,7 @@ const writeNewNote = Effect.fnUntraced(function* <E>(
       if (composed.outcome === "refused") {
         const refused: CreateNoteResult = {
           outcome: "refused",
-          diagnostic: frontmatterRefusal(composed.failures, {
+          diagnostic: yield* frontmatterRefusal(composed.failures, {
             itemKey: item.indexedKey,
             diagnosticContext: { indexedKey: item.indexedKey },
           }),
@@ -1113,6 +1115,7 @@ const rewriteNote = Effect.fnUntraced(function* (
   },
 ) {
   const template = yield* syncTemplate;
+  const warn = yield* composeWarn;
   let changed: "key" | "profile" | undefined;
   yield* rewriteLiveText(file, (content) => {
     const fm = parseFrontMatter(content);
@@ -1123,7 +1126,7 @@ const rewriteNote = Effect.fnUntraced(function* (
     if (changed) return content;
     input.beforeWrite?.();
     applyComposedFrontmatter(
-      { template, events: composeEvents(ctx) },
+      { template, warn, events: composeEvents(ctx) },
       fm,
       input,
     );
@@ -1175,7 +1178,7 @@ const prepareFrontmatter = Effect.fnUntraced(function* (input: {
     toInstant(yield* DateTime.now),
   );
   if ("prepared" in result) return result.prepared;
-  return { diagnostic: frontmatterRefusal(result.failures, input) };
+  return { diagnostic: yield* frontmatterRefusal(result.failures, input) };
 });
 
 /** A type guard: when conversion is pending, a non-default selector is a real Profile ID. */

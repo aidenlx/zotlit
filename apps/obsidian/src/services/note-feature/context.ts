@@ -149,15 +149,13 @@ export function buildNoteResolvers(
     resolveChildNote: (note) =>
       childNoteLink(
         {
-          app: { fileManager: { generateMarkdownLink } },
-          noteIndex: {
-            getImportedNoteByNoteKey: (noteKey) =>
-              run(
-                Effect.flatMap(NoteIndex, (noteIndex) =>
-                  noteIndex.getImportedNoteByNoteKey(noteKey),
-                ),
+          importedNote: (noteKey) =>
+            run(
+              Effect.flatMap(NoteIndex, (noteIndex) =>
+                noteIndex.getImportedNoteByNoteKey(noteKey),
               ),
-          },
+            )[0],
+          link: options.link,
         },
         note,
         options.sourcePath,

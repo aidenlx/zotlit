@@ -34,6 +34,7 @@ import {
 
 import { noteImporterOver } from "./__fixtures__/importer";
 import { childNoteLink } from "./child-note-link";
+import type { ChildNoteLinkDeps } from "./child-note-link";
 import { noteAnnotationKeys, parseNote } from "./note-parser";
 import { NoteImportMintError, NoteImportParseError } from "./service";
 
@@ -1105,7 +1106,16 @@ describe("NoteImporter", () => {
     });
     const existing = host.file("Imported/Old name_abc123.md");
     const link = childNoteLink(
-      { app, noteIndex: { getImportedNoteByNoteKey: () => [existing] } },
+      {
+        importedNote: () => existing,
+        link: (file, sourcePath, options) =>
+          app.fileManager.generateMarkdownLink(
+            file,
+            sourcePath,
+            options?.subpath,
+            options?.alias,
+          ),
+      },
       makeNote({ title: "Renamed" }),
       "Literature/Paper.md",
     );
@@ -1121,15 +1131,24 @@ describe("NoteImporter", () => {
 
   it("links a Child Note with no Imported Note to Zotero and writes nothing", () => {
     const { app, create, createFolder } = makeApp();
-    const noteIndex = { getImportedNoteByNoteKey: () => [] };
+    const deps: ChildNoteLinkDeps = {
+      importedNote: () => undefined,
+      link: (file, sourcePath, options) =>
+        app.fileManager.generateMarkdownLink(
+          file,
+          sourcePath,
+          options?.subpath,
+          options?.alias,
+        ),
+    };
 
     const personal = childNoteLink(
-      { app, noteIndex },
+      deps,
       makeNote({ title: "Methods [draft]" }),
       "Literature/Paper.md",
     );
     const group = childNoteLink(
-      { app, noteIndex },
+      deps,
       { ...makeNote({ groupID: 42, libraryID: 2 }), title: null },
       "Literature/Paper.md",
     );
