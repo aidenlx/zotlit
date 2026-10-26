@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect";
 
 import { buildFilenameContext } from "@zotlit/db";
 import type { Item, ItemTag, TemplateCollection } from "@zotlit/db";
-import { joinNotePath } from "@zotlit/templates";
+import { hasSuffixMarker, joinNotePath } from "@zotlit/templates";
 
 import { creatorSummary } from "@/lib/item-summary";
 import { Vault } from "@/lib/obsidian-vault";
@@ -12,7 +12,12 @@ import type { ProfileBindingSettings } from "@/services/profile/bindings";
 import { Template } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 
-import { freeNotePathSteps } from "./filename";
+import {
+  baseNoteName,
+  MAX_SUFFIX_ATTEMPTS,
+  noFreeName,
+  suffixedNoteName,
+} from "./filename";
 
 /**
  * No free path came of the rendered filename: it is empty, or each `suffix()`
@@ -42,7 +47,9 @@ export const renderDocumentFilename = (
 
 /**
  * The free path of `rendered` under `folder`. A path the vault holds, or one
- * of `reserved`, is taken.
+ * of `reserved`, is taken. On a collision, each `suffix()` marker is filled
+ * with a random alphanumeric id; without a marker the rendered path is
+ * returned as it is, taken or not.
  */
 export const resolveRenderedNotePath = Effect.fnUntraced(function* (
   folder: string,
@@ -50,18 +57,22 @@ export const resolveRenderedNotePath = Effect.fnUntraced(function* (
   reserved?: ReadonlySet<string>,
 ) {
   const vault = yield* Vault;
-  const step = (advance: () => IteratorResult<string, string>) =>
-    Effect.try({ try: advance, catch: unavailable });
-  const steps = freeNotePathSteps(rendered);
-  let next = yield* step(() => steps.next());
-  while (!next.done) {
-    const path = joinNotePath(folder, next.value);
-    const taken =
-      reserved?.has(path) === true ||
-      (yield* vault.getAbstractFileByPath(path)) !== null;
-    next = yield* step(() => steps.next(taken));
+  const name = (resolve: () => string) =>
+    Effect.try({ try: resolve, catch: unavailable });
+  const taken = (rel: string) => {
+    const path = joinNotePath(folder, rel);
+    return reserved?.has(path) === true
+      ? Effect.succeed(true)
+      : Effect.map(vault.getAbstractFileByPath(path), (file) => file !== null);
+  };
+  const base = yield* name(() => baseNoteName(rendered));
+  if (!hasSuffixMarker(rendered) || !(yield* taken(base)))
+    return { path: joinNotePath(folder, base) };
+  for (let attempt = 0; attempt < MAX_SUFFIX_ATTEMPTS; attempt++) {
+    const rel = yield* name(() => suffixedNoteName(rendered));
+    if (!(yield* taken(rel))) return { path: joinNotePath(folder, rel) };
   }
-  return { path: joinNotePath(folder, next.value) };
+  return yield* unavailable(noFreeName(base));
 });
 
 /**

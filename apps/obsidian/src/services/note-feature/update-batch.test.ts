@@ -66,6 +66,8 @@ import type {
   FlatGroupDef,
 } from "@/views/batch-modal";
 
+import { layerPromiseNoteFeature } from "./__fixtures__/promise-note-feature";
+import type { PromiseNoteFeature } from "./__fixtures__/promise-note-feature";
 import type {
   CreateNoteOptions,
   CreateNoteResult,
@@ -259,7 +261,7 @@ interface UpdateDeps {
   /** The Snapshot the runners open; the case's reads by default. */
   snapshot: ZoteroReads["Service"]["snapshot"];
   settings: Pick<PluginSettings["Service"], "current" | "update">;
-  noteFeature: BatchUpdatePorts["noteFeature"];
+  noteFeature: PromiseNoteFeature;
   noteIndex: {
     whenIndexed(): Promise<void>;
     getNotesByItemKey(indexedKey: string): TFile[];
@@ -287,7 +289,6 @@ function makeDeps(
       update: () => Effect.succeed(defaults),
     },
     noteFeature: stubService<UpdateDeps["noteFeature"]>("NoteFeature", {
-      ready: Promise.resolve(),
       reportExcerptImages: vi.fn(),
       planCreations: async (keys: readonly string[]) =>
         creationPlans(keys, () => ({
@@ -303,6 +304,7 @@ function makeDeps(
       Layer.mock(LibraryScope, {
         resolveLibraries: () => Effect.sync(() => currentScope),
       }),
+      layerPromiseNoteFeature(() => deps.noteFeature),
       // Only the one-item path reads them, and no case here reaches it.
       Layer.mock(MetadataCache, {}),
       Layer.mock(Workspace, {}),
@@ -337,8 +339,8 @@ function makeDeps(
 }
 
 /**
- * The ports a case's runs take: its Note Feature, the view port fakes, and
- * `bridge` for the modal's callbacks.
+ * The ports a case's runs take: the view port fakes, and `bridge` for the
+ * modal's callbacks.
  */
 function portsOf(
   deps: UpdateDeps,
@@ -353,7 +355,6 @@ function portsOf(
       },
       chooseProfile,
     },
-    noteFeature: deps.noteFeature,
   };
 }
 
@@ -622,7 +623,7 @@ describe("a write that rejects", () => {
             (reason: unknown) => reason,
           ),
         );
-        expect(error).toMatchObject({ _tag: "LegacyPortError", cause: inert });
+        expect(error).toMatchObject({ _tag: "NoteWriteAborted", cause: inert });
         expect(onItemSettled).not.toHaveBeenCalledWith(
           expect.objectContaining({ status: "failed" }),
         );
@@ -760,7 +761,7 @@ describe("the run's Snapshot", () => {
       const run = yield* classifyAndRun(deps);
       expect(yield* Fiber.join(run)).toMatchObject({
         rejected: true,
-        reason: { _tag: "LegacyPortError" },
+        reason: { _tag: "NoteWriteAborted" },
       });
       expect(events).toEqual(["open", "close", "open", "close"]);
     }),
@@ -777,8 +778,7 @@ describe("the run's Snapshot", () => {
           opens++;
           return opens === 1 ? deps.zoteroReads.snapshot : Effect.fail(failure);
         });
-        const createNote =
-          vi.fn<BatchUpdatePorts["noteFeature"]["createNote"]>();
+        const createNote = vi.fn<PromiseNoteFeature["createNote"]>();
         deps.noteFeature.createNote = createNote;
 
         const run = yield* classifyAndRun(deps);
@@ -832,10 +832,12 @@ describe("one item without additional Profiles", () => {
 
   /**
    * The services the one-item path reads, over an Item `ITEM1` with `note` as
-   * its Literature Note, or none; `notifier` records the notices.
+   * its Literature Note, or none; `notifier` records the notices, and
+   * `feature` answers the Note Feature's writes.
    */
   function oneItemServices(
     notifier: ReturnType<typeof testNotifier>,
+    feature: Partial<PromiseNoteFeature>,
     note?: TFile,
   ) {
     const opened: string[] = [];
@@ -852,6 +854,9 @@ describe("one item without additional Profiles", () => {
         ),
     });
     const layer = Layer.mergeAll(
+      layerPromiseNoteFeature(() =>
+        stubService<PromiseNoteFeature>("NoteFeature", feature),
+      ),
       Layer.mock(LibraryScope, {}),
       Layer.mock(MetadataCache, {
         fileCache: () =>
@@ -887,18 +892,13 @@ describe("one item without additional Profiles", () => {
     () =>
       Effect.gen(function* () {
         const notifier = testNotifier();
-        const { layer, opened } = oneItemServices(notifier);
-        const createNote =
-          vi.fn<BatchUpdatePorts["noteFeature"]["createNote"]>();
+        const createNote = vi.fn<PromiseNoteFeature["createNote"]>();
+        const { layer, opened } = oneItemServices(notifier, { createNote });
         const ports: BatchUpdatePorts = {
           notices: batchUpdateNotices(stubService<App>("App", {})),
           // The single-update path opens no batch modal.
           bridge: stubService<BatchUpdatePorts["bridge"]>("EffectBridge", {}),
           view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {}),
-          noteFeature: stubService<BatchUpdatePorts["noteFeature"]>(
-            "NoteFeature",
-            { createNote },
-          ),
         };
 
         const result = yield* runBatchUpdateEffect(ports, [1], {
@@ -917,24 +917,18 @@ describe("one item without additional Profiles", () => {
   it.effect("returns only after the note update has settled", () =>
     Effect.gen(function* () {
       const note = noteAt("Literature/Item.md");
-      const { layer } = oneItemServices(testNotifier(), note);
       const called = yield* Deferred.make<void>();
       const written = Promise.withResolvers<UpdateResult>();
-      const updateNote = vi.fn<BatchUpdatePorts["noteFeature"]["updateNote"]>(
-        () => {
-          Deferred.doneUnsafe(called, Exit.void);
-          return written.promise;
-        },
-      );
+      const updateNote = vi.fn<PromiseNoteFeature["updateNote"]>(() => {
+        Deferred.doneUnsafe(called, Exit.void);
+        return written.promise;
+      });
+      const { layer } = oneItemServices(testNotifier(), { updateNote }, note);
       const ports: BatchUpdatePorts = {
         notices: batchUpdateNotices(stubService<App>("App", {})),
         // The single-update path opens no batch modal.
         bridge: stubService<BatchUpdatePorts["bridge"]>("EffectBridge", {}),
         view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {}),
-        noteFeature: stubService<BatchUpdatePorts["noteFeature"]>(
-          "NoteFeature",
-          { updateNote },
-        ),
       };
 
       const run = yield* runBatchUpdateEffect(ports, [1], {
@@ -962,19 +956,16 @@ describe("one item without additional Profiles", () => {
   it.effect("creates and opens a note when the full scope finds none", () =>
     Effect.gen(function* () {
       const notifier = testNotifier();
-      const { layer, opened } = oneItemServices(notifier);
-      const createNote = vi.fn<BatchUpdatePorts["noteFeature"]["createNote"]>(
-        async () => ({ outcome: "created", file: noteAt("Literature/New.md") }),
-      );
+      const createNote = vi.fn<PromiseNoteFeature["createNote"]>(async () => ({
+        outcome: "created",
+        file: noteAt("Literature/New.md"),
+      }));
+      const { layer, opened } = oneItemServices(notifier, { createNote });
       const ports: BatchUpdatePorts = {
         notices: batchUpdateNotices(stubService<App>("App", {})),
         // The single-update path opens no batch modal.
         bridge: stubService<BatchUpdatePorts["bridge"]>("EffectBridge", {}),
         view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {}),
-        noteFeature: stubService<BatchUpdatePorts["noteFeature"]>(
-          "NoteFeature",
-          { createNote },
-        ),
       };
 
       const result = yield* runBatchUpdateEffect(ports, [1], {
@@ -1530,7 +1521,7 @@ describe("mixed batch", () => {
         // One call resolves every new row (#1642).
         expect(planCreations).toHaveBeenCalledExactlyOnceWith(
           [1, 2, 3, 4, 5].map((itemID) => `ITEM${itemID}`),
-          { headless: undefined, signal: expect.any(AbortSignal) },
+          { headless: undefined },
         );
         expect(tasks).toMatchObject([
           {

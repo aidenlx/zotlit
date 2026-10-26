@@ -18,7 +18,7 @@ import type {
   CreationProfileSelection,
   CreationProfileSources,
   CreationSelectionProblem,
-  NoteFeature,
+  NoteFeatureHandle,
   PreparedCreationProfile,
 } from "./operations";
 import { describeSelectionProblem } from "./selection-copy";
@@ -30,7 +30,7 @@ export interface InteractiveCreationDeps {
   createProfile: CreateProfile;
   importProfile: ImportProfile;
   app: App;
-  noteFeature: Pick<NoteFeature, "createNote" | "planCreations">;
+  noteFeature: Pick<NoteFeatureHandle, "createNote" | "planCreations">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
 }
 

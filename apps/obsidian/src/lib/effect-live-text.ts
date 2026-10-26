@@ -15,7 +15,8 @@ import { vaultError } from "@/lib/vault-errors";
  * view that holds other text than it was given is set back, and the write
  * goes through the vault, so `fn` runs at most twice.
  *
- * Fails with `VaultError` when the view's save or the vault write rejects.
+ * Fails with `VaultError` when `fn` throws, or when the view's save or the
+ * vault write rejects; the note is left as it was when `fn` throws.
  */
 export const processLiveText = Effect.fn("processLiveText")(function* (
   file: TFile,
@@ -24,7 +25,10 @@ export const processLiveText = Effect.fn("processLiveText")(function* (
   const view = yield* (yield* Workspace).loadedTextView(file);
   if (view !== null) {
     const text = view.getViewData();
-    const next = fn(text);
+    const next = yield* Effect.try({
+      try: () => fn(text),
+      catch: vaultError("process", file.path),
+    });
     if (next === text) return;
     setViewDataKeepingScroll(view, next);
     if (view.getViewData() === next) {

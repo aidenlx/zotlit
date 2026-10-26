@@ -103,13 +103,10 @@ export type ProtocolServices =
   | ZoteroReads;
 
 /**
- * The legacy values the handlers still hold. Note Feature, the Profile
- * factories and the Attachment opener convert in later slices.
+ * The legacy values the handlers still hold. The interactive creation, the
+ * Profile factories and the Attachment opener convert in later slices.
  */
 export interface ProtocolDeps extends CompanionNoteDeps {
-  noteFeature: CompanionNoteDeps["noteFeature"] &
-    BatchUpdatePorts["noteFeature"] &
-    BatchImportPorts["noteFeature"];
   webWorkbenchEnabled: boolean;
   /** The note import's classify, confirm and Profile modals. */
   noteImportView: NoteImportView;
@@ -240,7 +237,6 @@ export function startProtocolHandlers(
 function importPorts(deps: ProtocolDeps): BatchImportPorts {
   return {
     view: deps.noteImportView,
-    noteFeature: deps.noteFeature,
     bridge: deps.bridge,
   };
 }
@@ -250,7 +246,6 @@ function updatePorts(deps: ProtocolDeps): BatchUpdatePorts {
   return {
     notices: batchUpdateNotices(deps.app),
     view: deps.noteImportView,
-    noteFeature: deps.noteFeature,
     bridge: deps.bridge,
   };
 }

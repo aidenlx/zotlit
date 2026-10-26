@@ -1,7 +1,9 @@
 // Folder creation over the Vault tag, for Effect code that writes into a folder.
 import { Effect } from "effect";
+import { dirname } from "node:path/posix";
 import { TFile, TFolder } from "obsidian";
 
+import { normalizeFolderPath } from "@/lib/ensure-folder";
 import { Vault } from "@/lib/obsidian-vault";
 import { VaultFolderBlockedError } from "@/lib/vault-errors";
 
@@ -19,3 +21,10 @@ export const ensureVaultFolder = Effect.fnUntraced(function* (path: string) {
     return yield* new VaultFolderBlockedError({ path });
   yield* vault.createFolder(path);
 });
+
+/**
+ * Make sure the parent folder of the vault file path `filePath` exists, as
+ * {@link ensureVaultFolder} does: `Vault.create` makes no missing parents.
+ */
+export const ensureVaultParentFolder = (filePath: string) =>
+  ensureVaultFolder(normalizeFolderPath(dirname(filePath)));

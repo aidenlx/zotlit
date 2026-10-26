@@ -23,6 +23,8 @@ import type { ReadsAnswers } from "@/services/zotero-reads/__fixtures__";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
+import { layerPromiseNoteFeature } from "./__fixtures__/promise-note-feature";
+import type { PromiseNoteFeature } from "./__fixtures__/promise-note-feature";
 import { companionNoteNotice, openCompanionNote } from "./index";
 import type {
   CompanionNoteDeps,
@@ -62,10 +64,21 @@ interface FlowServices {
   readonly readItems?: ReadsAnswers["ItemsByIndexedKeys"];
   /** Records each notice the flow shows. */
   readonly notifier: ReturnType<typeof testNotifier>;
+  /** Answers the Note Feature's lookups and updates. */
+  readonly feature: Partial<PromiseNoteFeature>;
 }
 
-function flowLayer({ workspace, excluded, readItems, notifier }: FlowServices) {
+function flowLayer({
+  workspace,
+  excluded,
+  readItems,
+  notifier,
+  feature,
+}: FlowServices) {
   return Layer.mergeAll(
+    layerPromiseNoteFeature(() =>
+      stubService<PromiseNoteFeature>("NoteFeature", feature),
+    ),
     layerWorkspaceFrom(workspace),
     notifier.layer,
     Layer.mock(UseLedger, {
@@ -121,23 +134,26 @@ function creationHarness(selection: CreationProfileSelection) {
     createProfile: vi.fn(),
     importProfile: vi.fn(),
     app: stubService<App>("App", {}),
-    noteFeature: stubService<CompanionNoteDeps["noteFeature"]>("NoteFeature", {
-      resolveCompanionNote: vi.fn(async (): Promise<CompanionNoteTarget> => ({
-        outcome: "create",
-      })),
-      planCreations,
-      createNote: create,
-      updateNote: vi.fn(async () => ({
-        bodyUpdated: true,
-        duplicateRegionCount: 0,
-      })),
-    }),
+    noteFeature: stubService<CompanionNoteDeps["noteFeature"]>(
+      "NoteFeatureHandle",
+      { planCreations, createNote: create },
+    ),
+  };
+  const feature = {
+    resolveCompanionNote: vi.fn(async (): Promise<CompanionNoteTarget> => ({
+      outcome: "create",
+    })),
+    updateNote: vi.fn(async () => ({
+      bodyUpdated: true,
+      duplicateRegionCount: 0,
+    })),
   };
   const workspace = new MemoryWorkspace({ layoutReady: true });
   const excluded: string[] = [];
   const notifier = testNotifier();
   return {
     deps,
+    feature,
     file,
     item,
     readItems,
@@ -146,7 +162,7 @@ function creationHarness(selection: CreationProfileSelection) {
     workspace,
     excluded,
     notices: notifier.notices,
-    layer: flowLayer({ workspace, excluded, readItems, notifier }),
+    layer: flowLayer({ workspace, excluded, readItems, notifier, feature }),
   };
 }
 
@@ -328,9 +344,7 @@ it.effect(
         outcome: "refused" as const,
         diagnostic: unknownProfileDiagnostic(PAPERS),
       };
-      vi.mocked(
-        harness.deps.noteFeature.resolveCompanionNote,
-      ).mockResolvedValue(target);
+      vi.mocked(harness.feature.resolveCompanionNote).mockResolvedValue(target);
       yield* openCompanionNote(harness.deps, REF, {
         action: "open",
         profile: PAPERS,
@@ -353,7 +367,7 @@ it.effect("opens a matching existing note and updates under its stamp", () =>
       source: "headless",
       shouldAsk: true,
     });
-    vi.mocked(harness.deps.noteFeature.resolveCompanionNote).mockResolvedValue({
+    vi.mocked(harness.feature.resolveCompanionNote).mockResolvedValue({
       outcome: "existing",
       files: [harness.file],
     });
@@ -364,7 +378,7 @@ it.effect("opens a matching existing note and updates under its stamp", () =>
     }).pipe(Effect.provide(harness.layer));
     expect(harness.workspace.opened).toHaveLength(1);
     expect(harness.excluded).toEqual([harness.file.path]);
-    expect(harness.deps.noteFeature.updateNote).toHaveBeenCalledExactlyOnceWith(
+    expect(harness.feature.updateNote).toHaveBeenCalledExactlyOnceWith(
       harness.file,
       { indexedKey: "ABCD2345", scope: "metadata" },
     );
@@ -389,15 +403,13 @@ it.effect(
           path: harness.file.path,
         }),
       };
-      vi.mocked(
-        harness.deps.noteFeature.resolveCompanionNote,
-      ).mockResolvedValue(target);
+      vi.mocked(harness.feature.resolveCompanionNote).mockResolvedValue(target);
       yield* openCompanionNote(harness.deps, REF, {
         action: "update",
         profile: "default",
       }).pipe(Effect.provide(harness.layer));
       expect(harness.workspace.opened).toHaveLength(1);
-      expect(harness.deps.noteFeature.updateNote).not.toHaveBeenCalled();
+      expect(harness.feature.updateNote).not.toHaveBeenCalled();
       expect(harness.create).not.toHaveBeenCalled();
       const notice = companionNoteNotice(
         harness.deps.app,
@@ -421,9 +433,7 @@ it.effect.each(["tab"] as const)(
         source: "headless",
         shouldAsk: false,
       });
-      vi.mocked(
-        harness.deps.noteFeature.resolveCompanionNote,
-      ).mockResolvedValue({
+      vi.mocked(harness.feature.resolveCompanionNote).mockResolvedValue({
         outcome: "existing",
         files: [harness.file],
       });
@@ -486,12 +496,8 @@ it.effect.each(["open", "update"] as const)(
         importProfile: vi.fn(),
         app: stubService<App>("App", {}),
         noteFeature: stubService<CompanionNoteDeps["noteFeature"]>(
-          "NoteFeature",
-          {
-            resolveCompanionNote,
-            updateNote,
-            createNote,
-          },
+          "NoteFeatureHandle",
+          { createNote },
         ),
       };
       const workspace = new MemoryWorkspace({ layoutReady: true });
@@ -499,7 +505,14 @@ it.effect.each(["open", "update"] as const)(
       const notifier = testNotifier();
 
       yield* openCompanionNote(deps, REF, { action, profile: PAPERS }).pipe(
-        Effect.provide(flowLayer({ workspace, excluded: [], notifier })),
+        Effect.provide(
+          flowLayer({
+            workspace,
+            excluded: [],
+            notifier,
+            feature: { resolveCompanionNote, updateNote },
+          }),
+        ),
       );
 
       expect(workspace.opened).toEqual([openedAt("Books/Paper.md", false)]);

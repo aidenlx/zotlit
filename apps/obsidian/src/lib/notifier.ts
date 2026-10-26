@@ -1,5 +1,5 @@
 // Obsidian notices as a service the Effect layers show their toasts through.
-import { Cause, Context, Effect, Exit, Layer, Option } from "effect";
+import { Cause, Context, Deferred, Effect, Exit, Layer, Option } from "effect";
 import type { Duration } from "effect";
 import type { Scope } from "effect";
 
@@ -62,9 +62,13 @@ export const layerNotifier: Layer.Layer<Notifier> = Layer.succeed(
 );
 
 /** The three messages of a task's progress notice. */
-export interface ProgressCopy {
+export interface ProgressCopy<A = unknown> {
   readonly loading: NoticeMessage;
-  readonly success: NoticeMessage;
+  /**
+   * The success message, or the message for the task's result. A message for
+   * the result shows nothing for an interrupted task.
+   */
+  readonly success: NoticeMessage | ((result: A) => NoticeMessage);
   /** The error message, or the message for the error the task failed with. */
   readonly error: NoticeMessage | ((error: unknown) => NoticeMessage);
   /**
@@ -89,14 +93,18 @@ export interface ProgressCopy {
 export const reportProgress = Effect.fn("Notifier.reportProgress")(function* <
   A,
   E,
->(outcome: Effect.Effect<Exit.Exit<A, E>>, copy: ProgressCopy) {
+>(outcome: Effect.Effect<Exit.Exit<A, E>>, copy: ProgressCopy<A>) {
   const notifier = yield* Notifier;
   const notice = yield* notifier.progress;
   const early = yield* Effect.timeoutOption(outcome, "200 millis");
   if (Option.isNone(early)) yield* notice.setMessage(copy.loading);
   const exit = Option.isSome(early) ? early.value : yield* outcome;
   if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) {
-    yield* notice.setMessage(copy.success);
+    const { success } = copy;
+    if (typeof success !== "function") yield* notice.setMessage(success);
+    else if (Exit.isSuccess(exit))
+      yield* notice.setMessage(success(exit.value));
+    else return;
     yield* Effect.sleep(copy.successDuration ?? "2 seconds");
     return;
   }
@@ -130,6 +138,24 @@ const failureMessage = Effect.fnUntraced(function* (
   );
   return message;
 });
+
+/**
+ * Run `task` behind a progress notice, as `toast.promise` did: the task's
+ * result or failure returns once the task ends, while the notice reports the
+ * outcome on its own fiber, as {@link reportProgress} does.
+ */
+export const withProgress = <A, E, R>(
+  task: Effect.Effect<A, E, R>,
+  copy: ProgressCopy<A>,
+): Effect.Effect<A, E, R | Notifier> =>
+  Effect.gen(function* () {
+    const outcome = yield* Deferred.make<Exit.Exit<A, E>>();
+    // Detached, so the notice outlives the caller's run, as the toast did.
+    yield* Effect.forkDetach(reportProgress(Deferred.await(outcome), copy));
+    return yield* task.pipe(
+      Effect.onExit((exit) => Deferred.succeed(outcome, exit)),
+    );
+  });
 
 /** The messages of a task's outcome notice; see {@link reportOutcome}. */
 export interface OutcomeCopy<A> {

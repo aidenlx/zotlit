@@ -26,7 +26,7 @@ import {
 } from "@/lib/obsidian-private/property-values";
 import { createNoteInteractively } from "@/services/note-feature/creation-view";
 import type { InteractiveCreationDeps } from "@/services/note-feature/creation-view";
-import type { NoteFeature } from "@/services/note-feature/operations";
+import type { NoteFeatureHandle } from "@/services/note-feature/operations";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { PlainProfile } from "@/services/profile/plain";
 import type { PlainTemplate } from "@/services/template/plain";
@@ -194,7 +194,7 @@ export interface LiteratureNotesDeps extends InteractiveCreationDeps {
     | "frontmatter-changed"
   >;
   noteFeature: InteractiveCreationDeps["noteFeature"] &
-    Pick<NoteFeature, "replacedKeys">;
+    Pick<NoteFeatureHandle, "replacedKeys">;
   profile: Pick<PlainProfile, "changed">;
   template: Pick<PlainTemplate, "compile-status-changed">;
   zoteroReads: Pick<PlainZoteroReads, "reads">;

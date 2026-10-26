@@ -213,7 +213,7 @@ describe("TemplateWorkbenchView", () => {
       runtime: testRuntime(),
       noteFeature: stubService<
         NonNullable<TemplateWorkbenchDeps["noteFeature"]>
-      >("NoteFeature", { updateNote }),
+      >("NoteFeatureHandle", { updateNote }),
       profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
         "Profile",
         {

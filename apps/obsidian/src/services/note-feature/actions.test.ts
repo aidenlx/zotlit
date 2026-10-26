@@ -59,7 +59,7 @@ it("offers Profile switching only for the active Literature Note and opens its c
         getFileCache: () => ({ frontmatter }),
       }),
     }),
-    noteFeature: stubService<NoteDeps["noteFeature"]>("NoteFeature", {
+    noteFeature: stubService<NoteDeps["noteFeature"]>("NoteFeatureHandle", {
       on: () => () => {},
     }),
     batchImport: stubService<NoteDeps["batchImport"]>("BatchImport", {}),

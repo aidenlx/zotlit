@@ -141,7 +141,7 @@ async function setup(
       "compile-status-changed": Stream.empty,
     }),
     noteFeature: stubService<LiteratureNotesDeps["noteFeature"]>(
-      "NoteFeature",
+      "NoteFeatureHandle",
       {
         replacedKeys: async () => new Set(),
       },
@@ -465,7 +465,7 @@ describe("literatureNotes vault property writes", () => {
         dataDir: "/Zotero",
       }),
       noteFeature: stubService<LiteratureNotesDeps["noteFeature"]>(
-        "NoteFeature",
+        "NoteFeatureHandle",
         {
           createNote,
           planCreations: async (keys: readonly string[]) =>

@@ -40,7 +40,8 @@ import type {
   AttachmentFlushError,
   AttachmentImportBatch,
 } from "@/services/attachment-import/service";
-import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
+import { outcomeScope } from "@/services/excerpt-image/outcome-scope";
+import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type {
   ExcerptPreparation,
   ExcerptSummary,
@@ -274,12 +275,6 @@ const writeScoped = (
       });
     }),
   );
-
-/** The batch's scope, or one this write owns until its Scope closes. */
-const outcomeScope = (provided: ExcerptOutcomeScope | undefined) =>
-  provided === undefined
-    ? Effect.acquireDisposable(Effect.sync(() => new ExcerptOutcomeScope()))
-    : Effect.succeed(provided);
 
 const prepareExplicitImport = Effect.fnUntraced(function* (
   ctx: Ctx,

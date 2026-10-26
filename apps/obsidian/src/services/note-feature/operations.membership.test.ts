@@ -15,15 +15,12 @@ import type { MatchTree } from "@zotlit/templates/facade";
 import type { ItemFields } from "@zotlit/zotero-types";
 
 import { testEvents } from "@/lib/__fixtures__/event-stream";
-import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
-import type { VaultSource } from "@/lib/obsidian-vault";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { buildQueryService } from "@/services/item-query/__fixtures__";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
@@ -36,10 +33,8 @@ import {
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
-import { planningContext } from "./__fixtures__/planning-context";
-import type { NoteCitations } from "./citations-handle";
-import type { NoteFeatureDeps } from "./context";
-import { createNoteFeature } from "./operations";
+import { noteFeatureHandle } from "./__fixtures__/note-feature";
+import type { NoteFeatureSources } from "./__fixtures__/note-feature";
 import type { CreationPlanOptions } from "./operations";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
@@ -289,25 +284,13 @@ async function harness(
     },
     stack,
   );
-  const noteIndex: NoteFeatureDeps["noteIndex"] = {
+  const noteIndex: NoteFeatureSources["noteIndex"] = {
     whenIndexed: async () => {},
     getNotesByItemKey: (key) => notesByKey.get(key) ?? [],
     getImportedNoteByNoteKey: () => [],
   };
-  const deps: NoteFeatureDeps = {
-    context: planningContext(
-      { profile, noteIndex, zoteroReads, template, app },
-      query,
-    ),
+  const deps: NoteFeatureSources = {
     app,
-    citations: stubService<NoteCitations>("NoteCitations", {}),
-    vault: vaultOver(app.vault as unknown as VaultSource),
-    fileManager: { renameFile: () => Effect.void },
-    bridge: {
-      runSync: Effect.runSync,
-      runPromise: Effect.runPromise,
-      runPromiseExit: Effect.runPromiseExit,
-    },
     zoteroReads,
     profile,
     template,
@@ -334,7 +317,7 @@ async function harness(
       }),
     },
   };
-  const feature = createNoteFeature(deps);
+  const { handle: feature } = noteFeatureHandle(deps, stack, { query });
   const cleanup = stack.move();
   return {
     ...fixture,

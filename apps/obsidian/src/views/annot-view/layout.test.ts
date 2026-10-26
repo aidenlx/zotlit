@@ -19,7 +19,7 @@ import type {
   AnnotationList,
   AnnotationRecord,
 } from "@/services/annotation-repository/service";
-import type { NoteFeature } from "@/services/note-feature";
+import type { NoteFeatureHandle } from "@/services/note-feature";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 
 import { stateEditor } from "./__fixtures__/editor";
@@ -164,7 +164,7 @@ async function mountLayout(
   });
   const app = editorApp();
   app.workspace = workspace;
-  const prepare = vi.fn<NoteFeature["prepareAnnotationInsert"]>(() =>
+  const prepare = vi.fn<NoteFeatureHandle["prepareAnnotationInsert"]>(() =>
     Promise.resolve(null),
   );
   const deps = stubService<AnnotationsLayoutDeps>("AnnotationsLayoutDeps", {
@@ -179,7 +179,7 @@ async function mountLayout(
       { open: vi.fn(), refresh: vi.fn() },
     ),
     noteFeature: stubService<AnnotationsLayoutDeps["noteFeature"]>(
-      "NoteFeature",
+      "NoteFeatureHandle",
       { prepareAnnotationInsert: prepare },
     ),
     libraryTagNames: () => Promise.resolve([]),

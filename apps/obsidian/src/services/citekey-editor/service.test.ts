@@ -507,7 +507,7 @@ function creation(
     ),
     zoteroPref: { dataDir: "/zotero" },
     noteFeature: stubService<InteractiveCreationDeps["noteFeature"]>(
-      "NoteFeature",
+      "NoteFeatureHandle",
       {
         planCreations: async (keys: readonly string[]) =>
           new Map<string, CreationPlan>(

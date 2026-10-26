@@ -7,6 +7,7 @@ import type { TFile } from "obsidian";
 import type { Item } from "@zotlit/db";
 
 import { logAndContinue, withLogCategory } from "@/lib/effect-log";
+import { portCall } from "@/lib/legacy-port";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { describeCandidates } from "@/services/citation-index/ambiguity";
 import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
@@ -254,8 +255,18 @@ export const layerCitekeyEditor = (
           return;
         }
 
-        const file = yield* Effect.promise(() =>
+        const file = yield* portCall("create-note", () =>
           creation.createNote(zoteroItem),
+        ).pipe(
+          Effect.catchTag("LegacyPortError", ({ cause }) =>
+            Effect.logError("Cannot create the citekey note").pipe(
+              Effect.annotateLogs({
+                indexedKey: item.indexedKey,
+                error: cause,
+              }),
+              Effect.as(null),
+            ),
+          ),
         );
         if (!file) {
           yield* Effect.logDebug("Citekey note creation cancelled").pipe(

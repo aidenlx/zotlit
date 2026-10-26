@@ -68,7 +68,7 @@ function fixture() {
         >("TemplateDocument", {}),
     }),
     noteFeature: stubService<ProfileCreationDeps["noteFeature"]>(
-      "NoteFeature",
+      "NoteFeatureHandle",
       { prepareProfileNote: () => preview },
     ),
     zoteroPref: stubService<ProfileCreationDeps["zoteroPref"]>("ZoteroPref", {

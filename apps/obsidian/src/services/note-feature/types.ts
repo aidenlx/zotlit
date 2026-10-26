@@ -3,7 +3,6 @@ import type { TFile } from "obsidian";
 
 import type { Item, NoteTemplateContext } from "@zotlit/db";
 import type { UpdateScope } from "@zotlit/protocol";
-import type { Emitter } from "@zotlit/shared/nanoevents";
 
 import type {
   ProfileId,
@@ -17,8 +16,6 @@ import type { LiteratureNoteProfile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
-
-import type { NoteFeatureDeps } from "./context";
 
 export interface UpdateResult {
   bodyUpdated: boolean;
@@ -234,7 +231,6 @@ export interface CreateNoteOptions {
 }
 
 interface CreateNoteInternalOptions extends CreateNoteOptions {
-  onFileCreated?: (file: TFile) => void;
   preparedPath?: { path: string };
 }
 
@@ -272,7 +268,16 @@ export interface NoteFeatureEvents {
   }) => void;
 }
 
-/** Deps plus the feature's emitter, threaded through the internal operations. */
-type OpsContext = NoteFeatureDeps & { events: Emitter<NoteFeatureEvents> };
+/** One {@link NoteFeatureEvents} occurrence, tagged with its event name. */
+export type NoteFeatureEvent =
+  | {
+      readonly _tag: "excerpt-images-reported";
+      readonly summary: ExcerptSummary;
+    }
+  | {
+      readonly _tag: "frontmatter-eval-failed";
+      readonly itemKey: string;
+      readonly fields: string[];
+    };
 
-export type { CreateNoteInternalOptions, OpsContext };
+export type { CreateNoteInternalOptions };

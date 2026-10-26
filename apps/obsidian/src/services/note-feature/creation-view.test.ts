@@ -85,7 +85,7 @@ function directDeps(
     app: stubService<App>("App", {}),
     zoteroPref: { dataDir: "" },
     noteFeature: stubService<InteractiveCreationDeps["noteFeature"]>(
-      "NoteFeature",
+      "NoteFeatureHandle",
       {
         planCreations: vi.fn(async (keys: readonly string[]) =>
           creationPlans(keys, selection, previews),
@@ -135,7 +135,7 @@ it("creates a note from the New profile dialog's prepared callback without re-re
     createProfile,
     zoteroPref: { dataDir: "" },
     noteFeature: stubService<InteractiveCreationDeps["noteFeature"]>(
-      "NoteFeature",
+      "NoteFeatureHandle",
       {
         planCreations: vi.fn(async (keys: readonly string[]) =>
           creationPlans(
@@ -380,7 +380,7 @@ it("imports from the contextual picker without creating a note", async () => {
     importProfile,
     zoteroPref: { dataDir: "" },
     noteFeature: stubService<InteractiveCreationDeps["noteFeature"]>(
-      "NoteFeature",
+      "NoteFeatureHandle",
       {
         planCreations: vi.fn(async (keys: readonly string[]) =>
           creationPlans(

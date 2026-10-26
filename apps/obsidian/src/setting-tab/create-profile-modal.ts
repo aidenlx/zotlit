@@ -9,7 +9,10 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import type { NoteFeature, ProfileNotePreview } from "@/services/note-feature";
+import type {
+  NoteFeatureHandle,
+  ProfileNotePreview,
+} from "@/services/note-feature";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import type { PlainProfile } from "@/services/profile/plain";
@@ -56,7 +59,7 @@ export interface ProfileCreationDeps {
   app: App;
   profile: Pick<PlainProfile, "profiles" | "resolveProfile" | "prepareCreate">;
   template: Pick<PlainTemplate, "prepareLiteratureNoteTemplateSource">;
-  noteFeature: Pick<NoteFeature, "prepareProfileNote">;
+  noteFeature: Pick<NoteFeatureHandle, "prepareProfileNote">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   loadData: (options?: {
     indexedKey?: string;
@@ -72,7 +75,7 @@ export type ProfileDialogServices = TemplateDataDeps & {
     "render" | "renderCitation" | "prepareLiteratureNoteTemplateSource"
   >;
   profile: ProfileCreationDeps["profile"] & Pick<PlainProfile, "prepareImport">;
-  noteFeature: Pick<NoteFeature, "prepareProfileNote">;
+  noteFeature: Pick<NoteFeatureHandle, "prepareProfileNote">;
 };
 
 export async function loadProfilePreviewData(

@@ -13,7 +13,7 @@ import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
-import type { NoteFeature } from "@/services/note-feature";
+import type { NoteFeatureHandle } from "@/services/note-feature";
 import { ProfileAnnotationError } from "@/services/template/service";
 
 import { captureInsertion } from "./async-insert";
@@ -29,7 +29,7 @@ interface AnnotationSnapshot {
 
 interface AsyncInsertDeps {
   app: App;
-  noteFeature: Pick<NoteFeature, "prepareAnnotationInsert">;
+  noteFeature: Pick<NoteFeatureHandle, "prepareAnnotationInsert">;
   snapshot: (annotation: AnnotationRecord) => AnnotationSnapshot;
   notify: (message: string | DocumentFragment) => void;
 }

@@ -32,7 +32,7 @@ import type { TargetOpener } from "@/services/attachment-open/open-target";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import { savedExcerptRequest } from "@/services/excerpt-image/request";
 import type { ExcerptRequest } from "@/services/excerpt-image/service";
-import type { NoteFeature } from "@/services/note-feature";
+import type { NoteFeatureHandle } from "@/services/note-feature";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 import type { ReaderSession } from "@/services/reader-session/session";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
@@ -165,7 +165,7 @@ export interface AnnotationsLayoutDeps {
   /** The plugin's live display surface for Excerpt Images. */
   excerptDisplay: Pick<ExcerptDisplayService, "open" | "refresh">;
   noteFeature: Pick<
-    NoteFeature,
+    NoteFeatureHandle,
     "renderAnnotationCitation" | "prepareAnnotationInsert"
   >;
 }

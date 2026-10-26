@@ -15,6 +15,8 @@
 // provenance and stay classed apart from validated generated entries.
 //
 // @see apps/obsidian/docs/adr/0051-batches-reuse-excerpt-outcomes-with-bounded-memory.md
+import { Effect } from "effect";
+
 import type { ExcerptOutcome, PdfStamp } from "./service";
 
 /** Encoded bytes one batch retains. */
@@ -219,14 +221,12 @@ export class ExcerptOutcomeScope implements AsyncDisposable {
 }
 
 /**
- * The scope a batch above provides, or one opened on `stack` when the caller is
- * its own initiating batch. Whichever way it is obtained, the stack that owns
- * it releases the retention once the batch's consumers settle, and every write
- * below the seam shares that one scope.
+ * The scope a batch above provides, or one this operation owns until its
+ * Scope closes, when the caller is its own initiating batch. Whichever way it
+ * is obtained, its owner releases the retention once the batch's consumers
+ * settle, and every write below the seam shares that one scope.
  */
-export function resolveOutcomeScope(
-  provided: ExcerptOutcomeScope | undefined,
-  stack: AsyncDisposableStack,
-): ExcerptOutcomeScope {
-  return provided ?? stack.use(new ExcerptOutcomeScope());
-}
+export const outcomeScope = (provided: ExcerptOutcomeScope | undefined) =>
+  provided === undefined
+    ? Effect.acquireDisposable(Effect.sync(() => new ExcerptOutcomeScope()))
+    : Effect.succeed(provided);

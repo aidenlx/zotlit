@@ -50,11 +50,9 @@ import {
 } from "@zotlit/templates/obsidian";
 import type { ItemFields } from "@zotlit/zotero-types";
 
-import { fileManagerOver } from "@/lib/__fixtures__/obsidian-file-manager";
+import { MemoryFileManager } from "@/lib/__fixtures__/obsidian-file-manager";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import type { ObsidianHost } from "@/lib/__fixtures__/obsidian-host";
-import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
-import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   FIELD_CITATION_STYLE,
   FIELD_CITEKEY,
@@ -63,8 +61,6 @@ import {
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { parseFrontMatter } from "@/lib/live-text";
-import type { FileManagerSource } from "@/lib/obsidian-file-manager";
-import type { VaultSource } from "@/lib/obsidian-vault";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type {
   AttachmentSource,
@@ -92,7 +88,6 @@ import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {
   ATTACHMENT_TYPE_ID,
@@ -102,42 +97,36 @@ import {
   worksSql,
 } from "@/services/zotero-reads/test-utils";
 
-import { planningContext } from "./__fixtures__/planning-context";
+import { noteFeatureHandle } from "./__fixtures__/note-feature";
+import type { NoteFeatureSources } from "./__fixtures__/note-feature";
 import type { PlanningSources } from "./__fixtures__/planning-context";
 import type { NoteCitations } from "./citations-handle";
-import type { NoteFeatureDeps } from "./context";
+import { plainNoteError } from "./errors";
+import type { NoteFeatureHandle, UpdateScope } from "./operations";
+import { NoteFeature } from "./service";
+import type { WriteNoteUpdateOptions } from "./types";
 /**
  * The note feature's deps, with the fixture database its reads serve. The
  * host's file manager also renames: the FileManager tag runs over it.
  */
-type TestDeps = Omit<
-  NoteFeatureDeps,
-  | "bridge"
-  | "profile"
-  | "context"
-  | "vault"
-  | "fileManager"
-  | "app"
-  | "zoteroReads"
-  | "citations"
-> &
-  Partial<
-    Pick<NoteFeatureDeps, "bridge" | "vault" | "fileManager" | "citations">
-  > & {
-    /** Creation planning reads the registry through the Profile tag. */
-    profile?: NoteFeatureDeps["profile"] & PlanningSources["profile"];
-    app: NoteFeatureDeps["app"] & {
-      fileManager: Pick<
-        FileManagerSource,
-        "generateMarkdownLink" | "renameFile"
-      >;
-    };
-    db: { client: NodeDatabaseClient };
-    /** Creation planning reads the Snapshot through the ZoteroReads tag. */
-    zoteroReads: NoteFeatureDeps["zoteroReads"] &
-      Pick<PlainZoteroReads, "snapshot">;
+type TestDeps = Omit<NoteFeatureSources, "profile" | "zoteroReads"> & {
+  /** Runs a test's own reads of the settings. */
+  bridge?: {
+    runSync: typeof Effect.runSync;
+    runPromise: typeof Effect.runPromise;
+    runPromiseExit: typeof Effect.runPromiseExit;
   };
-import { createNoteFeature as createFeature } from "./operations";
+  citations?: NoteCitations;
+  /** Creation planning reads the registry through the Profile tag. */
+  profile?: PlanningSources["profile"];
+  db: { client: NodeDatabaseClient };
+  /** The write pipeline and creation planning read Snapshots through the ZoteroReads tag. */
+  zoteroReads: PlanningSources["zoteroReads"];
+};
+/**
+ * The Note Feature over `deps`, through its edge handle: the layer runs on a
+ * runtime this case closes.
+ */
 function createNoteFeature(deps: TestDeps) {
   const profile =
     deps.profile ??
@@ -145,53 +134,60 @@ function createNoteFeature(deps: TestDeps) {
       () => Effect.runSync(deps.settings.current) ?? settingsDefaults,
       deps.app.metadataCache,
     );
-  const feature = createFeature({
-    ...deps,
-    // The tag over the test host's vault, so a create sees its cache.
-    vault: deps.vault ?? vaultOver(deps.app.vault as unknown as VaultSource),
-    fileManager:
-      deps.fileManager ??
-      fileManagerOver(
-        deps.app.fileManager as FileManagerSource,
-        deps.app.vault as unknown as VaultSource,
-      ),
-    bridge: deps.bridge ?? {
-      runSync: Effect.runSync,
-      runPromise: Effect.runPromise,
-      runPromiseExit: Effect.runPromiseExit,
-    },
-    // The citation members run no note operation; citation.test.ts covers them.
-    citations:
-      deps.citations ?? stubService<NoteCitations>("NoteCitations", {}),
-    // These Profiles name no Match, so creation runs no query.
-    context: planningContext({
+  const { handle: feature, runtime } = noteFeatureHandle(
+    {
+      ...deps,
+      // These Profiles name no Match, so creation runs no query.
       profile,
+      get template() {
+        return deps.template;
+      },
       get noteIndex() {
         return deps.noteIndex;
+      },
+      get settings() {
+        return deps.settings;
+      },
+      get zoteroPref() {
+        return deps.zoteroPref;
+      },
+      get attachmentImport() {
+        return deps.attachmentImport;
+      },
+      get excerptImages() {
+        return deps.excerptImages;
       },
       get zoteroReads() {
         return deps.zoteroReads;
       },
-      get template() {
-        return deps.template;
-      },
-      get app() {
-        return deps.app;
-      },
-    }),
-    profile,
-  });
+    },
+    caseFixtures,
+    // The citation members run no note operation; citation.test.ts covers them.
+    { citations: deps.citations },
+  );
   // The caller hands over an Item it read from Zotero, so the database holds it.
   const know = (item: Item) => seedItem(deps.db.client, item);
   return {
     ...feature,
-    createNote: (...args) => {
+    createNote: (...args: Parameters<NoteFeatureHandle["createNote"]>) => {
       know(args[0]);
       return feature.createNote(...args);
     },
-  } satisfies NoteFeature;
+    // The batch runners' members, which no Promise caller holds.
+    reportExcerptImages: (summary: ExcerptSummary) =>
+      runtime.runSync(
+        Effect.flatMap(NoteFeature, (service) =>
+          service.reportExcerptImages(summary),
+        ),
+      ),
+    writeNoteUpdate: (file: TFile, options: WriteNoteUpdateOptions) =>
+      runtime.runPromise(
+        Effect.flatMap(NoteFeature, (service) =>
+          service.writeNoteUpdate(file, options),
+        ).pipe(Effect.mapError((error) => plainNoteError(error))),
+      ),
+  };
 }
-import type { NoteFeature, UpdateScope } from "./operations";
 
 /** Stand-in decision port: every source blocks, so no test copies a file. */
 const blockedDecide = (
@@ -593,17 +589,15 @@ describe("createNote", () => {
     const zoteroReads = deps.zoteroReads;
     deps.zoteroReads = {
       reads: zoteroReads.reads,
-      snapshot: zoteroReads.snapshot,
-      acquireRead: async () => {
-        const lease = await zoteroReads.acquireRead();
-        return {
-          reads: lease.reads,
-          [Symbol.asyncDispose]() {
-            state.leaseReleased = true;
-            return lease[Symbol.asyncDispose]();
-          },
-        };
-      },
+      snapshot: zoteroReads.snapshot.pipe(
+        Effect.tap(() =>
+          Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              state.leaseReleased = true;
+            }),
+          ),
+        ),
+      ),
     };
     // The create seeds the Item "Paper" (RTKEY234) itself; its PDF holds an
     // image and an ink annotation.
@@ -2243,10 +2237,10 @@ function makeUpdateHarness(options: {
   const deps: TestDeps = {
     app: {
       ...host.app,
-      fileManager: {
+      fileManager: Object.assign(new MemoryFileManager(), {
         generateMarkdownLink: () => "",
         renameFile: vi.fn(),
-      },
+      }),
     },
     bridge: {
       runSync: Effect.runSync,
@@ -3515,9 +3509,6 @@ describe("updateNote", () => {
           snapshot: Effect.fail(
             new DbUnavailable({ message: "Database unavailable" }),
           ),
-          acquireRead: async () => {
-            throw new Error("Database unavailable");
-          },
         };
       const file = harness.file("Literature/Paper.md");
       const feature = createNoteFeature(harness.deps);
@@ -3591,8 +3582,9 @@ describe("updateNote", () => {
         ],
       },
     });
-    harness.deps.zoteroReads.acquireRead = async () => {
-      throw new Error("Recovery must not need a parent lookup");
+    harness.deps.zoteroReads = {
+      ...harness.deps.zoteroReads,
+      snapshot: Effect.die(new Error("Recovery must not need a parent lookup")),
     };
     const file = harness.file("Imports/Child.md");
     harness.deps.app.fileManager.renameFile = async (_file, path) => {
@@ -4238,9 +4230,7 @@ describe("replacedKeys", () => {
 });
 
 describe("writeNoteUpdate", () => {
-  const writeOptions = (
-    scope?: UpdateScope,
-  ): Parameters<NoteFeature["writeNoteUpdate"]>[1] => ({
+  const writeOptions = (scope?: UpdateScope): WriteNoteUpdateOptions => ({
     reads,
     item: makeItem({
       key: "ABC23456",
@@ -4613,7 +4603,7 @@ function seedChildNotes(
 function makeSettings(
   overrides: Partial<Settings> &
     Partial<ResolvedLiteratureNoteProfileBindings> = {},
-): NoteFeatureDeps["settings"] {
+): TestDeps["settings"] {
   const {
     ["note.literature-folder"]: literatureFolder,
     ["citation.references-style"]: referencesStyle,
@@ -4668,7 +4658,7 @@ function makeSettings(
  * persisted; the feature must neither read it nor write it back.
  */
 function seedRememberedProfile(
-  settings: NoteFeatureDeps["settings"],
+  settings: TestDeps["settings"],
   selector: ProfileId,
 ): void {
   Object.assign(Effect.runSync(settings.current), {
@@ -4696,7 +4686,7 @@ function makeApp(files: Record<string, string> = {}) {
     ...host.app,
     host,
     vault,
-    fileManager: {
+    fileManager: Object.assign(new MemoryFileManager(), {
       links,
       // oxlint-disable-next-line max-params
       generateMarkdownLink(
@@ -4709,7 +4699,7 @@ function makeApp(files: Record<string, string> = {}) {
         return alias ? `[[${file.path}|${alias}]]` : `[[${file.path}]]`;
       },
       renameFile: vi.fn(),
-    },
+    }),
   };
 }
 
@@ -4723,7 +4713,7 @@ function makeFile(path: string): TFile {
 }
 
 function createdFile(
-  result: Awaited<ReturnType<NoteFeature["createNote"]>>,
+  result: Awaited<ReturnType<NoteFeatureHandle["createNote"]>>,
 ): TFile {
   expect(result.outcome).toBe("created");
   if (result.outcome !== "created") {

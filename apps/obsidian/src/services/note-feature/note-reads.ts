@@ -4,10 +4,8 @@ import { Effect } from "effect";
 import type { Item } from "@zotlit/db";
 
 import type { NoteProfile, ResolvedProfile } from "@/services/profile/bindings";
-import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
+import { Template } from "@/services/template/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
-
-import type { NoteFeatureDeps } from "./context";
 
 /** The Profile a note moves from: none for an unresolved Profile stamp. */
 function relocationSource(current: NoteProfile): ResolvedProfile | undefined {
@@ -21,12 +19,16 @@ function readItem(reads: ZoteroReadsApi, indexedKey: string) {
     .pipe(Effect.map((items): Item | undefined => items.get(indexedKey)));
 }
 
-function resolveProfileDocument(
-  ctx: NoteFeatureDeps,
+/**
+ * The Profile's document: `undefined` for one that names none, `null` for
+ * one whose document Template is missing.
+ */
+const resolveProfileDocument = Effect.fnUntraced(function* (
   profile: ResolvedProfile,
-): ResolvedLiteratureNoteTemplate | undefined | null {
+) {
   if (profile.document === undefined) return undefined;
-  return ctx.template.getLiteratureNoteTemplate(profile.document) ?? null;
-}
+  const template = yield* Template;
+  return (yield* template.getLiteratureNoteTemplate(profile.document)) ?? null;
+});
 
 export { readItem, relocationSource, resolveProfileDocument };

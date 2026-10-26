@@ -34,13 +34,15 @@ import {
 } from "@/services/batch-scope";
 import type { BatchLibrary, BatchTarget } from "@/services/batch-scope";
 import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
-import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
 import type { LibraryScope } from "@/services/library-scope/service";
 import type {
-  NoteFeature,
   CreationProfileSelection,
   ProfilePreview,
 } from "@/services/note-feature";
+import {
+  collectExcerptReports,
+  NoteFeature,
+} from "@/services/note-feature/service";
 import { lastmodFromFrontmatter } from "@/services/note-index/parse";
 import { NoteIndex } from "@/services/note-index/service";
 import { Profile } from "@/services/profile/service";
@@ -71,6 +73,7 @@ const IMPORT_CONCURRENCY = 16;
 export type BatchImportServices =
   | LibraryScope
   | MetadataCache
+  | NoteFeature
   | NoteImporter
   | NoteIndex
   | PluginSettings
@@ -79,17 +82,12 @@ export type BatchImportServices =
 
 /**
  * The legacy values a batch import calls: the UI port for the classify,
- * confirm and Profile modals, Note Feature's creation Profile and excerpt
- * report, and the bridge the modal's callbacks enter Effect through. Note
- * Feature converts in a later slice.
+ * confirm and Profile modals, and the bridge the modal's callbacks enter
+ * Effect through.
  */
 export interface BatchImportPorts {
   /** UI port for the classify/confirm modals; keeps `App` out of the runners. */
   readonly view: NoteImportView;
-  readonly noteFeature: Pick<
-    NoteFeature,
-    "resolveCreationProfile" | "reportExcerptImages"
-  >;
   /** Runs the modal's callbacks; unload interrupts a run still going. */
   readonly bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
 }
@@ -345,9 +343,8 @@ const prepareImportProfiles = Effect.fnUntraced(function* (
   const zoteroReads = yield* ZoteroReads;
   const context = yield* Effect.context<BatchImportServices>();
   const { settle } = yield* modalRunner<BatchImportServices>(ports.bridge);
-  let selection: CreationProfileSelection = yield* Effect.promise(() =>
-    ports.noteFeature.resolveCreationProfile(),
-  );
+  let selection: CreationProfileSelection =
+    yield* (yield* NoteFeature).resolveCreationProfile();
   const cache = new Map<ProfileSelector, Map<number, PreparedExplicitImport>>();
   const initial = new Map<number, PreparedExplicitImport>();
   yield* Effect.scoped(
@@ -788,16 +785,6 @@ const importSingleNote = Effect.fnUntraced(function* (
   return result({ outcome: "single", write, title });
 });
 
-/** A summary of the excerpts a run reports, to Note Feature when the Scope closes. */
-const excerptReports = (ports: BatchImportPorts) =>
-  Effect.acquireDisposable(
-    Effect.sync(() =>
-      collectExcerptSummary((summary) =>
-        ports.noteFeature.reportExcerptImages(summary),
-      ),
-    ),
-  );
-
 /** Load a note's full body under a fresh Snapshot and write its mirror. */
 const importOne = Effect.fnUntraced(function* (
   ports: BatchImportPorts,
@@ -818,7 +805,7 @@ const importOne = Effect.fnUntraced(function* (
         const skipped: WriteOutcome = "skipped";
         return skipped;
       }
-      const excerpts = yield* excerptReports(ports);
+      const excerpts = yield* collectExcerptReports;
       return yield* importer.importNote(note, {
         reads,
         settings,
@@ -858,7 +845,7 @@ const executeImportRun = Effect.fnUntraced(function* (
   const failures: { noteKey: string; error: unknown }[] = [];
   const result = yield* Effect.scoped(
     Effect.gen(function* () {
-      const excerpts = yield* excerptReports(ports);
+      const excerpts = yield* collectExcerptReports;
       // One run is one initiating batch: every note it writes reuses one
       // retention, released as soon as the run's last admitted consumer
       // settles.
@@ -1021,7 +1008,7 @@ export const reimportNoteByKey = Effect.fn("reimportNoteByKey")(function* (
       }
 
       const settings = yield* (yield* PluginSettings).current;
-      const excerpts = yield* excerptReports(ports);
+      const excerpts = yield* collectExcerptReports;
       const writeOutcome = yield* importer.importNote(note, {
         reads,
         settings,

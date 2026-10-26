@@ -9,13 +9,10 @@ import { parse } from "yaml";
 import { getItemsByKey } from "@zotlit/db";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
-import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import type { VaultSource } from "@/lib/obsidian-vault";
 import type { SourceOrigin } from "@/services/attachment-import/source";
-import { planningContext } from "@/services/note-feature/__fixtures__/planning-context";
-import type { NoteFeatureDeps } from "@/services/note-feature/context";
-import { createNoteFeature } from "@/services/note-feature/operations";
+import { noteFeatureHandle } from "@/services/note-feature/__fixtures__/note-feature";
+import type { NoteFeatureSources } from "@/services/note-feature/__fixtures__/note-feature";
 import type { CreateNoteResult } from "@/services/note-feature/operations";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ProfileFixtureSettings } from "@/services/profile/__fixtures__/reader";
@@ -86,43 +83,30 @@ async function realCreate(
     }),
   });
   const profile = profileReader(current, host.metadataCache);
-  const template = stubService<NoteFeatureDeps["template"]>("Template", {
+  const template = stubService<NoteFeatureSources["template"]>("Template", {
     frontmatterFields: [],
     getLiteratureNoteTemplate: () => document,
     renderFilename: (data: object) => document.renderFilename(data),
     render: (name: string, data: object) =>
       fixture.deps.templates.render(name as "note", data),
   });
-  const noteIndex: NoteFeatureDeps["noteIndex"] = {
+  const noteIndex: NoteFeatureSources["noteIndex"] = {
     whenIndexed: async () => {},
     getNotesByItemKey: () => [],
     getImportedNoteByNoteKey: () => [],
   };
-  const deps = stubService<NoteFeatureDeps>("NoteFeatureDeps", {
+  const deps = stubService<NoteFeatureSources>("NoteFeatureSources", {
     profile,
     app,
     template,
     zoteroReads: fixture.zoteroReads,
     noteIndex,
-    context: planningContext({
-      profile,
-      noteIndex,
-      zoteroReads: fixture.zoteroReads,
-      template,
-      app: host,
-    }),
     zoteroPref: { dataDir: "/Zotero", baseAttachmentPath: null },
-    settings: stubService<NoteFeatureDeps["settings"]>("PluginSettings", {
+    settings: stubService<NoteFeatureSources["settings"]>("PluginSettings", {
       current: Effect.succeed(current),
       update: () => Effect.succeed(current),
     }),
-    bridge: stubService<NoteFeatureDeps["bridge"]>("EffectBridge", {
-      runSync: Effect.runSync,
-      runPromise: Effect.runPromise,
-    }),
-    vault: vaultOver(host.vault as unknown as VaultSource),
-    fileManager: { renameFile: () => Effect.void },
-    attachmentImport: stubService<NoteFeatureDeps["attachmentImport"]>(
+    attachmentImport: stubService<NoteFeatureSources["attachmentImport"]>(
       "AttachmentImport",
       {
         prepare: async (_notePath: string) => ({
@@ -149,9 +133,9 @@ async function realCreate(
   const item = getItemsByKey(fixture.client, ["MAIN2345"], {
     libraryID: 1,
   })[0]!;
-  const result = await createNoteFeature(deps).createNote(item, {
-    profile: entry.id,
-  });
+  await using stack = new AsyncDisposableStack();
+  const { handle } = noteFeatureHandle(deps, stack);
+  const result = await handle.createNote(item, { profile: entry.id });
   const [file] = host.vault.getMarkdownFiles();
   return {
     result,

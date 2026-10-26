@@ -5,7 +5,7 @@ import type { App, MarkdownFileInfo } from "obsidian";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { getLogger } from "@/lib/log";
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
-import type { NoteFeature } from "@/services/note-feature";
+import type { NoteFeatureHandle } from "@/services/note-feature";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import { captureInsertion } from "@/views/annot-view/async-insert";
@@ -19,7 +19,7 @@ export interface AnnotationInsertDeps {
   app: App;
   annotations: Pick<AnnotationRepository["Service"], "read">;
   bridge: Pick<EffectBridge, "runPromise" | "runSync">;
-  noteFeature: Pick<NoteFeature, "prepareAnnotationInsert">;
+  noteFeature: Pick<NoteFeatureHandle, "prepareAnnotationInsert">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   useLedger: Pick<PlainUseLedger, "record">;
   notify: (message: string | DocumentFragment) => void;

@@ -31,7 +31,7 @@ import {
 import { InertTemplateError } from "@/services/template/errors";
 
 import type {
-  NoteFeature,
+  NoteFeatureHandle,
   NoteOperationDiagnostic,
   UpdateScope,
 } from "./operations";
@@ -48,7 +48,7 @@ interface NoteFeatureActionDeps extends Pick<
   "zoteroPref" | "createProfile" | "importProfile"
 > {
   app: App;
-  noteFeature: NoteFeature;
+  noteFeature: NoteFeatureHandle;
   batchImport: Pick<
     BatchImport,
     "runChildImportByKey" | "reimportNoteByKey" | "runBatchImportAll"
