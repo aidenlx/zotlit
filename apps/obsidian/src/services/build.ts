@@ -71,6 +71,8 @@ import { bindManagedBinary } from "./managed-binary/handle";
 import { createNoteFeature } from "./note-feature";
 import type { NoteFeature } from "./note-feature";
 import { bindBatchUpdate } from "./note-feature/batch-update-handle";
+import { bindNoteCitations } from "./note-feature/citations-handle";
+import type { NoteCitationServices } from "./note-feature/citations-handle";
 import type { BatchUpdateServices } from "./note-feature/update-batch";
 import { batchUpdateNotices } from "./note-feature/update-single";
 import type { BatchImportServices } from "./note-import/batch-import";
@@ -409,12 +411,18 @@ export async function buildServices(
         createNoteFeature({
           vault,
           fileManager,
-          singleExcerpt: (options) =>
-            prepareSingleExcerpt({
-              ...options,
-              app: plugin.app,
-              resolver: excerptImage,
-            }),
+          citations: bindNoteCitations(
+            bridge,
+            runtime.runSync(Effect.context<NoteCitationServices>()),
+            {
+              singleExcerpt: (options) =>
+                prepareSingleExcerpt({
+                  ...options,
+                  app: plugin.app,
+                  resolver: excerptImage,
+                }),
+            },
+          ),
           excerptImages: (options) =>
             createExcerptPreparation({
               app: plugin.app,

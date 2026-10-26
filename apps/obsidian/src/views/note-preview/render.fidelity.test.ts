@@ -88,10 +88,8 @@ async function realCreate(
     profile: profileReader(current, host.metadataCache),
     app,
     template: stubService<NoteFeatureDeps["template"]>("Template", {
-      loaded: true,
       frontmatterFields: [],
       getLiteratureNoteTemplate: () => document,
-      renderProfileAnnotation: () => "",
       renderFilename: (data: object) => document.renderFilename(data),
       render: (name: string, data: object) =>
         fixture.deps.templates.render(name as "note", data),

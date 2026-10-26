@@ -1,6 +1,6 @@
 import type { TFile } from "obsidian";
 
-import type { CitationVariant, CiteRef, Item } from "@zotlit/db";
+import type { Item } from "@zotlit/db";
 import type { UpdateScope } from "@zotlit/protocol";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
@@ -9,9 +9,7 @@ import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 
-import { renderAnnotationCitation } from "./annotation-citation";
-import type { AnnotationCitation } from "./annotation-citation";
-import { renderCitation } from "./citation";
+import type { NoteCitations } from "./citations-handle";
 import type { NoteFeatureDeps } from "./context";
 import {
   planCreations,
@@ -21,8 +19,6 @@ import {
   resolveCreationProfile,
 } from "./creation-planning";
 import { refusedCreate } from "./diagnostics";
-import { prepareAnnotationInsert } from "./insert-annotation";
-import type { AnnotationInsertOptions } from "./insert-annotation";
 import type {
   CompanionNoteTarget,
   CreateNoteInternalOptions,
@@ -87,7 +83,7 @@ const MAX_UNINDEXED_CREATES = 256;
  * The bound note-feature operations returned by {@link createNoteFeature}.
  * Consumers hold this object; the collaborators stay behind the seam.
  */
-export interface NoteFeature {
+export interface NoteFeature extends NoteCitations {
   reportExcerptImages(summary: ExcerptSummary): void;
   /**
    * Settles when templates and the note index are usable. Single-item methods
@@ -159,16 +155,6 @@ export interface NoteFeature {
     file: TFile,
     options: WriteNoteUpdateOptions,
   ): Promise<UpdateResult>;
-  /** @see renderCitation */
-  renderCitation(
-    items: readonly CiteRef[],
-    variant: CitationVariant,
-  ): string | null;
-  /** @see renderAnnotationCitation */
-  renderAnnotationCitation(annotationKey: string): Promise<AnnotationCitation>;
-  prepareAnnotationInsert(
-    options: AnnotationInsertOptions,
-  ): ReturnType<typeof prepareAnnotationInsert>;
   /** Subscribe to {@link NoteFeatureEvents}; returns an unsubscribe. */
   on<K extends keyof NoteFeatureEvents>(
     event: K,
@@ -269,10 +255,13 @@ export function createNoteFeature(deps: NoteFeatureDeps): NoteFeature {
     overwriteNote: (file, indexedKey, options) =>
       overwriteNote(ctx, file, { ...options, indexedKey }),
     writeNoteUpdate: (file, options) => writeNoteUpdate(ctx, file, options),
-    renderCitation: (items, variant) => renderCitation(ctx, items, variant),
+    // Until the Note Feature is a tag, the citation members run on the bridge.
+    renderCitation: (items, variant) =>
+      deps.citations.renderCitation(items, variant),
     renderAnnotationCitation: (annotationKey) =>
-      renderAnnotationCitation(ctx, annotationKey),
-    prepareAnnotationInsert: (options) => prepareAnnotationInsert(ctx, options),
+      deps.citations.renderAnnotationCitation(annotationKey),
+    prepareAnnotationInsert: (options) =>
+      deps.citations.prepareAnnotationInsert(options),
     on: (event, cb) => events.on(event, cb),
   };
 }

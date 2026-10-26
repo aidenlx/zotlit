@@ -20,7 +20,6 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildNoteContextFromSource,
-  citekeysToCiteTemplateData,
   itemBaseFields,
   resolveVenue,
 } from "@zotlit/db";
@@ -36,14 +35,8 @@ import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema, rowInstant } from "@zotlit/db/test-utils";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
-import {
-  filenameSuffix,
-  inlineCitation,
-  TemplateEngine,
-} from "@zotlit/templates";
-import defaultCitation from "@zotlit/templates/defaults/citation.liquid?raw";
+import { filenameSuffix, TemplateEngine } from "@zotlit/templates";
 import { MissingTemplateError, TemplateFacade } from "@zotlit/templates/facade";
-import type { TemplateLanguage } from "@zotlit/templates/facade";
 import { compileFrontmatterFields } from "@zotlit/templates/frontmatter";
 import type {
   CompiledFrontmatterField,
@@ -61,6 +54,7 @@ import { fileManagerOver } from "@/lib/__fixtures__/obsidian-file-manager";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import type { ObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   FIELD_CITATION_STYLE,
   FIELD_CITEKEY,
@@ -106,6 +100,7 @@ import {
   worksSql,
 } from "@/services/zotero-reads/test-utils";
 
+import type { NoteCitations } from "./citations-handle";
 import type { NoteFeatureDeps } from "./context";
 /**
  * The note feature's deps, with the fixture database its reads serve. The
@@ -113,12 +108,12 @@ import type { NoteFeatureDeps } from "./context";
  */
 type TestDeps = Omit<
   NoteFeatureDeps,
-  "bridge" | "profile" | "query" | "vault" | "fileManager" | "app"
+  "bridge" | "profile" | "query" | "vault" | "fileManager" | "app" | "citations"
 > &
   Partial<
     Pick<
       NoteFeatureDeps,
-      "bridge" | "profile" | "query" | "vault" | "fileManager"
+      "bridge" | "profile" | "query" | "vault" | "fileManager" | "citations"
     >
   > & {
     app: NoteFeatureDeps["app"] & {
@@ -145,6 +140,9 @@ function createNoteFeature(deps: TestDeps) {
       runSync: Effect.runSync,
       runPromise: Effect.runPromise,
     },
+    // The citation members run no note operation; citation.test.ts covers them.
+    citations:
+      deps.citations ?? stubService<NoteCitations>("NoteCitations", {}),
     // These Profiles name no Match, so creation runs no query.
     query: deps.query ?? {
       run: () => Promise.reject(new Error("This test runs no query.")),
@@ -1410,11 +1408,8 @@ describe("createNote", () => {
       app,
       template: {
         renderManagedContent: () => "",
-        loaded: true,
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
-        renderProfileAnnotation: () => "",
-        renderCitation: () => "",
         renderFilename<T extends object>(data: T): string {
           const d = data as {
             title: string | null;
@@ -1558,11 +1553,8 @@ describe("createNote", () => {
       app,
       template: {
         renderManagedContent: () => "",
-        loaded: true,
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
-        renderProfileAnnotation: () => "",
-        renderCitation: () => "",
         renderFilename: () => "Root",
         render: () => "body",
       },
@@ -2397,11 +2389,8 @@ function makeUpdateHarness(options: {
 
   const template: TestDeps["template"] = {
     renderManagedContent: () => renderContent(),
-    loaded: true,
     frontmatterFields: options.frontmatterFields ?? [],
     getLiteratureNoteTemplate: () => undefined,
-    renderProfileAnnotation: () => "",
-    renderCitation: () => "",
     renderFilename: () => "",
     render: <T extends object>(name: string, _data: T): string =>
       name === "content" ? renderContent() : "",
@@ -4588,169 +4577,6 @@ describe("writeNoteUpdate", () => {
   });
 });
 
-describe("renderCitation", () => {
-  it("returns null instead of throwing when the template isn't loaded yet", () => {
-    // renderCitation runs inside selectSuggestion/onChooseSuggestion, which
-    // can't await `template.ready`; guard on the sync `loaded` flag so a
-    // cold-start citation insert returns null instead of throwing
-    // TemplateService's "service is not ready" through the handler.
-    const render = vi.fn();
-    const deps: TestDeps = {
-      app: makeApp(),
-      template: {
-        renderManagedContent: () => "",
-        loaded: false,
-        frontmatterFields: [],
-        getLiteratureNoteTemplate: () => undefined,
-        renderProfileAnnotation: () => "",
-        renderFilename: () => "",
-        render,
-        renderCitation: (refs, variant) =>
-          inlineCitation(
-            render("citation", citekeysToCiteTemplateData(refs, variant)),
-          ),
-      },
-      ...makeDbDeps(),
-      noteIndex: {
-        getImportedNoteByNoteKey: () => [],
-        whenIndexed: async () => {},
-        getNotesByItemKey: () => [],
-      },
-      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-      settings: makeSettings(),
-      attachmentImport: blockedAttachmentImport,
-    };
-
-    const result = createNoteFeature(deps).renderCitation(
-      [{ citationKey: "root2024" }],
-      "main",
-    );
-
-    expect(result).toBeNull();
-    expect(render).not.toHaveBeenCalled();
-  });
-
-  it("renders the alternate variant from the same document", () => {
-    // One Citation Template answers both gestures: Shift+Enter and a trailing
-    // slash arrive as the alt variant, which the built-in source maps to an
-    // Author-in-text Citation.
-    const result = createNoteFeature(
-      annotDeps(citationTemplate(defaultCitation)),
-    ).renderCitation([{ citationKey: "smith2024" }], "alt");
-
-    expect(result).toBe("@smith2024");
-  });
-
-  it("hands the variant to a document that branches on zt.variant", () => {
-    // The variant names the gesture only: a custom document decides what each
-    // one renders, so a vault can map alt to anything it likes.
-    const feature = createNoteFeature(
-      annotDeps(
-        citationTemplate(
-          "{% if zt.variant == 'alt' %}~{{ zt.citations[0].item.citationKey }}~" +
-            "{% else %}<{{ zt.citations[0].item.citationKey }}>{% endif %}",
-        ),
-      ),
-    );
-
-    expect(feature.renderCitation([{ citationKey: "smith2024" }], "main")).toBe(
-      "<smith2024>",
-    );
-    expect(feature.renderCitation([{ citationKey: "smith2024" }], "alt")).toBe(
-      "~smith2024~",
-    );
-  });
-
-  it("carries the selected item's full narrowed data through to the Citation Template (9.2-CSL #03)", () => {
-    // Citation-suggest passes the selected search hit's full item alongside
-    // its citationKey; a data-driven (author-year) Citation Template should see
-    // the item's title/date, not just a citekey-only stub.
-    const deps: TestDeps = {
-      app: makeApp(),
-      template: {
-        renderManagedContent: () => "",
-        loaded: true,
-        frontmatterFields: [],
-        getLiteratureNoteTemplate: () => undefined,
-        renderProfileAnnotation: () => "",
-        renderFilename: () => "",
-        render: () => "",
-        renderCitation: (refs) =>
-          citekeysToCiteTemplateData(refs, "main")
-            .citations.map((c) => c.item.title)
-            .join("; "),
-      },
-      ...makeDbDeps(),
-      noteIndex: {
-        getImportedNoteByNoteKey: () => [],
-        whenIndexed: async () => {},
-        getNotesByItemKey: () => [],
-      },
-      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-      settings: makeSettings(),
-      attachmentImport: blockedAttachmentImport,
-    };
-
-    const item = makeItem({
-      key: "RTKEY234",
-      indexedKey: "RTKEY234",
-      title: "Stated choice methods",
-      citationKey: "root2024",
-    });
-
-    const result = createNoteFeature(deps).renderCitation(
-      [{ citationKey: "root2024", item }],
-      "main",
-    );
-
-    expect(result).toBe("Stated choice methods");
-  });
-});
-
-/** A template service backed by the real engine, with a `citation` + optional `annotation` pair. */
-function citationTemplate(
-  citationSource = defaultCitation,
-  opts?: { annotation?: string; language?: TemplateLanguage },
-): TestDeps["template"] {
-  const facade = new TemplateFacade();
-  facade.define("citation", citationSource, opts?.language ?? "liquid");
-  if (opts?.annotation !== undefined) {
-    facade.define("annotation", opts.annotation, "eta");
-  }
-  return {
-    renderManagedContent: <T extends object>(data: T): string =>
-      facade.render("content", data),
-    loaded: true,
-    frontmatterFields: [],
-    getLiteratureNoteTemplate: () => undefined,
-    renderProfileAnnotation: <T extends object>(data: T): string =>
-      facade.render("annotation", data),
-    renderFilename: () => "",
-    render: <T extends object>(name: string, data: T): string =>
-      facade.render(name, data),
-    renderCitation: (refs, variant) =>
-      inlineCitation(
-        facade.render("citation", citekeysToCiteTemplateData(refs, variant)),
-      ),
-  };
-}
-
-function annotDeps(template: TestDeps["template"]): TestDeps {
-  return {
-    app: makeApp(),
-    template,
-    ...makeDbDeps(),
-    noteIndex: {
-      getImportedNoteByNoteKey: () => [],
-      whenIndexed: async () => {},
-      getNotesByItemKey: () => [],
-    },
-    zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-    settings: makeSettings(),
-    attachmentImport: blockedAttachmentImport,
-  };
-}
-
 // `render` / `renderFilename` are generic (`<T extends object>`) on the real
 // service, so the mocks mirror that signature and narrow the erased payload to
 // the fixture shape they assert on — the only casts the stub needs.
@@ -4771,8 +4597,6 @@ function makeTemplate() {
     loaded: true,
     frontmatterFields: [],
     getLiteratureNoteTemplate: () => undefined,
-    renderProfileAnnotation: () => "",
-    renderCitation: () => "",
     renderManagedContent: () => "",
     renderFilename<T extends object>(data: T): string {
       const { title, key } = data as { title: string | null; key: string };
