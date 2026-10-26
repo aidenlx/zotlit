@@ -200,8 +200,9 @@ it("says nothing when the dialog's Scope stops the save", async () => {
     .find((button) => button.text === m.settings_profile_add())!
     .click();
   await vi.waitFor(() => expect(f.create).toHaveBeenCalledOnce());
-  // A macrotask: the rejected save has run its catch.
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  // The modal waited on the save first, so its catch has run once this one
+  // does.
+  await f.create.mock.results[0]!.value.catch(() => {});
   expect(failed).not.toHaveBeenCalled();
   expect(modal.contentEl.querySelector('[role="status"]')!.textContent).toBe(
     "",
