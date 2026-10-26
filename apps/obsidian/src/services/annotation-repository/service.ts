@@ -25,6 +25,19 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import type { DatabaseRowsError } from "./core/bridge";
 import {
+  annotationState,
+  discardTagDraft,
+  discardTextDraft,
+  editTags,
+  editTextField,
+  holdUnsavableDrafts,
+  retryTextDraft,
+  submitTags,
+  submitTextField,
+  tagDraftFor,
+  textDraftFor,
+} from "./core/drafts";
+import {
   canRedo,
   canUndo,
   closeHistory,
@@ -177,7 +190,7 @@ export type AnnotationRepositoryShape = {
     field: TextField,
     annotationKey: string,
     options?: { automatic?: boolean },
-  ): Effect.Effect<MutationState>;
+  ): Effect.Effect<MutationState, WriteRunFailed>;
   /** Keep Zotero's reviewed value of one text field and discard the draft. */
   discardTextDraft(
     field: TextField,
@@ -187,7 +200,7 @@ export type AnnotationRepositoryShape = {
   retryTextDraft(
     field: TextField,
     annotationKey: string,
-  ): Effect.Effect<MutationState>;
+  ): Effect.Effect<MutationState, WriteRunFailed>;
   /** The active Zotero database's shared tag draft for one Annotation. */
   tagDraftFor(annotationKey: string): Effect.Effect<TagDraft | null>;
   /**
@@ -220,7 +233,7 @@ export type AnnotationRepositoryShape = {
   submitTags(
     annotationKey: string,
     options?: { automatic?: boolean },
-  ): Effect.Effect<MutationState>;
+  ): Effect.Effect<MutationState, WriteRunFailed>;
   /** Drop a held tag draft and keep the tags Zotero holds. */
   discardTagDraft(annotationKey: string): Effect.Effect<void>;
   /**
@@ -446,6 +459,8 @@ export function layerAnnotationRepository(options: {
         AnnotationList | null,
         never
       >();
+      const idleSaves = yield* FiberMap.make<string>();
+      const burstSaves = yield* FiberMap.make<string>();
       const shared = new CoreState(
         {
           bridge,
@@ -459,9 +474,9 @@ export function layerAnnotationRepository(options: {
           now,
           persistedExcerpt,
         },
-        { fibers, refreshes },
+        { fibers, refreshes, idleSaves, burstSaves },
       );
-      const core = yield* Effect.acquireDisposable(
+      yield* Effect.acquireDisposable(
         Effect.sync(() => new AnnotationRepositoryCore(shared)),
       );
       // A database change and a Local API source move supersede lists; the
@@ -473,6 +488,8 @@ export function layerAnnotationRepository(options: {
         ),
       );
       yield* forkEach(api.changes, () => sourceMoved(shared));
+      // A draft that can no longer be saved is held for an explicit save.
+      yield* forkEach(api.capabilityChanges, () => holdUnsavableDrafts(shared));
       // The repository's reads read the time from the layer's Clock,
       // whichever fiber calls them.
       const onLayerClock = Effect.provideService(Clock.Clock, clock);
@@ -507,47 +524,73 @@ export function layerAnnotationRepository(options: {
         ),
         // Untraced: the annotation view reads it once per changed Annotation.
         annotationState: Effect.fnUntraced(function* (annotationKey) {
-          return yield* Effect.sync(() => core.annotationState(annotationKey));
+          return yield* annotationState(shared, annotationKey).pipe(
+            inRepository,
+            onLayerClock,
+          );
         }),
         // Untraced: the annotation view reads it per Annotation and field.
         textDraftFor: Effect.fnUntraced(function* (field, annotationKey) {
-          return yield* Effect.sync(() =>
-            core.textDraftFor(field, annotationKey),
+          return yield* textDraftFor(shared, field, annotationKey).pipe(
+            inRepository,
+            onLayerClock,
           );
         }),
         editTextField: Effect.fn("AnnotationRepository.editTextField")(
           (field, annotationKey, text) =>
-            Effect.sync(() => core.editTextField(field, annotationKey, text)),
+            editTextField(shared, field, { annotationKey, text }).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         submitTextField: Effect.fn("AnnotationRepository.submitTextField")(
           (field, annotationKey, writeOptions) =>
-            Effect.promise(() =>
-              core.submitTextField(field, annotationKey, writeOptions),
-            ),
+            submitTextField(shared, field, {
+              annotationKey,
+              ...writeOptions,
+            }).pipe(inRepository, onLayerClock),
         ),
         discardTextDraft: Effect.fn("AnnotationRepository.discardTextDraft")(
           (field, annotationKey) =>
-            Effect.sync(() => core.discardTextDraft(field, annotationKey)),
+            discardTextDraft(shared, field, annotationKey).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         retryTextDraft: Effect.fn("AnnotationRepository.retryTextDraft")(
           (field, annotationKey) =>
-            Effect.promise(() => core.retryTextDraft(field, annotationKey)),
+            retryTextDraft(shared, field, annotationKey).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         // Untraced: the annotation view reads it per Annotation.
         tagDraftFor: Effect.fnUntraced(function* (annotationKey) {
-          return yield* Effect.sync(() => core.tagDraftFor(annotationKey));
+          return yield* tagDraftFor(shared, annotationKey).pipe(
+            inRepository,
+            onLayerClock,
+          );
         }),
         editTags: Effect.fn("AnnotationRepository.editTags")(
           (annotationKey, names) =>
-            Effect.sync(() => core.editTags(annotationKey, names)),
+            editTags(shared, annotationKey, names).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         submitTags: Effect.fn("AnnotationRepository.submitTags")(
           (annotationKey, writeOptions) =>
-            Effect.promise(() => core.submitTags(annotationKey, writeOptions)),
+            submitTags(shared, annotationKey, writeOptions).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         discardTagDraft: Effect.fn("AnnotationRepository.discardTagDraft")(
           (annotationKey) =>
-            Effect.sync(() => core.discardTagDraft(annotationKey)),
+            discardTagDraft(shared, annotationKey).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         createAnnotation: Effect.fn("AnnotationRepository.createAnnotation")(
           (attachmentKey, draft, createOptions) =>
@@ -621,10 +664,10 @@ export function layerAnnotationRepository(options: {
             ),
         ),
         canUndo: Effect.fn("AnnotationRepository.canUndo")((attachmentKey) =>
-          Effect.sync(() => canUndo(shared, attachmentKey)),
+          canUndo(shared, attachmentKey).pipe(inRepository, onLayerClock),
         ),
         canRedo: Effect.fn("AnnotationRepository.canRedo")((attachmentKey) =>
-          Effect.sync(() => canRedo(shared, attachmentKey)),
+          canRedo(shared, attachmentKey).pipe(inRepository, onLayerClock),
         ),
         undo: Effect.fn("AnnotationRepository.undo")((attachmentKey) =>
           undo(shared, attachmentKey).pipe(inRepository, onLayerClock),

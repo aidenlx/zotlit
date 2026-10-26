@@ -182,7 +182,10 @@ const readUnasked = Effect.fnUntraced(function* (
     core.publishedLists.set(attachmentKey, candidate);
     const held = yield* peekQuery<AnnotationList>(core, queryKey);
     core.publishedStatuses.set(attachmentKey, held?.status ?? "fresh");
-    reconcilePublishedDrafts(core, held, attachmentKey, candidate);
+    yield* reconcilePublishedDrafts(core, held, {
+      attachmentKey,
+      list: candidate,
+    });
     yield* announceReadPixels(core, superseded, candidate);
     return drawn(core, attachmentKey, candidate);
   }
@@ -836,7 +839,7 @@ const adoptDatabaseSource = Effect.fnUntraced(function* (
         ) {
           sources.delete(draft.annotationKey);
           if (isTextField(field)) {
-            cancelTextSave(core, field, draft);
+            yield* cancelTextSave(core, field, draft);
           }
           core.publish({
             _tag: "annotation-changed",

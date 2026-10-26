@@ -1,16 +1,10 @@
 // The dependencies and the state that every part of the Annotation Repository core reads and changes.
-import type { DateTime, FiberMap, FiberSet } from "effect";
+import type { DateTime, Effect, FiberMap, FiberSet } from "effect";
 
 import type { AnnotationHistory } from "@/services/annotation-repository/history";
 import type { AnnotationLock } from "@/services/annotation-repository/lock";
-import {
-  newWriteToken,
-  TEXT_FIELDS,
-} from "@/services/annotation-repository/write";
-import type {
-  MutationState,
-  TextField,
-} from "@/services/annotation-repository/write";
+import { newWriteToken } from "@/services/annotation-repository/write";
+import type { MutationState } from "@/services/annotation-repository/write";
 import type { Held } from "@/services/query-client/service";
 
 import { databaseRowsResolver } from "./bridge";
@@ -24,13 +18,15 @@ import type {
   DraftField,
   DraftFields,
   OutcomeWrite,
-  TextSave,
 } from "./model";
+import type { WriteRunFailed } from "./writes";
 
 /** The fibers the layer's Scope owns for the core. */
 interface CoreFibers {
   readonly fibers: FiberSet.FiberSet;
   readonly refreshes: FiberMap.FiberMap<string, AnnotationList | null, never>;
+  readonly idleSaves: FiberMap.FiberMap<string>;
+  readonly burstSaves: FiberMap.FiberMap<string>;
 }
 
 /**
@@ -75,14 +71,17 @@ class CoreState {
   readonly draftSources = fieldMaps<DraftField, Record<DraftField, string>>(
     DRAFT_FIELDS,
   );
-  /** Autosave timers, by text field and then by the draft's key. */
-  readonly textSaves = fieldMaps<TextField, Record<TextField, TextSave>>(
-    TEXT_FIELDS,
-  );
-  /** What each write on the mutation cache answers its callers. */
+  /**
+   * The autosave timers of the text drafts, by text field and the draft's
+   * key: the idle timer, which each keystroke starts again, and the burst
+   * timer, which caps a run of typing. A timer that comes due leaves its map.
+   */
+  readonly idleSaves;
+  readonly burstSaves;
+  /** What each write on the mutation cache answers a caller that joins it. */
   readonly operations = new WeakMap<
     AnnotationMutation,
-    Promise<MutationState>
+    Effect.Effect<MutationState, WriteRunFailed>
   >();
   /**
    * One Annotation History per Attachment, held only while a PDF view of the
@@ -183,7 +182,7 @@ class CoreState {
       persistedExcerpt,
       publish,
     }: AnnotationRepositoryCoreDeps,
-    { fibers, refreshes }: CoreFibers,
+    { fibers, refreshes, idleSaves, burstSaves }: CoreFibers,
   ) {
     this.bridge = bridge;
     this.db = db;
@@ -195,6 +194,8 @@ class CoreState {
     this.publish = publish;
     this.fibers = fibers;
     this.refreshes = refreshes;
+    this.idleSaves = idleSaves;
+    this.burstSaves = burstSaves;
     this.databaseRows = databaseRowsResolver(db, fibers);
   }
 

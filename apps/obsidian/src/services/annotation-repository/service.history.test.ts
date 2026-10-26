@@ -26,8 +26,9 @@ import {
 import {
   collect,
   NOW,
+  eventually,
   scopedStack,
-  useFakeTimers,
+  settledDraft,
   writable,
   zoteroLibrary,
   DRAFT,
@@ -1308,87 +1309,93 @@ it.effect("keeps a colour pick out of a run of keyboard nudges", () =>
 // #region comment editing sessions
 
 //
-// Each session's autosaves run on the fake clock the idle timer is armed on.
+// Each session's autosaves run on the repository's TestClock, which the idle
+// timer is armed on; a case waits for the save a timer started to land.
 
-it("makes one step of a comment session, however many times it saved", async () => {
-  useFakeTimers();
-  try {
-    await using stack = new AsyncDisposableStack();
-    const zotero = zoteroHolding("PUPR5FG5");
-    const { repository } = await writable(stack, zotero.answers);
-    repository.openHistory("RGRPDF24");
+it.effect(
+  "makes one step of a comment session, however many times it saved",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const zotero = zoteroHolding("PUPR5FG5");
+      const { service, adjustLayerClock } = yield* Effect.promise(() =>
+        writable(stack, zotero.answers),
+      );
+      yield* service.openHistory("RGRPDF24");
 
-    // The Mark Popup types, and an Annotation Card carries the editing on
-    // through the very same verb: the hand-off between them is one session.
-    repository.editTextField("comment", "PUPR5FG5", "Worth");
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(zotero.held?.comment).toBe("Worth");
-    repository.editTextField("comment", "PUPR5FG5", "Worth citing");
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(zotero.held?.comment).toBe("Worth citing");
-    repository.editTextField("comment", "PUPR5FG5", "Worth citing twice");
-    await repository.submitTextField("comment", "PUPR5FG5");
-    expect(zotero.held?.comment).toBe("Worth citing twice");
+      // The Mark Popup types, and an Annotation Card carries the editing on
+      // through the very same verb: the hand-off between them is one session.
+      yield* service.editTextField("comment", "PUPR5FG5", "Worth");
+      yield* adjustLayerClock("1 second");
+      yield* settledDraft(service, "comment");
+      expect(zotero.held?.comment).toBe("Worth");
+      yield* service.editTextField("comment", "PUPR5FG5", "Worth citing");
+      yield* adjustLayerClock("1 second");
+      yield* settledDraft(service, "comment");
+      expect(zotero.held?.comment).toBe("Worth citing");
+      yield* service.editTextField("comment", "PUPR5FG5", "Worth citing twice");
+      yield* service.submitTextField("comment", "PUPR5FG5");
+      expect(zotero.held?.comment).toBe("Worth citing twice");
 
-    expect(await repository.undo("RGRPDF24")).toEqual({
-      kind: "stepped",
-      annotationKey: "PUPR5FG5",
-    });
-    // The whole session went back in one press, to the text the draft was born
-    // with rather than the text the last autosave left.
-    expect(zotero.held?.comment).toBe("");
-    expect(repository.canUndo("RGRPDF24")).toBe(false);
+      expect(yield* service.undo("RGRPDF24")).toEqual({
+        kind: "stepped",
+        annotationKey: "PUPR5FG5",
+      });
+      // The whole session went back in one press, to the text the draft was born
+      // with rather than the text the last autosave left.
+      expect(zotero.held?.comment).toBe("");
+      expect(yield* service.canUndo("RGRPDF24")).toBe(false);
 
-    expect(await repository.redo("RGRPDF24")).toMatchObject({
-      kind: "stepped",
-    });
-    expect(zotero.held?.comment).toBe("Worth citing twice");
-  } finally {
-    vi.useRealTimers();
-  }
-});
+      expect(yield* service.redo("RGRPDF24")).toMatchObject({
+        kind: "stepped",
+      });
+      expect(zotero.held?.comment).toBe("Worth citing twice");
+    }),
+);
 
-it("makes one step of a Text Edit session, and undo writes back the earlier text alone", async () => {
-  useFakeTimers();
-  try {
-    await using stack = new AsyncDisposableStack();
-    const zotero = zoteroHolding("PUPR5FG5");
-    const original = zotero.held!.text;
-    const { repository, requests } = await writable(stack, zotero.answers);
-    repository.openHistory("RGRPDF24");
+it.effect(
+  "makes one step of a Text Edit session, and undo writes back the earlier text alone",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const zotero = zoteroHolding("PUPR5FG5");
+      const original = zotero.held!.text;
+      const { service, requests, adjustLayerClock } = yield* Effect.promise(
+        () => writable(stack, zotero.answers),
+      );
+      yield* service.openHistory("RGRPDF24");
 
-    repository.editTextField("text", "PUPR5FG5", "Identify");
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(zotero.held?.text).toBe("Identify");
-    repository.editTextField("text", "PUPR5FG5", "Identify your message");
-    await repository.submitTextField("text", "PUPR5FG5");
-    expect(zotero.held?.text).toBe("Identify your message");
+      yield* service.editTextField("text", "PUPR5FG5", "Identify");
+      yield* adjustLayerClock("1 second");
+      yield* settledDraft(service, "text");
+      expect(zotero.held?.text).toBe("Identify");
+      yield* service.editTextField("text", "PUPR5FG5", "Identify your message");
+      yield* service.submitTextField("text", "PUPR5FG5");
+      expect(zotero.held?.text).toBe("Identify your message");
 
-    const sent = requests.length;
-    expect(await repository.undo("RGRPDF24")).toEqual({
-      kind: "stepped",
-      annotationKey: "PUPR5FG5",
-    });
-    // The whole session went back in one press, to the text it began with,
-    // through a patch of the text alone.
-    expect(zotero.held?.text).toBe(original);
-    expect(repository.canUndo("RGRPDF24")).toBe(false);
-    const [patch] = requests
-      .slice(sent)
-      .filter(({ method }) => method === "PATCH");
-    expect(Object.keys(JSON.parse(patch!.body ?? "{}")).sort()).toEqual([
-      "annotationText",
-      "version",
-    ]);
+      const sent = requests.length;
+      expect(yield* service.undo("RGRPDF24")).toEqual({
+        kind: "stepped",
+        annotationKey: "PUPR5FG5",
+      });
+      // The whole session went back in one press, to the text it began with,
+      // through a patch of the text alone.
+      expect(zotero.held?.text).toBe(original);
+      expect(yield* service.canUndo("RGRPDF24")).toBe(false);
+      const [patch] = requests
+        .slice(sent)
+        .filter(({ method }) => method === "PATCH");
+      expect(Object.keys(JSON.parse(patch!.body ?? "{}")).sort()).toEqual([
+        "annotationText",
+        "version",
+      ]);
 
-    expect(await repository.redo("RGRPDF24")).toMatchObject({
-      kind: "stepped",
-    });
-    expect(zotero.held?.text).toBe("Identify your message");
-  } finally {
-    vi.useRealTimers();
-  }
-});
+      expect(yield* service.redo("RGRPDF24")).toMatchObject({
+        kind: "stepped",
+      });
+      expect(zotero.held?.text).toBe("Identify your message");
+    }),
+);
 
 it.effect(
   "keeps a Text Edit session and a comment session after it as two steps",
@@ -1422,261 +1429,279 @@ it.effect(
     }),
 );
 
-it("starts a new step where the comment moved in Zotero between two saves", async () => {
-  useFakeTimers();
-  try {
-    await using stack = new AsyncDisposableStack();
+it.effect(
+  "starts a new step where the comment moved in Zotero between two saves",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const zotero = zoteroHolding("PUPR5FG5");
+      const { service, adjustLayerClock } = yield* Effect.promise(() =>
+        writable(stack, zotero.answers),
+      );
+      yield* service.openHistory("RGRPDF24");
+
+      yield* service.editTextField("comment", "PUPR5FG5", "Worth citing");
+      yield* adjustLayerClock("1 second");
+      yield* settledDraft(service, "comment");
+      expect(zotero.held?.comment).toBe("Worth citing");
+
+      // The same comment is changed in Zotero, so the next save is refused and
+      // the card offers "Apply again" against the value Zotero holds now.
+      zotero.changeInZotero({ comment: "Cited by Perez" });
+      zotero.refuseNextWrite();
+      yield* service.editTextField("comment", "PUPR5FG5", "Worth citing twice");
+      yield* adjustLayerClock("1 second");
+      yield* eventually(
+        service.textDraftFor("comment", "PUPR5FG5"),
+        (draft) => draft?.state.kind === "conflict",
+      );
+      yield* service.retryTextDraft("comment", "PUPR5FG5");
+      expect(zotero.held?.comment).toBe("Worth citing twice");
+      yield* service.discardTextDraft("comment", "PUPR5FG5");
+
+      // The write that landed was stamped off the Zotero-side text, so it
+      // starts a step of its own: one press puts that text back rather than
+      // writing over it with the empty comment the first session began with.
+      expect(yield* service.undo("RGRPDF24")).toEqual({
+        kind: "stepped",
+        annotationKey: "PUPR5FG5",
+      });
+      expect(zotero.held?.comment).toBe("Cited by Perez");
+
+      // The first session's own step stands behind it, and it is the Zotero-side
+      // text that now blocks it rather than the step having written it away.
+      expect(yield* service.undo("RGRPDF24")).toEqual({
+        kind: "changed",
+        annotationKey: "PUPR5FG5",
+      });
+      expect(zotero.held?.comment).toBe("Cited by Perez");
+    }),
+);
+
+it.effect("records no step for a comment draft discarded before it saved", () =>
+  Effect.gen(function* () {
+    const stack = yield* scopedStack;
     const zotero = zoteroHolding("PUPR5FG5");
-    const { repository } = await writable(stack, zotero.answers);
-    repository.openHistory("RGRPDF24");
+    const { service, adjustLayerClock } = yield* Effect.promise(() =>
+      writable(stack, zotero.answers),
+    );
+    yield* service.openHistory("RGRPDF24");
 
-    repository.editTextField("comment", "PUPR5FG5", "Worth citing");
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(zotero.held?.comment).toBe("Worth citing");
+    yield* service.editTextField("comment", "PUPR5FG5", "Never saved");
+    yield* service.discardTextDraft("comment", "PUPR5FG5");
+    yield* adjustLayerClock("10 seconds");
 
-    // The same comment is changed in Zotero, so the next save is refused and
-    // the card offers "Apply again" against the value Zotero holds now.
-    zotero.changeInZotero({ comment: "Cited by Perez" });
-    zotero.refuseNextWrite();
-    repository.editTextField("comment", "PUPR5FG5", "Worth citing twice");
-    await vi.advanceTimersByTimeAsync(1_000);
-    await repository.retryTextDraft("comment", "PUPR5FG5");
-    expect(zotero.held?.comment).toBe("Worth citing twice");
-    repository.discardTextDraft("comment", "PUPR5FG5");
-
-    // The write that landed was stamped off the Zotero-side text, so it
-    // starts a step of its own: one press puts that text back rather than
-    // writing over it with the empty comment the first session began with.
-    expect(await repository.undo("RGRPDF24")).toEqual({
-      kind: "stepped",
-      annotationKey: "PUPR5FG5",
-    });
-    expect(zotero.held?.comment).toBe("Cited by Perez");
-
-    // The first session's own step stands behind it, and it is the Zotero-side
-    // text that now blocks it rather than the step having written it away.
-    expect(await repository.undo("RGRPDF24")).toEqual({
-      kind: "changed",
-      annotationKey: "PUPR5FG5",
-    });
-    expect(zotero.held?.comment).toBe("Cited by Perez");
-  } finally {
-    vi.useRealTimers();
-  }
-});
-
-it("records no step for a comment draft discarded before it saved", async () => {
-  useFakeTimers();
-  try {
-    await using stack = new AsyncDisposableStack();
-    const zotero = zoteroHolding("PUPR5FG5");
-    const { repository } = await writable(stack, zotero.answers);
-    repository.openHistory("RGRPDF24");
-
-    repository.editTextField("comment", "PUPR5FG5", "Never saved");
-    repository.discardTextDraft("comment", "PUPR5FG5");
-    await vi.advanceTimersByTimeAsync(10_000);
-
-    expect(repository.canUndo("RGRPDF24")).toBe(false);
-    expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+    expect(yield* service.canUndo("RGRPDF24")).toBe(false);
+    expect(yield* service.undo("RGRPDF24")).toEqual({ kind: "idle" });
     expect(zotero.held?.comment).toBeUndefined();
-  } finally {
-    vi.useRealTimers();
-  }
-});
+  }),
+);
 
-it("records no step where a comment session settles on its starting text", async () => {
-  useFakeTimers();
-  try {
-    await using stack = new AsyncDisposableStack();
-    const zotero = zoteroHolding("HRK7BG32");
-    const seeded = zotero.held!.comment!;
-    const { repository } = await writable(stack, zotero.answers);
-    repository.openHistory("RGRPDF24");
+it.effect(
+  "records no step where a comment session settles on its starting text",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const zotero = zoteroHolding("HRK7BG32");
+      const seeded = zotero.held!.comment!;
+      const { service, adjustLayerClock } = yield* Effect.promise(() =>
+        writable(stack, zotero.answers),
+      );
+      yield* service.openHistory("RGRPDF24");
 
-    repository.editTextField("comment", "HRK7BG32", `${seeded} and slow`);
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(zotero.held?.comment).toBe(`${seeded} and slow`);
+      yield* service.editTextField("comment", "HRK7BG32", `${seeded} and slow`);
+      yield* adjustLayerClock("1 second");
+      yield* settledDraft(service, "comment", "HRK7BG32");
+      expect(zotero.held?.comment).toBe(`${seeded} and slow`);
 
-    // The researcher typed the ending away again before leaving the editor.
-    repository.editTextField("comment", "HRK7BG32", seeded);
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(zotero.held?.comment).toBe(seeded);
+      // The researcher typed the ending away again before leaving the editor.
+      yield* service.editTextField("comment", "HRK7BG32", seeded);
+      yield* adjustLayerClock("1 second");
+      yield* settledDraft(service, "comment", "HRK7BG32");
+      expect(zotero.held?.comment).toBe(seeded);
 
-    expect(repository.canUndo("RGRPDF24")).toBe(false);
-    expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
-    expect(zotero.held?.comment).toBe(seeded);
-  } finally {
-    vi.useRealTimers();
-  }
-});
+      expect(yield* service.canUndo("RGRPDF24")).toBe(false);
+      expect(yield* service.undo("RGRPDF24")).toEqual({ kind: "idle" });
+      expect(zotero.held?.comment).toBe(seeded);
+    }),
+);
 
-it("does nothing while the Annotation the top step touches is being edited", async () => {
-  useFakeTimers();
-  try {
-    await using stack = new AsyncDisposableStack();
+it.effect(
+  "does nothing while the Annotation the top step touches is being edited",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const zotero = zoteroHolding("PUPR5FG5");
+      const { service, adjustLayerClock } = yield* Effect.promise(() =>
+        writable(stack, zotero.answers),
+      );
+      yield* service.openHistory("RGRPDF24");
+
+      yield* service.editTextField("comment", "PUPR5FG5", "Half typed");
+      yield* adjustLayerClock("1 second");
+      yield* settledDraft(service, "comment");
+      expect(zotero.held?.comment).toBe("Half typed");
+
+      // The comment editor is open again on the same Annotation, with nothing
+      // typed into it yet, so the keys belong to the editor holding it.
+      yield* service.editTextField("comment", "PUPR5FG5");
+      expect(yield* service.undo("RGRPDF24")).toEqual({ kind: "idle" });
+      expect(zotero.held?.comment).toBe("Half typed");
+      // The menu row and the palette entry read this, so neither is drawn for a
+      // press that would do nothing and say nothing.
+      expect(yield* service.canUndo("RGRPDF24")).toBe(false);
+
+      // The editor closed, keeping what Zotero holds.
+      yield* service.discardTextDraft("comment", "PUPR5FG5");
+      expect(yield* service.canUndo("RGRPDF24")).toBe(true);
+
+      expect(yield* service.undo("RGRPDF24")).toEqual({
+        kind: "stepped",
+        annotationKey: "PUPR5FG5",
+      });
+      expect(zotero.held?.comment).toBe("");
+    }),
+);
+
+it.effect("does nothing while an autosave on the Attachment is still due", () =>
+  Effect.gen(function* () {
+    const stack = yield* scopedStack;
     const zotero = zoteroHolding("PUPR5FG5");
-    const { repository } = await writable(stack, zotero.answers);
-    repository.openHistory("RGRPDF24");
-
-    repository.editTextField("comment", "PUPR5FG5", "Half typed");
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(zotero.held?.comment).toBe("Half typed");
-
-    // The comment editor is open again on the same Annotation, with nothing
-    // typed into it yet, so the keys belong to the editor holding it.
-    repository.editTextField("comment", "PUPR5FG5");
-    expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
-    expect(zotero.held?.comment).toBe("Half typed");
-    // The menu row and the palette entry read this, so neither is drawn for a
-    // press that would do nothing and say nothing.
-    expect(repository.canUndo("RGRPDF24")).toBe(false);
-
-    // The editor closed, keeping what Zotero holds.
-    repository.discardTextDraft("comment", "PUPR5FG5");
-    expect(repository.canUndo("RGRPDF24")).toBe(true);
-
-    expect(await repository.undo("RGRPDF24")).toEqual({
-      kind: "stepped",
-      annotationKey: "PUPR5FG5",
-    });
-    expect(zotero.held?.comment).toBe("");
-  } finally {
-    vi.useRealTimers();
-  }
-});
-
-it("does nothing while an autosave on the Attachment is still due", async () => {
-  useFakeTimers();
-  try {
-    await using stack = new AsyncDisposableStack();
-    const zotero = zoteroHolding("PUPR5FG5");
-    const { repository } = await writable(stack, zotero.answers);
-    repository.openHistory("RGRPDF24");
-    await repository.patchColor("PUPR5FG5", "#ff6666");
+    const { service } = yield* Effect.promise(() =>
+      writable(stack, zotero.answers),
+    );
+    yield* service.openHistory("RGRPDF24");
+    yield* service.patchColor("PUPR5FG5", "#ff6666");
 
     // Another Annotation of the same Attachment is being typed into, and its
     // save is armed: the undo waits for it rather than stepping past it.
-    repository.editTextField("comment", "HRK7BG32", "Still typing");
+    yield* service.editTextField("comment", "HRK7BG32", "Still typing");
 
-    expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+    expect(yield* service.undo("RGRPDF24")).toEqual({ kind: "idle" });
     expect(zotero.held?.color).toBe("#ff6666");
-    expect(repository.canUndo("RGRPDF24")).toBe(true);
-  } finally {
-    vi.useRealTimers();
-  }
-});
+    expect(yield* service.canUndo("RGRPDF24")).toBe(true);
+  }),
+);
 
-it("discards the redo steps when a comment session moves its own step", async () => {
-  useFakeTimers();
-  try {
-    await using stack = new AsyncDisposableStack();
-    const zotero = zoteroHolding("PUPR5FG5");
-    const { repository } = await writable(stack, zotero.answers);
-    repository.openHistory("RGRPDF24");
+it.effect(
+  "discards the redo steps when a comment session moves its own step",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const zotero = zoteroHolding("PUPR5FG5");
+      const { service, adjustLayerClock } = yield* Effect.promise(() =>
+        writable(stack, zotero.answers),
+      );
+      yield* service.openHistory("RGRPDF24");
 
-    // A comment session on one Annotation, then a colour pick on another.
-    repository.editTextField("comment", "PUPR5FG5", "Worth citing");
-    await vi.advanceTimersByTimeAsync(1_000);
-    repository.discardTextDraft("comment", "PUPR5FG5");
-    await repository.patchColor("HRK7BG32", "#ff6666");
-    await repository.undo("RGRPDF24");
-    const seededColor = zotero.heldOf("HRK7BG32")!.color;
-    expect(repository.canRedo("RGRPDF24")).toBe(true);
+      // A comment session on one Annotation, then a colour pick on another.
+      yield* service.editTextField("comment", "PUPR5FG5", "Worth citing");
+      yield* adjustLayerClock("1 second");
+      yield* settledDraft(service, "comment");
+      yield* service.discardTextDraft("comment", "PUPR5FG5");
+      yield* service.patchColor("HRK7BG32", "#ff6666");
+      yield* service.undo("RGRPDF24");
+      const seededColor = zotero.heldOf("HRK7BG32")!.color;
+      expect(yield* service.canRedo("RGRPDF24")).toBe(true);
 
-    // Typing in the first Annotation's comment again moves the step that
-    // session left rather than pushing a new one, and a moved step is a newly
-    // confirmed edit like any other: the undone colour pick is not offered
-    // again.
-    repository.editTextField("comment", "PUPR5FG5", "Worth citing twice");
-    await vi.advanceTimersByTimeAsync(1_000);
-    repository.discardTextDraft("comment", "PUPR5FG5");
+      // Typing in the first Annotation's comment again moves the step that
+      // session left rather than pushing a new one, and a moved step is a newly
+      // confirmed edit like any other: the undone colour pick is not offered
+      // again.
+      yield* service.editTextField("comment", "PUPR5FG5", "Worth citing twice");
+      yield* adjustLayerClock("1 second");
+      yield* settledDraft(service, "comment");
+      yield* service.discardTextDraft("comment", "PUPR5FG5");
 
-    expect(repository.canRedo("RGRPDF24")).toBe(false);
-    expect(await repository.redo("RGRPDF24")).toEqual({ kind: "idle" });
-    expect(zotero.heldOf("HRK7BG32")?.color).toBe(seededColor);
-  } finally {
-    vi.useRealTimers();
-  }
-});
+      expect(yield* service.canRedo("RGRPDF24")).toBe(false);
+      expect(yield* service.redo("RGRPDF24")).toEqual({ kind: "idle" });
+      expect(zotero.heldOf("HRK7BG32")?.color).toBe(seededColor);
+    }),
+);
 
-it("records a colour pick after a comment session as a step of its own", async () => {
-  useFakeTimers();
-  try {
-    await using stack = new AsyncDisposableStack();
-    const zotero = zoteroHolding("PUPR5FG5");
-    const { repository } = await writable(stack, zotero.answers);
-    repository.openHistory("RGRPDF24");
+it.effect(
+  "records a colour pick after a comment session as a step of its own",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const zotero = zoteroHolding("PUPR5FG5");
+      const { service, adjustLayerClock } = yield* Effect.promise(() =>
+        writable(stack, zotero.answers),
+      );
+      yield* service.openHistory("RGRPDF24");
 
-    repository.editTextField("comment", "PUPR5FG5", "Noted");
-    await vi.advanceTimersByTimeAsync(1_000);
-    await repository.submitTextField("comment", "PUPR5FG5");
-    await repository.patchColor("PUPR5FG5", "#ff6666");
+      yield* service.editTextField("comment", "PUPR5FG5", "Noted");
+      yield* adjustLayerClock("1 second");
+      yield* service.submitTextField("comment", "PUPR5FG5");
+      yield* service.patchColor("PUPR5FG5", "#ff6666");
 
-    expect(await repository.undo("RGRPDF24")).toMatchObject({
-      kind: "stepped",
-    });
-    expect(zotero.held?.color).toBe("#2ea8e5");
-    expect(zotero.held?.comment).toBe("Noted");
+      expect(yield* service.undo("RGRPDF24")).toMatchObject({
+        kind: "stepped",
+      });
+      expect(zotero.held?.color).toBe("#2ea8e5");
+      expect(zotero.held?.comment).toBe("Noted");
 
-    expect(await repository.undo("RGRPDF24")).toMatchObject({
-      kind: "stepped",
-    });
-    expect(zotero.held?.comment).toBe("");
-    expect(zotero.held?.color).toBe("#2ea8e5");
-  } finally {
-    vi.useRealTimers();
-  }
-});
+      expect(yield* service.undo("RGRPDF24")).toMatchObject({
+        kind: "stepped",
+      });
+      expect(zotero.held?.comment).toBe("");
+      expect(zotero.held?.color).toBe("#2ea8e5");
+    }),
+);
 
-it("records an autosave that lands while a step runs beside it", async () => {
-  useFakeTimers();
-  try {
-    await using stack = new AsyncDisposableStack();
+it.effect("records an autosave that lands while a step runs beside it", () =>
+  Effect.gen(function* () {
+    const stack = yield* scopedStack;
     const zotero = zoteroHolding("PUPR5FG5");
     const seeded = zotero.heldOf("HRK7BG32")!.comment!;
     const gate = Promise.withResolvers<void>();
     const away = Promise.withResolvers<void>();
+    const autosaved = Promise.withResolvers<void>();
     let holdNext = false;
-    const { repository } = await writable(stack, {
-      ...zotero.answers,
-      write: async (request) => {
-        if (holdNext) {
-          holdNext = false;
-          away.resolve();
-          await gate.promise;
-        }
-        return zotero.answers.write(request);
-      },
-    });
-    repository.openHistory("RGRPDF24");
-    await repository.patchColor("PUPR5FG5", "#ff6666");
+    const { service, adjustLayerClock } = yield* Effect.promise(() =>
+      writable(stack, {
+        ...zotero.answers,
+        write: async (request) => {
+          if (request.body?.includes("Typed meanwhile")) autosaved.resolve();
+          if (holdNext) {
+            holdNext = false;
+            away.resolve();
+            await gate.promise;
+          }
+          return zotero.answers.write(request);
+        },
+      }),
+    );
+    yield* service.openHistory("RGRPDF24");
+    yield* service.patchColor("PUPR5FG5", "#ff6666");
 
     holdNext = true;
-    const undone = repository.undo("RGRPDF24");
+    const undone = yield* Effect.forkChild(service.undo("RGRPDF24"), {
+      startImmediately: true,
+    });
     // The undo's own write is away and waiting, which the write itself says.
-    await away.promise;
+    yield* Effect.promise(() => away.promise);
     // Another Annotation's comment session saves while the undo's own write is
     // still away.
-    repository.editTextField("comment", "HRK7BG32", "Typed meanwhile");
-    await vi.advanceTimersByTimeAsync(1_000);
+    yield* service.editTextField("comment", "HRK7BG32", "Typed meanwhile");
+    yield* adjustLayerClock("1 second");
+    // The idle timer sent the autosave before the undo's write comes back.
+    yield* Effect.promise(() => autosaved.promise);
     gate.resolve();
-    expect(await undone).toMatchObject({ kind: "stepped" });
+    expect(yield* Fiber.join(undone)).toMatchObject({ kind: "stepped" });
     expect(zotero.held?.color).toBe("#2ea8e5");
 
     // The session's own step stands beside the undo rather than being lost to
     // it, so the editor's comment can be stepped back in its turn.
-    await repository.submitTextField("comment", "HRK7BG32");
+    yield* service.submitTextField("comment", "HRK7BG32");
     expect(zotero.heldOf("HRK7BG32")?.comment).toBe("Typed meanwhile");
-    expect(await repository.undo("RGRPDF24")).toEqual({
+    expect(yield* service.undo("RGRPDF24")).toEqual({
       kind: "stepped",
       annotationKey: "HRK7BG32",
     });
     expect(zotero.heldOf("HRK7BG32")?.comment).toBe(seeded);
-  } finally {
-    vi.useRealTimers();
-  }
-});
+  }),
+);
 
 // #endregion
 

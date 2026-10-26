@@ -122,17 +122,6 @@ export default defineConfig({
   },
   overrides: [
     {
-      // The Annotation Repository core's functions take the core state first,
-      // where the methods they replace took `this`. Remove the entry when the
-      // core is gone (slice 15f of #1710).
-      files: [
-        "src/services/annotation-repository/core/draft-store.ts",
-        "src/services/annotation-repository/core/drafts.ts",
-        "src/services/annotation-repository/core/outcomes.ts",
-      ],
-      rules: { "max-params": ["error", { max: 4 }] },
-    },
-    {
       files: ["src/services/citekey-editor/decorate.ts"],
       rules: {
         "no-restricted-imports": [
