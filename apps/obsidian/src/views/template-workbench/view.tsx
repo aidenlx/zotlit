@@ -192,7 +192,7 @@ export function originatingNoteUpdateNotice(
     case "not-ready":
       return m.template_workbench_update_not_ready();
     case "failed":
-      return feedback.error("", result.error);
+      return feedback.error(result.error);
     case "refused":
     case "updated": {
       if (result.result.bodyUpdated && !result.result.diagnostic)

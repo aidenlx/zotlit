@@ -78,6 +78,7 @@ import {
   createNoteNotice,
   duplicateLiteratureNoteWarning,
   noteOperationDiagnosticNotice,
+  updateWithNotice,
 } from "./update-single";
 import type { BatchUpdateNotices } from "./update-single";
 
@@ -305,20 +306,11 @@ const updateNote = Effect.fnUntraced(function* (
   );
   if (!itemKey) return;
 
-  const copy = ports.notices.updateToast(scope);
-  // The notice tells the user how the update failed.
-  yield* withProgress(
-    (yield* NoteFeature).updateNote(file, {
-      indexedKey: itemKey,
-      scope,
-      profile,
-    }),
-    {
-      loading: copy.loading,
-      success: copy.success,
-      error: (error) => copy.error("", plainNoteError(error)),
-    },
-  ).pipe(Effect.ignore);
+  yield* updateWithNotice(
+    file,
+    { indexedKey: itemKey, scope, profile },
+    ports.notices.updateToast(scope),
+  );
 });
 
 /** Lazily resolve the full Item and create + open a new literature note. */
