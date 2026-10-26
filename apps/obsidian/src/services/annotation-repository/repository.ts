@@ -23,7 +23,6 @@ import { cooldownFailure } from "@/services/zotero-local-api/plain";
 import type {
   LocalApiFailure,
   LocalApiSource,
-  LocalApiState,
 } from "@/services/zotero-local-api/service";
 import {
   libraryPath,
@@ -34,6 +33,15 @@ import { acquireReadLease } from "@/services/zotero-reads/lease";
 
 import { capabilityReason, editingCapabilityOf } from "./capability";
 import type { EditingCapability } from "./capability";
+import {
+  apiState,
+  demandedSource,
+  invalidate,
+  keysUnder,
+  peekQuery,
+  readHeldQuery,
+  refreshZoteroDatabase,
+} from "./core/bridge";
 import {
   ANNOTATIONS,
   DRAFT_FIELDS,
@@ -94,7 +102,7 @@ import type {
 } from "./history";
 import { firstLockRefusal, lockOf } from "./lock";
 import type { AnnotationLock, LockedVerb, LockReason } from "./lock";
-import { listLocalApi, readAll, readHeld, refreshDatabase } from "./reads";
+import { listLocalApi, readAll } from "./reads";
 import { resolvesSilently, sameStoredGeometry } from "./reconcile";
 import {
   annotationTags,
@@ -553,44 +561,6 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
   redo(attachmentKey: string): Promise<HistoryOutcome> {
     return redo(this.#core, attachmentKey);
   }
-}
-
-function demandedSource(core: CoreState): LocalApiSource | null {
-  return core.bridge.runSync(core.localApi.demandSource);
-}
-
-function apiState(core: CoreState): LocalApiState {
-  return core.bridge.runSync(core.localApi.state);
-}
-
-// After the plugin closes, a read helper answers as the bridge's `closed` says.
-function refreshZoteroDatabase(core: CoreState): Promise<void> {
-  return refreshDatabase(core.bridge, core.db);
-}
-
-function invalidate(core: CoreState, queryKey: QueryKey): void {
-  if (!core.bridge.closed())
-    core.bridge.runSync(core.queries.invalidate(queryKey));
-}
-
-function keysUnder(core: CoreState, prefix: QueryKey): QueryKey[] {
-  return core.bridge.closed()
-    ? []
-    : core.bridge.runSync(core.queries.keysUnder(prefix));
-}
-
-function peekQuery<T>(core: CoreState, queryKey: QueryKey): Held<T> | null {
-  return core.bridge.closed()
-    ? null
-    : core.bridge.runSync(core.queries.peek<T>(queryKey));
-}
-
-function readHeldQuery<T>(
-  core: CoreState,
-  queryKey: QueryKey,
-  read: QueryFunction<T>,
-): Promise<T | null> {
-  return readHeld(core.bridge, core.queries, { key: queryKey, read });
 }
 
 /**
