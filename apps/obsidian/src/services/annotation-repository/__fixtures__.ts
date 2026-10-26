@@ -347,7 +347,9 @@ export async function setup(
 
 /**
  * The stack an `it.effect` case builds its harness on: {@link setup} and
- * {@link writable} add to it, and the case's Scope disposes it.
+ * {@link writable} add to it, and the case's Scope disposes it. The
+ * repository reads the TestClock of the harness's `runtime`, not the case's
+ * own: a case moves the repository's time through `runtime`.
  */
 export const scopedStack = Effect.acquireRelease(
   Effect.sync(() => new AsyncDisposableStack()),

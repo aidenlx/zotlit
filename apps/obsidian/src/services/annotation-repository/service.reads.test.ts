@@ -814,21 +814,16 @@ it.effect(
       const stack = yield* scopedStack;
       const inFlight = Promise.withResolvers<void>();
       let answering = true;
-      const {
-        repository,
-        service,
-        serverEvents,
-        localApiService,
-        localApiBridge,
-      } = yield* Effect.promise(() =>
-        setup(stack, {
-          children: () => {
-            if (answering) return annotationPage(ROUGIER_ANNOTATIONS);
-            inFlight.resolve();
-            return new Promise<Response>(() => undefined);
-          },
-        }),
-      );
+      const { repository, service, serverEvents, localApiService } =
+        yield* Effect.promise(() =>
+          setup(stack, {
+            children: () => {
+              if (answering) return annotationPage(ROUGIER_ANNOTATIONS);
+              inFlight.resolve();
+              return new Promise<Response>(() => undefined);
+            },
+          }),
+        );
       yield* Effect.promise(() => switchToLocalApi(repository));
 
       answering = false;
@@ -846,9 +841,7 @@ it.effect(
       expect(list?.annotations.map(({ key, type }) => [key, type])).toEqual(
         READING_ORDER,
       );
-      expect(
-        localApiBridge.runSync(localApiService.demandSource),
-      ).not.toBeNull();
+      expect(yield* localApiService.demandSource).not.toBeNull();
       // A read asked after the close finds no list to hold.
       expect(yield* service.read("EPUBBKS2")).toBeNull();
     }),
@@ -913,17 +906,14 @@ it.effect(
 it.effect("answers the Editing Capability the Annotation Source leaves", () =>
   Effect.gen(function* () {
     const stack = yield* scopedStack;
-    const { service, localApiService, localApiBridge } = yield* Effect.promise(
-      () =>
-        setup(stack, {
-          root: localApiDisabled,
-        }),
+    const { service, localApiService } = yield* Effect.promise(() =>
+      setup(stack, {
+        root: localApiDisabled,
+      }),
     );
 
     const beforeProbe = yield* service.capabilityFor("RGRPDF24");
-    yield* Effect.promise(() =>
-      localApiBridge.runPromise(localApiService.probe),
-    );
+    yield* localApiService.probe;
     const disabled = yield* service.capabilityFor("RGRPDF24");
 
     expect(beforeProbe).toEqual({ kind: "read-only", reason: "probing" });
@@ -961,12 +951,12 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service, localApiService, localApiBridge } =
-        yield* Effect.promise(() =>
+      const { repository, service, localApiService } = yield* Effect.promise(
+        () =>
           setup(stack, {
             children: () => annotationPage(ROUGIER_ANNOTATIONS),
           }),
-        );
+      );
       let announced = 0;
       stack.defer(
         repository.listen("capability-changed", () => {
@@ -978,9 +968,7 @@ it.effect(
         kind: "read-only",
         reason: "probing",
       });
-      yield* Effect.promise(() =>
-        localApiBridge.runPromise(localApiService.probe),
-      );
+      yield* localApiService.probe;
 
       // The settings row reads this one: it names no Attachment, so no library
       // Zotero refused a write to is part of it.
