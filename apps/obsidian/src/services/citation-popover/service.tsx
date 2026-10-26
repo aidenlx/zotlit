@@ -17,9 +17,10 @@ import { Workspace, workspaceTrigger } from "@/lib/obsidian-workspace";
 import type { WorkspaceEventHost } from "@/lib/obsidian-workspace";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
 import {
-  describeCandidates,
+  describeCandidatesEffect,
   describeJoinedCandidates,
 } from "@/services/citation-index/ambiguity";
+import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
 import type {
   CitationLookupAnswer,
   CitationLookupRequest,
@@ -33,7 +34,10 @@ import type { CitationLookupStatus } from "@/services/citation-index/lookup-serv
 import { CitationIndex } from "@/services/citation-index/service";
 import { readReferenceSources } from "@/services/citation-index/service";
 import type { DocumentCitationSet } from "@/services/citation-index/service";
-import type { CitekeyResolution } from "@/services/citation-index/service";
+import type {
+  CitekeyResolution,
+  SnapshotItem,
+} from "@/services/citation-index/service";
 import { shownCitationContent } from "@/services/citation-text/present";
 import { CitationText } from "@/services/citation-text/service";
 import type { DocumentCitations } from "@/services/citation-text/service";
@@ -108,6 +112,10 @@ interface PopoverReads {
   libraryScope: {
     readonly current: ResolvedLibraryScope | null;
   };
+  /** The candidates of one Ambiguous Citation Key; none once unload interrupts the read. */
+  describeCandidates(
+    candidates: readonly SnapshotItem[],
+  ): Promise<AmbiguousCandidate[]>;
   /** The formatted citations of the hovered document, read for this popover. */
   readText(
     path: string,
@@ -304,6 +312,8 @@ export const layerCitationPopover: Layer.Layer<
           return bridge.runSync(libraries.current);
         },
       },
+      describeCandidates: (candidates) =>
+        held(describeCandidatesEffect(deps, candidates), []),
       async readText(path, { signal }) {
         if (bridge.closed()) return null;
         return held(
@@ -531,8 +541,7 @@ async function readWork(
             ? {
                 kind: "ambiguous",
                 citekey: work.citekey,
-                candidates: await describeCandidates(
-                  deps,
+                candidates: await deps.describeCandidates(
                   resolution.candidates,
                 ),
               }
