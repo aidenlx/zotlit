@@ -40,16 +40,7 @@ import type {
   LocalApiSource,
 } from "@/services/zotero-local-api/service";
 
-import {
-  apiState,
-  databaseRows,
-  demandedSource,
-  invalidate,
-  keysUnder,
-  peekQuery,
-  readHeldQuery,
-  refreshZoteroDatabase,
-} from "./bridge";
+import { databaseRows } from "./bridge";
 import type { DatabaseRowsError } from "./bridge";
 import { cancelTextSave, reconcilePublishedDrafts } from "./draft-store";
 import {
@@ -124,12 +115,6 @@ export class AnnotationLibraryUnresolved extends Schema.TaggedError<
   }
 }
 
-/** This device's persisted Excerpt Image could not be read. */
-class PersistedExcerptUnreadable extends Schema.TaggedError<
-  PersistedExcerptUnreadable,
-  { readonly brand: unique symbol }
->()("PersistedExcerptUnreadable", { cause: Schema.Defect() }) {}
-
 /**
  * @param attachmentKey the Attachment's Indexed Key.
  * @returns the list that stands, with the Pending Proposal of each write in
@@ -154,7 +139,7 @@ const readUnasked = Effect.fnUntraced(function* (
   AnnotationList | null,
   DatabaseRowsError | AnnotationLibraryUnresolved
 > {
-  const source = yield* demandedSource(core);
+  const source = yield* core.localApi.demandSource;
   const binding = core.databaseBindings.get(attachmentKey);
   if (
     source &&
@@ -164,7 +149,7 @@ const readUnasked = Effect.fnUntraced(function* (
     yield* sourceStillBound(core, attachmentKey, source);
   }
   const { queryKey, read } = yield* activePartition(core, attachmentKey);
-  const candidate = yield* readHeldQuery(core, queryKey, read);
+  const candidate = yield* core.queries.read(queryKey, read);
   if (
     candidate &&
     !overtakenPartition(core, queryKey) &&
@@ -180,7 +165,7 @@ const readUnasked = Effect.fnUntraced(function* (
     }
     const superseded = core.publishedLists.get(attachmentKey);
     core.publishedLists.set(attachmentKey, candidate);
-    const held = yield* peekQuery<AnnotationList>(core, queryKey);
+    const held = yield* core.queries.peek<AnnotationList>(queryKey);
     core.publishedStatuses.set(attachmentKey, held?.status ?? "fresh");
     yield* reconcilePublishedDrafts(core, held, {
       attachmentKey,
@@ -367,7 +352,7 @@ const revalidate = Effect.fnUntraced(function* (
   if ((yield* compatibleApiSource(core, attachmentKey)) === null) {
     // A failed refresh keeps the previous database serving, so the read
     // below still answers; a database that cannot serve fails that read.
-    yield* refreshZoteroDatabase(core).pipe(
+    yield* core.db.refresh.pipe(
       Effect.catch((error) =>
         Effect.logDebug("The Zotero database refresh failed").pipe(
           Effect.annotateLogs({ error }),
@@ -377,9 +362,9 @@ const revalidate = Effect.fnUntraced(function* (
   }
   const { queryKey } = yield* activePartition(core, attachmentKey);
   core.publish({ _tag: "annotations-changed", attachmentKey });
-  yield* invalidate(core, queryKey);
+  yield* core.queries.invalidate(queryKey);
   const value = yield* read(core, attachmentKey);
-  const status = (yield* peekQuery<AnnotationList>(core, queryKey))?.status;
+  const status = (yield* core.queries.peek<AnnotationList>(queryKey))?.status;
   if (value && status === "failed") {
     core.publishedStatuses.set(attachmentKey, status);
   }
@@ -437,13 +422,13 @@ const editingCapability = Effect.fnUntraced(function* (
 ): Effect.fn.Return<EditingCapability> {
   const capability =
     attachmentKey !== null &&
-    (yield* demandedSource(core)) &&
+    (yield* core.localApi.demandSource) &&
     !(yield* compatibleApiSource(core, attachmentKey))
       ? ({ kind: "read-only", reason: "server-changed" } as const)
       : editingCapabilityOf(
-          yield* apiState(core),
+          yield* core.localApi.state,
           yield* core.localApi.writeStateFor(attachmentKey),
-          core.now,
+          yield* DateTime.now,
         );
   const described = describeCapability(capability);
   if (core.lastCapability.get(attachmentKey) === described) {
@@ -513,10 +498,7 @@ const persistedFingerprints = Effect.fnUntraced(function* (
   const stood = yield* Effect.forEach(
     candidate.annotations,
     (record) =>
-      Effect.tryPromise({
-        try: () => persisted(record, candidate.source),
-        catch: (cause) => new PersistedExcerptUnreadable({ cause }),
-      }).pipe(
+      persisted(record, candidate.source).pipe(
         recover(
           (cause) =>
             Effect.logDebug(
@@ -541,7 +523,7 @@ const holding = Effect.fnUntraced(function* (
   core: CoreState,
   annotationKey: string,
 ): Effect.fn.Return<HeldAnnotation | null> {
-  const source = yield* demandedSource(core);
+  const source = yield* core.localApi.demandSource;
   for (const [attachmentKey, list] of core.publishedLists) {
     if (
       source
@@ -601,7 +583,7 @@ const prepareWrite = Effect.fnUntraced(function* (
   HeldAnnotation | null | "server-changed",
   DatabaseRowsError | AnnotationLibraryUnresolved
 > {
-  const source = yield* demandedSource(core);
+  const source = yield* core.localApi.demandSource;
   if (!source) return yield* holding(core, annotationKey);
   const attachmentKey = attachmentHolding(core, annotationKey);
   if (attachmentKey) {
@@ -628,8 +610,7 @@ const dropAttachment = Effect.fnUntraced(function* (
   attachmentKey: string,
   queryKey?: QueryKey,
 ) {
-  yield* invalidate(
-    core,
+  yield* core.queries.invalidate(
     queryKey ?? (yield* activePartition(core, attachmentKey)).queryKey,
   );
   core.publish({ _tag: "annotations-changed", attachmentKey });
@@ -883,9 +864,9 @@ const adoptDatabaseSource = Effect.fnUntraced(function* (
  * switch to the Zotero Local API most concerns.
  */
 const sourceMoved = Effect.fnUntraced(function* (core: CoreState) {
-  yield* invalidate(core, [ANNOTATIONS, ZOTERO_LOCAL_API]);
+  yield* core.queries.invalidate([ANNOTATIONS, ZOTERO_LOCAL_API]);
   const held = yield* attachmentsHeld(core, [ANNOTATIONS]);
-  const source = yield* demandedSource(core);
+  const source = yield* core.localApi.demandSource;
   yield* Effect.logDebug("The Zotero Local API source moved").pipe(
     Effect.annotateLogs({ attachments: held.length, source }),
   );
@@ -904,7 +885,7 @@ const attachmentsHeld = Effect.fnUntraced(function* (
   core: CoreState,
   prefix: QueryKey,
 ) {
-  const keys = (yield* keysUnder(core, prefix))
+  const keys = (yield* core.queries.keysUnder(prefix))
     .map((queryKey) => queryKey.at(-1))
     .filter((key) => typeof key === "string");
   return [...new Set(keys)];
@@ -918,8 +899,8 @@ const dropDatabasePartition = Effect.fnUntraced(function* (core: CoreState) {
   core.databaseGeneration += 1;
   const prefix = [ANNOTATIONS, ZOTERO_DB];
   const held = yield* attachmentsHeld(core, prefix);
-  yield* invalidate(core, prefix);
-  yield* invalidate(core, [ANNOTATIONS, ZOTERO_LOCAL_API]);
+  yield* core.queries.invalidate(prefix);
+  yield* core.queries.invalidate([ANNOTATIONS, ZOTERO_LOCAL_API]);
   yield* Effect.logDebug("Zotero database annotation partition dropped").pipe(
     Effect.annotateLogs({ attachments: held.length }),
   );
@@ -1072,7 +1053,7 @@ const compatibleApiSource = Effect.fnUntraced(function* (
   core: CoreState,
   attachmentKey: string | null,
 ): Effect.fn.Return<LocalApiSource | null> {
-  const api = yield* demandedSource(core);
+  const api = yield* core.localApi.demandSource;
   if (!api) return null;
   const sources =
     attachmentKey === null
@@ -1102,7 +1083,7 @@ const sourceStillBound = Effect.fnUntraced(function* (
   expected: LocalApiSource,
 ): Effect.fn.Return<boolean, DatabaseRowsError | AnnotationLibraryUnresolved> {
   for (;;) {
-    const state = yield* apiState(core);
+    const state = yield* core.localApi.state;
     if (
       state.kind === "available"
         ? state.source.serverID !== expected.serverID
@@ -1276,7 +1257,7 @@ function coversConfirmations(
  */
 function describeCapability(capability: EditingCapability): string {
   return capability.kind === "cooldown"
-    ? `cooldown:${capability.retryAfter.toString()}`
+    ? `cooldown:${DateTime.formatIso(capability.retryAfter)}`
     : capabilityReason(capability);
 }
 

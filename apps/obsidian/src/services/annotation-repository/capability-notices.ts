@@ -6,6 +6,8 @@
 // @see apps/obsidian/policies/ui-seams.md
 // @see https://github.com/aidenlx/zotlit/issues/1147
 
+import type { DateTime } from "effect";
+
 import * as m from "@/lib/i18n/generated/messages";
 import type {
   LocalApiFailure,
@@ -101,7 +103,7 @@ export class CapabilityNoticeLedger {
   readonly #conflictsSpoken = new Set<string>();
 
   /** @param now the clock a cooldown's remaining seconds are read against. */
-  constructor(now: () => Temporal.Instant) {
+  constructor(now: () => DateTime.Utc) {
     this.#now = now;
   }
 

@@ -17,7 +17,6 @@ import type {
   TextField,
 } from "@/services/annotation-repository/write";
 
-import { demandedSource } from "./bridge";
 import {
   cancelTextSave,
   draftFor,
@@ -153,7 +152,7 @@ const editTextField = Effect.fnUntraced(function* (
   field: TextField,
   { annotationKey, text }: { annotationKey: string; text?: string },
 ): Effect.fn.Return<TextFieldDraft | null> {
-  const source = yield* demandedSource(core);
+  const source = yield* core.localApi.demandSource;
   const standing = yield* draftFor(core, field, annotationKey);
   const held = standing ? null : yield* holding(core, annotationKey);
   if (!standing && (!source || !held)) return null;
@@ -474,7 +473,7 @@ const editTags = Effect.fnUntraced(function* (
 ): Effect.fn.Return<TagDraft | null> {
   const standing = yield* tagDraftFor(core, annotationKey);
   if (standing?.state.kind === "pending") return standing;
-  const source = yield* demandedSource(core);
+  const source = yield* core.localApi.demandSource;
   const held = standing ? null : yield* holding(core, annotationKey);
   if (!standing && (!source || !held)) return null;
   const attachmentKey = standing?.attachmentKey ?? held!.attachmentKey;

@@ -11,11 +11,10 @@ import {
 } from "effect";
 
 import { scopedBridge } from "@/lib/effect-bridge";
-import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ExcerptImages } from "@/services/excerpt-image/layer";
-import { savedExcerptRequestOver } from "@/services/excerpt-image/request";
+import { savedExcerptRequestFor } from "@/services/excerpt-image/request";
 import type { Held } from "@/services/query-client/service";
 import { QueryClients } from "@/services/query-client/service";
 import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
@@ -23,6 +22,7 @@ import { ZoteroPref } from "@/services/zotero-pref/service";
 import { changed } from "@/services/zotero-reads/events";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
+import type { EditingCapability } from "./capability";
 import type { DatabaseRowsError } from "./core/bridge";
 import {
   annotationState,
@@ -58,6 +58,17 @@ import {
   sourceMoved,
 } from "./core/lists";
 import type { AnnotationLibraryUnresolved } from "./core/lists";
+import { PersistedExcerptUnreadable } from "./core/model";
+import type {
+  AnnotationList,
+  AnnotationRecord,
+  AnnotationRepositoryCoreDeps,
+  AnnotationRepositoryEvent,
+  AnnotationSource,
+  AnnotationState,
+  TagDraft,
+  TextFieldDraft,
+} from "./core/model";
 import { mutationFor } from "./core/outcomes";
 import { CoreState } from "./core/state";
 import {
@@ -71,29 +82,57 @@ import {
   patchGeometry,
   retryWrite,
 } from "./core/writes";
-import { AnnotationRepositoryCore } from "./repository";
 import type {
-  AnnotationDraft,
-  AnnotationList,
-  AnnotationRecord,
-  AnnotationRepositoryCoreDeps,
-  AnnotationRepositoryEvent,
-  AnnotationSource,
-  AnnotationState,
   CreateOutcome,
-  EditingCapability,
-  GeometryEdit,
-  GeometryInput,
-  HistoryOutcome,
-  MutationState,
-  TagDraft,
-  TextField,
-  TextFieldDraft,
   WriteReadError,
   WriteRunFailed,
-} from "./repository";
+} from "./core/writes";
+import type { HistoryOutcome } from "./history";
+import type {
+  AnnotationDraft,
+  GeometryEdit,
+  GeometryInput,
+  MutationState,
+  TextField,
+} from "./write";
 
-export * from "./repository";
+export type { CreateOutcome, WriteReadError } from "./core/writes";
+export { WriteRunFailed } from "./core/writes";
+export {
+  UNHELD_RETENTION,
+  LocalApiReadFailed,
+  AnnotationLibraryUnresolved,
+} from "./core/lists";
+export type {
+  DatabaseAnnotationSource,
+  AnnotationSource,
+  AnnotationRecord,
+  AnnotationList,
+  TextFieldDraftState,
+  TextFieldDraft,
+  TagDraftState,
+  TagDraft,
+  AnnotationState,
+  AnnotationRepositoryEvent,
+  AnnotationRepositoryCoreDeps,
+} from "./core/model";
+export type { EditingCapability } from "./capability";
+export type { AnnotationLock, LockReason } from "./lock";
+export type {
+  HistoryDirection,
+  HistoryEditKind,
+  HistoryOutcome,
+  HistoryStep,
+} from "./history";
+export type {
+  AnnotationDraft,
+  GeometryEdit,
+  GeometryInput,
+  MutationState,
+  TextField,
+  WriteConflict,
+  WriteFailure,
+} from "./write";
 export type { DatabaseRowsError } from "./core/bridge";
 
 export type AnnotationRepositoryShape = {
@@ -416,6 +455,38 @@ export type AnnotationRepositoryShape = {
   }>;
 };
 
+/**
+ * Answers an Attachment's Annotations from the Annotation Source that is active
+ * for it, and says which source answered. Reads are held on the plugin-wide
+ * query client, so the overlay and the Annotation View asking for one Attachment
+ * at once cost one database read.
+ *
+ * It is also the one write path. A command takes Indexed Keys alone: the record
+ * the active source answered supplies the version the write sends as its
+ * precondition, and a record with no version — the Zotero DB source's — refuses
+ * the write before any request. Each write is a mutation on the plugin-wide
+ * query client, run one at a time per Annotation, and its variables are its
+ * Pending Proposal: every list this repository publishes draws the proposal in
+ * place of the confirmed fields until the write settles, and the query cache
+ * behind it keeps the confirmed record every write, conflict, and History Step
+ * is decided against.
+ *
+ * The Zotero DB partition is dropped wholesale whenever the database refreshes,
+ * and the Zotero Local API partition whenever that source moves — a Freshness
+ * Signal, another Zotero database, a capability that changed. Every Attachment
+ * the drop concerns is announced through `annotations-changed`, which is the
+ * only signal that a list was superseded, and read again here, so the pixels
+ * such a change moved are announced even with no surface mounted to ask.
+ *
+ * A surface holds the lists it shows through {@link AnnotationRepositoryShape.hold}
+ * and reads them through {@link AnnotationRepositoryShape.read}: the reads it asks
+ * in one task the Zotero DB source answers in one batch read. A list no surface
+ * holds any more is let go, so a view over a whole Library leaves nothing
+ * behind.
+ *
+ * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
+ * @see docs/adr/0060-held-reads-are-realized-on-tanstack-query-core.md
+ */
 export class AnnotationRepository extends Context.Service<
   AnnotationRepository,
   AnnotationRepositoryShape
@@ -437,22 +508,32 @@ export function layerAnnotationRepository(options: {
       const api = yield* ZoteroLocalApi;
       const pref = yield* ZoteroPref;
       const clock = yield* Clock.Clock;
-      const now = instantClock(clock);
       const bridge = yield* scopedBridge;
       const bus = yield* PubSub.unbounded<AnnotationRepositoryEvent>();
       yield* Effect.addFinalizer(() => PubSub.shutdown(bus));
-      const excerptRequest = savedExcerptRequestOver({ reads, pref, bridge });
       // A session's first read of an Attachment has no list that stood
       // before it to compare against, so it is compared against the image
       // this device persists for the Annotation instead — the display's own
       // stored-outcome read, so an Annotation this device never cached has
       // no baseline here exactly as it has no image to replace there.
       const persistedExcerpt: AnnotationRepositoryCoreDeps["persistedExcerpt"] =
-        async (annotation, source) => {
-          const request = await excerptRequest({ annotation, source });
+        Effect.fnUntraced(function* (annotation, source) {
+          const request = yield* savedExcerptRequestFor({
+            annotation,
+            source,
+          }).pipe(
+            Effect.provideService(ZoteroReads, reads),
+            Effect.provideService(ZoteroPref, pref),
+          );
           if (!request) return null;
-          return (await images.stored(request))?.identity.fingerprint ?? null;
-        };
+          // The Excerpt Image service is legacy until #1790: its stored read
+          // is the one Promise port left here.
+          const stored = yield* Effect.tryPromise({
+            try: () => images.stored(request),
+            catch: (cause) => new PersistedExcerptUnreadable({ cause }),
+          });
+          return stored?.identity.fingerprint ?? null;
+        });
       const fibers = yield* FiberSet.make();
       const refreshes = yield* FiberMap.make<
         string,
@@ -471,13 +552,15 @@ export function layerAnnotationRepository(options: {
             void PubSub.publishUnsafe(bus, event);
           },
           writeToken: options.writeToken,
-          now,
           persistedExcerpt,
         },
         { fibers, refreshes, idleSaves, burstSaves },
       );
-      yield* Effect.acquireDisposable(
-        Effect.sync(() => new AnnotationRepositoryCore(shared)),
+      // A command still queued when the repository closes sends nothing.
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          shared.commandGeneration += 1;
+        }),
       );
       // A database change and a Local API source move supersede lists; the
       // reads they start run on the layer's Scope.

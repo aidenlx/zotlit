@@ -16,7 +16,6 @@ import type { AnnotationPositionRaw } from "@zotlit/db";
 
 import { valueOr } from "@/lib/effect-bridge";
 import { recover } from "@/lib/effect-cause";
-import { fromInstant, toInstant } from "@/lib/effect-clock";
 import { contentOf } from "@/services/annotation-repository/history";
 import type {
   HistoryJoin,
@@ -64,7 +63,6 @@ import {
   readCreateResult,
 } from "@/services/zotero-local-api/wire";
 
-import { demandedSource, invalidate } from "./bridge";
 import type { DatabaseRowsError } from "./bridge";
 import {
   cancelTextSave,
@@ -462,7 +460,7 @@ const patchGeometry = Effect.fnUntraced(function* (
     request: (target, record) => geometryPatch(target, record.type, edit),
     propose: (record) => proposedGeometry(record, edit),
     ...(input === "keyboard" && {
-      join: { input, at: toInstant(yield* DateTime.now) },
+      join: { input, at: yield* DateTime.now },
     }),
   });
 });
@@ -681,7 +679,8 @@ const command = Effect.fnUntraced(function* (
   // drawn and a Write Conflict standing on the Annotation stays.
   const locked = yield* lockRefusal(core, annotationKey, command.write);
   if (locked) return { kind: "failed", failure: locked };
-  const expectedServerID = (yield* demandedSource(core))?.serverID ?? null;
+  const expectedServerID =
+    (yield* core.localApi.demandSource)?.serverID ?? null;
   const generation = core.commandGeneration;
   const held = yield* holding(core, annotationKey);
   const proposal: PendingProposal | null =
@@ -771,7 +770,7 @@ const runCommand: (
       return UNKNOWN_OUTCOME;
     }
     if (
-      ((yield* demandedSource(core))?.serverID ?? null) !==
+      ((yield* core.localApi.demandSource)?.serverID ?? null) !==
       command.expectedServerID
     ) {
       return { kind: "failed", failure: { kind: "server-changed" } };
@@ -993,7 +992,7 @@ const uncount = Effect.fnUntraced(function* (
     return;
   }
   core.writesInFlight.delete(attachmentKey);
-  if (yield* demandedSource(core)) return;
+  if (yield* core.localApi.demandSource) return;
   yield* FiberSet.run(
     core.fibers,
     read(core, attachmentKey).pipe(
@@ -1096,7 +1095,7 @@ const writeBlocked = Effect.fnUntraced(function* (
         kind: "cooldown",
         retryAfter: DateTime.distance(
           yield* DateTime.now,
-          fromInstant(capability.retryAfter),
+          capability.retryAfter,
         ),
       };
     case "read-only":
@@ -1224,7 +1223,7 @@ const applyWrite = Effect.fnUntraced(function* (
     yield* Effect.logDebug("A written annotation could not be read back").pipe(
       Effect.annotateLogs({ annotationKey, failure: fresh.failure }),
     );
-    yield* invalidate(core, queryKey);
+    yield* core.queries.invalidate(queryKey);
     return fresh;
   }
   const record = fromLocalApi(fresh.value);

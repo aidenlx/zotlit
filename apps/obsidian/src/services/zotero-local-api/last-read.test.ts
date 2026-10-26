@@ -1,10 +1,11 @@
-import { DateTime, Effect } from "effect";
+import { it } from "@effect/vitest";
+import { DateTime, Effect, Exit, Layer } from "effect";
 import { TestClock } from "effect/testing";
-import { expect, it, vi } from "vitest";
+import { expect, vi } from "vitest";
 
-import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import type { ZoteroReads } from "@/services/zotero-reads/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 import {
   ATTACHMENT_KEY,
@@ -21,7 +22,7 @@ import {
 // Failure modes: wrong source or group; revoked authorization; stale object;
 // out-of-order reads; closed Zotero; rejected writes; notices from a reprobe.
 import { writeReadUse } from "./last-read";
-import type { ZoteroLocalApi } from "./service";
+import { ZoteroLocalApi } from "./service";
 
 // RECORDED shape: Paired Zotero on 2026-10-19 omitted lastRead before the
 // first read, then returned numeric Unix seconds. Object version is set to 7
@@ -227,63 +228,6 @@ it("leaves a closed Zotero alone after an unavailable probe", async () => {
   expect(requests).toHaveLength(1);
 });
 
-it.each([null, "BBBBBBBBBBBB"])(
-  "skips a database whose server identity is %s",
-  async (serverID) => {
-    await using bridge = openTestBridge();
-    const writeLastRead = vi.fn(() => Effect.void);
-    const reads = stubService<ZoteroReads["Service"]>("ZoteroReads", {
-      // The RPC client's members are generic over queue options; the
-      // read answers the one call the code makes.
-      snapshot: Effect.succeed(
-        Object.assign(
-          stubService<Effect.Success<ZoteroReads["Service"]["snapshot"]>>(
-            "ZoteroReadsSnapshot",
-            {},
-          ),
-          { DatabaseIdentity: () => Effect.succeed({ serverID }) },
-        ),
-      ),
-    });
-    const api = stubService<ZoteroLocalApi["Service"]>("ZoteroLocalApi", {
-      state: Effect.succeed({
-        kind: "available",
-        source: { kind: "zotero-local-api", serverID: SERVER_ID },
-        authorized: true,
-      }),
-      writeLastRead,
-    });
-    await writeReadUse(
-      { reads, bridge, api },
-      { attachmentKey: ATTACHMENT_KEY, instant: NOW, serverID: SERVER_ID },
-    );
-    expect(writeLastRead).not.toHaveBeenCalled();
-  },
-);
-
-it("contains a database failure without delaying local reading", async () => {
-  await using bridge = openTestBridge();
-  const writeLastRead = vi.fn(() => Effect.void);
-  const reads = stubService<ZoteroReads["Service"]>("ZoteroReads", {
-    snapshot: Effect.die(new Error("closed database")),
-  });
-  const api = stubService<ZoteroLocalApi["Service"]>("ZoteroLocalApi", {
-    state: Effect.succeed({
-      kind: "available",
-      source: { kind: "zotero-local-api", serverID: SERVER_ID },
-      authorized: true,
-    }),
-    writeLastRead,
-  });
-  await expect(
-    writeReadUse(
-      { reads, bridge, api },
-      { attachmentKey: ATTACHMENT_KEY, instant: NOW, serverID: SERVER_ID },
-    ),
-  ).resolves.toBeUndefined();
-  expect(writeLastRead).not.toHaveBeenCalled();
-});
-
 it("keeps the newest read when two writes overlap at the same object version", async () => {
   const firstWrite = Promise.withResolvers<void>();
   const firstStarted = Promise.withResolvers<void>();
@@ -388,3 +332,148 @@ it("lets the caller see a defect of the write-back", async () => {
     bridge.runPromise(service.writeLastRead(ATTACHMENT_KEY, SERVER_ID, NOW)),
   ).rejects.toMatchObject({ cause: new Error("keychain locked") });
 });
+
+const AVAILABLE = {
+  kind: "available",
+  source: { kind: "zotero-local-api", serverID: SERVER_ID },
+  authorized: true,
+} as const;
+
+/**
+ * Runs a read write-back over the two services it reads, with the calls it
+ * makes counted.
+ */
+function readUseServices({
+  state = AVAILABLE,
+  databaseServerID = SERVER_ID,
+  snapshot,
+  writeLastRead = vi.fn(() => Effect.void),
+}: {
+  state?: Effect.Success<ZoteroLocalApi["Service"]["state"]>;
+  databaseServerID?: string | null;
+  snapshot?: ZoteroReads["Service"]["snapshot"];
+  writeLastRead?: ZoteroLocalApi["Service"]["writeLastRead"];
+} = {}) {
+  const snapshots = vi.fn();
+  const reads = Layer.mock(ZoteroReads, {
+    reads: stubService<ZoteroReadsApi>("Reads", {}),
+    snapshot:
+      snapshot ??
+      Effect.sync(() => {
+        snapshots();
+        // The RPC client's members are generic over queue options; the
+        // read answers the one call the code makes.
+        return Object.assign(
+          stubService<Effect.Success<ZoteroReads["Service"]["snapshot"]>>(
+            "ZoteroReadsSnapshot",
+            {},
+          ),
+          {
+            DatabaseIdentity: () =>
+              Effect.succeed({ serverID: databaseServerID }),
+          },
+        );
+      }),
+  });
+  const api = Layer.mock(ZoteroLocalApi, {
+    state: Effect.succeed(state),
+    writeLastRead,
+  });
+  const run = (target: Parameters<typeof writeReadUse>[0]) =>
+    writeReadUse(target).pipe(Effect.provide(Layer.mergeAll(reads, api)));
+  return { run, snapshots, writeLastRead };
+}
+
+it.effect(
+  "writes the read against the database that resolved its Attachment",
+  () =>
+    Effect.gen(function* () {
+      const { run, writeLastRead } = readUseServices();
+      yield* run({
+        attachmentKey: ATTACHMENT_KEY,
+        instant: NOW,
+        serverID: SERVER_ID,
+      });
+      expect(writeLastRead).toHaveBeenCalledWith(
+        ATTACHMENT_KEY,
+        SERVER_ID,
+        NOW,
+      );
+    }),
+);
+
+it.effect.each([
+  { name: "a group Attachment", key: `${ATTACHMENT_KEY}g42` },
+  { name: "a key that names no Attachment", key: "not a key" },
+  {
+    name: "an unavailable Local API",
+    state: { kind: "unavailable", failure: { kind: "unreachable" } } as const,
+  },
+  { name: "no authorization", state: { ...AVAILABLE, authorized: false } },
+  { name: "no resolved database", serverID: null },
+  { name: "another resolved database", serverID: "BBBBBBBBBBBB" },
+])(
+  "skips $name before it reads the database",
+  ({ key = ATTACHMENT_KEY, state, serverID = SERVER_ID }) =>
+    Effect.gen(function* () {
+      const { run, snapshots, writeLastRead } = readUseServices({ state });
+      yield* run({ attachmentKey: key, instant: NOW, serverID });
+      expect(snapshots).not.toHaveBeenCalled();
+      expect(writeLastRead).not.toHaveBeenCalled();
+    }),
+);
+
+it.effect.each([null, "BBBBBBBBBBBB"])(
+  "skips a database whose server identity is %s",
+  (databaseServerID) =>
+    Effect.gen(function* () {
+      const { run, snapshots, writeLastRead } = readUseServices({
+        databaseServerID,
+      });
+      yield* run({
+        attachmentKey: ATTACHMENT_KEY,
+        instant: NOW,
+        serverID: SERVER_ID,
+      });
+      expect(snapshots).toHaveBeenCalledOnce();
+      expect(writeLastRead).not.toHaveBeenCalled();
+    }),
+);
+
+it.effect("contains a database failure without delaying local reading", () =>
+  Effect.gen(function* () {
+    const { run, writeLastRead } = readUseServices({
+      snapshot: Effect.die(new Error("closed database")),
+    });
+    yield* run({
+      attachmentKey: ATTACHMENT_KEY,
+      instant: NOW,
+      serverID: SERVER_ID,
+    });
+    expect(writeLastRead).not.toHaveBeenCalled();
+  }),
+);
+
+it.effect("contains a write-back that fails", () =>
+  Effect.gen(function* () {
+    const { run } = readUseServices({
+      writeLastRead: () => Effect.die(new Error("keychain locked")),
+    });
+    const exit = yield* Effect.exit(
+      run({ attachmentKey: ATTACHMENT_KEY, instant: NOW, serverID: SERVER_ID }),
+    );
+    expect(exit._tag).toBe("Success");
+  }),
+);
+
+it.effect("lets an interrupt of the write-back through", () =>
+  Effect.gen(function* () {
+    const { run } = readUseServices({
+      writeLastRead: () => Effect.interrupt,
+    });
+    const exit = yield* Effect.exit(
+      run({ attachmentKey: ATTACHMENT_KEY, instant: NOW, serverID: SERVER_ID }),
+    );
+    expect(Exit.hasInterrupts(exit)).toBe(true);
+  }),
+);
