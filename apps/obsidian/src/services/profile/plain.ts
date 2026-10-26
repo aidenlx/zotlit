@@ -2,6 +2,8 @@
 import { Cause, Effect, Exit, Stream } from "effect";
 import type { ManagedRuntime } from "effect";
 
+import { effectBridge } from "@/lib/effect-bridge";
+
 import { Profile, ProfileOperationError } from "./service";
 import type { ProfileOperations, ProfileState } from "./service";
 
@@ -18,19 +20,21 @@ export function plainProfile(
   >,
 ): PlainProfile {
   const service = runtime.runSync(Profile);
-  const context = runtime.runSync(Effect.context<never>());
-  const runSync = Effect.runSyncWith(context);
-  const runPromise = Effect.runPromiseExitWith(context);
-  const unwrap = <A>(exit: Exit.Exit<A, ProfileOperationError>): A => {
+  // Unload stops a pending call, which then rejects with an `AbortError`.
+  const bridge = effectBridge(runtime);
+  const plainError = (error: unknown) =>
+    error instanceof ProfileOperationError ? error.cause : error;
+  const read = <A>(effect: Effect.Effect<A, ProfileOperationError>): A => {
+    const exit = bridge.runSync(Effect.exit(effect));
     if (Exit.isSuccess(exit)) return exit.value;
-    const error = Cause.squash(exit.cause);
-    throw error instanceof ProfileOperationError ? error.cause : error;
+    throw plainError(Cause.squash(exit.cause));
   };
-  const read = <A>(effect: Effect.Effect<A, ProfileOperationError>) =>
-    unwrap(runSync(Effect.exit(effect)));
-  const run = async <A>(
+  const run = <A>(
     effect: Effect.Effect<A, ProfileOperationError>,
-  ): Promise<A> => unwrap(await runPromise(effect));
+  ): Promise<A> =>
+    bridge.runPromise(effect).catch((error: unknown) => {
+      throw plainError(error);
+    });
   return {
     get state() {
       return read(service.state);

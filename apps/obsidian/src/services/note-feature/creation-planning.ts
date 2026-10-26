@@ -31,6 +31,7 @@ import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import { applyComposedFrontmatter } from "./compose";
 import type { ComposeNoteDeps } from "./compose";
 import { templateFacets } from "./context";
+import { composeWarn } from "./diagnostics";
 import { ItemNotFound } from "./errors";
 import { prepareManagedFrontmatter } from "./frontmatter";
 import {
@@ -500,7 +501,7 @@ const prepareProfileNote = Effect.fnUntraced(function* (
       : [];
   const properties: Record<string, unknown> = {};
   applyComposedFrontmatter(
-    { template: { frontmatterFields }, events },
+    { template: { frontmatterFields }, warn: yield* composeWarn, events },
     properties,
     {
       context: note,

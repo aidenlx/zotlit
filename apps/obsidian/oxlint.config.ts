@@ -156,7 +156,6 @@ export default defineConfig({
     {
       // Logging backlog: rework the file to log through Effect, then remove it from the list.
       files: [
-        "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
         "src/services/pandoc/document-presentation.ts",
         "src/services/template/actions.ts",
@@ -352,11 +351,8 @@ export default defineConfig({
       // Default-runtime backlog: run the Effect through the bridge, a layer context runner or a runtime, then remove the file from the list.
       files: [
         "src/lib/effect-scope.ts",
-        "src/lib/temp-sweep.ts",
         "src/services/batch-run.ts",
-        "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
-        "src/services/database/reap-temps.ts",
         "src/services/profile/service.ts",
         "src/views/annot-view/view.tsx",
         "src/views/library/item-actions.ts",
@@ -372,6 +368,17 @@ export default defineConfig({
         "src/views/welcome/connection.ts",
       ],
       rules: { "zotlit-services/no-default-runtime": "off" },
+    },
+    {
+      files: ["src/services/**"],
+      excludeFiles: [
+        "**/*.test.{ts,tsx}",
+        "**/*.browser-test.ts",
+        "**/__fixtures__/**",
+        "**/__fixtures__.ts",
+        "**/test-harness.ts",
+      ],
+      rules: { "zotlit-services/scoped-runner": "error" },
     },
     {
       files: ["src/**/*.{ts,tsx}"],

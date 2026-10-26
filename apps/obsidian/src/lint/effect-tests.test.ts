@@ -152,6 +152,9 @@ tester.run("typed-fake", typedFake, {
     `${host}const cache: CachedMetadata = { frontmatter: {} };`,
     // A cast of a value that is no literal fake, outside a layer.
     `${host}const app = host.app as unknown as App;`,
+    `${layer}layerHost({ vault: host.vault });`,
+    // A cast in a property of an object no layer takes.
+    `${layer}const sources = { vault: host.vault as unknown as VaultSource };`,
     `${host}const target = event.target as HTMLElement;`,
     "const shape = { hoverEl } as unknown as { hoverEl: HTMLElement };",
     "const value = read() as never;",
@@ -188,6 +191,10 @@ tester.run("typed-fake", typedFake, {
     },
     {
       code: `${layer}layerHostApp(host.app as unknown as App);`,
+      errors: layerFake,
+    },
+    {
+      code: `${layer}layerHost({ vault: host.vault as unknown as VaultSource });`,
       errors: layerFake,
     },
     {

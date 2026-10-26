@@ -16,7 +16,7 @@ import type {
   UpdateResult,
   UpdateScope,
 } from "@/services/note-feature/operations";
-import { InertTemplateError } from "@/services/template/errors";
+import { isInertTemplateError } from "@/services/template/errors";
 
 import { NoteFeature } from "./service";
 import type { UpdateNoteOptions } from "./write-pipeline";
@@ -44,7 +44,7 @@ export function updateNoteToast(
     const cause = plainNoteError(failure);
     return (
       missingPartialNotice(cause, options) ??
-      (cause instanceof InertTemplateError
+      (isInertTemplateError(cause)
         ? cause.message
         : m.notice_update_note_failed())
     );
@@ -97,7 +97,7 @@ export function batchUpdateNotices(app: App): BatchUpdateNotices {
       const cause = plainNoteError(error);
       return (
         missingPartialNotice(cause, { app }) ??
-        (cause instanceof InertTemplateError
+        (isInertTemplateError(cause)
           ? cause.message
           : m.batch_update_run_failed())
       );
@@ -155,7 +155,7 @@ function createNoteToast(
       const e = plainError(error);
       return (
         missingPartialNotice(e, options) ??
-        (e instanceof EmptyFilenameError || e instanceof InertTemplateError
+        (e instanceof EmptyFilenameError || isInertTemplateError(e)
           ? e.message
           : m.notice_create_note_failed())
       );

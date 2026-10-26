@@ -732,7 +732,6 @@
   "settings_profile_name_invalid": "请输入配置方案名称。",
   "settings_profile_folder_name": "文献笔记文件夹",
   "settings_profile_citation_style_name": "引文样式",
-  "settings_profile_inherit": "使用默认配置方案",
   "settings_profile_display": "{folder} · {style} · {document}",
   "settings_profile_document_name": "模板文档",
   "settings_profile_document_builtin": "内置模板",

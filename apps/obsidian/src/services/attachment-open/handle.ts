@@ -1,9 +1,8 @@
 // Literature Note Attachments for callers outside Effect: the `open-pdf`
 // command, the file menu, and the Quick Switcher's and Library View's PDF opens.
-import { Effect } from "effect";
 import type { Context } from "effect";
 
-import { valueOr } from "@/lib/effect-bridge";
+import { exitOver, valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 
 import { literatureNoteAttachments } from "./literature-note";
@@ -26,13 +25,9 @@ export function bindLiteratureNoteAttachments(
   bridge: Pick<EffectBridge, "runPromiseExit">,
   context: Context.Context<LiteratureNoteServices>,
 ): LiteratureNoteAttachmentsHandle {
+  const runExit = exitOver(bridge, context);
   return {
     literatureNoteAttachments: async (indexedKey) =>
-      valueOr(
-        await bridge.runPromiseExit(
-          Effect.provideContext(literatureNoteAttachments(indexedKey), context),
-        ),
-        [],
-      ),
+      valueOr(await runExit(literatureNoteAttachments(indexedKey)), []),
   };
 }

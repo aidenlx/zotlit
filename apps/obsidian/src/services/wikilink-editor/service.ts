@@ -5,7 +5,7 @@ import type { Extension } from "@codemirror/state";
 import { Effect, Layer } from "effect";
 
 import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
-import { scopedBridge, valueOr } from "@/lib/effect-bridge";
+import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
@@ -75,9 +75,7 @@ export const layerWikilinkEditor = Layer.effectDiscard(
         citationText: (path) => run(citationText.peek(path)),
         // Unload interrupts a pending open.
         open: (citekey, pane) =>
-          void bridge
-            .runPromiseExit(citekeyEditor.openCitekey(citekey, pane))
-            .then((exit) => valueOr(exit, undefined)),
+          bridge.runAndForget(citekeyEditor.openCitekey(citekey, pane)),
         showPopover: (request) => run(citationPopover.show(request)),
         hoverPreferences: () => display.hover,
         popoverHover: () => display.popoverHover,

@@ -269,7 +269,11 @@ function takesFake(
   if (callee?.type === "CallExpression") return takesFake(callee.callee, names);
   if (callee?.type === "Identifier") {
     const name = callee.name as string;
-    return name === "layerHostApp" || /^layer\w*From$/.test(name);
+    return (
+      name === "layerHost" ||
+      name === "layerHostApp" ||
+      /^layer\w*From$/.test(name)
+    );
   }
   return (
     isMemberOf(
@@ -343,8 +347,9 @@ function hasServiceIndex(node: unknown): boolean {
  * a layer, `stubService<T>(name, { … })` for a value that a legacy consumer
  * takes, the capability test layers for Obsidian's host, and a type
  * annotation for plain Obsidian data. Reports a cast given to a call that
- * takes a fake, and an object literal cast to a type from `obsidian` or
- * `@/lib/obsidian-*`, a service type, a `…Deps` type, or `never`.
+ * takes a fake, or in a property of its object argument, and an object
+ * literal cast to a type from `obsidian` or `@/lib/obsidian-*`, a service
+ * type, a `…Deps` type, or `never`.
  */
 export const typedFake: Rule = {
   meta: {
@@ -408,6 +413,15 @@ export const typedFake: Rule = {
         ) {
           argument = parent;
           parent = parent.parent;
+        }
+        // A cast in a property of the argument, as `layerHost({ vault: … })`.
+        if (
+          parent?.type === "Property" &&
+          parent.value === argument &&
+          parent.parent
+        ) {
+          argument = parent.parent;
+          parent = argument.parent;
         }
         if (
           parent?.type === "CallExpression" &&

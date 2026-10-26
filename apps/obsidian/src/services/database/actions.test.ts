@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer } from "effect";
+import { Deferred, Effect, Exit, Fiber, Layer, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import type { Command } from "obsidian";
 import { describe, expect, vi } from "vitest";
@@ -162,6 +162,22 @@ describe("database refresh action", () => {
       expect(notices[0]?.hidden).toBe(false);
       yield* TestClock.adjust("1 millis");
       expect(notices[0]?.hidden).toBe(true);
+    }),
+  );
+
+  it.effect("stops a pending refresh at unload and ends quietly", () =>
+    Effect.gen(function* () {
+      const never = yield* Deferred.make<void>();
+      const scope = yield* Scope.make();
+      const { command } = yield* layerCommand(() => Deferred.await(never)).pipe(
+        Scope.provide(scope),
+      );
+
+      const running = run(command);
+      yield* Effect.yieldNow;
+      yield* Scope.close(scope, Exit.void);
+
+      yield* Effect.promise(() => running);
     }),
   );
 });

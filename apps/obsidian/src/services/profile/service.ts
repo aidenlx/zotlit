@@ -36,6 +36,7 @@ import {
 import type { LiteratureNotePartialUnpack } from "@zotlit/templates/literature-note-pack";
 
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
+import { forkedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { ensureParentFolder, normalizeFolderPath } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
@@ -1477,23 +1478,19 @@ export const layerProfile = Layer.effect(
     const settings = yield* PluginSettings;
     const template = yield* Template;
     const noteIndex = yield* NoteIndex;
-    const context = yield* Effect.context<never>();
-    const runSync = Effect.runSyncWith(context);
+    // Forked before `operations`: a close waits for a write already started.
+    const bridge = yield* forkedBridge;
+    const runSync = bridge.runSync;
     const read = <A, E>(effect: Effect.Effect<A, E>): A => {
       const exit = runSync(Effect.exit(effect));
       if (Exit.isFailure(exit))
         throw plainTemplateError(Cause.squash(exit.cause));
       return exit.value;
     };
-    const runPromiseExit = Effect.runPromiseExitWith(context);
-    const runPromise = async <A, E>(
-      effect: Effect.Effect<A, E>,
-    ): Promise<A> => {
-      const exit = await runPromiseExit(effect);
-      if (Exit.isFailure(exit))
-        throw plainTemplateError(Cause.squash(exit.cause));
-      return exit.value;
-    };
+    const runPromise = <A, E>(effect: Effect.Effect<A, E>): Promise<A> =>
+      bridge.runPromise(effect).catch((error: unknown) => {
+        throw plainTemplateError(error);
+      });
     const stopped = yield* Deferred.make<void>();
     let released = false;
     // Reads before a mutation can wait on another layer or the host. Cancel
@@ -1520,7 +1517,7 @@ export const layerProfile = Layer.effect(
       app,
       vault,
       fileManager,
-      runPromise: Effect.runPromiseWith(context),
+      runPromise: bridge.runPromise,
       readText: (file) =>
         preflight(attemptPromise(() => readLiveText(app, file))),
       changed: () =>

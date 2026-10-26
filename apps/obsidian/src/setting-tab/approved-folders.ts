@@ -4,6 +4,7 @@
 
 import type { SettingDefinitionItem, SettingDefinitionPage } from "obsidian";
 
+import { passAborted } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 
 import type { SettingsKey, SettingTabContext } from "./context";
@@ -65,7 +66,8 @@ function approvedFolderItems(
         if (folder === undefined) return;
         void ctx.attachmentImport
           .revokeFolder(folder)
-          .then(() => ctx.requestUpdate());
+          .then(() => ctx.requestUpdate())
+          .catch(passAborted);
       },
       items: folders.map((folder) => ({
         id: `settings_attachment_approved_entry:${folder}`,
@@ -84,7 +86,8 @@ function pickApprovedFolder(ctx: SettingTabContext): void {
     onPick: (folder) => {
       void ctx.attachmentImport
         .approveFolder(folder)
-        .then(() => ctx.requestUpdate());
+        .then(() => ctx.requestUpdate())
+        .catch(passAborted);
     },
   });
 }

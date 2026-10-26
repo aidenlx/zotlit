@@ -2,7 +2,7 @@
 import { Cause, Deferred, Effect, Exit, Option, Ref, Stream } from "effect";
 
 import { AbortError } from "@/lib/abort-error";
-import { valueOr } from "@/lib/effect-bridge";
+import { exitOver, valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { settleAtEdge } from "@/lib/signal-edge";
 import { formatErrorMessage } from "@/lib/toast";
@@ -264,14 +264,14 @@ function profileRecovery(error: unknown): BatchFailure["recovery"] {
  * failures and defects keep their identity, an aborted signal rejects with the
  * signal's own abort reason, and an unload rejects with the interrupt.
  */
-export function runBatchWith(
+export function runBatchWith<R = never>(
   runExit: <A, E>(
-    effect: Effect.Effect<A, E>,
+    effect: Effect.Effect<A, E, R>,
     options?: { readonly signal?: AbortSignal },
   ) => Promise<Exit.Exit<A, E>>,
 ) {
   return async <A, E>(
-    effect: Effect.Effect<A, E>,
+    effect: Effect.Effect<A, E, R>,
     signal?: AbortSignal,
   ): Promise<A> => {
     signal?.throwIfAborted();
@@ -292,19 +292,12 @@ export function runBatchWith(
 export const modalRunner = Effect.fnUntraced(function* <R>(
   bridge: Pick<EffectBridge, "runPromiseExit">,
 ) {
-  const context = yield* Effect.context<R>();
-  const runExit = runBatchWith((effect, options) =>
-    bridge.runPromiseExit(effect, options),
-  );
+  const runExit = exitOver(bridge, yield* Effect.context<R>());
   return {
-    run: <A, E>(effect: Effect.Effect<A, E, R>, signal?: AbortSignal) =>
-      runExit(Effect.provideContext(effect, context), signal),
+    run: runBatchWith(runExit),
     settle: async <A, E>(
       effect: Effect.Effect<A, E, R>,
     ): Promise<A | undefined> =>
-      valueOr<A | undefined, E>(
-        await bridge.runPromiseExit(Effect.provideContext(effect, context)),
-        undefined,
-      ),
+      valueOr<A | undefined, E>(await runExit(effect), undefined),
   };
 });
