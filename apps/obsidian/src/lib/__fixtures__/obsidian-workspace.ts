@@ -42,6 +42,8 @@ export class MemoryWorkspace implements WorkspaceSource {
     newLeaf: PaneType | boolean | undefined;
     openViewState: OpenViewState | undefined;
   }[] = [];
+  /** What `readWorkspaceFile` answers: the layout Obsidian restored the leaves from. */
+  savedLayout: unknown = {};
   /** The pane of each `getLeaf` call, in order. */
   readonly leafRequests: (PaneType | boolean | undefined)[] = [];
   /**
@@ -116,6 +118,10 @@ export class MemoryWorkspace implements WorkspaceSource {
     );
     this.openLeaf("markdown", view);
     return view;
+  }
+
+  async readWorkspaceFile(): Promise<unknown> {
+    return this.savedLayout;
   }
 
   updateOptions(): void {

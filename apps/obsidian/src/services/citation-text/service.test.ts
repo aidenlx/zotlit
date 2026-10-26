@@ -203,10 +203,12 @@ async function makeHarness({
     errors: [],
   };
   const metadataCache: MetadataCacheSource = {
-    getFileCache: (file) =>
-      file.path === NOTE.path
+    getFileCache: (file) => metadataCache.getCache(file.path),
+    getCache: (path) =>
+      path === NOTE.path
         ? { links, frontmatter }
         : { frontmatter: { "zotero-key": LIT_KEY } },
+    resolvedLinks: {},
     getFirstLinkpathDest: (linkpath) =>
       Object.hasOwn(notes, linkpath)
         ? Object.assign(new TFile(), { path: `${linkpath}.md` })

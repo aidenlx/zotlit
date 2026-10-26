@@ -59,6 +59,8 @@ import { layerExcerptImages } from "./excerpt-image/layer";
 import type { ExcerptImages } from "./excerpt-image/layer";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
 import type { ExcerptStore } from "./excerpt-image/store";
+import { layerGraphCitations } from "./graph-citations/service";
+import type { GraphCitations } from "./graph-citations/service";
 import { layerItemLookup } from "./item-lookup/service";
 import type { ItemLookup } from "./item-lookup/service";
 import { layerQueryCli } from "./item-query/cli";
@@ -149,6 +151,7 @@ export function pluginLayer(
     readonly noteCreation: CitekeyNoteCreation;
   },
 ): Layer.Layer<
+  | GraphCitations
   | LanguagePack
   | Notifier
   | AnnotationRepository
@@ -306,6 +309,7 @@ export function pluginLayer(
     layerCitekeyEditorNotices.pipe(startingAs("CitekeyEditorNotices")),
     layerCitekeyReading.pipe(startingAs("CitekeyReading")),
     layerDatabaseActions.pipe(startingAs("DatabaseActions")),
+    layerGraphCitations.pipe(startingAs("GraphCitations")),
     layerLanguagePackNotices.pipe(startingAs("LanguagePackNotices")),
     layerLibraryScopeCli.pipe(startingAs("LibraryScopeCli")),
     layerLibraryScopeNotices.pipe(startingAs("LibraryScopeNotices")),

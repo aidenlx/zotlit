@@ -3,6 +3,7 @@
 import { Keymap } from "obsidian";
 import type { App, Plugin, TFile } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -14,7 +15,8 @@ const logger = getLogger("graph-citations");
 
 export interface GraphCitationsActionDeps {
   app: App;
-  graphCitations: Pick<GraphCitations, "ready" | "enabled" | "applyPreset">;
+  graphCitations: Pick<GraphCitations["Service"], "enabled" | "applyPreset">;
+  bridge: Pick<EffectBridge, "runSync">;
 }
 
 /**
@@ -54,12 +56,12 @@ export function addGraphCitationsActions(
 async function openCitationGraph(
   deps: GraphCitationsActionDeps,
 ): Promise<void> {
-  if (!(await settled(deps))) return;
+  if (!openable(deps)) return;
   const leaf = deps.app.workspace.getLeaf(
     Keymap.isModEvent(deps.app.lastEvent),
   );
   await leaf.setViewState({ type: "graph", active: true, state: {} });
-  deps.graphCitations.applyPreset(leaf);
+  deps.bridge.runSync(deps.graphCitations.applyPreset(leaf));
 }
 
 /**
@@ -71,7 +73,7 @@ export async function openLocalCitationGraph(
   deps: GraphCitationsActionDeps,
   file: TFile,
 ): Promise<void> {
-  if (!(await settled(deps))) return;
+  if (!openable(deps)) return;
   const { workspace } = deps.app;
   // The leaf the split is taken from, read before the split so the graph joins
   // the pane the reader was in and follows its file. `getLeaf("split", …)` is
@@ -85,7 +87,7 @@ export async function openLocalCitationGraph(
     group,
     state: { file: file.path },
   });
-  deps.graphCitations.applyPreset(leaf);
+  deps.bridge.runSync(deps.graphCitations.applyPreset(leaf));
 }
 
 /**
@@ -95,13 +97,11 @@ export async function openLocalCitationGraph(
 export type CitationGraphReadiness =
   | "ready"
   | "core-plugin-disabled"
-  | "unavailable"
   | "feature-off";
 
 /** What each way of not opening says to the reader. */
 const BLOCKED = {
   "core-plugin-disabled": m.graph_citations_core_plugin_disabled,
-  unavailable: m.graph_citations_unavailable,
   "feature-off": m.graph_citations_disabled,
 } as const satisfies Record<
   Exclude<CitationGraphReadiness, "ready">,
@@ -117,20 +117,15 @@ const BLOCKED = {
  * @returns what a Citation Graph stands on, each way it cannot be opened told
  *   from the others.
  */
-export async function citationGraphReadiness(
+export function citationGraphReadiness(
   deps: GraphCitationsActionDeps,
-): Promise<CitationGraphReadiness> {
+): CitationGraphReadiness {
   if (!deps.app.internalPlugins.getEnabledPluginById(GRAPH_CORE_PLUGIN_ID)) {
     return "core-plugin-disabled";
   }
-  try {
-    await deps.graphCitations.ready;
-  } catch {
-    return "unavailable";
-  }
-  // Read once `ready` has settled, by which point the first settings snapshot
-  // has landed and the flag holds the user's own choice.
-  return deps.graphCitations.enabled ? "ready" : "feature-off";
+  return deps.bridge.runSync(deps.graphCitations.enabled)
+    ? "ready"
+    : "feature-off";
 }
 
 /**
@@ -145,8 +140,8 @@ export function notifyCitationGraph(readiness: CitationGraphReadiness): void {
 }
 
 /** Reads what a Citation Graph stands on and says what stands in the way. */
-async function settled(deps: GraphCitationsActionDeps): Promise<boolean> {
-  const readiness = await citationGraphReadiness(deps);
+function openable(deps: GraphCitationsActionDeps): boolean {
+  const readiness = citationGraphReadiness(deps);
   notifyCitationGraph(readiness);
   return readiness === "ready";
 }

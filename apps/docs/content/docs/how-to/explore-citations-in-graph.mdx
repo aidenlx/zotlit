@@ -141,15 +141,12 @@ Graphs saved or bookmarked before author and title labels were added keep their 
 
 ### When a command opens nothing
 
-Both commands show a notice instead of opening a graph in three cases.
+Both commands show a notice instead of opening a graph in two cases.
 
 - <UiLabel name={m.graph_citations_core_plugin_disabled()} /> Obsidian owns the
   graph views, so no graph opens until its core plugin is on.
 - <UiLabel name={m.graph_citations_disabled()} /> The preset would otherwise
   open a graph with no citations in it, so the command stops instead.
-- <UiLabel name={m.graph_citations_unavailable()} /> ZotLit could not start the
-  part that draws citation edges. Both settings above can be on and the command
-  still stops here.
 
 ## Act on a cited work
 

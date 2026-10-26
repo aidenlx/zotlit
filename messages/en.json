@@ -986,7 +986,6 @@
   "graph_citations_citekey_copy_failed": "Failed to copy citation key.",
   "graph_citations_add_literature_notes_group": "Add literature notes group",
   "graph_citations_core_plugin_disabled": "The Graph view core plugin is disabled. Turn it on in Settings → Core plugins.",
-  "graph_citations_unavailable": "Citation graph is not available.",
   "graph_citations_disabled": "“Show citations in graph view” is turned off. Turn it on in Settings → ZotLit → Citations.",
   "settings_citation_editor_heading": "In-text citations",
   "settings_citation_show_formatted_name": "Show formatted citations",

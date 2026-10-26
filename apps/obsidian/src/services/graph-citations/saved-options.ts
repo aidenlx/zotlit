@@ -40,18 +40,18 @@ export function deferredLeafOptions(leaf: WorkspaceLeaf): GraphOptions | null {
  * the deferred placeholder that would still carry it, so the file is what is
  * left to read.
  *
+ * @param layout what the Workspace tag's `readWorkspaceFile` read; `null`
+ *   where the build moved the reader.
  * @returns an empty map when the build moved the reader, the file is absent,
  *   or no leaf in it is a graph.
  */
-export async function savedLeafOptions(
-  app: App,
-): Promise<Map<string, GraphOptions>> {
+export function savedLeafOptions(layout: unknown): Map<string, GraphOptions> {
   const saved = new Map<string, GraphOptions>();
-  if (typeof app.workspace.readWorkspaceFile !== "function") {
+  if (layout === null) {
     logger.warn("Workspace file reader missing; local graph rows start fresh");
     return saved;
   }
-  collectLeafOptions(await app.workspace.readWorkspaceFile(), saved);
+  collectLeafOptions(layout, saved);
   logger.debug("Saved graph leaf options read", { leaves: saved.size });
   return saved;
 }
