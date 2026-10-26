@@ -37,6 +37,7 @@ import {
   memoryOpener,
   seedWorksSql,
 } from "@/services/zotero-reads/test-utils";
+import { createRenderFixture } from "@/views/note-preview/__fixtures__/render";
 
 import { createSharedPartial } from "./new-partial";
 import { SAMPLE_ITEM_CHOICES } from "./selection-data";
@@ -74,6 +75,13 @@ vi.mock("@/views/note-preview/render", async (importOriginal) => {
   return {
     ...actual,
     renderNativeTemplate: stub(),
+    makeNativeRenderer: (
+      deps: Parameters<typeof actual.makeNativeRenderer>[0],
+    ) => ({
+      ...actual.makeNativeRenderer(deps),
+      render: (request: Parameters<typeof actual.renderNativeTemplate>[1]) =>
+        stub()(deps, request),
+    }),
     renderNativeProfile: stub(),
   };
 });
@@ -2874,44 +2882,11 @@ language: liquid
 {{ zt.citations | pandoc_cite }}
 `;
 
-  function openCitation() {
+  async function openCitation() {
+    const fixture = await createRenderFixture();
     const harness = setup({
       runtime: testRuntime(),
-      nativePreview: stubService<
-        NonNullable<TemplateWorkbenchDeps["nativePreview"]>
-      >("NativeRenderDeps", {
-        runtime: testRuntime(),
-        app: stubService<App>("App", {
-          vault: stubService<App["vault"]>("Vault", {
-            on: vi.fn(),
-            offref: vi.fn(),
-          }),
-        }),
-        zoteroReads: stubService<
-          NonNullable<TemplateWorkbenchDeps["nativePreview"]>["zoteroReads"]
-        >("ZoteroReads", {
-          changed: Stream.empty,
-          degraded: Stream.empty,
-          "refresh-failed": Stream.empty,
-          refreshing: Stream.empty,
-          "db-file-missing": Stream.empty,
-          "refresh-requested": Stream.empty,
-          acquireRead: vi.fn(),
-        }),
-        templates: stubService<
-          NonNullable<TemplateWorkbenchDeps["nativePreview"]>["templates"]
-        >("Templates", { "compile-status-changed": Stream.empty }),
-        bibliographyRender: stubService<
-          NonNullable<
-            TemplateWorkbenchDeps["nativePreview"]
-          >["bibliographyRender"]
-        >("BibliographyRender", {
-          changed: Stream.empty,
-          settled: Stream.empty,
-          invalidated: Stream.empty,
-          "style-missing": Stream.empty,
-        }),
-      }),
+      nativePreview: fixture.deps,
       templates: stubService<TemplateWorkbenchDeps["templates"]>("Templates", {
         "compile-status-changed": Stream.empty,
         loaded: true,
@@ -2924,12 +2899,13 @@ language: liquid
     file.path = "templates/zotlit-citation.md";
     harness.view.file = file;
     harness.view.setViewData(CITATION_SOURCE, true);
-    return harness;
+    return { ...harness, fixture };
   }
 
   it("follows the document context and the source the editor holds", async () => {
     await using cleanup = new AsyncDisposableStack();
-    const { view } = openCitation();
+    const { view, fixture } = await openCitation();
+    cleanup.use(fixture);
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
 

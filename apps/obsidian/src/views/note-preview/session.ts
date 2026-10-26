@@ -1,135 +1,82 @@
 // One native render owner loads its own Item Snapshot and annotation examples.
-import { Effect } from "effect";
-import { createStore } from "zustand/vanilla";
-import type { StoreApi } from "zustand/vanilla";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 
-import { DEFAULT_CITATION_VARIANT, parseIndexedKey } from "@zotlit/db";
-import type { CitationVariant } from "@zotlit/db";
+import {
+  makePreviewModel,
+  holdPreviewModel,
+  previewStateHandle,
+} from "./model";
+import type { NativePreviewState, PreviewStateHandle } from "./model";
+export type { NativePreviewState } from "./model";
 import {
   parseLiteratureNoteTemplate,
   parsePlainTemplateDocument,
 } from "@zotlit/templates/facade";
 import { managedFrontmatterEntries } from "@zotlit/workbench/document";
-import type { ManagedEntrySource } from "@zotlit/workbench/document";
-import {
-  CITATION_EXAMPLE_ITEM,
-  DEFAULT_CITATION_EXAMPLE,
-  engineEvidence,
-  SAMPLE_ANNOTATIONS,
-} from "@zotlit/workbench/render";
+import { CITATION_EXAMPLE_ITEM } from "@zotlit/workbench/render";
 import type {
-  AnnotationExample,
   CitationExampleId,
   PartialContext,
 } from "@zotlit/workbench/render";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
-import { annotationSamples } from "@zotlit/workbench/ui";
 import type {
   RenderScheduler,
   WorkbenchItemChoice,
-  PreviewMode,
 } from "@zotlit/workbench/ui";
 
-import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import {
-  getSampleAnnotationParent,
-  getSampleItem,
-} from "@/views/template-workbench/selection-data";
+import { bibliographyRevisionAtom } from "@/services/pandoc/render-cache/atoms";
+import { templateRevisionAtom } from "@/services/template/atoms";
+import { getSampleAnnotationParent } from "@/views/template-workbench/selection-data";
 import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
-import { renderRegisteredPartial } from "./render";
+import { makeNativeRenderer } from "./render";
 import type { NativeRenderDeps, NativeRenderResult } from "./render";
 
 const logger = getLogger(["note-preview", "session"]);
 
-export interface NativePreviewState {
-  context: TemplateAuthoringContext | null;
-  annotationId: string | null;
-  presentation: { scrollTop: number; reveal: string | null; pending: boolean };
-  source: string | null;
-  sourceProblem: string | null;
-  entries: readonly ManagedEntrySource[];
-  item: WorkbenchItemChoice | null;
-  preview: { mode: PreviewMode; live: boolean };
-  status: "empty" | "loading" | "ready" | "error";
-  error: string | null;
-  showMarkdown: boolean;
-  showManaged: boolean;
-  snapshot: ItemSnapshot | null;
-  current: readonly AnnotationExample[];
-  example: AnnotationExample | null;
-  /** The Citation Variant a Citation Template preview renders under. */
-  variant: CitationVariant;
-  /**
-   * The built-in Citation example set the preview renders, or null while the
-   * chosen Item supplies the set instead. It outranks `item`: a reader who
-   * picks an example is looking at the example, whichever Item is selected.
-   */
-  citationExample: CitationExampleId | null;
-}
-const EMPTY_PREVIEW: NativePreviewState = {
-  context: null,
-  annotationId: null,
-  presentation: { scrollTop: 0, reveal: null, pending: false },
-  source: null,
-  sourceProblem: null,
-  entries: [],
-  item: null,
-  preview: { mode: "create", live: true },
-  status: "empty",
-  error: null,
-  showMarkdown: false,
-  showManaged: false,
-  snapshot: null,
-  current: [],
-  example: null,
-  variant: DEFAULT_CITATION_VARIANT,
-  citationExample: DEFAULT_CITATION_EXAMPLE,
-};
-export const createNativePreviewStore = () =>
-  createStore<NativePreviewState>(() => ({ ...EMPTY_PREVIEW }));
-
 export class NativePreviewSession implements Disposable {
-  readonly state: StoreApi<NativePreviewState>;
+  readonly state: PreviewStateHandle;
   readonly #deps: NativeRenderDeps;
   readonly #scheduler: RenderScheduler<NativeRenderResult>;
   readonly #cleanup: DisposableStack;
-  #dataGeneration = 0;
-  #loading: Promise<void>;
+  readonly #renderer;
+
   #closed = false;
   constructor(
     deps: NativeRenderDeps,
     scheduler: RenderScheduler<NativeRenderResult>,
     options: {
       item?: WorkbenchItemChoice | null;
-      state?: StoreApi<NativePreviewState>;
+      state?: PreviewStateHandle;
     } = {},
   ) {
     this.#deps = deps;
     this.#scheduler = scheduler;
-    this.state = options.state ?? createNativePreviewStore();
+    const model = options.state?.model ?? makePreviewModel();
+    this.state = options.state ?? previewStateHandle(deps.registry, model);
     if (options.item !== undefined) this.state.setState({ item: options.item });
     using cleanup = new DisposableStack();
+    this.#renderer = cleanup.use(makeNativeRenderer(deps));
+    cleanup.defer(holdPreviewModel(deps.registry, model));
+    for (const atom of [templateRevisionAtom, bibliographyRevisionAtom]) {
+      let previous = deps.registry.get(atom);
+      cleanup.defer(
+        deps.registry.subscribe(atom, (next) => {
+          if (next !== previous) {
+            previous = next;
+            scheduler.invalidate();
+          }
+        }),
+      );
+    }
     cleanup.defer(
-      subscribe(this.#deps.runtime, deps.zoteroReads["changed"], () =>
-        this.refresh(),
-      ),
-    );
-    cleanup.defer(
-      subscribe(
-        this.#deps.runtime,
-        deps.templates["compile-status-changed"],
-        () => scheduler.invalidate(),
-      ),
-    );
-    cleanup.defer(
-      subscribe(
-        this.#deps.runtime,
-        deps.bibliographyRender["invalidated"],
-        () => scheduler.invalidate(),
-      ),
+      this.state.subscribe((state) => {
+        this.#feed();
+        if (state.status === "error" && state.error)
+          scheduler.fail({ code: "render-error", message: state.error });
+      }),
     );
     const modify = deps.app.vault.on("modify", (file) => {
       if (file.path === scheduler.getState().result?.sourcePath)
@@ -138,15 +85,34 @@ export class NativePreviewSession implements Disposable {
     cleanup.defer(() => deps.app.vault.offref(modify));
     cleanup.defer(this.#log());
     this.#cleanup = cleanup.move();
-    this.#loading = this.#loadSnapshot();
+    this.#feed();
   }
   /** Resolves once the paper a render reads is loaded. */
   get ready(): Promise<void> {
-    return this.#loading;
+    if (this.#closed) return Promise.resolve();
+    const registry = this.#deps.registry;
+    const loaded = this.state.model.loaded;
+    if (!registry.get(loaded).waiting) return Promise.resolve();
+    return new Promise((resolve) => {
+      const unsubscribe = registry.subscribe(loaded, (result) => {
+        if (!result.waiting && !AsyncResult.isInitial(result)) {
+          unsubscribe();
+          resolve();
+        }
+      });
+      this.#cleanup.defer(() => {
+        unsubscribe();
+        resolve();
+      });
+    });
   }
   /** Data choice remains live even while template execution is on demand. */
   refresh(): void {
-    if (!this.#closed) this.#loading = this.#loadSnapshot();
+    if (!this.#closed)
+      this.#deps.registry.update(
+        this.state.model.refresh,
+        (revision) => revision + 1,
+      );
   }
   /** The authoring context the preview follows; its kind picks the root data. */
   setContext(context: TemplateAuthoringContext | null): void {
@@ -223,12 +189,6 @@ export class NativePreviewSession implements Disposable {
         ? { presentation: { scrollTop: 0, reveal: null, pending: false } }
         : {}),
     });
-    const { snapshot, item } = this.state.getState();
-    if (snapshot) this.state.setState(annotationSamples(snapshot, id));
-    else if (!item)
-      this.state.setState({
-        example: SAMPLE_ANNOTATIONS.find((sample) => sample.id === id) ?? null,
-      });
     this.#feed();
   }
   /**
@@ -277,8 +237,7 @@ export class NativePreviewSession implements Disposable {
         : undefined;
     const snapshot = previewSnapshot(state, citation?.example ?? null);
     if (!snapshot) throw new Error(m.workbench_example_missing_item());
-    return await renderRegisteredPartial(
-      this.#deps,
+    return await this.#renderer.partial(
       {
         source: state.source ?? "",
         snapshot,
@@ -318,93 +277,9 @@ export class NativePreviewSession implements Disposable {
       annotation: example,
     });
   }
-  async #loadSnapshot(): Promise<void> {
-    const generation = ++this.#dataGeneration;
-    logger.debug("Loading preview data", {
-      generation,
-      item: this.state.getState().item?.id,
-    });
-    this.state.setState({
-      snapshot: null,
-      current: [],
-      example: !this.state.getState().item
-        ? (SAMPLE_ANNOTATIONS.find(
-            ({ id }) => id === this.state.getState().annotationId,
-          ) ?? null)
-        : null,
-      error: null,
-      status: this.state.getState().item ? "loading" : "empty",
-    });
-    this.#feed();
-    const item = this.state.getState().item;
-    if (!item || this.#closed) return;
-    try {
-      let snapshot = getSampleItem(item.id);
-      if (!snapshot) {
-        const parsed = item.id.startsWith("sample:")
-          ? null
-          : parseIndexedKey(item.id);
-        if (!parsed) {
-          this.state.setState({ status: "error" });
-          return;
-        }
-        await using lease = await this.#deps.zoteroReads.acquireRead();
-        if (generation !== this.#dataGeneration || this.#closed) return;
-        snapshot = await Effect.runPromise(
-          lease.reads.ItemSnapshot({
-            selection: {
-              key: parsed.key,
-              library:
-                parsed.groupID === null
-                  ? { type: "personal" }
-                  : { type: "group", groupID: parsed.groupID },
-            },
-            provenance: {
-              kind: "connected",
-              installationId: "obsidian",
-              vault: "preview",
-            },
-          }),
-        );
-      }
-      if (generation !== this.#dataGeneration || this.#closed) {
-        logger.debug("Discarded stale preview data", {
-          generation,
-          current: this.#dataGeneration,
-          closed: this.#closed,
-        });
-        return;
-      }
-      logger.debug("Preview data loaded", {
-        generation,
-        revision: snapshot.revision,
-      });
-      this.state.setState({
-        snapshot,
-        status: "ready",
-        ...annotationSamples(snapshot, this.state.getState().annotationId),
-      });
-      this.#feed();
-    } catch (error) {
-      if (generation !== this.#dataGeneration || this.#closed) return;
-      logger.debug("Preview data failed", { error, item: item.id });
-      this.state.setState({
-        status: "error",
-        error: error instanceof Error ? error.message : String(error),
-      });
-      this.#scheduler.fail({
-        code: "render-error",
-        message: error instanceof Error ? error.message : String(error),
-        evidence: engineEvidence(error),
-      });
-    }
-  }
   [Symbol.dispose](): void {
-    logger.debug("Preview session closed", {
-      dataGeneration: this.#dataGeneration,
-    });
+    logger.debug("Preview session closed", {});
     this.#closed = true;
-    this.#dataGeneration++;
     this.#cleanup.dispose();
   }
 }

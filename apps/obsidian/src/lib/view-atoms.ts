@@ -19,11 +19,20 @@ import { createElement } from "react";
 import type { ReactNode } from "react";
 
 import { scheduleBrowserTask } from "@/lib/browser-scheduler";
+import type { FileManager } from "@/lib/obsidian-file-manager";
 import type { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { CitationIndex } from "@/services/citation-index/service";
+import type { CitationParse } from "@/services/citation-parse/service";
+import type { NoteIndex } from "@/services/note-index/service";
+import type { BibliographyRender } from "@/services/pandoc/render-cache";
+import type { Profile } from "@/services/profile/service";
+import type { PluginSettings } from "@/services/settings/service";
 import type { TemplateDataReads } from "@/services/template-workbench/data-reads";
+import type { Template } from "@/services/template/service";
+import type { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroReads } from "@/services/zotero-reads/service";
 
 /**
@@ -32,6 +41,15 @@ import type { ZoteroReads } from "@/services/zotero-reads/service";
  * here when a view atom first reads it.
  */
 export type ViewServices =
+  | CitationLookup
+  | CitationParse
+  | BibliographyRender
+  | Profile
+  | PluginSettings
+  | Template
+  | NoteIndex
+  | ZoteroPref
+  | FileManager
   | CitationIndex
   | MetadataCache
   | TemplateDataReads

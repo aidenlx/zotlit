@@ -134,7 +134,7 @@ import type {
 import {
   nativeResult,
   retainNativeOutputs,
-  renderNativeTemplate,
+  makeNativeRenderer,
 } from "@/views/note-preview/render";
 import { NativePreviewSession } from "@/views/note-preview/session";
 import { exportTemplateDataFile } from "@/views/template-data-explorer/export-file";
@@ -491,9 +491,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     super(leaf);
     this.#deps = deps;
     this.contentEl.addClass("zt-root", "zt-template-workbench");
+    const nativeRenderer = deps.nativePreview
+      ? makeNativeRenderer(deps.nativePreview)
+      : null;
+    if (nativeRenderer) this.register(() => nativeRenderer[Symbol.dispose]());
     const render: WorkbenchHost["render"] =
       (deps.nativePreview
-        ? (request) => renderNativeTemplate(deps.nativePreview!, request)
+        ? (request) => nativeRenderer!.render(request)
         : deps.render) ??
       ((request) =>
         Promise.resolve(
