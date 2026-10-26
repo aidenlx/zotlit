@@ -24,7 +24,7 @@ export interface QuickSwitchDeps {
   noteFeature: Pick<NoteFeature, "createNote" | "planCreations">;
   settings: Pick<PluginSettings["Service"], "current">;
   bridge: Pick<EffectBridge, "runSync">;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   /** Opens the PDF a result asks for. */
   opener: Pick<TargetOpener, "open">;
   /** Open the Library View with the Item selected. */

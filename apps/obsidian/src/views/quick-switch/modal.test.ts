@@ -240,7 +240,6 @@ describe("QuickSwitchModal PDF chord", () => {
       ),
       zoteroPref: stubService<QuickSwitchDeps["zoteroPref"]>("ZoteroPref", {
         dataDir: undefined,
-        baseAttachmentPath: null,
       }),
       opener: stubService<QuickSwitchDeps["opener"]>("TargetOpener", { open }),
     });
@@ -363,7 +362,6 @@ describe("QuickSwitchModal Profile creation", () => {
       }),
       zoteroPref: stubService<QuickSwitchDeps["zoteroPref"]>("ZoteroPref", {
         dataDir: undefined,
-        baseAttachmentPath: null,
       }),
       settings: stubService<QuickSwitchDeps["settings"]>("PluginSettings", {
         current: Effect.succeed({
