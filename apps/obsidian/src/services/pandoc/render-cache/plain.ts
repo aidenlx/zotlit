@@ -1,6 +1,6 @@
 /** Bibliography renders for views and legacy services, on the plugin runtime. */
 import { Stream } from "effect";
-import type { ManagedRuntime , Effect} from "effect";
+import type { ManagedRuntime, Effect } from "effect";
 
 import type { CslItemData } from "@zotlit/db";
 

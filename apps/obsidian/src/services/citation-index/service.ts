@@ -17,6 +17,7 @@ import {
 import { TFile } from "obsidian";
 import type { TAbstractFile } from "obsidian";
 
+import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { isScopeClosed } from "@/lib/effect-scope";
@@ -220,9 +221,8 @@ function makeCitationIndex(
     const lookup = yield* CitationLookup;
     const parser = yield* CitationParse;
     const scope = yield* Scope.fork(yield* Scope.Scope);
-    const context = yield* Effect.context<never>();
-    const run = Effect.runSyncWith(context);
-    const runPromise = Effect.runPromiseWith(context);
+    const bridge = yield* scopedBridge;
+    const { runSync: run, runPromise, runPromiseExit } = bridge;
     /** The vault's Markdown files now, for the plain code below. */
     const markdownFiles = () => run(vault.getMarkdownFiles);
     /** The file at `path` now, `null` when the vault has none. */
@@ -263,7 +263,6 @@ function makeCitationIndex(
         ),
       );
     };
-    const runPromiseExit = Effect.runPromiseExitWith(context);
     const lookupReleased = () =>
       new DOMException("Citation Lookup released", "AbortError");
     const lookupAdapter = {
@@ -666,7 +665,7 @@ function makeCitationIndex(
       onChange();
       return () => {
         disposed = true;
-        void runPromise(Scope.close(observationScope, Exit.void));
+        bridge.runAndForget(Scope.close(observationScope, Exit.void));
       };
     });
 

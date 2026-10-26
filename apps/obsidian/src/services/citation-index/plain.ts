@@ -1,6 +1,6 @@
 /** Citation services for views and legacy services, on the plugin runtime. */
 import { Cause, Exit, Stream } from "effect";
-import type { ManagedRuntime , Effect} from "effect";
+import type { ManagedRuntime, Effect } from "effect";
 import type { TFile } from "obsidian";
 
 import { AbortError } from "@/lib/abort-error";

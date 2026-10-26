@@ -1,5 +1,6 @@
 import { Cause, Effect, Exit, Layer } from "effect";
 
+import { exitOver, scopedBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { Notifier } from "@/lib/notifier";
 import { withProgress } from "@/lib/notifier";
@@ -23,7 +24,10 @@ export const layerDatabaseActions: Layer.Layer<
   Effect.gen(function* () {
     const host = yield* PluginHost;
     const reads = yield* ZoteroReads;
-    const run = Effect.runPromiseExitWith(yield* Effect.context<Notifier>());
+    const run = exitOver(
+      yield* scopedBridge,
+      yield* Effect.context<Notifier>(),
+    );
     // The toast outlives the command, as `toast.promise` did, until the
     // Notifier's layer closes.
     const refresh = withProgress(reads.refresh, {

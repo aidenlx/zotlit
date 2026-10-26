@@ -1,5 +1,6 @@
 import { Effect, Layer } from "effect";
 
+import { scopedBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { PluginHost } from "@/lib/plugin-host";
 
@@ -14,11 +15,11 @@ export const layerReleaseActions: Layer.Layer<
   Effect.gen(function* () {
     const host = yield* PluginHost;
     const release = yield* Release;
-    const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+    const bridge = yield* scopedBridge;
     yield* host.addCommand({
       id: "open-release-note",
       name: m.command_open_release_note_name(),
-      callback: () => void runPromise(release.openReleaseNote),
+      callback: () => bridge.runAndForget(release.openReleaseNote),
     });
   }),
 );
