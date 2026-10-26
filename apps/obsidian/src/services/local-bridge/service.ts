@@ -144,7 +144,9 @@ export const layerLocalBridge = (options: {
         options.webWorkbenchEnabled &&
           (yield* settings.current)["server.workbench"],
       );
-      const installationId = yield* loadInstallationId;
+      // Obsidian's device store catches its own errors, so a failure here is
+      // a defect, and the layer fails with it.
+      const installationId = yield* Effect.orDie(loadInstallationId);
 
       const describe = Effect.fnUntraced(function* (
         connection: BridgeConnection | null,
