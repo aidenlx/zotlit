@@ -157,7 +157,6 @@ export default defineConfig({
       // Logging backlog: rework the file to log through Effect, then remove it from the list.
       files: [
         "src/services/citation-index/sources.ts",
-        "src/services/excerpt-image/prepare.ts",
         "src/services/pandoc/document-presentation.ts",
         "src/services/template/actions.ts",
         "src/views/annot-view/view.tsx",
@@ -354,7 +353,6 @@ export default defineConfig({
         "src/lib/effect-scope.ts",
         "src/services/batch-run.ts",
         "src/services/citation-index/sources.ts",
-        "src/services/excerpt-image/prepare.ts",
         "src/services/profile/service.ts",
         "src/views/annot-view/view.tsx",
         "src/views/library/item-actions.ts",

@@ -1,4 +1,5 @@
-import { DateTime, Effect, Fiber } from "effect";
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { Cause, DateTime, Effect, Exit, Fiber, Layer } from "effect";
 import { TestClock } from "effect/testing";
 import {
   mkdir,
@@ -54,6 +55,7 @@ import type { ItemFields } from "@zotlit/zotero-types";
 import { MemoryFileManager } from "@/lib/__fixtures__/obsidian-file-manager";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import type { ObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import {
   FIELD_CITATION_STYLE,
   FIELD_CITEKEY,
@@ -63,6 +65,7 @@ import {
 import * as m from "@/lib/i18n/generated/messages";
 import { parseFrontMatter } from "@/lib/live-text";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { VaultError } from "@/lib/vault-errors";
 import type {
   AttachmentSource,
   SourceOrigin,
@@ -75,9 +78,11 @@ import {
 } from "@/services/excerpt-image/__fixtures__/png";
 import { excerptReuseProbe } from "@/services/excerpt-image/__fixtures__/reuse";
 import { PNG_FORMAT } from "@/services/excerpt-image/format";
-import { materializeExcerpt } from "@/services/excerpt-image/materialize";
+import {
+  makePublicationGate,
+  materializeExcerpt,
+} from "@/services/excerpt-image/materialize";
 import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
-import { createExcerptPreparation } from "@/services/excerpt-image/prepare";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import { ExcerptImageService } from "@/services/excerpt-image/service";
 import type {
@@ -215,6 +220,13 @@ function createNoteFeature(deps: TestDeps) {
         Effect.flatMap(NoteFeature, (service) =>
           service.writeNoteUpdate(file, options),
         ).pipe(Effect.mapError((error) => plainNoteError(error))),
+      ),
+    /** {@link writeNoteUpdate}'s Exit, its typed error kept. */
+    writeNoteUpdateExit: (file: TFile, options: WriteNoteUpdateOptions) =>
+      runtime.runPromiseExit(
+        Effect.flatMap(NoteFeature, (service) =>
+          service.writeNoteUpdate(file, options),
+        ),
       ),
   };
 }
@@ -377,7 +389,7 @@ describe("Profile source selection", () => {
     deps.app = app;
     const prepareImages = vi.fn(() => ({
       annotationImageLink: () => null,
-      prepare: async () => {},
+      prepare: Effect.void,
       summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
     }));
     deps.excerptImages = prepareImages;
@@ -762,12 +774,7 @@ describe("createNote", () => {
         };
       },
     };
-    const prepareExcerpts = createExcerptPreparation({
-      app: app as unknown as App,
-      resolver,
-      paths: deps.zoteroPref,
-    });
-    deps.excerptImages = (options) => prepareExcerpts(options);
+    deps.excerptResolver = resolver;
     if (mode === "write-failure") await writeFile(`${root}/Images`, "occupied");
     const engine = new TemplateEngine();
     engine.define(
@@ -865,20 +872,27 @@ describe("createNote", () => {
     await writeFile(otherNote, original);
     const retainedAssets: string[] = [];
     if (mode === "retain-replaced") {
+      const host = Layer.mergeAll(
+        layerHost({ vault: app.vault, fileManager: app.fileManager }),
+        NodeFileSystem.layer,
+      );
       for (const [request] of resolver.resolve.mock.calls) {
         const save = (bytes: Uint8Array) =>
-          materializeExcerpt({
-            app: app as unknown as App,
-            notePath: file.path,
-            settings: Effect.runSync(deps.settings.current),
-            request,
-            outcome: availableOutcome({
-              bytes,
-              format: PNG_FORMAT,
-              provenance: "rendered",
-              freshness: "checked",
-            }),
-          });
+          Effect.gen(function* () {
+            const gate = yield* makePublicationGate;
+            return yield* materializeExcerpt({
+              gate,
+              notePath: file.path,
+              settings: yield* deps.settings.current,
+              request,
+              outcome: availableOutcome({
+                bytes,
+                format: PNG_FORMAT,
+                provenance: "rendered",
+                freshness: "checked",
+              }),
+            });
+          }).pipe(Effect.scoped, Effect.provide(host), Effect.runPromise);
         const oldAsset = await save(redPng),
           newAsset = await save(bluePng);
         if (oldAsset.kind !== "saved" || newAsset.kind !== "saved")
@@ -2898,7 +2912,7 @@ describe("updateNote", () => {
     });
     const prepare = vi.fn<NonNullable<TestDeps["excerptImages"]>>(() => ({
       annotationImageLink: () => null,
-      prepare: async () => {},
+      prepare: Effect.void,
       summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
     }));
     harness.deps.excerptImages = prepare;
@@ -4459,9 +4473,7 @@ describe("writeNoteUpdate", () => {
       excerptScopes.push(options.outcomes);
       return {
         annotationImageLink: () => null,
-        prepare: async () => {
-          await probe.resolve(options.outcomes);
-        },
+        prepare: Effect.promise(() => probe.resolve(options.outcomes)),
         summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
       };
     };
@@ -4475,6 +4487,29 @@ describe("writeNoteUpdate", () => {
     // The caller's scope outlives the update: it still answers a repeat.
     await probe.resolve(outcomes);
     expect(probe.renders()).toBe(1);
+  });
+
+  it("fails with the excerpt preparation's typed error", async () => {
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
+    const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
+    const failure = new VaultError({
+      operation: "cachedRead",
+      path: "Literature/Root.md",
+      message: "note unreadable",
+      cause: null,
+    });
+    harness.deps.excerptImages = () => ({
+      annotationImageLink: () => null,
+      prepare: Effect.fail(failure),
+      summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
+    });
+
+    const exit = await createNoteFeature(harness.deps).writeNoteUpdateExit(
+      harness.file("Literature/Root.md"),
+      writeOptions("full"),
+    );
+
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(failure);
   });
 
   it("honors scope 'metadata' by leaving the body untouched", async () => {

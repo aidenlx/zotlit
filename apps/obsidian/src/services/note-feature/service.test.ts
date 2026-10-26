@@ -145,7 +145,7 @@ describe("NoteFeature.changes", () => {
       });
       const scope = yield* Scope.make();
       const context = yield* Layer.buildWithScope(
-        layerNoteFeature({}).pipe(Layer.provide(noteFeatureServices(sources))),
+        layerNoteFeature.pipe(Layer.provide(noteFeatureServices(sources))),
         scope,
       );
       const feature = Context.get(context, NoteFeature);

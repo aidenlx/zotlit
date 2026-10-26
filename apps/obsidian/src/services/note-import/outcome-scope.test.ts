@@ -30,12 +30,12 @@ import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw
 import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import type { MetadataCacheSource } from "@/lib/obsidian-metadata-cache";
 import type { VaultSource } from "@/lib/obsidian-vault";
 import { bluePng } from "@/services/excerpt-image/__fixtures__/png";
 import { PNG_FORMAT } from "@/services/excerpt-image/format";
 import type { ExcerptImage } from "@/services/excerpt-image/format";
 import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
-import { createExcerptPreparation } from "@/services/excerpt-image/prepare";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import { ExcerptImageService } from "@/services/excerpt-image/service";
 import type { ExcerptEntry } from "@/services/excerpt-image/service";
@@ -161,11 +161,6 @@ async function setupFixture(
   );
   /** Every scope the import writer handed to its excerpt preparation. */
   const scopes: (ExcerptOutcomeScope | undefined)[] = [];
-  const preparation = createExcerptPreparation({
-    app,
-    paths,
-    resolver: service,
-  });
   const fakes: ImporterFakes = {
     vault: host.app.vault as unknown as VaultSource,
     workspace: host.app.workspace,
@@ -185,9 +180,16 @@ async function setupFixture(
       fileManager: app.fileManager,
       basePath: vaultRoot,
     },
-    excerptImages: (options) => {
-      scopes.push(options.outcomes);
-      return preparation(options);
+    excerptImages: {
+      resolver: {
+        operation: (options) => {
+          scopes.push(options?.outcomes);
+          return service.operation(options);
+        },
+        resolve: (request, signal) => service.resolve(request, signal),
+      },
+      fileManager: app.fileManager,
+      metadataCache: app.metadataCache as unknown as MetadataCacheSource,
     },
   };
   const { reads } = await stack.use(

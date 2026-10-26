@@ -1,5 +1,5 @@
 // Renders the captured card once, after its final image outcome is durable.
-import { Effect, Ref, Stream } from "effect";
+import { Effect } from "effect";
 
 import {
   annotationOpenUri,
@@ -11,14 +11,13 @@ import {
   annotationCitation,
   buildAnnotationResolvers,
 } from "@/lib/annotation-render";
-import { portCall } from "@/lib/legacy-port";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
+import { ExcerptPreparation } from "@/services/excerpt-image/prepare";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
-import type { prepareSingleExcerpt } from "@/services/excerpt-image/prepare-single";
 import {
   excerptInputs,
   excerptRequestFrom,
@@ -38,7 +37,7 @@ export interface AnnotationInsertOptions {
   source: AnnotationSource;
   sourceScope: string;
   notePath: string;
-  /** Whether the editor still takes the insert; the legacy excerpt port reads it. */
+  /** Whether the editor still takes the insert. */
   valid: () => boolean;
 }
 
@@ -47,14 +46,6 @@ export interface AnnotationInsert {
   text: string;
   summary: ExcerptSummary;
 }
-
-/**
- * The single-excerpt preparation, a legacy port until the excerpt area
- * converts: the plugin binds `app` and the excerpt resolver.
- */
-export type SingleExcerpt = (
-  options: Omit<Parameters<typeof prepareSingleExcerpt>[0], "app" | "resolver">,
-) => ReturnType<typeof prepareSingleExcerpt>;
 
 /**
  * Render the captured card through the annotation template of its parent
@@ -68,20 +59,18 @@ export type SingleExcerpt = (
  */
 export const prepareAnnotationInsert = Effect.fn(
   "NoteFeature.prepareAnnotationInsert",
-)(function* (singleExcerpt: SingleExcerpt, options: AnnotationInsertOptions) {
+)(function* (options: AnnotationInsertOptions) {
   const { annotation: a, source } = options;
   const pref = yield* ZoteroPref;
   const reads = yield* (yield* ZoteroReads).snapshot;
   const { dataDir: startDataDir, baseAttachmentPath } = yield* pref.current;
-  // The data directory as the preparation reads it on each `valid()`.
-  const liveDataDir = yield* Ref.make(startDataDir);
-  yield* pref.changes.pipe(
-    Stream.runForEach((snapshot) => Ref.set(liveDataDir, snapshot.dataDir)),
-    Effect.forkScoped({ startImmediately: true }),
+  // The insert is current while the editor takes it and the Zotero data
+  // directory is the one the card came from.
+  const valid = Effect.map(
+    pref.current,
+    ({ dataDir }) => options.valid() && options.sourceScope === dataDir,
   );
-  const valid = () =>
-    options.valid() && options.sourceScope === Ref.getUnsafe(liveDataDir);
-  if (!valid()) return null;
+  if (!(yield* valid)) return null;
   const paths = { dataDir: startDataDir, baseAttachmentPath };
   // The parent context, not the Annotation's own row: a card the Local API
   // answered can precede its SQLite row.
@@ -137,18 +126,15 @@ export const prepareAnnotationInsert = Effect.fn(
     pageLabel: a.pageLabel,
   });
   const settings = yield* (yield* PluginSettings).current;
-  const prepared = yield* portCall("single-excerpt", (signal) =>
-    singleExcerpt({
-      annotation: a,
-      request,
-      settings,
-      notePath: options.notePath,
-      sourceLink: `[Zotero](${backlink})`,
-      signal,
-      valid,
-    }),
-  );
-  if (!valid()) return null;
+  const prepared = yield* (yield* ExcerptPreparation).forCard({
+    annotation: a,
+    request,
+    settings,
+    notePath: options.notePath,
+    sourceLink: `[Zotero](${backlink})`,
+    valid,
+  });
+  if (!(yield* valid)) return null;
   const templates = yield* syncTemplate;
   const data = annotationInsertData({
     annotation: a,

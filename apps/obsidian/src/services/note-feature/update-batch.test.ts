@@ -776,7 +776,7 @@ describe("a write that rejects", () => {
               },
             },
           );
-          return layerNoteFeature({}).pipe(
+          return layerNoteFeature.pipe(
             Layer.provide(noteFeatureServices(sources)),
           );
         });

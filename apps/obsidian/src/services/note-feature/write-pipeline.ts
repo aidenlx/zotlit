@@ -17,7 +17,6 @@ import { toInstant } from "@/lib/effect-clock";
 import { processLiveText } from "@/lib/effect-live-text";
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag } from "@/lib/effect-stream";
-import { portCall } from "@/lib/legacy-port";
 import { parseFrontMatter, spliceFrontMatter } from "@/lib/live-text";
 import { FileManager } from "@/lib/obsidian-file-manager";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
@@ -34,9 +33,11 @@ import { AttachmentImport } from "@/services/attachment-import/service";
 import type { AttachmentImportBatch } from "@/services/attachment-import/service";
 import { outcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
-import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
-import type {
+import {
+  nonEmptySummary,
   ExcerptPreparation,
+} from "@/services/excerpt-image/prepare";
+import type {
   ExcerptSummary,
   PreparedExcerpts,
 } from "@/services/excerpt-image/prepare";
@@ -102,6 +103,7 @@ const logged = withLogCategory("note-feature");
 /** The services the note writes read through their tags. */
 export type NoteWriteServices =
   | AttachmentImport
+  | ExcerptPreparation
   | FileManager
   | MetadataCache
   | NoteIndex
@@ -113,18 +115,8 @@ export type NoteWriteServices =
   | ZoteroPref
   | ZoteroReads;
 
-/**
- * The legacy piece a note write calls: the excerpt preparation. It converts
- * in a later slice; until then `build.ts` binds it once the container holds
- * it, as it does for the note importer.
- */
-export interface NoteWritePorts {
-  readonly excerptImages?: ExcerptPreparation;
-}
-
 /** What every write of one Note Feature shares. */
 export interface NoteWriteContext {
-  readonly ports: NoteWritePorts;
   /**
    * Raises a Note Feature event at once, from inside a render's synchronous
    * callback as well as from Effect code.
@@ -312,7 +304,7 @@ const writeNewNote = Effect.fnUntraced(function* <E>(
   return yield* Effect.scoped(
     Effect.gen(function* () {
       const outcomes = yield* outcomeScope(options.outcomes);
-      const excerptImages = ctx.ports.excerptImages?.({
+      const excerptImages = yield* (yield* ExcerptPreparation).forNote({
         reads: options.reads,
         notePath: path,
         settings,
@@ -326,8 +318,7 @@ const writeNewNote = Effect.fnUntraced(function* <E>(
         excerptImages,
       });
       const context = buildNoteContextFromSource(options.source, resolvers);
-      if (excerptImages)
-        yield* portCall("excerpt-prepare", () => excerptImages.prepare());
+      yield* excerptImages.prepare;
       const template = yield* syncTemplate;
       const now = toInstant(yield* DateTime.now);
       const composed = yield* Effect.try({
@@ -771,7 +762,7 @@ export const writeNoteUpdate = Effect.fnUntraced(function* (
         });
       const excerptImages =
         options.scope !== "metadata"
-          ? ctx.ports.excerptImages?.({
+          ? yield* (yield* ExcerptPreparation).forNote({
               reads: options.reads,
               notePath: file.path,
               settings: profile.settings,
@@ -835,8 +826,7 @@ const applyManagedUpdate = Effect.fnUntraced(function* (
   if ("diagnostic" in prepared)
     return { ...NO_BODY_UPDATE, diagnostic: prepared.diagnostic };
   const { excerptImages } = input;
-  if (excerptImages)
-    yield* portCall("excerpt-prepare", () => excerptImages.prepare());
+  if (excerptImages) yield* excerptImages.prepare;
   const noManagedBlock =
     scope === "full" && document !== undefined && !document.hasManagedBlock;
   const template = yield* syncTemplate;
@@ -962,8 +952,7 @@ export const overwriteNote = Effect.fnUntraced(function* (
       });
       if ("diagnostic" in prepared)
         return { ...NO_BODY_UPDATE, diagnostic: prepared.diagnostic };
-      if (excerptImages)
-        yield* portCall("excerpt-prepare", () => excerptImages.prepare());
+      if (excerptImages) yield* excerptImages.prepare;
       // The body renders before either write, so a render that raises — a call
       // to a Shared Partial the vault holds no document for — leaves the note
       // whole.
@@ -1016,25 +1005,19 @@ const flushNoteAttachments = (
     reportExcerpts?: (summary: ExcerptSummary) => void;
   },
 ) =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const reports = yield* Effect.acquireDisposable(
-        Effect.sync(() =>
-          collectExcerptSummary(
-            input.reportExcerpts ??
-              ((summary) =>
-                ctx.emit({
-                  _tag: "excerpt-images-reported",
-                  payload: summary,
-                })),
-          ),
-        ),
-      );
-      const summary = input.excerptImages?.summary();
-      if (summary) reports.add(summary);
-      yield* input.attachmentImport.flush;
-    }),
-  );
+  Effect.suspend(() => {
+    const summary = input.excerptImages?.summary();
+    const report = summary && nonEmptySummary(summary);
+    return input.attachmentImport.flush.pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (!report) return;
+          if (input.reportExcerpts) input.reportExcerpts(report);
+          else ctx.emit({ _tag: "excerpt-images-reported", payload: report });
+        }),
+      ),
+    );
+  });
 
 /**
  * Assumes the caller has settled note-index and template readiness (and
@@ -1064,7 +1047,7 @@ const contextForIndexedKey = Effect.fnUntraced(function* (
       message: `Zotero item not found: ${indexedKey}`,
     });
   const excerptImages = options.previousNote
-    ? ctx.ports.excerptImages?.({
+    ? yield* (yield* ExcerptPreparation).forNote({
         reads,
         notePath: sourcePath,
         settings,

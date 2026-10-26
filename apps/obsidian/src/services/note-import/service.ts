@@ -27,8 +27,6 @@ import { processLiveText } from "@/lib/effect-live-text";
 import { withLogCategory } from "@/lib/effect-log";
 import { joinFolderPath, normalizeFolderPath } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
-import { portCall } from "@/lib/legacy-port";
-import type { LegacyPortError } from "@/lib/legacy-port";
 import { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
@@ -43,8 +41,9 @@ import type {
 } from "@/services/attachment-import/service";
 import { outcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
+import { ExcerptPreparation } from "@/services/excerpt-image/prepare";
 import type {
-  ExcerptPreparation,
+  ExcerptPrepareError,
   ExcerptSummary,
   PreparedExcerpts,
 } from "@/services/excerpt-image/prepare";
@@ -90,14 +89,6 @@ interface RunContext {
   outcomes: ExcerptOutcomeScope;
 }
 
-/**
- * The legacy piece a note write calls: the excerpt preparation. It converts in
- * a later slice; until then `build.ts` binds it once the container holds it.
- */
-export interface NoteImportPorts {
-  readonly excerptImages?: ExcerptPreparation;
-}
-
 export interface ImportNoteOptions {
   /** Bound to the calling operation's Snapshot. */
   reads: ZoteroReadsApi;
@@ -128,7 +119,7 @@ export type NoteImportError =
   | NoteImportProfileError
   | NoteImportMintError
   | VaultFolderBlockedError
-  | LegacyPortError
+  | ExcerptPrepareError
   | AttachmentFlushError
   | NoteImportParseError
   | Effect.Error<ReturnType<typeof readDisplayRef>>
@@ -174,54 +165,50 @@ export class NoteImporter extends Context.Service<
 
 const logged = withLogCategory("note-import", "service");
 
-/** The note importer over the graph's tags and the legacy `ports`. */
-export const layerNoteImporter = (ports: NoteImportPorts) =>
-  Layer.effect(
-    NoteImporter,
-    Effect.gen(function* () {
-      const writes = yield* Semaphore.make(WRITE_CONCURRENCY);
-      const context = yield* Effect.context<
-        AttachmentImport | Profile | NoteIndex | Vault | Workspace | ZoteroPref
-      >();
-      const templates = yield* syncTemplate;
-      const ctx: Ctx = { ports, templates };
-      const run = <A, E>(
-        effect: Effect.Effect<
-          A,
-          E,
-          | AttachmentImport
-          | Profile
-          | NoteIndex
-          | Vault
-          | Workspace
-          | ZoteroPref
-        >,
-      ) => Effect.provideContext(effect, context);
-      return NoteImporter.of({
-        prepareExplicitImport: Effect.fn("NoteImporter.prepareExplicitImport")(
-          function* (note, options) {
-            const prepared = yield* run(
-              prepareExplicitImport(ctx, note, options),
-            );
-            return {
-              ...prepared,
-              import: (current: Note, runOptions: ImportNoteOptions) =>
-                writes.withPermits(1)(
-                  run(prepared.importNow(current, runOptions)),
-                ),
-            };
-          },
-        ),
-        importNote: Effect.fn("NoteImporter.importNote")((note, options) =>
-          writes.withPermits(1)(run(doImportNote(ctx, note, options))),
-        ),
-      });
-    }),
-  );
+/** The services the note importer reads through their tags. */
+type NoteImporterServices =
+  | AttachmentImport
+  | ExcerptPreparation
+  | Profile
+  | NoteIndex
+  | Vault
+  | Workspace
+  | ZoteroPref;
+
+/** The note importer over the graph's tags. */
+export const layerNoteImporter = Layer.effect(
+  NoteImporter,
+  Effect.gen(function* () {
+    const writes = yield* Semaphore.make(WRITE_CONCURRENCY);
+    const context = yield* Effect.context<NoteImporterServices>();
+    const templates = yield* syncTemplate;
+    const ctx: Ctx = { templates };
+    const run = <A, E>(effect: Effect.Effect<A, E, NoteImporterServices>) =>
+      Effect.provideContext(effect, context);
+    return NoteImporter.of({
+      prepareExplicitImport: Effect.fn("NoteImporter.prepareExplicitImport")(
+        function* (note, options) {
+          const prepared = yield* run(
+            prepareExplicitImport(ctx, note, options),
+          );
+          return {
+            ...prepared,
+            import: (current: Note, runOptions: ImportNoteOptions) =>
+              writes.withPermits(1)(
+                run(prepared.importNow(current, runOptions)),
+              ),
+          };
+        },
+      ),
+      importNote: Effect.fn("NoteImporter.importNote")((note, options) =>
+        writes.withPermits(1)(run(doImportNote(ctx, note, options))),
+      ),
+    });
+  }),
+);
 
 /** Per-layer values every write reads. */
 interface Ctx {
-  readonly ports: NoteImportPorts;
   readonly templates: Effect.Success<typeof syncTemplate>;
 }
 
@@ -416,12 +403,9 @@ const writeNote = Effect.fnUntraced(function* (
       html,
       annotations: templateMode,
     });
-    const { excerptImages } = ctx.ports;
-    const annotations = excerptImages
-      ? inputs.annotations?.annotations
-      : undefined;
-    if (excerptImages && annotations?.length) {
-      const prepared = excerptImages({
+    const annotations = inputs.annotations?.annotations;
+    if (annotations?.length) {
+      const prepared = yield* (yield* ExcerptPreparation).forNote({
         reads: run.reads,
         notePath: path,
         settings: run.profile.settings,
@@ -431,7 +415,7 @@ const writeNote = Effect.fnUntraced(function* (
       excerpts = prepared;
       for (const annotation of annotations)
         prepared.annotationImageLink(annotation);
-      yield* portCall("excerpt-prepare", () => prepared.prepare());
+      yield* prepared.prepare;
     }
     const sources = inputs.annotations;
     const { templates } = ctx;
