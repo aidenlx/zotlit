@@ -54,7 +54,10 @@ export const layerAnnotationImageCli: Layer.Layer<
         answerAnnotationImage(params, {
           read,
           resolve: (request, signal) => excerptImage.resolve(request, signal),
-          publish: publishExcerptPng,
+          publish: (fingerprint, bytes) =>
+            publishExcerptPng(fingerprint, bytes).pipe(
+              Effect.provideService(FileSystem.FileSystem, fs),
+            ),
           // A path that cannot be read counts as no file, as an absent one does.
           exists: (path) =>
             fs.stat(path).pipe(
