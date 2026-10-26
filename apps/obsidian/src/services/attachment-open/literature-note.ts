@@ -6,7 +6,7 @@ import { ObsidianEnv } from "@/lib/obsidian-env";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
-import { toObsidianOpenable } from "./actions";
+import { toObsidianOpenable } from "./openable";
 import type { ObsidianOpenableAttachment } from "./resolve";
 
 /** The services {@link literatureNoteAttachments} reads. */
@@ -14,8 +14,9 @@ export type LiteratureNoteServices = ZoteroReads | ZoteroPref | ObsidianEnv;
 
 /**
  * Resolve a Literature Note's Indexed Key to its Item's Obsidian-Openable PDF
- * Attachments — shared by the `open-pdf` command, the file menu, and the
- * Quick Switcher's PDF chords, so a key→itemID lookup is written once.
+ * Attachments — shared by the `open-pdf` command, the file menu, the Quick
+ * Switcher's PDF chords, and the Library View's PDF open, so a key→itemID
+ * lookup is written once.
  *
  * Both reads share one Snapshot, so a database swap between them cannot pair
  * an itemID with another database's Attachments.

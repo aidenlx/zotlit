@@ -45,11 +45,9 @@ import {
 } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
-import {
-  pdfPickerReader,
-  toObsidianOpenable,
-} from "@/services/attachment-open/actions";
+import { pdfPickerReader } from "@/services/attachment-open/actions";
 import type { TargetOpener } from "@/services/attachment-open/open-target";
+import { toObsidianOpenable } from "@/services/attachment-open/openable";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 import { LocalServer } from "@/services/local-server/service";
 import type {

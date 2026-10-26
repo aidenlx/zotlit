@@ -3,8 +3,6 @@
 import { TFile } from "obsidian";
 import type { App, Plugin } from "obsidian";
 
-import type { Attachment } from "@zotlit/db";
-
 import {
   createObsidianAttachmentReader,
   openAttachments,
@@ -15,13 +13,11 @@ import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { PluginSettings } from "@/services/settings/service";
-import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { activateAnnotView } from "@/views/annot-view/register";
 
 import type { LiteratureNoteAttachmentsHandle } from "./handle";
 import type { TargetOpener, TargetReader } from "./open-target";
 import type { ObsidianOpenableAttachment } from "./resolve";
-import { toObsidianOpenableAttachments } from "./resolve";
 
 /** What opening a PDF in Obsidian needs, wherever the gesture came from. */
 export interface PdfReaderDeps {
@@ -71,33 +67,6 @@ export interface AttachmentOpenDeps {
   /** Resolves a Literature Note's Indexed Key to its Item's PDF Attachments. */
   attachments: LiteratureNoteAttachmentsHandle;
   opener: Pick<TargetOpener, "open">;
-}
-
-/**
- * Attachments already fetched from the database, narrowed to the
- * Obsidian-Openable ones — the path-context setup
- * `literatureNoteAttachments` and the `open-attachment` protocol
- * handler both need, written once here.
- */
-export function toObsidianOpenable(
-  attachments: readonly Attachment[],
-  {
-    vaultBasePath,
-    zoteroPref,
-  }: {
-    /** The vault's folder on disk. */
-    vaultBasePath: string;
-    zoteroPref: Pick<ZoteroPrefSnapshot, "dataDir" | "baseAttachmentPath">;
-  },
-): ObsidianOpenableAttachment[] {
-  return toObsidianOpenableAttachments(attachments, {
-    pathContext: {
-      dataDir: zoteroPref.dataDir,
-      baseAttachmentPath: zoteroPref.baseAttachmentPath,
-    },
-    vaultBasePath,
-    platform: process.platform,
-  });
 }
 
 async function runOpenPdfCommand(
