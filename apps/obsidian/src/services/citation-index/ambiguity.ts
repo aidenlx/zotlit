@@ -1,10 +1,11 @@
 // One Ambiguous Citation Key's candidates, described the same way on every surface that shows them.
 
-import { Effect } from "effect";
+import { Cause, Effect } from "effect";
 
 import { isChildItemFields } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
+import { withLogCategory } from "@/lib/effect-log";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { libraryLabel } from "@/services/library-scope/label";
@@ -86,6 +87,35 @@ export async function describeCandidates(
     candidates,
   );
 }
+
+/**
+ * {@link describeCandidates} for Effect code: the same description, read in
+ * the caller's fiber. A failed read logs and leaves the summaries as the bare
+ * Zotero item keys; an interrupt stays an interrupt.
+ */
+export const describeCandidatesEffect = Effect.fnUntraced(function* (
+  deps: CandidateDeps,
+  candidates: readonly SnapshotItem[],
+) {
+  const items = yield* deps.db.reads
+    .ItemsByIndexedKeys({
+      indexedKeys: candidates.map((candidate) => candidate.indexedKey),
+    })
+    .pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.interrupt
+          : Effect.logWarning(
+              "Ambiguous citekey candidates read without summaries",
+              cause,
+            ).pipe(
+              withLogCategory("citation-index"),
+              Effect.as(new Map<string, Item>()),
+            ),
+      ),
+    );
+  return describeWith(deps, items, candidates);
+});
 
 /** The candidates' Items by Indexed Key; a failed read answers none. */
 async function readCandidateItems(

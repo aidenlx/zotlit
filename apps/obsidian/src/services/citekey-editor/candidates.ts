@@ -1,9 +1,13 @@
 // UI seam for an Ambiguous Citation Key: the picker that opens one candidate exactly.
 
+import { Effect, Layer } from "effect";
 import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 
+import { scopedBridge, valueOr } from "@/lib/effect-bridge";
+import { filterTag, forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
+import { PluginHost } from "@/lib/plugin-host";
 import { candidateRow } from "@/services/citation-index/ambiguity";
 import type {
   AmbiguousCandidate,
@@ -15,7 +19,8 @@ import {
   appendTrailingFlair,
 } from "@/services/item-lookup/render-hit";
 
-import type { AmbiguousCitekey, CitekeyEditor } from "./service";
+import { CitekeyEditor } from "./service";
+import type { AmbiguousCitekey } from "./service";
 
 /** Whether a candidate row answers a typed filter, over the text it shows. */
 export function candidateMatches(row: CandidateRow, query: string): boolean {
@@ -83,13 +88,21 @@ class AmbiguousCitekeyModal extends SuggestModal<AmbiguousCandidate> {
  * Asks which Item an Ambiguous Citation Key should open, then opens that one
  * by its exact Indexed Key.
  */
-export function registerCitekeyCandidatePicker(
-  app: App,
-  service: CitekeyEditor,
-): () => void {
-  return service.on("citekey-ambiguous", (ambiguous) => {
-    new AmbiguousCitekeyModal(app, ambiguous, (candidate) => {
-      void service.openCandidate(candidate, ambiguous.pane);
-    }).open();
-  });
-}
+export const layerCitekeyCandidatePicker = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const host = yield* PluginHost;
+    const editor = yield* CitekeyEditor;
+    const bridge = yield* scopedBridge;
+    yield* forkEach(
+      filterTag(editor.events, "citekey-ambiguous"),
+      ({ ambiguous }) => {
+        new AmbiguousCitekeyModal(host.app, ambiguous, (candidate) => {
+          // Unload interrupts a pending open.
+          void bridge
+            .runPromiseExit(editor.openCandidate(candidate, ambiguous.pane))
+            .then((exit) => valueOr(exit, undefined));
+        }).open();
+      },
+    );
+  }),
+);

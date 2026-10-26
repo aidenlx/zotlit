@@ -6,8 +6,8 @@ import type { Command, Plugin } from "obsidian";
 import type { CliHost } from "@/lib/cli-command";
 
 /**
- * What a layer registers on: Obsidian commands, post-processors, zotlit:*
- * commands, and the manifest.
+ * What a layer registers on: Obsidian commands, post-processors, editor
+ * extensions, hover link sources, zotlit:* commands, and the manifest.
  *
  * Obsidian removes every registration when the plugin unloads. `addCommand`
  * also removes its command when the caller's Scope closes, so a startup that
@@ -15,7 +15,14 @@ import type { CliHost } from "@/lib/cli-command";
  */
 export interface PluginHostShape
   extends
-    Pick<Plugin, "app" | "manifest" | "registerMarkdownPostProcessor">,
+    Pick<
+      Plugin,
+      | "app"
+      | "manifest"
+      | "registerMarkdownPostProcessor"
+      | "registerEditorExtension"
+      | "registerHoverLinkSource"
+    >,
     CliHost {
   /** Add a command. Obsidian prefixes its id with the plugin id, as `Plugin.addCommand` does. */
   addCommand(command: Command): Effect.Effect<Command, never, Scope.Scope>;
@@ -37,6 +44,10 @@ export function makePluginHost(plugin: Plugin & CliHost): PluginHostShape {
     },
     registerMarkdownPostProcessor: (postProcessor, sortOrder) =>
       plugin.registerMarkdownPostProcessor(postProcessor, sortOrder),
+    registerEditorExtension: (extension) =>
+      plugin.registerEditorExtension(extension),
+    registerHoverLinkSource: (id, info) =>
+      plugin.registerHoverLinkSource(id, info),
     registerCliCommand: (name, command) =>
       plugin.registerCliCommand(name, command),
     addCommand: Effect.fn("PluginHost.addCommand")(function* (command) {

@@ -4,6 +4,7 @@
 
 import type { Plugin } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { NavigationPane } from "@/services/citekey-navigation";
@@ -14,7 +15,11 @@ import type { CitekeyEditor } from "./service";
 const logger = getLogger("citekey-editor");
 
 export interface CitekeyEditorActionDeps {
-  citekeyEditor: Pick<CitekeyEditor, "navigationEnabled" | "openCitekey">;
+  citekeyEditor: Pick<
+    CitekeyEditor["Service"],
+    "navigationEnabled" | "openCitekey"
+  >;
+  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
 }
 
 export function addCitekeyEditorActions(
@@ -53,7 +58,8 @@ function addOpenCitekeyCommand(
     id: command.id,
     name: command.name,
     editorCheckCallback(checking, editor) {
-      if (!deps.citekeyEditor.navigationEnabled) return false;
+      if (!deps.bridge.runSync(deps.citekeyEditor.navigationEnabled))
+        return false;
       const { state } = editor.cm;
       const citekey = citekeyAtPos(state, state.selection.main.head);
       if (!citekey) return false;
@@ -63,7 +69,11 @@ function addOpenCitekeyCommand(
         command: command.id,
         pane: command.pane,
       });
-      void deps.citekeyEditor.openCitekey(citekey, command.pane);
+      // Unload interrupts a pending open. The open logs its own failures, so
+      // the Exit is a success or an interrupt.
+      void deps.bridge.runPromiseExit(
+        deps.citekeyEditor.openCitekey(citekey, command.pane),
+      );
       return true;
     },
   });

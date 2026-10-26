@@ -1,149 +1,94 @@
-import type { Extension } from "@codemirror/state";
-import { Effect, Layer, PubSub, Stream } from "effect";
-import { MarkdownView, TFile } from "obsidian";
-import type { App, HoverLinkSource, Workspace } from "obsidian";
-import {
-  beforeEach as beforeStreamTest,
-  afterEach as afterStreamTest,
-} from "vitest";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { it } from "@effect/vitest";
+import { Context, Effect, Fiber, Layer, Queue, Stream } from "effect";
+import { TFile } from "obsidian";
+import type { App } from "obsidian";
+import { describe, expect, vi } from "vitest";
 
 import type { Item } from "@zotlit/db";
 
-import { MemoryFileManager } from "@/lib/__fixtures__/obsidian-file-manager";
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
-import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
-import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
-import {
-  lookupAnswerFor,
-  lookupForWorks,
-} from "@/services/citation-index/__fixtures__/lookup";
+import { lookupAnswerFor } from "@/services/citation-index/__fixtures__/lookup";
+import type { CitationLookupRequest } from "@/services/citation-index/lookup";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { CitekeyResolution } from "@/services/citation-index/service";
-import type { DocumentCitations } from "@/services/citation-text/service";
-import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
+import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
+import { LibraryScope } from "@/services/library-scope/service";
 import type {
   CreationProfileSelection,
+  InteractiveCreationDeps,
   PreparedCreationProfile,
 } from "@/services/note-feature";
 import type { CreationPlan } from "@/services/note-feature/operations";
+import { createNoteHost } from "@/services/note-index/__fixtures__";
+import { layerNoteIndex } from "@/services/note-index/service";
 import {
-  buildNoteIndex,
-  createNoteHost,
-} from "@/services/note-index/__fixtures__";
-import { buildSeededSettings } from "@/services/settings/__fixtures__";
-import type { SettingsOverrides } from "@/services/settings/__fixtures__";
+  layerPluginSettings,
+  PluginSettings,
+} from "@/services/settings/service";
+import { layerRcRef } from "@/services/zotero-reads/connection";
+import { layerZoteroReads, ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsState } from "@/services/zotero-reads/service";
 import {
-  inProcessReadsService,
+  inProcessClient,
   memoryOpener,
   seedWorksSql,
-  withState,
 } from "@/services/zotero-reads/test-utils";
 import type { SeededWork } from "@/services/zotero-reads/test-utils";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
 
-import { CitekeyEditor } from "./service";
-import type { CitekeyEditorDeps } from "./service";
-import type { AmbiguousCitekey } from "./service";
+import { citekeyNoteCreation } from "./note-creation";
+import { CitekeyEditor, layerCitekeyEditor } from "./service";
+import type { CitekeyEditorEvent, CitekeyNoteCreation } from "./service";
 
-let streamStack: AsyncDisposableStack;
-let streamRuntime: ReturnType<typeof buildRuntime<never>>;
-beforeStreamTest(() => {
-  streamStack = new AsyncDisposableStack();
-  streamRuntime = buildRuntime(Layer.empty, streamStack);
-});
-afterStreamTest(() => streamStack.disposeAsync());
+const MY_LIBRARY: AvailableLibrary = {
+  selector: { type: "personal" },
+  libraryID: 1,
+  name: null,
+};
+const GROUP_LIBRARY: AvailableLibrary = {
+  selector: { type: "group", groupID: 7 },
+  libraryID: 4,
+  name: "Shared group",
+};
+const BOTH_LIBRARIES: ResolvedLibraryScope = {
+  mode: "all",
+  invalid: false,
+  available: [MY_LIBRARY, GROUP_LIBRARY],
+  unavailable: [],
+};
 
-function appWithWorkspace<W extends object>(workspace: W): App {
-  return stubService<App>("App", {
-    workspace: Object.assign(
-      stubService<Workspace>("Workspace", {}),
-      workspace,
-    ),
-  });
+interface EditorOptions {
+  /** Each Literature Note's path and the Item key it carries. */
+  notes?: Record<string, string>;
+  /** What each citekey resolves to; any other key is missing. */
+  resolutions?: Record<string, CitekeyResolution>;
+  /** The Items the database holds. */
+  works?: readonly SeededWork[];
+  /** The legacy note creation flow. */
+  createNote?: CitekeyNoteCreation["createNote"];
+  /** The database state the editor reads. */
+  readsState?: ZoteroReadsState["state"];
 }
 
-/** A typed facade over a test double, which fails only when a read is missing. */
-function capability<T extends object>(name: string, source: object): T {
-  const typed = stubService<T>(name, {});
-  return new Proxy(typed, {
-    get(_target, key) {
-      const value = Reflect.get(source, key, source);
-      return typeof value === "function" ? value.bind(source) : value;
-    },
-  });
-}
-
-/** A Citekey Editor over only the dependencies one test reads. */
-function editorDeps(
-  overrides: Partial<CitekeyEditorDeps> = {},
-): CitekeyEditorDeps {
-  return {
-    runtime: streamRuntime,
-    app: appWithWorkspace({}),
-    createProfile: stubService<CitekeyEditorDeps["createProfile"]>(
-      "CreateProfile",
-      {},
-    ),
-    importProfile: stubService<CitekeyEditorDeps["importProfile"]>(
-      "ImportProfile",
-      {},
-    ),
-    plugin: stubService<CitekeyEditorDeps["plugin"]>("Plugin", {}),
-    noteIndex: stubService<CitekeyEditorDeps["noteIndex"]>("NoteIndex", {}),
-    noteFeature: stubService<CitekeyEditorDeps["noteFeature"]>(
-      "NoteFeature",
-      {},
-    ),
-    zoteroPref: stubService<CitekeyEditorDeps["zoteroPref"]>("ZoteroPref", {}),
-    db: stubService<CitekeyEditorDeps["db"]>("ZoteroReads", {}),
-    citationText: stubService<CitekeyEditorDeps["citationText"]>(
-      "CitationText",
-      {},
-    ),
-    citationPopover: stubService<CitekeyEditorDeps["citationPopover"]>(
-      "CitationPopover",
-      {},
-    ),
-    bridge: stubService<CitekeyEditorDeps["bridge"]>("EffectBridge", {}),
-    annotationPopover: stubService<CitekeyEditorDeps["annotationPopover"]>(
-      "AnnotationPopover",
-      {},
-    ),
-    settings: stubService<CitekeyEditorDeps["settings"]>("PluginSettings", {}),
-    citationLookup: stubService<CitekeyEditorDeps["citationLookup"]>(
-      "CitationLookup",
-      {},
-    ),
-    libraryScope: stubService<CitekeyEditorDeps["libraryScope"]>(
-      "LibraryScope",
-      {},
-    ),
-    ...overrides,
-  };
-}
-
-/** Every reads stand-in, settings store, and Note Index a test opened, disposed after it. */
-const opened: AsyncDisposable[] = [];
-afterEach(async () => {
-  for (const reads of opened.splice(0)) await reads[Symbol.asyncDispose]();
-});
-
-/** The real settings store, seeded with `overrides`. */
-async function settingsOf(overrides: SettingsOverrides = {}) {
-  const settings = await buildSeededSettings(overrides);
-  opened.push(settings);
-  return settings;
-}
-
-/** The real Note Index over Literature Notes by path, each with its Item key. */
-async function noteIndexOf(notes: Record<string, string> = {}) {
-  const stack = new AsyncDisposableStack();
-  opened.push(stack);
+/**
+ * The Citekey Editor over the real Note Index on an in-memory vault, the real
+ * settings and Zotero reads over a fixture database (My Library and the Shared
+ * group: group 7, Library 4), and a Citation Lookup that answers from
+ * `resolutions`.
+ */
+const openEditor = Effect.fnUntraced(function* ({
+  notes = {},
+  resolutions = {},
+  works = [],
+  createNote = () => Promise.reject(new Error("No note is created")),
+  readsState = "ready",
+}: EditorOptions = {}) {
   const host = createNoteHost(
     Object.fromEntries(
       Object.entries(notes).map(([path, itemKey]) => [
@@ -153,428 +98,250 @@ async function noteIndexOf(notes: Record<string, string> = {}) {
     ),
     { enabledAtRuntime: true },
   );
-  host.app.fileManager = capability<App["fileManager"]>(
-    "FileManager",
-    new MemoryFileManager(),
-  );
-  const noteIndex = buildNoteIndex(host.app, stack);
-  await noteIndex.whenIndexed();
-  return noteIndex;
-}
-
-/**
- * ZoteroReads on the in-process adapter over My Library and the Shared group
- * (group 7, Library 4), holding `works`.
- */
-function reads(works: readonly SeededWork[] = []) {
+  const { workspace } = host;
   const sql = `${seedWorksSql(works)}
     insert into libraries (libraryID, type) values (4, 'group');
     insert into groups (groupID, libraryID, name) values (7, 4, 'Shared group');`;
-  const service = inProcessReadsService(memoryOpener(() => sql).open);
-  opened.push(service);
-  return withState(service, "ready");
+  const citekeysRead: string[] = [];
+  const lookup = Layer.mock(CitationLookup, {
+    read: ({ citekeys = [] }: CitationLookupRequest) =>
+      Effect.sync(() => {
+        citekeysRead.push(...citekeys);
+        return lookupAnswerFor(citekeys, resolutions, "test");
+      }),
+  });
+  // The real reads over the fixture database, in the state the test names.
+  const { reads } = Context.get(
+    yield* Layer.build(
+      layerZoteroReads(
+        inProcessClient(layerRcRef(memoryOpener(() => sql).open)),
+      ),
+    ),
+    ZoteroReads,
+  );
+  const context = yield* Layer.build(
+    layerCitekeyEditor({ createNote }).pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          layerNoteIndex,
+          Layer.mock(ZoteroReads, {
+            reads,
+            current: Effect.succeed({
+              state: readsState,
+              error: null,
+              moved: false,
+              dbFileMissing: false,
+              activeReadMode: null,
+            }),
+          }),
+          lookup,
+          Layer.mock(LibraryScope, {
+            current: Effect.succeed(BOTH_LIBRARIES),
+          }),
+        ),
+      ),
+      Layer.provideMerge(
+        layerPluginSettings({
+          loadData: () => Promise.resolve(null),
+          saveData: () => Promise.resolve(),
+        }),
+      ),
+      Layer.provide(layerHostApp(host.app)),
+    ),
+  );
+  const editor = Context.get(context, CitekeyEditor);
+  const settings = Context.get(context, PluginSettings);
+  const events: CitekeyEditorEvent[] = [];
+  const arrivals = yield* Queue.unbounded<CitekeyEditorEvent>();
+  yield* Stream.runForEach(editor.events, (event) => {
+    events.push(event);
+    return Queue.offer(arrivals, event);
+  }).pipe(Effect.forkScoped({ startImmediately: true }));
+  return {
+    editor,
+    settings,
+    events,
+    /** Completes once `count` more events have reached `events`. */
+    received: (count: number) => Queue.takeN(arrivals, count),
+    workspace,
+    citekeysRead,
+  };
+});
+
+const paper = {
+  itemID: 11,
+  libraryID: 1,
+  indexedKey: "PAPER234",
+  key: "PAPER234",
+};
+
+function created(path: string): TFile {
+  return Object.assign(new TFile(), { path });
 }
 
-vi.mock("@/views/quick-switch/profile-picker", () => ({
-  chooseLiteratureNoteProfile: vi.fn(),
-}));
-
-describe("CitekeyEditor Profile creation", () => {
-  const books = "Bk3Qn7XvT2Lp" as ProfileId;
-  const item = {
-    itemID: 11,
-    libraryID: 1,
-    indexedKey: "PAPER234",
-    key: "PAPER234",
-  };
-  function creationPlans(
-    indexedKeys: readonly string[],
-    selection: CreationProfileSelection,
-    previews: readonly PreparedCreationProfile[],
-  ): ReadonlyMap<string, CreationPlan> {
-    return new Map(
-      indexedKeys.map((key) => [
-        key,
-        { item: item as Item, selection, previews },
-      ]),
-    );
-  }
-  async function fixture(
-    selection: CreationProfileSelection = {
-      selector: "default",
-      source: "bound",
-      shouldAsk: true,
-    },
-  ) {
-    const create = vi.fn(async () => ({
-      outcome: "created" as const,
-      file: Object.assign(new TFile(), { path: "Books/Paper.md" }),
-    }));
-    const openLinkText = vi.fn(async () => {});
-    const citationLookup = new LookupStub({
-      paper2024: { kind: "unique", item },
-    });
-    const service = new CitekeyEditor(
-      editorDeps({
-        runtime: streamRuntime,
-        app: appWithWorkspace({
-          updateOptions: () => {},
-          getLeavesOfType: () => [],
-          openLinkText,
-        }),
-        plugin: {
-          registerEditorExtension: () => {},
-          registerHoverLinkSource: () => {},
+describe("CitekeyEditor note creation", () => {
+  it.effect("opens the note the creation flow made in the requested pane", () =>
+    Effect.gen(function* () {
+      const choice = Promise.withResolvers<TFile | null>();
+      const asked: Item[] = [];
+      const { editor, workspace } = yield* openEditor({
+        resolutions: { paper2024: { kind: "unique", item: paper } },
+        works: [{ itemID: paper.itemID, key: paper.key }],
+        createNote: (item) => {
+          asked.push(item);
+          return choice.promise;
         },
-        settings: await settingsOf(),
-        noteIndex: await noteIndexOf(),
-        citationLookup,
-        citationText: capability<CitekeyEditorDeps["citationText"]>(
-          "CitationText",
-          new CitationTextStub(),
-        ),
-        zoteroPref: { dataDir: "/zotero" },
-        db: reads([{ itemID: item.itemID, key: item.key }]),
-        noteFeature: capability<CitekeyEditorDeps["noteFeature"]>(
-          "NoteFeature",
-          {
-            planCreations: async (keys: readonly string[]) =>
-              creationPlans(keys, selection, [
-                {
-                  selector: "default",
-                  label: undefined,
-                  folder: "Literature",
-                  citationStyle: null,
-                  document: undefined,
-                  path: "Literature/Paper.md",
-                  create: vi.fn(),
-                },
-                {
-                  selector: books,
-                  label: "Books",
-                  folder: "Books",
-                  citationStyle: null,
-                  document: undefined,
-                  path: "Books/Paper.md",
-                  create,
-                },
-              ]),
-          },
-        ),
+      });
+
+      const opening = yield* editor
+        .openCitekey("paper2024", "tab")
+        .pipe(Effect.forkScoped);
+      yield* Effect.promise(async () => {
+        await expect.poll(() => asked).toHaveLength(1);
+      });
+      expect(asked[0]?.indexedKey).toBe("PAPER234");
+      expect(workspace.opened).toEqual([]);
+
+      choice.resolve(created("Books/Paper.md"));
+      yield* Fiber.join(opening);
+      expect(workspace.opened).toEqual([
+        {
+          linktext: "Books/Paper.md",
+          sourcePath: "",
+          newLeaf: "tab",
+          openViewState: { active: true },
+        },
+      ]);
+    }),
+  );
+
+  it.effect("keeps hover read-only and a cancelled creation silent", () =>
+    Effect.gen(function* () {
+      let asked = 0;
+      const { editor, workspace, events } = yield* openEditor({
+        resolutions: { paper2024: { kind: "unique", item: paper } },
+        works: [{ itemID: paper.itemID, key: paper.key }],
+        createNote: () => {
+          asked += 1;
+          return Promise.resolve(null);
+        },
+      });
+      const answer = lookupAnswerFor(["paper2024"], {
+        paper2024: { kind: "unique", item: paper },
+      });
+
+      expect(yield* editor.hoverNotePath("paper2024", answer)).toBeNull();
+      expect(asked).toBe(0);
+
+      yield* editor.openCitekey("paper2024", false);
+      expect(asked).toBe(1);
+      expect(workspace.opened).toEqual([]);
+      expect(events).toEqual([]);
+    }),
+  );
+
+  it.effect(
+    "creates the note of an exact ambiguous-citekey candidate without resolving the key",
+    () =>
+      Effect.gen(function* () {
+        const { editor, workspace, citekeysRead } = yield* openEditor({
+          works: [{ itemID: paper.itemID, key: paper.key }],
+          createNote: () => Promise.resolve(created("Books/Paper.md")),
+        });
+
+        yield* editor.openCandidate(
+          { ...paper, summary: "A study of citations", library: null },
+          true,
+        );
+
+        expect(citekeysRead).toEqual([]);
+        expect(
+          workspace.opened.map(({ linktext, newLeaf }) => [linktext, newLeaf]),
+        ).toEqual([["Books/Paper.md", true]]);
       }),
-    );
-    return { service, create, openLinkText, citationLookup };
-  }
-
-  it("waits for the Profile choice before creating and preserves the requested pane", async () => {
-    const h = await fixture();
-    await using service = h.service;
-    await service.ready;
-    const choice = Promise.withResolvers<
-      LiteratureNoteProfileChoice | undefined
-    >();
-    vi.mocked(chooseLiteratureNoteProfile).mockReturnValue(choice.promise);
-    const opening = service.openCitekey("paper2024", "tab");
-    await vi.waitFor(() =>
-      expect(chooseLiteratureNoteProfile).toHaveBeenCalledOnce(),
-    );
-    expect(h.create).not.toHaveBeenCalled();
-    expect(h.openLinkText).not.toHaveBeenCalled();
-    choice.resolve({ id: books, label: "Books" });
-    await opening;
-    expect(h.create).toHaveBeenCalledOnce();
-    expect(h.openLinkText).toHaveBeenCalledWith("Books/Paper.md", "", "tab", {
-      active: true,
-    });
-  });
-
-  it("creates directly under a match-selected Profile without the picker", async () => {
-    const h = await fixture({
-      selector: books,
-      source: "match",
-      shouldAsk: true,
-      reason: m.profile_match_selected({ profile: "Books" }),
-    });
-    await using service = h.service;
-    await service.ready;
-    vi.mocked(chooseLiteratureNoteProfile).mockClear();
-    await service.openCitekey("paper2024", "tab");
-    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
-    expect(h.create).toHaveBeenCalledOnce();
-    expect(h.openLinkText).toHaveBeenCalledWith("Books/Paper.md", "", "tab", {
-      active: true,
-    });
-  });
-
-  it("keeps hover read-only and dismissal silent", async () => {
-    const h = await fixture();
-    await using service = h.service;
-    await service.ready;
-    expect(service.hoverNotePath("paper2024")).toBeNull();
-    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
-    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue(undefined);
-    await service.openCitekey("paper2024", false);
-    expect(h.create).not.toHaveBeenCalled();
-    expect(h.openLinkText).not.toHaveBeenCalled();
-  });
-
-  it("asks for a Profile after an exact ambiguous-citekey candidate is selected", async () => {
-    const h = await fixture();
-    await using service = h.service;
-    await service.ready;
-    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
-      id: books,
-      label: "Books",
-    });
-    await service.openCandidate(
-      { ...item, summary: "A study of citations", library: null },
-      true,
-    );
-    expect(h.citationLookup.citekeysResolved).toEqual([]);
-    expect(chooseLiteratureNoteProfile).toHaveBeenCalledOnce();
-    expect(h.openLinkText).toHaveBeenCalledWith("Books/Paper.md", "", true, {
-      active: true,
-    });
-  });
+  );
 });
 
-describe("CitekeyEditor settings lifecycle", () => {
-  it("registers the extension while formatting or navigation is enabled", async () => {
-    const settings = await settingsOf({
-      "citation.show-formatted": false,
-      "citation.open-as-links": false,
-    });
-    let registered: Extension[] = [];
-    let reconfigures = 0;
-    const service = new CitekeyEditor(
-      editorDeps({
-        runtime: streamRuntime,
-        app: appWithWorkspace({
-          updateOptions: () => reconfigures++,
-          getLeavesOfType: () => [],
-        }),
-        plugin: {
-          registerEditorExtension: (extension: Extension) => {
-            registered = extension as Extension[];
-          },
-          registerHoverLinkSource: () => undefined,
-        },
-        noteIndex: await noteIndexOf(),
-        citationText: capability<CitekeyEditorDeps["citationText"]>(
-          "CitationText",
-          new CitationTextStub(),
-        ),
-        citationLookup: new LookupStub(),
-        settings,
+describe("CitekeyEditor navigation", () => {
+  it.effect("opens the existing Literature Note before any creation", () =>
+    Effect.gen(function* () {
+      const { editor, workspace } = yield* openEditor({
+        notes: { "Paper.md": "PAPER234" },
+        resolutions: { paper2024: { kind: "unique", item: paper } },
+      });
+      const answer = lookupAnswerFor(["paper2024"], {
+        paper2024: { kind: "unique", item: paper },
+      });
+
+      expect(yield* editor.hoverNotePath("paper2024", answer)).toBe("Paper.md");
+      yield* editor.openCitekey("paper2024", "split");
+      expect(
+        workspace.opened.map(({ linktext, newLeaf }) => [linktext, newLeaf]),
+      ).toEqual([["Paper.md", "split"]]);
+    }),
+  );
+
+  it.effect("reports a citekey that names no Item", () =>
+    Effect.gen(function* () {
+      const { editor, events, received, workspace } = yield* openEditor();
+
+      yield* editor.openCitekey("nobody2024", false);
+      yield* received(1);
+
+      expect(events).toEqual([
+        { _tag: "citekey-not-found", citekey: "nobody2024" },
+      ]);
+      expect(workspace.opened).toEqual([]);
+    }),
+  );
+
+  it.effect(
+    "reports a missing citekey as a database problem while the database is not ready",
+    () =>
+      Effect.gen(function* () {
+        const { editor, events, received } = yield* openEditor({
+          readsState: "degraded",
+        });
+
+        yield* editor.openCitekey("nobody2024", false);
+        yield* editor.openIndexedKey("PAPER234", false);
+        yield* received(2);
+
+        expect(events).toEqual([
+          { _tag: "db-unavailable", citekey: "nobody2024" },
+          { _tag: "item-unavailable", reason: "database" },
+        ]);
       }),
-    );
-    await service.ready;
+  );
 
-    expect(registered).toEqual([]);
-    expect(service.navigationEnabled).toBe(false);
-    settings.bridge.runSync(
-      settings.update({ "citation.show-formatted": true }),
-    );
-    expect(registered).toHaveLength(1);
-    expect(service.navigationEnabled).toBe(false);
+  it.effect("reports an Indexed Key the database holds no Item for", () =>
+    Effect.gen(function* () {
+      const { editor, events, received } = yield* openEditor();
 
-    settings.bridge.runSync(
-      settings.update({ "citation.open-as-links": true }),
-    );
-    expect(registered).toHaveLength(1);
-    expect(service.navigationEnabled).toBe(true);
-    expect(reconfigures).toBe(1);
+      yield* editor.openIndexedKey("GONE2345", false);
+      yield* received(1);
 
-    settings.bridge.runSync(
-      settings.update({ "citation.show-formatted": false }),
-    );
-    expect(registered).toHaveLength(1);
-    expect(service.navigationEnabled).toBe(true);
-    settings.bridge.runSync(
-      settings.update({ "citation.open-as-links": false }),
-    );
-    expect(registered).toEqual([]);
-    expect(service.navigationEnabled).toBe(false);
+      expect(events).toEqual([{ _tag: "item-unavailable", reason: "item" }]);
+    }),
+  );
 
-    await service[Symbol.asyncDispose]();
-    expect(registered).toEqual([]);
-  });
+  it.effect(
+    "gates the palette commands on Pandoc citations and open-as-links",
+    () =>
+      Effect.gen(function* () {
+        const { editor, settings } = yield* openEditor();
+        expect(yield* editor.navigationEnabled).toBe(false);
 
-  it("stays off while Pandoc citations are off, whatever the editor toggle says", async () => {
-    const settings = await settingsOf({
-      "citation.pandoc-citations": false,
-      "citation.open-as-links": true,
-    });
-    let registered: Extension[] = [];
-    await using service = new CitekeyEditor(
-      editorDeps({
-        runtime: streamRuntime,
-        app: appWithWorkspace({ updateOptions: () => undefined }),
-        plugin: {
-          registerEditorExtension: (extension: Extension) => {
-            registered = extension as Extension[];
-          },
-          registerHoverLinkSource: () => undefined,
-        },
-        noteIndex: await noteIndexOf(),
-        citationText: capability<CitekeyEditorDeps["citationText"]>(
-          "CitationText",
-          new CitationTextStub(),
-        ),
-        citationLookup: new LookupStub(),
-        settings,
+        yield* settings.update({ "citation.open-as-links": true });
+        expect(yield* editor.navigationEnabled).toBe(true);
+
+        yield* settings.update({ "citation.pandoc-citations": false });
+        expect(yield* editor.navigationEnabled).toBe(false);
       }),
-    );
-    await service.ready;
-
-    expect(registered).toEqual([]);
-    settings.bridge.runSync(
-      settings.update({ "citation.pandoc-citations": true }),
-    );
-    expect(registered).toHaveLength(1);
-    settings.bridge.runSync(
-      settings.update({ "citation.pandoc-citations": false }),
-    );
-    expect(registered).toEqual([]);
-  });
-});
-
-describe("CitekeyEditor hover source", () => {
-  it("registers one Mod-gated hover-link source for every citekey surface", async () => {
-    const sources: Record<string, HoverLinkSource> = {};
-    await using service = new CitekeyEditor(
-      editorDeps({
-        runtime: streamRuntime,
-        app: appWithWorkspace({ updateOptions: () => undefined }),
-        plugin: {
-          registerEditorExtension: () => undefined,
-          registerHoverLinkSource: (id: string, info: HoverLinkSource) => {
-            sources[id] = info;
-          },
-        },
-        noteIndex: await noteIndexOf(),
-        citationText: capability<CitekeyEditorDeps["citationText"]>(
-          "CitationText",
-          new CitationTextStub(),
-        ),
-        citationLookup: new LookupStub(),
-        settings: await settingsOf(),
-      }),
-    );
-    await service.ready;
-
-    expect(Object.keys(sources)).toEqual([CITEKEY_HOVER_SOURCE]);
-    // Mod is the platform convention, and this row is the Page preview
-    // plugin's own gate on the Page preview Hover action.
-    expect(sources[CITEKEY_HOVER_SOURCE]?.defaultMod).toBe(true);
-    expect(sources[CITEKEY_HOVER_SOURCE]?.display).toBeTruthy();
-  });
-});
-
-describe("CitekeyEditor lookup ownership", () => {
-  it("leaves lookup redraws to each open editor view", async () => {
-    const citationLookup = new LookupStub();
-    let requests = 0;
-    await using service = new CitekeyEditor(
-      editorDeps({
-        runtime: streamRuntime,
-        app: appWithWorkspace({
-          updateOptions: () => undefined,
-          getLeavesOfType: (type: string) => {
-            if (type === "markdown") requests++;
-            return [];
-          },
-        }),
-        plugin: {
-          registerEditorExtension: () => undefined,
-          registerHoverLinkSource: () => undefined,
-        },
-        noteIndex: await noteIndexOf(),
-        citationText: capability<CitekeyEditorDeps["citationText"]>(
-          "CitationText",
-          new CitationTextStub(),
-        ),
-        citationLookup,
-        settings: await settingsOf(),
-      }),
-    );
-    await service.ready;
-
-    citationLookup.emit();
-    expect(requests).toBe(0);
-  });
-});
-
-describe("CitekeyEditor citation text broadcast", () => {
-  /** The markdown leaves two notes are open in, as the workspace hands them out. */
-  const leaves = (dispatched: string[]) =>
-    ["note.md", "other.md"].map((path) => ({
-      // The service narrows a leaf's view with `instanceof`, so the stand-in
-      // carries the prototype rather than running the real constructor.
-      view: Object.assign(Object.create(MarkdownView.prototype) as object, {
-        file: { path },
-        editor: { cm: { dispatch: () => dispatched.push(path) } },
-      }),
-    }));
-
-  const openEditors = async (dispatched: string[]) => {
-    const citationText = new CitationTextStub();
-    const service = new CitekeyEditor(
-      editorDeps({
-        runtime: streamRuntime,
-        app: appWithWorkspace({
-          updateOptions: () => undefined,
-          getLeavesOfType: () => leaves(dispatched),
-        }),
-        plugin: {
-          registerEditorExtension: () => undefined,
-          registerHoverLinkSource: () => undefined,
-        },
-        noteIndex: await noteIndexOf(),
-        citationText: capability<CitekeyEditorDeps["citationText"]>(
-          "CitationText",
-          citationText,
-        ),
-        citationLookup: new LookupStub(),
-        settings: await settingsOf(),
-      }),
-    );
-    await service.ready;
-    return { service, citationText };
-  };
-
-  it("redraws only the editors showing the document whose text changed", async () => {
-    const dispatched: string[] = [];
-    const { service, citationText } = await openEditors(dispatched);
-
-    citationText.emit("changed", "note.md");
-
-    expect(dispatched).toEqual(["note.md"]);
-    await service[Symbol.asyncDispose]();
-  });
-
-  it("redraws every editor when all citation text goes stale", async () => {
-    const dispatched: string[] = [];
-    const { service, citationText } = await openEditors(dispatched);
-
-    citationText.emit("invalidated");
-
-    expect(dispatched).toEqual(["note.md", "other.md"]);
-    await service[Symbol.asyncDispose]();
-  });
+  );
 });
 
 describe("CitekeyEditor ambiguous citation keys", () => {
-  const MY_LIBRARY: AvailableLibrary = {
-    selector: { type: "personal" },
-    libraryID: 1,
-    name: null,
-  };
-  const GROUP_LIBRARY: AvailableLibrary = {
-    selector: { type: "group", groupID: 7 },
-    libraryID: 4,
-    name: "Shared group",
-  };
   const AMBIGUOUS: CitekeyResolution = {
     kind: "ambiguous",
     candidates: [
@@ -599,160 +366,204 @@ describe("CitekeyEditor ambiguous citation keys", () => {
     };
   }
 
-  async function openEditor(
-    /** Each Literature Note's path and the Item key it carries. */
-    notes: Record<string, string> = {},
-    opened: { path: string; pane: unknown }[] = [],
-    works: readonly SeededWork[] = [],
-  ) {
-    const citationLookup = new LookupStub({ doe2024: AMBIGUOUS });
-    const ambiguities: AmbiguousCitekey[] = [];
-    const service = new CitekeyEditor(
-      editorDeps({
-        runtime: streamRuntime,
-        app: appWithWorkspace({
-          updateOptions: () => undefined,
-          getLeavesOfType: () => [],
-          openLinkText: (path: string, _from: string, pane: unknown) => {
-            opened.push({ path, pane });
-            return Promise.resolve();
+  it.effect(
+    "reports every candidate with its summary, Library name, and bare Zotero item key",
+    () =>
+      Effect.gen(function* () {
+        const { editor, events, received, workspace } = yield* openEditor({
+          resolutions: { doe2024: AMBIGUOUS },
+          works: [
+            zoteroItem(11, "A study of citations", "Doe"),
+            zoteroItem(22, "Another study", "Roe"),
+          ],
+        });
+
+        yield* editor.openCitekey("doe2024", false);
+        yield* received(1);
+
+        expect(workspace.opened).toEqual([]);
+        expect(events).toHaveLength(1);
+        const [event] = events;
+        if (event?._tag !== "citekey-ambiguous")
+          throw new Error("Expected an ambiguous citekey report");
+        expect(event.ambiguous).toMatchObject({
+          citekey: "doe2024",
+          pane: false,
+        });
+        expect(
+          event.ambiguous.candidates.map(({ summary, library, key }) => ({
+            summary,
+            library: library?.name ?? null,
+            key,
+          })),
+        ).toEqual([
+          {
+            summary: "Doe (2024): A study of citations",
+            library: null,
+            key: "DEAA2345",
           },
-        }),
-        plugin: {
-          registerEditorExtension: () => undefined,
-          registerHoverLinkSource: () => undefined,
-        },
-        noteIndex: await noteIndexOf(notes),
-        citationText: capability<CitekeyEditorDeps["citationText"]>(
-          "CitationText",
-          new CitationTextStub(),
-        ),
-        citationLookup,
-        libraryScope: {
-          current: {
-            mode: "all",
-            invalid: false,
-            available: [MY_LIBRARY, GROUP_LIBRARY],
-            unavailable: [],
+          {
+            summary: "Roe (2024): Another study",
+            library: "Shared group",
+            key: "REBB3456",
           },
-        },
-        db: reads(works),
-        settings: await settingsOf(),
+        ]);
       }),
-    );
-    await service.ready;
-    service.on("citekey-ambiguous", (ambiguous) => ambiguities.push(ambiguous));
-    return { service, citationLookup, ambiguities };
-  }
-
-  it("reports every candidate with its summary, Library name, and bare Zotero item key", async () => {
-    const items = [
-      zoteroItem(11, "A study of citations", "Doe"),
-      zoteroItem(22, "Another study", "Roe"),
-    ];
-    const opened: { path: string; pane: unknown }[] = [];
-    const { service, ambiguities } = await openEditor({}, opened, items);
-
-    await service.openCitekey("doe2024", false);
-
-    expect(opened).toEqual([]);
-    expect(ambiguities).toHaveLength(1);
-    expect(ambiguities[0]).toMatchObject({ citekey: "doe2024", pane: false });
-    expect(
-      ambiguities[0]!.candidates.map(({ summary, library, key }) => ({
-        summary,
-        library: library?.name ?? null,
-        key,
-      })),
-    ).toEqual([
-      {
-        summary: "Doe (2024): A study of citations",
-        library: null,
-        key: "DEAA2345",
-      },
-      {
-        summary: "Roe (2024): Another study",
-        library: "Shared group",
-        key: "REBB3456",
-      },
-    ]);
-    await service[Symbol.asyncDispose]();
-  });
+  );
 
   // The page preview would have to pick one of the candidates to show, so it
   // shows none of them: a hover implies no identity the key does not carry.
-  it("previews no note for a citekey that names several Items", async () => {
-    const { service } = await openEditor({
-      "Doe 2024.md": "DEAA2345",
-      "Roe 2025.md": "REBB3456g7",
-    });
+  it.effect("previews no note for a citekey that names several Items", () =>
+    Effect.gen(function* () {
+      const { editor } = yield* openEditor({
+        notes: { "Doe 2024.md": "DEAA2345", "Roe 2025.md": "REBB3456g7" },
+        resolutions: { doe2024: AMBIGUOUS },
+      });
+      const answer = lookupAnswerFor(["doe2024"], { doe2024: AMBIGUOUS });
 
-    expect(service.hoverNotePath("doe2024")).toBeNull();
-    await service[Symbol.asyncDispose]();
-  });
+      expect(yield* editor.hoverNotePath("doe2024", answer)).toBeNull();
+    }),
+  );
 
-  it("opens a chosen candidate by its exact Indexed Key without resolving the key again", async () => {
-    const opened: { path: string; pane: unknown }[] = [];
-    const { service, citationLookup, ambiguities } = await openEditor(
-      { "Roe 2025.md": "REBB3456g7" },
-      opened,
-    );
-    await service.openCitekey("doe2024", "tab");
-    citationLookup.citekeysResolved.length = 0;
+  it.effect(
+    "opens a chosen candidate by its exact Indexed Key without resolving the key again",
+    () =>
+      Effect.gen(function* () {
+        const { editor, events, received, workspace, citekeysRead } =
+          yield* openEditor({
+            notes: { "Roe 2025.md": "REBB3456g7" },
+            resolutions: { doe2024: AMBIGUOUS },
+          });
+        yield* editor.openCitekey("doe2024", "tab");
+        yield* received(1);
+        citekeysRead.length = 0;
+        const [event] = events;
+        if (event?._tag !== "citekey-ambiguous")
+          throw new Error("Expected an ambiguous citekey report");
 
-    await service.openCandidate(ambiguities[0]!.candidates[1]!, "tab");
+        yield* editor.openCandidate(event.ambiguous.candidates[1]!, "tab");
 
-    expect(opened).toEqual([{ path: "Roe 2025.md", pane: "tab" }]);
-    expect(citationLookup.citekeysResolved).toEqual([]);
-    await service[Symbol.asyncDispose]();
-  });
+        expect(
+          workspace.opened.map(({ linktext, newLeaf }) => [linktext, newLeaf]),
+        ).toEqual([["Roe 2025.md", "tab"]]);
+        expect(citekeysRead).toEqual([]);
+      }),
+  );
 });
 
-class CitationTextStub {
-  readonly #changedBus = Effect.runSync(PubSub.unbounded<string>());
-  readonly #invalidatedBus = Effect.runSync(PubSub.unbounded<void>());
-  readonly changed = Stream.fromPubSub(this.#changedBus);
-  readonly invalidated = Stream.fromPubSub(this.#invalidatedBus);
+vi.mock("@/views/quick-switch/profile-picker", () => ({
+  chooseLiteratureNoteProfile: vi.fn(),
+}));
 
-  peek(): DocumentCitations | null {
-    return null;
-  }
+const books = "Bk3Qn7XvT2Lp" as ProfileId;
+const creationItem = {
+  itemID: 11,
+  libraryID: 1,
+  indexedKey: "PAPER234",
+  key: "PAPER234",
+} as Item;
 
-  load(): Promise<DocumentCitations> {
-    return Promise.resolve({
-      formatted: new Map(),
-      entrySerials: false,
-      summaries: new Map(),
-      lookup: lookupForWorks(new Map()),
-      literalWorks: new Map(),
+/** The creation flow over a Note Feature that plans `selection` for every Item. */
+function creation(
+  selection: CreationProfileSelection = {
+    selector: "default",
+    source: "bound",
+    shouldAsk: true,
+  },
+) {
+  const create = vi.fn(async () => ({
+    outcome: "created" as const,
+    file: Object.assign(new TFile(), { path: "Books/Paper.md" }),
+  }));
+  const previews: PreparedCreationProfile[] = [
+    {
+      selector: "default",
+      label: undefined,
+      folder: "Literature",
+      citationStyle: null,
+      document: undefined,
+      path: "Literature/Paper.md",
+      create: vi.fn(),
+    },
+    {
+      selector: books,
+      label: "Books",
+      folder: "Books",
+      citationStyle: null,
+      document: undefined,
+      path: "Books/Paper.md",
+      create,
+    },
+  ];
+  const port = citekeyNoteCreation({
+    app: stubService<App>("App", {}),
+    createProfile: stubService<InteractiveCreationDeps["createProfile"]>(
+      "CreateProfile",
+      {},
+    ),
+    importProfile: stubService<InteractiveCreationDeps["importProfile"]>(
+      "ImportProfile",
+      {},
+    ),
+    zoteroPref: { dataDir: "/zotero" },
+    noteFeature: stubService<InteractiveCreationDeps["noteFeature"]>(
+      "NoteFeature",
+      {
+        planCreations: async (keys: readonly string[]) =>
+          new Map<string, CreationPlan>(
+            keys.map((key) => [
+              key,
+              { item: creationItem, selection, previews },
+            ]),
+          ),
+      },
+    ),
+  });
+  return { port, create };
+}
+
+// The note creation flow a citekey opens a new note through, as build.ts binds
+// it: the citation names one Item, so creation runs direct.
+describe("CitekeyEditor note creation binding", () => {
+  it("waits for the Profile choice before it creates the note", async () => {
+    const { port, create } = creation();
+    const choice = Promise.withResolvers<
+      LiteratureNoteProfileChoice | undefined
+    >();
+    vi.mocked(chooseLiteratureNoteProfile).mockReset();
+    vi.mocked(chooseLiteratureNoteProfile).mockReturnValue(choice.promise);
+
+    const creating = port.createNote(creationItem);
+    await vi.waitFor(() =>
+      expect(chooseLiteratureNoteProfile).toHaveBeenCalledOnce(),
+    );
+    expect(create).not.toHaveBeenCalled();
+
+    choice.resolve({ id: books, label: "Books" });
+    expect((await creating)?.path).toBe("Books/Paper.md");
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it("creates at once under a match-selected Profile, without the picker", async () => {
+    const { port, create } = creation({
+      selector: books,
+      source: "match",
+      shouldAsk: true,
+      reason: m.profile_match_selected({ profile: "Books" }),
     });
-  }
+    vi.mocked(chooseLiteratureNoteProfile).mockReset();
 
-  emit(event: "changed" | "invalidated", path?: string): void {
-    if (event === "changed") PubSub.publishUnsafe(this.#changedBus, path!);
-    else PubSub.publishUnsafe(this.#invalidatedBus, undefined);
-  }
-}
+    expect((await port.createNote(creationItem))?.path).toBe("Books/Paper.md");
+    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledOnce();
+  });
 
-class LookupStub extends CitationLookupStub {
-  readonly #resolutions: Record<string, CitekeyResolution>;
-  readonly citekeysResolved: string[] = [];
+  it("creates nothing when the Profile choice is dismissed", async () => {
+    const { port, create } = creation();
+    vi.mocked(chooseLiteratureNoteProfile).mockReset();
+    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue(undefined);
 
-  constructor(resolutions: Record<string, CitekeyResolution> = {}) {
-    super(({ citekeys = [] }) => this.#answer(citekeys));
-    this.#resolutions = resolutions;
-  }
-
-  read({ citekeys = [] }: { citekeys?: readonly string[] }) {
-    this.citekeysResolved.push(...citekeys);
-    return Promise.resolve(this.#answer(citekeys));
-  }
-
-  emit(): void {
-    this.refresh();
-  }
-
-  #answer(citekeys: readonly string[]) {
-    return lookupAnswerFor(citekeys, this.#resolutions, "test");
-  }
-}
+    expect(await port.createNote(creationItem)).toBeNull();
+    expect(create).not.toHaveBeenCalled();
+  });
+});

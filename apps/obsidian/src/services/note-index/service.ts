@@ -8,7 +8,10 @@ import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
-import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
+import type {
+  MetadataCacheShape,
+  MetadataEvent,
+} from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import type { VaultEvent } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -75,7 +78,28 @@ export function resolveLiteratureNote(
   const { app } = options;
   const dest = app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
   if (!dest) return null;
-  const cache = app.metadataCache.getFileCache(dest);
+  return literatureNoteOf(dest, app.metadataCache.getFileCache(dest));
+}
+
+/**
+ * {@link resolveLiteratureNote} over the MetadataCache tag, for an Effect
+ * surface that turns a linkpath into a Citation.
+ */
+export const resolveLiteratureNoteIn = Effect.fnUntraced(function* (
+  metadata: Pick<MetadataCacheShape, "firstLinkpathDest" | "fileCache">,
+  linkpath: string,
+  sourcePath: string,
+) {
+  const dest = yield* metadata.firstLinkpathDest(linkpath, sourcePath);
+  if (!dest) return null;
+  return literatureNoteOf(dest, yield* metadata.fileCache(dest));
+});
+
+/** The Literature Note `dest` is by its frontmatter, or `null` for an ordinary note. */
+function literatureNoteOf(
+  dest: TFile,
+  cache: CachedMetadata | null,
+): ResolvedLiteratureNote | null {
   const indexedKey = itemKeyFromFrontmatter(cache);
   if (indexedKey === null) return null;
   return {

@@ -1,9 +1,21 @@
 // An in-memory workspace for tests. The test drives it; the tag's own layer
 // runs over it (`layerWorkspaceFrom`, or `layerHostApp` from
 // ./obsidian-host-app). It copies the shape of ./obsidian-metadata-cache.
-import type { Constructor, EventRef, TFile, View } from "obsidian";
+import type { EditorView } from "@codemirror/view";
+import { MarkdownView, TFile } from "obsidian";
+import type {
+  Constructor,
+  Editor,
+  EventRef,
+  OpenViewState,
+  PaneType,
+  View,
+  WorkspaceLeaf,
+} from "obsidian";
 
 import type { WorkspaceSource } from "@/lib/obsidian-workspace";
+
+import { stubService } from "./service-stub";
 
 type Callback = (...args: unknown[]) => unknown;
 
@@ -17,6 +29,19 @@ export class MemoryWorkspace implements WorkspaceSource {
   activeFile: TFile | null = null;
   /** The view of the active leaf, for `getActiveViewOfType`. */
   activeView: unknown = null;
+  /** The open leaves, by view type, for `getLeavesOfType`. */
+  readonly leaves = new Map<string, WorkspaceLeaf[]>();
+  /** The path of each editor a dispatch reached, in order. */
+  readonly dispatched: string[] = [];
+  /** How many times `updateOptions` reconfigured the editors. */
+  reconfigures = 0;
+  /** Each `openLinkText` call, in order. */
+  readonly opened: {
+    linktext: string;
+    sourcePath: string;
+    newLeaf: PaneType | boolean | undefined;
+    openViewState: OpenViewState | undefined;
+  }[] = [];
   readonly #listeners = new Map<string, Set<Callback>>();
   readonly #readyCallbacks: (() => void)[] = [];
   #layoutReady: boolean;
@@ -45,6 +70,53 @@ export class MemoryWorkspace implements WorkspaceSource {
 
   getActiveViewOfType<T extends View>(type: Constructor<T>): T | null {
     return this.activeView instanceof type ? this.activeView : null;
+  }
+
+  getLeavesOfType(type: string): WorkspaceLeaf[] {
+    return [...(this.leaves.get(type) ?? [])];
+  }
+
+  /** Open a leaf of `type` that shows `view`. */
+  openLeaf(type: string, view: View): WorkspaceLeaf {
+    const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", { view });
+    const leaves = this.leaves.get(type) ?? [];
+    leaves.push(leaf);
+    this.leaves.set(type, leaves);
+    return leaf;
+  }
+
+  /**
+   * Open a Markdown leaf showing `path` in an editor; each dispatch to that
+   * editor lands in {@link dispatched}.
+   */
+  openMarkdownEditor(path: string): MarkdownView {
+    const file = Object.assign(new TFile(), { path });
+    const editor = stubService<Editor>("Editor", {
+      cm: stubService<EditorView>("EditorView", {
+        dispatch: () => {
+          this.dispatched.push(path);
+        },
+      }),
+    });
+    const view = Object.assign(
+      new MarkdownView(stubService<WorkspaceLeaf>("WorkspaceLeaf", {})),
+      { file, editor },
+    );
+    this.openLeaf("markdown", view);
+    return view;
+  }
+
+  updateOptions(): void {
+    this.reconfigures += 1;
+  }
+
+  /** Records the call; no leaf opens. */
+  async openLinkText(
+    ...[linktext, sourcePath, newLeaf, openViewState]: Parameters<
+      WorkspaceSource["openLinkText"]
+    >
+  ): Promise<void> {
+    this.opened.push({ linktext, sourcePath, newLeaf, openViewState });
   }
 
   /** The active file becomes `file`, then `file-open`. */

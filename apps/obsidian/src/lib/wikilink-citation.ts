@@ -14,6 +14,7 @@ import { subscribe } from "@/lib/effect-stream";
 import { hoverPreferences } from "@/services/citekey-navigation";
 import type { HoverPreferences } from "@/services/citekey-navigation";
 import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
 import type { PluginSettings } from "@/services/settings/service";
 
 import { citationRunItem } from "./citation-fragment";
@@ -280,6 +281,29 @@ export class WikilinkDisplaySettings {
   }
 
   /**
+   * Takes `next` as the current settings.
+   *
+   * @returns whether they change what a link displays or who answers its
+   *   hover, which asks for a redraw.
+   */
+  apply(next: Readonly<Settings>): boolean {
+    const enabled =
+      next["citation.wikilink-citations"] && next["citation.show-formatted"];
+    // Read straight through: a hover answers from the newest snapshot, and
+    // only the listener the popover needs is drawn from it.
+    const popoverHover = this.popoverHover;
+    const clickIntercepted = this.clickIntercepted;
+    this.#hover = hoverPreferences(next);
+    this.#openAsLinks = next["citation.open-as-links"];
+    const changed =
+      enabled !== this.#enabled ||
+      popoverHover !== this.popoverHover ||
+      clickIntercepted !== this.clickIntercepted;
+    this.#enabled = enabled;
+    return changed;
+  }
+
+  /**
    * Follows the settings, and asks for a redraw whenever they change what a
    * link displays or who answers its hover.
    *
@@ -299,22 +323,10 @@ export class WikilinkDisplaySettings {
     return subscribe(runtime, settings.changes, (next) => {
       const seeding = !seeded;
       seeded = true;
-      const enabled =
-        next["citation.wikilink-citations"] && next["citation.show-formatted"];
-      // Read straight through: a hover answers from the newest snapshot, and
-      // only the listener the popover needs is drawn from it.
-      const popoverHover = this.popoverHover;
-      const clickIntercepted = this.clickIntercepted;
-      this.#hover = hoverPreferences(next);
-      this.#openAsLinks = next["citation.open-as-links"];
-      const changed =
-        enabled !== this.#enabled ||
-        popoverHover !== this.popoverHover ||
-        clickIntercepted !== this.clickIntercepted;
-      this.#enabled = enabled;
+      const changed = this.apply(next);
       if (seeding || !changed) return;
       logger.debug("Wikilink display settings changed", {
-        enabled,
+        enabled: this.#enabled,
         popoverHover: this.popoverHover,
         clickIntercepted: this.clickIntercepted,
       });

@@ -3,13 +3,15 @@
 // the shape of ./obsidian-metadata-cache; policies/events.md (Capability tags)
 // describes it. Views, leaves, `Component`s and React handlers stay edges and
 // keep `app.workspace`.
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
 import type { Scope, Stream } from "effect";
 import { MarkdownView } from "obsidian";
 import type {
   Editor,
   MarkdownFileInfo,
   Menu,
+  OpenViewState,
+  PaneType,
   TAbstractFile,
   TFile,
   Workspace as ObsidianWorkspace,
@@ -24,10 +26,27 @@ import {
 } from "@/lib/obsidian-event-source";
 import type { ObsidianEventEmitter } from "@/lib/obsidian-event-source";
 
+/** Obsidian rejected an `openLinkText` call. `cause` holds what it threw. */
+export class OpenLinkFailed extends Schema.TaggedError<
+  OpenLinkFailed,
+  { readonly brand: unique symbol }
+>()("OpenLinkFailed", {
+  /** The link text the call opened. */
+  linktext: Schema.String,
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
 /** The Obsidian object the tag reads: what `app.workspace` gives. */
 export type WorkspaceSource = Pick<
   ObsidianWorkspace,
-  "onLayoutReady" | "getActiveFile" | "getActiveViewOfType"
+  | "onLayoutReady"
+  | "getActiveFile"
+  | "getActiveViewOfType"
+  | "getLeavesOfType"
+  | "updateOptions"
+  | "openLinkText"
+  | "trigger"
 > &
   ObsidianEventEmitter;
 
@@ -57,6 +76,31 @@ export interface WorkspaceShape {
   readonly getActiveFile: Effect.Effect<TFile | null>;
   /** The Markdown view of the active leaf now, `null` when it holds none. */
   readonly activeMarkdownView: Effect.Effect<MarkdownView | null>;
+  /**
+   * The Markdown view of each open Markdown leaf now, in Obsidian's leaf
+   * order: the editors a decoration change reaches, and the reading views a
+   * re-render reaches.
+   */
+  readonly markdownViews: Effect.Effect<readonly MarkdownView[]>;
+  /**
+   * Obsidian's `updateOptions()`: every editor reads the registered editor
+   * extensions again, so a change to a registered extension array applies.
+   */
+  readonly updateOptions: Effect.Effect<void>;
+  /**
+   * Obsidian's `openLinkText`: open `linktext`, resolved from `sourcePath`, in
+   * the pane `newLeaf` names, with the view state `state`.
+   */
+  openLinkText(
+    linktext: string,
+    sourcePath: string,
+    options?: {
+      readonly newLeaf?: PaneType | boolean;
+      readonly state?: OpenViewState;
+    },
+  ): Effect.Effect<void, OpenLinkFailed>;
+  /** Obsidian's `trigger`: raise the workspace event `name` with `data`. */
+  trigger(name: string, ...data: unknown[]): Effect.Effect<void>;
   /**
    * Add `handler` to Obsidian's `file-menu` for the life of the current
    * Scope. Obsidian reads the menu as soon as its listeners return, so the
@@ -127,6 +171,36 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     activeMarkdownView: Effect.sync(() =>
       source.getActiveViewOfType(MarkdownView),
     ),
+    markdownViews: Effect.sync(() =>
+      source
+        .getLeavesOfType("markdown")
+        .flatMap(({ view }) => (view instanceof MarkdownView ? [view] : [])),
+    ).pipe(Effect.withSpan("Workspace.markdownViews")),
+    updateOptions: Effect.sync(() => source.updateOptions()).pipe(
+      Effect.withSpan("Workspace.updateOptions"),
+    ),
+    openLinkText: Effect.fn("Workspace.openLinkText")(
+      (linktext, sourcePath, options = {}) =>
+        Effect.tryPromise({
+          try: () =>
+            source.openLinkText(
+              linktext,
+              sourcePath,
+              options.newLeaf,
+              options.state,
+            ),
+          catch: (cause) =>
+            new OpenLinkFailed({
+              linktext,
+              message: cause instanceof Error ? cause.message : String(cause),
+              cause,
+            }),
+        }),
+    ),
+    // Untraced: a citation raises its menus from a pointer handler.
+    trigger: Effect.fnUntraced(function* (name, ...data) {
+      yield* Effect.sync(() => source.trigger(name, ...data));
+    }),
     onFileMenu: Effect.fn("Workspace.onFileMenu")((handler) =>
       menuHook(
         "file-menu",

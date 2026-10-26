@@ -23,8 +23,6 @@ import { registerFileLinkCapture } from "./services/attachment-open/capture";
 import { attachmentOpenFileMenu } from "./services/attachment-open/menu";
 import { buildServices } from "./services/build";
 import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
-import { registerCitekeyCandidatePicker } from "./services/citekey-editor/candidates";
-import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices";
 import { registerAnnotationImageCli } from "./services/excerpt-image/register-cli";
 import { savedExcerptRequest } from "./services/excerpt-image/request";
 import { registerFileMenu } from "./services/file-menu";
@@ -320,7 +318,10 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     addCustomizeActions(this, customizeDeps);
     addProfileActions(this, { importProfile: services.importProfile });
     addIndexedKeyActions(this);
-    addCitekeyEditorActions(this, { citekeyEditor: services.citekeyEditor });
+    addCitekeyEditorActions(this, {
+      citekeyEditor: services.citekeyEditor,
+      bridge: services.bridge,
+    });
     addGraphCitationsActions(this, {
       app: this.app,
       graphCitations: services.graphCitations,
@@ -607,7 +608,15 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       citationLookup: services.citationLookup,
       libraryScope: services.libraryScope,
       citationText: services.citationText,
-      citekeyEditor: services.citekeyEditor,
+      citekeyEditor: {
+        // Unload interrupts a pending open. The open logs its own failures,
+        // so the Exit is a success or an interrupt.
+        openIndexedKey: async (indexedKey, pane) => {
+          await services.bridge.runPromiseExit(
+            services.citekeyEditor.openIndexedKey(indexedKey, pane),
+          );
+        },
+      },
       pandocEngine: services.pandocEngine,
       bibliographyRender: services.bibliographyRender,
     });
@@ -705,10 +714,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
           ]);
         },
       }),
-    );
-    stack.defer(registerCitekeyEditorNotices(services.citekeyEditor));
-    stack.defer(
-      registerCitekeyCandidatePicker(this.app, services.citekeyEditor),
     );
 
     // The companion's Freshness Signal means the database changed and its
