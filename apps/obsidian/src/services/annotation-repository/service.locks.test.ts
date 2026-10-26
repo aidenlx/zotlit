@@ -32,6 +32,7 @@ import {
   markExternal,
   NOW,
   nextChange,
+  nextChangeOf,
   REMEMBERED_KEY,
   scopedStack,
   setup,
@@ -384,9 +385,9 @@ it.effect(
         );
       yield* service.patchColor("PUPR5FG5", "#ff6666");
       answering = false;
-      const lost = nextChange(repository);
+      const lost = yield* nextChangeOf(service);
       freshnessSignal(serverEvents);
-      yield* Effect.promise(() => lost);
+      yield* lost;
 
       // The database is behind the colour Zotero confirmed, so the Local API
       // list stays published over each list the database gives.
@@ -756,7 +757,7 @@ it.effect(
         key: "UNREAD23",
         sortIndex: "00000|002050|00170",
       };
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         setup(
           stack,
           {
@@ -771,9 +772,9 @@ it.effect(
           { key: REMEMBERED_KEY, group: SYNCED },
         ),
       );
-      const announced = nextChange(repository);
+      const announced = yield* nextChangeOf(service);
       yield* service.read(GROUP_ATTACHMENT);
-      yield* Effect.promise(() => announced);
+      yield* announced;
 
       const list = yield* service.read(GROUP_ATTACHMENT);
 

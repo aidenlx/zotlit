@@ -214,7 +214,7 @@ group in vault-wide answers because other Fixture pages cite the same Items.
 | Fixture Vault page | Purpose |
 | --- | --- |
 | `citation-scan-forms.md` | Compare Pandoc citation forms, Citation Fragments, and normalised wikilinks across References, Cited By, the popover, CitationText, CLI, and export. |
-| `Scan target.md` | Provide an ordinary-space Literature Note target for the no-break-space and trailing-backslash links, using the existing Shared Reading Item `FFFF6666g4200309`. |
+| `Scan target.md` | Provide an ordinary-space Literature Note target for the no-break-space and trailing-backslash links, as the only Literature Note of the My Library Item `PUBJRNL3` (`marshMarginaliaEvidence2019`). |
 | `citation-scan-exclusions.md` | Check code, math, frontmatter, HTML and Obsidian comments, plus a partially commented Citation Cluster and visible dollar-sign cases. |
 | `citation-scan-annotations.md` | Compare empty, labelled, whitespace-only, autolink, and embed uses of `PUPR5FG5`, then check source choices and immediate CLI reads after an edit. |
 | `citation-scan-errors.md` | Compare the reasons References and the CLI give for the declared unknown key, an ambiguous key, and an attachment-only empty link. |

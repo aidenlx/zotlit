@@ -1313,8 +1313,14 @@ it.effect(
       });
       reply.resolve(writeAccepted(20));
       yield* Effect.promise(() => verifying.promise);
-      yield* Effect.promise(() => repository[Symbol.asyncDispose]());
+      // The close interrupts the started database check and waits for its
+      // Snapshot to be acquired and let go.
+      const unload = yield* Effect.forkChild(
+        Effect.promise(() => repository[Symbol.asyncDispose]()),
+        { startImmediately: true },
+      );
       lease.resolve(yield* Effect.promise(() => leaseOver(stack, client)));
+      yield* Fiber.join(unload);
 
       expect(yield* Fiber.join(color)).toEqual({ kind: "idle" });
     }),
@@ -1353,8 +1359,14 @@ it.effect(
       });
       reply.resolve(createAccepted(MADE));
       yield* Effect.promise(() => verifying.promise);
-      yield* Effect.promise(() => repository[Symbol.asyncDispose]());
+      // The close interrupts the started database check and waits for its
+      // Snapshot to be acquired and let go.
+      const unload = yield* Effect.forkChild(
+        Effect.promise(() => repository[Symbol.asyncDispose]()),
+        { startImmediately: true },
+      );
       lease.resolve(yield* Effect.promise(() => leaseOver(stack, client)));
+      yield* Fiber.join(unload);
 
       // Zotero created the Annotation before the unload, so the create keeps
       // the key Zotero answered.

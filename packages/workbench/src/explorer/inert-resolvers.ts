@@ -21,35 +21,6 @@ export type ExcerptImageContext =
   | { kind: "not-imported" }
   | { kind: "vault"; folderPath: string };
 
-export interface ResolveExcerptImageContextOptions {
-  attachmentImport: boolean;
-  attachmentFolderPath: string | null;
-  litNotePath: string | null;
-  resolveAttachmentFolderPath: (
-    folderPath: string | null,
-    sourcePath?: string,
-  ) => Promise<string>;
-}
-
-/**
- * Resolve which excerpt-image rendering path applies: real `file://` links
- * when attachment import is disabled; otherwise a vault-relative folder or
- * "not-imported" when the default folder has no Literature Note to anchor it.
- */
-export async function resolveExcerptImageContext(
-  options: ResolveExcerptImageContextOptions,
-): Promise<ExcerptImageContext> {
-  if (!options.attachmentImport) return { kind: "file-url" };
-  if (!options.attachmentFolderPath && options.litNotePath === null) {
-    return { kind: "not-imported" };
-  }
-  const folderPath = await options.resolveAttachmentFolderPath(
-    options.attachmentFolderPath,
-    options.litNotePath ?? undefined,
-  );
-  return { kind: "vault", folderPath };
-}
-
 export interface InertNoteFile {
   readonly path: string;
 }

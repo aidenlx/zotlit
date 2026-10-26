@@ -1,6 +1,7 @@
 // The database batch of the Annotation Repository core: what it answers to a key it did not find, and to callers that left before it started.
 import { describe, expect, it } from "@effect/vitest";
-import { Cause, Effect, Exit, Fiber } from "effect";
+import { Cause, Effect, Exit, Fiber, FiberSet, RequestResolver } from "effect";
+import { TestClock } from "effect/testing";
 
 import {
   scopedStack,
@@ -11,7 +12,8 @@ import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import { databaseRows, databaseRowsResolver } from "./bridge";
 
 /**
- * The batch over the Fixture's database, each Snapshot a counted lease.
+ * The batch over the Fixture's database, each Snapshot a counted lease, on
+ * fibers of the case's Scope.
  *
  * @param answer what the Snapshot's reads answer, from the Fixture's own.
  */
@@ -20,13 +22,17 @@ const batchOver = Effect.fnUntraced(function* (
 ) {
   const stack = yield* scopedStack;
   const { acquireRead } = yield* Effect.promise(() => setup(stack));
+  const fibers = yield* FiberSet.make();
   const core = {
     databaseGeneration: 1,
-    databaseRows: databaseRowsResolver({
-      snapshot: Effect.acquireDisposable(
-        Effect.promise(() => acquireRead()),
-      ).pipe(Effect.map((lease) => answer(lease.reads))),
-    }),
+    databaseRows: databaseRowsResolver(
+      {
+        snapshot: Effect.acquireDisposable(
+          Effect.promise(() => acquireRead()),
+        ).pipe(Effect.map((lease) => answer(lease.reads))),
+      },
+      fibers,
+    ),
   };
   return { core, acquireRead };
 });
@@ -56,7 +62,16 @@ describe("databaseRows", () => {
     "takes no Snapshot when every caller left before the batch started",
     () =>
       Effect.gen(function* () {
-        const { core, acquireRead } = yield* batchOver();
+        const batch = yield* batchOver();
+        const { acquireRead } = batch;
+        // The batch waits one second of the TestClock before it starts.
+        const core = {
+          ...batch.core,
+          databaseRows: RequestResolver.setDelay(
+            batch.core.databaseRows,
+            "1 second",
+          ),
+        };
 
         const first = yield* Effect.forkChild(databaseRows(core, "RGRPDF24"), {
           startImmediately: true,
@@ -67,14 +82,19 @@ describe("databaseRows", () => {
         yield* Fiber.interrupt(first);
         yield* Fiber.interrupt(second);
         // Past the batch's delay: a batch still standing would read now.
-        for (let turn = 0; turn < 5; turn++) yield* Effect.yieldNow;
+        yield* TestClock.adjust("1 second");
 
         expect(acquireRead).not.toHaveBeenCalled();
         // The same asks, left to run, take one Snapshot for both.
-        yield* Effect.all(
-          [databaseRows(core, "RGRPDF24"), databaseRows(core, "EPUBBKS2")],
-          { concurrency: "unbounded" },
+        const both = yield* Effect.forkChild(
+          Effect.all(
+            [databaseRows(core, "RGRPDF24"), databaseRows(core, "EPUBBKS2")],
+            { concurrency: "unbounded" },
+          ),
+          { startImmediately: true },
         );
+        yield* TestClock.adjust("1 second");
+        yield* Fiber.join(both);
         expect(acquireRead).toHaveBeenCalledTimes(1);
       }),
   );

@@ -34,12 +34,7 @@ import type {
 import { attempt, CheckSourceThrew, thrown } from "./check-plain-document";
 import { readTemplateData, withSelectedNote, withSettings } from "./data";
 import { sourceRevision } from "./inspect";
-import {
-  profileCall,
-  syncTemplate,
-  templateCall,
-  templateRead,
-} from "./sync-template";
+import { profileCall, syncTemplate, templateCall } from "./sync-template";
 
 /** The refusal a Template Draft identity that fails the Profile ID rule carries. */
 export const INVALID_PROFILE_ID = "INVALID_PROFILE_ID";
@@ -117,7 +112,7 @@ export const checkProfileDocument = Effect.fn(
     };
     const template = yield* Template;
     if (
-      !(yield* templateRead(template.javascriptTemplatesEnabled)) &&
+      !(yield* template.javascriptTemplatesEnabled) &&
       (parsed.manifest.language === "eta" ||
         parsed.manifest.frontmatter?.some((entry) => "js" in entry))
     ) {
