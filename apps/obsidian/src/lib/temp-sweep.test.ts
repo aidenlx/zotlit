@@ -26,7 +26,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect } from "vitest";
 
 import { LogCategory } from "./effect-log-category";
-import { isOlderThan, sweepTempDirectoryEffect } from "./temp-sweep";
+import { isOlderThan, sweepTempDirectory } from "./temp-sweep";
 import type { TempSweepOptions } from "./temp-sweep";
 
 let directory: string;
@@ -81,7 +81,7 @@ const logsOf = Effect.fnUntraced(function* (
   sweepOptions: TempSweepOptions<never>,
 ) {
   const records: LogRecord[] = [];
-  yield* sweepTempDirectoryEffect(sweepOptions).pipe(
+  yield* sweepTempDirectory(sweepOptions).pipe(
     Effect.provide(capture(records)),
   );
   return records;
@@ -97,9 +97,7 @@ const interruptedLogsOf = Effect.fnUntraced(function* (
 ) {
   const records: LogRecord[] = [];
   const run = yield* Effect.forkChild(
-    sweepTempDirectoryEffect(sweepOptions).pipe(
-      Effect.provide(capture(records)),
-    ),
+    sweepTempDirectory(sweepOptions).pipe(Effect.provide(capture(records))),
     { startImmediately: false },
   );
   if (early) run.interruptUnsafe();
@@ -119,7 +117,7 @@ const byPath = (records: readonly LogRecord[]) =>
     )
     .map(({ level, annotations }) => [level, annotations["path"]]);
 
-describe("sweepTempDirectoryEffect", () => {
+describe("sweepTempDirectory", () => {
   it.effect("removes only the entries the residue rule claims", () =>
     onDisk(
       Effect.gen(function* () {
@@ -127,7 +125,7 @@ describe("sweepTempDirectoryEffect", () => {
         yield* write("drop");
         yield* Effect.promise(() => mkdir(join(directory, "drop-dir")));
         yield* write(join("drop-dir", "nested"));
-        yield* sweepTempDirectoryEffect({
+        yield* sweepTempDirectory({
           directory,
           kind: "test entry",
           isResidue: (name, path) =>
