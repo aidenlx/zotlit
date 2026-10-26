@@ -26,7 +26,7 @@ import type { MatchSelection } from "@/services/profile-selection";
 import type { ResolvedProfile } from "@/services/profile/bindings";
 import { relocatedNotePath } from "@/services/profile/relocation";
 import { Profile } from "@/services/profile/service";
-import { Template } from "@/services/template/service";
+import { Template, templateFailure } from "@/services/template/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
@@ -516,7 +516,10 @@ const prepareProfileNote = Effect.fnUntraced(function* (
       prepared: prepared.prepared,
     },
   );
-  const body = document.renderForCreate(note);
+  const body = yield* Effect.try({
+    try: () => document.renderForCreate(note),
+    catch: templateFailure,
+  });
   const preview: PreparedProfileNote = {
     path: preparedPath.path,
     body,
