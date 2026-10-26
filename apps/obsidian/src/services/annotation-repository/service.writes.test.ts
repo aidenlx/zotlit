@@ -25,6 +25,7 @@ import {
 import type { ZoteroReadLease } from "@/services/zotero-reads/service";
 
 import {
+  collect,
   afterWrite,
   FIXTURE_ROWS,
   leaseOver,
@@ -285,7 +286,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, {
           item: () =>
             annotationItem(
@@ -294,10 +295,8 @@ it.effect(
         }),
       );
       const announced: Array<[string, string | null]> = [];
-      stack.defer(
-        repository.listen("excerpt-pixels-changed", (record) =>
-          announced.push([record.key, record.color]),
-        ),
+      yield* collect(service.excerptPixelsChanged, ({ record }) =>
+        Effect.sync(() => announced.push([record.key, record.color])),
       );
 
       yield* service.patchColor("TYY6Z6ZF", "#2EA8E5");
@@ -309,7 +308,7 @@ it.effect(
 it.effect("says nothing for a saved write that left the pixels alone", () =>
   Effect.gen(function* () {
     const stack = yield* scopedStack;
-    const { repository, service } = yield* Effect.promise(() =>
+    const { service } = yield* Effect.promise(() =>
       writable(stack, {
         item: ({ url }) =>
           annotationItem(
@@ -322,10 +321,8 @@ it.effect("says nothing for a saved write that left the pixels alone", () =>
       }),
     );
     const announced: string[] = [];
-    stack.defer(
-      repository.listen("excerpt-pixels-changed", (record) =>
-        announced.push(record.key),
-      ),
+    yield* collect(service.excerptPixelsChanged, ({ record }) =>
+      Effect.sync(() => announced.push(record.key)),
     );
 
     yield* service.patchComment("TYY6Z6ZF", "Saved");
@@ -340,7 +337,7 @@ it.effect("announces nothing while a write is still in flight", () =>
     const stack = yield* scopedStack;
     const reread = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
-    const { repository, service } = yield* Effect.promise(() =>
+    const { service } = yield* Effect.promise(() =>
       writable(stack, {
         item: async () => {
           reread.resolve();
@@ -350,10 +347,8 @@ it.effect("announces nothing while a write is still in flight", () =>
       }),
     );
     const announced: string[] = [];
-    stack.defer(
-      repository.listen("excerpt-pixels-changed", (record) =>
-        announced.push(record.key),
-      ),
+    yield* collect(service.excerptPixelsChanged, ({ record }) =>
+      Effect.sync(() => announced.push(record.key)),
     );
 
     const saved = yield* Effect.forkChild(
@@ -508,7 +503,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, {
           write: () => staleVersion(),
           item: () =>
@@ -516,10 +511,12 @@ it.effect(
         }),
       );
       const conflicted: string[] = [];
-      stack.defer(
-        repository.listen("write-conflict", (annotationKey, attachmentKey) => {
-          conflicted.push(`${annotationKey} on ${attachmentKey}`);
-        }),
+      yield* collect(
+        service.writeConflicts,
+        ({ annotationKey, attachmentKey }) =>
+          Effect.sync(() =>
+            conflicted.push(`${annotationKey} on ${attachmentKey}`),
+          ),
       );
 
       const outcome = yield* service.patchColor("PUPR5FG5", "#ff6666");
@@ -538,7 +535,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, {
           write: () => staleVersion(),
           // The Annotation moved to the very colour this write asks for — another
@@ -548,8 +545,8 @@ it.effect(
         }),
       );
       const conflicted: string[] = [];
-      stack.defer(
-        repository.listen("write-conflict", (key) => conflicted.push(key)),
+      yield* collect(service.writeConflicts, ({ annotationKey }) =>
+        Effect.sync(() => conflicted.push(annotationKey)),
       );
 
       const outcome = yield* service.patchColor("PUPR5FG5", "#FF6666");
@@ -803,7 +800,7 @@ it.effect(
       const inFlight = new Promise<Response>((resolve) => {
         answer = resolve;
       });
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, {
           write: () => inFlight,
           item: () =>
@@ -813,19 +810,21 @@ it.effect(
         }),
       );
       const states: string[] = [];
-      stack.defer(
-        repository.listen("annotation-changed", (key) => {
-          states.push(repository.mutationFor(key).kind);
-        }),
+      yield* collect(service.annotationChanged, (key) =>
+        service
+          .mutationFor(key)
+          .pipe(Effect.map(({ kind }) => states.push(kind))),
       );
       // What a surface redrawing on the announcement reads, in the same task.
       const announced: (string | null)[] = [];
-      stack.defer(
-        repository.listen("annotations-changed", (key) => {
-          announced.push(
-            colorOf(repository.peek(key)?.value ?? null, "PUPR5FG5"),
-          );
-        }),
+      yield* collect(service.annotationsChanged, (key) =>
+        service
+          .peek(key)
+          .pipe(
+            Effect.map((held) =>
+              announced.push(colorOf(held?.value ?? null, "PUPR5FG5")),
+            ),
+          ),
       );
 
       // Zotero stores lower case, so the proposal is drawn as Zotero will answer.
@@ -862,14 +861,14 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       const zotero = zoteroLibrary();
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, zotero.answers),
       );
       const states: string[] = [];
-      stack.defer(
-        repository.listen("annotation-changed", (key) => {
-          states.push(repository.mutationFor(key).kind);
-        }),
+      yield* collect(service.annotationChanged, (key) =>
+        service
+          .mutationFor(key)
+          .pipe(Effect.map(({ kind }) => states.push(kind))),
       );
       const release = zotero.holdWrites();
 
@@ -905,7 +904,7 @@ it.effect.each([
   ([, write]) =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, {
           write,
           // Zotero's own copy, which a conflict re-reads.
@@ -914,10 +913,14 @@ it.effect.each([
         }),
       );
       const drawn: (string | null)[] = [];
-      stack.defer(
-        repository.listen("annotations-changed", (key) => {
-          drawn.push(colorOf(repository.peek(key)?.value ?? null, "PUPR5FG5"));
-        }),
+      yield* collect(service.annotationsChanged, (key) =>
+        service
+          .peek(key)
+          .pipe(
+            Effect.map((held) =>
+              drawn.push(colorOf(held?.value ?? null, "PUPR5FG5")),
+            ),
+          ),
       );
 
       const outcome = yield* service.patchColor("PUPR5FG5", "#ff6666");
@@ -1902,7 +1905,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service, requests } = yield* Effect.promise(() =>
+      const { service, requests } = yield* Effect.promise(() =>
         writable(stack, {
           item: () =>
             annotationItem(
@@ -1911,10 +1914,8 @@ it.effect(
         }),
       );
       const announced: unknown[] = [];
-      stack.defer(
-        repository.listen("excerpt-pixels-changed", (record) =>
-          announced.push([record.key, record.position]),
-        ),
+      yield* collect(service.excerptPixelsChanged, ({ record }) =>
+        Effect.sync(() => announced.push([record.key, record.position])),
       );
       const sent = requests.length;
 
@@ -1952,7 +1953,7 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       const answer = Promise.withResolvers<Response>();
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, {
           write: () => answer.promise,
           item: () =>
@@ -1969,10 +1970,8 @@ it.effect(
           ),
         );
       const pixels: string[] = [];
-      stack.defer(
-        repository.listen("excerpt-pixels-changed", ({ key }) =>
-          pixels.push(key),
-        ),
+      yield* collect(service.excerptPixelsChanged, ({ record }) =>
+        Effect.sync(() => pixels.push(record.key)),
       );
 
       // The reader's own edge, before Zotero's three decimals.
@@ -2039,7 +2038,7 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       const moved = { pageIndex: 1, rects: [[60, 400, 570, 743.723]] };
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         writable(stack, {
           write: () => staleVersion(),
           item: () =>
@@ -2049,8 +2048,8 @@ it.effect(
         }),
       );
       const conflicted: string[] = [];
-      stack.defer(
-        repository.listen("write-conflict", (key) => conflicted.push(key)),
+      yield* collect(service.writeConflicts, ({ annotationKey }) =>
+        Effect.sync(() => conflicted.push(annotationKey)),
       );
 
       const outcome = yield* service.patchGeometry(

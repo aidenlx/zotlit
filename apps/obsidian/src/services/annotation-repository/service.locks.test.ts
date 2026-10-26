@@ -25,6 +25,7 @@ import {
 } from "@/views/annot-view/card-controls";
 
 import {
+  collect,
   afterWrite,
   GROUP_ATTACHMENT,
   GROUP_ID,
@@ -238,13 +239,13 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { repository, service, requests } = yield* Effect.promise(() =>
+      const { service, requests } = yield* Effect.promise(() =>
         writable(stack, {}, { external: ["PUPR5FG5"] }),
       );
       const sent = requests.length;
       const drawn: string[] = [];
-      stack.defer(
-        repository.listen("annotations-changed", (key) => drawn.push(key)),
+      yield* collect(service.annotationsChanged, (key) =>
+        Effect.sync(() => drawn.push(key)),
       );
 
       const outcomes = [
