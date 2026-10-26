@@ -141,8 +141,8 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
           const settled=Promise.withResolvers();
           let active=false,publications=0;
           using cleanup=new DisposableStack();
-          cleanup.defer(s.zoteroReads.on('changed',()=>publications++));
-          cleanup.defer(s.zoteroReads.on('refreshing',value=>{
+          cleanup.defer(s.bridge.subscribe(s.zoteroReads.changed,()=>publications++));
+          cleanup.defer(s.bridge.subscribe(s.zoteroReads.refreshing,value=>{
             if(value)active=true;else if(active)settled.resolve();
           }));
           cleanup.adopt(setTimeout(()=>settled.reject(Error('Push did not settle')),10000),clearTimeout);
@@ -180,7 +180,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
               let previous=performance.now(),heldThroughout=true;
               using cleanup=new DisposableStack();
               const changed=Promise.withResolvers();
-              cleanup.defer(s.zoteroReads.on('changed',()=>changed.resolve()));
+              cleanup.defer(s.bridge.subscribe(s.zoteroReads.changed,()=>changed.resolve()));
               const sample=()=>{const now=performance.now();gaps.push(now-previous);previous=now;heldThroughout&&=projection.current?.value.citekeyOf(key)===expected;};
               cleanup.adopt(setInterval(sample,4),clearInterval);
               let refreshing=true,readsDuringRefresh=0,readsCorrect=true;
@@ -312,7 +312,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
             const s=app.plugins.plugins.zotlit.services;
             using cleanup=new DisposableStack();
             const changed=Promise.withResolvers();
-            cleanup.defer(s.zoteroReads.on('changed',()=>changed.resolve()));
+            cleanup.defer(s.bridge.subscribe(s.zoteroReads.changed,()=>changed.resolve()));
             cleanup.adopt(setTimeout(()=>changed.reject(Error('Changed push did not publish')),60000),clearTimeout);
             let refreshed=false,maximum=0,samples=0,correct=true,fresh=false;
             const settled=changed.promise.then(()=>{refreshed=true;});
