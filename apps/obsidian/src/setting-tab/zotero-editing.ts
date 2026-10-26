@@ -1,12 +1,11 @@
 // The "Zotero editing" row under Zotero → Connection: what the session may do
 // to Zotero's annotations, and the two actions that change it.
-import { DateTime, Effect, Queue, Stream } from "effect";
+import { Cause, DateTime, Effect, FiberHandle, Queue, Stream } from "effect";
 import type { ButtonComponent, Setting, SettingGroupItem } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
-import { countdownInterval } from "@/services/annotation-repository/cooldown";
 import { CapabilityNotices } from "@/services/annotation-repository/notices";
 import { AnnotationRepository } from "@/services/annotation-repository/service";
 import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
@@ -76,8 +75,13 @@ function renderEditingRow(
       const rereads = yield* Queue.unbounded<void>();
       let remembered = false;
       let checking = false;
-      let stopCountdown: (() => void) | null = null;
-      yield* Effect.addFinalizer(() => Effect.sync(() => stopCountdown?.()));
+      // Zotero's dialog rate limit is the one state whose copy changes with no
+      // event behind it, so the row redraws each second while it runs.
+      const countdown = yield* FiberHandle.make();
+      const tick: Effect.Effect<boolean> = Effect.suspend(() => apply).pipe(
+        Effect.delay("1 second"),
+        Effect.repeat({ while: (countsDown) => countsDown }),
+      );
 
       const apply = Effect.gen(function* () {
         const capability = yield* repository.capability;
@@ -99,13 +103,9 @@ function renderEditingRow(
         applyAction(enableButton, model.enable);
         applyAction(forgetButton, model.forget);
         if (model.countsDown) {
-          stopCountdown ??= countdownInterval(setting.settingEl.win, () =>
-            ctx.tab.sync(apply),
-          );
-        } else {
-          stopCountdown?.();
-          stopCountdown = null;
+          yield* FiberHandle.run(countdown, tick, { onlyIfMissing: true });
         }
+        return model.countsDown;
       });
 
       const check = Effect.gen(function* () {
@@ -133,7 +133,7 @@ function renderEditingRow(
       );
 
       checkButton?.onClick(
-        () => void ctx.tab.run(check, "Cannot check the Zotero connection"),
+        () => void ctx.tab.run(check, m.settings_zotero_editing_check_failed()),
       );
       forgetButton?.onClick(
         () =>
@@ -141,12 +141,15 @@ function renderEditingRow(
             localApi.forgetAuthorization.pipe(
               Effect.andThen(Queue.offer(rereads, undefined)),
             ),
-            "Cannot forget the Remembered Write Authorization",
+            m.settings_zotero_editing_forget_failed(),
           ),
       );
       enableButton?.onClick(
         () =>
-          void ctx.tab.run(notices.allowEditing, "Cannot allow Zotero editing"),
+          void ctx.tab.run(
+            notices.allowEditing,
+            m.settings_zotero_editing_enable_failed(),
+          ),
       );
 
       yield* apply;
@@ -165,10 +168,12 @@ function renderEditingRow(
           Stream.fromEffect(
             localApi.remembered.pipe(
               Effect.tapCause((cause) =>
-                Effect.logWarning(
-                  "Cannot read the Remembered Write Authorization",
-                  cause,
-                ),
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.void
+                  : Effect.logWarning(
+                      "Cannot read the Remembered Write Authorization",
+                      cause,
+                    ),
               ),
             ),
           ),
