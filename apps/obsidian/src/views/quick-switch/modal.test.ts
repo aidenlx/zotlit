@@ -8,7 +8,6 @@ import { makeItem } from "@zotlit/db/test-utils";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { openAttachments } from "@/lib/attachment-open";
 import type { ProfileId } from "@/lib/profile-stamp";
-import { resolveLiteratureNoteAttachments } from "@/services/attachment-open/actions";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 import type { SearchHit } from "@/services/item-lookup/service";
 import type {
@@ -29,12 +28,8 @@ vi.mock("./profile-picker", () => ({
 
 // The picker's reader stays real, so the chord still exercises the reader the
 // plugin builds; only the database lookup behind it is stubbed.
-vi.mock("@/services/attachment-open/actions", async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import("@/services/attachment-open/actions")
-  >()),
-  resolveLiteratureNoteAttachments: vi.fn(),
-}));
+const literatureNoteAttachments =
+  vi.fn<(indexedKey: string) => Promise<ObsidianOpenableAttachment[]>>();
 
 vi.mock("@/lib/attachment-open", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/attachment-open")>()),
@@ -239,9 +234,10 @@ describe("QuickSwitchModal PDF chord", () => {
       bridge: stubService<QuickSwitchDeps["bridge"]>("EffectBridge", {
         runSync: Effect.runSync,
       }),
-      reads: stubService<QuickSwitchDeps["reads"]>("ZoteroReads", {
-        acquireRead: vi.fn(),
-      }),
+      attachments: stubService<QuickSwitchDeps["attachments"]>(
+        "LiteratureNoteAttachments",
+        { literatureNoteAttachments },
+      ),
       zoteroPref: stubService<QuickSwitchDeps["zoteroPref"]>("ZoteroPref", {
         dataDir: undefined,
         baseAttachmentPath: null,
@@ -254,16 +250,13 @@ describe("QuickSwitchModal PDF chord", () => {
   it("resolves the Item's Attachments instead of its note on Shift+Enter", async () => {
     const { deps, modal, getNotesByItemKey } = pdfDeps();
     const attachments = [openable("ATCH1")];
-    vi.mocked(resolveLiteratureNoteAttachments).mockResolvedValue(attachments);
+    literatureNoteAttachments.mockResolvedValue(attachments);
 
     await modal.onChooseSuggestion(searchHit("PAPER234"), {
       shiftKey: true,
     } as KeyboardEvent);
 
-    expect(resolveLiteratureNoteAttachments).toHaveBeenCalledWith(
-      deps,
-      "PAPER234",
-    );
+    expect(literatureNoteAttachments).toHaveBeenCalledWith("PAPER234");
     expect(openAttachments).toHaveBeenCalledExactlyOnceWith(attachments, {
       reader: expect.anything(),
       app: deps.app,
@@ -274,7 +267,7 @@ describe("QuickSwitchModal PDF chord", () => {
   it("honors Mod+Shift+Enter's new-pane request, however many Attachments resolve", async () => {
     const { modal, open } = pdfDeps();
     const opened = openable("ATCH1");
-    vi.mocked(resolveLiteratureNoteAttachments).mockResolvedValue([opened]);
+    literatureNoteAttachments.mockResolvedValue([opened]);
     using _mod = vi.spyOn(Keymap, "isModEvent").mockReturnValue(true);
 
     await modal.onChooseSuggestion(searchHit("PAPER234"), {
@@ -551,7 +544,7 @@ describe("QuickSwitchModal Show in Library chord", () => {
     await modal.onChooseSuggestion(searchHit("ABCD2345g7"), evt);
     expect(showInLibrary).toHaveBeenCalledExactlyOnceWith("ABCD2345g7");
     expect(getNotesByItemKey).not.toHaveBeenCalled();
-    expect(resolveLiteratureNoteAttachments).not.toHaveBeenCalled();
+    expect(literatureNoteAttachments).not.toHaveBeenCalled();
   });
 
   it("advertises the chord with the option glyph on macOS and Alt elsewhere", () => {

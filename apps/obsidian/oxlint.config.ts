@@ -156,7 +156,6 @@ export default defineConfig({
     {
       // Logging backlog: rework the file to log through Effect, then remove it from the list.
       files: [
-        "src/services/attachment-open/actions.ts",
         "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
         "src/services/excerpt-image/prepare.ts",
@@ -284,7 +283,6 @@ export default defineConfig({
     {
       // No tag member yet: `vault.adapter`.
       files: [
-        "src/services/attachment-open/actions.ts",
         "src/services/log/service.ts",
         "src/views/pandoc-export/register.ts",
       ],
@@ -363,7 +361,6 @@ export default defineConfig({
       files: [
         "src/lib/effect-scope.ts",
         "src/lib/temp-sweep.ts",
-        "src/services/attachment-open/actions.ts",
         "src/services/batch-run.ts",
         "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",

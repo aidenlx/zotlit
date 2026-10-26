@@ -323,10 +323,8 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
     const attachmentOpenDeps = {
       app: this.app,
-      reads: services.zoteroReads,
-      zoteroPref: services.zoteroPref,
+      attachments: services.literatureNoteAttachments,
       opener: services.targetOpener,
-      bridge: services.bridge,
     };
     addAttachmentOpenActions(this, attachmentOpenDeps);
     void stack.use(
@@ -387,7 +385,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       createProfile: services.createProfile,
       importProfile: services.importProfile,
       app: this.app,
-      reads: services.zoteroReads,
+      attachments: services.literatureNoteAttachments,
       lookup: services.itemLookup,
       noteIndex: services.noteIndex,
       noteFeature: services.noteFeature,
@@ -489,6 +487,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         zoteroPref: services.zoteroPref,
         citationLookup: services.citationLookup,
         useLedger: services.useLedger,
+        attachments: services.literatureNoteAttachments,
         opener: services.targetOpener,
         notify: (message) => new BaseNotice(message),
       }),

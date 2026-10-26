@@ -32,6 +32,8 @@ import { bindAttachmentImport } from "./attachment-import/handle";
 import { AttachmentImport } from "./attachment-import/service";
 import { createPdfReader } from "./attachment-open/actions";
 import { openWithSystem } from "./attachment-open/capture";
+import { bindLiteratureNoteAttachments } from "./attachment-open/handle";
+import type { LiteratureNoteServices } from "./attachment-open/literature-note";
 import { createTargetOpener } from "./attachment-open/open-target";
 import { AttachmentResolver } from "./attachment-resolver/service";
 import { ChineseSegmenter } from "./chinese-segmenter/service";
@@ -258,6 +260,13 @@ export async function buildServices(
             plugin.app.vault.adapter as FileSystemAdapter
           ).getBasePath(),
         }),
+    })
+    .useValue({
+      literatureNoteAttachments: () =>
+        bindLiteratureNoteAttachments(
+          bridge,
+          runtime.runSync(Effect.context<LiteratureNoteServices>()),
+        ),
     })
     .useValue({ zoteroLocalApi: () => zoteroLocalApiService })
     .useValue({
