@@ -74,11 +74,19 @@ export function testBaselineOverrides(directory?: string) {
     testBaseline as Record<string, string[]>,
   )) {
     if (!file.startsWith(prefix)) continue;
-    for (const rule of rules)
+    for (const rule of rules) {
+      // Only apps/obsidian loads the zotlit-effect-tests plugin; any other
+      // config that names one of its rules fails to build.
+      if (
+        rule.startsWith("zotlit-effect-tests/") &&
+        directory !== "apps/obsidian"
+      )
+        continue;
       filesByRule.set(rule, [
         ...(filesByRule.get(rule) ?? []),
         file.slice(prefix.length),
       ]);
+    }
   }
   // Entries may be deleted, never added.
   return [...filesByRule].map(([rule, files]) => ({

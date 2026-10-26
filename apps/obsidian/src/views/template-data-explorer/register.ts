@@ -8,11 +8,9 @@ import "./style.css";
 import { MENU_SECTION } from "@/lib/menu-section";
 import type { FileMenuSegment } from "@/services/file-menu";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { PluginSettings } from "@/services/settings/service";
 import type { TemplateDataLoader } from "@/services/template-workbench/data";
 import type { PlainTemplate } from "@/services/template/plain";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import {
   activeTemplateWorkbench,
@@ -41,18 +39,10 @@ export interface ExplorerRegistrationDeps {
     | "db-file-missing"
     | "refresh-requested"
   >;
-  noteIndex: Pick<
-    PlainNoteIndex,
-    "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
-  >;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   itemLookup: ItemLookupHandle;
   settings: Pick<PluginSettings["Service"], "current" | "changes">;
   bridge: Pick<EffectBridge, "runSync">;
-  templates: Pick<
-    PlainTemplate,
-    "javascriptTemplatesEnabled" | "render" | "renderCitation"
-  >;
+  templates: Pick<PlainTemplate, "javascriptTemplatesEnabled">;
   templateData: TemplateDataLoader;
 }
 
