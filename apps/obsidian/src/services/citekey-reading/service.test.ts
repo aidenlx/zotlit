@@ -153,8 +153,11 @@ const makeHarness = Effect.fnUntraced(function* ({
   frontmatter = {},
   ambiguousKeys = [],
   resolutionPending = false,
+  open = Effect.void,
 }: {
   body: string;
+  /** What an open runs after it records the call; it ends at once by default. */
+  open?: Effect.Effect<void>;
   cited?: Citation[];
   /** The citekeys the resolution snapshot answers with several candidates for. */
   ambiguousKeys?: readonly string[];
@@ -309,7 +312,7 @@ const makeHarness = Effect.fnUntraced(function* ({
       openCitekey: (citekey, pane) =>
         Effect.sync(() => {
           opened.push([citekey, pane]);
-        }),
+        }).pipe(Effect.andThen(open)),
     },
     citationPopover: {
       show: (request) =>
@@ -804,6 +807,33 @@ describe("CitekeyReading", () => {
 
       expect(h.popoverRequests).toEqual([]);
       expect(h.opened).toEqual([["alpha", "tab"]]);
+    }),
+  );
+
+  it.live("interrupts a pending open when the plugin unloads", () =>
+    Effect.gen(function* () {
+      let interrupted = false;
+      const h = yield* makeHarness({
+        body: "Blah [@alpha].",
+        overrides: { "citation.open-as-links": true },
+        open: Effect.never.pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              interrupted = true;
+            }),
+          ),
+        ),
+      });
+      const el = section("<p>Blah [@alpha].</p>");
+
+      h.process(el, h.viewedCtx(el));
+      el.querySelector<HTMLElement>(".zt-citation")!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+      expect(h.opened).toEqual([["alpha", false]]);
+      yield* h.unload;
+
+      expect(interrupted).toBe(true);
     }),
   );
 
