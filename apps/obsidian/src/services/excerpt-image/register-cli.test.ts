@@ -71,9 +71,8 @@ const registered = (
   });
 
 /** The real ZoteroReads over the annotations scenario database. */
-const scenarioReads = Effect.acquireRelease(
+const scenarioReads = Effect.acquireDisposable(
   Effect.sync(() => openScenarioDatabase({ annotations: true })),
-  (scenario) => Effect.sync(() => scenario[Symbol.dispose]()),
 ).pipe(
   Effect.map((scenario) =>
     layerZoteroReads(
