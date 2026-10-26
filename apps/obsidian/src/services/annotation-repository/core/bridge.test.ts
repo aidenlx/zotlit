@@ -1,6 +1,6 @@
 // The database batch of the Annotation Repository core: what it answers to a key it did not find, and to callers that left before it started.
 import { describe, expect, it } from "@effect/vitest";
-import { Cause, Effect, Exit, Fiber } from "effect";
+import { Cause, Effect, Exit, Fiber, FiberSet } from "effect";
 
 import {
   scopedStack,
@@ -11,7 +11,8 @@ import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import { databaseRows, databaseRowsResolver } from "./bridge";
 
 /**
- * The batch over the Fixture's database, each Snapshot a counted lease.
+ * The batch over the Fixture's database, each Snapshot a counted lease, on
+ * fibers of the case's Scope.
  *
  * @param answer what the Snapshot's reads answer, from the Fixture's own.
  */
@@ -20,13 +21,17 @@ const batchOver = Effect.fnUntraced(function* (
 ) {
   const stack = yield* scopedStack;
   const { acquireRead } = yield* Effect.promise(() => setup(stack));
+  const fibers = yield* FiberSet.make();
   const core = {
     databaseGeneration: 1,
-    databaseRows: databaseRowsResolver({
-      snapshot: Effect.acquireDisposable(
-        Effect.promise(() => acquireRead()),
-      ).pipe(Effect.map((lease) => answer(lease.reads))),
-    }),
+    databaseRows: databaseRowsResolver(
+      {
+        snapshot: Effect.acquireDisposable(
+          Effect.promise(() => acquireRead()),
+        ).pipe(Effect.map((lease) => answer(lease.reads))),
+      },
+      fibers,
+    ),
   };
   return { core, acquireRead };
 });
