@@ -12,12 +12,6 @@ import type {
   TemplateOperations,
 } from "@/services/template/service";
 
-/** A Template call whose failure is a defect carrying what the Template threw. */
-export const templateRead = <A, R>(
-  effect: Effect.Effect<A, TemplateFailure, R>,
-): Effect.Effect<A, never, R> =>
-  Effect.orDie(Effect.mapError(effect, (error) => plainTemplateError(error)));
-
 /**
  * A Template call that fails with what the Template threw, defects included,
  * as `Effect.try` over the plain call did.
@@ -42,12 +36,6 @@ export const profileCall = <A, R>(
       error instanceof ProfileOperationError ? error.cause : error,
     );
   });
-
-/** A Profile read whose failure is a defect carrying what the store threw. */
-export const profileRead = <A, R>(
-  effect: Effect.Effect<A, ProfileOperationError, R>,
-): Effect.Effect<A, never, R> =>
-  Effect.orDie(Effect.mapError(effect, (error) => error.cause));
 
 /**
  * The Template's `render`, `renderCitation`, `renderProfileAnnotation` and

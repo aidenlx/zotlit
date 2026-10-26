@@ -46,7 +46,6 @@ import { lastmodFromFrontmatter } from "@/services/note-index/parse";
 import { NoteIndex } from "@/services/note-index/service";
 import { Profile } from "@/services/profile/service";
 import { PluginSettings } from "@/services/settings/service";
-import { profileRead } from "@/services/template-workbench/sync-template";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
@@ -426,7 +425,7 @@ const prepareImportProfiles = Effect.fnUntraced(function* (
     const previews: ProfilePreview[] = [];
     const selectors: ProfileSelector[] = [
       DEFAULT_PROFILE,
-      ...(yield* profileRead(profiles.profiles)).map(({ id }) => id),
+      ...(yield* profiles.profiles).map(({ id }) => id),
     ];
     for (const selector of selectors) {
       const plan = (yield* plansFor(selector)).get(first.note.itemID)!;
@@ -468,7 +467,7 @@ const prepareImportProfiles = Effect.fnUntraced(function* (
       return (
         ports.bridge.runSync(
           Effect.provideContext(
-            profileRead(profiles.resolveProfile(selection.selector)),
+            profiles.resolveProfile(selection.selector),
             context,
           ),
         )?.label ?? m.settings_profile_default_name()
@@ -525,7 +524,7 @@ const openNoteImportModal = Effect.fnUntraced(function* (
     controls: BatchClassifyControls,
   ) {
     const classified = yield* classifyNoteImport(ids, controls);
-    profilesEnabled = (yield* profileRead(profiles.profiles)).length > 0;
+    profilesEnabled = (yield* profiles.profiles).length > 0;
     if (profilesEnabled)
       profileChoice = yield* prepareImportProfiles(ports, classified.actions);
     runnableActions = classified.actions.filter(needsImport);
@@ -665,7 +664,7 @@ const openChildImportModal = Effect.fnUntraced(function* (
   ) {
     const parents = yield* classifyChildImport(ids, controls);
     const allActions = parents.flatMap((parent) => parent.actions);
-    profilesEnabled = (yield* profileRead(profiles.profiles)).length > 0;
+    profilesEnabled = (yield* profiles.profiles).length > 0;
     if (profilesEnabled)
       profileChoice = yield* prepareImportProfiles(ports, allActions);
     runnableActions = allActions.filter(needsImport);
