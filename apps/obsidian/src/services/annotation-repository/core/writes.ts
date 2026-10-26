@@ -564,7 +564,8 @@ async function command(
   // drawn and a Write Conflict standing on the Annotation stays.
   const locked = lockRefusal(core, annotationKey, command.write);
   if (locked) return { kind: "failed", failure: locked };
-  const expectedServerID = demandedSource(core)?.serverID ?? null;
+  const expectedServerID =
+    core.bridge.runSync(demandedSource(core))?.serverID ?? null;
   const generation = core.commandGeneration;
   const held = holding(core, annotationKey);
   const proposal: PendingProposal | null =
@@ -649,7 +650,10 @@ async function runCommand(
   if (command.generation !== core.commandGeneration) {
     return { kind: "failed", failure: { kind: "unknown-outcome" } };
   }
-  if ((demandedSource(core)?.serverID ?? null) !== command.expectedServerID) {
+  if (
+    (core.bridge.runSync(demandedSource(core))?.serverID ?? null) !==
+    command.expectedServerID
+  ) {
     return { kind: "failed", failure: { kind: "server-changed" } };
   }
   const parsed = parseIndexedKey(annotationKey);
@@ -823,7 +827,7 @@ async function counted<T>(
     if (left > 0) core.writesInFlight.set(attachmentKey, left);
     else {
       core.writesInFlight.delete(attachmentKey);
-      if (!demandedSource(core)) {
+      if (!core.bridge.runSync(demandedSource(core))) {
         void read(core, attachmentKey).catch((error: unknown) => {
           logger.debug(
             "The database fallback after a write could not be read",
@@ -1033,7 +1037,7 @@ async function applyWrite(
       annotationKey,
       failure: fresh.failure,
     });
-    invalidate(core, queryKey);
+    core.bridge.runSync(invalidate(core, queryKey));
     return fresh;
   }
   const record = fromLocalApi(fresh.value);

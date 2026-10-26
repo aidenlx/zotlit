@@ -1,10 +1,7 @@
 // The bridge reads every part of the Annotation Repository core makes: the demanded Local API source, its state, and the query client.
 import type { QueryFunction, QueryKey } from "@tanstack/query-core";
+import type { Effect } from "effect";
 
-import {
-  readHeld,
-  refreshDatabase,
-} from "@/services/annotation-repository/reads";
 import type { Held } from "@/services/query-client/service";
 import type {
   LocalApiSource,
@@ -13,42 +10,50 @@ import type {
 
 import type { CoreState } from "./state";
 
-function demandedSource(core: CoreState): LocalApiSource | null {
-  return core.bridge.runSync(core.localApi.demandSource);
+// A plain part of the core runs these through `core.bridge`, the layer's
+// `scopedBridge`, until its own slice converts it.
+
+function demandedSource(core: CoreState): Effect.Effect<LocalApiSource | null> {
+  return core.localApi.demandSource;
 }
 
-function apiState(core: CoreState): LocalApiState {
-  return core.bridge.runSync(core.localApi.state);
+function apiState(core: CoreState): Effect.Effect<LocalApiState> {
+  return core.localApi.state;
 }
 
-// After the plugin closes, a read helper answers as the bridge's `closed` says.
-function refreshZoteroDatabase(core: CoreState): Promise<void> {
-  return refreshDatabase(core.bridge, core.db);
+/** Fails where the Zotero database cannot refresh; the previous one keeps serving. */
+function refreshZoteroDatabase(core: CoreState) {
+  return core.db.refresh;
 }
 
-function invalidate(core: CoreState, queryKey: QueryKey): void {
-  if (!core.bridge.closed())
-    core.bridge.runSync(core.queries.invalidate(queryKey));
+/** After the query client closes, the drop does nothing. */
+function invalidate(core: CoreState, queryKey: QueryKey): Effect.Effect<void> {
+  return core.queries.invalidate(queryKey);
 }
 
-function keysUnder(core: CoreState, prefix: QueryKey): QueryKey[] {
-  return core.bridge.closed()
-    ? []
-    : core.bridge.runSync(core.queries.keysUnder(prefix));
+/** After the query client closes, it holds no key. */
+function keysUnder(
+  core: CoreState,
+  prefix: QueryKey,
+): Effect.Effect<QueryKey[]> {
+  return core.queries.keysUnder(prefix);
 }
 
-function peekQuery<T>(core: CoreState, queryKey: QueryKey): Held<T> | null {
-  return core.bridge.closed()
-    ? null
-    : core.bridge.runSync(core.queries.peek<T>(queryKey));
+/** After the query client closes, it holds nothing. */
+function peekQuery<T>(
+  core: CoreState,
+  queryKey: QueryKey,
+): Effect.Effect<Held<T> | null> {
+  return core.queries.peek<T>(queryKey);
 }
 
+/** After the query client closes, the read answers null. */
 function readHeldQuery<T>(
   core: CoreState,
   queryKey: QueryKey,
   read: QueryFunction<T>,
-): Promise<T | null> {
-  return readHeld(core.bridge, core.queries, { key: queryKey, read });
+): Effect.Effect<T | null> {
+  return core.queries.read(queryKey, read);
 }
 
 export {

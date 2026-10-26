@@ -37,7 +37,7 @@ function draftFor<F extends DraftField>(
   annotationKey: string,
 ): DraftFields[F] | null {
   const serverID =
-    demandedSource(core)?.serverID ??
+    core.bridge.runSync(demandedSource(core))?.serverID ??
     core.draftSources[field].get(annotationKey);
   return serverID
     ? (core.drafts[field].get(indexedID(serverID, annotationKey)) ?? null)
@@ -274,7 +274,7 @@ function reconcilePublishedDrafts(
   list: AnnotationList | null,
 ): void {
   if (!list) return;
-  const held = peekQuery<AnnotationList>(core, queryKey);
+  const held = core.bridge.runSync(peekQuery<AnnotationList>(core, queryKey));
   if (held?.status !== "fresh" || held.value !== list) return;
   const serverID =
     list.source.kind === "zotero-local-api"

@@ -152,7 +152,7 @@ function editTextField(
   annotationKey: string,
   text?: string,
 ): TextFieldDraft | null {
-  const source = demandedSource(core);
+  const source = core.bridge.runSync(demandedSource(core));
   const standing = draftFor(core, field, annotationKey);
   const held = standing ? null : holding(core, annotationKey);
   if (!standing && (!source || !held)) return null;
@@ -458,7 +458,7 @@ function editTags(
 ): TagDraft | null {
   const standing = tagDraftFor(core, annotationKey);
   if (standing?.state.kind === "pending") return standing;
-  const source = demandedSource(core);
+  const source = core.bridge.runSync(demandedSource(core));
   const held = standing ? null : holding(core, annotationKey);
   if (!standing && (!source || !held)) return null;
   const attachmentKey = standing?.attachmentKey ?? held!.attachmentKey;

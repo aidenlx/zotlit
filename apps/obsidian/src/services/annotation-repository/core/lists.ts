@@ -121,7 +121,7 @@ async function readUnasked(
   core: CoreState,
   attachmentKey: string,
 ): Promise<AnnotationList | null> {
-  const source = demandedSource(core);
+  const source = core.bridge.runSync(demandedSource(core));
   const binding = core.databaseBindings.get(attachmentKey);
   if (
     source &&
@@ -131,7 +131,9 @@ async function readUnasked(
     await sourceStillBound(core, attachmentKey, source);
   }
   const { queryKey, read } = activePartition(core, attachmentKey);
-  const candidate = await readHeldQuery(core, queryKey, read);
+  const candidate = await core.bridge.runPromise(
+    readHeldQuery(core, queryKey, read),
+  );
   if (candidate && canPublish(core, attachmentKey, candidate, queryKey)) {
     if (candidate.source.kind === "zotero-db") {
       adoptDatabaseSource(core, attachmentKey, candidate.source);
@@ -145,7 +147,8 @@ async function readUnasked(
     core.publishedLists.set(attachmentKey, candidate);
     core.publishedStatuses.set(
       attachmentKey,
-      peekQuery<AnnotationList>(core, queryKey)?.status ?? "fresh",
+      core.bridge.runSync(peekQuery<AnnotationList>(core, queryKey))?.status ??
+        "fresh",
     );
     reconcilePublishedDrafts(core, queryKey, attachmentKey, candidate);
     await announceReadPixels(core, superseded, candidate);
@@ -298,15 +301,19 @@ async function revalidate(
   if (compatibleApiSource(core, attachmentKey) === null) {
     // A failed refresh keeps the previous database serving, so the read
     // below still answers; a database that cannot serve fails that read.
-    await refreshZoteroDatabase(core).catch((error: unknown) => {
-      logger.debug("The Zotero database refresh failed", { error });
-    });
+    await core.bridge
+      .runPromise(refreshZoteroDatabase(core))
+      .catch((error: unknown) => {
+        logger.debug("The Zotero database refresh failed", { error });
+      });
   }
   const { queryKey } = activePartition(core, attachmentKey);
   core.publish({ _tag: "annotations-changed", attachmentKey });
-  invalidate(core, queryKey);
+  core.bridge.runSync(invalidate(core, queryKey));
   const value = await read(core, attachmentKey);
-  const status = peekQuery<AnnotationList>(core, queryKey)?.status;
+  const status = core.bridge.runSync(
+    peekQuery<AnnotationList>(core, queryKey),
+  )?.status;
   if (value && status === "failed") {
     core.publishedStatuses.set(attachmentKey, status);
   }
@@ -373,11 +380,11 @@ function editingCapability(
 ): EditingCapability {
   const capability =
     attachmentKey !== null &&
-    demandedSource(core) &&
+    core.bridge.runSync(demandedSource(core)) &&
     !compatibleApiSource(core, attachmentKey)
       ? ({ kind: "read-only", reason: "server-changed" } as const)
       : editingCapabilityOf(
-          apiState(core),
+          core.bridge.runSync(apiState(core)),
           core.bridge.runSync(core.localApi.writeStateFor(attachmentKey)),
           core.now,
         );
@@ -468,7 +475,7 @@ function holding(
   core: CoreState,
   annotationKey: string,
 ): HeldAnnotation | null {
-  const source = demandedSource(core);
+  const source = core.bridge.runSync(demandedSource(core));
   for (const [attachmentKey, list] of core.publishedLists) {
     if (
       source
@@ -525,7 +532,7 @@ async function prepareWrite(
   core: CoreState,
   annotationKey: string,
 ): Promise<HeldAnnotation | null | "server-changed"> {
-  const source = demandedSource(core);
+  const source = core.bridge.runSync(demandedSource(core));
   if (!source) return holding(core, annotationKey);
   const attachmentKey = attachmentHolding(core, annotationKey);
   if (attachmentKey) {
@@ -552,7 +559,9 @@ function dropAttachment(
   attachmentKey: string,
   queryKey?: QueryKey,
 ): void {
-  invalidate(core, queryKey ?? activePartition(core, attachmentKey).queryKey);
+  core.bridge.runSync(
+    invalidate(core, queryKey ?? activePartition(core, attachmentKey).queryKey),
+  );
   core.publish({ _tag: "annotations-changed", attachmentKey });
 }
 
@@ -822,9 +831,9 @@ function adoptDatabaseSource(
  * switch to the Zotero Local API most concerns.
  */
 function sourceMoved(core: CoreState): void {
-  invalidate(core, [ANNOTATIONS, ZOTERO_LOCAL_API]);
+  core.bridge.runSync(invalidate(core, [ANNOTATIONS, ZOTERO_LOCAL_API]));
   const held = attachmentsHeld(core, [ANNOTATIONS]);
-  const source = demandedSource(core);
+  const source = core.bridge.runSync(demandedSource(core));
   logger.debug("The Zotero Local API source moved", {
     attachments: held.length,
     source,
@@ -841,7 +850,8 @@ function sourceMoved(core: CoreState): void {
  * last element names the Attachment whichever source answered.
  */
 function attachmentsHeld(core: CoreState, prefix: QueryKey): string[] {
-  const keys = keysUnder(core, prefix)
+  const keys = core.bridge
+    .runSync(keysUnder(core, prefix))
     .map((queryKey) => queryKey.at(-1))
     .filter((key) => typeof key === "string");
   return [...new Set(keys)];
@@ -855,8 +865,8 @@ function dropDatabasePartition(core: CoreState): void {
   core.databaseGeneration += 1;
   const prefix = [ANNOTATIONS, ZOTERO_DB];
   const held = attachmentsHeld(core, prefix);
-  invalidate(core, prefix);
-  invalidate(core, [ANNOTATIONS, ZOTERO_LOCAL_API]);
+  core.bridge.runSync(invalidate(core, prefix));
+  core.bridge.runSync(invalidate(core, [ANNOTATIONS, ZOTERO_LOCAL_API]));
   logger.debug("Zotero database annotation partition dropped", {
     attachments: held.length,
   });
@@ -997,7 +1007,7 @@ function compatibleApiSource(
   core: CoreState,
   attachmentKey: string | null,
 ): LocalApiSource | null {
-  const api = demandedSource(core);
+  const api = core.bridge.runSync(demandedSource(core));
   if (!api) return null;
   const sources =
     attachmentKey === null
@@ -1026,7 +1036,7 @@ async function sourceStillBound(
   expected: LocalApiSource,
 ): Promise<boolean> {
   for (;;) {
-    const state = apiState(core);
+    const state = core.bridge.runSync(apiState(core));
     if (
       state.kind === "available"
         ? state.source.serverID !== expected.serverID
