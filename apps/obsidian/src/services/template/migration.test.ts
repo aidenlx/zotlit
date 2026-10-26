@@ -379,17 +379,18 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           return write(path, source);
         });
 
-        const converting = harness.service.convert();
+        // A flush that yields runs past unload's start, as a real save does.
+        harness.flushRuns.mockImplementation(() => Effect.yieldNow);
+
+        // Unload stops the waiting caller; the conversion itself finishes.
+        const converting = expect(
+          harness.service.convert(),
+        ).rejects.toMatchObject({ name: "AbortError" });
         yield* Effect.promise(() => started.promise);
         const unloading = harness.service[Symbol.asyncDispose]();
         held.resolve();
         yield* Effect.promise(() => unloading);
-        yield* Effect.promise(() =>
-          converting.then(
-            () => undefined,
-            () => undefined,
-          ),
-        );
+        yield* Effect.promise(() => converting);
 
         // The document stands, the legacy files are gone, and the result is
         // recorded, so no retry meets a half-done conversion.
@@ -406,6 +407,10 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           trashed: 3,
           pendingCleanup: [],
         });
+        // The settings flush is the conversion's last step; unload waits for it.
+        expect(
+          harness.flushRuns.mock.invocationCallOrder.at(-1),
+        ).toBeGreaterThan(harness.trashFile.mock.invocationCallOrder.at(-1)!);
       }),
   );
 

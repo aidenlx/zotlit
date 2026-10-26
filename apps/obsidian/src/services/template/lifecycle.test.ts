@@ -165,6 +165,53 @@ it.effect(
     }),
 );
 
+// The unpack writes through the engine's own runner, which must stay open
+// until the write's Scope has closed.
+it.effect("runtime disposal waits for a partial unpack that has started", () =>
+  Effect.gen(function* () {
+    const host = createTemplateHost();
+    const context = yield* Effect.context<never>();
+    const stack = yield* Effect.acquireDisposable(
+      Effect.tryPromise(async () => new AsyncDisposableStack()),
+    );
+    const runtime = buildRuntime(
+      templateOver(host).pipe(
+        Layer.provideMerge(Layer.succeedContext(context)),
+      ),
+      stack,
+    );
+    yield* Effect.promise(() => runtime.context());
+    const template = plainTemplate(runtime);
+    const plan = template.planPartialUnpack([
+      { name: "venue-line", language: "liquid", source: "{{ zt.venue }}" },
+    ]);
+    const started = yield* Queue.unbounded<void>();
+    const writing = Promise.withResolvers<void>();
+    const create = host.vault.create.bind(host.vault);
+    vi.spyOn(host.vault, "create").mockImplementation(async (path, source) => {
+      Queue.offerUnsafe(started, undefined);
+      await writing.promise;
+      return create(path, source);
+    });
+    const unpacked = expect(
+      template.unpackPartials(plan),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    yield* Queue.take(started);
+    let disposed = false;
+    const closing = runtime.dispose().then(() => {
+      disposed = true;
+    });
+    yield* TestClock.adjust(0);
+    expect(disposed).toBe(false);
+    writing.resolve();
+    yield* Effect.promise(() => unpacked);
+    yield* Effect.promise(() => closing);
+    expect(
+      host.vault.contents.has("templates/zotlit-partial.venue-line.md"),
+    ).toBe(true);
+  }),
+);
+
 it.effect(
   "#1705: migration ignores late layout callbacks and stops its calls after disposal",
   () =>

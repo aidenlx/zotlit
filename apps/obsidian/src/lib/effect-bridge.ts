@@ -129,3 +129,15 @@ export const scopedBridge: Effect.Effect<EffectBridge, never, Scope.Scope> =
       scope,
     });
   });
+
+/**
+ * A {@link scopedBridge} on a Scope forked from the layer's now, for the
+ * runner of a write the layer runs on a Scope it forks later: the layer's close
+ * waits for that write, with its runs still open, and then ends the runs that
+ * remain.
+ */
+export const forkedBridge: Effect.Effect<EffectBridge, never, Scope.Scope> =
+  Effect.gen(function* () {
+    const runs = yield* Scope.fork(yield* Scope.Scope);
+    return yield* Effect.provideService(scopedBridge, Scope.Scope, runs);
+  });

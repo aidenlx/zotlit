@@ -12,6 +12,7 @@ import {
   LegacyTemplateConversionError,
 } from "@zotlit/templates/facade";
 
+import { forkedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -500,9 +501,12 @@ export function layerTemplateMigration<R = never>(
       const settings = yield* PluginSettings;
       const template = yield* Template;
       const context = yield* Effect.context<R>();
+      // Forked before `scope`: a close waits for a conversion already started.
+      const bridge = yield* forkedBridge;
       const scope = yield* Scope.fork(yield* Scope.Scope);
       const run = Effect.runSyncWith(context);
-      const runPromise = Effect.runPromiseWith(context);
+      const runPromise = <A, E>(effect: Effect.Effect<A, E, R>) =>
+        bridge.runPromise(Effect.provideContext(effect, context));
       const intake = yield* obsidianEvents<{
         detect: [];
         prompt: [];
