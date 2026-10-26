@@ -237,7 +237,7 @@ export function buildNoteResolvers(
   };
 }
 
-export function resolveRenderedNotePath(
+function resolveRenderedNotePath(
   folder: string,
   rendered: string,
   options: { exists: (path: string) => boolean },
