@@ -2,19 +2,13 @@
 import { Effect } from "effect";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
-import { filterTag } from "@/lib/effect-stream";
 import { settleAtEdge } from "@/lib/signal-edge";
 
 import type { NoteCitations } from "./citations-handle";
-import type { PlannedCreationProfile } from "./creation-planning";
 import { plainNoteError } from "./errors";
 import type { NoteFeatureHandle } from "./operations";
+import { eventPayloads, plansRunBy } from "./service";
 import type { NoteFeature } from "./service";
-import type {
-  NoteFeatureEvent,
-  NoteFeatureEvents,
-  PreparedCreationProfile,
-} from "./types";
 
 /**
  * The Note Feature's members over `service`, run through `bridge`, with the
@@ -36,12 +30,6 @@ export function bindNoteFeature(
     bridge.runPromise(
       Effect.mapError(effect, (error) => plainNoteError(error)),
     );
-  const promised = (
-    preview: PlannedCreationProfile,
-  ): PreparedCreationProfile => ({
-    ...preview,
-    create: (options) => run(preview.create(options)),
-  });
   return {
     ...citations,
     createNote: (item, options) => run(service.createNote(item, options)),
@@ -58,19 +46,9 @@ export function bindNoteFeature(
     planCreations: async (indexedKeys, { signal, ...sources } = {}) => {
       signal?.throwIfAborted();
       const exit = await bridge.runPromiseExit(
-        service
-          .planCreations(indexedKeys, sources)
-          .pipe(
-            Effect.map(
-              (plans) =>
-                new Map(
-                  Array.from(plans, ([key, plan]) => [
-                    key,
-                    { ...plan, previews: plan.previews.map(promised) },
-                  ]),
-                ),
-            ),
-          ),
+        Effect.map(service.planCreations(indexedKeys, sources), (plans) =>
+          plansRunBy(plans, run),
+        ),
         signal && { signal },
       );
       return settleAtEdge(exit, signal);
@@ -83,15 +61,6 @@ export function bindNoteFeature(
     getImportedNotesForItem: (indexedKey) =>
       run(service.getImportedNotesForItem(indexedKey)),
     on: (event, cb) =>
-      bridge.subscribe(
-        filterTag(service.changes, event),
-        (change: NoteFeatureEvent) =>
-          change._tag === "excerpt-images-reported"
-            ? (cb as NoteFeatureEvents[typeof change._tag])(change.summary)
-            : (cb as NoteFeatureEvents[typeof change._tag])({
-                itemKey: change.itemKey,
-                fields: change.fields,
-              }),
-      ),
+      bridge.subscribe(eventPayloads(service.changes, event), cb),
   };
 }

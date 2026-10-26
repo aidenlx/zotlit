@@ -146,7 +146,7 @@ export const composeEvents = (
   ctx: NoteWriteContext,
 ): NonNullable<ComposeNoteDeps["events"]> => ({
   emit: (_event, payload) =>
-    ctx.emit({ _tag: "frontmatter-eval-failed", ...payload }),
+    ctx.emit({ _tag: "frontmatter-eval-failed", payload }),
 });
 
 /** The reads `use` runs on: the batch's Snapshot, or one of its own. */
@@ -997,7 +997,10 @@ const flushNoteAttachments = (
           collectExcerptSummary(
             input.reportExcerpts ??
               ((summary) =>
-                ctx.emit({ _tag: "excerpt-images-reported", summary })),
+                ctx.emit({
+                  _tag: "excerpt-images-reported",
+                  payload: summary,
+                })),
           ),
         ),
       );

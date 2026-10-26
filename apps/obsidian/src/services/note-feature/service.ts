@@ -45,8 +45,11 @@ import type {
   CreateNoteOptions,
   CreateNoteResult,
   CreationProfileSelection,
+  CreationPlan,
   CreationProfileSources,
   NoteFeatureEvent,
+  NoteFeatureEventOf,
+  NoteFeaturePayloads,
   PreparedProfileSwitch,
   ProfileNotePreviewOptions,
   UpdateResult,
@@ -215,7 +218,7 @@ export const layerNoteFeature = (ports: NoteWritePorts) =>
           function* (summary) {
             yield* PubSub.publish(events, {
               _tag: "excerpt-images-reported",
-              summary,
+              payload: summary,
             });
           },
         ),
@@ -277,6 +280,43 @@ export const layerNoteFeature = (ports: NoteWritePorts) =>
  * Collect one operation's excerpt outcomes. When the scope closes, their
  * total reports on {@link NoteFeature.changes}.
  */
+/**
+ * The payloads of `event` on `changes`, each in the shape its
+ * `NoteFeatureEvents` callback takes.
+ */
+export const eventPayloads = <K extends keyof NoteFeaturePayloads>(
+  changes: Stream.Stream<NoteFeatureEvent>,
+  event: K,
+): Stream.Stream<NoteFeaturePayloads[K]> =>
+  changes.pipe(
+    Stream.filter(
+      (change): change is NoteFeatureEventOf<K> & NoteFeatureEvent =>
+        change._tag === event,
+    ),
+    Stream.map((change) => change.payload),
+  );
+
+/**
+ * `plans` with each preview's create run by `run`, for a caller outside
+ * Effect.
+ */
+export const plansRunBy = (
+  plans: ReadonlyMap<string, PlannedCreation>,
+  run: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>,
+): ReadonlyMap<string, CreationPlan> =>
+  new Map(
+    Array.from(plans, ([key, plan]) => [
+      key,
+      {
+        ...plan,
+        previews: plan.previews.map((preview) => ({
+          ...preview,
+          create: (options) => run(preview.create(options)),
+        })),
+      },
+    ]),
+  );
+
 export const collectExcerptReports = Effect.gen(function* () {
   const feature = yield* NoteFeature;
   let total: ExcerptSummary | undefined;

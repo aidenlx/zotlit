@@ -255,29 +255,30 @@ export interface WriteNoteUpdateOptions {
   outcomes?: ExcerptOutcomeScope;
 }
 
-/** Events the bound note feature emits; a UI subscriber owns any rendering. */
-export interface NoteFeatureEvents {
-  "excerpt-images-reported": (summary: ExcerptSummary) => void;
+/** What each Note Feature event carries, by event name. */
+export interface NoteFeaturePayloads {
+  "excerpt-images-reported": ExcerptSummary;
   /**
    * A legacy settings-held frontmatter expression failed during a write; the
    * write completed with those keys skipped.
    */
-  "frontmatter-eval-failed": (payload: {
-    itemKey: string;
-    fields: string[];
-  }) => void;
+  "frontmatter-eval-failed": { itemKey: string; fields: string[] };
+}
+
+/** Events the bound note feature emits; a UI subscriber owns any rendering. */
+export type NoteFeatureEvents = {
+  [K in keyof NoteFeaturePayloads]: (payload: NoteFeaturePayloads[K]) => void;
+};
+
+/** One `event` occurrence, with the payload its callback takes. */
+export interface NoteFeatureEventOf<K extends keyof NoteFeaturePayloads> {
+  readonly _tag: K;
+  readonly payload: NoteFeaturePayloads[K];
 }
 
 /** One {@link NoteFeatureEvents} occurrence, tagged with its event name. */
-export type NoteFeatureEvent =
-  | {
-      readonly _tag: "excerpt-images-reported";
-      readonly summary: ExcerptSummary;
-    }
-  | {
-      readonly _tag: "frontmatter-eval-failed";
-      readonly itemKey: string;
-      readonly fields: string[];
-    };
+export type NoteFeatureEvent = {
+  [K in keyof NoteFeaturePayloads]: NoteFeatureEventOf<K>;
+}[keyof NoteFeaturePayloads];
 
 export type { CreateNoteInternalOptions };

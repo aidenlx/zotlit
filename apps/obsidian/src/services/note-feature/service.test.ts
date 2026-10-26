@@ -158,7 +158,7 @@ describe("NoteFeature.changes", () => {
       yield* Scope.close(scope, Exit.void);
 
       expect(yield* Fiber.join(heard)).toEqual([
-        { _tag: "excerpt-images-reported", summary },
+        { _tag: "excerpt-images-reported", payload: summary },
       ]);
     }),
   );
