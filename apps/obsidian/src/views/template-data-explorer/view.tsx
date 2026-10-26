@@ -84,10 +84,7 @@ export interface ExplorerViewDeps extends TemplateDataDeps {
   itemLookup: Pick<ItemLookupHandle, "search" | "openSession">;
   settings: Pick<PluginSettings["Service"], "current" | "changes">;
   bridge: Pick<EffectBridge, "runSync">;
-  templates: Pick<
-    PlainTemplate,
-    "javascriptTemplatesEnabled" | "render" | "renderCitation"
-  >;
+  templates: Pick<PlainTemplate, "javascriptTemplatesEnabled">;
   pluginVersion: string;
 }
 export class TemplateDataExplorerView extends ItemView {

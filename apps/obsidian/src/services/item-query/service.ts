@@ -168,20 +168,24 @@ export function layerQueryService({
       const fs = yield* FileSystem.FileSystem;
       const scope = yield* Scope.Scope;
       const jobs = yield* FiberMap.make<string, unknown, ItemQueryError>();
-      const runJob = yield* FiberMap.runtime(jobs)();
       let viewRuns = 0;
 
       /**
-       * Fork `job` into the map under `key`. The fiber is uninterruptible
-       * outside the waits of the job, so an answer that arrives wins a later
-       * cancel.
+       * Forks a job into the map from the context of the call that yields it,
+       * so the caller's span and log annotations reach the job. The fiber is
+       * uninterruptible outside the waits of the job, so an answer that
+       * arrives wins a later cancel.
        */
-      const fork = <A>(key: string, job: Effect.Effect<A, ItemQueryError>) =>
-        runJob(key, job, { uninterruptible: true });
+      const jobRunner = Effect.map(
+        FiberMap.runtime(jobs)<never>(),
+        (run) =>
+          <A>(key: string, job: Effect.Effect<A, ItemQueryError>) =>
+            run(key, job, { uninterruptible: true }),
+      );
 
       /** Fork `job` under a key that names no query. */
       const forkUnnamed = <A>(job: Effect.Effect<A, ItemQueryError>) =>
-        Effect.sync(() => fork(unnamedKey(), job));
+        Effect.map(jobRunner, (fork) => fork(unnamedKey(), job));
 
       /**
        * Fork `job` under `id`, or none when `id` names a running job. The
@@ -192,7 +196,7 @@ export function layerQueryService({
         job: Effect.Effect<A, ItemQueryError>,
         id: string,
       ): Effect.Effect<Fiber.Fiber<A, ItemQueryError> | undefined> =>
-        Effect.sync(() =>
+        Effect.map(jobRunner, (fork) =>
           FiberMap.hasUnsafe(jobs, id) ? undefined : fork(id, job),
         );
 
