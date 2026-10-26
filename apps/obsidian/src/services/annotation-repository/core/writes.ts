@@ -772,6 +772,9 @@ const runCommand: (
       headers,
       body,
     });
+    if (command.progress && !("failure" in reply)) {
+      command.progress.accepted = true;
+    }
     if (
       !source ||
       !(yield* sourceStillBound(core, held.attachmentKey, source))
@@ -821,7 +824,6 @@ const runCommand: (
       return state;
     }
 
-    if (command.progress) command.progress.accepted = true;
     yield* Effect.logDebug("Zotero took a write").pipe(
       Effect.annotateLogs({ annotationKey, method }),
     );
