@@ -9,7 +9,7 @@ import type {
   WorkbenchMatchResult,
 } from "@zotlit/workbench/ui";
 
-import type { QueryService } from "@/services/item-query/service";
+import type { QueryHandle } from "@/services/item-query/handle";
 import {
   resolveLibraryScope,
   selectorKey,
@@ -23,7 +23,7 @@ import { getSampleItem } from "./selection-data";
 
 export function createMatchData(
   db: Pick<PlainZoteroReads, "acquireRead">,
-  query: Pick<QueryService, "run" | "customFieldNames"> | undefined,
+  query: Pick<QueryHandle, "run" | "customFieldNames"> | undefined,
 ): WorkbenchHost["matchData"] {
   return {
     async tags() {
@@ -63,7 +63,7 @@ export function createMatchData(
  * Item in memory, from its seed, and a real Item through ZotLit Query.
  */
 async function testMatch(
-  query: Pick<QueryService, "run"> | undefined,
+  query: Pick<QueryHandle, "run"> | undefined,
   indexedKey: string,
   filter: string,
 ): Promise<WorkbenchMatchResult> {

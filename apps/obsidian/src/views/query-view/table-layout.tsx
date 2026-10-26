@@ -24,12 +24,12 @@ import type {
   OpenTarget,
   TargetOpener,
 } from "@/services/attachment-open/open-target";
+import type { QueryHandle } from "@/services/item-query/handle";
 import type {
   QueryViewRequest,
   QueryViewRow,
   QueryViewValue,
 } from "@/services/item-query/query-view";
-import type { QueryService } from "@/services/item-query/service";
 import { useAnnotStore } from "@/views/annot-view/store";
 
 import { useItemRow } from "./item-rows";
@@ -81,7 +81,7 @@ export interface TableChildSource {
    */
   load(
     parent: TableRecord,
-    query: Pick<QueryService, "run">,
+    query: Pick<QueryHandle, "run">,
     signal: AbortSignal,
   ): Promise<readonly TableRecord[]>;
   /**
@@ -285,7 +285,7 @@ export const LOADING_TEXT =
   "zt:truncate zt:animate-in zt:fade-in zt:fill-mode-backwards zt:delay-150";
 
 /** The expanded rows and the rows under them, read when a row expands. */
-export function useChildren(query: Pick<QueryService, "run">) {
+export function useChildren(query: Pick<QueryHandle, "run">) {
   const [children, setChildren] = useState<ReadonlyMap<string, ChildState>>(
     () => new Map(),
   );

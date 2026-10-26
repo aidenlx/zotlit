@@ -29,8 +29,6 @@ import { registerFileMenu } from "./services/file-menu";
 import { addGraphCitationsActions } from "./services/graph-citations/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { indexedKeyFileMenu } from "./services/indexed-key/menu";
-import { registerQueryCli } from "./services/item-query/cli";
-import { registerQueryMeasureCli } from "./services/item-query/measure";
 import {
   addCustomizeActions,
   customizeFileMenu,
@@ -636,15 +634,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       zoteroPref: services.zoteroPref,
     });
 
-    registerQueryCli(this, services.query);
     registerAnnotationImageCli(this, services);
-
-    // Measurement-only: lets packages/e2e/src/query-measure.ts read the
-    // slices, statements, heap, and cancel times of a run. A dev-build port,
-    // never registered in a production build.
-    if (__DEV__) {
-      registerQueryMeasureCli(this, services.query);
-    }
 
     registerPandocExport(this, {
       citationParse: services.citationParseService,

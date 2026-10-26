@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/service";
-import type { ItemLookup } from "@/services/item-lookup/service";
+import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { SearchHit } from "@/services/item-lookup/service";
 import { defaults } from "@/services/settings/schema";
 
@@ -28,7 +28,7 @@ function searchHit(): SearchHit {
 
 function makeModal(
   overrides: Partial<Omit<CitationSuggestDeps, "lookup">> & {
-    lookup?: Pick<ItemLookup, "openSession">;
+    lookup?: Pick<ItemLookupHandle, "openSession">;
   } = {},
   editor: Editor = stubService<Editor>("Editor", {}),
   file: TFile | null = null,

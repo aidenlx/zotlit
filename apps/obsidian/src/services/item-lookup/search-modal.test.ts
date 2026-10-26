@@ -9,9 +9,10 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { defaults as defaultSettings } from "@/services/settings/schema";
 import type { PluginSettings } from "@/services/settings/service";
 
+import type { SearchSession } from "./handle";
 import { ItemSearchModal, pickItem } from "./search-modal";
 import type { ItemSearchDeps } from "./search-modal";
-import type { SearchHit, SearchSession } from "./service";
+import type { SearchHit } from "./service";
 
 /** Two Items with one title: their rows read the same. */
 const figures = hit("DMRGRART");

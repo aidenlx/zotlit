@@ -58,6 +58,12 @@ import { layerExcerptImages } from "./excerpt-image/layer";
 import type { ExcerptImages } from "./excerpt-image/layer";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
 import type { ExcerptStore } from "./excerpt-image/store";
+import { layerItemLookup } from "./item-lookup/service";
+import type { ItemLookup } from "./item-lookup/service";
+import { layerQueryCli } from "./item-query/cli";
+import { layerQueryMeasureCli } from "./item-query/measure";
+import { layerQueryService } from "./item-query/service";
+import type { QueryService } from "./item-query/service";
 import { layerLanguagePackNotices } from "./language-pack/notices";
 import { layerLanguagePack } from "./language-pack/service";
 import type {
@@ -147,6 +153,8 @@ export function pluginLayer(
   | AnnotationRepository
   | AnnotationPopover
   | CitekeyEditor
+  | ItemLookup
+  | QueryService
   | ExcerptDisplays
   | ExcerptImages
   | CitationText
@@ -192,6 +200,10 @@ export function pluginLayer(
     layerCitationPopover.pipe(startingAs("CitationPopover")),
     layerAnnotationPopover.pipe(startingAs("AnnotationPopover")),
     layerCitekeyEditor(noteCreation).pipe(startingAs("CitekeyEditor")),
+    layerItemLookup.pipe(startingAs("ItemLookup")),
+    layerQueryService({ pluginVersion: plugin.manifest.version }).pipe(
+      startingAs("QueryService"),
+    ),
   ).pipe(
     Layer.provideMerge(layerCitationText().pipe(startingAs("CitationText"))),
     Layer.provideMerge(layerCitationIndex().pipe(startingAs("CitationIndex"))),
@@ -296,6 +308,13 @@ export function pluginLayer(
     layerLibraryScopeCli.pipe(startingAs("LibraryScopeCli")),
     layerLibraryScopeNotices.pipe(startingAs("LibraryScopeNotices")),
     layerPandocResolve.pipe(startingAs("PandocResolve")),
+    layerQueryCli.pipe(startingAs("QueryCli")),
+    // Measurement-only: lets packages/e2e/src/query-measure.ts read the
+    // slices, statements, heap, and cancel times of a run. A dev-build port,
+    // never registered in a production build.
+    __DEV__
+      ? layerQueryMeasureCli.pipe(startingAs("QueryMeasureCli"))
+      : Layer.empty,
     layerReleaseActions.pipe(startingAs("ReleaseActions")),
     layerWikilinkEditor.pipe(startingAs("WikilinkEditor")),
     layerWikilinkReading.pipe(startingAs("WikilinkReading")),

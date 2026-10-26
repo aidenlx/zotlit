@@ -109,7 +109,7 @@ import { MENU_SECTION } from "@/lib/menu-section";
 import { BaseNotice } from "@/lib/notice";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
-import type { QueryService } from "@/services/item-query/service";
+import type { QueryHandle } from "@/services/item-query/handle";
 import type {
   NoteFeature,
   UpdateResult,
@@ -213,7 +213,7 @@ export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
    * ZotLit Query, which tests the Match of a Profile on a real Item and names
    * the custom fields a condition reads.
    */
-  query?: Pick<QueryService, "run" | "customFieldNames">;
+  query?: Pick<QueryHandle, "run" | "customFieldNames">;
   render?: WorkbenchHost["render"];
   nativePreview?: NativeRenderDeps;
   pluginVersion?: string;

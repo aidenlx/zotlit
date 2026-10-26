@@ -7,7 +7,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import "./style.css";
 import { MENU_SECTION } from "@/lib/menu-section";
 import type { FileMenuSegment } from "@/services/file-menu";
-import type { ItemLookup } from "@/services/item-lookup/service";
+import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { PluginSettings } from "@/services/settings/service";
 import type { PlainTemplate } from "@/services/template/plain";
@@ -45,7 +45,7 @@ export interface ExplorerRegistrationDeps {
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
-  itemLookup: ItemLookup;
+  itemLookup: ItemLookupHandle;
   settings: Pick<PluginSettings["Service"], "current" | "changes">;
   bridge: Pick<EffectBridge, "runSync">;
   templates: Pick<
