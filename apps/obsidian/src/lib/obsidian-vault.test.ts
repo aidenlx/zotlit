@@ -131,6 +131,23 @@ it.effect("writes through process, create and trash", () =>
 );
 
 it.effect(
+  "creates a folder, and fails with VaultError when Obsidian rejects",
+  () =>
+    Effect.gen(function* () {
+      const source = new MemoryVault();
+      const { vault } = yield* open(layerVaultFrom(source));
+      const folder = yield* vault.createFolder("Notes");
+      expect(source.getFolderByPath("Notes")).toBe(folder);
+      const error = yield* Effect.flip(vault.createFolder("Notes"));
+      expect(error).toMatchObject({
+        _tag: "VaultError",
+        operation: "createFolder",
+        path: "Notes",
+      });
+    }),
+);
+
+it.effect(
   "fails create with FileExists when the vault cache holds the path",
   () =>
     Effect.gen(function* () {

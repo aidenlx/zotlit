@@ -223,6 +223,10 @@ export class MockVault implements VaultSource {
     return Promise.reject(new Error(`The harness writes no note: ${path}`));
   }
 
+  createFolder(path: string): Promise<TFolder> {
+    return Promise.reject(new Error(`The harness writes no folder: ${path}`));
+  }
+
   trash(file: TAbstractFile): Promise<void> {
     return Promise.reject(
       new Error(`The harness writes no note: ${file.path}`),

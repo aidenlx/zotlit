@@ -83,6 +83,11 @@ export class MemoryVault implements VaultSource {
     return this.add(path, data);
   }
 
+  async createFolder(path: string): Promise<TFolder> {
+    if (this.getAbstractFileByPath(path)) throw new Error("Folder already exists.");
+    return this.addFolder(path);
+  }
+
   async trash(file: TAbstractFile, _system: boolean): Promise<void> {
     this.trashed.push(file);
     this.remove(file.path);
