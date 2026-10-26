@@ -32,12 +32,9 @@ import {
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 
+import { childNoteLink } from "./child-note-link";
 import { noteAnnotationKeys, parseNote } from "./note-parser";
-import {
-  childNoteLink,
-  createNoteImporter,
-  NoteImportMintError,
-} from "./service";
+import { createNoteImporter, NoteImportMintError } from "./service";
 import type { ImportVaultApp, NoteImporter } from "./service";
 
 // The service owns the annotation renderer now; stub the leaf so the test asserts
