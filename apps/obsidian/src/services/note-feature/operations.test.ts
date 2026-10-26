@@ -112,7 +112,10 @@ import type { NoteCitations } from "./citations-handle";
 import { plainNoteError } from "./errors";
 import type { NoteFeatureHandle, UpdateScope } from "./operations";
 import { NoteFeature } from "./service";
-import type { WriteNoteUpdateOptions } from "./types";
+import type {
+  ProfileNotePreviewOptions,
+  WriteNoteUpdateOptions,
+} from "./types";
 /**
  * The note feature's deps, with the fixture database its reads serve. The
  * host's file manager also renames: the FileManager tag runs over it.
@@ -179,6 +182,11 @@ function createNoteFeature(deps: TestDeps) {
     ...handle,
     /** The Note Feature service, for the operations no edge handle serves. */
     service,
+    /** A Profile note preview, rendered now; its create runs on the runtime. */
+    prepareProfileNote: (options: ProfileNotePreviewOptions) => {
+      const preview = runtime.runSync(service.prepareProfileNote(options));
+      return { ...preview, create: () => runtime.runPromise(preview.create) };
+    },
     createNote: (...args: Parameters<NoteFeatureHandle["createNote"]>) => {
       know(args[0]);
       return handle.createNote(...args);

@@ -15,11 +15,11 @@ import type { NoteFeature } from "./service";
  * citation members and the interactive creation of `edges`
  * (`policies/services.md` → Edge handle). A
  * member resolves with its result and rejects with what failed, a render's
- * or a rewrite's throw as it was thrown. A Profile note preview renders
- * synchronously. An event subscription ends at unload.
+ * or a rewrite's throw as it was thrown. An event subscription ends at
+ * unload.
  */
 export function bindNoteFeature(
-  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">,
+  bridge: Pick<EffectBridge, "runPromise" | "subscribe">,
   service: NoteFeature["Service"],
   edges: NoteCitations & NoteCreation,
 ): NoteFeatureHandle {
@@ -38,10 +38,6 @@ export function bindNoteFeature(
       run(service.resolveCompanionNote(indexedKey, options)),
     resolveCreationProfile: (sources) =>
       run(service.resolveCreationProfile(sources)),
-    prepareProfileNote: (options) => {
-      const preview = bridge.runSync(service.prepareProfileNote(options));
-      return { ...preview, create: () => run(preview.create) };
-    },
     getImportedNotesForItem: (indexedKey) =>
       run(service.getImportedNotesForItem(indexedKey)),
     on: (event, cb) =>
