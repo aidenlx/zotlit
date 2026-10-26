@@ -1,3 +1,4 @@
+import { DateTime } from "effect";
 import { describe, expect, it } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -20,11 +21,11 @@ const NEEDS_AUTH = { kind: "authorization-required" } as const;
 
 /** A clock the test moves by hand, so nothing waits on real time. */
 function clock(start = "2026-09-17T10:00:00Z") {
-  let now = Temporal.Instant.from(start);
+  let now = DateTime.makeUnsafe(start);
   return {
     read: () => now,
     advance: (seconds: number) => {
-      now = now.add({ seconds });
+      now = DateTime.add(now, { seconds });
     },
     get instant() {
       return now;
@@ -33,7 +34,7 @@ function clock(start = "2026-09-17T10:00:00Z") {
 }
 
 /** What the copy table says for a capability, as the notice should read it. */
-function copyOf(capability: EditingCapability, now: Temporal.Instant) {
+function copyOf(capability: EditingCapability, now: DateTime.Utc) {
   const { label, detail } = editingCapabilityCopy(capability, now);
   return { label, detail };
 }
@@ -41,7 +42,7 @@ function copyOf(capability: EditingCapability, now: Temporal.Instant) {
 /** The lines a rollback notice carries: the state, then what to do about it. */
 function readOnlyLines(
   reason: Extract<EditingCapability, { kind: "read-only" }>["reason"],
-  now: Temporal.Instant,
+  now: DateTime.Utc,
 ): string[] {
   const { label, detail } = copyOf({ kind: "read-only", reason }, now);
   return detail === null ? [label] : [label, detail];
