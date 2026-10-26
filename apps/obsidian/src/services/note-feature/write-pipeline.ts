@@ -19,7 +19,7 @@ import { processLiveText } from "@/lib/effect-live-text";
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag } from "@/lib/effect-stream";
 import { parseFrontMatter, spliceFrontMatter } from "@/lib/live-text";
-import { FileManager } from "@/lib/obsidian-file-manager";
+import { FileManager, markdownLinker } from "@/lib/obsidian-file-manager";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
@@ -162,12 +162,19 @@ const withReads = <A, E, R>(
  * Zotero data directory as it stands now.
  */
 const noteResolvers = Effect.fnUntraced(function* (
-  options: Omit<Parameters<typeof buildNoteResolvers>[1], "zoteroPref">,
+  options: Omit<
+    Parameters<typeof buildNoteResolvers>[1],
+    "zoteroPref" | "link"
+  >,
 ) {
   const { dataDir, baseAttachmentPath } = yield* (yield* ZoteroPref).current;
   return buildNoteResolvers(
     Effect.runSyncWith(yield* Effect.context<NoteResolverServices>()),
-    { ...options, zoteroPref: { dataDir, baseAttachmentPath } },
+    {
+      ...options,
+      zoteroPref: { dataDir, baseAttachmentPath },
+      link: yield* markdownLinker,
+    },
   );
 });
 

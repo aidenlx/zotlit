@@ -18,7 +18,7 @@ import { buildAnnotationResolvers } from "@/lib/annotation-render";
 import { withLogCategory } from "@/lib/effect-log";
 import { creatorSummary } from "@/lib/item-summary";
 import { syntheticFile } from "@/lib/markdown-link";
-import { FileManager } from "@/lib/obsidian-file-manager";
+import type { MarkdownLinker } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
 import type { AttachmentImportBatch } from "@/services/attachment-import/service";
 import type { PreparedExcerpts } from "@/services/excerpt-image/prepare";
@@ -34,7 +34,7 @@ import { baseNoteName } from "./filename";
 const logged = withLogCategory("note-feature");
 
 /** The services the note resolvers read during a render. */
-export type NoteResolverServices = FileManager | NoteIndex | Template | Vault;
+export type NoteResolverServices = NoteIndex | Template | Vault;
 
 /**
  * Runs one resolver read synchronously, inside the template render that
@@ -86,6 +86,8 @@ export function buildNoteResolvers(
     sourcePath: string;
     zoteroPref: AttachmentPathContext;
     excerptImages?: PreparedExcerpts;
+    /** The render's link call. */
+    link: MarkdownLinker;
   },
 ): NoteResolvers {
   const resolvingFallback = new Set<string>();
@@ -103,12 +105,7 @@ export function buildNoteResolvers(
     );
   const generateMarkdownLink = (
     ...[file, sourcePath, subpath, alias]: [TFile, string, string?, string?]
-  ) =>
-    run(
-      Effect.flatMap(FileManager, (fileManager) =>
-        fileManager.generateMarkdownLink(file, sourcePath, { subpath, alias }),
-      ),
-    );
+  ) => options.link(file, sourcePath, { subpath, alias });
 
   return {
     annotation: buildAnnotationResolvers({

@@ -41,7 +41,7 @@ import { fileUrlLink, syntheticFile } from "@/lib/markdown-link";
 import { DeviceStorage } from "@/lib/obsidian-device-storage";
 import type { DeviceStorageError } from "@/lib/obsidian-device-storage";
 import { ObsidianEnv } from "@/lib/obsidian-env";
-import { FileManager } from "@/lib/obsidian-file-manager";
+import { FileManager, markdownLinker } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
 import type { VaultError, VaultFolderBlockedError } from "@/lib/vault-errors";
 import { ensureVaultFolder } from "@/lib/vault-folder";
@@ -256,9 +256,7 @@ export const layerAttachmentImport = (
         saveApprovedFolders(folders).pipe(
           Effect.provideService(DeviceStorage, storage),
         );
-      // A render links synchronously, so it reads the file manager through
-      // this runner: the template-render edge.
-      const runSync = Effect.runSyncWith(yield* Effect.context<never>());
+      const link = yield* markdownLinker;
 
       // Obsidian's device store catches its own errors, so a failure here is
       // a defect, and the layer fails with it.
@@ -471,12 +469,10 @@ export const layerAttachmentImport = (
                   dest: absoluteVaultPath(basePath, vaultPath, folderPath),
                 });
               }
-              return runSync(
-                fileManager.generateMarkdownLink(file, notePath, {
-                  ...(subpath === undefined ? {} : { subpath }),
-                  ...(alias === undefined ? {} : { alias }),
-                }),
-              );
+              return link(file, notePath, {
+                ...(subpath === undefined ? {} : { subpath }),
+                ...(alias === undefined ? {} : { alias }),
+              });
             };
           },
           flush: Effect.gen(function* () {
