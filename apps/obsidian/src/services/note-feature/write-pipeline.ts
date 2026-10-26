@@ -41,7 +41,7 @@ import {
   noteKeyFromFrontmatter,
 } from "@/services/note-index/service";
 import { noteProfileSelector } from "@/services/profile/bindings";
-import type { NoteProfile, ResolvedProfile } from "@/services/profile/bindings";
+import type { ResolvedProfile } from "@/services/profile/bindings";
 import { relocatedNotePath } from "@/services/profile/relocation";
 import type { Settings } from "@/services/settings/schema";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
@@ -66,6 +66,11 @@ import {
 } from "./diagnostics";
 import { prepareManagedFrontmatter } from "./frontmatter";
 import type { PreparedManagedFrontmatter } from "./frontmatter";
+import {
+  readItem,
+  relocationSource,
+  resolveProfileDocument,
+} from "./note-reads";
 import type {
   CreateNoteInternalOptions,
   CreateNoteResult,
@@ -328,11 +333,6 @@ async function updateNote(
     beforeWrite: options.beforeWrite,
     excerptImages,
   });
-}
-
-/** The Profile a note moves from: none for an unresolved Profile stamp. */
-function relocationSource(current: NoteProfile): ResolvedProfile | undefined {
-  return current.ok ? current.profile : undefined;
 }
 
 const NO_KEYS: ReadonlySet<string> = new Set();
@@ -870,17 +870,6 @@ async function contextForIndexedKey(
   return { context, excerptImages };
 }
 
-/** The live Item an Indexed Key names, or `undefined` when none does. */
-async function readItem(
-  reads: ZoteroReadsApi,
-  indexedKey: string,
-): Promise<Item | undefined> {
-  const items = await Effect.runPromise(
-    reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
-  );
-  return items.values().next().value;
-}
-
 /**
  * The {@link NoteSource} of an item, or `null` for an unknown item. An omitted
  * `username` reads the signed-in account.
@@ -993,22 +982,11 @@ function conversionRequired(
   );
 }
 
-function resolveProfileDocument(
-  ctx: NoteFeatureDeps,
-  profile: ResolvedProfile,
-): ResolvedLiteratureNoteTemplate | undefined | null {
-  if (profile.document === undefined) return undefined;
-  return ctx.template.getLiteratureNoteTemplate(profile.document) ?? null;
-}
-
 export {
   createNote,
   getImportedNotesForItem,
   overwriteNote,
-  readItem,
-  relocationSource,
   replacedKeys,
-  resolveProfileDocument,
   switchNoteProfile,
   updateNote,
   writeNoteUpdate,

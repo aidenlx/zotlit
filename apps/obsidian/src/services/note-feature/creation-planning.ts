@@ -28,6 +28,11 @@ import {
 } from "./context";
 import type { NoteFeatureDeps } from "./context";
 import { prepareManagedFrontmatter } from "./frontmatter";
+import {
+  readItem,
+  relocationSource,
+  resolveProfileDocument,
+} from "./note-reads";
 import type {
   CompanionNoteTarget,
   CreateNoteInternalOptions,
@@ -44,12 +49,7 @@ import type {
   ProfileNotePreviewOptions,
   ProfilePreview,
 } from "./types";
-import {
-  getImportedNotesForItem,
-  readItem,
-  relocationSource,
-  resolveProfileDocument,
-} from "./write-pipeline";
+import { getImportedNotesForItem } from "./write-pipeline";
 
 const logger = getLogger("note-feature");
 

@@ -375,6 +375,7 @@ export default defineConfig({
         "src/services/excerpt-image/request.ts",
         "src/services/note-feature/annotation-citation.ts",
         "src/services/note-feature/creation-planning.ts",
+        "src/services/note-feature/note-reads.ts",
         "src/services/note-feature/write-pipeline.ts",
         "src/services/profile/service.ts",
         "src/views/annot-view/view.tsx",
