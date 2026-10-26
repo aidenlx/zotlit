@@ -72,6 +72,7 @@ import { createNoteFeature } from "./note-feature";
 import type { NoteFeature } from "./note-feature";
 import { bindBatchUpdate } from "./note-feature/batch-update-handle";
 import type { BatchUpdateServices } from "./note-feature/update-batch";
+import { batchUpdateNotices } from "./note-feature/update-single";
 import type { BatchImportServices } from "./note-import/batch-import";
 import { bindBatchImport } from "./note-import/batch-import-handle";
 import type { NoteImportPorts } from "./note-import/service";
@@ -490,7 +491,11 @@ export async function buildServices(
         bindBatchUpdate(
           bridge,
           runtime.runSync(Effect.context<BatchUpdateServices>()),
-          { app: plugin.app, view: noteImportView, noteFeature },
+          {
+            notices: batchUpdateNotices(plugin.app),
+            view: noteImportView,
+            noteFeature,
+          },
         ),
     })
     .useValue({

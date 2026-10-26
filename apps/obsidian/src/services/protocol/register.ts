@@ -67,7 +67,10 @@ import type {
   BatchUpdateResult,
   BatchUpdateServices,
 } from "@/services/note-feature/update-batch";
-import { noteOperationDiagnosticNotice } from "@/services/note-feature/update-single";
+import {
+  batchUpdateNotices,
+  noteOperationDiagnosticNotice,
+} from "@/services/note-feature/update-single";
 import {
   runBatchImport,
   runBatchImportAll,
@@ -247,7 +250,7 @@ function importPorts(deps: ProtocolDeps): BatchImportPorts {
 /** The ports a note update takes, from the handlers' legacy values. */
 function updatePorts(deps: ProtocolDeps): BatchUpdatePorts {
   return {
-    app: deps.app,
+    notices: batchUpdateNotices(deps.app),
     view: deps.noteImportView,
     noteFeature: deps.noteFeature,
     bridge: deps.bridge,

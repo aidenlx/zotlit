@@ -1,19 +1,18 @@
 import { Effect, Predicate, Schema } from "effect";
-import type { App, TFile } from "obsidian";
+import type { TFile } from "obsidian";
 
 import type { ItemRef } from "@zotlit/db";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import { LegacyPortError, portCall } from "@/lib/legacy-port";
+import { portCall } from "@/lib/legacy-port";
 import { Notifier } from "@/lib/notifier";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Workspace } from "@/lib/obsidian-workspace";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { DEFAULT_PROFILE, unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
-import { missingPartialNotice } from "@/lib/workbench-recovery";
 import { batchProfileSummary } from "@/services/batch-profile-summary";
 import type { BatchProfileCount } from "@/services/batch-profile-summary";
 import {
@@ -77,11 +76,10 @@ import {
 } from "./selection-copy";
 import {
   createNoteNotice,
-  createNoteWithToast,
   duplicateLiteratureNoteWarning,
   noteOperationDiagnosticNotice,
-  updateNoteToast,
 } from "./update-single";
+import type { BatchUpdateNotices } from "./update-single";
 
 const logged = withLogCategory("batch-update");
 
@@ -102,12 +100,12 @@ export type BatchUpdateServices =
 
 /**
  * The legacy values a note update calls: Note Feature's note writes, the UI
- * port for the batch modal and the Profile picker, the `App` the notices
- * build their recovery actions on, and the bridge the modal's callbacks enter
- * Effect through. Note Feature converts in a later slice.
+ * port for the batch modal and the Profile picker, the notices the caller
+ * builds, and the bridge the modal's callbacks enter Effect through. Note
+ * Feature converts in a later slice.
  */
 export interface BatchUpdatePorts {
-  readonly app: App;
+  readonly notices: BatchUpdateNotices;
   readonly bridge: Pick<EffectBridge, "runPromiseExit">;
   readonly view: Pick<NoteImportView, "openBatchModal" | "chooseProfile">;
   readonly noteFeature: Pick<
@@ -201,7 +199,7 @@ export interface BatchUpdateOptions {
 }
 
 /** `value` as a {@link BatchUpdateResult}, so each branch returns one type. */
-const result = (value: BatchUpdateResult): BatchUpdateResult => value;
+const updateResult = (value: BatchUpdateResult): BatchUpdateResult => value;
 
 /** Whether the database answers reads now. */
 const databaseReady = Effect.gen(function* () {
@@ -244,12 +242,12 @@ export const runBatchUpdate = Effect.fn("runBatchUpdate")(function* (
       Effect.annotateLogs({ count: itemIDs.length }),
       logged,
     );
-    return result({ outcome: "db-unavailable" });
+    return updateResult({ outcome: "db-unavailable" });
   }
 
   const [firstID, ...restIDs] = itemIDs;
   if (firstID === undefined) {
-    return result({ outcome: "empty-selection" });
+    return updateResult({ outcome: "empty-selection" });
   }
 
   yield* (yield* NoteIndex).whenIndexed;
@@ -268,10 +266,10 @@ export const runBatchUpdate = Effect.fn("runBatchUpdate")(function* (
     // item load on the create path — no need to hydrate it here.
     const ref = yield* displayRef(firstID);
     if (!ref) {
-      return result({ outcome: "not-found" });
+      return updateResult({ outcome: "not-found" });
     }
     yield* updateNote(ports, ref, { scope, profile });
-    return result({ outcome: "single-update" });
+    return updateResult({ outcome: "single-update" });
   }
 
   yield* openBatchUpdateModal(ports, itemIDs, {
@@ -280,7 +278,7 @@ export const runBatchUpdate = Effect.fn("runBatchUpdate")(function* (
     profile,
     profilesEnabled,
   });
-  return result({ outcome: "batch-modal" });
+  return updateResult({ outcome: "batch-modal" });
 });
 
 /**
@@ -321,7 +319,7 @@ const updateNote = Effect.fnUntraced(function* (
         scope,
         profile,
       }),
-      updateNoteToast(scope, { app: ports.app }),
+      ports.notices.updateToast(scope),
     ),
   );
 });
@@ -340,7 +338,9 @@ const createAndOpen = Effect.fnUntraced(function* (
   if (!item) return;
 
   const file = yield* Effect.promise(() =>
-    createNoteWithToast(ports.noteFeature, item, { profile, app: ports.app }),
+    ports.notices.createWithToast(() =>
+      ports.noteFeature.createNote(item, { profile }),
+    ),
   );
   if (!file) return;
   yield* (yield* Workspace).openLinkText(file.path, "", {
@@ -541,17 +541,7 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
         title: m.batch_update_title(),
         loadingLabel: m.batch_update_loading_label(),
         loadFailed: m.batch_update_load_failed(),
-        runFailed: (error) => {
-          // The plain modal shell hands back what the run failed with; a
-          // Note Feature rejection arrives as the port error around it.
-          const cause = error instanceof LegacyPortError ? error.cause : error;
-          return (
-            missingPartialNotice(cause, { app: ports.app }) ??
-            (cause instanceof InertTemplateError
-              ? cause.message
-              : m.batch_update_run_failed())
-          );
-        },
+        runFailed: ports.notices.runFailed,
         progressLabel: m.batch_update_progress_label(),
         confirmIntro: ({ actionable, notFound }) =>
           withUnavailableLibraries(
@@ -1056,14 +1046,15 @@ export const runBatchUpdateAll = Effect.fn("runBatchUpdateAll")(function* (
     yield* Effect.logWarning("Batch update all: database not ready").pipe(
       logged,
     );
-    return result({ outcome: "db-unavailable" });
+    return updateResult({ outcome: "db-unavailable" });
   }
 
   const plan = yield* planBatchScope("literature-items", target);
-  if (plan.outcome !== "resolved") return result({ outcome: plan.outcome });
+  if (plan.outcome !== "resolved")
+    return updateResult({ outcome: plan.outcome });
 
   if (plan.itemIDs.length === 0) {
-    return result({ outcome: "empty-selection" });
+    return updateResult({ outcome: "empty-selection" });
   }
   return yield* runBatchUpdate(ports, plan.itemIDs, {
     unavailableLibraries: plan.unavailableLibraries,

@@ -40,6 +40,7 @@ import type {
 } from "@/services/library-scope/scope";
 import { selectorOf } from "@/services/library-scope/scope";
 import { LibraryScope } from "@/services/library-scope/service";
+import { batchUpdateNotices } from "@/services/note-feature/update-single";
 import type { NoteImportView } from "@/services/note-import/view";
 import { NoteIndex } from "@/services/note-index/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
@@ -340,7 +341,7 @@ function portsOf(
   bridge: BatchUpdatePorts["bridge"],
 ): BatchUpdatePorts {
   return {
-    app: stubService<App>("App", {}),
+    notices: batchUpdateNotices(stubService<App>("App", {})),
     bridge,
     view: {
       openBatchModal: (options) => {
@@ -727,7 +728,7 @@ describe("one item without additional Profiles", () => {
         const createNote =
           vi.fn<BatchUpdatePorts["noteFeature"]["createNote"]>();
         const ports: BatchUpdatePorts = {
-          app: stubService<App>("App", {}),
+          notices: batchUpdateNotices(stubService<App>("App", {})),
           // The single-update path opens no batch modal.
           bridge: stubService<BatchUpdatePorts["bridge"]>("EffectBridge", {}),
           view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {}),
@@ -763,7 +764,7 @@ describe("one item without additional Profiles", () => {
         },
       );
       const ports: BatchUpdatePorts = {
-        app: stubService<App>("App", {}),
+        notices: batchUpdateNotices(stubService<App>("App", {})),
         // The single-update path opens no batch modal.
         bridge: stubService<BatchUpdatePorts["bridge"]>("EffectBridge", {}),
         view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {}),
@@ -803,7 +804,7 @@ describe("one item without additional Profiles", () => {
         async () => ({ outcome: "created", file: noteAt("Literature/New.md") }),
       );
       const ports: BatchUpdatePorts = {
-        app: stubService<App>("App", {}),
+        notices: batchUpdateNotices(stubService<App>("App", {})),
         // The single-update path opens no batch modal.
         bridge: stubService<BatchUpdatePorts["bridge"]>("EffectBridge", {}),
         view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {}),

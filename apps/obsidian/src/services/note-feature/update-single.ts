@@ -3,6 +3,7 @@ import type { App, TFile } from "obsidian";
 import type { Item } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { LegacyPortError } from "@/lib/legacy-port";
 import { BaseNotice } from "@/lib/notice";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
 import type { ProfileSelector } from "@/lib/profile-stamp";
@@ -76,6 +77,46 @@ export async function createNoteWithToast(
     () => noteFeature.createNote(item, { profile: options.profile }),
     { app: options.app },
   );
+}
+
+/**
+ * The notices a note update shows. The caller builds them over the `App` that
+ * their recovery actions open, so the update itself holds no `App`.
+ */
+export interface BatchUpdateNotices {
+  /** The single update's toast copy for `scope`. */
+  readonly updateToast: (
+    scope: UpdateScope,
+  ) => ReturnType<typeof updateNoteToast>;
+  /**
+   * Run one note create behind the standard create toast. Resolves with the
+   * created file, or `null` when the create wrote nothing; the toast already
+   * told the user.
+   */
+  readonly createWithToast: (
+    create: () => Promise<CreateNoteResult>,
+  ) => Promise<TFile | null>;
+  /** The batch modal's notice when its run fails. */
+  readonly runFailed: (error: unknown) => string | DocumentFragment;
+}
+
+/** The note update's notices, with recovery actions that open in `app`. */
+export function batchUpdateNotices(app: App): BatchUpdateNotices {
+  return {
+    updateToast: (scope) => updateNoteToast(scope, { app }),
+    createWithToast: (create) => createNoteTaskWithToast(create, { app }),
+    runFailed: (error) => {
+      // The modal hands back what the run failed with; a Note Feature
+      // rejection arrives as the port error around it.
+      const cause = error instanceof LegacyPortError ? error.cause : error;
+      return (
+        missingPartialNotice(cause, { app }) ??
+        (cause instanceof InertTemplateError
+          ? cause.message
+          : m.batch_update_run_failed())
+      );
+    },
+  };
 }
 
 /**
