@@ -1,7 +1,9 @@
-import { DateTime, Deferred, Effect, Exit, Stream } from "effect";
+import { it } from "@effect/vitest";
+import { DateTime, Deferred, Effect, Exit, Layer, Stream } from "effect";
+import type { ManagedRuntime } from "effect";
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, vi } from "vitest";
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
 import type { Item, Library } from "@zotlit/db";
@@ -9,12 +11,14 @@ import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import { Workspace } from "@/lib/obsidian-workspace";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
-import { batchScopeOver } from "@/services/__fixtures__/batch-scope";
-import { chooseBatchProfile } from "@/services/batch-profile-choice";
 import { excerptReuseProbe } from "@/services/excerpt-image/__fixtures__/reuse";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type {
@@ -23,12 +27,21 @@ import type {
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 import { selectorOf } from "@/services/library-scope/scope";
+import { LibraryScope } from "@/services/library-scope/service";
+import type { NoteImportView } from "@/services/note-import/view";
+import { NoteIndex } from "@/services/note-index/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
+import { Profile } from "@/services/profile/service";
+import type { ProfileReader } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
+import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
+import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsState } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
-  withState,
   recordCalls,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
@@ -48,31 +61,25 @@ import type {
 import {
   batchCreateOutcome,
   BatchCreateRefusedError,
-  runBatchUpdateAll,
-  runBatchUpdate,
+  runBatchUpdate as runBatchUpdateEffect,
+  runBatchUpdateAll as runBatchUpdateAllEffect,
 } from "./update-batch";
-import type { BatchUpdateResult, BatchUpdateDeps } from "./update-batch";
-import type { SingleUpdateDeps } from "./update-single";
+import type {
+  BatchUpdateOptions,
+  BatchUpdatePorts,
+  BatchUpdateResult,
+  BatchUpdateServices,
+} from "./update-batch";
 
-vi.mock("@/services/batch-profile-choice", () => ({
-  chooseBatchProfile: vi.fn(),
-}));
-
-/** Captured options of every batch modal the runner opened. */
+/** Captured options of every batch modal the runner opened via its view port. */
 const openedModals: BatchModalOptions[] = [];
+/** The view port's Profile picker; controlled per Profile-choice test. */
+const chooseProfile = vi.fn<NoteImportView["chooseProfile"]>();
 
-// Stub the DOM-bound modal so the runner's scope resolution can be driven
-// headlessly; classification runs inside the modal, which never opens here.
+// Stub only the DOM-bound manifest so classify/run drive the real batch-run
+// mechanics headlessly; classification runs inside the modal, which never
+// opens here.
 vi.mock("@/views/batch-modal", () => {
-  class BatchModal {
-    constructor(
-      _app: unknown,
-      readonly options: BatchModalOptions,
-    ) {
-      openedModals.push(options);
-    }
-    open(): void {}
-  }
   class FlatManifest {
     constructor(readonly options: any) {}
     get counts() {
@@ -82,7 +89,7 @@ vi.mock("@/views/batch-modal", () => {
       };
     }
   }
-  return { BatchModal, FlatManifest };
+  return { FlatManifest };
 });
 
 const COLLECTION = "ABCD2345";
@@ -222,30 +229,42 @@ function collectionHolds(libraryID: number, itemIDs: readonly number[]): void {
 /** {@link db} and the read services the current case opened over it. */
 let caseResources: AsyncDisposableStack;
 
+/**
+ * The values a case sets: the plugin services' answers, which the runtime
+ * reads from here at the time of each call, and Note Feature's note writes.
+ */
+interface UpdateDeps {
+  profile: ProfileReader;
+  zoteroReads: TestReads;
+  dbState: ZoteroReadsState["state"];
+  settings: Pick<PluginSettings["Service"], "current" | "update">;
+  noteFeature: BatchUpdatePorts["noteFeature"];
+  noteIndex: {
+    whenIndexed(): Promise<void>;
+    getNotesByItemKey(indexedKey: string): TFile[];
+  };
+  /** The plugin services the runners read, answering from these values. */
+  runtime: ManagedRuntime.ManagedRuntime<BatchUpdateServices, never>;
+}
+
 function makeDeps(
   dbState: "loading" | "ready" = "ready",
   wrap: (client: ZoteroReadsClient) => ZoteroReadsClient = (client) => client,
-): BatchUpdateDeps {
-  const client = db;
-  const zoteroReads = withState(
-    caseResources.use(
-      inProcessReadsService(sharedClientOpener(client), {
-        wrap: (reads) => wrap(itemsAtInterface(reads)),
-      }),
-    ),
-    dbState,
+): UpdateDeps {
+  const zoteroReads = caseResources.use(
+    inProcessReadsService(sharedClientOpener(db), {
+      wrap: (reads) => wrap(itemsAtInterface(reads)),
+    }),
   );
-  return {
+  const deps: UpdateDeps = {
     profile: profileReader(),
-    app: stubService<App>("App", {}),
     zoteroReads,
-    settings: stubService<SingleUpdateDeps["settings"]>("PluginSettings", {
+    dbState,
+    settings: {
       current: Effect.succeed(defaults),
       update: () => Effect.succeed(defaults),
-    }),
-    bridge: { runSync: Effect.runSync },
-    batchScope: batchScopeOver(zoteroReads, () => currentScope, caseResources),
-    noteFeature: stubService<SingleUpdateDeps["noteFeature"]>("NoteFeature", {
+    },
+    noteFeature: stubService<UpdateDeps["noteFeature"]>("NoteFeature", {
       ready: Promise.resolve(),
       reportExcerptImages: vi.fn(),
       planCreations: async (keys: readonly string[]) =>
@@ -254,14 +273,83 @@ function makeDeps(
           previews: [],
         })),
     }),
-    createProfile: vi.fn(),
-    importProfile: vi.fn(),
-    zoteroPref: { dataDir: "" },
-    noteIndex: stubService<SingleUpdateDeps["noteIndex"]>("NoteIndex", {
+    noteIndex: {
       whenIndexed: async () => {},
       getNotesByItemKey: () => [],
-    }),
+    },
+    runtime: buildRuntime(
+      Layer.mergeAll(
+        Layer.mock(LibraryScope, {
+          resolveLibraries: () => Effect.sync(() => currentScope),
+        }),
+        // Only the one-item path reads them, and no case here reaches it.
+        Layer.mock(MetadataCache, {}),
+        Layer.mock(Workspace, {}),
+        Layer.mock(NoteIndex, {
+          whenIndexed: Effect.promise(() => deps.noteIndex.whenIndexed()),
+          getNotesByItemKey: (indexedKey) =>
+            Effect.sync(() => deps.noteIndex.getNotesByItemKey(indexedKey)),
+        }),
+        testNotifier().layer,
+        Layer.mock(PluginSettings, {
+          current: Effect.suspend(() => deps.settings.current),
+          update: (patch) => deps.settings.update(patch),
+        }),
+        Layer.mock(Profile, {
+          profiles: Effect.sync(() => deps.profile.profiles),
+          resolveProfile: (selector) =>
+            Effect.sync(() => deps.profile.resolveProfile(selector)),
+          profileOf: (file) => Effect.sync(() => deps.profile.profileOf(file)),
+        }),
+        Layer.mock(ZoteroReads, {
+          current: Effect.sync(() =>
+            stubService<ZoteroReadsState>("ZoteroReadsState", {
+              state: deps.dbState,
+            }),
+          ),
+          reads: zoteroReads.reads,
+          snapshot: zoteroReads.snapshot,
+        }),
+      ),
+      caseResources,
+    ),
   };
+  return deps;
+}
+
+/** The ports a case's runs take: its Note Feature and the view port fakes. */
+function portsOf(deps: UpdateDeps): BatchUpdatePorts {
+  return {
+    app: stubService<App>("App", {}),
+    view: {
+      openBatchModal: (options) => {
+        openedModals.push(options);
+      },
+      chooseProfile,
+    },
+    noteFeature: deps.noteFeature,
+  };
+}
+
+/** {@link runBatchUpdateEffect} on the case's services, through a Promise. */
+function runBatchUpdate(
+  deps: UpdateDeps,
+  itemIDs: readonly number[],
+  options?: BatchUpdateOptions,
+): Promise<BatchUpdateResult> {
+  return deps.runtime.runPromise(
+    runBatchUpdateEffect(portsOf(deps), itemIDs, options),
+  );
+}
+
+/** {@link runBatchUpdateAllEffect} on the case's services, through a Promise. */
+function runBatchUpdateAll(
+  deps: UpdateDeps,
+  target?: Parameters<typeof runBatchUpdateAllEffect>[1],
+): Promise<BatchUpdateResult> {
+  return deps.runtime.runPromise(
+    runBatchUpdateAllEffect(portsOf(deps), target),
+  );
 }
 
 /** Drive the last opened modal's loading phase and return its manifest options. */
@@ -288,6 +376,7 @@ async function classifyLastModal(): Promise<{
 
 beforeEach(() => {
   openedModals.length = 0;
+  chooseProfile.mockReset();
   currentScope = scopeOf([PERSONAL_LIBRARY]);
   caseResources = new AsyncDisposableStack();
   db = caseResources.adopt(seedDatabase(), (client) => client.$client.close());
@@ -317,7 +406,7 @@ describe("classify through the DisplayRefs stream", () => {
     const deps = makeDeps("ready", recorded.wrap);
     deps.noteFeature.createNote = async (item, options) => {
       // The create renders through the reads it was handed.
-      await Effect.runPromise(
+      await deps.runtime.runPromise(
         options!.reads!.ItemsByIndexedKeys({ indexedKeys: [item.indexedKey] }),
       );
       return {
@@ -406,26 +495,146 @@ describe("classify through the DisplayRefs stream", () => {
 });
 
 describe("batchCreateOutcome", () => {
-  it("preserves a create refusal as a failed-row error with its diagnostic", () => {
-    const refusal: Extract<CreateNoteResult, { outcome: "refused" }> = {
-      outcome: "refused",
-      diagnostic: {
-        code: "duplicate-literature-notes",
-        hint: "Resolve the duplicate Literature Notes, then run create again.",
-        indexedKey: "ABCD1234",
-        paths: ["Literature/Newer.md", "Archive/Older.md"],
-      },
-    };
+  it.effect(
+    "preserves a create refusal as a failed-row error with its diagnostic",
+    () =>
+      Effect.gen(function* () {
+        const refusal: Extract<CreateNoteResult, { outcome: "refused" }> = {
+          outcome: "refused",
+          diagnostic: {
+            code: "duplicate-literature-notes",
+            hint: "Resolve the duplicate Literature Notes, then run create again.",
+            indexedKey: "ABCD1234",
+            paths: ["Literature/Newer.md", "Archive/Older.md"],
+          },
+        };
 
-    expect(() => batchCreateOutcome(refusal)).toThrow(BatchCreateRefusedError);
-    expect(() => batchCreateOutcome(refusal)).toThrow(
-      expect.objectContaining({
-        message:
-          "Multiple literature notes use this Zotero key: Literature/Newer.md, Archive/Older.md; resolve the duplicates before you create another note.",
-        diagnostic: refusal.diagnostic,
+        const error = yield* Effect.flip(batchCreateOutcome(refusal));
+
+        expect(error).toBeInstanceOf(BatchCreateRefusedError);
+        expect(error).toMatchObject({
+          message:
+            "Multiple literature notes use this Zotero key: Literature/Newer.md, Archive/Older.md; resolve the duplicates before you create another note.",
+          diagnostic: refusal.diagnostic,
+        });
+      }),
+  );
+});
+
+describe("one item without additional Profiles", () => {
+  const REF = {
+    itemID: 1,
+    libraryID: USER_LIBRARY_ID,
+    key: "ITEM1",
+    groupID: null,
+    indexedKey: "ITEM1",
+    title: "Item 1",
+  };
+
+  /**
+   * The services the one-item path reads, over an Item `ITEM1` with no
+   * Literature Note; `notifier` records the notices.
+   */
+  function oneItemServices(notifier: ReturnType<typeof testNotifier>) {
+    const opened: string[] = [];
+    const reads = readsAnswering({
+      DisplayRefs: () => Stream.make([{ itemID: 1, ref: REF }]),
+      ItemsByIndexedKeys: ({ indexedKeys }) =>
+        Effect.succeed(
+          new Map(
+            indexedKeys.map((indexedKey) => [
+              indexedKey,
+              stubService<Item>("Item", { itemID: 1, indexedKey }),
+            ]),
+          ),
+        ),
+    });
+    const layer = Layer.mergeAll(
+      Layer.mock(LibraryScope, {}),
+      Layer.mock(MetadataCache, {}),
+      Layer.mock(Workspace, {
+        openLinkText: (path) => Effect.sync(() => void opened.push(path)),
+      }),
+      Layer.mock(NoteIndex, {
+        whenIndexed: Effect.void,
+        getNotesByItemKey: () => Effect.succeed([]),
+      }),
+      notifier.layer,
+      Layer.mock(PluginSettings, {}),
+      Layer.mock(Profile, {
+        profiles: Effect.succeed([]),
+      }),
+      Layer.mock(ZoteroReads, {
+        current: Effect.succeed(
+          stubService<ZoteroReadsState>("ZoteroReadsState", {
+            state: "ready",
+          }),
+        ),
+        reads,
+        snapshot: Effect.succeed(reads),
       }),
     );
-  });
+    return { layer, opened };
+  }
+
+  it.effect(
+    "never creates when the metadata scope finds no literature note",
+    () =>
+      Effect.gen(function* () {
+        const notifier = testNotifier();
+        const { layer, opened } = oneItemServices(notifier);
+        const createNote =
+          vi.fn<BatchUpdatePorts["noteFeature"]["createNote"]>();
+        const ports: BatchUpdatePorts = {
+          app: stubService<App>("App", {}),
+          view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {}),
+          noteFeature: stubService<BatchUpdatePorts["noteFeature"]>(
+            "NoteFeature",
+            { createNote },
+          ),
+        };
+
+        const result = yield* runBatchUpdateEffect(ports, [1], {
+          scope: "metadata",
+        }).pipe(Effect.provide(layer));
+
+        expect(result).toEqual({ outcome: "single-update" });
+        expect(createNote).not.toHaveBeenCalled();
+        expect(opened).toEqual([]);
+        expect(
+          notifier.notices.map(({ messages: [message] }) => message),
+        ).toEqual([m.notice_update_metadata_no_note()]);
+      }),
+  );
+
+  it.effect("creates and opens a note when the full scope finds none", () =>
+    Effect.gen(function* () {
+      const notifier = testNotifier();
+      const { layer, opened } = oneItemServices(notifier);
+      const createNote = vi.fn<BatchUpdatePorts["noteFeature"]["createNote"]>(
+        async () => ({ outcome: "created", file: noteAt("Literature/New.md") }),
+      );
+      const ports: BatchUpdatePorts = {
+        app: stubService<App>("App", {}),
+        view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {}),
+        noteFeature: stubService<BatchUpdatePorts["noteFeature"]>(
+          "NoteFeature",
+          { createNote },
+        ),
+      };
+
+      const result = yield* runBatchUpdateEffect(ports, [1], {
+        scope: "full",
+      }).pipe(Effect.provide(layer));
+
+      expect(result).toEqual({ outcome: "single-update" });
+      expect(createNote).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ indexedKey: "ITEM1" }),
+        { profile: undefined },
+      );
+      expect(opened).toEqual(["Literature/New.md"]);
+    }),
+  );
 });
 
 it.each([false, true])(
@@ -621,7 +830,7 @@ it("classifies conflicting Companion Profiles as kept rows before any write or p
       [3, USER_LIBRARY_ID],
     ]),
   );
-  vi.mocked(chooseBatchProfile).mockClear();
+  chooseProfile.mockClear();
   await runBatchUpdate(deps, [1, 2, 3], { profile: books });
   const modal = openedModals.at(-1)!;
   const manifest = (await modal.onClassify({
@@ -643,7 +852,7 @@ it("classifies conflicting Companion Profiles as kept rows before any write or p
     },
   ]);
   expect(manifest.counts.actionable).toBe(2);
-  expect(chooseBatchProfile).not.toHaveBeenCalled();
+  expect(chooseProfile).not.toHaveBeenCalled();
   expect(create).not.toHaveBeenCalled();
   expect(settingsUpdate).not.toHaveBeenCalled();
   // Every row carries the Companion's Profile, so the only control is the
@@ -656,7 +865,7 @@ it("classifies conflicting Companion Profiles as kept rows before any write or p
     source: "headless",
     count: 1,
   });
-  vi.mocked(chooseBatchProfile)
+  chooseProfile
     .mockResolvedValueOnce(undefined)
     .mockResolvedValueOnce("default");
   await choice.choose();
@@ -859,11 +1068,11 @@ function mixedBatch() {
   deps.noteIndex.getNotesByItemKey = (key) =>
     key in notes ? [noteAt(notes[key]!)] : [];
   itemsIn(new Map([1, 2, 3, 4, 5, 6, 7, 8].map((id) => [id, USER_LIBRARY_ID])));
-  vi.mocked(chooseBatchProfile).mockReset();
+  chooseProfile.mockReset();
   return { deps, planCreations, created, updated, selections };
 }
 
-async function classifyMixedBatch(deps: BatchUpdateDeps) {
+async function classifyMixedBatch(deps: UpdateDeps) {
   await runBatchUpdate(deps, [1, 2, 3, 4, 5, 6, 7, 8]);
   const modal = openedModals.at(-1)!;
   const manifest = (await modal.onClassify({
@@ -944,10 +1153,9 @@ describe("mixed batch", () => {
     expect(choice("all-new")).toMatchObject({ count: 5, label: undefined });
 
     // The fallback moves the two unmatched rows only.
-    vi.mocked(chooseBatchProfile).mockResolvedValueOnce(BOOKS);
+    chooseProfile.mockResolvedValueOnce(BOOKS);
     await choice("unresolved").choose();
-    expect(chooseBatchProfile).toHaveBeenLastCalledWith(
-      deps,
+    expect(chooseProfile).toHaveBeenLastCalledWith(
       expect.objectContaining({
         indexedKey: "ITEM3",
         selection: { selector: "default", source: "bound", shouldAsk: true },
@@ -973,10 +1181,9 @@ describe("mixed batch", () => {
     expect(choice("affected")).toMatchObject({ count: 1, label: undefined });
 
     // Cancelling the recovery leaves the affected row without a destination.
-    vi.mocked(chooseBatchProfile).mockResolvedValueOnce(undefined);
+    chooseProfile.mockResolvedValueOnce(undefined);
     await choice("affected").choose();
-    expect(chooseBatchProfile).toHaveBeenLastCalledWith(
-      deps,
+    expect(chooseProfile).toHaveBeenLastCalledWith(
       expect.objectContaining({
         indexedKey: "ITEM5",
         problem: INVALID_PROBLEM,
@@ -1036,7 +1243,7 @@ describe("mixed batch", () => {
     const { deps, created, updated } = mixedBatch();
     const { modal, tasks, choice, run } = await classifyMixedBatch(deps);
 
-    vi.mocked(chooseBatchProfile).mockResolvedValueOnce(ARTICLES);
+    chooseProfile.mockResolvedValueOnce(ARTICLES);
     await choice("all-new").choose();
     expect(tasks).toMatchObject([
       { id: 1, profile: "Articles", path: "Articles/Item 1.md" },
@@ -1349,10 +1556,9 @@ it("uses one fallback for unmatched and distinct overlaps, exposing all candidat
   const { tasks, choices, choice, run } = await classifyMixedBatch(deps);
   expect(choices.map(({ scope }) => scope)).toEqual(["unresolved", "all-new"]);
   expect(choice("unresolved")).toMatchObject({ count: 3, label: undefined });
-  vi.mocked(chooseBatchProfile).mockResolvedValueOnce(BOOKS);
+  chooseProfile.mockResolvedValueOnce(BOOKS);
   await choice("unresolved").choose();
-  expect(chooseBatchProfile).toHaveBeenLastCalledWith(
-    deps,
+  expect(chooseProfile).toHaveBeenLastCalledWith(
     expect.objectContaining({
       selection: expect.objectContaining({
         problem: { kind: "overlap", candidates: [...profiles, extra] },

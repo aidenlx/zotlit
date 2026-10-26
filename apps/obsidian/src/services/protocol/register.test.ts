@@ -37,6 +37,7 @@ import {
   runBatchUpdate,
   runBatchUpdateAll,
 } from "@/services/note-feature/update-batch";
+import type { BatchUpdateResult } from "@/services/note-feature/update-batch";
 import {
   runBatchImport,
   runBatchImportAll,
@@ -62,10 +63,16 @@ import { openTemplateWorkbench } from "@/views/template-workbench/register";
 import { registerProtocolHandlers } from "./register";
 import type { ProtocolDeps } from "./register";
 
-vi.mock("@/services/note-feature/update-batch", () => ({
-  runBatchUpdate: vi.fn(async () => ({ outcome: "batch-modal" })),
-  runBatchUpdateAll: vi.fn(async () => ({ outcome: "batch-modal" })),
-}));
+vi.mock("@/services/note-feature/update-batch", async (importOriginal) => {
+  const { Effect } = await import("effect");
+  return {
+    ...(await importOriginal<
+      typeof import("@/services/note-feature/update-batch")
+    >()),
+    runBatchUpdate: vi.fn(() => Effect.succeed({ outcome: "batch-modal" })),
+    runBatchUpdateAll: vi.fn(() => Effect.succeed({ outcome: "batch-modal" })),
+  };
+});
 
 vi.mock("@/services/note-import/batch-import", async (importOriginal) => {
   const { Effect } = await import("effect");
@@ -255,7 +262,8 @@ const register = Effect.fn("register")(function* (setup: Setup = {}) {
         importNotesRequests: setup.importNotesRequests ?? Stream.empty,
       }),
       Layer.mock(UseLedger, {}),
-      // The batch import is mocked; the handlers only carry these tags to it.
+      // The batch import and update are mocked; the handlers only carry
+      // these tags to them.
       Layer.mock(LibraryScope, {}),
       Layer.mock(MetadataCache, {}),
       Layer.mock(NoteImporter, {}),
@@ -824,11 +832,40 @@ describe("batch protocol links", () => {
         });
 
         expect(runBatchUpdate).toHaveBeenCalledExactlyOnceWith(
-          expect.anything(),
+          expect.objectContaining({ view: noteImportView, noteFeature }),
           [3, 4],
           { scope: "metadata", profile: "Bk3Qn7XvT2Lp" },
         );
       }),
+  );
+
+  it.effect(
+    "shows the early-exit notice a link's batch update ended with",
+    () =>
+      Effect.gen(function* () {
+        vi.mocked(runBatchUpdate).mockReturnValueOnce(
+          Effect.succeed<BatchUpdateResult>({ outcome: "db-unavailable" }),
+        );
+        yield* register();
+
+        yield* dispatch("zotlit/update-many", { items: "3,4" });
+
+        expect(shown()).toEqual([m.batch_update_db_unavailable()]);
+        expect(notifier.notices[0]!.duration).toBe(2000);
+      }),
+  );
+
+  it.effect("shows no notice for a link's batch update that failed", () =>
+    Effect.gen(function* () {
+      vi.mocked(runBatchUpdate).mockReturnValueOnce(
+        Effect.die(new Error("classify failed")),
+      );
+      yield* register();
+
+      yield* dispatch("zotlit/update-many", { items: "3,4" });
+
+      expect(shown()).toEqual([]);
+    }),
   );
 
   it.effect("imports the one item an import-note link names", () =>
@@ -938,10 +975,12 @@ describe("requests pushed over the Local Server", () => {
       }).pipe(Scope.provide(scope));
       const request: UpdateManyRequest = { items: [5], scope: "full" };
       const ran = yield* Deferred.make<void>();
-      vi.mocked(runBatchUpdate).mockImplementationOnce(async () => {
-        Deferred.doneUnsafe(ran, Effect.void);
-        return { outcome: "batch-modal" };
-      });
+      vi.mocked(runBatchUpdate).mockImplementationOnce(() =>
+        Effect.sync((): BatchUpdateResult => {
+          Deferred.doneUnsafe(ran, Effect.void);
+          return { outcome: "batch-modal" };
+        }),
+      );
       yield* PubSub.publish(requests, request);
       yield* Deferred.await(ran);
 

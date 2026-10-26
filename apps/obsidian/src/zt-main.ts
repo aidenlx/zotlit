@@ -39,7 +39,6 @@ import {
   addNoteFeatureActions,
   noteFeatureFileMenu,
 } from "./services/note-feature/actions";
-import { runBatchUpdateAll } from "./services/note-feature/update-batch";
 import { addProfileActions } from "./services/profile/actions";
 import { startProtocolHandlers } from "./services/protocol/register";
 import { ServiceStartupFailed } from "./services/startup-failure";
@@ -338,20 +337,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         bridge: services.bridge,
       }),
     );
-    const updateAll = () =>
-      runBatchUpdateAll({
-        createProfile: services.createProfile,
-        importProfile: services.importProfile,
-        zoteroPref: services.zoteroPref,
-        profile: services.profile,
-        app: this.app,
-        zoteroReads: services.zoteroReads,
-        settings: services.settings,
-        bridge: services.bridge,
-        batchScope: services.batchScope,
-        noteFeature: services.noteFeature,
-        noteIndex: services.noteIndex,
-      });
+    const updateAll = () => services.batchUpdate.runBatchUpdateAll();
     const noteFeatureDeps = {
       createProfile: services.createProfile,
       importProfile: services.importProfile,
@@ -417,16 +403,9 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
         createProfile: services.createProfile,
         importProfile: services.importProfile,
-        profile: services.profile,
         app: this.app,
-        settings: services.settings,
-        zoteroReads: services.zoteroReads,
-        batchScope: services.batchScope,
-        zoteroPref: services.zoteroPref,
         noteFeature: services.noteFeature,
-        noteIndex: services.noteIndex,
         noteImportView: services.noteImportView,
-        bridge: services.bridge,
         opener: services.targetOpener,
       }),
     );

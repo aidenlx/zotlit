@@ -162,7 +162,6 @@ export default defineConfig({
         "src/services/citation-index/sources.ts",
         "src/services/excerpt-image/prepare.ts",
         "src/services/note-feature/operations.ts",
-        "src/services/note-feature/update-batch.ts",
         "src/services/pandoc/document-presentation.ts",
         "src/services/template/actions.ts",
         "src/views/annot-view/view.tsx",
@@ -330,7 +329,6 @@ export default defineConfig({
       // Plain async code, or an Effect.fn, that reaches the App through
       // `deps.app`: the deps must carry the tag first.
       files: [
-        "src/services/note-feature/update-single.ts",
         "src/views/note-preview/render.ts",
         "src/views/note-preview/session.ts",
       ],
@@ -375,8 +373,6 @@ export default defineConfig({
         "src/services/excerpt-image/request.ts",
         "src/services/note-feature/annotation-citation.ts",
         "src/services/note-feature/operations.ts",
-        "src/services/note-feature/update-batch.ts",
-        "src/services/note-feature/update-single.ts",
         "src/services/profile/service.ts",
         "src/views/annot-view/view.tsx",
         "src/views/library/item-actions.ts",
@@ -610,7 +606,6 @@ export default defineConfig({
       // Effect tests written before the rule, in plain Vitest. A file moves
       // off this list when its cases move to it.effect.
       files: [
-        "src/services/note-feature/update-batch.test.ts",
         "src/services/zotero-reads/citation-lookup.test.ts",
         "src/services/zotero-reads/connection.test.ts",
         "src/services/zotero-reads/handlers.test.ts",
