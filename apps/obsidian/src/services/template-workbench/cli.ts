@@ -16,13 +16,17 @@ import { withLogCategory } from "@/lib/effect-log";
 import { DEFAULT_PROFILE, parseProfileSelector } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
-import type { ProfileDiagnostic } from "@/services/profile/service";
+import type {
+  ProfileDiagnostic,
+  ProfileOperationError,
+} from "@/services/profile/service";
 import { InertTemplateError } from "@/services/template/errors";
 import type {
   LiteratureNoteTemplateStatus,
   ResolvedLiteratureNoteTemplate,
   SettleOutcome,
   Template,
+  TemplateFailure,
 } from "@/services/template/service";
 
 import type {
@@ -60,7 +64,6 @@ import {
   parseStatusRequest,
   targetMismatch,
 } from "./request";
-import { templateRead } from "./sync-template";
 
 export type { WorkbenchIdentity } from "./envelope";
 
@@ -95,7 +98,9 @@ interface TemplateWorkbenchDeps {
   /** The installed ZotLit version, reported by the status command. */
   pluginVersion: string;
   getIdentity: Effect.Effect<WorkbenchIdentity>;
-  selectNote: (name: string) => Effect.Effect<InspectionNote>;
+  selectNote: (
+    name: string,
+  ) => Effect.Effect<InspectionNote, ProfileOperationError>;
   loadData: (
     indexedKey: string,
     root: ContractRoot,
@@ -115,22 +120,28 @@ interface TemplateWorkbenchDeps {
     | "waitUntilSettled"
   >;
   literatureNotes?: {
-    readProfiles: Effect.Effect<{
-      defaultProfile:
-        | {
-            readonly document?: string;
-            readonly bindings?: ResolvedLiteratureNoteProfileBindings;
-          }
-        | undefined;
-      diagnostics?: readonly ProfileDiagnostic[];
-      profiles: readonly {
-        readonly id: string;
-        readonly label: string;
-        readonly document?: string;
-        readonly bindings?: ResolvedLiteratureNoteProfileBindings;
-      }[];
-    }>;
-    getDocumentStatuses: Effect.Effect<readonly LiteratureNoteTemplateStatus[]>;
+    readProfiles: Effect.Effect<
+      {
+        defaultProfile:
+          | {
+              readonly document?: string;
+              readonly bindings?: ResolvedLiteratureNoteProfileBindings;
+            }
+          | undefined;
+        diagnostics?: readonly ProfileDiagnostic[];
+        profiles: readonly {
+          readonly id: string;
+          readonly label: string;
+          readonly document?: string;
+          readonly bindings?: ResolvedLiteratureNoteProfileBindings;
+        }[];
+      },
+      ProfileOperationError
+    >;
+    getDocumentStatuses: Effect.Effect<
+      readonly LiteratureNoteTemplateStatus[],
+      TemplateFailure
+    >;
     /** The installed document `reference` names; fails with what it threw. */
     getDocument: (
       reference: string,
@@ -172,7 +183,7 @@ export function createTemplateWorkbenchHandlers(
 
   const getIdentity = () => deps.getIdentity;
   const waitUntilSettled = () =>
-    templateRead(deps.templates.waitUntilSettled(settleTimeoutMs));
+    deps.templates.waitUntilSettled(settleTimeoutMs);
 
   /**
    * The preamble both item-backed commands share: parse the selector, resolve
@@ -232,12 +243,9 @@ export function createTemplateWorkbenchHandlers(
           ok: true,
           pluginVersion: deps.pluginVersion,
           identity: yield* getIdentity(),
-          javascriptTemplatesEnabled: yield* templateRead(
-            deps.templates.javascriptTemplatesEnabled,
-          ),
-          templates: yield* templateRead(
-            deps.templates.getTemplateFileStatuses,
-          ),
+          javascriptTemplatesEnabled:
+            yield* deps.templates.javascriptTemplatesEnabled,
+          templates: yield* deps.templates.getTemplateFileStatuses,
           ...(deps.literatureNotes
             ? yield* literatureNoteAuthoringState(deps.literatureNotes)
             : {}),
@@ -347,9 +355,7 @@ export function createTemplateWorkbenchHandlers(
               ...echoed,
               diagnostic: templateFaultDiagnostic(error, {
                 template: null,
-                compileErrors: yield* templateRead(
-                  deps.templates.compileErrors,
-                ),
+                compileErrors: yield* deps.templates.compileErrors,
               }),
             });
           }
@@ -505,11 +511,14 @@ const answerRejection = (command: WorkbenchCommand) =>
 
 const literatureNoteAuthoringState = Effect.fnUntraced(function* (
   literatureNotes: NonNullable<TemplateWorkbenchDeps["literatureNotes"]>,
-): Effect.fn.Return<{
-  profiles: readonly LiteratureNoteProfileRow[];
-  documents: readonly LiteratureNoteDocumentRow[];
-  profileDiagnostics: readonly ProfileDiagnostic[];
-}> {
+): Effect.fn.Return<
+  {
+    profiles: readonly LiteratureNoteProfileRow[];
+    documents: readonly LiteratureNoteDocumentRow[];
+    profileDiagnostics: readonly ProfileDiagnostic[];
+  },
+  ProfileOperationError | TemplateFailure
+> {
   const state = yield* literatureNotes.readProfiles;
   const profiles: LiteratureNoteProfileRow[] = [
     ...(state.defaultProfile
@@ -577,7 +586,7 @@ const literatureNoteAuthoringState = Effect.fnUntraced(function* (
 const profileDocumentReference = Effect.fnUntraced(function* (
   literatureNotes: NonNullable<TemplateWorkbenchDeps["literatureNotes"]>,
   text: string,
-): Effect.fn.Return<string | Diagnostic> {
+): Effect.fn.Return<string | Diagnostic, ProfileOperationError> {
   const selector = parseProfileSelector(text);
   const state = yield* literatureNotes.readProfiles;
   const found =
