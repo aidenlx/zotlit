@@ -1,6 +1,5 @@
 // Creation planning and Profile selection: which Profile a new or switched note gets, and its preview.
 import { DateTime, Effect, Schema } from "effect";
-import type { Context } from "effect";
 import type { TFile } from "obsidian";
 
 import type { Item, ItemFacets } from "@zotlit/db";
@@ -31,6 +30,7 @@ import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import { applyComposedFrontmatter } from "./compose";
 import type { ComposeNoteDeps } from "./compose";
 import { templateFacets } from "./context";
+import { composeWarn } from "./diagnostics";
 import { ItemNotFound } from "./errors";
 import { prepareManagedFrontmatter } from "./frontmatter";
 import {
@@ -71,9 +71,6 @@ export type CreationPlanningServices =
   | Template
   | Vault
   | ZoteroReads;
-
-/** The planning services, as the Note Feature's deps hold them. */
-export type CreationPlanningContext = Context.Context<CreationPlanningServices>;
 
 /**
  * The create gate the Note Feature owns: it serializes creates by Indexed Key
@@ -500,7 +497,7 @@ const prepareProfileNote = Effect.fnUntraced(function* (
       : [];
   const properties: Record<string, unknown> = {};
   applyComposedFrontmatter(
-    { template: { frontmatterFields }, events },
+    { template: { frontmatterFields }, warn: yield* composeWarn, events },
     properties,
     {
       context: note,

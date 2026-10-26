@@ -9,7 +9,7 @@ import type { LocalBridgeHandle } from "./handle";
 const SAVED_NOTICE_DURATION_MS = 15_000;
 
 export interface WorkbenchSavedNoticeDeps {
-  localBridge: Pick<LocalBridgeHandle, "on">;
+  localBridge: Pick<LocalBridgeHandle, "onProfileSaved">;
   /** The existing Update all notes flow, batch confirm modal and outcome notice included. */
   updateAll: () => Promise<void>;
 }
@@ -55,10 +55,10 @@ export function workbenchSavedNotice(
  * trigger to rendering: one Notice per Save that landed, none for a refusal.
  */
 export function subscribeWorkbenchSaved(
-  localBridge: Pick<LocalBridgeHandle, "on">,
+  localBridge: Pick<LocalBridgeHandle, "onProfileSaved">,
   showNotice: () => void,
 ): () => void {
-  return localBridge.on("profile-saved", () => showNotice());
+  return localBridge.onProfileSaved(() => showNotice());
 }
 
 function showWorkbenchSaved(copy: WorkbenchSavedNoticeCopy): BaseNotice {

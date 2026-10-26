@@ -361,7 +361,9 @@ it("refuses an installed Eta dependency without writing the Profile", async () =
     },
   });
   bridge.app.saveLocalStorage = vi.fn();
-  await bridge.template.setJavascriptTemplatesEnabled(true);
+  await bridge.runtime.runPromise(
+    Template.use((template) => template.setJavascriptTemplatesEnabled(true)),
+  );
   const res = await bridge.save({
     reference: BOOKS_PROFILE,
     expected: { state: "revision", revision: REVISION.books },

@@ -17,6 +17,7 @@ import {
 } from "effect";
 import type { RpcClientError } from "effect/rpc";
 
+import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import { LibraryScope } from "@/services/library-scope/service";
@@ -95,9 +96,8 @@ export const layerCitationLookup = Layer.effect(
     const libraryScope = yield* LibraryScope;
     const queries = yield* QueryClients;
     const scope = yield* Scope.Scope;
-    const context = yield* Effect.context<never>();
-    const run = Effect.runSyncWith(context);
-    const runPromise = Effect.runPromiseWith(context);
+    const bridge = yield* scopedBridge;
+    const { runSync: run, runPromise } = bridge;
     const subscriptions = yield* Scope.fork(scope);
     const state = yield* SubscriptionRef.make<CitationLookupState>({
       status: "pending",
@@ -271,7 +271,7 @@ export const layerCitationLookup = Layer.effect(
         disposed = true;
         unsubscribe();
         observer.destroy();
-        void runPromise(Scope.close(observation, Exit.void));
+        bridge.runAndForget(Scope.close(observation, Exit.void));
         observations.delete(dispose);
         current = null;
         previous = undefined;

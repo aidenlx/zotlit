@@ -2,7 +2,7 @@
 import { Cause, Deferred, Effect, Exit, Option, Ref, Stream } from "effect";
 
 import { AbortError } from "@/lib/abort-error";
-import { valueOr } from "@/lib/effect-bridge";
+import { exitOver, valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { settleAtEdge } from "@/lib/signal-edge";
 import { formatErrorMessage } from "@/lib/toast";
@@ -130,6 +130,8 @@ export type RunOutcome = "created" | "updated" | "skipped";
  *
  * The executor polls {@link BatchRunControls.stop} as each task starts: a stop
  * skips queued tasks and leaves admitted work running to its own completion.
+ * An interrupt, such as unload, stops a task at once, except for the write
+ * steps its `run` makes uninterruptible; the task reports no settle event.
  *
  * @param opts.onTaskFailed Optional per-failure callback (non-abort only),
  *   called after the task is reported as failed; use for structured logging.
@@ -165,14 +167,18 @@ export function executeBatchRun<T extends BatchRunTask, E>(opts: {
       tasks,
       (task) =>
         Effect.exit(
-          Effect.uninterruptible(
+          // The task's reads stay interruptible, so unload does not wait for
+          // them; its write steps are uninterruptible in their own services.
+          Effect.uninterruptibleMask((restore) =>
             Effect.gen(function* () {
               if (yield* Deferred.isDone(controls.stop))
                 return yield* Effect.interrupt;
               if ((yield* Ref.get(halt)) !== null)
                 return yield* Effect.interrupt;
-              const exit = yield* Effect.exit(run(task));
+              const exit = yield* Effect.exit(restore(run(task)));
               if (Exit.isFailure(exit)) {
+                if (Cause.hasInterruptsOnly(exit.cause))
+                  return yield* Effect.failCause(exit.cause);
                 const error = Cause.squash(exit.cause);
                 const failure = Cause.findErrorOption(exit.cause);
                 if (haltOn && Option.isSome(failure) && haltOn(failure.value)) {
@@ -264,14 +270,14 @@ function profileRecovery(error: unknown): BatchFailure["recovery"] {
  * failures and defects keep their identity, an aborted signal rejects with the
  * signal's own abort reason, and an unload rejects with the interrupt.
  */
-export function runBatchWith(
+export function runBatchWith<R = never>(
   runExit: <A, E>(
-    effect: Effect.Effect<A, E>,
+    effect: Effect.Effect<A, E, R>,
     options?: { readonly signal?: AbortSignal },
   ) => Promise<Exit.Exit<A, E>>,
 ) {
   return async <A, E>(
-    effect: Effect.Effect<A, E>,
+    effect: Effect.Effect<A, E, R>,
     signal?: AbortSignal,
   ): Promise<A> => {
     signal?.throwIfAborted();
@@ -292,19 +298,12 @@ export function runBatchWith(
 export const modalRunner = Effect.fnUntraced(function* <R>(
   bridge: Pick<EffectBridge, "runPromiseExit">,
 ) {
-  const context = yield* Effect.context<R>();
-  const runExit = runBatchWith((effect, options) =>
-    bridge.runPromiseExit(effect, options),
-  );
+  const runExit = exitOver(bridge, yield* Effect.context<R>());
   return {
-    run: <A, E>(effect: Effect.Effect<A, E, R>, signal?: AbortSignal) =>
-      runExit(Effect.provideContext(effect, context), signal),
+    run: runBatchWith(runExit),
     settle: async <A, E>(
       effect: Effect.Effect<A, E, R>,
     ): Promise<A | undefined> =>
-      valueOr<A | undefined, E>(
-        await bridge.runPromiseExit(Effect.provideContext(effect, context)),
-        undefined,
-      ),
+      valueOr<A | undefined, E>(await runExit(effect), undefined),
   };
 });

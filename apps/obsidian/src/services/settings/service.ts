@@ -303,8 +303,6 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
   const writes = yield* Effect.acquireRelease(Scope.make(), (scope) =>
     Scope.close(scope, Exit.void),
   );
-  const context = yield* Effect.context<never>();
-  const runPromise = Effect.runPromiseWith(context);
   const snapshot = (): Settings => ({ ...defaults, ...overrides });
   const current = Effect.sync(snapshot);
 
@@ -353,17 +351,22 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     }
   }).pipe(Effect.uninterruptible, Effect.withSpan("PluginSettings.flush"));
 
-  // Obsidian unload is synchronous. The Promise is also the reload handoff;
-  // the save it waits for belongs to `writes`, which scope close drains.
+  // Obsidian unload is synchronous. The flush runs on `writes`, which scope
+  // close drains, and the reload handoff is a Promise that settles when it ends.
   const handOff = Effect.fn("PluginSettings.handOff")(function* () {
-    const write = runPromise(
+    const write = yield* Effect.forkIn(
       flush.pipe(
         Effect.catchCause((cause) =>
           reportFailure("settings save on unload failed", cause),
         ),
       ),
+      writes,
+      { startImmediately: true },
     );
-    if (handoff) handoff[LAST_WRITE] = write;
+    if (handoff)
+      handoff[LAST_WRITE] = new Promise<void>((resolve) =>
+        write.addObserver(() => resolve()),
+      );
   });
 
   const commitMutation = Effect.fn("PluginSettings.commitMutation")(function* (

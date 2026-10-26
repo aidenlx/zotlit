@@ -13,10 +13,11 @@ import {
   FIELD_CITATION_STYLE,
   FIELD_LITERATURE_NOTE_PROFILE,
 } from "@/lib/constants";
-import { getLogger } from "@/lib/log";
 import type { ResolvedProfile } from "@/services/profile/bindings";
-import type { PlainTemplate } from "@/services/template/plain";
-import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
+import type {
+  ResolvedLiteratureNoteTemplate,
+  TemplateOperations,
+} from "@/services/template/service";
 
 import {
   applyDocumentManagedFrontmatter,
@@ -28,11 +29,17 @@ import type {
   PreparedManagedFrontmatter,
 } from "./frontmatter";
 
-const logger = getLogger("note-feature");
+/** Logs a warning the composition meets, with its annotations. */
+export type ComposeWarn = (
+  message: string,
+  annotations: Record<string, unknown>,
+) => void;
 
 /** The template slice the composition renders through. */
 export interface ComposeNoteDeps {
-  template: Pick<PlainTemplate, "render" | "frontmatterFields">;
+  template: Pick<TemplateOperations, "render" | "frontmatterFields">;
+  /** Where the composition logs a skipped append or a failed expression. */
+  warn?: ComposeWarn;
   events?: {
     emit: (
       event: "frontmatter-eval-failed",
@@ -175,6 +182,7 @@ export function composeLiteratureNote(
 export function applyComposedFrontmatter(
   deps: {
     template: Pick<ComposeNoteDeps["template"], "frontmatterFields">;
+    warn?: ComposeWarn;
     events?: ComposeNoteDeps["events"];
   },
   fm: Record<string, unknown>,
@@ -183,7 +191,7 @@ export function applyComposedFrontmatter(
   const { context, itemKey, profile, prepared } = input;
   const failed: string[] = [];
   const onConflict: FrontmatterMergeConflictHandler = (key, detail) => {
-    logger.warn("Skipped frontmatter append", { key, itemKey, ...detail });
+    deps.warn?.("Skipped frontmatter append", { key, itemKey, ...detail });
     input.onConflict?.(key, detail);
   };
   if (prepared.kind === "document") {
@@ -193,7 +201,7 @@ export function applyComposedFrontmatter(
       compiled: deps.template.frontmatterFields,
       onError: (key, error) => {
         failed.push(key);
-        logger.warn("Frontmatter expression failed", { key, itemKey, error });
+        deps.warn?.("Frontmatter expression failed", { key, itemKey, error });
       },
       onConflict,
     });

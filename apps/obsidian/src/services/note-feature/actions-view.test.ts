@@ -25,6 +25,7 @@ import type {
   ZoteroReadsApi,
   ZoteroReadsState,
 } from "@/services/zotero-reads/service";
+import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
 
 import {
   overwriteNote,
@@ -78,6 +79,7 @@ function actions(
     database.reads ?? stubService<ZoteroReadsApi>("ZoteroReadsApi", {});
   const notifier = testNotifier();
   const layer: Layer.Layer<NoteActionServices> = Layer.mergeAll(
+    unimplementedProfileDialogServices,
     Layer.mock(NoteFeature, feature),
     notifier.layer,
     Layer.mock(LibraryScope, {}),

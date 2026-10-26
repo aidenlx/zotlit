@@ -41,7 +41,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   override setControlValue(key: string, value: unknown): Promise<void> {
     return this.#ctx.tab.run(
       writeControlValue(key, value),
-      m.settings_tab_save_failed(),
+      m.settings_failed_save(),
     );
   }
 

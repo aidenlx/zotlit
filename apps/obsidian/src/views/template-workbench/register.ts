@@ -9,7 +9,10 @@ import { MENU_SECTION } from "@/lib/menu-section";
 import { BaseNotice } from "@/lib/notice";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
 import type { FileMenuSegment } from "@/services/file-menu";
-import type { CustomizeAction } from "@/services/local-bridge/customize";
+import type {
+  CustomizeAction,
+  NativeProfileTarget,
+} from "@/services/local-bridge/customize";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { PlainProfile } from "@/services/profile/plain";
 import {
@@ -331,7 +334,7 @@ function activeLeafFor(
 /** Open a Profile file or the built-in Default draft in the native editor. */
 export async function openNativeProfile(
   app: App,
-  target: TFile | Pick<PlainProfile, "defaultDocumentPath" | "getSource">,
+  target: NativeProfileTarget,
   options: {
     leaf?: WorkspaceLeaf;
     itemIndexedKey?: string;
@@ -348,7 +351,9 @@ export async function openNativeProfile(
       : app.vault.getFileByPath(target.defaultDocumentPath);
   const source = file
     ? await app.vault.cachedRead(file)
-    : await (target as Pick<PlainProfile, "getSource">).getSource("default");
+    : await (target as Exclude<NativeProfileTarget, TFile>).getSource(
+        "default",
+      );
   if (file) {
     await openTemplateWorkbench(app, file, {
       ...options,
