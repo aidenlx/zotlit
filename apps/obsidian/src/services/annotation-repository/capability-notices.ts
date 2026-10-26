@@ -105,18 +105,21 @@ export class CapabilityNoticeLedger {
     this.#now = now;
   }
 
+  /** The Attachments an episode is open for, which {@link refresh} re-reads. */
+  openEpisodes(): string[] {
+    return [...this.#episodes.keys()];
+  }
+
   /**
-   * Re-reads every Attachment an episode is open for and closes the ones that
-   * have cleared, so an Attachment that can be edited again speaks afresh the
-   * next time it cannot.
+   * Closes the episodes of the Attachments that have cleared, so an Attachment
+   * that can be edited again speaks afresh the next time it cannot.
    *
-   * @param capabilityOf one Attachment's Editing Capability.
+   * @param capabilities the Editing Capability of each Attachment in
+   *   {@link openEpisodes}, read again.
    */
-  refresh(capabilityOf: (attachmentKey: string) => EditingCapability): void {
-    // Deleting the entry being visited is safe: a Map iterator skips only what
-    // was removed before it got there.
-    for (const attachmentKey of this.#episodes.keys()) {
-      if (capabilityOf(attachmentKey).kind === "writable") {
+  refresh(capabilities: ReadonlyMap<string, EditingCapability>): void {
+    for (const [attachmentKey, capability] of capabilities) {
+      if (capability.kind === "writable") {
         this.#episodes.delete(attachmentKey);
       }
     }

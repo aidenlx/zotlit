@@ -48,8 +48,13 @@ function readOnlyLines(
 }
 
 /** Answers `capability` for every Attachment the ledger re-reads. */
-function everyAttachmentIs(capability: EditingCapability) {
-  return () => capability;
+function everyAttachmentIs(
+  ledger: CapabilityNoticeLedger,
+  capability: EditingCapability,
+) {
+  return new Map(
+    ledger.openEpisodes().map((attachmentKey) => [attachmentKey, capability]),
+  );
 }
 
 describe("authorization notice lifetime", () => {
@@ -112,7 +117,7 @@ describe("a blocked keyboard gesture", () => {
 
     // A probe that made the Attachment writable ends the episode, whether the
     // gesture finds out or a capability change announces it.
-    ledger.refresh(everyAttachmentIs(WRITABLE));
+    ledger.refresh(everyAttachmentIs(ledger, WRITABLE));
     expect(ledger.blockedGesture(ATTACHMENT, CLOSED)).not.toBeNull();
 
     // A gesture that meets a writable Attachment ends it too, and says nothing.
@@ -225,7 +230,7 @@ describe("a Zotero database swapped under the port", () => {
 
     // An unrelated capability change does not re-arm it, which is what a
     // session-state test of this would have got wrong.
-    ledger.refresh(everyAttachmentIs(WRITABLE));
+    ledger.refresh(everyAttachmentIs(ledger, WRITABLE));
     expect(ledger.serverChanged("A1B2C3D4E5F6")).toBeNull();
 
     // Another database is another change.
