@@ -98,7 +98,7 @@ describe("the create gate", () => {
   );
 
   it.effect(
-    "frees the key of an interrupted create, and ends the create that waited on it",
+    "frees the key of an interrupted create, and runs the create that waited on it",
     () =>
       Effect.gen(function* () {
         const file = noteAt("Paper.md");
@@ -121,8 +121,11 @@ describe("the create gate", () => {
         );
         yield* Fiber.interrupt(first);
 
-        expect(Exit.hasInterrupts(yield* Fiber.await(waiting))).toBe(true);
-        expect(yield* gate(ITEM, {})).toEqual({ outcome: "created", file });
+        // The waiter did not ask to stop: it enters the gate again.
+        expect(yield* Fiber.join(waiting)).toEqual({
+          outcome: "created",
+          file,
+        });
         expect(writes).toBe(2);
       }).pipe(Effect.provide(gateServices)),
   );

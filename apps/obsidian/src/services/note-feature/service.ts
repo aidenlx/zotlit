@@ -1,8 +1,10 @@
 // The Note Feature: Literature Note writes, creation planning and Profile switches, as one service.
 import {
+  Cause,
   Context,
   Deferred,
   Effect,
+  Exit,
   Layer,
   PubSub,
   Ref,
@@ -296,126 +298,134 @@ export const collectExcerptReports = Effect.gen(function* () {
 /**
  * The create gate: one create per Indexed Key at a time, and a refusal for a
  * note created before the Note Index saw it. A create that arrives while one
- * runs for the same key waits for it, and is refused when it created a note.
- * The last {@link MAX_UNINDEXED_CREATES} created notes are remembered.
+ * runs for the same key waits for it, and is refused when it created a note;
+ * when the running create was interrupted, the waiting one enters the gate
+ * again. The last {@link MAX_UNINDEXED_CREATES} created notes are remembered.
  */
-export const makeCreateGate = (
+export const makeCreateGate = Effect.fnUntraced(function* (
   write: (
     item: Item,
     options: CreateNoteInternalOptions & {
       onFileCreated: (file: TFile) => Effect.Effect<void>;
     },
   ) => Effect.Effect<CreateNoteResult, CreateNoteError>,
-) =>
-  Effect.gen(function* () {
-    const pending = yield* SynchronizedRef.make<ReadonlyMap<string, CreateRun>>(
-      new Map(),
-    );
-    const createdBeforeIndex = yield* Ref.make(new Map<string, TFile>());
+) {
+  const pending = yield* SynchronizedRef.make<ReadonlyMap<string, CreateRun>>(
+    new Map(),
+  );
+  const createdBeforeIndex = yield* Ref.make(new Map<string, TFile>());
 
-    const remember = (indexedKey: string, file: TFile) =>
-      Ref.update(createdBeforeIndex, (created) => {
-        const next = new Map(created);
-        if (next.size >= MAX_UNINDEXED_CREATES && !next.has(indexedKey)) {
-          const oldest = next.keys().next().value;
-          if (oldest !== undefined) next.delete(oldest);
-        }
-        next.set(indexedKey, file);
-        return next;
-      });
-    const forget = (indexedKey: string) =>
-      Ref.update(createdBeforeIndex, (created) => {
-        if (!created.has(indexedKey)) return created;
-        const next = new Map(created);
-        next.delete(indexedKey);
-        return next;
-      });
-
-    /** The refusal a note created before the Note Index saw it gives. */
-    const recentRefusal = Effect.fnUntraced(function* (indexedKey: string) {
-      const recent = (yield* Ref.get(createdBeforeIndex)).get(indexedKey);
-      if (!recent) return undefined;
-      const indexed = yield* (yield* NoteIndex).getNotesByItemKey(indexedKey);
-      if (indexed.length > 0) {
-        yield* forget(indexedKey);
-        return refusedCreate(indexedKey, indexed) as CreateNoteResult;
+  const remember = (indexedKey: string, file: TFile) =>
+    Ref.update(createdBeforeIndex, (created) => {
+      const next = new Map(created);
+      if (next.size >= MAX_UNINDEXED_CREATES && !next.has(indexedKey)) {
+        const oldest = next.keys().next().value;
+        if (oldest !== undefined) next.delete(oldest);
       }
-      if (
-        (yield* (yield* Vault).getAbstractFileByPath(recent.path)) === recent
-      ) {
-        const cache = yield* (yield* MetadataCache).fileCache(recent);
-        if (cache === null || itemKeyFromFrontmatter(cache) === indexedKey) {
-          return refusedCreate(indexedKey, [recent]) as CreateNoteResult;
-        }
-      }
-      yield* forget(indexedKey);
-      return undefined;
+      next.set(indexedKey, file);
+      return next;
+    });
+  const forget = (indexedKey: string) =>
+    Ref.update(createdBeforeIndex, (created) => {
+      if (!created.has(indexedKey)) return created;
+      const next = new Map(created);
+      next.delete(indexedKey);
+      return next;
     });
 
-    const gate = (
-      item: Item,
-      options: CreateNoteInternalOptions,
+  /** The refusal a note created before the Note Index saw it gives. */
+  const recentRefusal = Effect.fnUntraced(function* (indexedKey: string) {
+    const recent = (yield* Ref.get(createdBeforeIndex)).get(indexedKey);
+    if (!recent) return undefined;
+    const indexed = yield* (yield* NoteIndex).getNotesByItemKey(indexedKey);
+    if (indexed.length > 0) {
+      yield* forget(indexedKey);
+      return refusedCreate(indexedKey, indexed);
+    }
+    if ((yield* (yield* Vault).getAbstractFileByPath(recent.path)) === recent) {
+      const cache = yield* (yield* MetadataCache).fileCache(recent);
+      if (cache === null || itemKeyFromFrontmatter(cache) === indexedKey) {
+        return refusedCreate(indexedKey, [recent]);
+      }
+    }
+    yield* forget(indexedKey);
+    return undefined;
+  });
+
+  const gate = (
+    item: Item,
+    options: CreateNoteInternalOptions,
+  ): Effect.Effect<
+    CreateNoteResult,
+    CreateNoteError,
+    MetadataCache | NoteIndex | Vault
+  > => {
+    const { indexedKey } = item;
+    const enter = (
+      creates: ReadonlyMap<string, CreateRun>,
     ): Effect.Effect<
-      CreateNoteResult,
-      CreateNoteError,
+      readonly [GateStep, ReadonlyMap<string, CreateRun>],
+      never,
       MetadataCache | NoteIndex | Vault
-    > => {
-      const { indexedKey } = item;
-      const enter = (
-        creates: ReadonlyMap<string, CreateRun>,
-      ): Effect.Effect<
-        readonly [GateStep, ReadonlyMap<string, CreateRun>],
-        never,
-        MetadataCache | NoteIndex | Vault
-      > =>
-        Effect.gen(function* () {
-          const running = creates.get(indexedKey);
-          if (running) return [{ wait: running }, creates] as const;
-          const refused = yield* recentRefusal(indexedKey);
-          if (refused) return [{ refused }, creates] as const;
-          const started = yield* Deferred.make<
-            CreateNoteResult,
-            CreateNoteError
-          >();
-          return [
-            { started },
-            new Map(creates).set(indexedKey, started),
-          ] as const;
-        });
-      return Effect.gen(function* () {
-        const step = yield* SynchronizedRef.modifyEffect(pending, enter);
-        if ("refused" in step) return step.refused;
-        if ("wait" in step) {
-          const result = yield* Deferred.await(step.wait);
-          return result.outcome === "created"
-            ? (refusedCreate(indexedKey, [result.file]) as CreateNoteResult)
-            : result;
-        }
-        const { started } = step;
-        return yield* write(item, {
+    > =>
+      Effect.gen(function* () {
+        const running = creates.get(indexedKey);
+        if (running) return [{ wait: running }, creates] as const;
+        const refused = yield* recentRefusal(indexedKey);
+        if (refused) return [{ refused }, creates] as const;
+        const started =
+          yield* Deferred.make<Exit.Exit<CreateNoteResult, CreateNoteError>>();
+        return [
+          { started },
+          new Map(creates).set(indexedKey, started),
+        ] as const;
+      });
+    // The entry cannot be interrupted, so a started run always reaches its
+    // release, which completes its Deferred and frees the key.
+    return Effect.acquireUseRelease(
+      SynchronizedRef.modifyEffect(pending, enter),
+      (step) => {
+        if ("refused" in step) return Effect.succeed(step.refused);
+        if ("wait" in step)
+          return Effect.flatMap(Deferred.await(step.wait), (exit) =>
+            Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+              ? gate(item, options)
+              : Effect.map(exit, (result) =>
+                  result.outcome === "created"
+                    ? refusedCreate(indexedKey, [result.file])
+                    : result,
+                ),
+          );
+        return write(item, {
           ...options,
           onFileCreated: (file) => remember(indexedKey, file),
-        }).pipe(
-          Effect.onExit((exit) =>
-            Deferred.done(started, exit).pipe(
+        });
+      },
+      (step, exit) =>
+        "started" in step
+          ? Deferred.succeed(step.started, exit).pipe(
               Effect.andThen(
                 SynchronizedRef.update(pending, (creates) => {
-                  if (creates.get(indexedKey) !== started) return creates;
+                  if (creates.get(indexedKey) !== step.started) return creates;
                   const next = new Map(creates);
                   next.delete(indexedKey);
                   return next;
                 }),
               ),
-            ),
-          ),
-        );
-      });
-    };
-    return gate;
-  });
+            )
+          : Effect.void,
+    );
+  };
+  return gate;
+});
 
-/** One create running at the gate; a create for the same key waits on it. */
-type CreateRun = Deferred.Deferred<CreateNoteResult, CreateNoteError>;
+/**
+ * One create running at the gate, completed with how it ended; a create for
+ * the same key waits on it.
+ */
+type CreateRun = Deferred.Deferred<
+  Exit.Exit<CreateNoteResult, CreateNoteError>
+>;
 
 /** What a create finds at the gate: a run to wait on, a refusal, or its turn. */
 type GateStep =
