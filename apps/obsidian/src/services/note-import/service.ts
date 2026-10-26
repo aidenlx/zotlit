@@ -116,14 +116,15 @@ interface PrepareExplicitImportOptions {
 /**
  * What a note write fails with: the Profile it needs is unknown, its minted
  * path is taken, Attachment Import or the excerpt preparation failed, or a
- * read or vault write failed. A Template throw is a defect that carries what
- * was thrown.
+ * read or vault write failed, or the note conversion threw. A Template throw
+ * outside the conversion is a defect that carries what was thrown.
  */
 export type NoteImportError =
   | NoteImportProfileError
   | NoteImportMintError
   | NoteImportFolderError
   | NoteImportPortError
+  | NoteImportParseError
   | Effect.Error<ReturnType<typeof readDisplayRef>>
   | ProfileOperationError
   | VaultError;
@@ -449,22 +450,24 @@ const writeNote = Effect.fnUntraced(function* (
               }),
           })
       : undefined;
-    body = yield* Effect.sync(() =>
-      parseNote(TurndownService, html, {
-        citedItems: inputs.citedItems,
-        groupID: note.groupID,
-        attachments: inputs.attachments,
-        renderCite: (items) => templates.renderCitation(items, "main"),
-        pathContext: zoteroPref,
-        useColoredHighlightSyntax: getProfileBinding(
-          run.settings,
-          "note.import-colored-highlights",
-        ),
-        highlightMappings: run.settings["note.import-highlight-mappings"],
-        attachmentImport: batch,
-        renderAnnotationParagraph,
-      }),
-    );
+    body = yield* Effect.try({
+      try: () =>
+        parseNote(TurndownService, html, {
+          citedItems: inputs.citedItems,
+          groupID: note.groupID,
+          attachments: inputs.attachments,
+          renderCite: (items) => templates.renderCitation(items, "main"),
+          pathContext: zoteroPref,
+          useColoredHighlightSyntax: getProfileBinding(
+            run.settings,
+            "note.import-colored-highlights",
+          ),
+          highlightMappings: run.settings["note.import-highlight-mappings"],
+          attachmentImport: batch,
+          renderAnnotationParagraph,
+        }),
+      catch: (cause) => new NoteImportParseError({ cause }),
+    });
   }
 
   const frontmatter = {
@@ -637,6 +640,23 @@ export class NoteImportPortError extends Schema.TaggedError<
     "attachment-flush",
   ]),
   /** What the step rejected with. */
+  cause: Schema.Defect(),
+}) {
+  override get message(): string {
+    if (this.cause instanceof Error) return this.cause.message;
+    return typeof this.cause === "string" ? this.cause : "Unknown error";
+  }
+}
+
+/**
+ * The note conversion threw, for example when the Citation Template or the
+ * annotation Template fails. The message is the throw's own.
+ */
+export class NoteImportParseError extends Schema.TaggedError<
+  NoteImportParseError,
+  { readonly brand: unique symbol }
+>()("NoteImportParseError", {
+  /** What the conversion threw. */
   cause: Schema.Defect(),
 }) {
   override get message(): string {
