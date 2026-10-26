@@ -35,7 +35,7 @@ import {
 import { noteImporterOver } from "./__fixtures__/importer";
 import { childNoteLink } from "./child-note-link";
 import { noteAnnotationKeys, parseNote } from "./note-parser";
-import { NoteImportMintError, NoteImportPortError } from "./service";
+import { NoteImportMintError } from "./service";
 
 // The service owns the annotation renderer now; stub the leaf so the test asserts
 // the wiring (resolveLink binding, library scoping) without the template pipeline.
@@ -1211,8 +1211,8 @@ describe("NoteImporter", () => {
           }),
         );
 
-        expect(error).toBeInstanceOf(NoteImportPortError);
         expect(error).toMatchObject({
+          _tag: "LegacyPortError",
           step: "attachment-flush",
           cause: copyFailed,
           message: "EACCES: permission denied",

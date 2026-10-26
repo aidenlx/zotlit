@@ -7,6 +7,7 @@ import { valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
+import { LegacyPortError, portCall } from "@/lib/legacy-port";
 import { Notifier } from "@/lib/notifier";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -382,7 +383,7 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
     runBatch(
       Effect.provideContext(effect, context).pipe(
         Effect.mapError((error) =>
-          error instanceof NoteUpdatePortError ? error.cause : error,
+          error instanceof LegacyPortError ? error.cause : error,
         ),
       ),
       signal,
@@ -902,7 +903,7 @@ const executeBatchActions = Effect.fnUntraced(function* (
         // A template that cannot render reaches the run as the cause of
         // the write's rejection.
         haltOn: (error) =>
-          error instanceof NoteUpdatePortError &&
+          error instanceof LegacyPortError &&
           error.cause instanceof InertTemplateError,
       });
     }),
@@ -1007,35 +1008,6 @@ class BatchRowRefused extends Schema.TaggedError<
   BatchRowRefused,
   { readonly brand: unique symbol }
 >()("BatchRowRefused", { message: Schema.String }) {}
-
-/**
- * A Note Feature step that rejected, such as a note write that failed on a
- * file error. The message is the rejection's own.
- */
-export class NoteUpdatePortError extends Schema.TaggedError<
-  NoteUpdatePortError,
-  { readonly brand: unique symbol }
->()("NoteUpdatePortError", {
-  /** The step that rejected. */
-  step: Schema.Literals(["plan-creations", "write-update", "create-note"]),
-  /** What the step rejected with. */
-  cause: Schema.Defect(),
-}) {
-  override get message(): string {
-    if (this.cause instanceof Error) return this.cause.message;
-    return typeof this.cause === "string" ? this.cause : "Unknown error";
-  }
-}
-
-/** A Note Feature Promise, its rejection a {@link NoteUpdatePortError}. */
-const portCall = <A>(
-  step: NoteUpdatePortError["step"],
-  call: (signal: AbortSignal) => Promise<A>,
-) =>
-  Effect.tryPromise({
-    try: call,
-    catch: (cause) => new NoteUpdatePortError({ step, cause }),
-  });
 
 export class BatchUpdateRefusedError extends Error {
   readonly diagnostic: NoteOperationDiagnostic;
