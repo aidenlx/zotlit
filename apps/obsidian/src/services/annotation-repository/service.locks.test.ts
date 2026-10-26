@@ -31,7 +31,8 @@ import {
   GROUP_ID,
   markExternal,
   NOW,
-  nextChange,
+  nextChangeOf,
+  switchServiceToLocalApi,
   REMEMBERED_KEY,
   scopedStack,
   setup,
@@ -381,9 +382,9 @@ it.effect(
         );
       yield* service.patchColor("PUPR5FG5", "#ff6666");
       answering = false;
-      const lost = nextChange(repository);
+      const lost = yield* nextChangeOf(service);
       freshnessSignal(serverEvents);
-      yield* Effect.promise(() => lost);
+      yield* lost;
 
       // The database is behind the colour Zotero confirmed, so the Local API
       // list stays published over each list the database gives.
@@ -674,31 +675,31 @@ function groupLocks(list: AnnotationList | null) {
  * The repository over a Zotero Local API session with a Write Authorization,
  * with the Fixture's Annotations read from a group library.
  */
-async function groupWritable(
+const groupWritable = Effect.fnUntraced(function* (
   stack: AsyncDisposableStack,
   group: GroupLibrary = SYNCED,
 ) {
-  const harness = await setup(
-    stack,
-    {
-      children: () =>
-        annotationPage(
-          ROUGIER_ANNOTATIONS.map((annotation) => ({
-            ...annotation,
-            groupID: GROUP_ID,
-          })),
-        ),
-    },
-    { key: REMEMBERED_KEY, group },
+  const harness = yield* Effect.promise(() =>
+    setup(
+      stack,
+      {
+        children: () =>
+          annotationPage(
+            ROUGIER_ANNOTATIONS.map((annotation) => ({
+              ...annotation,
+              groupID: GROUP_ID,
+            })),
+          ),
+      },
+      { key: REMEMBERED_KEY, group },
+    ),
   );
-  const announced = nextChange(harness.repository);
-  await harness.repository.read(GROUP_ATTACHMENT);
-  await announced;
-  expect((await harness.repository.read(GROUP_ATTACHMENT))?.source.kind).toBe(
+  yield* switchServiceToLocalApi(harness.service, GROUP_ATTACHMENT);
+  expect((yield* harness.service.read(GROUP_ATTACHMENT))?.source.kind).toBe(
     "zotero-local-api",
   );
   return harness;
-}
+});
 
 it.effect(
   "locks another user's Annotation in a group library under the Zotero DB source",
@@ -721,7 +722,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { service } = yield* Effect.promise(() => groupWritable(stack));
+      const { service } = yield* groupWritable(stack);
 
       const list = yield* service.read(GROUP_ATTACHMENT);
 
@@ -759,7 +760,7 @@ it.effect(
         key: "UNREAD23",
         sortIndex: "00000|002050|00170",
       };
-      const { repository, service } = yield* Effect.promise(() =>
+      const { service } = yield* Effect.promise(() =>
         setup(
           stack,
           {
@@ -774,9 +775,9 @@ it.effect(
           { key: REMEMBERED_KEY, group: SYNCED },
         ),
       );
-      const announced = nextChange(repository);
+      const announced = yield* nextChangeOf(service);
       yield* service.read(GROUP_ATTACHMENT);
-      yield* Effect.promise(() => announced);
+      yield* announced;
 
       const list = yield* service.read(GROUP_ATTACHMENT);
 
@@ -808,9 +809,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { service, requests, acquireRead } = yield* Effect.promise(() =>
-        groupWritable(stack),
-      );
+      const { service, requests, acquireRead } = yield* groupWritable(stack);
 
       acquireRead.mockRejectedValue(new Error("database is locked"));
       const refreshed = yield* service.refresh(GROUP_ATTACHMENT);
@@ -830,9 +829,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { service, requests } = yield* Effect.promise(() =>
-        groupWritable(stack),
-      );
+      const { service, requests } = yield* groupWritable(stack);
       const key = inGroup("PUPR5FG5");
       const sent = requests.length;
 
@@ -867,9 +864,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const harness = yield* Effect.promise(() =>
-        groupWritable(stack, { createdBy: CREATED_BY }),
-      );
+      const harness = yield* groupWritable(stack, { createdBy: CREATED_BY });
       const { repository, service, requests, client, dbEvents } = harness;
       const key = inGroup("PUPR5FG5");
       yield* service.editTextField("comment", key, "typed before the sync");
@@ -1069,7 +1064,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const stack = yield* scopedStack;
-      const { service } = yield* Effect.promise(() => groupWritable(stack));
+      const { service } = yield* groupWritable(stack);
       const controls = (key: string) =>
         Effect.gen(function* () {
           const annotation = (yield* service.peek(

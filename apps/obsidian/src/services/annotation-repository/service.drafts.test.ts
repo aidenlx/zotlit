@@ -29,10 +29,10 @@ import {
 import {
   afterWrite,
   NOW,
-  nextChange,
+  nextChangeOf,
   REMEMBERED_KEY,
   setup,
-  switchToLocalApi,
+  switchServiceToLocalApi,
   writable,
   zoteroLibrary,
   colorOf,
@@ -69,7 +69,7 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       let serverID = SERVER_ID;
-      const { repository, service, prefEvents } = yield* Effect.promise(() =>
+      const { service, prefEvents } = yield* Effect.promise(() =>
         setup(
           stack,
           {
@@ -79,7 +79,7 @@ it.effect(
           { key: REMEMBERED_KEY },
         ),
       );
-      yield* Effect.promise(() => switchToLocalApi(repository));
+      yield* switchServiceToLocalApi(service);
       yield* service.read("RGRPDF24");
       yield* service.editTextField("comment", "PUPR5FG5", "First database");
 
@@ -242,8 +242,8 @@ it.effect("says a database switch hid an Annotation's drafts", () =>
     const stack = yield* scopedStack;
     let serverID = SERVER_ID;
     let answering = true;
-    const { repository, service, client, dbEvents, serverEvents } =
-      yield* Effect.promise(() =>
+    const { service, client, dbEvents, serverEvents } = yield* Effect.promise(
+      () =>
         writable(stack, {
           root: () =>
             answering
@@ -251,15 +251,15 @@ it.effect("says a database switch hid an Annotation's drafts", () =>
               : unreachable(),
           children: () => annotationPage(ROUGIER_ANNOTATIONS, { serverID }),
         }),
-      );
+    );
     yield* service.editTextField("comment", "PUPR5FG5", "First database");
     yield* service.editTags("PUPR5FG5", ["figure"]);
     expect((yield* service.annotationState("PUPR5FG5")).hidden).toBe(false);
 
     answering = false;
-    const lost = nextChange(repository);
+    const lost = yield* nextChangeOf(service);
     freshnessSignal(serverEvents);
-    yield* Effect.promise(() => lost);
+    yield* lost;
     serverID = "Zzzz11119999";
     client.$client.exec(
       `update settings set value = '${serverID}' where setting = 'localAPI' and key = 'serverID'`,
@@ -281,7 +281,6 @@ it.effect("hides an old database draft and cancels its save schedule", () =>
     let serverID = SERVER_ID;
     let answering = true;
     const {
-      repository,
       service,
       adjustLayerClock,
       client,
@@ -307,9 +306,9 @@ it.effect("hides an old database draft and cancels its save schedule", () =>
     const hidden = yield* firstAnnotation(service, "hidden");
 
     answering = false;
-    const lost = nextChange(repository);
+    const lost = yield* nextChangeOf(service);
     freshnessSignal(serverEvents);
-    yield* Effect.promise(() => lost);
+    yield* lost;
     serverID = "Zzzz11119999";
     client.$client.exec(
       `update settings set value = '${serverID}' where setting = 'localAPI' and key = 'serverID'`,
@@ -338,17 +337,17 @@ it.effect("hides an offline draft after a different database is accepted", () =>
   Effect.gen(function* () {
     const stack = yield* scopedStack;
     let answering = true;
-    const { repository, service, client, dbEvents, serverEvents } =
-      yield* Effect.promise(() =>
+    const { service, client, dbEvents, serverEvents } = yield* Effect.promise(
+      () =>
         writable(stack, {
           root: () => (answering ? rootOk() : unreachable()),
         }),
-      );
+    );
     yield* service.editTextField("comment", "PUPR5FG5", "First database");
     answering = false;
-    const unavailable = nextChange(repository);
+    const unavailable = yield* nextChangeOf(service);
     freshnessSignal(serverEvents);
-    yield* Effect.promise(() => unavailable);
+    yield* unavailable;
 
     client.$client.exec(
       "update settings set value = 'Zzzz11119999' where setting = 'localAPI' and key = 'serverID'",
@@ -368,7 +367,7 @@ it.effect(
       const obsolete = Promise.withResolvers<Response>();
       const started = Promise.withResolvers<void>();
       let deferNext = false;
-      const { repository, service, queryClient } = yield* Effect.promise(() =>
+      const { service, queryClient } = yield* Effect.promise(() =>
         setup(
           stack,
           {
@@ -384,7 +383,7 @@ it.effect(
           { key: REMEMBERED_KEY },
         ),
       );
-      yield* Effect.promise(() => switchToLocalApi(repository));
+      yield* switchServiceToLocalApi(service);
       yield* service.read("RGRPDF24");
       yield* service.editTextField("comment", "PUPR5FG5", "Keep this draft");
 
@@ -1037,18 +1036,18 @@ it.effect(
     Effect.gen(function* () {
       const stack = yield* scopedStack;
       let answering = true;
-      const { service, repository, client, dbEvents, serverEvents } =
-        yield* Effect.promise(() =>
+      const { service, client, dbEvents, serverEvents } = yield* Effect.promise(
+        () =>
           writable(stack, {
             root: () => (answering ? rootOk() : unreachable()),
           }),
-        );
+      );
       yield* service.editTextField("comment", "PUPR5FG5", "My offline draft");
 
       answering = false;
-      const lost = nextChange(repository);
+      const lost = yield* nextChangeOf(service);
       freshnessSignal(serverEvents);
-      yield* Effect.promise(() => lost);
+      yield* lost;
       client.$client.exec(`
     update libraries set clientVersion = 38 where libraryID = 1;
     update itemAnnotations set comment = 'Changed in Zotero' where itemID = 48;
@@ -1312,7 +1311,6 @@ it.effect(
       let answering = true;
       const {
         service,
-        repository,
         client,
         dbEvents,
         requests,
@@ -1332,9 +1330,9 @@ it.effect(
       const deleted = yield* firstAnnotation(service, "gone");
 
       answering = false;
-      const lost = nextChange(repository);
+      const lost = yield* nextChangeOf(service);
       freshnessSignal(serverEvents);
-      yield* Effect.promise(() => lost);
+      yield* lost;
       client.$client.exec(`
       update libraries set clientVersion = 38 where libraryID = 1;
       delete from itemAnnotations where itemID = 48;
@@ -2247,8 +2245,8 @@ it.effect("hides an old database's tag draft when the database switches", () =>
     const stack = yield* scopedStack;
     let serverID = SERVER_ID;
     let answering = true;
-    const { service, repository, client, dbEvents, serverEvents } =
-      yield* Effect.promise(() =>
+    const { service, client, dbEvents, serverEvents } = yield* Effect.promise(
+      () =>
         writable(
           stack,
           {
@@ -2260,16 +2258,16 @@ it.effect("hides an old database's tag draft when the database switches", () =>
           },
           { key: REMEMBERED_KEY },
         ),
-      );
+    );
     yield* service.editTags("PUPR5FG5", ["figure"]);
     const hidden = yield* firstAnnotation(service, "hidden");
 
     // With the Local API gone, the draft is found by the database it was made
     // in, so the switch itself must hide it.
     answering = false;
-    const lost = nextChange(repository);
+    const lost = yield* nextChangeOf(service);
     freshnessSignal(serverEvents);
-    yield* Effect.promise(() => lost);
+    yield* lost;
     serverID = "Zzzz11119999";
     client.$client.exec(
       `update settings set value = '${serverID}' where setting = 'localAPI' and key = 'serverID'`,
