@@ -18,25 +18,12 @@ const INSTALLATION_ID_BYTES = 16;
  * The id this device uses for this vault, minted and stored on first read. A
  * record that is not a non-empty string reads as no id at all and is replaced,
  * so a corrupted entry costs the page its drafts rather than the connection.
- * A store Obsidian cannot read or write costs the same: the minted id holds
- * for this load only.
  */
 export const loadInstallationId = Effect.gen(function* () {
   const storage = yield* DeviceStorage;
+  const held = yield* storage.load(STORAGE_KEY);
+  if (typeof held === "string" && held.length > 0) return held;
   const minted = randomHex(INSTALLATION_ID_BYTES);
-  return yield* Effect.gen(function* () {
-    const held = yield* storage.load(STORAGE_KEY);
-    if (typeof held === "string" && held.length > 0) return held;
-    yield* storage.save(STORAGE_KEY, minted);
-    return minted;
-  }).pipe(
-    Effect.catch((error) =>
-      Effect.as(
-        Effect.logWarning("Could not keep the installation id").pipe(
-          Effect.annotateLogs({ operation: error.operation }),
-        ),
-        minted,
-      ),
-    ),
-  );
+  yield* storage.save(STORAGE_KEY, minted);
+  return minted;
 }).pipe(Effect.withSpan("LocalBridge.loadInstallationId"));

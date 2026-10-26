@@ -4,7 +4,7 @@
 //
 // The sheet itself is a port (`confirmLaunch`), so the decision this module
 // makes is testable apart from the modal that renders it.
-import { Duration, Effect, Option, Stream } from "effect";
+import { Duration, Effect, Option, Schema, Stream } from "effect";
 import type { Context } from "effect";
 import type { CachedMetadata, TFile } from "obsidian";
 
@@ -16,7 +16,6 @@ import { Notifier } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Workspace } from "@/lib/obsidian-workspace";
-import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { LocalServer } from "@/services/local-server/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
@@ -25,6 +24,7 @@ import { PluginSettings } from "@/services/settings/service";
 import { Template } from "@/services/template/service";
 import type { ProfileCustomization } from "@/views/template-workbench/preferences";
 
+import { profileDisplayName } from "./profile-name";
 import { LocalBridge } from "./service";
 import type { SelectedItemIdentity } from "./sessions";
 import { unsupportedProfileSourceReason } from "./unsupported";
@@ -96,6 +96,14 @@ export type CustomizeServices =
   | MetadataCache
   | ObsidianEnv;
 
+/** A port the shell supplies rejected; `cause` is what it rejected with. */
+export class CustomizePortError extends Schema.TaggedError<
+  CustomizePortError,
+  { readonly brand: unique symbol }
+>()("CustomizePortError", {
+  cause: Schema.Defect(),
+}) {}
+
 /** Open a template in the chosen editor, with approval for web access. */
 export type CustomizeAction = (request: CustomizeRequest) => Promise<void>;
 
@@ -110,13 +118,18 @@ export function bindCustomize(
 ): CustomizeAction {
   return (request) =>
     bridge.runPromise(
-      customize(request, ports).pipe(Effect.provideContext(context)),
+      customize(request, ports).pipe(
+        Effect.mapError(({ cause }) => cause),
+        Effect.provideContext(context),
+      ),
     );
 }
 
+const portError = (cause: unknown) => new CustomizePortError({ cause });
+
 /** A port's Promise, failing with what it rejected with. */
 const port = <A>(evaluate: () => Promise<A>) =>
-  Effect.tryPromise({ try: evaluate, catch: (error) => error });
+  Effect.tryPromise({ try: evaluate, catch: portError });
 
 export const customize = Effect.fn("LocalBridge.customize")(function* (
   request: CustomizeRequest,
@@ -131,9 +144,7 @@ export const customize = Effect.fn("LocalBridge.customize")(function* (
     return;
   }
   const preference = ports.preference();
-  const source = yield* (yield* Profile)
-    .getSource(request.profileId)
-    .pipe(Effect.mapError(({ cause }) => cause));
+  const source = yield* (yield* Profile).getSource(request.profileId);
   const reason = unsupportedProfileSourceReason(
     yield* withDependencies(source),
     ports.pluginVersion,
@@ -166,7 +177,7 @@ export const customize = Effect.fn("LocalBridge.customize")(function* (
       website: new URL(DOCS_SITE_URL).host,
       vault: (yield* ObsidianEnv).vaultName,
       item: item?.title ?? item?.key ?? null,
-      template: yield* templateName(request.profileId),
+      template: yield* profileDisplayName(request.profileId),
       turnServerOn,
       turnWorkbenchOn,
     };
@@ -244,9 +255,3 @@ export function noteItem(
   const key = itemKeyFromFrontmatter(cache);
   return key === null ? null : { key, title: file.basename };
 }
-
-const templateName = Effect.fnUntraced(function* (profileId: ProfileSelector) {
-  if (profileId === DEFAULT_PROFILE) return m.settings_profile_default_name();
-  const profiles = yield* (yield* Profile).profiles;
-  return profiles.find(({ id }) => id === profileId)?.label ?? profileId;
-});

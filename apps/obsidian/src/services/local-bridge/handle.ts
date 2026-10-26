@@ -13,6 +13,11 @@ export interface LocalBridgeEvents {
   "profile-saved": (profileId: string) => void;
 }
 
+/** An event name with the callback that follows it. */
+type LocalBridgeSubscription = {
+  [K in keyof LocalBridgeEvents]: [event: K, callback: LocalBridgeEvents[K]];
+}[keyof LocalBridgeEvents];
+
 /** The edge handle `build.ts` binds; see {@link bindLocalBridge}. */
 export interface LocalBridgeHandle {
   /** The connection standing now, without its credential; `null` while none does. */
@@ -20,9 +25,13 @@ export interface LocalBridgeHandle {
   /** End the connection from Obsidian; the page's next request answers 401. */
   disconnect(): void;
   /** Follow `event` until the returned function stops it, or the runtime closes. */
-  on<K extends keyof LocalBridgeEvents>(
-    event: K,
-    callback: LocalBridgeEvents[K],
+  on(
+    event: "connection",
+    callback: LocalBridgeEvents["connection"],
+  ): () => void;
+  on(
+    event: "profile-saved",
+    callback: LocalBridgeEvents["profile-saved"],
   ): () => void;
 }
 
@@ -36,16 +45,10 @@ export function bindLocalBridge(
       return bridge.runSync(service.connection);
     },
     disconnect: () => bridge.runSync(service.disconnect),
-    on: (event, callback) =>
+    on: (...[event, callback]: LocalBridgeSubscription) =>
       event === "connection"
         ? // The current connection replays first; the event names a change.
-          bridge.subscribe(
-            Stream.drop(service.changes, 1),
-            callback as LocalBridgeEvents["connection"],
-          )
-        : bridge.subscribe(
-            service.saved,
-            callback as LocalBridgeEvents["profile-saved"],
-          ),
+          bridge.subscribe(Stream.drop(service.changes, 1), callback)
+        : bridge.subscribe(service.saved, callback),
   };
 }

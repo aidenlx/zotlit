@@ -26,10 +26,8 @@ import { DOCS_SITE_URL } from "@/lib/constants";
 import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
-import * as m from "@/lib/i18n/generated/messages";
 import type { DeviceStorage } from "@/lib/obsidian-device-storage";
 import { ObsidianEnv } from "@/lib/obsidian-env";
-import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
 import { LocalServer } from "@/services/local-server/service";
 import { Profile } from "@/services/profile/service";
 import { PluginSettings } from "@/services/settings/service";
@@ -39,6 +37,7 @@ import { createLocalBridgeApp } from "./app";
 import type { ConnectionGrantDescription } from "./app";
 import { loadInstallationId } from "./installation";
 import { ALLOWED_DOCS_ORIGINS } from "./origins";
+import { profileDisplayName } from "./profile-name";
 import { makeLocalBridgeReads } from "./reads";
 import type { BridgeReadServices } from "./reads";
 import { makeLocalBridgeSave } from "./save";
@@ -122,6 +121,10 @@ export const layerLocalBridge = (options: {
       const settings = yield* PluginSettings;
       const localServer = yield* LocalServer;
       const profiles = yield* Profile;
+      const profileName = (profileId: string) =>
+        profileDisplayName(profileId).pipe(
+          Effect.provideService(Profile, profiles),
+        );
       const { vaultName } = yield* ObsidianEnv;
       // Hono handlers and the sessions' callback run outside Effect.
       const context = yield* Effect.context<never>();
@@ -141,22 +144,10 @@ export const layerLocalBridge = (options: {
         options.webWorkbenchEnabled &&
           (yield* settings.current)["server.workbench"],
       );
-      const installationId = yield* loadInstallationId;
+      // Obsidian's device store catches its own errors, so a failure here is
+      // a defect, and the layer fails with it.
+      const installationId = yield* Effect.orDie(loadInstallationId);
 
-      /**
-       * The Profile's own label, the built-in name for Default, and the id
-       * itself when the vault no longer carries that Profile.
-       */
-      const profileName = Effect.fnUntraced(function* (profileId: string) {
-        if (profileId === DEFAULT_PROFILE)
-          return m.settings_profile_default_name();
-        if (!(yield* profiles.loaded) || !isProfileId(profileId))
-          return profileId;
-        const resolved = yield* Effect.orDie(
-          profiles.resolveProfile(profileId),
-        );
-        return resolved?.label ?? profileId;
-      });
       const describe = Effect.fnUntraced(function* (
         connection: BridgeConnection | null,
       ) {

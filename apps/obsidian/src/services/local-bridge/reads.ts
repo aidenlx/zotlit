@@ -24,7 +24,6 @@ import type {
   SnapshotSelection,
 } from "@zotlit/workbench/snapshot";
 
-import * as m from "@/lib/i18n/generated/messages";
 import { profileRevision } from "@/lib/profile-revision";
 import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
@@ -39,6 +38,7 @@ import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
+import { profileDisplayName } from "./profile-name";
 import type { SelectedItemIdentity } from "./sessions";
 import { collectVaultTargets } from "./vault-targets";
 import type { VaultTargetServices } from "./vault-targets";
@@ -158,7 +158,7 @@ export const readSelectedProfile = Effect.fn("LocalBridge.selectedProfile")(
     }
     const profile = {
       id: profileId,
-      name: resolved.label ?? m.settings_profile_default_name(),
+      name: yield* profileDisplayName(profileId),
     };
     // The document reference a Save addresses is the Profile id and nothing
     // else, so no vault path crosses and the page can key a draft on it.
