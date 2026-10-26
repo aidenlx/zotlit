@@ -84,7 +84,7 @@ export class ReactivityLabView extends ItemView {
     // View-level keys: Obsidian hands each key to the active leaf's Scope.
     this.scope = new Scope(this.app.scope);
     this.scope.register(["Mod", "Shift"], "s", () => {
-      this.#toggleSort();
+      this.toggleSort();
       return false;
     });
   }
@@ -139,7 +139,7 @@ export class ReactivityLabView extends ItemView {
       item
         .setTitle("Sort by citations")
         .setChecked(sort === "count")
-        .onClick(() => this.#toggleSort()),
+        .onClick(() => this.toggleSort()),
     );
     menu.addItem((item) =>
       item
@@ -154,7 +154,7 @@ export class ReactivityLabView extends ItemView {
     );
   }
 
-  #toggleSort() {
+  toggleSort() {
     this.#registry.update(this.model.layout, (layout) => ({
       ...layout,
       sort: nextSort(layout.sort),
@@ -164,7 +164,7 @@ export class ReactivityLabView extends ItemView {
   protected override async onOpen() {
     // Header action: click writes the model; the icon follows the model.
     const sortAction = this.addAction("arrow-down-wide-narrow", "Sort", () =>
-      this.#toggleSort(),
+      this.toggleSort(),
     );
     this.register(
       this.#registry.subscribe(

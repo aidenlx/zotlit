@@ -12,12 +12,15 @@ export type LabSort = "path" | "count";
 const SavedLayout = Schema.Struct({
   search: Schema.optionalKey(Schema.String),
   sort: Schema.optionalKey(Schema.Literals(["path", "count"])),
+  pin: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 
 /** What the workspace layout keeps across a restart. */
 export interface LabLayout {
   readonly search: string;
   readonly sort: LabSort;
+  /** A pinned item key; `null` follows the active note. */
+  readonly pin: string | null;
 }
 
 const decodeSavedLayout = Schema.decodeUnknownOption(SavedLayout);
@@ -25,7 +28,7 @@ const decodeSavedLayout = Schema.decodeUnknownOption(SavedLayout);
 export function makeLabViewModel() {
   return {
     /** Saved: getState/setState carry it in the workspace layout. */
-    layout: Atom.make({ search: "", sort: "path" } as LabLayout),
+    layout: Atom.make({ search: "", sort: "path", pin: null } as LabLayout),
     /** In memory for the leaf's life; never saved. */
     collapsed: Atom.make(new Set<string>() as ReadonlySet<string>),
   };

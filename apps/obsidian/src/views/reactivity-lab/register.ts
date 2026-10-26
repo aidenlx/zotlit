@@ -38,6 +38,17 @@ export function registerReactivityLab(
     REACTIVITY_LAB_VIEW_TYPE,
     (leaf) => new ReactivityLabView(leaf, deps),
   );
+  // A command on "this view": offered only while a lab leaf is active.
+  plugin.addCommand({
+    id: "reactivity-lab-toggle-sort",
+    name: "Toggle reactivity lab sort (prototype)",
+    checkCallback: (checking) => {
+      const view = plugin.app.workspace.getActiveViewOfType(ReactivityLabView);
+      if (!view) return false;
+      if (!checking) view.toggleSort();
+      return true;
+    },
+  });
   plugin.addCommand({
     id: "open-reactivity-lab",
     name: "Open reactivity lab (prototype)",

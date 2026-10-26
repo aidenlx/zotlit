@@ -483,3 +483,135 @@ Needs real OS focus on the Obsidian window.
   return JSON.stringify(out, null, 1);
 })()
 ```
+
+## family.js
+
+Three lab leaves: one follows the active note, two are pinned. Needs a fresh plugin load (probe counters start at zero).
+
+```js
+// Atom.family keyed by leaf input: three lab leaves, one following the active
+// note and two pinned. Counts live citedBy subscriptions per key after each
+// step, then checks saved state and the checkCallback command on this view.
+(async () => {
+  const wait = (ms) => new Promise((r) => window.setTimeout(r, ms));
+  const T = "zotlit-reactivity-lab";
+  const CMD = "zotlit:reactivity-lab-toggle-sort";
+  const notes = [
+    "literatures/wangMutationalClinicalSpectrum2020a.md",
+    "literatures/yinClinicopathologicalFeaturesMutational2021.md",
+    "literatures/wittNebulinRegulatesThin2006.md",
+  ];
+  for (const l of app.workspace.getLeavesOfType(T)) l.detach();
+  let main = app.workspace.getLeavesOfType("markdown")[0];
+  if (!main) main = app.workspace.getLeaf(true);
+  const show = async (path) => {
+    await main.openFile(app.vault.getAbstractFileByPath(path));
+    app.workspace.setActiveLeaf(main, { focus: true });
+    await wait(1000);
+  };
+  const openLab = async () => {
+    const leaf = app.workspace.getLeaf("split");
+    await leaf.setViewState({ type: T, active: false });
+    await leaf.loadIfDeferred();
+    await wait(800);
+    return leaf;
+  };
+  const header = (leaf) => {
+    const text = leaf.view.contentEl.innerText;
+    return {
+      pin: /pin: (\S+)/.exec(text)?.[1],
+      citedBy: /Cited by (loading…|\d+ notes)/.exec(text)?.[1],
+    };
+  };
+
+  await show(notes[0]);
+  const L1 = await openLab();
+  const registry = L1.view.deps.registry;
+  const probe = globalThis.__zotlitLabProbe;
+  // Every probe line, in order, from here on.
+  const events = [];
+  let lastSeq = 0;
+  const unsubscribe = probe.subscribe(() => {
+    for (const line of [...probe.get().log].reverse()) {
+      const seq = Number(/^#(\d+)/.exec(line)?.[1]);
+      if (seq > lastSeq) { lastSeq = seq; events.push(line.replace(/^#\d+ /, "")); }
+    }
+  });
+  const liveByKey = () => {
+    const live = {};
+    for (const e of events) {
+      const m = /^(open|close) citedBy\((.+)\)$/.exec(e);
+      if (m) live[m[2]] = (live[m[2]] ?? 0) + (m[1] === "open" ? 1 : -1);
+    }
+    return Object.fromEntries(Object.entries(live).filter(([, n]) => n !== 0));
+  };
+  const pin = (leaf, key) =>
+    registry.update(leaf.view.model.layout, (l) => ({ ...l, pin: key }));
+
+  // Keys of the three notes, read from the following leaf.
+  const keys = [];
+  for (const n of notes) {
+    await show(n);
+    keys.push(/key: (\S+)/.exec(L1.view.contentEl.innerText)?.[1]);
+  }
+  const [K1, K2, K3] = keys;
+  await show(notes[0]);
+  await wait(800);
+  const out = { keys };
+  const base = { ...liveByKey() };
+  const step = (name) => {
+    out[name] = {
+      liveTotal: probe.get().live,
+      liveByKey: liveByKey(),
+      L1: header(L1), L2: header(L2), L3: header(L3),
+    };
+  };
+  out.baseline = { liveTotal: probe.get().live, liveByKeyFromEvents: base };
+
+  // A. L1 follows n1 (K1); L2 pins K2; L3 pins K1 → expect K1:1, K2:1.
+  const L2 = await openLab();
+  pin(L2, K2);
+  const L3 = await openLab();
+  pin(L3, K1);
+  await wait(1000);
+  step("A_follow_K1_pin_K2_pin_K1");
+
+  // B. L3 → K3 → expect K1 (L1), K2, K3.
+  pin(L3, K3);
+  await wait(1000);
+  step("B_L3_to_K3");
+
+  // C. Active note → n2 (K2): L1 joins L2 on K2; K1 loses its last reader.
+  await show(notes[1]);
+  await wait(500);
+  step("C_active_to_K2");
+
+  // D. Saved state: L2's pin survives a rebuild.
+  out.D_saved = { stateBefore: L2.getViewState().state.pin };
+  await L2.rebuildView();
+  await wait(1200);
+  out.D_saved.pinAfterRebuild = registry.get(L2.view.model.layout).pin;
+  out.D_saved.header = header(L2);
+  out.D_saved.liveByKey = liveByKey();
+
+  // E. checkCallback: offered only with a lab leaf active, acts on that leaf.
+  const command = app.commands.findCommand(CMD);
+  const sorts = () => [L1, L2, L3].map((l) => registry.get(l.view.model.layout).sort);
+  app.workspace.setActiveLeaf(main, { focus: true });
+  await wait(300);
+  out.E_command = { noteActive: { offered: command.checkCallback(true), ran: app.commands.executeCommandById(CMD), sorts: sorts() } };
+  app.workspace.setActiveLeaf(L3, { focus: true });
+  await wait(300);
+  out.E_command.L3Active = { offered: command.checkCallback(true), ran: app.commands.executeCommandById(CMD), sorts: sorts() };
+
+  // F. Close L2 and L3: only L1 on K2 is left.
+  L2.detach();
+  L3.detach();
+  await wait(1200);
+  out.F_after_close = { liveTotal: probe.get().live, liveByKey: liveByKey() };
+  out.lateCallbacks = probe.get().lateCallbacks;
+  out.events = events;
+  unsubscribe();
+  return JSON.stringify(out, null, 1);
+})()
+```

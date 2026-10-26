@@ -28,7 +28,7 @@ two leaves, plugin disable while notes switch.
 |---|---|---|---|
 | Works under Preact compat | yes | yes | yes |
 | Rename does not resubscribe | yes | yes | yes |
-| Fast switch A→B→C→A opens | 1 | 1 | 0–1 |
+| Fast switch A→B→C→A opens | 1 (0 once the active atom reads the key family) | 1 | 0–1 |
 | Stale-callback guard in view code | not needed | not needed (Stream `switchMap`) | not needed |
 | Setting write: pending + result | yes (`AsyncResult.waiting`) | yes (hand-rolled) | yes (hand-rolled) |
 | Unmount: live subs / late callbacks | 0 / 0 (closes after idle TTL, ~0.5 s) | 0 / 0 | 0 / 0 |
@@ -174,6 +174,47 @@ const keyLayer = (keys: ReadonlyArray<KeyBinding>) =>
 
 The layer is pushed while the popup is mounted and popped on every exit
 (unmount, plugin unload, registry dispose) by the finalizer.
+
+## Keyed atoms and commands on this view (third walk, Atom tab)
+
+Each leaf saves a `pin` (an item key, or `null` to follow the active note) in
+its layout. The data comes from one family, and the active atom reads the
+same family, so equal keys share one node across leaves:
+
+```ts
+citedByKeyAtom    = Atom.family((key: string) => viewRuntime.atom(citedBy(key)))
+citedByActiveAtom = Atom.make((get) => {
+  const key = get(activeKeyAtom);
+  return key ? get(citedByKeyAtom(key)) : EMPTY_SNAPSHOT;
+});
+// leaf: useAtomValue(pin === null ? citedByActiveAtom : citedByKeyAtom(pin))
+```
+
+Walk `family.js` (in `WALK.md`), three leaves, live `citedBy` subscriptions
+counted per key from the probe events:
+
+| Step | Live by key | Result |
+|---|---|---|
+| L1 follows K1, L2 pins K2, L3 pins K1 | K1: 1, K2: 1 | following and pinned leaves share K1 |
+| L3 → K3 | K1, K2, K3: 1 each | |
+| active note → K2 | K2: 1, K3: 1 | L1 joins L2 on K2; K1 lost its last reader and closed |
+| `rebuildView()` on L2 | K2: 1, K3: 1 | pin restored from saved state; K2 not reopened |
+| close L2 and L3 | K2: 1 | |
+
+Late callbacks: 0. With the active atom on the family, a key switch closes
+the old key after the idle TTL instead of at once, so a quick return reuses
+the node: the fast-switch scenario opened 0 subscriptions (was 1), with 0
+late callbacks and 0 live after unmount.
+
+The family looks keys up with Effect `Equal`/`Hash`. Use a string key, or
+`Data.struct` for a composite key: a plain object compares by reference and
+gives a new atom, and a new subscription, on every render.
+
+**Command on this view.** `checkCallback` with
+`workspace.getActiveViewOfType(ReactivityLabView)`: with a note leaf active,
+`checkCallback(true)` is `false` and no leaf changes; with L3 active it is
+`true` and only L3's sort flips. `executeCommandById` returned `true` in
+both cases, so it does not report availability; `checkCallback(true)` does.
 
 ## A Layer or Service per ItemView?
 

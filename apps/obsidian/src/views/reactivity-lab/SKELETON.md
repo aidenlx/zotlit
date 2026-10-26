@@ -93,8 +93,10 @@ ViewRegistry({ registry, children }) = <RegistryContext.Provider value={registry
 ```ts
 activeNoteAtom    = held(activeNote /* Workspace + Metadata + Vault rename */, null)
 activeKeyAtom     = Atom.map(activeNoteAtom, n => n?.key ?? null)     // equal key: no rerun
-citedByActiveAtom = viewRuntime.atom(get =>
-                      get(activeKeyAtom) ? citedBy(key) : Stream.make(EMPTY))
+citedByKeyAtom    = Atom.family((key: string) =>                      // one node per key
+                      viewRuntime.atom(citedBy(key)))
+citedByActiveAtom = Atom.make(get =>                                  // through the family:
+                      get(activeKeyAtom) ? get(citedByKeyAtom(key)) : EMPTY) // shares with pinned leaves
 
 previewAtom       = Atom.family((path) =>                             // was: queue + generations
                       viewRuntime.atom(readPreview(path)))           // AsyncResult per group
@@ -236,10 +238,16 @@ function GroupPreview({ path }) {                     // was: loadPreviews queue
 
 ## 9. Open before you build
 
-- `previewAtom` family and `Atom.family` keys: sketched, not walked.
+- `previewAtom` itself (an Effect read per group, not a Stream): sketched.
+  The family mechanics under it are walked (below).
 
 Resolved by walk (FINDINGS.md):
 
+- `Atom.family` keyed by leaf input: one subscription per key across leaves;
+  a pinned key is saved state; a key with no reader closes after the idle TTL.
+  Use a string key (or `Data.struct`): the family compares keys with `Equal`.
+- Command on "this view": `checkCallback` + `getActiveViewOfType` is offered
+  only while a lab leaf is active and acts on that leaf.
 - Registry seat: a scoped Layer in `pluginLayer` is safe. Obsidian closes the
   views before `onunload`, and the Layer disposes the registry after that.
 - `view.scope`: with real focus, a trusted key reaches the handler only while

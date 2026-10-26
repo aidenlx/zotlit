@@ -12,7 +12,7 @@ import type { CitedBySnapshot } from "@/services/citation-index/service";
 import {
   activeNoteAtom,
   atTriggerAtom,
-  citedByActiveAtom,
+  citedByForPin,
   openNoteCommand,
   readCitedByOnceCommand,
   toggleAtTriggerCommand,
@@ -46,18 +46,18 @@ function sorted(
 function AtomPanel() {
   const model = useLabViewModel();
   const note = useAtomValue(activeNoteAtom);
-  const snapshot = useAtomValue(citedByActiveAtom);
+  const [layout, setLayout] = useAtom(model.layout);
+  const snapshot = useAtomValue(citedByForPin(layout.pin));
   const atTrigger = useAtomValue(atTriggerAtom);
   const toggle = useAtomValue(toggleAtTriggerCommand);
   const once = useAtomValue(readCitedByOnceCommand);
-  const [layout, setLayout] = useAtom(model.layout);
   const [collapsed, setCollapsed] = useAtom(model.collapsed);
   const runToggle = useAtomSet(toggleAtTriggerCommand);
   const readOnce = useAtomSet(readCitedByOnceCommand);
   const open = useAtomSet(openNoteCommand);
   return (
     <Panel
-      flavor={`Effect Atom · sort: ${layout.sort}`}
+      flavor={`Effect Atom · sort: ${layout.sort} · pin: ${layout.pin ?? "active"}`}
       note={note}
       snapshot={sorted(snapshot, layout.sort)}
       search={layout.search}
