@@ -1,11 +1,9 @@
 // Renders the captured card once, after its final image outcome is durable.
 import {
-  annotationColorToName,
   annotationOpenUri,
   buildAnnotationParents,
   parseIndexedKey,
 } from "@zotlit/db";
-import { TemplateError } from "@zotlit/templates/facade";
 
 import {
   annotationCitation,
@@ -23,6 +21,7 @@ import {
 import { ProfileAnnotationError } from "@/services/template/service";
 
 import type { NoteFeatureDeps } from "./context";
+import { annotationInsertData } from "./insert-annotation-data";
 
 export interface AnnotationInsertOptions {
   annotation: AnnotationRecord;
@@ -119,63 +118,22 @@ export async function prepareAnnotationInsert(
     valid,
   });
   if (!valid()) return null;
-  const metadata = a.templateMetadata;
-  const data = {
+  const data = annotationInsertData({
+    annotation: a,
     key: key.key,
-    indexedKey: a.key,
     libraryID: request.libraryID,
-    type: a.type,
-    text: a.text,
-    commentHtml: a.comment,
-    get comment() {
-      return a.comment ? resolvers.commentToMarkdown(a.comment) : null;
-    },
-    colorHex: a.color,
-    colorName: annotationColorToName(a.color),
-    pageLabel: a.pageLabel,
     page,
-    authorName: metadata?.authorName ?? null,
-    get isExternal() {
-      return requireFact(metadata?.isExternal, "isExternal");
-    },
-    get dateAdded() {
-      return Temporal.Instant.from(
-        requireFact(metadata?.dateAdded, "dateAdded"),
-      );
-    },
-    get dateModified() {
-      return Temporal.Instant.from(
-        requireFact(metadata?.dateModified, "dateModified"),
-      );
-    },
-    tags: a.tags.map((name) => ({
-      name,
-      type: metadata?.tags?.find((tag) => tag.name === name)?.type ?? "unknown",
-      toString: () => name,
-    })),
+    resolvers,
     imgLink: prepared.helper,
     fileLink,
     backlink,
-    parentItem,
-    parentAttachment: tplAttachment,
-    get citation() {
-      return annotationCitation(parentItem, a.pageLabel, ctx.template);
-    },
-    toString: () => a.text ?? a.comment ?? a.type,
-  };
+    parent: { parentItem, tplAttachment },
+    citation: () => annotationCitation(parentItem, a.pageLabel, ctx.template),
+  });
   return {
     text: ctx.template.renderProfileAnnotation(data, {
       profile: profile.profile,
     }),
     summary: prepared.summary(),
   };
-}
-
-function requireFact<T>(value: T | null | undefined, field: string): T {
-  if (value == null)
-    throw new TemplateError(
-      `Annotation source did not supply ${field}`,
-      "annotation",
-    );
-  return value;
 }
