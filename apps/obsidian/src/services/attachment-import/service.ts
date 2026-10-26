@@ -11,9 +11,9 @@ import {
   Queue,
   Ref,
   Schema,
-  Semaphore,
   Stream,
   SubscriptionRef,
+  SynchronizedRef,
 } from "effect";
 import type { PlatformError } from "effect";
 import {
@@ -270,13 +270,12 @@ export const layerAttachmentImport = (
        * so a moved base directory is followed and a drag between refreshes
        * reads a snapshot at most one operation old.
        */
-      const roots = yield* Ref.make<CanonicalRoots>(NO_ROOTS);
+      const roots = yield* SynchronizedRef.make<CanonicalRoots>(NO_ROOTS);
       // One rebuild at a time, so the last one started is the one that stays.
-      const rebuilding = yield* Semaphore.make(1);
-      const rebuildRoots = rebuilding.withPermits(1)(
+      const rebuildRoots = SynchronizedRef.updateEffect(roots, () =>
         Effect.gen(function* () {
           const { dataDir, baseAttachmentPath } = yield* pref.current;
-          const built = yield* buildCanonicalRoots(
+          return yield* buildCanonicalRoots(
             {
               dataDir,
               baseAttachmentPath,
@@ -286,7 +285,6 @@ export const layerAttachmentImport = (
             },
             platform,
           );
-          yield* Ref.set(roots, built);
         }).pipe(Effect.provideService(FileSystem.FileSystem, fs)),
       );
 
@@ -345,7 +343,7 @@ export const layerAttachmentImport = (
         // across every drag out of the active note. With import switched off
         // nothing is written, so no source is judged and no skip is announced.
         const rootsNow = importEnabled
-          ? Ref.get(roots)
+          ? SynchronizedRef.get(roots)
           : Effect.succeed(NO_ROOTS);
         const items: PendingCopy[] = [];
         let blocked = 0;
@@ -529,7 +527,7 @@ export const layerAttachmentImport = (
                 "Discarded queued attachment imports",
               ).pipe(Effect.annotateLogs({ dropped }), logged);
             }
-          }),
+          }).pipe(Effect.withSpan("AttachmentImport.discard")),
         };
       };
 
