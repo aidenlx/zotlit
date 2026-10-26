@@ -1,18 +1,43 @@
 // The Effect service over the Annotation Repository core.
-import { Clock, Context, Effect, Layer, PubSub, Stream } from "effect";
+import {
+  Clock,
+  Context,
+  Effect,
+  FiberMap,
+  FiberSet,
+  Layer,
+  PubSub,
+  Stream,
+} from "effect";
 
 import { scopedBridge } from "@/lib/effect-bridge";
 import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
-import { filterTag } from "@/lib/effect-stream";
+import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ExcerptImages } from "@/services/excerpt-image/layer";
 import { savedExcerptRequestOver } from "@/services/excerpt-image/request";
 import type { Held } from "@/services/query-client/service";
 import { QueryClients } from "@/services/query-client/service";
 import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
+import { changed } from "@/services/zotero-reads/events";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
+import type { DatabaseRowsError } from "./core/bridge";
+import {
+  capability,
+  capabilityFor,
+  dropDatabasePartition,
+  hold,
+  inRepository,
+  peek,
+  read,
+  refresh,
+  refreshLocks,
+  sourceMoved,
+} from "./core/lists";
+import type { AnnotationLibraryUnresolved } from "./core/lists";
+import { CoreState } from "./core/state";
 import { AnnotationRepositoryCore } from "./repository";
 import type {
   AnnotationDraft,
@@ -34,14 +59,21 @@ import type {
 } from "./repository";
 
 export * from "./repository";
+export type { DatabaseRowsError } from "./core/bridge";
 
 export type AnnotationRepositoryShape = {
   /**
    * @param attachmentKey the Attachment's Indexed Key.
    * @returns the list that stands, with the Pending Proposal of each write in
-   *   flight drawn over it, or null while no read has answered for it.
+   *   flight drawn over it, or null while no read has answered for it. It
+   *   fails where the read that rebinds the Attachment to its database fails.
    */
-  read(attachmentKey: string): Effect.Effect<AnnotationList | null>;
+  read(
+    attachmentKey: string,
+  ): Effect.Effect<
+    AnnotationList | null,
+    DatabaseRowsError | AnnotationLibraryUnresolved
+  >;
   /**
    * Keeps the lists of these Attachments published while a surface shows
    * them: a database change reads them again, and a write finds their
@@ -361,7 +393,8 @@ export function layerAnnotationRepository(options: {
       const queries = yield* QueryClients;
       const api = yield* ZoteroLocalApi;
       const pref = yield* ZoteroPref;
-      const now = instantClock(yield* Clock.Clock);
+      const clock = yield* Clock.Clock;
+      const now = instantClock(clock);
       const bridge = yield* scopedBridge;
       const bus = yield* PubSub.unbounded<AnnotationRepositoryEvent>();
       yield* Effect.addFinalizer(() => PubSub.shutdown(bus));
@@ -377,48 +410,67 @@ export function layerAnnotationRepository(options: {
           if (!request) return null;
           return (await images.stored(request))?.identity.fingerprint ?? null;
         };
+      const fibers = yield* FiberSet.make();
+      const refreshes = yield* FiberMap.make<
+        string,
+        AnnotationList | null,
+        never
+      >();
+      const shared = new CoreState(
+        {
+          bridge,
+          db: reads,
+          queryClient: queries,
+          localApi: api,
+          publish: (event) => {
+            void PubSub.publishUnsafe(bus, event);
+          },
+          writeToken: options.writeToken,
+          now,
+          persistedExcerpt,
+        },
+        { fibers, refreshes },
+      );
       const core = yield* Effect.acquireDisposable(
-        Effect.tryPromise(() =>
-          Promise.resolve(
-            new AnnotationRepositoryCore({
-              bridge,
-              db: reads,
-              queryClient: queries,
-              localApi: api,
-              publish: (event) => {
-                void PubSub.publishUnsafe(bus, event);
-              },
-              writeToken: options.writeToken,
-              now,
-              persistedExcerpt,
-            }),
-          ),
+        Effect.sync(() => new AnnotationRepositoryCore(shared)),
+      );
+      // A database change and a Local API source move supersede lists; the
+      // reads they start run on the layer's Scope.
+      yield* forkEach(changed(reads), () =>
+        Effect.andThen(
+          dropDatabasePartition(shared),
+          FiberSet.run(fibers, refreshLocks(shared)),
         ),
       );
+      yield* forkEach(api.changes, () => sourceMoved(shared));
+      // The repository's reads read the time from the layer's Clock,
+      // whichever fiber calls them.
+      const onLayerClock = Effect.provideService(Clock.Clock, clock);
       const events = Stream.fromPubSub(bus);
       const byTag = <T extends AnnotationRepositoryEvent["_tag"]>(tag: T) =>
         filterTag(events, tag);
       return AnnotationRepository.of({
         read: Effect.fn("AnnotationRepository.read")((attachmentKey) =>
-          Effect.promise(() => core.read(attachmentKey)),
+          read(shared, attachmentKey).pipe(inRepository, onLayerClock),
         ),
         hold: Effect.fn("AnnotationRepository.hold")((attachmentKeys) =>
-          Effect.sync(() => core.hold(attachmentKeys)),
+          hold(shared, attachmentKeys),
         ),
         refresh: Effect.fn("AnnotationRepository.refresh")((attachmentKey) =>
-          Effect.promise(() => core.refresh(attachmentKey)),
+          refresh(shared, attachmentKey).pipe(inRepository, onLayerClock),
         ),
         peek: Effect.fn("AnnotationRepository.peek")((attachmentKey) =>
-          Effect.sync(() => core.peek(attachmentKey)),
+          Effect.sync(() => peek(shared, attachmentKey)),
         ),
         capabilityFor: Effect.fn("AnnotationRepository.capabilityFor")(
           (attachmentKey) =>
-            Effect.sync(() => core.capabilityFor(attachmentKey)),
+            capabilityFor(shared, attachmentKey).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
-        capability: Effect.sync(() => core.capability),
-        probe: Effect.promise(() => core.probe()).pipe(
-          Effect.withSpan("AnnotationRepository.probe"),
-        ),
+        capability: capability(shared).pipe(inRepository, onLayerClock),
+        probe: api.probe.pipe(Effect.withSpan("AnnotationRepository.probe")),
         mutationFor: Effect.fn("AnnotationRepository.mutationFor")(
           (annotationKey) => Effect.sync(() => core.mutationFor(annotationKey)),
         ),

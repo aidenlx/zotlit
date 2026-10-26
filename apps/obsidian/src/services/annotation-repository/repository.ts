@@ -1,8 +1,4 @@
 // The Annotations of one Attachment, read from one Annotation Source at a time.
-import type { Held } from "@/services/query-client/service";
-import { changed } from "@/services/zotero-reads/events";
-
-import type { EditingCapability } from "./capability";
 import {
   cancelAllTextSaves,
   cancelTextSave,
@@ -28,27 +24,10 @@ import {
   redo,
   undo,
 } from "./core/history-steps";
-import {
-  capability,
-  capabilityFor,
-  dropDatabasePartition,
-  hold,
-  peek,
-  probe,
-  read,
-  refresh,
-  refreshLocks,
-  sourceMoved,
-} from "./core/lists";
-import type {
-  AnnotationList,
-  AnnotationRepositoryCoreDeps,
-  AnnotationState,
-  TagDraft,
-  TextFieldDraft,
-} from "./core/model";
+import { capabilityFor } from "./core/lists";
+import type { AnnotationState, TagDraft, TextFieldDraft } from "./core/model";
 import { mutationFor } from "./core/outcomes";
-import { CoreState } from "./core/state";
+import type { CoreState } from "./core/state";
 import {
   createAnnotation,
   deleteAnnotation,
@@ -71,7 +50,11 @@ import type {
   TextField,
 } from "./write";
 export type { CreateOutcome } from "./core/writes";
-export { UNHELD_RETENTION, LocalApiReadFailed } from "./core/lists";
+export {
+  UNHELD_RETENTION,
+  LocalApiReadFailed,
+  AnnotationLibraryUnresolved,
+} from "./core/lists";
 export type {
   DatabaseAnnotationSource,
   AnnotationSource,
@@ -140,24 +123,17 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
   readonly #core: CoreState;
   readonly #stack = new AsyncDisposableStack();
 
-  constructor(deps: AnnotationRepositoryCoreDeps) {
-    const core = new CoreState(deps);
+  constructor(core: CoreState) {
     this.#core = core;
-    this.#stack.defer(
-      core.bridge.subscribe(changed(core.db), () => {
-        dropDatabasePartition(core);
-        void refreshLocks(core);
-      }),
-    );
-    this.#stack.defer(
-      core.bridge.subscribe(core.localApi.changes, () => sourceMoved(core)),
-    );
     this.#stack.defer(
       core.bridge.subscribe(core.localApi.capabilityChanges, () => {
         for (const field of TEXT_FIELDS) {
           const drafts = core.drafts[field];
           for (const [id, draft] of drafts) {
-            if (capabilityFor(core, draft.attachmentKey).kind === "writable")
+            if (
+              core.bridge.runSync(capabilityFor(core, draft.attachmentKey))
+                .kind === "writable"
+            )
               continue;
             cancelTextSave(core, field, draft);
             drafts.set(id, { ...draft, manualSave: true });
@@ -172,7 +148,8 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
         for (const draft of core.drafts.tags.values()) {
           if (
             draft.manualSave ||
-            capabilityFor(core, draft.attachmentKey).kind === "writable"
+            core.bridge.runSync(capabilityFor(core, draft.attachmentKey))
+              .kind === "writable"
           )
             continue;
           setDraft(core, "tags", { ...draft, manualSave: true });
@@ -188,34 +165,6 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
 
   [Symbol.asyncDispose](): Promise<void> {
     return this.#stack.disposeAsync();
-  }
-
-  read(attachmentKey: string): Promise<AnnotationList | null> {
-    return read(this.#core, attachmentKey);
-  }
-
-  hold(attachmentKeys: Iterable<string>): Disposable {
-    return hold(this.#core, attachmentKeys);
-  }
-
-  refresh(attachmentKey: string): Promise<AnnotationList | null> {
-    return refresh(this.#core, attachmentKey);
-  }
-
-  peek(attachmentKey: string): Held<AnnotationList> | null {
-    return peek(this.#core, attachmentKey);
-  }
-
-  capabilityFor(attachmentKey: string): EditingCapability {
-    return capabilityFor(this.#core, attachmentKey);
-  }
-
-  get capability(): EditingCapability {
-    return capability(this.#core);
-  }
-
-  probe(): Promise<void> {
-    return probe(this.#core);
   }
 
   mutationFor(annotationKey: string): MutationState {

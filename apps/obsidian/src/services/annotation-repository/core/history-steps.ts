@@ -233,7 +233,9 @@ async function takeStep(
   }
   const checked: { change: HistoryChange; record: AnnotationRecord }[] = [];
   for (const change of step.changes) {
-    const record = holding(core, change.annotationKey)?.record;
+    const record = core.bridge.runSync(
+      holding(core, change.annotationKey),
+    )?.record;
     if (record && stillHolds(change.after, record)) {
       checked.push({ change, record });
       continue;
@@ -277,7 +279,7 @@ async function takeStep(
       history.drop(direction, step);
       return { kind: "changed", annotationKey };
     }
-    const settled = holding(core, annotationKey)?.record;
+    const settled = core.bridge.runSync(holding(core, annotationKey))?.record;
     left.push({
       annotationKey,
       before,
@@ -353,7 +355,7 @@ async function takeTagStep(
   },
 ): Promise<HistoryOutcome> {
   const [{ annotationKey, tags }] = step.changes;
-  const record = holding(core, annotationKey)?.record;
+  const record = core.bridge.runSync(holding(core, annotationKey))?.record;
   if (!record) {
     logger.debug("A history step was dropped: Zotero no longer holds it", {
       attachmentKey,
@@ -400,7 +402,7 @@ async function takeTagStep(
   if (outcome.kind === "failed") {
     return { kind: "failed", failure: outcome.failure };
   }
-  const settled = holding(core, annotationKey)?.record;
+  const settled = core.bridge.runSync(holding(core, annotationKey))?.record;
   const left =
     settled && tagChange(annotationTags(sent), annotationTags(settled));
   if (left && !noTagChange(left)) {
@@ -437,7 +439,8 @@ async function takeExistenceStep(
   },
 ): Promise<HistoryOutcome> {
   for (const change of step.changes) {
-    const record = holding(core, change.annotationKey)?.record ?? null;
+    const record =
+      core.bridge.runSync(holding(core, change.annotationKey))?.record ?? null;
     if (sameContent(change.after.content ?? null, record)) continue;
     logger.debug("A history step was dropped: Zotero holds another value", {
       attachmentKey,
@@ -488,7 +491,8 @@ async function takeExistenceStep(
     // Zotero named the restored Annotation itself, so every step of both
     // stacks that asked after the old key asks after this one now.
     history.rename(change.annotationKey, made.annotationKey);
-    const settled = holding(core, made.annotationKey)?.record ?? null;
+    const settled =
+      core.bridge.runSync(holding(core, made.annotationKey))?.record ?? null;
     left.push({
       annotationKey: made.annotationKey,
       before: { content: null },

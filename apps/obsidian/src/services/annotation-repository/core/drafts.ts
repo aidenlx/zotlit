@@ -152,13 +152,14 @@ function editTextField(
   annotationKey: string,
   text?: string,
 ): TextFieldDraft | null {
-  const source = demandedSource(core);
+  const source = core.bridge.runSync(demandedSource(core));
   const standing = draftFor(core, field, annotationKey);
-  const held = standing ? null : holding(core, annotationKey);
+  const held = standing
+    ? null
+    : core.bridge.runSync(holding(core, annotationKey));
   if (!standing && (!source || !held)) return null;
-  const capability = capabilityFor(
-    core,
-    standing?.attachmentKey ?? held!.attachmentKey,
+  const capability = core.bridge.runSync(
+    capabilityFor(core, standing?.attachmentKey ?? held!.attachmentKey),
   );
   if (capability.kind !== "writable") return standing ?? null;
   // A lock takes no keystroke either: a draft already standing is held.
@@ -226,7 +227,9 @@ function submitTextField(
   // Save comment pressed on a held draft, which that save's success ends.
   if (!saving) {
     if (automatic && !canAutosave(core, draft)) return Promise.resolve(IDLE);
-    const capability = capabilityFor(core, draft.attachmentKey);
+    const capability = core.bridge.runSync(
+      capabilityFor(core, draft.attachmentKey),
+    );
     if (capability.kind !== "writable")
       return Promise.resolve({
         kind: "failed",
@@ -347,7 +350,7 @@ async function resendText(
   annotationKey: string,
   draft: TextFieldDraft,
 ): Promise<MutationState> {
-  const held = holding(core, annotationKey);
+  const held = core.bridge.runSync(holding(core, annotationKey));
   const reviewed =
     draft.state.kind === "conflict" ? draft.state.fresh : draft.baseline;
   const fresh = (held && TEXT_FIELD_SPECS[field].valueOf(held.record)) ?? "";
@@ -458,11 +461,13 @@ function editTags(
 ): TagDraft | null {
   const standing = tagDraftFor(core, annotationKey);
   if (standing?.state.kind === "pending") return standing;
-  const source = demandedSource(core);
-  const held = standing ? null : holding(core, annotationKey);
+  const source = core.bridge.runSync(demandedSource(core));
+  const held = standing
+    ? null
+    : core.bridge.runSync(holding(core, annotationKey));
   if (!standing && (!source || !held)) return null;
   const attachmentKey = standing?.attachmentKey ?? held!.attachmentKey;
-  const capability = capabilityFor(core, attachmentKey);
+  const capability = core.bridge.runSync(capabilityFor(core, attachmentKey));
   // While editing is unavailable no session starts, but a standing one
   // still takes its editor's last names: the editor closing as editing goes
   // adds the text still typed, which the held draft keeps for Save tags.
@@ -523,7 +528,8 @@ async function submitTags(
     logger.debug("A tag draft is held for Save tags", {
       annotationKey,
       state: draft.state.kind,
-      capability: capabilityFor(core, draft.attachmentKey).kind,
+      capability: core.bridge.runSync(capabilityFor(core, draft.attachmentKey))
+        .kind,
     });
     setDraft(core, "tags", { ...draft, manualSave: true, held: true });
     return IDLE;
@@ -581,7 +587,9 @@ function canAutosave(
   core: CoreState,
   draft: Pick<TextFieldDraft, "attachmentKey" | "manualSave">,
 ): boolean {
-  const capability = capabilityFor(core, draft.attachmentKey);
+  const capability = core.bridge.runSync(
+    capabilityFor(core, draft.attachmentKey),
+  );
   return !draft.manualSave && capability.kind === "writable";
 }
 

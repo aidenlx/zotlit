@@ -1,6 +1,4 @@
 // The Annotation Drafts the core holds, their autosave timers, and how a read reconciles them.
-import type { QueryKey } from "@tanstack/query-core";
-
 import {
   isTextField,
   TEXT_FIELDS,
@@ -9,8 +7,9 @@ import type {
   MutationState,
   TextField,
 } from "@/services/annotation-repository/write";
+import type { Held } from "@/services/query-client/service";
 
-import { demandedSource, peekQuery } from "./bridge";
+import { demandedSource } from "./bridge";
 import {
   DRAFT_FIELDS,
   TEXT_FIELD_SPECS,
@@ -37,7 +36,7 @@ function draftFor<F extends DraftField>(
   annotationKey: string,
 ): DraftFields[F] | null {
   const serverID =
-    demandedSource(core)?.serverID ??
+    core.bridge.runSync(demandedSource(core))?.serverID ??
     core.draftSources[field].get(annotationKey);
   return serverID
     ? (core.drafts[field].get(indexedID(serverID, annotationKey)) ?? null)
@@ -266,15 +265,18 @@ function reconcileTextDrafts(
   }
 }
 
-/** Reconcile only a complete result Query Core accepted for publication. */
+/**
+ * Reconcile only a complete result Query Core accepted for publication.
+ *
+ * @param held what the list's query key holds now.
+ */
 function reconcilePublishedDrafts(
   core: CoreState,
-  queryKey: QueryKey,
+  held: Held<AnnotationList> | null,
   attachmentKey: string,
   list: AnnotationList | null,
 ): void {
   if (!list) return;
-  const held = peekQuery<AnnotationList>(core, queryKey);
   if (held?.status !== "fresh" || held.value !== list) return;
   const serverID =
     list.source.kind === "zotero-local-api"

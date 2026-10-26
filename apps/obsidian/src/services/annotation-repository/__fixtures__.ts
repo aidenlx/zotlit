@@ -1,6 +1,7 @@
 import {
   Context,
   DateTime,
+  Deferred,
   Effect,
   Exit,
   Layer,
@@ -69,7 +70,6 @@ import {
 import type {
   AnnotationList,
   AnnotationRecord,
-  AnnotationRepositoryCore,
   AnnotationRepositoryCoreDeps,
   AnnotationSource,
 } from "./repository";
@@ -346,6 +346,17 @@ export async function setup(
   };
 }
 
+/**
+ * The stack an `it.effect` case builds its harness on: {@link setup} and
+ * {@link writable} add to it, and the case's Scope disposes it. The
+ * repository reads the TestClock of the harness's `runtime`, not the case's
+ * own: a case moves the repository's time through `runtime`.
+ */
+export const scopedStack = Effect.acquireRelease(
+  Effect.sync(() => new AsyncDisposableStack()),
+  (stack) => Effect.promise(() => stack.disposeAsync()),
+);
+
 type FixtureEvents = {
   "annotations-changed": (attachmentKey: string) => void;
   "excerpt-pixels-changed": (
@@ -358,7 +369,41 @@ type FixtureEvents = {
   "write-conflict": (annotationKey: string, attachmentKey: string) => void;
 };
 
-export type RepositoryClient = AnnotationRepositoryCore & {
+type PromiseMember =
+  | "createAnnotation"
+  | "deleteAnnotation"
+  | "deleteAnnotations"
+  | "patchColor"
+  | "patchColors"
+  | "patchComment"
+  | "patchGeometry"
+  | "read"
+  | "redo"
+  | "refresh"
+  | "retryTextDraft"
+  | "retryWrite"
+  | "submitTags"
+  | "submitTextField"
+  | "undo";
+
+type Shape = AnnotationRepository["Service"];
+
+/**
+ * The tag's members as plain calls: a member that waits answers a Promise,
+ * the others their value; `capability` reads as a value and `probe` is a call.
+ */
+type PlainMembers = {
+  [K in Exclude<keyof Shape, "capability" | "probe">]: Shape[K] extends (
+    ...args: infer P
+  ) => Effect.Effect<infer A, unknown>
+    ? (...args: P) => K extends PromiseMember ? Promise<A> : A
+    : never;
+} & {
+  readonly capability: Effect.Success<Shape["capability"]>;
+  probe(): Promise<void>;
+};
+
+export type RepositoryClient = PlainMembers & {
   listen<K extends keyof FixtureEvents>(
     event: K,
     callback: FixtureEvents[K],
@@ -390,7 +435,6 @@ export function repositoryClient(
   bridge: EffectBridge,
   dispose: () => Promise<void>,
 ): RepositoryClient {
-  const refreshes = new Map<string, Promise<AnnotationList | null>>();
   return new Proxy({} as RepositoryClient, {
     get(_target, property) {
       if (property === Symbol.asyncDispose) return dispose;
@@ -437,25 +481,6 @@ export function repositoryClient(
       }
       if (property === "capability") return bridge.runSync(service.capability);
       if (property === "probe") return () => bridge.runPromise(service.probe);
-      if (property === "refresh") {
-        return (attachmentKey: string): Promise<AnnotationList | null> => {
-          const running = refreshes.get(attachmentKey);
-          if (running) return running;
-          const refreshing = bridge.runPromise(service.refresh(attachmentKey));
-          refreshes.set(attachmentKey, refreshing);
-          void refreshing.then(
-            () => {
-              if (refreshes.get(attachmentKey) === refreshing)
-                refreshes.delete(attachmentKey);
-            },
-            () => {
-              if (refreshes.get(attachmentKey) === refreshing)
-                refreshes.delete(attachmentKey);
-            },
-          );
-          return refreshing;
-        };
-      }
       const member = service[property as keyof typeof service];
       if (typeof member !== "function") return member;
       return (...args: unknown[]): unknown => {
@@ -564,6 +589,22 @@ function moveToGroup(
     ).run(userID);
 }
 
+/**
+ * Runs `push` on each value a repository stream announces, on a fiber of the
+ * case that starts at once and ends with the case.
+ */
+export function collect<A>(
+  stream: Stream.Stream<A>,
+  push: (value: A) => Effect.Effect<unknown>,
+) {
+  return Effect.forkChild(
+    Stream.runForEach(stream, (value) => push(value)),
+    {
+      startImmediately: true,
+    },
+  );
+}
+
 /** The next `annotations-changed` the repository emits, as a completion signal. */
 export function nextChange(
   repository: RepositoryClient,
@@ -579,6 +620,45 @@ export function nextChange(
     });
   });
 }
+
+/**
+ * The next `annotations-changed` the repository emits, as a completion signal
+ * for an `it.effect` case. It subscribes to the service stream at once; the
+ * Effect it answers waits for the first announcement and the ones the same
+ * step makes, and answers their keys.
+ */
+export function nextChangeOf(
+  service: Shape,
+): Effect.Effect<Effect.Effect<readonly string[]>> {
+  const announced: string[] = [];
+  return Effect.flatMap(Deferred.make<void>(), (first) =>
+    collect(service.annotationsChanged, (key) =>
+      Effect.sync(() => announced.push(key)).pipe(
+        Effect.andThen(Deferred.succeed(first, undefined)),
+      ),
+    ).pipe(
+      Effect.as(
+        Deferred.await(first).pipe(
+          Effect.andThen(Effect.yieldNow),
+          Effect.map((): readonly string[] => announced),
+        ),
+      ),
+    ),
+  );
+}
+
+/**
+ * Read once so the Capability Probe runs, and wait for the source it finds:
+ * the {@link switchToLocalApi} of an `it.effect` case.
+ */
+export const switchServiceToLocalApi = Effect.fnUntraced(function* (
+  service: Shape,
+  attachmentKey = "RGRPDF24",
+) {
+  const announced = yield* nextChangeOf(service);
+  yield* service.read(attachmentKey);
+  yield* announced;
+});
 
 /**
  * A Zotero that keeps everything ZotLit writes to it — a patch of any field, an

@@ -920,7 +920,9 @@ it("does not start a queued command after repository unload", async () => {
   await repository[Symbol.asyncDispose]();
   first.resolve(writeAccepted());
 
-  await color;
+  // Zotero accepted the write; the reads it waits on after the unload get
+  // their released answers, so it settles as idle.
+  await expect(color).resolves.toEqual({ kind: "idle" });
   await expect(queued).resolves.toEqual({
     kind: "failed",
     failure: { kind: "unknown-outcome" },
