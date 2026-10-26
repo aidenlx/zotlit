@@ -45,7 +45,7 @@ export interface TempSweepOptions<R> {
   ) => Effect.Effect<boolean, PlatformError.PlatformError, R>;
 }
 
-export const sweepTempDirectoryEffect = Effect.fnUntraced(function* <R>({
+export const sweepTempDirectory = Effect.fnUntraced(function* <R>({
   directory,
   kind,
   isResidue,
