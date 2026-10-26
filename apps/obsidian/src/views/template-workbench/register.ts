@@ -55,7 +55,9 @@ function workbenchTargets(app: App, deps: RegistrationDeps) {
     if (isProfile(file)) return file;
     if (!file || !itemKeyFromFrontmatter(app.metadataCache.getFileCache(file)))
       return null;
-    const resolved = deps.registry.get(fileProfileValueAtom(file));
+    const resolved = deps.registry.get(
+      fileProfileValueAtom((file as TFile).path),
+    );
     if (!resolved?.ok) return null;
     if (resolved.profile.selector === "default") return deps.registry;
     const profile = (state()?.profiles ?? []).find(

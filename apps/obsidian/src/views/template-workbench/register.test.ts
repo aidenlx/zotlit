@@ -605,6 +605,11 @@ Annotation`);
     deps.customize = vi.fn(async () => {});
     file.path = "Literature/Figures.md";
     file.basename = "Figures";
+    // The note's Profile resolves through the vault, by path.
+    Object.assign(deps, { app });
+    vi.spyOn(app.vault, "getFileByPath").mockImplementation((path) =>
+      path === file.path ? file : null,
+    );
     vi.spyOn(app.metadataCache, "getFileCache").mockReturnValue({
       frontmatter: { "zotero-key": "PAPER234" },
     });

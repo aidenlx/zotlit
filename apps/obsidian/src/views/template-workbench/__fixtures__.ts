@@ -274,7 +274,13 @@ export function makeWorkbenchHost(
         changes: options.metadata ?? Stream.empty,
       }),
     ),
-    Context.add(Vault, stubService<Vault["Service"]>("Vault", {})),
+    Context.add(
+      Vault,
+      stubService<Vault["Service"]>("Vault", {
+        getFileByPath: (path) =>
+          Effect.sync(() => deps.app!.vault.getFileByPath(path)),
+      }),
+    ),
     Context.add(
       Workspace,
       stubService<Workspace["Service"]>("Workspace", {

@@ -3,6 +3,7 @@ import { expect, it } from "@effect/vitest";
 import { Effect, Stream, SubscriptionRef } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { TFile } from "obsidian";
+import type { App } from "obsidian";
 import { vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -181,10 +182,15 @@ it.effect("reads a note's Profile again when its metadata changes", () =>
           "Profile",
           { profileOf },
         ),
+        app: stubService<NonNullable<WorkbenchHostDeps["app"]>>("App", {
+          vault: stubService<App["vault"]>("Vault", {
+            getFileByPath: () => file,
+          }),
+        }),
       },
       { metadata: SubscriptionRef.changes(events) },
     );
-    const atom = fileProfileAtom(file);
+    const atom = fileProfileAtom(file.path);
     const release = host.registry.mount(atom);
     yield* Effect.promise(() =>
       waitFor(() =>
