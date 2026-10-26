@@ -12,7 +12,10 @@ import type {
 } from "@/services/library-scope/scope";
 import { LibraryScope } from "@/services/library-scope/service";
 import { defaults } from "@/services/settings/schema";
-import { SettingsMutationError } from "@/services/settings/service";
+import {
+  PluginSettings,
+  SettingsMutationError,
+} from "@/services/settings/service";
 
 import { scopedSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
@@ -41,31 +44,31 @@ const setup = Effect.fn("setup")(function* (
   state: ScopeState,
   failure?: SettingsMutationError,
 ) {
-  const saved: Parameters<SettingTabContext["settings"]["update"]>[0][] = [];
+  const saved: Parameters<PluginSettings["Service"]["update"]>[0][] = [];
   let updates = 0;
   const services = yield* Layer.build(
-    Layer.mock(LibraryScope, {
-      effective: Effect.succeed(state.effective),
-      current: Effect.succeed(state.current),
-      invalid: Effect.succeed(state.invalid ?? false),
-      libraries: Effect.succeed(state.libraries ?? []),
-    }),
+    Layer.mergeAll(
+      Layer.mock(LibraryScope, {
+        effective: Effect.succeed(state.effective),
+        current: Effect.succeed(state.current),
+        invalid: Effect.succeed(state.invalid ?? false),
+        libraries: Effect.succeed(state.libraries ?? []),
+      }),
+      Layer.mock(PluginSettings, {
+        update: (patch) =>
+          failure
+            ? Effect.fail(failure)
+            : Effect.sync(() => {
+                saved.push(patch);
+                return defaults;
+              }),
+      }),
+    ),
   );
   const { tab, notices } = yield* scopedSettingTab(services, {
     update: () => void (updates += 1),
   });
-  const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    tab,
-    settings: stubService<SettingTabContext["settings"]>("Settings", {
-      update: (patch) =>
-        failure
-          ? Effect.fail(failure)
-          : Effect.sync(() => {
-              saved.push(patch);
-              return defaults;
-            }),
-    }),
-  });
+  const ctx = stubService<SettingTabContext>("SettingTabContext", { tab });
   return { ctx, saved, updates: () => updates, notices };
 });
 

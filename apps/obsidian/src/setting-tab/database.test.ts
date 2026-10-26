@@ -12,7 +12,10 @@ import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
-import { SettingsMutationError } from "@/services/settings/service";
+import {
+  PluginSettings,
+  SettingsMutationError,
+} from "@/services/settings/service";
 import type {
   ZoteroPrefSnapshot,
   ZoteroProfileInfo,
@@ -63,8 +66,7 @@ const READS: ZoteroReadsState = {
  */
 const setup = Effect.fn("setup")(function* (
   refresh: ZoteroReads["Service"]["refresh"] = Effect.void,
-  update: SettingTabContext["settings"]["update"] = () =>
-    Effect.succeed(defaults),
+  update: PluginSettings["Service"]["update"] = () => Effect.succeed(defaults),
 ) {
   const notifier = testNotifier();
   const pref = yield* SubscriptionRef.make(SNAPSHOT);
@@ -100,15 +102,15 @@ const setup = Effect.fn("setup")(function* (
         refresh,
         events: Stream.fromPubSub(events),
       }),
+      Layer.mock(PluginSettings, {
+        current: Effect.succeed(defaults),
+        changes: Stream.empty,
+        update,
+      }),
     ),
   );
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
     tab: (yield* scopedSettingTab(services)).tab,
-    settings: stubService<SettingTabContext["settings"]>("Settings", {
-      current: Effect.succeed(defaults),
-      changes: Stream.empty,
-      update,
-    }),
   });
   return { ctx, pref, reads, events, writes, notices: notifier.notices };
 });

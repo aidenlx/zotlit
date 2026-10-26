@@ -19,6 +19,7 @@ import type { ProfileId } from "@/lib/profile-stamp";
 import { Customize } from "@/services/local-bridge/customize";
 import { installedStyles } from "@/services/note-feature/creation-view";
 import { Profile } from "@/services/profile/service";
+import { PluginSettings } from "@/services/settings/service";
 import { openNativeProfile } from "@/views/template-workbench/register";
 
 import { referencesStyleDefinition } from "./citations";
@@ -59,7 +60,7 @@ function profileActionsLocked(ctx: SettingTabContext): boolean {
   return ctx.tab.sync(
     Effect.gen(function* () {
       const loaded = yield* (yield* Profile).loaded;
-      const settings = yield* ctx.settings.current;
+      const settings = yield* (yield* PluginSettings).current;
       return !loaded || !!settings["note.template-conversion-pending"];
     }),
   );

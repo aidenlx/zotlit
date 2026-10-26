@@ -125,7 +125,6 @@ const tabOver = Effect.fnUntraced(function* (
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
     tab,
     app: stubService<App>("App", {}),
-    settings: stubService<SettingTabContext["settings"]>("Settings", settings),
   });
   return { ctx, rebuilt, customize, settings };
 });

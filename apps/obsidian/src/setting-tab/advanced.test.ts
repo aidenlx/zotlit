@@ -50,9 +50,6 @@ function items(overrides: Partial<SettingTabContext> = {}) {
       loadLocalStorage: () => null,
       saveLocalStorage: () => {},
     }),
-    settings: stubService<SettingTabContext["settings"]>("Settings", {
-      current: Effect.succeed(settings),
-    }),
     ...overrides,
   });
   return advancedPageItems(ctx);

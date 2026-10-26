@@ -33,7 +33,7 @@ import { ZotLitSettingTab } from "./index";
  */
 export type SettingTabLegacy = Omit<
   SettingTabContext,
-  "tab" | "app" | "manifest" | "settings"
+  "tab" | "app" | "manifest"
 >;
 
 /**
@@ -65,7 +65,6 @@ export function layerSettingTab(legacy: SettingTabLegacy) {
         (plugin) =>
           new ZotLitSettingTab(plugin, {
             ...legacy,
-            settings,
             tab: service,
           }),
       );
