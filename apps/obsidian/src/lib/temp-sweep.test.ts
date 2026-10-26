@@ -1,11 +1,24 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { it } from "@effect/vitest";
-import { Cause, Effect, Exit, Fiber, Logger, References } from "effect";
+import {
+  Cause,
+  Duration,
+  Effect,
+  Exit,
+  Fiber,
+  Logger,
+  PlatformError,
+  References,
+} from "effect";
+import type { FileSystem } from "effect";
+import { TestClock } from "effect/testing";
 import {
   chmod,
   mkdir,
   mkdtemp,
   readdir,
   rm,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,7 +26,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect } from "vitest";
 
 import { LogCategory } from "./effect-log-category";
-import { sweepTempDirectory, sweepTempDirectoryEffect } from "./temp-sweep";
+import { isOlderThan, sweepTempDirectoryEffect } from "./temp-sweep";
 import type { TempSweepOptions } from "./temp-sweep";
 
 let directory: string;
@@ -30,24 +43,17 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
-async function names(): Promise<string[]> {
-  return (await readdir(directory)).sort();
-}
+const names = Effect.promise(async () => (await readdir(directory)).sort());
 
-/** The sweep under test, with a residue rule the case supplies. */
-function sweep(
-  isResidue: (name: string, path: string) => Promise<boolean> | boolean,
-  signal?: AbortSignal,
-): Promise<void> {
-  return sweepTempDirectory(
-    {
-      directory,
-      kind: "test entry",
-      isResidue,
-    },
-    signal,
-  );
-}
+const write = (name: string) =>
+  Effect.promise(() => writeFile(join(directory, name), "x"));
+
+/** A failure a residue rule can report, as the file system reports one. */
+const denied = PlatformError.systemError({
+  _tag: "PermissionDenied",
+  module: "FileSystem",
+  method: "stat",
+});
 
 interface LogRecord {
   readonly level: string;
@@ -70,8 +76,10 @@ function capture(records: LogRecord[]) {
   ]);
 }
 
-/** Run `sweep` and return what it logged, at every level. */
-const logsOf = Effect.fnUntraced(function* (sweepOptions: TempSweepOptions) {
+/** Run the sweep over the Node file system and return what it logged. */
+const logsOf = Effect.fnUntraced(function* (
+  sweepOptions: TempSweepOptions<never>,
+) {
   const records: LogRecord[] = [];
   yield* sweepTempDirectoryEffect(sweepOptions).pipe(
     Effect.provide(capture(records)),
@@ -81,248 +89,241 @@ const logsOf = Effect.fnUntraced(function* (sweepOptions: TempSweepOptions) {
 
 /**
  * Run the sweep in its own fiber and return what it logged and how it ended.
- * `interrupt` stops that fiber; `early` interrupts it before it starts.
+ * `early` interrupts the fiber before it starts.
  */
 const interruptedLogsOf = Effect.fnUntraced(function* (
-  build: (interrupt: () => void) => TempSweepOptions,
+  sweepOptions: TempSweepOptions<never>,
   { early = false }: { early?: boolean } = {},
 ) {
   const records: LogRecord[] = [];
-  let run: Fiber.Fiber<void> | undefined;
-  const interrupt = () => run?.interruptUnsafe();
-  run = yield* Effect.forkChild(
-    sweepTempDirectoryEffect(build(interrupt)).pipe(
+  const run = yield* Effect.forkChild(
+    sweepTempDirectoryEffect(sweepOptions).pipe(
       Effect.provide(capture(records)),
     ),
     { startImmediately: false },
   );
-  if (early) interrupt();
+  if (early) run.interruptUnsafe();
   return { records, exit: yield* Fiber.await(run) };
 });
 
-describe("sweepTempDirectory", () => {
-  it("removes only the entries the residue rule claims", async () => {
-    await writeFile(join(directory, "keep"), "x");
-    await writeFile(join(directory, "drop"), "x");
-    await mkdir(join(directory, "drop-dir"));
-    await writeFile(join(directory, "drop-dir", "nested"), "x");
+/** `self` over the real Node file system, in the case's temp directory. */
+const onDisk = <A, E>(self: Effect.Effect<A, E, FileSystem.FileSystem>) =>
+  Effect.provide(self, NodeFileSystem.layer);
 
-    await sweep(
-      (name, path) => name.startsWith("drop") && path === join(directory, name),
-    );
-
-    expect(await names()).toEqual(["keep"]);
-  });
-
-  it("rejects with an already-aborted signal's reason without removing anything", async () => {
-    await writeFile(join(directory, "drop"), "x");
-    const signal = AbortSignal.abort();
-
-    await expect(sweep(() => true, signal)).rejects.toBe(signal.reason);
-
-    expect(await names()).toEqual(["drop"]);
-  });
-
-  it("stops mid-walk once the signal aborts, rejecting with its reason", async () => {
-    for (const name of ["a", "b", "c", "d"]) {
-      await writeFile(join(directory, name), "x");
-    }
-    const controller = new AbortController();
-    const reason = new Error("Unloaded");
-    let seen = 0;
-
-    await expect(
-      sweep(() => {
-        seen += 1;
-        if (seen === 2) controller.abort(reason);
-        return false;
-      }, controller.signal),
-    ).rejects.toBe(reason);
-
-    expect(seen).toBe(2);
-    expect(await names()).toEqual(["a", "b", "c", "d"]);
-  });
-
-  it("resolves quietly when the directory does not exist", async () => {
-    await expect(
-      sweepTempDirectory({
-        directory: join(directory, "absent"),
-        kind: "test entry",
-        isResidue: () => true,
-      }),
-    ).resolves.toBeUndefined();
-  });
-
-  it("survives a residue rule that throws, without removing anything", async () => {
-    await writeFile(join(directory, "drop"), "x");
-
-    await expect(
-      sweep(() => {
-        throw new Error("cannot decide");
-      }),
-    ).resolves.toBeUndefined();
-    expect(await names()).toEqual(["drop"]);
-  });
-
-  it("removes the entries an asynchronous residue rule claims", async () => {
-    await writeFile(join(directory, "keep"), "x");
-    await writeFile(join(directory, "drop"), "x");
-
-    await sweep(async (name) => {
-      await Promise.resolve();
-      return name === "drop";
-    });
-
-    expect(await names()).toEqual(["keep"]);
-  });
-});
+const byPath = (records: readonly LogRecord[]) =>
+  records
+    .toSorted((a, b) =>
+      String(a.annotations["path"]).localeCompare(
+        String(b.annotations["path"]),
+      ),
+    )
+    .map(({ level, annotations }) => [level, annotations["path"]]);
 
 describe("sweepTempDirectoryEffect", () => {
+  it.effect("removes only the entries the residue rule claims", () =>
+    onDisk(
+      Effect.gen(function* () {
+        yield* write("keep");
+        yield* write("drop");
+        yield* Effect.promise(() => mkdir(join(directory, "drop-dir")));
+        yield* write(join("drop-dir", "nested"));
+        yield* sweepTempDirectoryEffect({
+          directory,
+          kind: "test entry",
+          isResidue: (name, path) =>
+            Effect.succeed(
+              name.startsWith("drop") && path === join(directory, name),
+            ),
+        });
+        expect(yield* names).toEqual(["keep"]);
+      }),
+    ),
+  );
+
   it.effect("logs nothing for a directory that does not exist", () =>
-    Effect.gen(function* () {
-      const records = yield* logsOf({
-        directory: join(directory, "absent"),
-        kind: "test entry",
-        isResidue: () => true,
-      });
-      expect(records).toEqual([]);
-    }),
+    onDisk(
+      Effect.gen(function* () {
+        const records = yield* logsOf({
+          directory: join(directory, "absent"),
+          kind: "test entry",
+          isResidue: () => Effect.succeed(true),
+        });
+        expect(records).toEqual([]);
+      }),
+    ),
   );
 
   it.effect("logs nothing when interrupted before or during the walk", () =>
-    Effect.gen(function* () {
-      yield* Effect.promise(() => writeFile(join(directory, "drop"), "x"));
-      yield* Effect.promise(() => writeFile(join(directory, "other"), "x"));
-      const before = yield* interruptedLogsOf(
-        () => ({ directory, kind: "test entry", isResidue: () => true }),
-        { early: true },
-      );
-      const during = yield* interruptedLogsOf((interrupt) => ({
-        directory,
-        kind: "test entry",
-        isResidue: () => {
-          interrupt();
-          throw new Error("cannot decide");
-        },
-      }));
-      for (const { records, exit } of [before, during]) {
-        expect(records).toEqual([]);
-        expect(
-          Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause),
-        ).toBe(true);
-      }
-      expect(yield* Effect.promise(() => names())).toEqual(["drop", "other"]);
-    }),
+    onDisk(
+      Effect.gen(function* () {
+        yield* write("drop");
+        yield* write("other");
+        const before = yield* interruptedLogsOf(
+          {
+            directory,
+            kind: "test entry",
+            isResidue: () => Effect.succeed(true),
+          },
+          { early: true },
+        );
+        const during = yield* interruptedLogsOf({
+          directory,
+          kind: "test entry",
+          isResidue: () => Effect.interrupt,
+        });
+        for (const { records, exit } of [before, during]) {
+          expect(records).toEqual([]);
+          expect(
+            Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause),
+          ).toBe(true);
+        }
+        expect(yield* names).toEqual(["drop", "other"]);
+      }),
+    ),
   );
 
   it.effect(
     "logs each reaped entry at debug under the temp-sweep category",
     () =>
+      onDisk(
+        Effect.gen(function* () {
+          yield* write("drop");
+          const records = yield* logsOf({
+            directory,
+            kind: "test entry",
+            isResidue: () => Effect.succeed(true),
+          });
+          expect(records).toEqual([
+            {
+              level: "Debug",
+              message: ["Reaped a stale ZotLit temp entry"],
+              category: ["temp-sweep"],
+              annotations: {
+                path: join(directory, "drop"),
+                kind: "test entry",
+              },
+            },
+          ]);
+        }),
+      ),
+  );
+
+  it.effect(
+    "warns for an entry the residue rule fails on and keeps walking",
+    () =>
+      onDisk(
+        Effect.gen(function* () {
+          yield* write("a-unreadable");
+          yield* write("b-drop");
+          const records = yield* logsOf({
+            directory,
+            kind: "test entry",
+            isResidue: (name) =>
+              name === "a-unreadable"
+                ? Effect.fail(denied)
+                : Effect.succeed(true),
+          });
+          expect(byPath(records)).toEqual([
+            ["Warn", join(directory, "a-unreadable")],
+            ["Debug", join(directory, "b-drop")],
+          ]);
+          expect(records.find(({ level }) => level === "Warn")).toMatchObject({
+            message: expect.arrayContaining([
+              "Failed to check a ZotLit temp entry",
+            ]),
+            category: ["temp-sweep"],
+          });
+          expect(yield* names).toEqual(["a-unreadable"]);
+        }),
+      ),
+  );
+
+  it.effect("warns once when the path is not a directory", () =>
+    onDisk(
       Effect.gen(function* () {
-        yield* Effect.promise(() => writeFile(join(directory, "drop"), "x"));
+        const file = join(directory, "file");
+        yield* write("file");
         const records = yield* logsOf({
-          directory,
+          directory: file,
           kind: "test entry",
-          isResidue: () => true,
+          isResidue: () => Effect.succeed(true),
         });
         expect(records).toEqual([
-          {
-            level: "Debug",
-            message: ["Reaped a stale ZotLit temp entry"],
+          expect.objectContaining({
+            level: "Warn",
+            message: expect.arrayContaining([
+              "Failed to sweep a ZotLit temp directory",
+            ]),
             category: ["temp-sweep"],
-            annotations: { path: join(directory, "drop"), kind: "test entry" },
-          },
+            annotations: { directory: file, kind: "test entry" },
+          }),
         ]);
       }),
-  );
-
-  it.effect("warns once and does not fail when the residue rule throws", () =>
-    Effect.gen(function* () {
-      yield* Effect.promise(() => writeFile(join(directory, "drop"), "x"));
-      const records = yield* logsOf({
-        directory,
-        kind: "test entry",
-        isResidue: () => {
-          throw new Error("cannot decide");
-        },
-      });
-      expect(records).toEqual([
-        expect.objectContaining({
-          level: "Warn",
-          message: expect.arrayContaining([
-            "Failed to sweep a ZotLit temp directory",
-          ]),
-          category: ["temp-sweep"],
-          annotations: { directory, kind: "test entry" },
-        }),
-      ]);
-      expect(yield* Effect.promise(() => names())).toEqual(["drop"]);
-    }),
-  );
-
-  it.effect("warns when the path is not a directory", () =>
-    Effect.gen(function* () {
-      const file = join(directory, "file");
-      yield* Effect.promise(() => writeFile(file, "x"));
-      const records = yield* logsOf({
-        directory: file,
-        kind: "test entry",
-        isResidue: () => true,
-      });
-      expect(records.map(({ level }) => level)).toEqual(["Warn"]);
-    }),
-  );
-
-  it.effect("accepts an asynchronous residue rule", () =>
-    Effect.gen(function* () {
-      yield* Effect.promise(() => writeFile(join(directory, "keep"), "x"));
-      yield* Effect.promise(() => writeFile(join(directory, "drop"), "x"));
-      yield* sweepTempDirectoryEffect({
-        directory,
-        kind: "test entry",
-        isResidue: async (name) => {
-          await Promise.resolve();
-          return name === "drop";
-        },
-      });
-      expect(yield* Effect.promise(() => names())).toEqual(["keep"]);
-    }),
+    ),
   );
 
   // Removing the entry inside a read-only directory fails; root ignores modes.
   it.effect.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     "logs a failed removal and keeps walking",
     () =>
+      onDisk(
+        Effect.gen(function* () {
+          yield* Effect.promise(async () => {
+            await writeFile(join(directory, "a-drop"), "x");
+            await mkdir(join(directory, "b-locked"));
+            await writeFile(join(directory, "b-locked", "inner"), "x");
+            await chmod(join(directory, "b-locked"), 0o500);
+            await writeFile(join(directory, "c-drop"), "x");
+          });
+          const records = yield* logsOf({
+            directory,
+            kind: "test entry",
+            isResidue: () => Effect.succeed(true),
+          });
+          // The walk order is the filesystem's, so compare by path.
+          expect(byPath(records)).toEqual([
+            ["Debug", join(directory, "a-drop")],
+            ["Warn", join(directory, "b-locked")],
+            ["Debug", join(directory, "c-drop")],
+          ]);
+          expect(
+            records.find(({ level }) => level === "Warn")?.message,
+          ).toEqual(
+            expect.arrayContaining([
+              "Failed to reap a stale ZotLit temp entry",
+            ]),
+          );
+          expect(yield* names).toEqual(["b-locked"]);
+        }),
+      ),
+  );
+});
+
+describe("isOlderThan", () => {
+  /** The entry's mtime, in seconds since the epoch, as `utimes` takes it. */
+  const STAMP = 1_000_000;
+
+  it.effect("ages an entry from its mtime against the Clock", () =>
+    onDisk(
       Effect.gen(function* () {
-        yield* Effect.promise(async () => {
-          await writeFile(join(directory, "a-drop"), "x");
-          await mkdir(join(directory, "b-locked"));
-          await writeFile(join(directory, "b-locked", "inner"), "x");
-          await chmod(join(directory, "b-locked"), 0o500);
-          await writeFile(join(directory, "c-drop"), "x");
-        });
-        const records = yield* logsOf({
-          directory,
-          kind: "test entry",
-          isResidue: () => true,
-        });
-        // The walk order is the filesystem's, so compare by path.
-        const byPath = records.toSorted((a, b) =>
-          String(a.annotations["path"]).localeCompare(
-            String(b.annotations["path"]),
-          ),
-        );
-        expect(
-          byPath.map(({ level, annotations }) => [level, annotations["path"]]),
-        ).toEqual([
-          ["Debug", join(directory, "a-drop")],
-          ["Warn", join(directory, "b-locked")],
-          ["Debug", join(directory, "c-drop")],
-        ]);
-        expect(byPath[1]?.message).toEqual(
-          expect.arrayContaining(["Failed to reap a stale ZotLit temp entry"]),
-        );
-        expect(yield* Effect.promise(() => names())).toEqual(["b-locked"]);
+        const path = join(directory, "entry");
+        yield* write("entry");
+        yield* Effect.promise(() => utimes(path, STAMP, STAMP));
+        yield* TestClock.setTime(STAMP * 1000);
+        yield* TestClock.adjust(Duration.hours(2));
+        expect(yield* isOlderThan(path, Duration.hours(1))).toBe(true);
+        expect(yield* isOlderThan(path, Duration.hours(3))).toBe(false);
       }),
+    ),
+  );
+
+  it.effect("calls an entry that vanished not older than anything", () =>
+    onDisk(
+      Effect.gen(function* () {
+        expect(yield* isOlderThan(join(directory, "gone"), Duration.zero)).toBe(
+          false,
+        );
+      }),
+    ),
   );
 });

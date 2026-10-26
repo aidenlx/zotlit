@@ -4,10 +4,9 @@ import { Effect } from "effect";
 import { tmpdir } from "node:os";
 
 import { ZOTERO_DB_READ_TEMP_PREFIX } from "@/lib/constants";
-import { isErrno, systemCallError } from "@/lib/errno";
-import { settleAtEdge } from "@/lib/signal-edge";
+import { isErrno } from "@/lib/errno";
 import { sweepTempDirectoryEffect } from "@/lib/temp-sweep";
-import type { PlainReapTempsOptions, ReapTempsOptions } from "@/lib/temp-sweep";
+import type { ReapTempsOptions } from "@/lib/temp-sweep";
 
 /**
  * Remove clone temp dirs left behind by crashed runs. Each dir is tagged with
@@ -24,26 +23,12 @@ export const reapReadClonesEffect = Effect.fnUntraced(function* ({
     kind: "database read clone",
     isResidue: (name) => {
       const pid = parseTempPid(name);
-      return pid !== null && pid !== process.pid && !isPidLive(pid);
+      return pid === null || pid === process.pid
+        ? Effect.succeed(false)
+        : Effect.map(isPidLive(pid), (live) => !live);
     },
   });
 });
-
-/**
- * Run the launch sweep through the existing Promise-shaped lifecycle call. An
- * abort of `signal` interrupts the sweep, which then rejects with the
- * signal's reason.
- */
-export async function reapReadClones({
-  signal,
-  ...options
-}: PlainReapTempsOptions = {}): Promise<void> {
-  const exit = await Effect.runPromiseExit(
-    reapReadClonesEffect(options),
-    signal === undefined ? undefined : { signal },
-  );
-  settleAtEdge(exit, signal);
-}
 
 /**
  * Remove the clone temp dirs a database worker left behind, once that worker
@@ -67,7 +52,7 @@ export const reapWorkerClones = Effect.fnUntraced(function* ({
       sweepTempDirectoryEffect({
         directory,
         kind: "database read clone",
-        isResidue: (name) => parseTempOwner(name) === owner,
+        isResidue: (name) => Effect.succeed(parseTempOwner(name) === owner),
       }),
     { concurrency: "unbounded" },
   );
@@ -91,20 +76,17 @@ function parseTempPid(entry: string): number | null {
   return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
 }
 
-function isPidLive(pid: number): boolean {
-  // boundary: process.kill is synchronous and the sweep predicate is synchronous.
-  return Effect.runSync(
-    Effect.try({
-      try: () => {
-        process.kill(pid, 0);
-      },
-      catch: systemCallError,
-    }).pipe(
-      Effect.match({
-        onSuccess: () => true,
-        // EPERM means the PID exists but is owned by another user — still live.
-        onFailure: (error) => isErrno(error, "EPERM"),
-      }),
-    ),
+/**
+ * Whether a process holds `pid`, probed with signal 0. A refused probe fails
+ * with its answer already: EPERM means the PID exists but another user owns
+ * it, so it is still live; any other refusal means no process holds it.
+ */
+function isPidLive(pid: number): Effect.Effect<boolean> {
+  return Effect.try({
+    try: () => process.kill(pid, 0),
+    catch: (error) => isErrno(error, "EPERM"),
+  }).pipe(
+    Effect.as(true),
+    Effect.catch((ownedByAnotherUser) => Effect.succeed(ownedByAnotherUser)),
   );
 }

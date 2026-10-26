@@ -1,28 +1,27 @@
-import { stat } from "node:fs/promises";
+// What counts as a stale excerpt PNG, next to the code that publishes one.
+
+import { Duration, Effect } from "effect";
 import { tmpdir } from "node:os";
 
-import { sweepTempDirectory } from "@/lib/temp-sweep";
-import type { PlainReapTempsOptions } from "@/lib/temp-sweep";
+import { isOlderThan, sweepTempDirectoryEffect } from "@/lib/temp-sweep";
+import type { ReapTempsOptions } from "@/lib/temp-sweep";
 
 import { excerptTempDirectory } from "./temp-store";
 
-/** Last use starts the seven-day lifetime; abandoned writes expire in one hour. */
-export async function reapExcerptTemps({
-  signal,
+/** Every reuse restamps a published PNG, so last use starts its lifetime. */
+const PNG_MAX_AGE = Duration.days(7);
+
+/** A `.part` file outlives its write only when the write was abandoned. */
+const PART_MAX_AGE = Duration.hours(1);
+
+/** Evict the excerpt PNGs and staged writes no CLI caller can still be reading. */
+export const reapExcerptTemps = Effect.fnUntraced(function* ({
   parent = tmpdir(),
-}: PlainReapTempsOptions = {}): Promise<void> {
-  await sweepTempDirectory(
-    {
-      directory: excerptTempDirectory(parent),
-      kind: "excerpt PNG",
-      isResidue: async (name, path) => {
-        const entry = await stat(path).catch(() => null);
-        const cutoff = Temporal.Now.instant().subtract({
-          hours: name.endsWith(".part") ? 1 : 7 * 24,
-        });
-        return entry !== null && entry.mtimeMs < cutoff.epochMilliseconds;
-      },
-    },
-    signal,
-  );
-}
+}: ReapTempsOptions = {}) {
+  yield* sweepTempDirectoryEffect({
+    directory: excerptTempDirectory(parent),
+    kind: "excerpt PNG",
+    isResidue: (name, path) =>
+      isOlderThan(path, name.endsWith(".part") ? PART_MAX_AGE : PNG_MAX_AGE),
+  });
+});

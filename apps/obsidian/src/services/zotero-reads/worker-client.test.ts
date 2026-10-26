@@ -1,5 +1,13 @@
 import { it } from "@effect/vitest";
-import { Context, Effect, Fiber, Layer, Queue, Stream } from "effect";
+import {
+  Context,
+  Effect,
+  Fiber,
+  FileSystem,
+  Layer,
+  Queue,
+  Stream,
+} from "effect";
 import { RpcGroup, RpcServer, RpcWorker } from "effect/rpc";
 import { TestClock } from "effect/testing";
 import { expect, vi } from "vitest";
@@ -144,6 +152,7 @@ it.effect("starts the worker with the loaded profile data directory", () =>
           Effect.provideService(ZoteroPref, f.pref),
           Effect.provideService(ChineseSegmenter, worker.chineseSegmenter),
           Effect.provideService(ObsidianEnv, testObsidianEnv()),
+          Effect.provideService(FileSystem.FileSystem, FileSystem.makeNoop({})),
         ),
       ),
       Effect.forkChild,
@@ -174,6 +183,7 @@ it.effect(
         Effect.provideService(ZoteroPref, f.pref),
         Effect.provideService(ChineseSegmenter, worker.chineseSegmenter),
         Effect.provideService(ObsidianEnv, testObsidianEnv()),
+        Effect.provideService(FileSystem.FileSystem, FileSystem.makeNoop({})),
         Effect.forkChild,
       );
       const spawned = yield* Queue.take(worker.spawned);
@@ -198,6 +208,7 @@ it.effect(
         Effect.provideService(ZoteroPref, f.pref),
         Effect.provideService(ChineseSegmenter, worker.chineseSegmenter),
         Effect.provideService(ObsidianEnv, testObsidianEnv()),
+        Effect.provideService(FileSystem.FileSystem, FileSystem.makeNoop({})),
         Effect.forkChild,
       );
       (yield* Queue.take(worker.spawned)).start();

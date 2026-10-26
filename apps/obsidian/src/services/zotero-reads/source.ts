@@ -6,6 +6,7 @@ import {
   Effect,
   Exit,
   Fiber,
+  FileSystem,
   Layer,
   Queue,
   Ref,
@@ -114,7 +115,7 @@ export interface SourcePorts {
   existsSync: (path: string) => boolean;
   reapReadClones: (options: {
     parent: string;
-  }) => Effect.Effect<unknown, DbUnavailable>;
+  }) => Effect.Effect<unknown, DbUnavailable, FileSystem.FileSystem>;
 }
 
 const defaultPorts: SourcePorts = {
@@ -158,12 +159,17 @@ interface RefreshRequest {
  * refresh validates the new source before it swaps; a failed one keeps the
  * previous client serving.
  */
-export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
+export function layerSource(
+  options?: SourceOptions,
+): Layer.Layer<Connection, never, FileSystem.FileSystem> {
   const ports: SourcePorts = { ...defaultPorts, ...options?.ports };
 
   return Layer.effect(Connection)(
     Effect.gen(function* () {
       const lifetime = yield* Scope.Scope;
+      // The refresh lane's Effects carry no requirement, so the snapshot sweep
+      // it starts takes the file system this layer was built with.
+      const fs = yield* FileSystem.FileSystem;
       const state = yield* Ref.make<{
         config: ReadsConfig | null;
         state: "loading" | "ready" | "degraded";
@@ -260,6 +266,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
           parent,
         });
         yield* ports.reapReadClones({ parent }).pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
           Effect.catch((error) =>
             logDebug("Read snapshot sweep failed", { error }),
           ),

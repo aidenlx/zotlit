@@ -8,7 +8,6 @@ import {
   DOCS_SITE_URL,
   WEB_WORKBENCH_ENABLED,
 } from "@/lib/constants";
-import { DisposableAbortController } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { initI18n } from "./lib/i18n";
@@ -31,8 +30,6 @@ import { buildServices } from "./services/build";
 import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
 import { registerCitekeyCandidatePicker } from "./services/citekey-editor/candidates";
 import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices";
-import { reapReadClones } from "./services/database/reap-temps";
-import { reapExcerptTemps } from "./services/excerpt-image/reap-temps";
 import { registerAnnotationImageCli } from "./services/excerpt-image/register-cli";
 import { savedExcerptRequest } from "./services/excerpt-image/request";
 import { registerFileMenu } from "./services/file-menu";
@@ -53,7 +50,6 @@ import {
   noteFeatureFileMenu,
 } from "./services/note-feature/actions";
 import { runBatchUpdateAll } from "./services/note-feature/update-batch";
-import { reapCslStore } from "./services/pandoc/reap-temps";
 import { addProfileActions } from "./services/profile/actions";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { ServiceStartupFailed } from "./services/startup-failure";
@@ -304,19 +300,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     // Local stack gives automatic rollback if any startup acquisition or wiring
     // fails before the plugin commits ownership with `stack.move()`.
     await using stack = new AsyncDisposableStack();
-
-    // Clear the temp residue of crashed runs before any service adds more.
-    // Fire-and-forget: a launch never waits on housekeeping, and unloading
-    // mid-sweep aborts it. Each producer owns what its own residue is, and
-    // each reap reports its own failures rather than raising them. A reap the
-    // abort ends rejects with its reason, which unload means to ignore.
-    const { signal: reapSignal } = stack.use(new DisposableAbortController());
-    const ignoreReapAbort = (error: unknown) => {
-      if (error !== reapSignal.reason) throw error;
-    };
-    void reapReadClones({ signal: reapSignal }).catch(ignoreReapAbort);
-    void reapCslStore({ signal: reapSignal }).catch(ignoreReapAbort);
-    void reapExcerptTemps({ signal: reapSignal }).catch(ignoreReapAbort);
 
     const { services } = await buildServices(this, stack).catch(
       reportStartupFailure,

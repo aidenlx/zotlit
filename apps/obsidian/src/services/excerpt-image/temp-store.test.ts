@@ -1,3 +1,6 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { it as effectIt } from "@effect/vitest";
+import { Clock, Duration, Effect } from "effect";
 import { mkdtemp, readFile, readdir, rm, stat, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -29,23 +32,35 @@ it("publishes a complete PNG once for concurrent uses of one fingerprint", async
   expect(await readdir(directory)).toEqual([basename(paths[0]!)]);
 });
 
-it("keeps a reused PNG and reaps one unused for more than seven days", async () => {
-  const parent = await mkdtemp(join(tmpdir(), "zotlit-excerpt-test-"));
-  directories.push(parent);
-  const directory = excerptTempDirectory(parent);
-  const recent = await publishExcerptPng("a".repeat(64), redPng, directory);
-  const old = await publishExcerptPng("b".repeat(64), redPng, directory);
-  const time =
-    Temporal.Now.instant().subtract({ hours: 8 * 24 }).epochMilliseconds / 1000;
-  await Promise.all([utimes(recent, time, time), utimes(old, time, time)]);
-  await publishExcerptPng("a".repeat(64), redPng, directory);
-  expect((await stat(recent)).mtimeMs).toBeGreaterThan(time * 1000);
-  await reapExcerptTemps({ parent });
-  expect(await readdir(directory)).toEqual([basename(recent)]);
-  await expect(
-    reapExcerptTemps({ parent: join(parent, "missing") }),
-  ).resolves.toBeUndefined();
-});
+// The publish restamps with the wall clock, so the reap reads the live Clock.
+effectIt.live(
+  "keeps a reused PNG and reaps one unused for more than seven days",
+  () =>
+    Effect.gen(function* () {
+      const parent = yield* Effect.promise(() =>
+        mkdtemp(join(tmpdir(), "zotlit-excerpt-test-")),
+      );
+      directories.push(parent);
+      const directory = excerptTempDirectory(parent);
+      const publish = (fingerprint: string) =>
+        Effect.promise(() => publishExcerptPng(fingerprint, redPng, directory));
+      const recent = yield* publish("a".repeat(64));
+      const old = yield* publish("b".repeat(64));
+      const now = yield* Clock.currentTimeMillis;
+      const time = (now - Duration.toMillis(Duration.days(8))) / 1000;
+      yield* Effect.promise(() =>
+        Promise.all([utimes(recent, time, time), utimes(old, time, time)]),
+      );
+      yield* publish("a".repeat(64));
+      expect(
+        (yield* Effect.promise(() => stat(recent))).mtimeMs,
+      ).toBeGreaterThan(time * 1000);
+      yield* reapExcerptTemps({ parent });
+      expect(yield* Effect.promise(() => readdir(directory))).toEqual([
+        basename(recent),
+      ]);
+    }).pipe(Effect.provide(NodeFileSystem.layer)),
+);
 
 it("publishes refreshed pixels for the same Annotation identity", async () => {
   const directory = await mkdtemp(join(tmpdir(), "zotlit-excerpt-test-"));
