@@ -1,10 +1,10 @@
 /** Bibliography renders for views and legacy services, on the plugin runtime. */
-import { Effect, Stream } from "effect";
-import type { ManagedRuntime } from "effect";
+import { Stream } from "effect";
+import type { ManagedRuntime , Effect} from "effect";
 
 import type { CslItemData } from "@zotlit/db";
 
-import { isScopeClosed } from "@/lib/effect-scope";
+import { effectBridge } from "@/lib/effect-bridge";
 import { settleAtEdge } from "@/lib/signal-edge";
 import type { EffectivePresentation } from "@/services/pandoc/document-presentation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
@@ -125,13 +125,12 @@ export interface PlainBibliographyRender {
 export function plainBibliographyRender(
   runtime: Pick<
     ManagedRuntime.ManagedRuntime<BibliographyRender, never>,
-    "runSync" | "runPromiseExit" | "runFork" | "scope"
+    "runSync" | "runFork" | "scope"
   >,
 ): PlainBibliographyRender {
   const service = runtime.runSync(BibliographyRender);
-  const context = runtime.runSync(Effect.context<never>());
-  const runSync = Effect.runSyncWith(context);
-  const runReleased = Effect.runPromiseExitWith(context);
+  const bridge = effectBridge(runtime);
+  const runSync = bridge.runSync;
   const releasedRender = () =>
     ({ kind: "unavailable", reason: "failed" }) as const;
   const releasedRead = (): never => {
@@ -142,13 +141,12 @@ export function plainBibliographyRender(
     released: () => A,
     signal?: AbortSignal,
   ): Promise<A> => {
-    // Retain the legacy read surface after release, including unavailable
-    // engine/style outcomes. A disposed ManagedRuntime cannot run it itself.
-    // The caller's signal interrupts the wait and rejects with its reason.
-    const options = signal === undefined ? undefined : { signal };
-    const exit = await (isScopeClosed(runtime.scope)
-      ? runReleased(effect, options)
-      : runtime.runPromiseExit(effect, options));
+    // Unload stops the run, which then answers `released`. The caller's
+    // signal interrupts the wait and rejects with its reason.
+    const exit = await bridge.runPromiseExit(
+      effect,
+      signal === undefined ? undefined : { signal },
+    );
     return settleAtEdge(exit, signal, released);
   };
   return {

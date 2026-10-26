@@ -73,8 +73,10 @@ it.effect(
       unsubscribe();
       yield* Effect.promise(() => runtime.dispose());
       expect(template.render("note", {})).toBe("First");
-      expect(yield* Effect.promise(() => template.waitUntilSettled(500))).toBe(
-        "settled",
+      yield* Effect.promise(() =>
+        expect(template.waitUntilSettled(500)).rejects.toMatchObject({
+          name: "AbortError",
+        }),
       );
       const afterClose = subscribe(runtime, template.changes, () => {
         throw new Error("closed subscriber");
@@ -142,7 +144,10 @@ it.effect(
           return create(path, source);
         },
       );
-      const created = template.createPartial("authors", { source: "Authors" });
+      // Unload stops the waiting caller; the write itself finishes.
+      const created = expect(
+        template.createPartial("authors", { source: "Authors" }),
+      ).rejects.toMatchObject({ name: "AbortError" });
       yield* Queue.take(started);
       let disposed = false;
       const closing = runtime.dispose().then(() => {
@@ -151,9 +156,7 @@ it.effect(
       yield* TestClock.adjust(0);
       expect(disposed).toBe(false);
       writing.resolve();
-      expect((yield* Effect.promise(() => created)).path).toBe(
-        "templates/zotlit-partial.authors.md",
-      );
+      yield* Effect.promise(() => created);
       yield* Effect.promise(() => closing);
       expect(disposed).toBe(true);
       expect(
@@ -163,7 +166,7 @@ it.effect(
 );
 
 it.effect(
-  "#1705: migration ignores late layout callbacks and retains its released adapter surface",
+  "#1705: migration ignores late layout callbacks and stops its calls after disposal",
   () =>
     Effect.gen(function* () {
       const host = createTemplateHost();
@@ -193,12 +196,13 @@ it.effect(
       yield* Effect.promise(() => runtime.dispose());
       host.vault.addFile("templates/zotlit-note.liquid.md", "Late inventory");
       for (const callback of callbacks) callback();
+      const aborted = { name: "AbortError" };
+      // A closed migration has nothing to settle: the answer is at once.
       yield* Effect.promise(() => migration.whenSettled());
       expect(openPrompt).not.toHaveBeenCalled();
-      expect(yield* Effect.promise(() => migration.convert())).toMatchObject({
-        outcome: "refused",
-        diagnostic: { code: "no-legacy-templates" },
-      });
+      yield* Effect.promise(() =>
+        expect(migration.convert()).rejects.toMatchObject(aborted),
+      );
       yield* Effect.promise(() =>
         expect(migration.retryCleanup()).rejects.toThrow(
           "Cleanup retry needs a completed conversion",

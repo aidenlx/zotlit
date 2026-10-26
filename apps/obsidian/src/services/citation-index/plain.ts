@@ -1,8 +1,9 @@
 /** Citation services for views and legacy services, on the plugin runtime. */
-import { Cause, Effect, Exit, Stream } from "effect";
-import type { ManagedRuntime } from "effect";
+import { Cause, Exit, Stream } from "effect";
+import type { ManagedRuntime , Effect} from "effect";
 import type { TFile } from "obsidian";
 
+import { AbortError } from "@/lib/abort-error";
 import { effectBridge } from "@/lib/effect-bridge";
 import { settleAtEdge } from "@/lib/signal-edge";
 
@@ -92,41 +93,26 @@ export function plainCitationIndex(
 ) {
   const bridge = effectBridge(runtime);
   const service = runtime.runSync(CitationIndex);
-  // Unload interrupts every bridge run. A read of the released service's
-  // terminal state runs outside the runtime's scope, so it answers after
-  // unload (#1705).
-  const runReleased = Effect.runPromiseWith(
-    runtime.runSync(Effect.context<CitationIndex>()),
-  );
-  /** Runs one call; the caller's signal interrupts it and rejects with its reason. */
+  /**
+   * Runs one call; the caller's signal interrupts it and rejects with its
+   * reason. Unload stops it, and it rejects with an `AbortError`.
+   */
   async function invoke<A, E>(
     effect: Effect.Effect<A, E>,
     signal?: AbortSignal,
   ): Promise<A> {
-    let exit = bridge.closed()
-      ? await runReleased(Effect.exit(effect))
-      : await bridge.runPromiseExit(
-          effect,
-          signal === undefined ? undefined : { signal },
-        );
-    // A call interrupted by unload reads the released service's terminal state.
-    if (
-      !signal?.aborted &&
-      Exit.isFailure(exit) &&
-      Cause.hasInterruptsOnly(exit.cause)
-    ) {
-      await runReleased(
-        Stream.runHead(
-          service.changes.pipe(Stream.filter((state) => state.stopped)),
-        ),
-      );
-      exit = await runReleased(Effect.exit(effect));
-    }
+    const exit = await bridge.runPromiseExit(
+      effect,
+      signal === undefined ? undefined : { signal },
+    );
     return settleAtEdge(
       Exit.mapError(exit, (error) =>
         Cause.isUnknownError(error) ? error.cause : error,
       ),
       signal,
+      () => {
+        throw new AbortError("The plugin unloaded during the run.");
+      },
     );
   }
   return {
