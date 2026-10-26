@@ -38,6 +38,27 @@ import {
 } from "./citations";
 import type { SettingTabContext } from "./context";
 
+/** Style folder reads a case holds in flight, and the folders read so far. */
+const styleReads = vi.hoisted(() => ({
+  held: new Map<string, Promise<void>>(),
+  started: new Set<string>(),
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    readdir: async (...args: Parameters<typeof actual.readdir>) => {
+      const [path] = args;
+      if (typeof path === "string") {
+        styleReads.started.add(path);
+        await styleReads.held.get(path);
+      }
+      return actual.readdir(...args);
+    },
+  };
+});
+
 const APA = { id: "http://www.zotero.org/styles/apa", title: "APA" };
 const NATURE = { id: "http://www.zotero.org/styles/nature", title: "Nature" };
 const CHICAGO = {
@@ -328,11 +349,18 @@ describe("References style row", () => {
         const row = yield* setup(first);
         yield* eventually(() => expect(row.titles()).toEqual(["APA"]));
 
+        // The read of the folder in between stays in flight until released.
+        const held = Promise.withResolvers<void>();
+        const secondStyles = join(second, "styles");
+        styleReads.held.set(secondStyles, held.promise);
         yield* row.moveDataFolder(second);
+        yield* eventually(() =>
+          expect(styleReads.started.has(secondStyles)).toBe(true),
+        );
         yield* row.moveDataFolder(third);
-
         yield* eventually(() => expect(row.titles()).toEqual(["Chicago"]));
-        // A read of the folder in between does not land after it.
+
+        held.resolve();
         yield* Effect.sleep("50 millis");
         expect(row.titles()).toEqual(["Chicago"]);
       }),
