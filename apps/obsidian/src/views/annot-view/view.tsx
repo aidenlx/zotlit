@@ -516,11 +516,9 @@ export class AnnotationView extends ItemView implements HistorySurface {
         if (this.#deps.app.workspace.activeLeaf === this.leaf) {
           this.#layout.revalidate();
         }
-        if (
-          this.#followMode === "active-tab" &&
-          (this.#activePdfSession() || this.#leafSession)
-        )
-          this.#reload();
+        // A pane without a file can clear the target while the note atom
+        // still holds the key of the note that becomes active again.
+        if (this.#followMode === "active-tab") this.#reload();
       }),
     );
 

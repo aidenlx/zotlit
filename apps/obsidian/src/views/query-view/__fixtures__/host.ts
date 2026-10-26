@@ -31,6 +31,7 @@ export async function makeQueryHost<R = never>(
       layerHost(options.sources),
       layerAnnotServices(options),
       Layer.mock(Vault, {
+        changes: Stream.empty,
         getFileByPath: (path) =>
           Effect.sync(() => deps.app.vault.getFileByPath(path)),
       }),

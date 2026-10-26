@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { Menu, setMockPlatform } from "@mock/obsidian";
 import { Effect, Layer, Stream } from "effect";
-import { debounce, Scope } from "obsidian";
+import { debounce, Scope, TFile } from "obsidian";
 import type { App, Menu as ObsidianMenu, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, expect, it, vi } from "vitest";
@@ -9,6 +9,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { AnnotViewAttachment } from "@zotlit/db";
 
 import { testEvents, testEvent } from "@/lib/__fixtures__/event-stream";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
@@ -28,6 +29,7 @@ import { libraryScopeStateAtom } from "@/services/library-scope/atoms";
 import { DEFAULT_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 import { LibraryScope } from "@/services/library-scope/service";
 import type { LibraryScopeState } from "@/services/library-scope/service";
+import { activeKeyAtom } from "@/services/note-index/atoms";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { zoteroRevisionAtom } from "@/services/zotero-reads/atoms";
 import { stubbedReads } from "@/services/zotero-reads/test-utils";
@@ -221,6 +223,7 @@ async function openSidebar(
     attachmentsOf,
     listOf,
     listRead,
+    activeNoteKey,
   }: {
     readsState?: "ready" | "degraded";
     query?: string;
@@ -230,6 +233,7 @@ async function openSidebar(
     listOf?: (attachmentKey: string) => AnnotationList;
     /** Settles when the repository answers a read of the Attachment's list. */
     listRead?: (attachmentKey: string) => Promise<void>;
+    activeNoteKey?: string;
   } = {},
 ) {
   setMockPlatform({ isMacOS: true });
@@ -249,18 +253,30 @@ async function openSidebar(
       Effect.succeed(attachmentsOf?.(key) ?? attachments),
     );
   const app = editorApp();
+  const workspace = new MemoryWorkspace({ layoutReady: true });
+  if (activeNoteKey)
+    workspace.open(
+      Object.assign(new TFile(), {
+        path: "literatures/paper.md",
+        extension: "md",
+      }),
+    );
   app.loadLocalStorage = () => null;
   app.saveLocalStorage = () => {};
   app.workspace = stubService<App["workspace"]>("Workspace", {
     trigger: () => {},
-    getActiveFile: () => null,
-    on: () => ({}),
+    activeLeaf: null,
+    getActiveFile: () => workspace.getActiveFile(),
+    on: (name: string, callback: (...args: never[]) => unknown) =>
+      workspace.on(name, (...args) => callback(...(args as never[]))),
+    offref: (ref) => workspace.offref(ref),
     requestSaveLayout: debounce(() => Promise.resolve()),
     getMostRecentLeaf: () => null,
   });
   app.metadataCache = stubService<App["metadataCache"]>("MetadataCache", {
     on: () => ({}),
-    getFileCache: () => null,
+    getFileCache: () =>
+      activeNoteKey ? { frontmatter: { "zotero-key": activeNoteKey } } : null,
   });
   const events = annotationReads();
   const repository = {
@@ -313,6 +329,7 @@ async function openSidebar(
     libraryRows: [],
   };
   const hostOptions: AnnotHostOptions = {
+    sources: { workspace },
     annotations: annotationsApi,
     services: Layer.mock(LibraryScope, {
       changes: Stream.concat(Stream.succeed(scopeState), scopeChanges.stream),
@@ -370,8 +387,9 @@ async function openSidebar(
   await act(() =>
     view.setState(
       {
-        followMode: "pinned",
-        pinnedItemKey: "ITEMAAAA",
+        ...(activeNoteKey
+          ? { followMode: "active-tab" }
+          : { followMode: "pinned", pinnedItemKey: "ITEMAAAA" }),
         ...(query !== undefined && { query }),
       },
       { history: false },
@@ -381,6 +399,11 @@ async function openSidebar(
     act(async () => {
       await view.read;
     });
+  await act(() =>
+    waitFor(() =>
+      expect(deps.registry.get(activeKeyAtom)).toBe(activeNoteKey ?? null),
+    ),
+  );
   await settle();
   await waitFor(() => expect(reads.subscribers("changed")).toBeGreaterThan(1));
   return {
@@ -388,6 +411,7 @@ async function openSidebar(
     app,
     run,
     attachmentReads,
+    workspace,
     registry: deps.registry,
     scopeChanges,
     scopeState,
@@ -429,6 +453,41 @@ function paneMenu(view: AnnotationView, source = "more-options"): Menu {
   view.onPaneMenu(menu as unknown as ObsidianMenu, source);
   return menu;
 }
+
+it("shows the annotation cards when the Literature Note becomes active again", async () => {
+  const { view, app, workspace, reads, settle } = await openSidebar(
+    [PDF],
+    undefined,
+    {
+      activeNoteKey: "ITEMAAAA",
+    },
+  );
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => act(() => view.close()));
+  expect(cards(view.contentEl)).toEqual(["ANNOTAAA", "ANNOTBBB"]);
+
+  // A non-file pane can take focus while the active-note Stream still holds the note.
+  const note = workspace.activeFile;
+  workspace.activeFile = null;
+  await act(() => reads.emit("changed"));
+  await settle();
+  // The note becomes active again with the same key the Stream already holds.
+  workspace.activeFile = note;
+  app.workspace.activeLeaf = stubService<WorkspaceLeaf>(
+    "LiteratureNoteLeaf",
+    {},
+  );
+  await act(() =>
+    workspace.trigger("active-leaf-change", app.workspace.activeLeaf),
+  );
+  await settle();
+
+  expect(view.getState()).toEqual({
+    followMode: "active-tab",
+    previousMode: "active-tab",
+  });
+  expect(cards(view.contentEl)).toEqual(["ANNOTAAA", "ANNOTBBB"]);
+});
 
 function menuItem(menu: Menu, title: string) {
   const item = menu.items.find((entry) => entry.title === title);
