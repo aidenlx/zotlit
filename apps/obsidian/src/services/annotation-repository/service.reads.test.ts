@@ -851,9 +851,9 @@ it.effect("keeps the locks a cancelled Local API read would have read", () =>
     // the cancelled read's lease open.
     markExternal(client, "PUPR5FG5");
     gate.resolve();
+    // The batch answers its callers before it lets the lease go, so a lock
+    // read that outlived its query has kept its locks by now.
     yield* Effect.promise(() => released.promise);
-    // A lock read that outlived its query would keep its locks now.
-    for (let turn = 0; turn < 5; turn++) yield* Effect.yieldNow;
 
     const held = yield* service.peek("RGRPDF24");
     expect(locksOf(held?.value ?? null).PUPR5FG5).toBeNull();
