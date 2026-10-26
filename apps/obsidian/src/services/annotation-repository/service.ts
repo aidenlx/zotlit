@@ -11,7 +11,6 @@ import {
 } from "effect";
 
 import { scopedBridge } from "@/lib/effect-bridge";
-import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ExcerptImages } from "@/services/excerpt-image/layer";
@@ -508,7 +507,6 @@ export function layerAnnotationRepository(options: {
       const api = yield* ZoteroLocalApi;
       const pref = yield* ZoteroPref;
       const clock = yield* Clock.Clock;
-      const now = instantClock(clock);
       const bridge = yield* scopedBridge;
       const bus = yield* PubSub.unbounded<AnnotationRepositoryEvent>();
       yield* Effect.addFinalizer(() => PubSub.shutdown(bus));
@@ -542,7 +540,6 @@ export function layerAnnotationRepository(options: {
             void PubSub.publishUnsafe(bus, event);
           },
           writeToken: options.writeToken,
-          now,
           persistedExcerpt,
         },
         { fibers, refreshes, idleSaves, burstSaves },

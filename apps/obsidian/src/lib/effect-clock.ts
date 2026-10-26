@@ -1,7 +1,6 @@
 // The edge between Effect's dates and the Temporal of plain code: the Effect
-// Clock as a Temporal clock, a DateTime as a Temporal.Instant and back, and a
-// Duration as a Temporal.Duration and back.
-import { DateTime, Duration, Option } from "effect";
+// Clock as a Temporal clock, and a DateTime as a Temporal.Instant and back.
+import { DateTime, Option } from "effect";
 import type { Clock } from "effect";
 
 /** Read `clock` as an Instant: the live clock in the plugin, TestClock in a test. */
@@ -23,25 +22,6 @@ export function toInstant(dateTime: DateTime.DateTime): Temporal.Instant {
  */
 export function fromInstant(instant: Temporal.Instant): DateTime.Utc {
   return DateTime.makeUnsafe(instant.epochMilliseconds);
-}
-
-/**
- * `duration` as the Temporal.Duration of plain code: the same span, in
- * milliseconds. It carries whole milliseconds and expects a finite Duration of
- * whole milliseconds; a fractional or infinite Duration throws a RangeError
- * from Temporal.
- */
-export function toTemporalDuration(
-  duration: Duration.Duration,
-): Temporal.Duration {
-  return Temporal.Duration.from({ milliseconds: Duration.toMillis(duration) });
-}
-
-/** `duration` as the Duration of Effect code: the same span, in milliseconds. */
-export function fromTemporalDuration(
-  duration: Temporal.Duration,
-): Duration.Duration {
-  return Duration.millis(duration.total({ unit: "millisecond" }));
 }
 
 /** `text` read as Temporal reads an instant's ISO form, or none when Temporal rejects it. */

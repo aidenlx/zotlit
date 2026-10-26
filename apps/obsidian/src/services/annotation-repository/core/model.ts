@@ -383,8 +383,6 @@ export interface AnnotationRepositoryCoreDeps {
     | "state"
     | "writeStateFor"
   >;
-  /** The clock a cooldown deadline in the Editing Capability is read against. */
-  now: () => Temporal.Instant;
   /**
    * The write token each create carries.
    *

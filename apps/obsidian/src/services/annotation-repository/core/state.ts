@@ -38,7 +38,6 @@ class CoreState {
   readonly db;
   readonly queries;
   readonly localApi;
-  readonly now;
   /**
    * The last Editing Capability each consumer was given, by Attachment and by
    * `null` for the session, so a change is logged once rather than per read.
@@ -177,7 +176,6 @@ class CoreState {
       db,
       queryClient,
       localApi,
-      now,
       writeToken = newWriteToken,
       persistedExcerpt,
       publish,
@@ -188,7 +186,6 @@ class CoreState {
     this.db = db;
     this.queries = queryClient;
     this.localApi = localApi;
-    this.now = now;
     this.writeToken = writeToken;
     this.persistedExcerpt = persistedExcerpt;
     this.publish = publish;

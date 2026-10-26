@@ -1,10 +1,8 @@
 // What a surface may do to one Attachment's Annotations, and the pure mapping
 // from what the Zotero Local API's probe knows onto it.
 
-import {
-  cooldownDeadline,
-  cooldownSpan,
-} from "@/services/zotero-local-api/plain";
+import { DateTime } from "effect";
+
 import type {
   LocalApiFailure,
   LocalApiState,
@@ -22,7 +20,7 @@ export type EditingCapability =
   | { kind: "writable" }
   | { kind: "authorization-required" }
   | { kind: "authorizing" }
-  | { kind: "cooldown"; retryAfter: Temporal.Instant }
+  | { kind: "cooldown"; retryAfter: DateTime.Utc }
   | {
       kind: "read-only";
       reason:
@@ -61,12 +59,12 @@ export function capabilityReason(capability: EditingCapability): string {
  *
  * @param state what the Zotero Local API's last Capability Probe learned.
  * @param writes what the write path learned about this Attachment.
- * @param now the clock a cooldown deadline is read against.
+ * @param now the instant a cooldown deadline is read against.
  */
 export function editingCapabilityOf(
   state: LocalApiState,
   writes: WriteAuthorizationState,
-  now: () => Temporal.Instant,
+  now: DateTime.Utc,
 ): EditingCapability {
   if (writes.libraryReadOnly) {
     return { kind: "read-only", reason: "library-read-only" };
@@ -75,9 +73,9 @@ export function editingCapabilityOf(
   switch (state.kind) {
     case "available": {
       if (state.authorized) return { kind: "writable" };
-      const cooldownUntil = cooldownDeadline(writes);
+      const cooldownUntil = writes.cooldownUntil;
       return cooldownUntil !== null &&
-        Temporal.Instant.compare(cooldownUntil, now()) > 0
+        DateTime.isGreaterThan(cooldownUntil, now)
         ? { kind: "cooldown", retryAfter: cooldownUntil }
         : { kind: "authorization-required" };
     }
@@ -92,10 +90,12 @@ export function editingCapabilityOf(
  * What one failure leaves the session able to do, for a caller holding a
  * failure rather than a probe — the write path, naming the reason an edit did
  * not land in the same words the affordance uses.
+ *
+ * @param now the instant a cooldown's wait is counted from.
  */
 export function capabilityOfFailure(
   failure: LocalApiFailure,
-  now: () => Temporal.Instant,
+  now: DateTime.Utc,
 ): EditingCapability {
   switch (failure.kind) {
     case "unreachable":
@@ -119,7 +119,10 @@ export function capabilityOfFailure(
     case "not-saved":
       return { kind: "authorization-required" };
     case "cooldown":
-      return { kind: "cooldown", retryAfter: now().add(cooldownSpan(failure)) };
+      return {
+        kind: "cooldown",
+        retryAfter: DateTime.addDuration(now, failure.retryAfter),
+      };
     case "invalid-response":
     // A read sends no version and no write token, and the list route answers an
     // empty list rather than a `404`, so all three answer a question this client

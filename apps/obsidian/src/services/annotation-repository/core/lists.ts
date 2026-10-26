@@ -434,7 +434,7 @@ const editingCapability = Effect.fnUntraced(function* (
       : editingCapabilityOf(
           yield* core.localApi.state,
           yield* core.localApi.writeStateFor(attachmentKey),
-          core.now,
+          yield* DateTime.now,
         );
   const described = describeCapability(capability);
   if (core.lastCapability.get(attachmentKey) === described) {
@@ -1266,7 +1266,7 @@ function coversConfirmations(
  */
 function describeCapability(capability: EditingCapability): string {
   return capability.kind === "cooldown"
-    ? `cooldown:${capability.retryAfter.toString()}`
+    ? `cooldown:${DateTime.formatIso(capability.retryAfter)}`
     : capabilityReason(capability);
 }
 

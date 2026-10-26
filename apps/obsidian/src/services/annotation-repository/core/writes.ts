@@ -16,7 +16,7 @@ import type { AnnotationPositionRaw } from "@zotlit/db";
 
 import { valueOr } from "@/lib/effect-bridge";
 import { recover } from "@/lib/effect-cause";
-import { fromInstant, toInstant } from "@/lib/effect-clock";
+import { toInstant } from "@/lib/effect-clock";
 import { contentOf } from "@/services/annotation-repository/history";
 import type {
   HistoryJoin,
@@ -1096,7 +1096,7 @@ const writeBlocked = Effect.fnUntraced(function* (
         kind: "cooldown",
         retryAfter: DateTime.distance(
           yield* DateTime.now,
-          fromInstant(capability.retryAfter),
+          capability.retryAfter,
         ),
       };
     case "read-only":

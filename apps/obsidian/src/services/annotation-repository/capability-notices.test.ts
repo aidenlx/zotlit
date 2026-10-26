@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 
-import { cooldownFailureOf } from "./__fixtures__/capability";
+import { cooldownFailureOf, deadlineAfter } from "./__fixtures__/capability";
 import type { EditingCapability } from "./capability";
 import { editingCapabilityCopy } from "./capability-copy";
 import {
@@ -130,7 +130,7 @@ describe("a blocked keyboard gesture", () => {
     const ledger = new CapabilityNoticeLedger(time.read);
     const cooling = (seconds: number): EditingCapability => ({
       kind: "cooldown",
-      retryAfter: time.instant.add({ seconds }),
+      retryAfter: deadlineAfter(time.instant, seconds),
     });
 
     const notice = ledger.blockedGesture(ATTACHMENT, cooling(60));

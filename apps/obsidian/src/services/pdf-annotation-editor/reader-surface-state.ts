@@ -1374,7 +1374,7 @@ export function sameCapability(
 ): boolean {
   if (capabilityReason(a) !== capabilityReason(b)) return false;
   return a.kind === "cooldown" && b.kind === "cooldown"
-    ? a.retryAfter.equals(b.retryAfter)
+    ? a.retryAfter.epochMilliseconds === b.retryAfter.epochMilliseconds
     : true;
 }
 
