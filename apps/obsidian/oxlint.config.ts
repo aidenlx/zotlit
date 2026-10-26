@@ -169,13 +169,10 @@ export default defineConfig({
     {
       // Logging backlog: rework the file to log through Effect, then remove it from the list.
       files: [
-        "src/services/attachment-import/service.ts",
-        "src/services/attachment-open/actions.ts",
         "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
         "src/services/excerpt-image/prepare.ts",
-        "src/services/note-feature/operations.ts",
-        "src/services/note-feature/update-batch.ts",
+        "src/services/note-feature/write-pipeline.ts",
         "src/services/pandoc/document-presentation.ts",
         "src/services/template/actions.ts",
         "src/views/annot-view/view.tsx",
@@ -299,7 +296,6 @@ export default defineConfig({
     {
       // No tag member yet: `vault.adapter`.
       files: [
-        "src/services/attachment-open/actions.ts",
         "src/services/log/service.ts",
         "src/views/pandoc-export/register.ts",
       ],
@@ -330,11 +326,11 @@ export default defineConfig({
       // Helpers and constructors that take a raw App object
       // (`documentPresentation(app.metadataCache, …)`,
       // `readProfileStamp(app.metadataCache, …)`, `vault: app.vault`).
-      // note-feature/operations.ts also listens to `metadataCache.on("changed")`
+      // note-feature/write-pipeline.ts also listens to `metadataCache.on("changed")`
       // in `parsedCache` through a local alias, which the rule does not see.
       files: [
         "src/services/build.ts",
-        "src/services/note-feature/operations.ts",
+        "src/services/note-feature/write-pipeline.ts",
         "src/services/pandoc/register.ts",
       ],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
@@ -343,7 +339,6 @@ export default defineConfig({
       // Plain async code, or an Effect.fn, that reaches the App through
       // `deps.app`: the deps must carry the tag first.
       files: [
-        "src/services/note-feature/update-single.ts",
         "src/views/note-preview/render.ts",
         "src/views/note-preview/session.ts",
       ],
@@ -379,17 +374,12 @@ export default defineConfig({
       files: [
         "src/lib/effect-scope.ts",
         "src/lib/temp-sweep.ts",
-        "src/services/attachment-open/actions.ts",
         "src/services/batch-run.ts",
         "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
         "src/services/database/reap-temps.ts",
         "src/services/excerpt-image/prepare.ts",
-        "src/services/excerpt-image/request.ts",
-        "src/services/note-feature/annotation-citation.ts",
-        "src/services/note-feature/operations.ts",
-        "src/services/note-feature/update-batch.ts",
-        "src/services/note-feature/update-single.ts",
+        "src/services/note-feature/write-pipeline.ts",
         "src/services/profile/service.ts",
         "src/views/annot-view/view.tsx",
         "src/views/library/item-actions.ts",
@@ -471,8 +461,8 @@ export default defineConfig({
       // Legacy emitters, written before no-nanoevents. A file moves off this
       // list when its service converts to Effect.
       files: [
-        "src/services/attachment-import/service.ts",
         "src/services/note-feature/operations.ts",
+        "src/services/note-feature/types.ts",
         "src/services/pdf-annotation-editor/service.ts",
         "src/services/reader-session/session.ts",
         "src/views/library/item-drag.test.ts",
@@ -623,7 +613,6 @@ export default defineConfig({
       // Effect tests written before the rule, in plain Vitest. A file moves
       // off this list when its cases move to it.effect.
       files: [
-        "src/services/note-feature/update-batch.test.ts",
         "src/services/zotero-reads/citation-lookup.test.ts",
         "src/services/zotero-reads/connection.test.ts",
         "src/services/zotero-reads/handlers.test.ts",
@@ -636,7 +625,6 @@ export default defineConfig({
       // Legacy services, written before the rule. A file moves off this list
       // when its service converts to Effect (/obsidian-services).
       files: [
-        "src/services/attachment-import/service.ts",
         "src/services/excerpt-image/display.ts",
         "src/services/excerpt-image/service.ts",
         "src/services/pdf-annotation-editor/service.ts",

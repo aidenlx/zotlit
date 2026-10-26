@@ -5,7 +5,7 @@ import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import type { LanguagePackLifecycle } from "@/lib/i18n";
 import type { CapabilityNoticesHandle } from "@/services/annotation-repository/notices-handle";
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
-import type { AttachmentImportService } from "@/services/attachment-import/service";
+import type { AttachmentImportHandle } from "@/services/attachment-import/handle";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type {} from "@/services/citation-index/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
@@ -80,7 +80,7 @@ export type WriteAuthorizationActions = Pick<
 
 /** The attachment-import surface the setting tab needs: read and edit the grants. */
 export type AttachmentImportActions = Pick<
-  AttachmentImportService,
+  AttachmentImportHandle,
   "approvedFolders" | "approveFolder" | "revokeFolder"
 >;
 

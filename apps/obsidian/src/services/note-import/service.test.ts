@@ -1,7 +1,7 @@
 import { it } from "@effect/vitest";
-import { Effect, Fiber, Stream } from "effect";
+import { Effect, Fiber } from "effect";
 import { stringifyYaml } from "obsidian";
-import type { App, TFile } from "obsidian";
+import type { TFile } from "obsidian";
 import { afterAll, beforeEach, describe, expect, vi } from "vitest";
 
 import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
@@ -9,16 +9,17 @@ import type { AnnotationTemplateContext } from "@zotlit/db";
 import { rowInstant } from "@zotlit/db/test-utils";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { renderAnnotationSources } from "@/lib/annotation-render";
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
-import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { VaultSource } from "@/lib/obsidian-vault";
 import type { ProfileId } from "@/lib/profile-stamp";
-import { AttachmentImportService } from "@/services/attachment-import/service";
+import { attachmentImportFixture } from "@/services/attachment-import/__fixtures__";
+import { AttachmentCopyError } from "@/services/attachment-import/service";
 import type {
+  AttachmentImport,
+  AttachmentImportBatch,
   AttachmentSource,
   SourceOrigin,
 } from "@/services/attachment-import/service";
@@ -35,11 +36,7 @@ import {
 import { noteImporterOver } from "./__fixtures__/importer";
 import { childNoteLink } from "./child-note-link";
 import { noteAnnotationKeys, parseNote } from "./note-parser";
-import {
-  NoteImportMintError,
-  NoteImportParseError,
-  NoteImportPortError,
-} from "./service";
+import { NoteImportMintError, NoteImportParseError } from "./service";
 
 // The service owns the annotation renderer now; stub the leaf so the test asserts
 // the wiring (resolveLink binding, library scoping) without the template pipeline.
@@ -190,7 +187,7 @@ function noteText(properties: Record<string, unknown>): string {
 
 /** Per-note attachment batch stub; `flush` records whether copies were committed. */
 function makeAttachmentImport() {
-  const flush = vi.fn(async () => ({
+  const flush = vi.fn(() => ({
     copied: 0,
     skipped: 0,
     missing: 0,
@@ -206,9 +203,17 @@ function makeAttachmentImport() {
     }),
   );
   const resolveLink = vi.fn(() => () => "[[image.png]]");
-  const discard = vi.fn();
-  const prepare = vi.fn(async () => ({ decide, resolveLink, flush, discard }));
-  return { prepare, flush, decide, resolveLink };
+  const batch: AttachmentImportBatch = {
+    decide,
+    resolveLink,
+    flush: Effect.sync(flush),
+    discard: Effect.void,
+  };
+  const prepare = vi.fn(
+    (..._args: Parameters<AttachmentImport["Service"]["prepare"]>) =>
+      Effect.succeed(batch),
+  );
+  return { prepare, flush, decide, resolveLink, batch };
 }
 
 /**
@@ -216,29 +221,11 @@ function makeAttachmentImport() {
  * and no approved folder, so every source it judges blocks. Lets a test observe
  * the `file://` fallback the production seam renders, rather than a stub's.
  */
-function makeBlockingAttachmentImport(): AttachmentImportService {
-  const runtime = testRuntime();
-  return new AttachmentImportService({
-    bridge: effectBridge(runtime),
-    app: stubService<App>("App", {
-      loadLocalStorage: () => null,
-      saveLocalStorage: () => undefined,
-    }),
-    settings: {
-      current: Effect.succeed({
-        ...defaults,
-        "attachment.import": true,
-        "attachment.folder-path": "Attachments",
-      }),
-      changes: Stream.empty,
-    },
-    zoteroPref: {
-      dataDir: "/nonexistent-zotero-data",
-      baseAttachmentPath: null,
-      "resolved-changed": Stream.empty,
-    },
-  });
-}
+const makeBlockingAttachmentImport = () =>
+  attachmentImportFixture({
+    dataDir: "/nonexistent-zotero-data",
+    baseAttachmentPath: null,
+  }).pipe(Effect.map(({ service }) => service));
 
 /**
  * The real importer over `app`'s host, with the note index answering
@@ -250,7 +237,7 @@ const makeService = Effect.fnUntraced(function* (
   options: {
     existing?: TFile[];
     literatureNotes?: TFile[];
-    attachmentImport?: Pick<AttachmentImportService, "prepare">;
+    attachmentImport?: Pick<AttachmentImport["Service"], "prepare">;
     template?: Pick<
       TemplateOperations,
       "render" | "renderCitation" | "renderProfileAnnotation"
@@ -802,8 +789,7 @@ describe("NoteImporter", () => {
     () =>
       Effect.gen(function* () {
         const { app, create } = makeApp();
-        const attachmentImport = makeBlockingAttachmentImport();
-        yield* Effect.promise(() => attachmentImport.ready);
+        const attachmentImport = yield* makeBlockingAttachmentImport();
         // Stand in for the parser's embedded-image rule: decide each image, then
         // embed whatever link resolution hands back.
         vi.mocked(parseNote).mockImplementationOnce((_td, _html, deps) =>
@@ -1155,13 +1141,12 @@ describe("NoteImporter", () => {
       const gate = Promise.withResolvers<void>();
       const full = Promise.withResolvers<void>();
       let started = 0;
-      const prepare = vi.fn(
-        async (...args: Parameters<typeof base.prepare>) => {
+      const prepare = vi.fn((...args: Parameters<typeof base.prepare>) =>
+        Effect.promise(async () => {
           started += 1;
           if (started === 16) full.resolve();
           await gate.promise;
-          return base.prepare(...args);
-        },
+        }).pipe(Effect.andThen(base.prepare(...args))),
       );
       const service = yield* makeService(app, {
         attachmentImport: { prepare },
@@ -1188,40 +1173,30 @@ describe("NoteImporter", () => {
     }),
   );
 
-  it.effect(
-    "fails with a typed error that keeps an attachment copy's rejection",
-    () =>
-      Effect.gen(function* () {
-        const { app } = makeApp();
-        const base = makeAttachmentImport();
-        const copyFailed = new Error("EACCES: permission denied");
-        const service = yield* makeService(app, {
-          attachmentImport: {
-            prepare: async (...args: Parameters<typeof base.prepare>) => {
-              const batch = await base.prepare(...args);
-              return Object.assign(batch, {
-                flush: async () => {
-                  throw copyFailed;
-                },
-              });
-            },
-          },
-        });
+  it.effect("fails with the typed error of a failed attachment copy", () =>
+    Effect.gen(function* () {
+      const { app } = makeApp();
+      const { batch } = makeAttachmentImport();
+      const copyFailed = new AttachmentCopyError({
+        message: "EACCES: permission denied",
+        cause: new Error("EACCES: permission denied"),
+      });
+      const service = yield* makeService(app, {
+        attachmentImport: {
+          prepare: () =>
+            Effect.succeed({ ...batch, flush: Effect.fail(copyFailed) }),
+        },
+      });
 
-        const error = yield* Effect.flip(
-          service.importNote(makeNote(), {
-            reads,
-            settings: importSettings(),
-          }),
-        );
+      const error = yield* Effect.flip(
+        service.importNote(makeNote(), {
+          reads,
+          settings: importSettings(),
+        }),
+      );
 
-        expect(error).toBeInstanceOf(NoteImportPortError);
-        expect(error).toMatchObject({
-          step: "attachment-flush",
-          cause: copyFailed,
-          message: "EACCES: permission denied",
-        });
-      }),
+      expect(error).toBe(copyFailed);
+    }),
   );
 
   it.effect(
