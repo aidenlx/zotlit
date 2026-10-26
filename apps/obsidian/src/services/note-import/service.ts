@@ -164,35 +164,26 @@ export class NoteImporter extends Context.Service<
 
 const logged = withLogCategory("note-import", "service");
 
+/** The services the note importer reads through their tags. */
+type NoteImporterServices =
+  | AttachmentImport
+  | ExcerptPreparation
+  | Profile
+  | NoteIndex
+  | Vault
+  | Workspace
+  | ZoteroPref;
+
 /** The note importer over the graph's tags. */
 export const layerNoteImporter = Layer.effect(
   NoteImporter,
   Effect.gen(function* () {
     const writes = yield* Semaphore.make(WRITE_CONCURRENCY);
-    const context = yield* Effect.context<
-      | AttachmentImport
-      | ExcerptPreparation
-      | Profile
-      | NoteIndex
-      | Vault
-      | Workspace
-      | ZoteroPref
-    >();
+    const context = yield* Effect.context<NoteImporterServices>();
     const templates = yield* syncTemplate;
     const ctx: Ctx = { templates };
-    const run = <A, E>(
-      effect: Effect.Effect<
-        A,
-        E,
-        | AttachmentImport
-        | ExcerptPreparation
-        | Profile
-        | NoteIndex
-        | Vault
-        | Workspace
-        | ZoteroPref
-      >,
-    ) => Effect.provideContext(effect, context);
+    const run = <A, E>(effect: Effect.Effect<A, E, NoteImporterServices>) =>
+      Effect.provideContext(effect, context);
     return NoteImporter.of({
       prepareExplicitImport: Effect.fn("NoteImporter.prepareExplicitImport")(
         function* (note, options) {

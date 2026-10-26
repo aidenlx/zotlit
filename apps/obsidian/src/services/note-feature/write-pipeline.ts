@@ -34,7 +34,7 @@ import type { AttachmentImportBatch } from "@/services/attachment-import/service
 import { outcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import {
-  collectExcerptSummary,
+  nonEmptySummary,
   ExcerptPreparation,
 } from "@/services/excerpt-image/prepare";
 import type {
@@ -1006,16 +1006,14 @@ const flushNoteAttachments = (
   },
 ) =>
   Effect.suspend(() => {
-    const reports = collectExcerptSummary();
     const summary = input.excerptImages?.summary();
-    if (summary) reports.add(summary);
+    const report = summary && nonEmptySummary(summary);
     return input.attachmentImport.flush.pipe(
       Effect.ensuring(
         Effect.sync(() => {
-          const total = reports.total();
-          if (!total) return;
-          if (input.reportExcerpts) input.reportExcerpts(total);
-          else ctx.emit({ _tag: "excerpt-images-reported", payload: total });
+          if (!report) return;
+          if (input.reportExcerpts) input.reportExcerpts(report);
+          else ctx.emit({ _tag: "excerpt-images-reported", payload: report });
         }),
       ),
     );

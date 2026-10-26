@@ -174,9 +174,9 @@ function layerExcerptPreparationOver(
         Layer.succeed(
           ExcerptImages,
           stubService<ExcerptImages["Service"]>("ExcerptImages", {
-          operation: (options) => excerpts.resolver.operation(options),
-          resolve: (request, signal) =>
-            excerpts.resolver.resolve(request, signal),
+            operation: (options) => excerpts.resolver.operation(options),
+            resolve: (request, signal) =>
+              excerpts.resolver.resolve(request, signal),
           }),
         ),
       ),

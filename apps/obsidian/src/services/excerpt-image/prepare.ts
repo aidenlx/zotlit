@@ -41,6 +41,17 @@ export type { ExcerptSummary } from "./helper";
 
 const logged = withLogCategory("excerpt-prepare");
 
+/** Skips one excerpt that failed, with `message` logged for `annotationKey`. */
+const skipLogged = (message: string, annotationKey: string) =>
+  recover(
+    (cause) =>
+      Effect.logDebug(message).pipe(
+        Effect.annotateLogs({ annotationKey, cause }),
+        logged,
+      ),
+    Effect.void,
+  );
+
 /** One collector belongs to one user operation, including partial or cancelled batches. */
 export function collectExcerptSummary(): {
   add: (summary: ExcerptSummary) => void;
@@ -56,12 +67,20 @@ export function collectExcerptSummary(): {
       if (summary.notRefreshed)
         total.notRefreshed = (total.notRefreshed ?? 0) + summary.notRefreshed;
     },
-    total: () =>
-      total.zotero || total.unchecked || total.unavailable || total.notRefreshed
-        ? total
-        : undefined,
+    total: () => nonEmptySummary(total),
   };
 }
+
+/** `summary`, or `undefined` when it counts no excerpt. */
+export const nonEmptySummary = (
+  summary: ExcerptSummary,
+): ExcerptSummary | undefined =>
+  summary.zotero ||
+  summary.unchecked ||
+  summary.unavailable ||
+  summary.notRefreshed
+    ? summary
+    : undefined;
 
 /** The reads of the write the excerpts serve, bound to its Snapshot. */
 export type ExcerptPreparationReads = Pick<
@@ -287,31 +306,13 @@ function noteExcerpts(
             request,
             outcome,
           });
-        }).pipe(
-          recover(
-            (cause) =>
-              Effect.logDebug("Excerpt resolution failed").pipe(
-                Effect.annotateLogs({ annotationKey: a.indexedKey, cause }),
-                logged,
-              ),
-            Effect.void,
-          ),
-        );
+        }).pipe(skipLogged("Excerpt resolution failed", a.indexedKey));
         if (candidate.result.kind === "unavailable") {
           candidate.result =
             (yield* retainExcerpt({ request, paths: previousPaths })) ??
             candidate.result;
         }
-      }).pipe(
-        recover(
-          (cause) =>
-            Effect.logDebug("Excerpt preparation failed").pipe(
-              Effect.annotateLogs({ annotationKey: a.indexedKey, cause }),
-              logged,
-            ),
-          Effect.void,
-        ),
-      );
+      }).pipe(skipLogged("Excerpt preparation failed", a.indexedKey));
     }
   }).pipe(Effect.scoped, provide);
   return {
@@ -368,16 +369,7 @@ const cardExcerpt = Effect.fnUntraced(function* (
           outcome,
           valid: options.valid,
         });
-    }).pipe(
-      recover(
-        (cause) =>
-          Effect.logDebug("Captured excerpt preparation failed").pipe(
-            Effect.annotateLogs({ annotationKey: annotation.key, cause }),
-            logged,
-          ),
-        Effect.void,
-      ),
-    );
+    }).pipe(skipLogged("Captured excerpt preparation failed", annotation.key));
   }
   const state = { used: false, result, sourceLink: options.sourceLink };
   const prepared: PreparedCardExcerpt = {
