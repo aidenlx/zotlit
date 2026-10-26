@@ -4,6 +4,7 @@ import { DateTime, Effect, FiberSet, Schema } from "effect";
 import { parseAnnotationPosition, parseIndexedKey } from "@zotlit/db";
 import type { AnnotationPositionRaw } from "@zotlit/db";
 
+import { valueOr } from "@/lib/effect-bridge";
 import { recover } from "@/lib/effect-cause";
 import { fromInstant, toInstant } from "@/lib/effect-clock";
 import { contentOf } from "@/services/annotation-repository/history";
@@ -53,7 +54,7 @@ import {
   readCreateResult,
 } from "@/services/zotero-local-api/wire";
 
-import { awaitRead, demandedSource, invalidate } from "./bridge";
+import { demandedSource, invalidate } from "./bridge";
 import type { DatabaseRowsError } from "./bridge";
 import {
   cancelTextSave,
@@ -152,6 +153,11 @@ type QueuedCommand = WriteAttempt & {
   gather?: GroupWrites;
   /** Set on the second send of a tag write, after its `412` re-read. */
   reapplied?: true;
+  /**
+   * Set once Zotero took the send. A close of the layer after that interrupts
+   * only the read-back, so the write keeps its answer.
+   */
+  progress?: { accepted: boolean };
 };
 
 /** Why a write's reads failed under it. */
@@ -645,12 +651,15 @@ const command = Effect.fnUntraced(function* (
     // Zotero runs on this device, so no write waits for an online event.
     networkMode: "always",
     mutationFn: () => {
-      const send = () =>
-        awaitRead(
-          core,
-          runCommand(core, annotationKey, queued),
-          UNKNOWN_OUTCOME,
+      // A close of the layer interrupts the write: before Zotero took the
+      // send, its outcome is unknown; after, the write was saved.
+      const send = async () => {
+        const progress = { accepted: false };
+        const exit = await core.bridge.runPromiseExit(
+          runCommand(core, annotationKey, { ...queued, progress }),
         );
+        return valueOr(exit, progress.accepted ? IDLE : UNKNOWN_OUTCOME);
+      };
       return command.run ? command.run(send, mutation) : send();
     },
   });
@@ -812,6 +821,7 @@ const runCommand: (
       return state;
     }
 
+    if (command.progress) command.progress.accepted = true;
     yield* Effect.logDebug("Zotero took a write").pipe(
       Effect.annotateLogs({ annotationKey, method }),
     );
