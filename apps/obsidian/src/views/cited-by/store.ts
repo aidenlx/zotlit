@@ -1,13 +1,10 @@
-// Per-instance state for one Cited By Sidebar.
+// Preview, excerpt, and sort rules for the Cited By Sidebar.
 import type {
   CachedMetadata,
   ListItemCache,
   Pos,
   SectionCache,
 } from "obsidian";
-import { createContext, useContext } from "react";
-import { useStore } from "zustand";
-import { createStore } from "zustand/vanilla";
 
 import type { ParsedNote } from "@/services/citation-index/parsed-note";
 import type {
@@ -79,60 +76,11 @@ export function isCitedBySortMode(value: unknown): value is CitedBySortMode {
   return CITED_BY_SORT_GROUPS.flat().includes(value as CitedBySortMode);
 }
 
-export interface CitedByState {
-  indexedKey: string | null;
-  activePath: string | null;
-  snapshot: CitedBySnapshot;
-  /** The applied filter query; empty while the search field stays closed. */
-  search: string;
-  searchVisible: boolean;
-  /** Whether every excerpt shows its enclosing block instead of its line. */
-  moreContext: boolean;
-  /** The order the source groups render in. */
-  sort: CitedBySortMode;
-  collapsed: readonly string[];
-  previews: Readonly<Record<string, CitedByPreview>>;
-  /**
-   * The manual chevron expansions in force, keyed by {@link excerptKey}. Held
-   * in memory only: they leave with the active Literature Note and never reach
-   * the workspace layout.
-   */
-  expansions: Readonly<Record<string, SourceRange>>;
-}
-
 export const EMPTY_CITED_BY_SNAPSHOT: CitedBySnapshot = {
   groups: [],
   coverage: "indexing",
   resolution: null,
 };
-
-export type CitedByStore = ReturnType<typeof createCitedByStore>;
-
-export function createCitedByStore() {
-  return createStore<CitedByState>()(() => ({
-    indexedKey: null,
-    activePath: null,
-    snapshot: EMPTY_CITED_BY_SNAPSHOT,
-    search: "",
-    searchVisible: false,
-    moreContext: false,
-    sort: DEFAULT_CITED_BY_SORT,
-    collapsed: [],
-    previews: {},
-    expansions: {},
-  }));
-}
-
-const CitedByStoreContext = createContext<CitedByStore | null>(null);
-export const CitedByStoreProvider = CitedByStoreContext.Provider;
-
-export function useCitedByStore<T>(selector: (state: CitedByState) => T): T {
-  const store = useContext(CitedByStoreContext);
-  if (!store) {
-    throw new Error("useCitedByStore must be used within CitedByStoreProvider");
-  }
-  return useStore(store, selector);
-}
 
 /** The vault facts the sort modes read from one citing note. */
 export interface SourceFileFacts {

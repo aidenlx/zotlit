@@ -3,6 +3,7 @@ import type { App, Plugin } from "obsidian";
 // Registration and the explicit command for the Cited By Sidebar.
 import "./style.css";
 import * as m from "@/lib/i18n/generated/messages";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type {} from "@/services/citation-index/service";
 
@@ -13,7 +14,8 @@ type CitedByPlugin = Pick<Plugin, "registerView" | "addCommand" | "app">;
 
 export interface CitedByRegistrationDeps {
   app: App;
-  citationIndex: PlainCitationIndex;
+  registry: ViewRegistryHandle;
+  citationIndex: Pick<PlainCitationIndex, "getParsedNote">;
 }
 
 export function registerCitedByView(
@@ -22,6 +24,7 @@ export function registerCitedByView(
 ): void {
   const viewDeps: CitedByViewDeps = {
     app: deps.app,
+    registry: deps.registry,
     citationIndex: deps.citationIndex,
   };
   plugin.registerView(

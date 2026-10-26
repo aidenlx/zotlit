@@ -9,6 +9,7 @@ import {
   WEB_WORKBENCH_ENABLED,
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
+import { ViewRegistry } from "@/lib/view-atoms";
 
 import { startI18n } from "./lib/i18n";
 import { enableStartupLogging } from "./lib/log";
@@ -559,6 +560,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     registerCitedByView(this, {
       app: this.app,
+      registry: services.runtime.runSync(ViewRegistry),
       citationIndex: services.citationIndex,
     });
 

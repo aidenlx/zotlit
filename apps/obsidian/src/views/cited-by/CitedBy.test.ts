@@ -20,11 +20,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { ViewRegistryProvider } from "@/lib/view-atoms";
 import { yieldToMain } from "@/lib/yield-to-main";
 import {
   annotationRows,
   annotationUri,
 } from "@/services/citation-index/__fixtures__/annotations";
+import { activeCitedByAtom } from "@/services/citation-index/atoms";
 import { ParsedNote } from "@/services/citation-index/parsed-note";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import { scanNote } from "@/services/citation-index/scan-note";
@@ -38,11 +40,19 @@ import {
 } from "@/services/citation-index/test-harness";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
+import { makeCitedByHost } from "./__fixtures__";
+import type { CitedByHost } from "./__fixtures__";
 import { CitedByActionsContext, createCitedByActions } from "./actions";
 import { CitedBy } from "./CitedBy";
-import { COMPACT_CAP, createCitedByStore, CitedByStoreProvider } from "./store";
-
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
+import {
+  CitedByModelContext,
+  DEFAULT_CITED_BY_LAYOUT,
+  EMPTY_CITED_BY_NOTE_STATE,
+  holdCitedByModel,
+  makeCitedByModel,
+} from "./model";
+import type { CitedByLayout } from "./model";
+import { COMPACT_CAP } from "./store";
 
 const body = "A reason cites @doe2024 here.\n";
 const start = body.indexOf("@doe2024");
@@ -193,6 +203,7 @@ const sortedStats: Record<string, { ctime: number; mtime: number }> = {
 };
 
 let root: Root | undefined;
+let host: CitedByHost | undefined;
 
 /** Bounds state polling while preserving the preview stream's host-yield boundary. */
 async function waitForState(assertion: () => void): Promise<void> {
@@ -212,6 +223,8 @@ afterEach(async () => {
   vi.useRealTimers();
   await act(() => root?.unmount());
   root = undefined;
+  await host?.close();
+  host = undefined;
   document.body.replaceChildren();
 });
 
@@ -309,19 +322,52 @@ async function render(options: {
     setActiveLeaf,
   });
   const app = stubService<App>("App", { vault, metadataCache, workspace });
-  const store = createCitedByStore();
-  store.setState({
-    indexedKey:
-      options.indexedKey === undefined ? "ABCD2345" : options.indexedKey,
-    snapshot: shown,
-    collapsed: options.collapsed ? [group.path] : [],
-    activePath: options.activePath ?? null,
+  const current = (host = await makeCitedByHost());
+  const { registry } = current;
+  // The component reads these once it renders; hold them for the setup too.
+  registry.mount(activeCitedByAtom);
+  /** Follows a note of `key` at `path` and waits for its Cited By to show. */
+  const retarget = async (
+    key: string | null,
+    path: string,
+    shownNext?: CitedBySnapshot,
+  ) => {
+    current.follow(path, key);
+    if (key === null || !shownNext) return;
+    await waitForState(() => expect(current.started).toContain(key));
+    await show(shownNext, key);
+  };
+  /** Sends `next` to the followed key's observer and waits for it to show. */
+  const show = async (next: CitedBySnapshot, key = followedKey()) => {
+    expect(current.publish(key, next)).toBe(true);
+    await waitForState(() =>
+      expect(registry.get(activeCitedByAtom)).toBe(next),
+    );
+  };
+  const followedKey = () => current.started.at(-1)!;
+  const indexedKey =
+    options.indexedKey === undefined ? "ABCD2345" : options.indexedKey;
+  await retarget(
+    indexedKey,
+    options.activePath ?? "Literature/Paper.md",
+    shown,
+  );
+  const model = makeCitedByModel({
     search: options.search ?? "",
     searchVisible: options.searchVisible ?? false,
   });
+  holdCitedByModel(registry, model);
+  registry.set(model.note, {
+    ...EMPTY_CITED_BY_NOTE_STATE,
+    collapsed: options.collapsed ? [group.path] : [],
+  });
+  /** Changes the controls as the toolbar does. */
+  const setLayout = (patch: Partial<CitedByLayout>) =>
+    registry.update(model.layout, (layout) => ({ ...layout, ...patch }));
   const actions = createCitedByActions({
     app,
-    store,
+    registry,
+    model,
     citationIndex: options.citationIndex ?? {
       getParsedNote: async (file) => {
         const source = await read(file);
@@ -336,12 +382,16 @@ async function render(options: {
   await act(async () => {
     root!.render(
       createElement(
-        CitedByStoreProvider,
-        { value: store },
+        ViewRegistryProvider,
+        { registry },
         createElement(
-          CitedByActionsContext,
-          { value: actions },
-          createElement(CitedBy),
+          CitedByModelContext,
+          { value: model },
+          createElement(
+            CitedByActionsContext,
+            { value: actions },
+            createElement(CitedBy),
+          ),
         ),
       ),
     );
@@ -354,7 +404,7 @@ async function render(options: {
   await act(() =>
     waitForState(() => {
       for (const path of previewPaths) {
-        expect(store.getState().previews[path]?.status).toBeOneOf([
+        expect(registry.get(model.previews)[path]?.status).toBeOneOf([
           "ready",
           "unavailable",
         ]);
@@ -368,10 +418,14 @@ async function render(options: {
     file,
     openLinkText,
     oldSetEphemeralState,
+    model,
     read,
+    registry,
+    retarget,
     setActiveLeaf,
     setEphemeralState,
-    store,
+    setLayout,
+    show,
   };
 }
 
@@ -497,21 +551,13 @@ describe("CitedBy", () => {
   });
 
   it("moves from reset progress to its final truthful state", async () => {
-    const { container, store } = await render({});
+    const { container, show } = await render({});
 
-    await act(() =>
-      store.setState({
-        snapshot: snapshot({ coverage: "indexing" }),
-      }),
-    );
+    await act(() => show(snapshot({ coverage: "indexing" })));
     expect(container.textContent).toContain("Indexing citations…");
     expect(container.textContent).toContain("draft");
 
-    await act(() =>
-      store.setState({
-        snapshot: snapshot({ groups: [], coverage: "complete" }),
-      }),
-    );
+    await act(() => show(snapshot({ groups: [], coverage: "complete" })));
     expect(container.querySelector("[data-cited-by-empty]")?.textContent).toBe(
       "No notes cite this literature note.",
     );
@@ -543,7 +589,7 @@ describe("CitedBy", () => {
     }));
     const paths = groups.map(({ path }) => path);
     const pendingReads: ((source: string) => void)[] = [];
-    const { container, read, store } = await render({
+    const { container, model, read, registry } = await render({
       previewsPending: true,
       snapshot: snapshot({ groups }),
       read: () =>
@@ -559,7 +605,7 @@ describe("CitedBy", () => {
           const path = readPaths().at(-1)!;
           pendingReads.shift()!(body);
           await waitForState(() =>
-            expect(store.getState().previews[path]?.status).toBe("ready"),
+            expect(registry.get(model.previews)[path]?.status).toBe("ready"),
           );
         }
       });
@@ -583,7 +629,7 @@ describe("CitedBy", () => {
 
   it("stops streaming once the view is gone", async () => {
     const pendingReads: ((source: string) => void)[] = [];
-    const { read, store } = await render({
+    const { model, read, registry } = await render({
       previewsPending: true,
       snapshot: snapshot({
         groups: [group, { ...group, path: "Notes/other.md" }],
@@ -600,7 +646,7 @@ describe("CitedBy", () => {
     await act(async () => {
       pendingReads.shift()!(body);
       await waitForState(() =>
-        expect(store.getState().previews[group.path]?.status).toBe("ready"),
+        expect(registry.get(model.previews)[group.path]?.status).toBe("ready"),
       );
     });
 
@@ -931,7 +977,7 @@ describe("CitedBy", () => {
   });
 
   it("activates the toolbar toggle from the keyboard", async () => {
-    const { container, store } = await render({});
+    const { container, registry, model } = await render({});
     await act(async () => Promise.resolve());
     const toggle = container.querySelector(
       "[data-cited-by-collapse-results]",
@@ -942,7 +988,7 @@ describe("CitedBy", () => {
         new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
       );
     });
-    expect(store.getState().collapsed).toEqual([group.path]);
+    expect(registry.get(model.note).collapsed).toEqual([group.path]);
   });
 
   it("shows note and occurrence counts, folders for duplicate names, and the self label", async () => {
@@ -962,16 +1008,16 @@ describe("CitedBy", () => {
   });
 
   it("filters by note path and by loaded context, collapsed groups included", async () => {
-    const { container, store } = await render({ collapsed: true });
+    const { container, setLayout } = await render({ collapsed: true });
     await act(async () => Promise.resolve());
 
-    await act(() => store.setState({ search: "notes/draft" }));
+    await act(() => setLayout({ search: "notes/draft" }));
     expect(container.querySelector("[data-source]")).not.toBeNull();
 
-    await act(() => store.setState({ search: "reason cites" }));
+    await act(() => setLayout({ search: "reason cites" }));
     expect(container.querySelector("[data-source]")).not.toBeNull();
 
-    await act(() => store.setState({ search: "not present" }));
+    await act(() => setLayout({ search: "not present" }));
     expect(container.querySelector("[data-source]")).toBeNull();
   });
 
@@ -1173,7 +1219,7 @@ describe("CitedBy", () => {
   });
 
   it("marks the context mode active and toggles it from the keyboard", async () => {
-    const { container, store } = await render({});
+    const { container, registry, model } = await render({});
     await act(async () => Promise.resolve());
     const toggle = container.querySelector(
       "[data-cited-by-show-more-context]",
@@ -1190,7 +1236,7 @@ describe("CitedBy", () => {
       );
     });
 
-    expect(store.getState().moreContext).toBe(true);
+    expect(registry.get(model.layout).moreContext).toBe(true);
     expect(
       container.querySelector("[data-cited-by-show-more-context]")?.classList,
     ).toContain("is-active");
@@ -1224,9 +1270,11 @@ describe("CitedBy", () => {
   });
 
   it("clears the query and restores every result when the search closes", async () => {
-    const { container, store } = await render({ searchVisible: true });
+    const { container, model, registry, setLayout } = await render({
+      searchVisible: true,
+    });
     await act(async () => Promise.resolve());
-    await act(() => store.setState({ search: "not present" }));
+    await act(() => setLayout({ search: "not present" }));
     expect(container.querySelector("[data-cited-by-result]")).toBeNull();
 
     await act(() =>
@@ -1235,25 +1283,25 @@ describe("CitedBy", () => {
       ).click(),
     );
 
-    expect(store.getState().search).toBe("");
+    expect(registry.get(model.layout).search).toBe("");
     expect(container.querySelector("[data-cited-by-search]")).toBeNull();
     expect(container.querySelector("[data-cited-by-result]")).not.toBeNull();
   });
 
   it("keeps every occurrence of a group whose note name matches", async () => {
-    const { container, store } = await render({
+    const { container, setLayout } = await render({
       snapshot: snapshot({ groups: [multiGroup] }),
       read: () => Promise.resolve(multiBody),
     });
     await act(async () => Promise.resolve());
 
-    await act(() => store.setState({ search: "draft" }));
+    await act(() => setLayout({ search: "draft" }));
 
     expect(container.querySelectorAll("[data-occurrence]")).toHaveLength(2);
   });
 
   it("keeps only matching occurrences, collapsed groups included", async () => {
-    const { actions, container, read, store } = await render({
+    const { actions, container, read, setLayout } = await render({
       collapsed: true,
       snapshot: snapshot({ groups: [multiGroup] }),
       read: () => Promise.resolve(multiBody),
@@ -1261,7 +1309,7 @@ describe("CitedBy", () => {
     await act(async () => Promise.resolve());
     expect(read).toHaveBeenCalledOnce();
 
-    await act(() => store.setState({ search: "beta cites" }));
+    await act(() => setLayout({ search: "beta cites" }));
     expect(container.querySelector("[data-cited-by-result]")).not.toBeNull();
     expect(read).toHaveBeenCalledOnce();
 
@@ -1273,7 +1321,9 @@ describe("CitedBy", () => {
   });
 
   it("applies a typed query only after the input debounce elapses", async () => {
-    const { container, store } = await render({ searchVisible: true });
+    const { container, model, registry } = await render({
+      searchVisible: true,
+    });
     await act(async () => Promise.resolve());
     vi.useFakeTimers();
     const input = container.querySelector(
@@ -1285,13 +1335,13 @@ describe("CitedBy", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     expect(input.value).toBe("not present");
-    expect(store.getState().search).toBe("");
+    expect(registry.get(model.layout).search).toBe("");
     expect(container.querySelector("[data-cited-by-result]")).not.toBeNull();
 
     await act(() => {
       vi.advanceTimersByTime(300);
     });
-    expect(store.getState().search).toBe("not present");
+    expect(registry.get(model.layout).search).toBe("not present");
     expect(container.querySelector("[data-cited-by-result]")).toBeNull();
   });
 
@@ -1310,9 +1360,8 @@ describe("CitedBy", () => {
   });
 
   it("preserves search and expands groups when the target changes", async () => {
-    const { actions, container, read, store } = await render({
-      search: "draft",
-    });
+    const { actions, container, model, read, registry, retarget } =
+      await render({ search: "draft" });
     await act(async () => Promise.resolve());
     await act(() => actions.collapseAll());
     const nextGroup: CitedByGroup = {
@@ -1320,26 +1369,20 @@ describe("CitedBy", () => {
       occurrences: [{ ...group.occurrences[0]!, raw: "other" }],
     };
 
-    await act(() =>
-      store.setState({
-        indexedKey: "NEXT0001",
-        activePath: "Other.md",
-        snapshot: snapshot({ groups: [nextGroup] }),
-        collapsed: [],
-      }),
-    );
+    await act(async () => {
+      await retarget("NEXT2345", "Other.md", snapshot({ groups: [nextGroup] }));
+      registry.set(model.note, EMPTY_CITED_BY_NOTE_STATE);
+    });
     await act(async () => Promise.resolve());
 
-    expect(store.getState().search).toBe("draft");
+    expect(registry.get(model.layout).search).toBe("draft");
     expect(container.querySelector("[aria-expanded=true]")).not.toBeNull();
     expect(
       container.querySelector('[data-occurrence$=":other"]'),
     ).not.toBeNull();
     expect(read).toHaveBeenCalledOnce();
-    expect(createCitedByStore().getState()).toMatchObject({
-      search: "",
-      collapsed: [],
-    });
+    expect(DEFAULT_CITED_BY_LAYOUT.search).toBe("");
+    expect(EMPTY_CITED_BY_NOTE_STATE.collapsed).toEqual([]);
   });
 
   it("offers the six Backlinks sort modes and marks the one in force", async () => {
@@ -1483,22 +1526,25 @@ describe("CitedBy", () => {
   });
 
   it("does not match context cached for the previous target", async () => {
-    const { container, store } = await render({});
+    const { container, registry, model, retarget, setLayout } = await render(
+      {},
+    );
     await act(async () => Promise.resolve());
-    await act(() => store.setState({ search: "reason cites" }));
+    await act(() => setLayout({ search: "reason cites" }));
     expect(container.querySelector("[data-source]")).not.toBeNull();
     const nextGroup: CitedByGroup = {
       ...group,
       occurrences: [{ ...group.occurrences[0]!, raw: "other" }],
     };
 
-    await act(() =>
-      store.setState({
-        indexedKey: "ZZZ99999g7",
-        snapshot: snapshot({ groups: [nextGroup] }),
-        collapsed: [],
-      }),
-    );
+    await act(async () => {
+      await retarget(
+        "ZZZ99999g7",
+        "Literature/Paper.md",
+        snapshot({ groups: [nextGroup] }),
+      );
+      registry.set(model.note, EMPTY_CITED_BY_NOTE_STATE);
+    });
 
     expect(container.querySelector("[data-source]")).toBeNull();
   });

@@ -6,7 +6,9 @@ import type { MouseEvent } from "react";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { showMenuAtButton } from "@/lib/menu";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import { yieldToMain } from "@/lib/yield-to-main";
+import { activeCitedByAtom } from "@/services/citation-index/atoms";
 import type { ParsedNote } from "@/services/citation-index/parsed-note";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type {
@@ -14,6 +16,7 @@ import type {
   CitationOccurrence,
 } from "@/services/citation-index/service";
 
+import type { CitedByModel } from "./model";
 import { openCitedByOccurrence } from "./navigation";
 import {
   citationContext,
@@ -29,7 +32,6 @@ import {
 import type {
   CitedByPreview,
   CitedBySortMode,
-  CitedByStore,
   ExpandDirection,
   OccurrenceContext,
 } from "./store";
@@ -85,22 +87,26 @@ export interface CitedByActions {
 export function createCitedByActions(options: {
   app: App;
   citationIndex: Pick<PlainCitationIndex, "getParsedNote">;
-  store: CitedByStore;
+  registry: ViewRegistryHandle;
+  model: CitedByModel;
 }): CitedByActions {
-  const { app, citationIndex, store } = options;
+  const { app, citationIndex, registry, model } = options;
+  /** The source groups of the followed note's Cited By. */
+  const shownGroups = () => registry.get(activeCitedByAtom)?.groups ?? [];
   const generations = new Map<string, number>();
   let queued: CitedByGroup[] = [];
   let draining = false;
 
   const setPreview = (path: string, preview: CitedByPreview): void => {
-    store.setState(({ previews }) => ({
-      previews: { ...previews, [path]: preview },
+    registry.update(model.previews, (previews) => ({
+      ...previews,
+      [path]: preview,
     }));
   };
 
   const loadPreview = async (group: CitedByGroup): Promise<void> => {
     const file = app.vault.getAbstractFileByPath(group.path);
-    const current = store.getState().previews[group.path];
+    const current = registry.get(model.previews)[group.path];
     if (!(file instanceof TFile)) {
       if (current?.status === "unavailable" && current.mtime === -1) return;
       setPreview(group.path, { status: "unavailable", mtime: -1 });
@@ -179,21 +185,25 @@ export function createCitedByActions(options: {
 
   return {
     setSearch(search) {
-      store.setState({ search });
+      registry.update(model.layout, (layout) => ({ ...layout, search }));
     },
     toggleSearch() {
-      store.setState(({ searchVisible }) =>
-        searchVisible
-          ? { searchVisible: false, search: "" }
-          : { searchVisible: true },
+      registry.update(model.layout, (layout) =>
+        layout.searchVisible
+          ? { ...layout, searchVisible: false, search: "" }
+          : { ...layout, searchVisible: true },
       );
     },
     toggleMoreContext() {
-      store.setState(({ moreContext }) => ({ moreContext: !moreContext }));
+      registry.update(model.layout, (layout) => ({
+        ...layout,
+        moreContext: !layout.moreContext,
+      }));
     },
     expandExcerpt({ group, occurrence, direction }) {
-      const { expansions, moreContext, previews } = store.getState();
-      const preview = previews[group.path];
+      const { moreContext } = registry.get(model.layout);
+      const { expansions } = registry.get(model.note);
+      const preview = registry.get(model.previews)[group.path];
       if (preview?.status !== "ready") return;
       const context = preview.contexts[occurrenceID(occurrence)];
       if (context?.status !== "ready") return;
@@ -207,12 +217,16 @@ export function createCitedByActions(options: {
         }),
         direction,
       });
-      store.setState({ expansions: { ...expansions, [key]: range } });
+      registry.update(model.note, (note) => ({
+        ...note,
+        expansions: { ...note.expansions, [key]: range },
+      }));
     },
     showSortMenu(event) {
       openSortMenu(event, {
-        current: store.getState().sort,
-        select: (sort) => store.setState({ sort }),
+        current: registry.get(model.layout).sort,
+        select: (sort) =>
+          registry.update(model.layout, (layout) => ({ ...layout, sort })),
       });
     },
     sortGroups(groups, mode) {
@@ -229,50 +243,53 @@ export function createCitedByActions(options: {
     },
     invalidatePreview(path) {
       generations.set(path, (generations.get(path) ?? 0) + 1);
-      store.setState(({ expansions, previews }) => {
-        // Every expansion holds offsets into the source that just changed, so
-        // this note's excerpts start from their mode range again.
-        const kept = Object.entries(expansions).filter(
-          ([key]) => !excerptKeyIn(key, path),
-        );
-        const stale = kept.length !== Object.keys(expansions).length;
-        if (!(path in previews) && !stale) return {};
-        const next = { ...previews };
-        delete next[path];
-        return {
-          previews: next,
-          ...(stale && { expansions: Object.fromEntries(kept) }),
-        };
-      });
-      const group = store
-        .getState()
-        .snapshot.groups.find((candidate) => candidate.path === path);
+      // Every expansion holds offsets into the source that just changed, so
+      // this note's excerpts start from their mode range again.
+      const { expansions } = registry.get(model.note);
+      const kept = Object.entries(expansions).filter(
+        ([key]) => !excerptKeyIn(key, path),
+      );
+      if (kept.length !== Object.keys(expansions).length) {
+        registry.update(model.note, (note) => ({
+          ...note,
+          expansions: Object.fromEntries(kept),
+        }));
+      }
+      if (path in registry.get(model.previews)) {
+        registry.update(model.previews, (previews) => {
+          const next = { ...previews };
+          delete next[path];
+          return next;
+        });
+      }
+      const group = shownGroups().find((candidate) => candidate.path === path);
       if (!group) return;
       queued.push(group);
       void drain();
     },
     toggleGroup(path) {
-      store.setState(({ collapsed }) => ({
-        collapsed: collapsed.includes(path)
-          ? collapsed.filter((item) => item !== path)
-          : [...collapsed, path],
+      registry.update(model.note, (note) => ({
+        ...note,
+        collapsed: note.collapsed.includes(path)
+          ? note.collapsed.filter((item) => item !== path)
+          : [...note.collapsed, path],
       }));
     },
     expandAll(paths) {
-      if (!paths) {
-        store.setState({ collapsed: [] });
-        return;
-      }
-      store.setState(({ collapsed }) => ({
-        collapsed: collapsed.filter((path) => !paths.includes(path)),
+      registry.update(model.note, (note) => ({
+        ...note,
+        collapsed: paths
+          ? note.collapsed.filter((path) => !paths.includes(path))
+          : [],
       }));
     },
     collapseAll(paths) {
-      store.setState(({ collapsed, snapshot }) => ({
+      registry.update(model.note, (note) => ({
+        ...note,
         collapsed: [
           ...new Set([
-            ...collapsed,
-            ...(paths ?? snapshot.groups.map(({ path }) => path)),
+            ...note.collapsed,
+            ...(paths ?? shownGroups().map(({ path }) => path)),
           ]),
         ],
       }));

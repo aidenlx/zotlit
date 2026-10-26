@@ -1,4 +1,5 @@
 // The rendered Cited By Sidebar list.
+import { useAtomValue } from "@effect/atom-react";
 import { prepareSimpleSearch } from "obsidian";
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
@@ -9,19 +10,22 @@ import { SearchInput } from "@/components/obsidian/search-input";
 import { SidebarToolbar } from "@/components/sidebar-toolbar";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
+import { activeCitedByAtom } from "@/services/citation-index/atoms";
 import type {
   CitationOccurrence,
   CitedByGroup,
   CitedBySnapshot,
 } from "@/services/citation-index/service";
+import { activeNoteAtom } from "@/services/note-index/atoms";
 
 import { useCitedByActions } from "./actions";
+import { useCitedByModel } from "./model";
 import {
   contextParts,
+  EMPTY_CITED_BY_SNAPSHOT,
   excerptKey,
   noteName,
   occurrenceID,
-  useCitedByStore,
 } from "./store";
 import type {
   CitedByPreview,
@@ -37,19 +41,15 @@ export const SEARCH_DEBOUNCE = 300;
 const ELLIPSIS = "…";
 
 export function CitedBy() {
-  const state = useCitedByStore((current) => current);
+  const model = useCitedByModel();
   const actions = useCitedByActions();
-  const {
-    indexedKey,
-    snapshot,
-    search,
-    searchVisible,
-    moreContext,
-    sort,
-    previews,
-    expansions,
-    activePath,
-  } = state;
+  const { key: indexedKey, path: activePath } = useAtomValue(activeNoteAtom);
+  const snapshot = useAtomValue(activeCitedByAtom) ?? EMPTY_CITED_BY_SNAPSHOT;
+  const { search, searchVisible, moreContext, sort } = useAtomValue(
+    model.layout,
+  );
+  const { expansions } = useAtomValue(model.note);
+  const previews = useAtomValue(model.previews);
   useEffect(() => {
     actions.loadPreviews(snapshot.groups);
     return () => actions.loadPreviews([]);
@@ -168,10 +168,17 @@ function Toolbar({
   paths: readonly string[];
 }) {
   const actions = useCitedByActions();
-  const hasTarget = useCitedByStore((state) => state.indexedKey !== null);
-  const collapsed = useCitedByStore((state) => state.collapsed);
-  const searchVisible = useCitedByStore((state) => state.searchVisible);
-  const moreContext = useCitedByStore((state) => state.moreContext);
+  const model = useCitedByModel();
+  const hasTarget = useAtomValue(activeNoteAtom, (note) => note.key !== null);
+  const collapsed = useAtomValue(model.note, (note) => note.collapsed);
+  const searchVisible = useAtomValue(
+    model.layout,
+    (layout) => layout.searchVisible,
+  );
+  const moreContext = useAtomValue(
+    model.layout,
+    (layout) => layout.moreContext,
+  );
   const allCollapsed =
     paths.length > 0 && paths.every((path) => collapsed.includes(path));
 
@@ -229,7 +236,10 @@ function Toolbar({
 /** The hidden-by-default query field: focused on open, debounced on input. */
 function SearchFilter() {
   const actions = useCitedByActions();
-  const search = useCitedByStore((state) => state.search);
+  const search = useAtomValue(
+    useCitedByModel().layout,
+    (layout) => layout.search,
+  );
   const [text, setText] = useState(search);
   const field = useRef<HTMLDivElement>(null);
 
@@ -333,10 +343,14 @@ function CitedBySource({
   label: string;
 }) {
   const actions = useCitedByActions();
-  const collapsed = useCitedByStore((state) =>
-    state.collapsed.includes(group.path),
+  const model = useCitedByModel();
+  const collapsed = useAtomValue(model.note, (note) =>
+    note.collapsed.includes(group.path),
   );
-  const preview = useCitedByStore((state) => state.previews[group.path]);
+  const preview = useAtomValue(
+    model.previews,
+    (previews) => previews[group.path],
+  );
 
   return (
     <li className="zt:break-words" data-cited-by-result>
@@ -448,9 +462,14 @@ function OccurrenceCard({
   source: string;
 }) {
   const actions = useCitedByActions();
-  const moreContext = useCitedByStore((state) => state.moreContext);
-  const expansion = useCitedByStore(
-    (state) => state.expansions[excerptKey(group.path, occurrence)],
+  const model = useCitedByModel();
+  const moreContext = useAtomValue(
+    model.layout,
+    (layout) => layout.moreContext,
+  );
+  const expansion = useAtomValue(
+    model.note,
+    (note) => note.expansions[excerptKey(group.path, occurrence)],
   );
   const excerpt =
     context.status === "ready"
