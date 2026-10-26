@@ -14,6 +14,7 @@ import { portCall } from "@/lib/legacy-port";
 import { showMenuAtButton } from "@/lib/menu";
 import { FileManager } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
+import { leaveSettingsFor } from "@/lib/plugin-host";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { installedStyles } from "@/services/note-feature/creation-view";
@@ -343,8 +344,7 @@ function openDocument(ctx: SettingTabContext, path: string) {
   return Effect.gen(function* () {
     const file = yield* (yield* Vault).getFileByPath(path);
     if (!file) return;
-    ctx.app.setting.close();
-    yield* portCall("open-native-profile", () =>
+    yield* leaveSettingsFor("open-native-profile", () =>
       openNativeProfile(ctx.app, file, { customize: true }),
     );
   });

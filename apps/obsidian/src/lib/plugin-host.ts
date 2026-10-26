@@ -11,6 +11,7 @@ import type {
 } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
+import { portCall } from "@/lib/legacy-port";
 
 /**
  * What a layer registers on: Obsidian commands, post-processors, editor
@@ -55,6 +56,8 @@ export interface PluginHostShape
   addSettingTab<T extends PluginSettingTab>(
     build: (plugin: Plugin) => T,
   ): Effect.Effect<T, never, Scope.Scope>;
+  /** Close Obsidian's settings window; nothing happens when it is closed. */
+  readonly closeSettings: Effect.Effect<void>;
 }
 
 /** The plugin the layer graph runs in. */
@@ -122,8 +125,21 @@ export function makePluginHost(plugin: Plugin & CliHost): PluginHostShape {
         }),
         (tab) => Effect.sync(() => plugin.app.setting.removeSettingTab(tab)),
       ),
+    closeSettings: Effect.sync(() => plugin.app.setting.close()),
   };
 }
+
+/**
+ * Close the settings window, then open a view through `open`: a view opened
+ * from a setting row shows only once the settings window is out of the way.
+ */
+export const leaveSettingsFor = <const S extends string, A>(
+  step: S,
+  open: (signal: AbortSignal) => Promise<A>,
+) =>
+  PluginHost.use((host) => host.closeSettings).pipe(
+    Effect.andThen(portCall(step, open)),
+  );
 
 export function layerPluginHost(
   plugin: Plugin & CliHost,

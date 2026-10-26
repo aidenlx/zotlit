@@ -128,7 +128,10 @@ export function layerSettingTab(legacy: SettingTabLegacy) {
 export function startSettingTab(
   runtime: Pick<
     ManagedRuntime.ManagedRuntime<
-      Exclude<SettingTabEnv, SettingTab | Notifier | FileSystem.FileSystem>,
+      Exclude<
+        SettingTabEnv,
+        SettingTab | Notifier | FileSystem.FileSystem | PluginHost
+      >,
       never
     >,
     "runSync" | "runPromise" | "scope"

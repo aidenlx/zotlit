@@ -17,6 +17,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { portCall } from "@/lib/legacy-port";
 import { Notifier } from "@/lib/notifier";
 import { Vault } from "@/lib/obsidian-vault";
+import { PluginHost } from "@/lib/plugin-host";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { requireDialog } from "@/lib/require";
 import type { LibraryScope } from "@/services/library-scope/service";
@@ -391,7 +392,7 @@ export const addProfileDestination = Effect.fn("addProfileDestination")(
         }),
     );
     if (!created) return;
-    app.setting.close();
+    yield* (yield* PluginHost).closeSettings;
     const file = yield* (yield* Vault).getFileByPath(created.path);
     if (!file) return yield* new ProfileDocumentMissing({ path: created.path });
     yield* portCall("open-template-workbench", () =>

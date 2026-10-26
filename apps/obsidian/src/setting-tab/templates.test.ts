@@ -16,6 +16,7 @@ import { answerConfirmation } from "@/lib/__fixtures__/confirm";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { Vault } from "@/lib/obsidian-vault";
+import { PluginHost } from "@/lib/plugin-host";
 import { Template } from "@/services/template/service";
 import type { CitationTemplateStatus } from "@/services/template/service";
 import { openNewPartialPrompt } from "@/views/template-workbench/new-partial";
@@ -33,7 +34,7 @@ vi.mock("@/views/template-workbench/new-partial", () => ({
 }));
 
 /**
- * The tab context over `template` and `vault`, in an App whose Settings window
+ * The tab context over `template` and `vault`, with a settings window that
  * closes through `close`. `rebuilt` takes one element per definition rebuild
  * an action asks for.
  */
@@ -48,17 +49,19 @@ const tabOver = Effect.fnUntraced(function* (
     Layer.mergeAll(
       Layer.mock(Template, template),
       Layer.mock(Vault, options.vault ?? {}),
+      Layer.succeed(
+        PluginHost,
+        stubService<PluginHost["Service"]>("PluginHost", {
+          closeSettings: Effect.sync(options.close ?? (() => {})),
+        }),
+      ),
     ),
   );
   const rebuilt = yield* Queue.unbounded<void>();
   const { tab } = yield* scopedSettingTab(services, {
     update: () => Queue.offerUnsafe(rebuilt, undefined),
   });
-  const app = stubService<App>("App", {
-    setting: stubService<App["setting"]>("SettingsModal", {
-      close: options.close ?? vi.fn(),
-    }),
-  });
+  const app = stubService<App>("App", {});
   const ctx = stubService<SettingTabContext>("SettingTabContext", { tab, app });
   return { ctx, rebuilt };
 });

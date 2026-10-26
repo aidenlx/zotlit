@@ -11,6 +11,7 @@ import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { Vault } from "@/lib/obsidian-vault";
+import { PluginHost } from "@/lib/plugin-host";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { NoteFeature } from "@/services/note-feature/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
@@ -88,6 +89,10 @@ it.effect(
         Layer.mock(Template, {}),
         Layer.mock(NoteFeature, {}),
         Layer.mock(Vault, {}),
+        Layer.succeed(
+          PluginHost,
+          stubService<PluginHost["Service"]>("PluginHost", {}),
+        ),
         testNotifier().layer,
       );
       const pending = yield* addProfileDestination(

@@ -24,6 +24,7 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { FileManager } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
+import { PluginHost } from "@/lib/plugin-host";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
@@ -115,6 +116,12 @@ const tabOver = Effect.fnUntraced(function* (
       }),
       Layer.mock(FileManager, fakes.fileManager ?? {}),
       Layer.mock(PluginSettings, settings),
+      Layer.succeed(
+        PluginHost,
+        stubService<PluginHost["Service"]>("PluginHost", {
+          closeSettings: Effect.void,
+        }),
+      ),
     ),
   );
   const rebuilt = yield* Queue.unbounded<void>();
@@ -124,11 +131,7 @@ const tabOver = Effect.fnUntraced(function* (
   const customize = vi.fn<CustomizeAction>(async () => {});
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
     tab,
-    app: stubService<App>("App", {
-      setting: stubService<App["setting"]>("SettingsModal", {
-        close: vi.fn(),
-      }),
-    }),
+    app: stubService<App>("App", {}),
     customize,
     settings: stubService<SettingTabContext["settings"]>("Settings", settings),
   });
