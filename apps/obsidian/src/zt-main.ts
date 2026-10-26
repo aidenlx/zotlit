@@ -333,21 +333,17 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         bridge: services.bridge,
       }),
     );
-    const updateAll = () => services.batchUpdate.runBatchUpdateAll();
     const noteFeatureDeps = {
-      createProfile: services.createProfile,
-      importProfile: services.importProfile,
       app: this.app,
       noteFeature: services.noteFeature,
-      zoteroPref: services.zoteroPref,
+      noteActions: services.noteActions,
       batchImport: services.batchImport,
-      updateAll,
     };
     addNoteFeatureActions(this, noteFeatureDeps);
     stack.defer(
       registerWorkbenchSavedNotice({
         localBridge: services.localBridge,
-        updateAll,
+        updateAll: () => services.noteActions.updateAll(),
       }),
     );
     registerCitationSuggest(this, {

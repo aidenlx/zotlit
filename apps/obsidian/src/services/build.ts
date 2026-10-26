@@ -68,13 +68,13 @@ import { LocalServer } from "./local-server/service";
 import { bindManagedBinary } from "./managed-binary/handle";
 import { bindNoteFeature, NoteFeature } from "./note-feature";
 import type { NoteFeatureHandle } from "./note-feature";
-import { bindBatchUpdate } from "./note-feature/batch-update-handle";
+import { bindNoteActions } from "./note-feature/actions-handle";
+import type { NoteActionServices } from "./note-feature/actions-view";
 import { bindNoteCitations } from "./note-feature/citations-handle";
 import type { NoteCitationServices } from "./note-feature/citations-handle";
 import { bindNoteCreation } from "./note-feature/creation-handle";
 import type { NoteCreationServices } from "./note-feature/creation-handle";
 import type { InteractiveCreationPorts } from "./note-feature/creation-view";
-import type { BatchUpdateServices } from "./note-feature/update-batch";
 import { batchUpdateNotices } from "./note-feature/update-single";
 import type { BatchImportServices } from "./note-import/batch-import";
 import { bindBatchImport } from "./note-import/batch-import-handle";
@@ -447,13 +447,14 @@ export async function buildServices(
         ),
     })
     .useValue({
-      batchUpdate: ({ noteImportView }) =>
-        bindBatchUpdate(
+      noteActions: ({ noteImportView }) =>
+        bindNoteActions(
           bridge,
-          runtime.runSync(Effect.context<BatchUpdateServices>()),
+          runtime.runSync(Effect.context<NoteActionServices>()),
           {
-            notices: batchUpdateNotices(plugin.app),
+            creation,
             view: noteImportView,
+            notices: batchUpdateNotices(plugin.app),
           },
         ),
     })

@@ -112,16 +112,6 @@ export interface BatchUpdatePorts {
 }
 
 /**
- * The library-wide update for callers outside Effect: the update-all command
- * and the Workbench's saved notice. `build.ts` binds it over the plugin's
- * services (`batch-update-handle.ts`).
- */
-export interface BatchUpdate {
-  /** @see {@link runBatchUpdateAll} */
-  runBatchUpdateAll(target?: BatchTarget): Promise<BatchUpdateResult>;
-}
-
-/**
  * Selection origin keeps the unresolved fallback and explicit recovery scoped
  * to their original rows when the user changes a destination.
  */

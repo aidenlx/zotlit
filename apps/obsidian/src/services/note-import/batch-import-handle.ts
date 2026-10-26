@@ -5,7 +5,6 @@ import type { Context } from "effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 
 import {
-  reimportNoteByKey,
   runBatchImport,
   runBatchImportAll,
   runChildImportByKey,
@@ -35,7 +34,5 @@ export function bindBatchImport(
     runBatchImportAll: (target) => run(runBatchImportAll(importPorts, target)),
     runChildImportByKey: (indexedKey) =>
       run(runChildImportByKey(importPorts, indexedKey)),
-    reimportNoteByKey: (noteKey, targetFile) =>
-      run(reimportNoteByKey(importPorts, noteKey, targetFile)),
   };
 }

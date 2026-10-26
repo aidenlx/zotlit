@@ -107,11 +107,6 @@ export interface BatchImport {
   runBatchImportAll(target?: BatchTarget): Promise<BatchImportResult>;
   /** @see {@link runChildImportByKey} */
   runChildImportByKey(indexedKey: string): Promise<BatchImportResult | null>;
-  /** @see {@link reimportNoteByKey} */
-  reimportNoteByKey(
-    noteKey: string,
-    targetFile: TFile,
-  ): Promise<ReimportResult>;
 }
 
 type ImportAction = {
