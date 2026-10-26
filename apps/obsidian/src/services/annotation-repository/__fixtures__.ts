@@ -432,7 +432,6 @@ export function repositoryClient(
   bridge: EffectBridge,
   dispose: () => Promise<void>,
 ): RepositoryClient {
-  const refreshes = new Map<string, Promise<AnnotationList | null>>();
   return new Proxy({} as RepositoryClient, {
     get(_target, property) {
       if (property === Symbol.asyncDispose) return dispose;
@@ -479,25 +478,6 @@ export function repositoryClient(
       }
       if (property === "capability") return bridge.runSync(service.capability);
       if (property === "probe") return () => bridge.runPromise(service.probe);
-      if (property === "refresh") {
-        return (attachmentKey: string): Promise<AnnotationList | null> => {
-          const running = refreshes.get(attachmentKey);
-          if (running) return running;
-          const refreshing = bridge.runPromise(service.refresh(attachmentKey));
-          refreshes.set(attachmentKey, refreshing);
-          void refreshing.then(
-            () => {
-              if (refreshes.get(attachmentKey) === refreshing)
-                refreshes.delete(attachmentKey);
-            },
-            () => {
-              if (refreshes.get(attachmentKey) === refreshing)
-                refreshes.delete(attachmentKey);
-            },
-          );
-          return refreshing;
-        };
-      }
       const member = service[property as keyof typeof service];
       if (typeof member !== "function") return member;
       return (...args: unknown[]): unknown => {

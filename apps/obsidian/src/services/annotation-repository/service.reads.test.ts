@@ -231,6 +231,8 @@ it.effect("shares one refresh and publishes the canonical held result", () =>
 
     const refreshed = yield* Fiber.join(overlay);
     expect(yield* Fiber.join(view)).toBe(refreshed);
+    // One revalidation for both: it refreshes the Zotero database once.
+    expect(reads.db.refresh).toHaveBeenCalledTimes(1);
     expect(batchReads(reads)).toBe(2);
     expect(refreshed).toBe(first);
     expect((yield* service.peek("RGRPDF24"))?.value).toBe(first);

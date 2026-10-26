@@ -347,6 +347,8 @@ const refresh = Effect.fnUntraced(function* (
   core: CoreState,
   attachmentKey: string,
 ) {
+  // The join is getUnsafe + run: `onlyIfMissing` answers an interrupted
+  // fiber, not the running one.
   const running = FiberMap.getUnsafe(core.refreshes, attachmentKey);
   if (Option.isSome(running)) return yield* Fiber.join(running.value);
   const refreshing = yield* FiberMap.run(
