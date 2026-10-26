@@ -20,6 +20,7 @@ import type { AttachmentPathContext } from "@zotlit/db/path";
 import { valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
+import { portCall } from "@/lib/legacy-port";
 import type {
   AnnotationRecord,
   AnnotationSource,
@@ -36,23 +37,6 @@ export type ExcerptRequestReads = Pick<
   ZoteroReadsApi,
   "AttachmentSources" | "DatabaseIdentity"
 >;
-
-/**
- * A legacy Promise port rejected at `step`; `cause` is the rejection. A local
- * stand-in for `lib/legacy-port.ts`, which the stack's 13a slice adds.
- */
-class LegacyPortError extends Data.TaggedError("LegacyPortError")<{
-  readonly step: string;
-  readonly cause: unknown;
-  readonly message: string;
-}> {}
-
-const legacyPortError = (step: string, cause: unknown) =>
-  new LegacyPortError({
-    step,
-    cause,
-    message: cause instanceof Error ? cause.message : String(cause),
-  });
 
 /**
  * The file inputs one saved Annotation resolves through, or `null` where nothing
@@ -85,10 +69,7 @@ export function savedExcerptRequest(options: {
       source,
       paths,
       snapshot: Effect.acquireDisposable(
-        Effect.tryPromise({
-          try: () => options.zoteroReads.acquireRead(),
-          catch: (cause) => legacyPortError("acquire-read", cause),
-        }),
+        portCall("acquire-read", () => options.zoteroReads.acquireRead()),
       ).pipe(Effect.map(({ reads }) => reads)),
       dataDir: Effect.sync(() => options.paths.dataDir),
     }),
