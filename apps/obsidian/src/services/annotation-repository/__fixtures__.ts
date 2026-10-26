@@ -1,6 +1,8 @@
 import {
+  Clock,
   Context,
   DateTime,
+  Deferred,
   Effect,
   Exit,
   Layer,
@@ -8,9 +10,12 @@ import {
   Scope,
   Stream,
 } from "effect";
+import type { Duration } from "effect";
+import { TestClock } from "effect/testing";
 import { vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 // The Annotation Repository over a real query client and a real Zotero Local
 // API client, with a fake transport under it: the seam every surface reads and
 // writes through. The repository's own suite and the reader suites build on it,
@@ -39,6 +44,8 @@ import {
   ROUGIER_ANNOTATIONS,
   SERVER_ID,
   testClockAtNow,
+  staleVersion,
+  staleVersionPatch,
   unreachable,
   writeAccepted,
 } from "@/services/zotero-local-api/__fixtures__";
@@ -66,11 +73,10 @@ import {
 import type {
   AnnotationList,
   AnnotationRecord,
-  AnnotationRepositoryCore,
-  AnnotationRepositoryCoreDeps,
   AnnotationSource,
-} from "./repository";
+} from "./service";
 import { layerAnnotationRepository, AnnotationRepository } from "./service";
+import type { GeometryEdit, TextField } from "./write";
 
 export const NOW = toInstant(DateTime.makeUnsafe("2026-09-16T15:52:21Z"));
 
@@ -199,7 +205,10 @@ export async function setup(
   options: ClientOptions & {
     writeToken?: () => string;
     /** What this device's persisted Excerpt Images were made from, by Annotation. */
-    persistedExcerpt?: AnnotationRepositoryCoreDeps["persistedExcerpt"];
+    persistedExcerpt?: (
+      annotation: AnnotationRecord,
+      source: AnnotationSource,
+    ) => Promise<string | null>;
     /** The Annotations Zotero imported from the PDF file, by key. */
     external?: readonly string[];
     /** The Fixture's rows in a group library, not the personal library. */
@@ -323,10 +332,17 @@ export async function setup(
   const bridge = effectBridge(runtime);
   const repository = repositoryClient(service, bridge, closeRepository);
   const queryClient = plainQueryClients(runtime);
+  // The repository reads the harness runtime's TestClock, not the case's.
+  const layerClock = Context.get(dependencies, Clock.Clock);
+  const adjustLayerClock = (duration: Duration.Input) =>
+    TestClock.adjust(duration).pipe(
+      Effect.provideService(Clock.Clock, layerClock),
+    );
   return {
     repository,
     service,
     runtime,
+    adjustLayerClock,
     client,
     db: { acquireRead, refresh },
     dbEvents,
@@ -342,6 +358,44 @@ export async function setup(
   };
 }
 
+/**
+ * The stack an `it.effect` case builds its harness on: {@link setup} and
+ * {@link writable} add to it, and the case's Scope disposes it. The
+ * repository reads the TestClock of the harness's `runtime`, not the case's
+ * own: a case moves the repository's time through `runtime`.
+ */
+export const scopedStack = Effect.acquireRelease(
+  Effect.sync(() => new AsyncDisposableStack()),
+  (stack) => Effect.promise(() => stack.disposeAsync()),
+);
+
+/**
+ * Read `read` task by task until `done` accepts its answer. A save that a
+ * timer started on the TestClock runs on to the fake Zotero's Promises, which
+ * `TestClock.adjust` does not wait for.
+ */
+export function eventually<A, E, R>(
+  read: Effect.Effect<A, E, R>,
+  done: (value: A) => boolean,
+): Effect.Effect<A, E, R> {
+  return Effect.yieldNow.pipe(
+    Effect.andThen(read),
+    Effect.repeat({ until: done }),
+  );
+}
+
+/** Wait until the save in flight lands and the text draft of `field` ends. */
+export function settledDraft(
+  service: AnnotationRepository["Service"],
+  field: TextField,
+  annotationKey = "PUPR5FG5",
+) {
+  return eventually(
+    service.textDraftFor(field, annotationKey),
+    (draft) => !draft,
+  );
+}
+
 type FixtureEvents = {
   "annotations-changed": (attachmentKey: string) => void;
   "excerpt-pixels-changed": (
@@ -354,7 +408,41 @@ type FixtureEvents = {
   "write-conflict": (annotationKey: string, attachmentKey: string) => void;
 };
 
-export type RepositoryClient = AnnotationRepositoryCore & {
+type PromiseMember =
+  | "createAnnotation"
+  | "deleteAnnotation"
+  | "deleteAnnotations"
+  | "patchColor"
+  | "patchColors"
+  | "patchComment"
+  | "patchGeometry"
+  | "read"
+  | "redo"
+  | "refresh"
+  | "retryTextDraft"
+  | "retryWrite"
+  | "submitTags"
+  | "submitTextField"
+  | "undo";
+
+type Shape = AnnotationRepository["Service"];
+
+/**
+ * The tag's members as plain calls: a member that waits answers a Promise,
+ * the others their value; `capability` reads as a value and `probe` is a call.
+ */
+type PlainMembers = {
+  [K in Exclude<keyof Shape, "capability" | "probe">]: Shape[K] extends (
+    ...args: infer P
+  ) => Effect.Effect<infer A, unknown>
+    ? (...args: P) => K extends PromiseMember ? Promise<A> : A
+    : never;
+} & {
+  readonly capability: Effect.Success<Shape["capability"]>;
+  probe(): Promise<void>;
+};
+
+export type RepositoryClient = PlainMembers & {
   listen<K extends keyof FixtureEvents>(
     event: K,
     callback: FixtureEvents[K],
@@ -386,7 +474,6 @@ export function repositoryClient(
   bridge: EffectBridge,
   dispose: () => Promise<void>,
 ): RepositoryClient {
-  const refreshes = new Map<string, Promise<AnnotationList | null>>();
   return new Proxy({} as RepositoryClient, {
     get(_target, property) {
       if (property === Symbol.asyncDispose) return dispose;
@@ -433,25 +520,6 @@ export function repositoryClient(
       }
       if (property === "capability") return bridge.runSync(service.capability);
       if (property === "probe") return () => bridge.runPromise(service.probe);
-      if (property === "refresh") {
-        return (attachmentKey: string): Promise<AnnotationList | null> => {
-          const running = refreshes.get(attachmentKey);
-          if (running) return running;
-          const refreshing = bridge.runPromise(service.refresh(attachmentKey));
-          refreshes.set(attachmentKey, refreshing);
-          void refreshing.then(
-            () => {
-              if (refreshes.get(attachmentKey) === refreshing)
-                refreshes.delete(attachmentKey);
-            },
-            () => {
-              if (refreshes.get(attachmentKey) === refreshing)
-                refreshes.delete(attachmentKey);
-            },
-          );
-          return refreshing;
-        };
-      }
       const member = service[property as keyof typeof service];
       if (typeof member !== "function") return member;
       return (...args: unknown[]): unknown => {
@@ -560,6 +628,22 @@ function moveToGroup(
     ).run(userID);
 }
 
+/**
+ * Runs `push` on each value a repository stream announces, on a fiber of the
+ * case that starts at once and ends with the case.
+ */
+export function collect<A>(
+  stream: Stream.Stream<A>,
+  push: (value: A) => Effect.Effect<unknown>,
+) {
+  return Effect.forkChild(
+    Stream.runForEach(stream, (value) => push(value)),
+    {
+      startImmediately: true,
+    },
+  );
+}
+
 /** The next `annotations-changed` the repository emits, as a completion signal. */
 export function nextChange(
   repository: RepositoryClient,
@@ -575,6 +659,45 @@ export function nextChange(
     });
   });
 }
+
+/**
+ * The next `annotations-changed` the repository emits, as a completion signal
+ * for an `it.effect` case. It subscribes to the service stream at once; the
+ * Effect it answers waits for the first announcement and the ones the same
+ * step makes, and answers their keys.
+ */
+export function nextChangeOf(
+  service: Shape,
+): Effect.Effect<Effect.Effect<readonly string[]>> {
+  const announced: string[] = [];
+  return Effect.flatMap(Deferred.make<void>(), (first) =>
+    collect(service.annotationsChanged, (key) =>
+      Effect.sync(() => announced.push(key)).pipe(
+        Effect.andThen(Deferred.succeed(first, undefined)),
+      ),
+    ).pipe(
+      Effect.as(
+        Deferred.await(first).pipe(
+          Effect.andThen(Effect.yieldNow),
+          Effect.map((): readonly string[] => announced),
+        ),
+      ),
+    ),
+  );
+}
+
+/**
+ * Read once so the Capability Probe runs, and wait for the source it finds:
+ * the {@link switchToLocalApi} of an `it.effect` case.
+ */
+export const switchServiceToLocalApi = Effect.fnUntraced(function* (
+  service: Shape,
+  attachmentKey = "RGRPDF24",
+) {
+  const announced = yield* nextChangeOf(service);
+  yield* service.read(attachmentKey);
+  yield* announced;
+});
 
 /**
  * A Zotero that keeps everything ZotLit writes to it — a patch of any field, an
@@ -755,3 +878,288 @@ export function batchReads(counters: ReadCounters): number {
     counters.excerptBaselines.mock.calls.length
   );
 }
+
+/** Every Annotation of `RGRPDF24`, in the reading order its sort indexes give. */
+const READING_ORDER = [
+  ["TYY6Z6ZF", "ink"],
+  ["4PE492KU", "ink"],
+  ["HRK7BG32", "text"],
+  ["K3JRFLFQ", "underline"],
+  ["PUPR5FG5", "highlight"],
+  ["C94NJNYG", "note"],
+  ["FDRFQ7C2", "image"],
+];
+
+const DATABASE_SOURCE = {
+  kind: "zotero-db",
+  database: { userID: null, localUserKey: null, serverID: SERVER_ID },
+  libraryID: 1,
+  libraryRevision: 37,
+} as const;
+
+/** The Annotation one create asks Zotero for, in the reader's own words. */
+const DRAFT = {
+  type: "highlight",
+  color: "#FFD400",
+  comment: "",
+  text: "Identify Your Message",
+  pageLabel: "1",
+  sortIndex: "00000|002041|00170",
+  position: {
+    pageIndex: 0,
+    rects: [[265.833_4, 611.202_4, 374.503_4, 620.019_4]],
+  },
+} as const;
+
+/** The Annotation Zotero answers a create with, and reads back afterwards. */
+const MADE: WireAnnotation = {
+  key: "MADE2345",
+  version: 42,
+  type: "highlight",
+  text: "Identify Your Message",
+  color: "#ffd400",
+  pageLabel: "1",
+  sortIndex: "00000|002041|00170",
+  position: { pageIndex: 0, rects: [[265.833, 611.202, 374.503, 620.019]] },
+};
+
+function colorOf(list: AnnotationList | null, key: string): string | null {
+  return list?.annotations.find((record) => record.key === key)?.color ?? null;
+}
+
+/** Every stored Annotation row, as an oracle for "nothing was written". */
+function annotationRows(client: NodeDatabaseClient): unknown[] {
+  return client.$client
+    .prepare("select * from itemAnnotations order by itemID")
+    .all();
+}
+
+/**
+ * A Zotero that keeps what a patch sends, Annotation by Annotation, so every
+ * later read answers the colour and comment the last accepted write asked for.
+ * What the Local API holds is the oracle an undo is read through; nothing here
+ * asks the history what it thinks.
+ */
+function zoteroHolding(annotationKey: string) {
+  const held = new Map<string, WireAnnotation>(
+    ROUGIER_ANNOTATIONS.map((entry) => [entry.key, { ...entry }]),
+  );
+  if (!held.has(annotationKey)) {
+    throw new Error(`No fixture annotation ${annotationKey}`);
+  }
+  let refuseOnce = false;
+  const list = () =>
+    ROUGIER_ANNOTATIONS.flatMap((entry) => {
+      const stored = held.get(entry.key);
+      return stored ? [stored] : [];
+    });
+  /** The item key a route names, which is its last segment. */
+  const keyOf = ({ url }: ZoteroRequest) =>
+    url.pathname.slice(url.pathname.lastIndexOf("/") + 1);
+  return {
+    answers: {
+      children: () => annotationPage(list()),
+      item: (request) => {
+        const stored = held.get(keyOf(request));
+        return stored ? annotationItem(stored) : notFound();
+      },
+      write: (request) => {
+        if (refuseOnce) {
+          refuseOnce = false;
+          return staleVersion();
+        }
+        const key = keyOf(request);
+        const stored = held.get(key);
+        const { annotationColor, annotationComment, annotationText } =
+          JSON.parse(request.body ?? "{}") as {
+            annotationColor?: string;
+            annotationComment?: string;
+            annotationText?: string;
+          };
+        const patched =
+          typeof annotationColor === "string" ||
+          typeof annotationComment === "string" ||
+          typeof annotationText === "string";
+        if (stored && patched) {
+          held.set(key, {
+            ...stored,
+            ...(typeof annotationColor === "string" && {
+              color: annotationColor,
+            }),
+            ...(typeof annotationComment === "string" && {
+              comment: annotationComment,
+            }),
+            ...(typeof annotationText === "string" && {
+              text: annotationText,
+            }),
+            version: stored.version + 1,
+          });
+        }
+        return writeAccepted();
+      },
+    } satisfies ZoteroAnswers,
+    /** What the Local API holds for the Annotation, or `null` once erased. */
+    get held(): WireAnnotation | null {
+      return held.get(annotationKey) ?? null;
+    },
+    /** What it holds for any other Annotation of the same Attachment. */
+    heldOf(key: string): WireAnnotation | null {
+      return held.get(key) ?? null;
+    },
+    /** An edit made in Zotero itself, beside ZotLit. */
+    changeInZotero(patch: Partial<WireAnnotation>): void {
+      const stored = held.get(annotationKey);
+      if (stored) {
+        held.set(annotationKey, {
+          ...stored,
+          ...patch,
+          version: stored.version + 1,
+        });
+      }
+    },
+    /** An erase in Zotero itself. */
+    eraseInZotero(): void {
+      held.delete(annotationKey);
+    },
+    /** Refuse the next write with the `412` a moved object answers. */
+    refuseNextWrite(): void {
+      refuseOnce = true;
+    },
+  };
+}
+
+/**
+ * Where a Geometry Edit puts each seeded mark, one step at a time: the whole
+ * rectangle a nudge or a drag moved down the page, and the Sort Index the new
+ * place gives it. Written out rather than computed, so the values a write
+ * rounds are the values the Local API is read back for.
+ */
+const MOVES: Readonly<Record<string, readonly GeometryEdit[]>> = {
+  PUPR5FG5: [
+    {
+      position: { pageIndex: 0, rects: [[265.833, 610.202, 374.503, 619.019]] },
+      sortIndex: "00000|002042|00170",
+    },
+    {
+      position: { pageIndex: 0, rects: [[265.833, 609.202, 374.503, 618.019]] },
+      sortIndex: "00000|002043|00170",
+    },
+  ],
+  K3JRFLFQ: [
+    {
+      position: {
+        pageIndex: 0,
+        rects: [
+          [67.011, 611.638, 211.485, 619.77],
+          [58.054, 600.98, 211.489, 609.112],
+          [58.054, 590.321, 153.781, 598.454],
+        ],
+      },
+      sortIndex: "00000|000435|00180",
+    },
+  ],
+};
+
+/** One step of {@link MOVES}, as a Geometry Edit the reader would have made. */
+function moved(annotationKey: string, step = 0): GeometryEdit {
+  const edit = MOVES[annotationKey]?.[step];
+  if (!edit) throw new Error(`No move ${step} for ${annotationKey}`);
+  return edit;
+}
+
+/** A tag as a tag `PATCH` sends it: always with its type. */
+type SentTag = Required<WireTag>;
+
+/**
+ * A Zotero holding one Annotation's tags and comment. It keeps the whole list a
+ * tag `PATCH` names and answers `412` to a body version it does not hold, as the paired
+ * probe recorded (aidenlx/zotlit#1231): what Zotero received and holds is the
+ * oracle, never the draft.
+ */
+function zoteroTagging(
+  annotationKey: string,
+  tags: NonNullable<WireAnnotation["tags"]>,
+) {
+  let stored: WireAnnotation = { ...afterWrite(annotationKey, {}), tags };
+  const patches: { version: number; tags: SentTag[] }[] = [];
+  let hold: Promise<void> | null = null;
+  return {
+    answers: {
+      children: () =>
+        annotationPage(
+          ROUGIER_ANNOTATIONS.map((entry) =>
+            entry.key === annotationKey ? stored : entry,
+          ),
+        ),
+      item: () => annotationItem(stored),
+      write: async (request) => {
+        const body = JSON.parse(request.body ?? "{}") as {
+          version: number;
+          tags?: SentTag[];
+          annotationComment?: string;
+          annotationText?: string;
+        };
+        const { tags: sent, annotationComment, annotationText } = body;
+        if (sent) patches.push({ version: body.version, tags: sent });
+        if (hold) await hold;
+        if (body.version !== stored.version) return staleVersionPatch();
+        stored = {
+          ...stored,
+          // Zotero writes a type for an automatic tag only.
+          ...(sent && {
+            tags: sent.map(({ tag, type }) =>
+              type === 0 ? tag : { tag, type },
+            ),
+          }),
+          ...(annotationComment !== undefined && {
+            comment: annotationComment,
+          }),
+          ...(annotationText !== undefined && { text: annotationText }),
+          version: stored.version + 1,
+        };
+        return writeAccepted();
+      },
+    } satisfies ZoteroAnswers,
+    /** Every tag `PATCH` body Zotero received. */
+    patches,
+    /** The tags Zotero holds, as the wire writes them. */
+    get tags() {
+      return stored.tags;
+    },
+    get comment() {
+      return stored.comment;
+    },
+    get text() {
+      return stored.text;
+    },
+    /** An edit made in Zotero itself, beside ZotLit. */
+    changeInZotero(patch: Partial<WireAnnotation>): void {
+      stored = { ...stored, ...patch, version: stored.version + 1 };
+    },
+    /** Hold every write until `release` is called. */
+    holdWrites(): () => void {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      hold = promise;
+      return () => {
+        hold = null;
+        resolve();
+      };
+    },
+  };
+}
+
+/** The Fixture's highlight with a manual, an automatic, and a manual tag. */
+const TAGGED = ["review", { tag: "nlp", type: 1 }, "todo"] as const;
+
+export {
+  READING_ORDER,
+  DATABASE_SOURCE,
+  DRAFT,
+  MADE,
+  colorOf,
+  annotationRows,
+  zoteroHolding,
+  moved,
+  zoteroTagging,
+  TAGGED,
+};

@@ -179,14 +179,13 @@ it("reads again on a database change only the lists that surfaces hold", async (
 it("lets go at a database change a list read with no hold and not asked for a while", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository, acquireRead, dbEvents, runtime } = await setup(stack);
-  const retention = Duration.millis(UNHELD_RETENTION.total("milliseconds"));
   const tick = Duration.millis(1);
 
   await repository.read("RGRPDF24");
   // A reader that asks without a hold keeps its list while no change comes,
   // so a card it shows still finds its record however long it stood idle.
   await runtime.runPromise(
-    TestClock.adjust(Duration.sum(retention, retention)),
+    TestClock.adjust(Duration.sum(UNHELD_RETENTION, UNHELD_RETENTION)),
   );
   expect(repository.peek("RGRPDF24")).not.toBeNull();
 
@@ -194,7 +193,7 @@ it("lets go at a database change a list read with no hold and not asked for a wh
   // the repository's own and no ask.
   await repository.read("RGRPDF24");
   await runtime.runPromise(
-    TestClock.adjust(Duration.subtract(retention, tick)),
+    TestClock.adjust(Duration.subtract(UNHELD_RETENTION, tick)),
   );
   acquireRead.mockClear();
   dbEvents.emit("changed");

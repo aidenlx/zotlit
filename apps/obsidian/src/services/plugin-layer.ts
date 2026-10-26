@@ -28,6 +28,11 @@ import { openLibraryView } from "@/views/library/register";
 import { layerAnnotationLinkReading } from "./annotation-popover/reading";
 import { layerAnnotationPopover } from "./annotation-popover/service";
 import type { AnnotationPopover } from "./annotation-popover/service";
+import { layerCapabilityNotices } from "./annotation-repository/notices";
+import type {
+  CapabilityNoticePorts,
+  CapabilityNotices,
+} from "./annotation-repository/notices";
 import { layerAnnotationRepository } from "./annotation-repository/service";
 import type { AnnotationRepository } from "./annotation-repository/service";
 import { layerAttachmentImport } from "./attachment-import/service";
@@ -152,11 +157,13 @@ export function pluginLayer(
   plugin: Plugin & CliHost,
   migration: Pick<TemplateMigrationOptions, "openPrompt">,
   {
+    capabilityNotices,
     excerpt,
     languagePack,
     noteCreation,
     noteImport,
   }: {
+    readonly capabilityNotices: CapabilityNoticePorts;
     readonly excerpt: {
       readonly openStore: () => Promise<ExcerptStore>;
       readonly readers: ExcerptReaderDocuments;
@@ -171,6 +178,7 @@ export function pluginLayer(
   | LocalBridge
   | Notifier
   | AnnotationRepository
+  | CapabilityNotices
   | AnnotationPopover
   | CitekeyEditor
   | ItemLookup
@@ -224,6 +232,9 @@ export function pluginLayer(
   const services = Layer.mergeAll(
     layerCitationPopover.pipe(startingAs("CitationPopover")),
     layerAnnotationPopover.pipe(startingAs("AnnotationPopover")),
+    layerCapabilityNotices(capabilityNotices).pipe(
+      startingAs("CapabilityNotices"),
+    ),
     layerCitekeyEditor(noteCreation).pipe(startingAs("CitekeyEditor")),
     layerItemLookup.pipe(startingAs("ItemLookup")),
     layerNoteImporter(noteImport).pipe(startingAs("NoteImporter")),

@@ -2,6 +2,7 @@
 import { expect, it, vi } from "vitest";
 
 import { themeHook } from "@/lib/theme-hooks";
+import { deadlineAfter } from "@/services/annotation-repository/__fixtures__/capability";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 
@@ -123,7 +124,7 @@ it("names the verb mark visibility would run next", () => {
 it.each([
   { kind: "read-only", reason: "zotero-unavailable" },
   { kind: "read-only", reason: "library-read-only" },
-  { kind: "cooldown", retryAfter: NOW.add({ seconds: 30 }) },
+  { kind: "cooldown", retryAfter: deadlineAfter(NOW, 30) },
 ] satisfies EditingCapability[])(
   "stands the writing controls down in place and says why under $kind",
   (capability) => {
