@@ -24,12 +24,17 @@ import type { ObsidianEnv } from "@/lib/obsidian-env";
 import type { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
+import type { CapabilityNotices } from "@/services/annotation-repository/notices";
+import type { AnnotationRepository } from "@/services/annotation-repository/service";
 import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { CitationIndex } from "@/services/citation-index/service";
+import type { ExcerptDisplays } from "@/services/excerpt-image/display";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { QueryService } from "@/services/item-query/service";
 import type { LibraryScope } from "@/services/library-scope/service";
 import type { NoteFeature } from "@/services/note-feature/service";
+import type { LocalServer } from "@/services/local-server/service";
+import type { AnnotationNoteActions } from "@/services/note-feature/view-actions";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { Profile } from "@/services/profile/service";
 import type { QueryClients } from "@/services/query-client/service";
@@ -48,6 +53,11 @@ import type { ZoteroReads } from "@/services/zotero-reads/service";
  * here when a view atom first reads it.
  */
 export type ViewServices =
+  | AnnotationNoteActions
+  | ExcerptDisplays
+  | CapabilityNotices
+  | AnnotationRepository
+  | LocalServer
   | CitationIndex
   | CitationLookup
   | ObsidianEnv

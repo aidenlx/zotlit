@@ -167,3 +167,23 @@ export const noteIndexStructureRevisionAtom = Atom.map(
   noteIndexSnapshotAtom,
   (snapshot) => snapshot.structureRevision,
 );
+
+/** The most recent Literature Note of an Item, used to resolve comment links. */
+export const noteSourceAtom = Atom.family((key: string) =>
+  held(
+    Stream.unwrap(
+      Effect.gen(function* () {
+        const index = yield* NoteIndex;
+        return Stream.concat(Stream.make(null), index.changes).pipe(
+          Stream.mapEffect(() =>
+            Effect.map(
+              index.getNotesByItemKey(key),
+              (notes) => notes[0]?.path ?? "",
+            ),
+          ),
+        );
+      }),
+    ),
+    "",
+  ),
+);

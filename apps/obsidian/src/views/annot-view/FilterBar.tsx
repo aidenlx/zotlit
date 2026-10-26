@@ -29,7 +29,7 @@ import {
   useSetSelectedTags,
   useToggleSearchOpen,
   useToggleSelectedColor,
-} from "./store";
+} from "./model";
 
 /** How many colours the trigger draws before it starts counting instead. */
 const COLOR_CAP = 3;

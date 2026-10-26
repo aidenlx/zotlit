@@ -27,7 +27,6 @@ import {
 import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { SearchHit, SearchOptions } from "@/services/item-lookup/service";
 import { ItemLookup } from "@/services/item-lookup/service";
@@ -49,7 +48,6 @@ import { LibraryScope as LibraryScopeService } from "@/services/library-scope/se
 import { notedItemKeysAtom } from "@/services/note-index/atoms";
 import { NoteIndex } from "@/services/note-index/service";
 import type { NoteIndexChange } from "@/services/note-index/service";
-import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import { PluginSettings } from "@/services/settings/service";
 import { useLedgerAtom } from "@/services/use-ledger/atoms";
@@ -711,7 +709,6 @@ async function pluginData(stored?: unknown) {
 
   const deps = stubService<LibraryViewDeps>("LibraryViewDeps", {
     runtime,
-    bridge: effectBridge(runtime),
     registry: welcomeHost.registry,
     app,
     reads: readsDeps,
@@ -727,22 +724,6 @@ async function pluginData(stored?: unknown) {
     }),
     query: fakeQuery(run),
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
-    annotations: stubService<LibraryViewDeps["annotations"]>(
-      "AnnotationRepository",
-      annotationReads(),
-    ),
-    excerptDisplay: stubService<LibraryViewDeps["excerptDisplay"]>(
-      "ExcerptDisplay",
-      {},
-    ),
-    noteFeature: stubService<LibraryViewDeps["noteFeature"]>(
-      "NoteFeatureHandle",
-      {},
-    ),
-    zoteroPref: { dataDir: "/Zotero", baseAttachmentPath: null },
-    libraryTagNames: async () => [],
-    allowEditing: vi.fn(),
-    reportBlockedGesture: vi.fn(),
     items,
     welcome: { registry: welcomeHost.registry, setupActions },
     literatureNotes,

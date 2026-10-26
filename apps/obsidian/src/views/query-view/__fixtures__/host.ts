@@ -14,10 +14,13 @@ import { DEFAULT_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 import { LibraryScope } from "@/services/library-scope/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsEvent } from "@/services/zotero-reads/service";
+import { layerAnnotServices } from "@/views/annot-view/__fixtures__/host";
+import type { AnnotHostOptions } from "@/views/annot-view/__fixtures__/host";
 import type { QueryViewDeps } from "@/views/query-view/view";
 
-export async function makeQueryHost(
+export async function makeQueryHost<R = never>(
   deps: Pick<QueryViewDeps, "query" | "reads" | "libraryScope" | "app">,
+  options: AnnotHostOptions<R> = {},
 ) {
   const stack = new AsyncDisposableStack();
   let libraryRevision = 0;
@@ -25,7 +28,8 @@ export async function makeQueryHost(
   const runtime = buildRuntime(
     Layer.mergeAll(
       layerUnreadViewServices,
-      layerHost(),
+      layerHost(options.sources),
+      layerAnnotServices(options),
       Layer.mock(Vault, {
         getFileByPath: (path) =>
           Effect.sync(() => deps.app.vault.getFileByPath(path)),
@@ -76,6 +80,20 @@ export async function makeQueryHost(
           "ZoteroReadsApi",
           {},
         ),
+        current: Effect.succeed({
+          state: "ready" as const,
+          error: null,
+          moved: false,
+          dbFileMissing: false,
+          activeReadMode: null,
+        }),
+        changes: Stream.succeed({
+          state: "ready" as const,
+          error: null,
+          moved: false,
+          dbFileMissing: false,
+          activeReadMode: null,
+        }),
         snapshot: Effect.acquireDisposable(
           Effect.promise(() => deps.reads.acquireRead()),
         ).pipe(Effect.map((lease) => lease.reads)),
@@ -94,6 +112,7 @@ export async function makeQueryHost(
           ],
           { concurrency: "unbounded" },
         ),
+        ...options.reads,
       }),
       Layer.mock(LibraryScope, {
         current: Effect.sync(() => deps.libraryScope.current),
@@ -129,6 +148,7 @@ export async function makeQueryHost(
           })),
         ),
       }),
+      options.services ?? Layer.empty,
     ),
     stack,
   );
