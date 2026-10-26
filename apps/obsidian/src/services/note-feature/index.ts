@@ -1,4 +1,5 @@
-export { type NoteFeatureDeps } from "./context";
+export { NoteFeature, layerNoteFeature } from "./service";
+export { bindNoteFeature } from "./handle";
 export {
   applyComposedFrontmatter,
   composeLiteratureNote,
@@ -29,7 +30,6 @@ export {
   type InteractiveCreationOptions,
 } from "./creation-view";
 export {
-  createNoteFeature,
   type CompanionNoteTarget,
   type CreateNoteDiagnostic,
   type CreateNoteResult,
@@ -42,7 +42,7 @@ export {
   type ProfileNotePreviewOptions,
   type ProfilePreview,
   type PreparedProfileSwitch,
-  type NoteFeature,
+  type NoteFeatureHandle,
   type UpdateResult,
   type UpdateScope,
 } from "./operations";

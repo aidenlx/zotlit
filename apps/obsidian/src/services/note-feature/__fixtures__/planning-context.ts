@@ -1,5 +1,9 @@
 // The services creation planning reads, over a Note Feature test's plain deps.
 import { Context, Effect } from "effect";
+import type {
+  MetadataCache as ObsidianMetadataCache,
+  Vault as ObsidianVault,
+} from "obsidian";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
@@ -9,11 +13,11 @@ import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { NoteIndex } from "@/services/note-index/service";
 import type { PlainProfile } from "@/services/profile/plain";
 import { Profile } from "@/services/profile/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import { Template, templateFailure } from "@/services/template/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
-import type { NoteFeatureDeps } from "@/services/note-feature/context";
 import type { CreationPlanningServices } from "@/services/note-feature/creation-planning";
 
 /** The plain deps the planning services read, as a Note Feature test holds them. */
@@ -25,12 +29,12 @@ export interface PlanningSources {
   >;
   zoteroReads: Pick<PlainZoteroReads, "reads" | "snapshot">;
   template: Pick<
-    NoteFeatureDeps["template"],
+    PlainTemplate,
     "renderFilename" | "getLiteratureNoteTemplate" | "frontmatterFields"
   >;
   app: {
-    vault: Pick<NoteFeatureDeps["app"]["vault"], "getAbstractFileByPath">;
-    metadataCache: Pick<NoteFeatureDeps["app"]["metadataCache"], "getFileCache">;
+    vault: Pick<ObsidianVault, "getAbstractFileByPath">;
+    metadataCache: Pick<ObsidianMetadataCache, "getFileCache">;
   };
 }
 

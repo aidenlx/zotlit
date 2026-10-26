@@ -143,7 +143,7 @@ it("marks the current Profile, names the destination folder, and applies the sin
     zoteroPref: { dataDir: "" },
     noteFeature: stubService<
       Parameters<typeof switchNoteProfileInteractively>[0]["noteFeature"]
-    >("NoteFeature", {
+    >("NoteFeatureHandle", {
       prepareProfileSwitch: async () => ({
         imported: false,
         current: { selector: current, label: "Books" },

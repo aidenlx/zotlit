@@ -1,5 +1,6 @@
 import { it } from "@effect/vitest";
 import {
+  Cause,
   DateTime,
   Deferred,
   Effect,
@@ -22,6 +23,8 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
+import { MemoryFileManager } from "@/lib/__fixtures__/obsidian-file-manager";
+import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { scopedBridge } from "@/lib/effect-bridge";
@@ -67,14 +70,20 @@ import type {
   FlatGroupDef,
 } from "@/views/batch-modal";
 
+import { noteFeatureServices } from "./__fixtures__/note-feature";
+import type { NoteFeatureSources } from "./__fixtures__/note-feature";
+import type {
+  PlannedCreation,
+  PlannedCreationProfile,
+} from "./creation-planning";
+import { NoteWriteAborted } from "./errors";
 import type {
   CreateNoteOptions,
   CreateNoteResult,
-  CreationPlan,
   CreationProfileSelection,
-  PreparedCreationProfile,
   UpdateResult,
 } from "./operations";
+import { layerNoteFeature, NoteFeature } from "./service";
 import {
   batchCreateOutcome,
   BatchCreateRefusedError,
@@ -179,8 +188,8 @@ function itemsAtInterface(client: ZoteroReadsClient): ZoteroReadsClient {
 
 function creationPlans(
   indexedKeys: readonly string[],
-  planFor: (item: Item) => Omit<CreationPlan, "item">,
-): ReadonlyMap<string, CreationPlan> {
+  planFor: (item: Item) => Omit<PlannedCreation, "item">,
+): ReadonlyMap<string, PlannedCreation> {
   return new Map(
     indexedKeys.map((indexedKey) => {
       const item = {
@@ -260,7 +269,15 @@ interface UpdateDeps {
   /** The Snapshot the runners open; the case's reads by default. */
   snapshot: ZoteroReads["Service"]["snapshot"];
   settings: Pick<PluginSettings["Service"], "current" | "update">;
-  noteFeature: BatchUpdatePorts["noteFeature"];
+  /** The Note Feature members the runners call; a case may replace one. */
+  noteFeature: Pick<
+    NoteFeature["Service"],
+    | "reportExcerptImages"
+    | "createNote"
+    | "updateNote"
+    | "writeNoteUpdate"
+    | "planCreations"
+  >;
   noteIndex: {
     whenIndexed(): Promise<void>;
     getNotesByItemKey(indexedKey: string): TFile[];
@@ -272,6 +289,7 @@ interface UpdateDeps {
 function makeDeps(
   dbState: "loading" | "ready" = "ready",
   wrap: (client: ZoteroReadsClient) => ZoteroReadsClient = (client) => client,
+  noteFeature?: (deps: UpdateDeps) => Layer.Layer<NoteFeature>,
 ): UpdateDeps {
   const zoteroReads = caseResources.use(
     inProcessReadsService(sharedClientOpener(db), {
@@ -288,13 +306,18 @@ function makeDeps(
       update: () => Effect.succeed(defaults),
     },
     noteFeature: stubService<UpdateDeps["noteFeature"]>("NoteFeature", {
-      ready: Promise.resolve(),
-      reportExcerptImages: vi.fn(),
-      planCreations: async (keys: readonly string[]) =>
-        creationPlans(keys, () => ({
-          selection: { selector: "default", source: "bound", shouldAsk: false },
-          previews: [],
-        })),
+      reportExcerptImages: vi.fn(() => Effect.void),
+      planCreations: (keys) =>
+        Effect.succeed(
+          creationPlans(keys, () => ({
+            selection: {
+              selector: "default",
+              source: "bound",
+              shouldAsk: false,
+            },
+            previews: [],
+          })),
+        ),
     }),
     noteIndex: {
       whenIndexed: async () => {},
@@ -304,6 +327,22 @@ function makeDeps(
       Layer.mock(LibraryScope, {
         resolveLibraries: () => Effect.sync(() => currentScope),
       }),
+      noteFeature
+        ? Layer.suspend(() => noteFeature(deps))
+        : // Each call reads the member as it is then, so a case may replace a
+          // member after the layer is built.
+          Layer.mock(NoteFeature, {
+            reportExcerptImages: (summary) =>
+              deps.noteFeature.reportExcerptImages(summary),
+            createNote: (item, options) =>
+              deps.noteFeature.createNote(item, options),
+            updateNote: (file, options) =>
+              deps.noteFeature.updateNote(file, options),
+            writeNoteUpdate: (file, options) =>
+              deps.noteFeature.writeNoteUpdate(file, options),
+            planCreations: (indexedKeys, sources) =>
+              deps.noteFeature.planCreations(indexedKeys, sources),
+          }),
       // Only the one-item path reads them, and no case here reaches it.
       Layer.mock(MetadataCache, {}),
       Layer.mock(Workspace, {}),
@@ -340,8 +379,8 @@ function makeDeps(
 }
 
 /**
- * The ports a case's runs take: its Note Feature, the view port fakes, and
- * `bridge` for the modal's callbacks.
+ * The ports a case's runs take: the view port fakes, and `bridge` for the
+ * modal's callbacks.
  */
 function portsOf(
   deps: UpdateDeps,
@@ -356,7 +395,6 @@ function portsOf(
       },
       chooseProfile,
     },
-    noteFeature: deps.noteFeature,
   };
 }
 
@@ -472,19 +510,17 @@ describe("classify through the DisplayRefs stream", () => {
       Effect.gen(function* () {
         const recorded = recordCalls(["DisplayRefs", "ItemsByIndexedKeys"]);
         const deps = makeDeps("ready", recorded.wrap);
-        const bridge = yield* scopedBridge;
-        deps.noteFeature.createNote = async (item, options) => {
-          // The create renders through the reads it was handed.
-          await bridge.runPromise(
-            options!.reads!.ItemsByIndexedKeys({
+        deps.noteFeature.createNote = (item, options) =>
+          Effect.gen(function* () {
+            // The create renders through the reads it was handed.
+            yield* options!.reads!.ItemsByIndexedKeys({
               indexedKeys: [item.indexedKey],
-            }),
-          );
-          return {
-            outcome: "created",
-            file: noteAt("Literature/New.md"),
-          };
-        };
+            });
+            return {
+              outcome: "created",
+              file: noteAt("Literature/New.md"),
+            } satisfies CreateNoteResult;
+          }).pipe(Effect.orDie);
         itemsIn(
           new Map([
             [1, USER_LIBRARY_ID],
@@ -588,6 +624,50 @@ describe("classify through the DisplayRefs stream", () => {
         expect(interrupted).toBe(true);
       }),
   );
+
+  it.effect(
+    "interrupts the creation plan when Cancel lands while it runs",
+    () =>
+      Effect.gen(function* () {
+        const deps = makeDeps("ready");
+        // An additional Profile makes classify plan the new rows.
+        deps.profile = profileReader({
+          ...defaults,
+          profiles: [{ id: BOOKS, label: "Books" }],
+        });
+        const planning = yield* Deferred.make<void>();
+        let interrupted = false;
+        deps.noteFeature.planCreations = () =>
+          Deferred.succeed(planning, undefined).pipe(
+            Effect.andThen(Effect.never),
+            Effect.onInterrupt(() =>
+              Effect.sync(() => {
+                interrupted = true;
+              }),
+            ),
+          );
+        itemsIn(
+          new Map([
+            [1, USER_LIBRARY_ID],
+            [2, USER_LIBRARY_ID],
+          ]),
+        );
+        // Closing `cancel` aborts the signal, as the modal's Cancel does.
+        const cancel = yield* Scope.make();
+        const signal = yield* Effect.abortSignal.pipe(Scope.provide(cancel));
+
+        yield* runBatchUpdate(deps, [1, 2]);
+        const classified = openedModals.at(-1)!.onClassify({
+          onProgress: vi.fn(),
+          signal,
+        });
+        yield* Deferred.await(planning);
+        yield* Scope.close(cancel, Exit.void);
+
+        yield* Effect.promise(() => expect(classified).rejects.toThrow());
+        expect(interrupted).toBe(true);
+      }),
+  );
 });
 
 describe("a write that rejects", () => {
@@ -597,7 +677,8 @@ describe("a write that rejects", () => {
       Effect.gen(function* () {
         const deps = makeDeps("ready");
         const inert = new InertTemplateError("Inert message");
-        deps.noteFeature.createNote = () => Promise.reject(inert);
+        deps.noteFeature.createNote = () =>
+          Effect.fail(new NoteWriteAborted({ path: "", cause: inert }));
         itemsIn(
           new Map([
             [1, USER_LIBRARY_ID],
@@ -625,7 +706,108 @@ describe("a write that rejects", () => {
             (reason: unknown) => reason,
           ),
         );
-        expect(error).toMatchObject({ _tag: "LegacyPortError", cause: inert });
+        expect(error).toMatchObject({ _tag: "NoteWriteAborted", cause: inert });
+        expect(onItemSettled).not.toHaveBeenCalledWith(
+          expect.objectContaining({ status: "failed" }),
+        );
+        const { runFailed } = modal.text;
+        expect(
+          typeof runFailed === "function" ? runFailed(error) : runFailed,
+        ).toBe("Inert message");
+      }),
+  );
+
+  it.effect(
+    "halts the run when the Note Feature's own render meets an inert template",
+    () =>
+      Effect.gen(function* () {
+        const inert = new InertTemplateError("Inert message");
+        const deps = makeDeps("ready", undefined, (deps) => {
+          const host = createObsidianHost();
+          const sources = stubService<NoteFeatureSources>(
+            "NoteFeatureSources",
+            {
+              get profile() {
+                return deps.profile;
+              },
+              noteIndex: {
+                whenIndexed: () => deps.noteIndex.whenIndexed(),
+                getNotesByItemKey: (key) =>
+                  deps.noteIndex.getNotesByItemKey(key),
+                getImportedNoteByNoteKey: () => [],
+              },
+              zoteroReads: {
+                reads: deps.zoteroReads.reads,
+                snapshot: deps.zoteroReads.snapshot,
+              },
+              template: stubService<NoteFeatureSources["template"]>(
+                "Template",
+                {
+                  renderFilename: () => "New",
+                  frontmatterFields: [],
+                  render: () => {
+                    throw inert;
+                  },
+                },
+              ),
+              app: { ...host.app, fileManager: new MemoryFileManager() },
+              get settings() {
+                return deps.settings;
+              },
+              zoteroPref: { dataDir: "", baseAttachmentPath: null },
+              attachmentImport: {
+                prepare: () =>
+                  Promise.resolve(
+                    stubService<
+                      Awaited<
+                        ReturnType<
+                          NoteFeatureSources["attachmentImport"]["prepare"]
+                        >
+                      >
+                    >("AttachmentBatch", {
+                      // The render stops the create before any attachment.
+                      decide: () => {
+                        throw new Error("This case copies no attachment.");
+                      },
+                      resolveLink: () => () => "",
+                      discard: () => undefined,
+                    }),
+                  ),
+              },
+            },
+          );
+          return layerNoteFeature({}).pipe(
+            Layer.provide(noteFeatureServices(sources)),
+          );
+        });
+        itemsIn(
+          new Map([
+            [1, USER_LIBRARY_ID],
+            [2, USER_LIBRARY_ID],
+          ]),
+        );
+        const onItemSettled = vi.fn();
+
+        yield* runBatchUpdate(deps, [1, 2]);
+        const modal = openedModals.at(-1)!;
+        yield* Effect.promise(() =>
+          modal.onClassify({
+            onProgress: vi.fn(),
+            signal: new AbortController().signal,
+          }),
+        );
+        const run = modal.onRun({
+          onItemSettled,
+          stop: Deferred.makeUnsafe<void>(),
+        });
+
+        const error: unknown = yield* Effect.promise(() =>
+          run.then(
+            () => expect.unreachable("the run halts"),
+            (reason: unknown) => reason,
+          ),
+        );
+        expect(error).toMatchObject({ _tag: "NoteWriteAborted", cause: inert });
         expect(onItemSettled).not.toHaveBeenCalledWith(
           expect.objectContaining({ status: "failed" }),
         );
@@ -642,7 +824,9 @@ describe("a write that rejects", () => {
       Effect.gen(function* () {
         const deps = makeDeps("ready");
         deps.noteFeature.createNote = () =>
-          Promise.reject(new Error("disk full"));
+          Effect.fail(
+            new NoteWriteAborted({ path: "", cause: new Error("disk full") }),
+          );
         itemsIn(
           new Map([
             [1, USER_LIBRARY_ID],
@@ -723,22 +907,26 @@ describe("the run's Snapshot", () => {
       const deps = makeDeps("ready");
       const events: string[] = [];
       trackSnapshots(deps, events);
-      const started = Promise.withResolvers<void>();
-      const release = Promise.withResolvers<void>();
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
       let writes = 0;
-      deps.noteFeature.createNote = async () => {
-        writes++;
-        if (writes === 2) started.resolve();
-        await release.promise;
-        events.push("write settled");
-        return { outcome: "created", file: noteAt("Literature/New.md") };
-      };
+      deps.noteFeature.createNote = () =>
+        Effect.gen(function* () {
+          writes++;
+          if (writes === 2) yield* Deferred.succeed(started, undefined);
+          yield* Deferred.await(release);
+          events.push("write settled");
+          return {
+            outcome: "created",
+            file: noteAt("Literature/New.md"),
+          } satisfies CreateNoteResult;
+        });
 
       const run = yield* classifyAndRun(deps);
-      yield* Effect.promise(() => started.promise);
+      yield* Deferred.await(started);
       // Classify closed its own Snapshot; the run's stays open.
       expect(events).toEqual(["open", "close", "open"]);
-      release.resolve();
+      yield* Deferred.succeed(release, undefined);
       expect(yield* Fiber.join(run)).toMatchObject({ rejected: false });
 
       expect(events).toEqual([
@@ -758,12 +946,17 @@ describe("the run's Snapshot", () => {
       const events: string[] = [];
       trackSnapshots(deps, events);
       deps.noteFeature.createNote = () =>
-        Promise.reject(new InertTemplateError("Inert message"));
+        Effect.fail(
+          new NoteWriteAborted({
+            path: "",
+            cause: new InertTemplateError("Inert message"),
+          }),
+        );
 
       const run = yield* classifyAndRun(deps);
       expect(yield* Fiber.join(run)).toMatchObject({
         rejected: true,
-        reason: { _tag: "LegacyPortError" },
+        reason: { _tag: "NoteWriteAborted" },
       });
       expect(events).toEqual(["open", "close", "open", "close"]);
     }),
@@ -780,8 +973,7 @@ describe("the run's Snapshot", () => {
           opens++;
           return opens === 1 ? deps.zoteroReads.snapshot : Effect.fail(failure);
         });
-        const createNote =
-          vi.fn<BatchUpdatePorts["noteFeature"]["createNote"]>();
+        const createNote = vi.fn<NoteFeature["Service"]["createNote"]>();
         deps.noteFeature.createNote = createNote;
 
         const run = yield* classifyAndRun(deps);
@@ -835,10 +1027,12 @@ describe("one item without additional Profiles", () => {
 
   /**
    * The services the one-item path reads, over an Item `ITEM1` with `note` as
-   * its Literature Note, or none; `notifier` records the notices.
+   * its Literature Note, or none; `notifier` records the notices, and
+   * `feature` answers the Note Feature's writes.
    */
   function oneItemServices(
     notifier: ReturnType<typeof testNotifier>,
+    feature: Partial<NoteFeature["Service"]>,
     note?: TFile,
   ) {
     const opened: string[] = [];
@@ -855,6 +1049,7 @@ describe("one item without additional Profiles", () => {
         ),
     });
     const layer = Layer.mergeAll(
+      Layer.mock(NoteFeature, feature),
       Layer.mock(LibraryScope, {}),
       Layer.mock(MetadataCache, {
         fileCache: () =>
@@ -892,18 +1087,13 @@ describe("one item without additional Profiles", () => {
     () =>
       Effect.gen(function* () {
         const notifier = testNotifier();
-        const { layer, opened } = oneItemServices(notifier);
-        const createNote =
-          vi.fn<BatchUpdatePorts["noteFeature"]["createNote"]>();
+        const createNote = vi.fn<NoteFeature["Service"]["createNote"]>();
+        const { layer, opened } = oneItemServices(notifier, { createNote });
         const ports: BatchUpdatePorts = {
           notices: batchUpdateNotices(stubService<App>("App", {})),
           // The single-update path opens no batch modal.
           bridge: stubService<BatchUpdatePorts["bridge"]>("EffectBridge", {}),
           view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {}),
-          noteFeature: stubService<BatchUpdatePorts["noteFeature"]>(
-            "NoteFeature",
-            { createNote },
-          ),
         };
 
         const result = yield* runBatchUpdateEffect(ports, [1], {
@@ -922,24 +1112,18 @@ describe("one item without additional Profiles", () => {
   it.effect("returns only after the note update has settled", () =>
     Effect.gen(function* () {
       const note = noteAt("Literature/Item.md");
-      const { layer } = oneItemServices(testNotifier(), note);
       const called = yield* Deferred.make<void>();
-      const written = Promise.withResolvers<UpdateResult>();
-      const updateNote = vi.fn<BatchUpdatePorts["noteFeature"]["updateNote"]>(
-        () => {
-          Deferred.doneUnsafe(called, Exit.void);
-          return written.promise;
-        },
-      );
+      const written = yield* Deferred.make<UpdateResult>();
+      const updateNote = vi.fn<NoteFeature["Service"]["updateNote"]>(() => {
+        Deferred.doneUnsafe(called, Exit.void);
+        return Deferred.await(written);
+      });
+      const { layer } = oneItemServices(testNotifier(), { updateNote }, note);
       const ports: BatchUpdatePorts = {
         notices: batchUpdateNotices(stubService<App>("App", {})),
         // The single-update path opens no batch modal.
         bridge: stubService<BatchUpdatePorts["bridge"]>("EffectBridge", {}),
         view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {}),
-        noteFeature: stubService<BatchUpdatePorts["noteFeature"]>(
-          "NoteFeature",
-          { updateNote },
-        ),
       };
 
       const run = yield* runBatchUpdateEffect(ports, [1], {
@@ -959,7 +1143,10 @@ describe("one item without additional Profiles", () => {
         profile: undefined,
       });
       expect(Option.isNone(yield* Fiber.join(early))).toBe(true);
-      written.resolve({ bodyUpdated: true, duplicateRegionCount: 0 });
+      yield* Deferred.succeed(written, {
+        bodyUpdated: true,
+        duplicateRegionCount: 0,
+      });
       expect(yield* Fiber.join(run)).toEqual({ outcome: "single-update" });
     }),
   );
@@ -967,19 +1154,18 @@ describe("one item without additional Profiles", () => {
   it.effect("creates and opens a note when the full scope finds none", () =>
     Effect.gen(function* () {
       const notifier = testNotifier();
-      const { layer, opened } = oneItemServices(notifier);
-      const createNote = vi.fn<BatchUpdatePorts["noteFeature"]["createNote"]>(
-        async () => ({ outcome: "created", file: noteAt("Literature/New.md") }),
+      const createNote = vi.fn<NoteFeature["Service"]["createNote"]>(() =>
+        Effect.succeed({
+          outcome: "created",
+          file: noteAt("Literature/New.md"),
+        }),
       );
+      const { layer, opened } = oneItemServices(notifier, { createNote });
       const ports: BatchUpdatePorts = {
         notices: batchUpdateNotices(stubService<App>("App", {})),
         // The single-update path opens no batch modal.
         bridge: stubService<BatchUpdatePorts["bridge"]>("EffectBridge", {}),
         view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {}),
-        noteFeature: stubService<BatchUpdatePorts["noteFeature"]>(
-          "NoteFeature",
-          { createNote },
-        ),
       };
 
       const result = yield* runBatchUpdateEffect(ports, [1], {
@@ -994,6 +1180,54 @@ describe("one item without additional Profiles", () => {
       expect(opened).toEqual(["Literature/New.md"]);
     }),
   );
+
+  it.effect("passes a note update that dies to the run", () =>
+    Effect.gen(function* () {
+      const note = noteAt("Literature/Item.md");
+      const defect = new Error("update died");
+      const { layer } = oneItemServices(
+        testNotifier(),
+        { updateNote: () => Effect.die(defect) },
+        note,
+      );
+      const ports: BatchUpdatePorts = {
+        notices: batchUpdateNotices(stubService<App>("App", {})),
+        // The single-update path opens no batch modal.
+        bridge: stubService<BatchUpdatePorts["bridge"]>("EffectBridge", {}),
+        view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {}),
+      };
+
+      const exit = yield* runBatchUpdateEffect(ports, [1], {
+        scope: "full",
+      }).pipe(Effect.provide(layer), Effect.exit);
+
+      expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
+      expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(defect);
+    }),
+  );
+
+  it.effect("passes a create that dies to the run", () =>
+    Effect.gen(function* () {
+      const defect = new Error("create died");
+      const { layer, opened } = oneItemServices(testNotifier(), {
+        createNote: () => Effect.die(defect),
+      });
+      const ports: BatchUpdatePorts = {
+        notices: batchUpdateNotices(stubService<App>("App", {})),
+        // The single-update path opens no batch modal.
+        bridge: stubService<BatchUpdatePorts["bridge"]>("EffectBridge", {}),
+        view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {}),
+      };
+
+      const exit = yield* runBatchUpdateEffect(ports, [1], {
+        scope: "full",
+      }).pipe(Effect.provide(layer), Effect.exit);
+
+      expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
+      expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(defect);
+      expect(opened).toEqual([]);
+    }),
+  );
 });
 
 it.effect.each([false, true])(
@@ -1001,24 +1235,27 @@ it.effect.each([false, true])(
   (prepared) =>
     Effect.gen(function* () {
       const deps = makeDeps();
-      const report = vi.fn();
+      const report = vi.fn<NoteFeature["Service"]["reportExcerptImages"]>(
+        () => Effect.void,
+      );
       deps.noteFeature.reportExcerptImages = report;
       const summaries = [
         { zotero: 1, unchecked: 0, unavailable: 1 },
         { zotero: 0, unchecked: 1, unavailable: 2 },
       ];
-      const create = async (
+      const create = (
         id: number,
         options?: Pick<CreateNoteOptions, "reportExcerpts">,
-      ): Promise<CreateNoteResult> => {
-        expect(options?.reportExcerpts).toBeTypeOf("function");
-        options!.reportExcerpts!(summaries[id - 1]!);
-        expect(report).not.toHaveBeenCalled();
-        return {
-          outcome: "created",
-          file: noteAt(`Literature/Item ${id}.md`),
-        };
-      };
+      ): Effect.Effect<CreateNoteResult> =>
+        Effect.sync(() => {
+          expect(options?.reportExcerpts).toBeTypeOf("function");
+          options!.reportExcerpts!(summaries[id - 1]!);
+          expect(report).not.toHaveBeenCalled();
+          return {
+            outcome: "created",
+            file: noteAt(`Literature/Item ${id}.md`),
+          };
+        });
       deps.noteFeature.createNote = (item, options) =>
         create(item.itemID, options);
       if (prepared) {
@@ -1026,25 +1263,27 @@ it.effect.each([false, true])(
           ...defaults,
           profiles: [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }],
         });
-        deps.noteFeature.planCreations = async (keys) =>
-          creationPlans(keys, (item) => ({
-            selection: {
-              selector: "default",
-              source: "bound",
-              shouldAsk: false,
-            },
-            previews: [
-              {
+        deps.noteFeature.planCreations = (keys) =>
+          Effect.succeed(
+            creationPlans(keys, (item) => ({
+              selection: {
                 selector: "default",
-                label: undefined,
-                folder: "Literature",
-                citationStyle: null,
-                document: undefined,
-                path: `Literature/Item ${item.itemID}.md`,
-                create: (options) => create(item.itemID, options),
+                source: "bound",
+                shouldAsk: false,
               },
-            ],
-          }));
+              previews: [
+                {
+                  selector: "default",
+                  label: undefined,
+                  folder: "Literature",
+                  citationStyle: null,
+                  document: undefined,
+                  path: `Literature/Item ${item.itemID}.md`,
+                  create: (options) => create(item.itemID, options),
+                },
+              ],
+            })),
+          );
       }
       itemsIn(
         new Map([
@@ -1084,19 +1323,23 @@ it.effect(
       // cannot be merged into the first one's in-flight request: only the run's own
       // retention can answer it.
       let resolutions: Promise<unknown> = Promise.resolve();
-      const resolveThrough = (outcomes: ExcerptOutcomeScope | undefined) => {
-        scopes.push(outcomes);
-        resolutions = resolutions.then(() => probe.resolve(outcomes));
-        return resolutions;
-      };
-      deps.noteFeature.writeNoteUpdate = async (_file, options) => {
-        await resolveThrough(options.outcomes);
-        return { bodyUpdated: true, duplicateRegionCount: 0 };
-      };
-      deps.noteFeature.createNote = async (_item, options) => {
-        await resolveThrough(options?.outcomes);
-        return { outcome: "created", file: noteAt("Literature/New.md") };
-      };
+      const resolveThrough = (outcomes: ExcerptOutcomeScope | undefined) =>
+        Effect.promise(() => {
+          scopes.push(outcomes);
+          resolutions = resolutions.then(() => probe.resolve(outcomes));
+          return resolutions;
+        });
+      deps.noteFeature.writeNoteUpdate = (_file, options) =>
+        resolveThrough(options.outcomes).pipe(
+          Effect.as({ bodyUpdated: true, duplicateRegionCount: 0 }),
+        );
+      deps.noteFeature.createNote = (_item, options) =>
+        resolveThrough(options?.outcomes).pipe(
+          Effect.as({
+            outcome: "created",
+            file: noteAt("Literature/New.md"),
+          } satisfies CreateNoteResult),
+        );
       deps.noteIndex.getNotesByItemKey = (key) =>
         key === "ITEM1" ? [noteAt("Literature/Item1.md")] : [];
       itemsIn(
@@ -1150,18 +1393,18 @@ it.effect(
           }),
         },
       );
-      const create = vi.fn(async () => ({
-        outcome: "created" as const,
-        file: noteAt("Books/New.md"),
-      }));
-      const createDefault = vi.fn(async () => ({
-        outcome: "created" as const,
-        file: noteAt("Literature/New.md"),
-      }));
-      const writeNoteUpdate = vi.fn(async () => ({
-        bodyUpdated: true,
-        duplicateRegionCount: 0,
-      }));
+      const create = vi.fn<PlannedCreationProfile["create"]>(() =>
+        Effect.succeed({ outcome: "created", file: noteAt("Books/New.md") }),
+      );
+      const createDefault = vi.fn<PlannedCreationProfile["create"]>(() =>
+        Effect.succeed({
+          outcome: "created",
+          file: noteAt("Literature/New.md"),
+        }),
+      );
+      const writeNoteUpdate = vi.fn<NoteFeature["Service"]["writeNoteUpdate"]>(
+        () => Effect.succeed({ bodyUpdated: true, duplicateRegionCount: 0 }),
+      );
       deps.noteFeature.writeNoteUpdate = writeNoteUpdate;
       // A remembered Profile persisted by an earlier version stays inert.
       Object.assign(deps.settings, {
@@ -1171,30 +1414,32 @@ it.effect(
         }),
       });
       using settingsUpdate = vi.spyOn(deps.settings, "update");
-      deps.noteFeature.planCreations = vi.fn(async (keys) =>
-        creationPlans(keys, () => ({
-          selection: { selector: books, source: "headless", shouldAsk: true },
-          previews: [
-            {
-              selector: books,
-              label: "Books",
-              folder: "Books",
-              citationStyle: null,
-              document: undefined,
-              path: "Books/New.md",
-              create,
-            },
-            {
-              selector: "default",
-              label: undefined,
-              folder: "Literature",
-              citationStyle: null,
-              document: undefined,
-              path: "Literature/New.md",
-              create: createDefault,
-            },
-          ],
-        })),
+      deps.noteFeature.planCreations = vi.fn((keys) =>
+        Effect.succeed(
+          creationPlans(keys, () => ({
+            selection: { selector: books, source: "headless", shouldAsk: true },
+            previews: [
+              {
+                selector: books,
+                label: "Books",
+                folder: "Books",
+                citationStyle: null,
+                document: undefined,
+                path: "Books/New.md",
+                create,
+              },
+              {
+                selector: "default",
+                label: undefined,
+                folder: "Literature",
+                citationStyle: null,
+                document: undefined,
+                path: "Literature/New.md",
+                create: createDefault,
+              },
+            ],
+          })),
+        ),
       );
       deps.noteIndex.getNotesByItemKey = (key) =>
         key === "ITEM2"
@@ -1313,11 +1558,12 @@ it.effect.each([true, false])(
       );
       deps.noteIndex.getNotesByItemKey = () => [file];
       itemsIn(new Map([[1, USER_LIBRARY_ID]]));
-      deps.noteFeature.writeNoteUpdate = async () => ({
-        bodyUpdated: false,
-        duplicateRegionCount: 0,
-        diagnostic: unknownProfileDiagnostic(stamp, { path: file.path }),
-      });
+      deps.noteFeature.writeNoteUpdate = () =>
+        Effect.succeed({
+          bodyUpdated: false,
+          duplicateRegionCount: 0,
+          diagnostic: unknownProfileDiagnostic(stamp, { path: file.path }),
+        });
       yield* runBatchUpdate(deps, [1, 2]);
       const options = openedModals.at(-1)!;
       const manifest = (yield* Effect.promise(() =>
@@ -1413,7 +1659,7 @@ function mixedBatch() {
     },
   };
   const created: { itemID: number; selector: ProfileSelector }[] = [];
-  const plansFor = (itemID: number): PreparedCreationProfile[] =>
+  const plansFor = (itemID: number): PlannedCreationProfile[] =>
     (["default", BOOKS, ARTICLES] as const).map((selector) => ({
       selector,
       label: profiles.find(({ id }) => id === selector)?.label,
@@ -1421,34 +1667,38 @@ function mixedBatch() {
       citationStyle: null,
       document: undefined,
       path: `${FOLDERS[selector]}/Item ${itemID}.md`,
-      create: async () => {
-        created.push({ itemID, selector });
-        return {
-          outcome: "created" as const,
-          file: noteAt(`${FOLDERS[selector]}/Item ${itemID}.md`),
-        };
-      },
+      create: () =>
+        Effect.sync(() => {
+          created.push({ itemID, selector });
+          return {
+            outcome: "created" as const,
+            file: noteAt(`${FOLDERS[selector]}/Item ${itemID}.md`),
+          };
+        }),
     }));
-  const planCreations = vi.fn(async (keys: readonly string[]) =>
-    creationPlans(keys, ({ itemID }) => ({
-      selection: selections[itemID]!,
-      previews: plansFor(itemID),
-    })),
+  const planCreations = vi.fn<NoteFeature["Service"]["planCreations"]>((keys) =>
+    Effect.succeed(
+      creationPlans(keys, ({ itemID }) => ({
+        selection: selections[itemID]!,
+        previews: plansFor(itemID),
+      })),
+    ),
   );
   deps.noteFeature.planCreations = planCreations;
   const updated: string[] = [];
-  deps.noteFeature.writeNoteUpdate = async (file) => {
-    updated.push(file.path);
-    return file.path.startsWith("Reading/")
-      ? {
-          bodyUpdated: false,
-          duplicateRegionCount: 0,
-          diagnostic: unknownProfileDiagnostic(RETIRED_STAMP, {
-            path: file.path,
-          }),
-        }
-      : { bodyUpdated: true, duplicateRegionCount: 0 };
-  };
+  deps.noteFeature.writeNoteUpdate = (file) =>
+    Effect.sync(() => {
+      updated.push(file.path);
+      return file.path.startsWith("Reading/")
+        ? {
+            bodyUpdated: false,
+            duplicateRegionCount: 0,
+            diagnostic: unknownProfileDiagnostic(RETIRED_STAMP, {
+              path: file.path,
+            }),
+          }
+        : { bodyUpdated: true, duplicateRegionCount: 0 };
+    });
   const notes: Record<string, string> = {
     ITEM6: "Books/Old.md",
     ITEM7: "Literature/Other.md",
@@ -1535,7 +1785,7 @@ describe("mixed batch", () => {
         // One call resolves every new row (#1642).
         expect(planCreations).toHaveBeenCalledExactlyOnceWith(
           [1, 2, 3, 4, 5].map((itemID) => `ITEM${itemID}`),
-          { headless: undefined, signal: expect.any(AbortSignal) },
+          { headless: undefined },
         );
         expect(tasks).toMatchObject([
           {

@@ -5,7 +5,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { LiteratureNoteAttachmentsHandle } from "@/services/attachment-open/handle";
 import type { TargetOpener } from "@/services/attachment-open/open-target";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
-import type { NoteFeature } from "@/services/note-feature";
+import type { NoteFeatureHandle } from "@/services/note-feature";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
@@ -21,7 +21,7 @@ export interface QuickSwitchDeps {
   attachments: LiteratureNoteAttachmentsHandle;
   lookup: ItemLookupHandle;
   noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByItemKey">;
-  noteFeature: Pick<NoteFeature, "createNote" | "planCreations">;
+  noteFeature: Pick<NoteFeatureHandle, "createNote" | "planCreations">;
   settings: Pick<PluginSettings["Service"], "current">;
   bridge: Pick<EffectBridge, "runSync">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;

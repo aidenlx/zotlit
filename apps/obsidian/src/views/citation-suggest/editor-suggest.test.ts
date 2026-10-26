@@ -70,7 +70,7 @@ function insertDeps(
 ): Pick<CitationSuggestDeps, "noteFeature" | "citationLookup"> {
   return {
     noteFeature: stubService<CitationSuggestDeps["noteFeature"]>(
-      "NoteFeature",
+      "NoteFeatureHandle",
       { renderCitation },
     ),
     citationLookup: stubService<CitationSuggestDeps["citationLookup"]>(

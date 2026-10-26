@@ -176,10 +176,13 @@ function setup(
           read: () => Promise.resolve(lookup),
         },
       ),
-      noteFeature: stubService<ItemActionsDeps["noteFeature"]>("NoteFeature", {
-        renderCitation: (cites: { citationKey: string }[]) =>
-          cites.map(({ citationKey }) => `[@${citationKey}]`).join(""),
-      }),
+      noteFeature: stubService<ItemActionsDeps["noteFeature"]>(
+        "NoteFeatureHandle",
+        {
+          renderCitation: (cites: { citationKey: string }[]) =>
+            cites.map(({ citationKey }) => `[@${citationKey}]`).join(""),
+        },
+      ),
       useLedger: stubService<ItemActionsDeps["useLedger"]>("UseLedger", {
         record,
       }),

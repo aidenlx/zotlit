@@ -13,7 +13,7 @@ import type { HostSources } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { setup as repositorySetup } from "@/services/annotation-repository/__fixtures__";
-import type { NoteFeature } from "@/services/note-feature";
+import type { NoteFeatureHandle } from "@/services/note-feature";
 import { buildUseLedger, ledgerHost } from "@/services/use-ledger/__fixtures__";
 import { stateEditor } from "@/views/annot-view/__fixtures__/editor";
 
@@ -79,19 +79,21 @@ async function harness(
     editor,
     file,
   });
-  const prepare = vi.fn<NoteFeature["prepareAnnotationInsert"]>(async () => {
-    whileRendering?.(cm);
-    return {
-      text: "quote",
-      summary: {
-        zotero: 0,
-        unchecked: 0,
-        unavailable: 0,
-        written: 0,
-        reused: 0,
-      },
-    };
-  });
+  const prepare = vi.fn<NoteFeatureHandle["prepareAnnotationInsert"]>(
+    async () => {
+      whileRendering?.(cm);
+      return {
+        text: "quote",
+        summary: {
+          zotero: 0,
+          unchecked: 0,
+          unavailable: 0,
+          written: 0,
+          reused: 0,
+        },
+      };
+    },
+  );
   const insert = (target: AnnotationHit, from: number, to: number) =>
     insertAnnotation(
       {

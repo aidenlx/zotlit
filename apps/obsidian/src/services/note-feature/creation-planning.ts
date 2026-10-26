@@ -8,8 +8,6 @@ import type { Item, ItemFacets } from "@zotlit/db";
 import { toInstant } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import { portCall } from "@/lib/legacy-port";
-import type { LegacyPortError } from "@/lib/legacy-port";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { Vault } from "@/lib/obsidian-vault";
 import { DEFAULT_PROFILE, unknownProfileDiagnostic } from "@/lib/profile-stamp";
@@ -33,16 +31,22 @@ import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import { applyComposedFrontmatter } from "./compose";
 import type { ComposeNoteDeps } from "./compose";
 import { templateFacets } from "./context";
+import { ItemNotFound } from "./errors";
 import { prepareManagedFrontmatter } from "./frontmatter";
 import {
   renderDocumentFilename,
   resolveNotePath,
   resolveRenderedNotePath,
 } from "./note-path";
-import { readItem, relocationSource } from "./note-reads";
+import {
+  readItem,
+  relocationSource,
+  resolveProfileDocument,
+} from "./note-reads";
 import type {
   CompanionNoteTarget,
   CreateNoteInternalOptions,
+  CreateNoteOptions,
   CreateNoteResult,
   CreationPlan,
   CreationProfileSelection,
@@ -54,6 +58,7 @@ import type {
   ProfileNotePreviewOptions,
   ProfilePreview,
 } from "./types";
+import type { CreateNoteError } from "./write-pipeline";
 
 const logged = withLogCategory("note-feature");
 
@@ -77,7 +82,20 @@ export type CreationPlanningContext = Context.Context<CreationPlanningServices>;
 export type CreateAtGate = (
   item: Item,
   options: CreateNoteInternalOptions,
-) => Promise<CreateNoteResult>;
+) => Effect.Effect<CreateNoteResult, CreateNoteError>;
+
+/** {@link PreparedCreationProfile} whose create runs on the services. */
+export type PlannedCreationProfile = Omit<PreparedCreationProfile, "create"> & {
+  /** Re-enters the create gate; the preview holds no database lease. */
+  readonly create: (
+    options?: Pick<CreateNoteOptions, "reportExcerpts" | "outcomes" | "reads">,
+  ) => Effect.Effect<CreateNoteResult, CreateNoteError>;
+};
+
+/** {@link CreationPlan} whose previews create on the services. */
+export type PlannedCreation = Omit<CreationPlan, "previews"> & {
+  readonly previews: readonly PlannedCreationProfile[];
+};
 
 /** The file carries neither a Zotero key nor a Zotero note key. */
 export class NotLiteratureNote extends Schema.TaggedError<
@@ -88,15 +106,6 @@ export class NotLiteratureNote extends Schema.TaggedError<
     return "The file is not a ZotLit note";
   }
 }
-
-/** The Snapshot holds no Item with this Indexed Key. */
-export class ItemNotFound extends Schema.TaggedError<
-  ItemNotFound,
-  { readonly brand: unique symbol }
->()("ItemNotFound", {
-  indexedKey: Schema.String,
-  message: Schema.String,
-}) {}
 
 /** A managed Property of the previewed document cannot be prepared. */
 export class ManagedFrontmatterRefused extends Schema.TaggedError<
@@ -113,7 +122,7 @@ export type PreparedProfileNote = Omit<ProfileNotePreview, "create"> & {
   readonly create: Effect.Effect<
     CreateNoteResult,
     | ItemNotFound
-    | LegacyPortError
+    | CreateNoteError
     | Effect.Error<ZoteroReads["Service"]["snapshot"]>
     | Effect.Error<ReturnType<ZoteroReadsApi["ItemsByIndexedKeys"]>>,
     ZoteroReads
@@ -228,7 +237,7 @@ const planCreations = Effect.fnUntraced(function* (
       const matchByItemID = new Map(
         items.map((item, index) => [item.itemID, matches?.[index]]),
       );
-      const plans = new Map<string, CreationPlan>();
+      const plans = new Map<string, PlannedCreation>();
       for (const key of indexedKeys) {
         const item = itemsByKey.get(key);
         plans.set(key, {
@@ -242,7 +251,7 @@ const planCreations = Effect.fnUntraced(function* (
           previews: (item && previews.get(item.itemID)) ?? [],
         });
       }
-      return plans as ReadonlyMap<string, CreationPlan>;
+      return plans as ReadonlyMap<string, PlannedCreation>;
     }),
   );
 });
@@ -256,9 +265,8 @@ const prepareCreationPreviews = Effect.fnUntraced(function* (
   items: readonly Item[],
   options: { reads: ZoteroReadsApi; create: CreateAtGate },
 ) {
-  const template = yield* Template;
   const profiles = yield* Effect.forEach(yield* selectableProfiles, (profile) =>
-    Effect.map(resolveProfileDocument(template, profile), (document) => ({
+    Effect.map(resolveProfileDocument(profile), (document) => ({
       profile,
       document,
       reserved: new Set<string>(),
@@ -318,7 +326,7 @@ const prepareCreationPreviews = Effect.fnUntraced(function* (
               }),
               Effect.catch((error) => unavailable(error.message, error)),
             );
-      const preview: PreparedCreationProfile = {
+      const preview: PlannedCreationProfile = {
         ...profilePreview(profile, preparedPath?.path),
         unavailable: reason,
         create: (reporting) =>
@@ -330,7 +338,7 @@ const prepareCreationPreviews = Effect.fnUntraced(function* (
       };
       return preview;
     });
-  const previews = new Map<number, readonly PreparedCreationProfile[]>();
+  const previews = new Map<number, readonly PlannedCreationProfile[]>();
   for (const item of items) {
     const facets = facetsByID.get(item.itemID);
     if (!facets) continue;
@@ -345,23 +353,8 @@ const prepareCreationPreviews = Effect.fnUntraced(function* (
     Effect.annotateLogs({ count: items.length }),
     logged,
   );
-  return previews as ReadonlyMap<number, readonly PreparedCreationProfile[]>;
+  return previews as ReadonlyMap<number, readonly PlannedCreationProfile[]>;
 });
-
-/**
- * The Profile's document: `undefined` for one that names none, `null` for
- * one whose document Template is missing.
- */
-const resolveProfileDocument = (
-  template: Template["Service"],
-  profile: ResolvedProfile,
-) =>
-  profile.document === undefined
-    ? Effect.succeed(undefined)
-    : Effect.map(
-        template.getLiteratureNoteTemplate(profile.document),
-        (document) => document ?? null,
-      );
 
 /** The Default and each registered Profile that resolves now. */
 const selectableProfiles = Effect.gen(function* () {
@@ -535,10 +528,12 @@ const prepareProfileNote = Effect.fnUntraced(function* (
             indexedKey: note.indexedKey,
             message: m.notice_protocol_item_not_found(),
           });
-        // Awaited inside the Snapshot's scope, which the create reads through.
-        return yield* portCall("create-note", () =>
-          create(item, { profile: profile.selector, preparedPath, reads }),
-        );
+        // Run inside the Snapshot's scope, which the create reads through.
+        return yield* create(item, {
+          profile: profile.selector,
+          preparedPath,
+          reads,
+        });
       }),
     ),
   };

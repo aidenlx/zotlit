@@ -8,8 +8,6 @@ import { fromInstant } from "@/lib/effect-clock";
 import { buildRuntime } from "@/lib/effect-layer";
 import { languagePackEdge } from "@/lib/i18n";
 import { Notifier } from "@/lib/notifier";
-import { FileManager } from "@/lib/obsidian-file-manager";
-import { Vault } from "@/lib/obsidian-vault";
 import { revealSetting } from "@/lib/open-settings";
 import { ZoteroHttp } from "@/lib/zotero-http";
 import { libraryTagNamesOf } from "@/services/database/library-tag-names";
@@ -73,12 +71,11 @@ import { bindLocalBridge } from "./local-bridge/handle";
 import { LocalBridge } from "./local-bridge/service";
 import { LocalServer } from "./local-server/service";
 import { bindManagedBinary } from "./managed-binary/handle";
-import { createNoteFeature } from "./note-feature";
-import type { NoteFeature } from "./note-feature";
+import { bindNoteFeature, NoteFeature } from "./note-feature";
+import type { NoteFeatureHandle } from "./note-feature";
 import { bindBatchUpdate } from "./note-feature/batch-update-handle";
 import { bindNoteCitations } from "./note-feature/citations-handle";
 import type { NoteCitationServices } from "./note-feature/citations-handle";
-import type { CreationPlanningServices } from "./note-feature/creation-planning";
 import type { BatchUpdateServices } from "./note-feature/update-batch";
 import { batchUpdateNotices } from "./note-feature/update-single";
 import type { BatchImportServices } from "./note-import/batch-import";
@@ -199,8 +196,6 @@ export async function buildServices(
   const bridge = effectBridge(runtime);
   const zoteroReadsService = runtime.runSync(ZoteroReads);
   const zoteroLocalApiService = runtime.runSync(ZoteroLocalApi);
-  const vault = runtime.runSync(Vault);
-  const fileManager = runtime.runSync(FileManager);
   const container = new ServiceContainer(stack, (key, error) => {
     console.error(`Service "${key}" failed to initialize`, error);
   });
@@ -406,20 +401,11 @@ export async function buildServices(
       itemLookup: () => bindItemLookup(bridge, runtime.runSync(ItemLookup)),
     })
     .useValue({
-      noteFeature: ({
-        excerptImage,
-        profile,
-        template,
-        zoteroReads,
-        noteIndex,
-        zoteroPref,
-        settings,
-        attachmentImport,
-      }): NoteFeature =>
-        createNoteFeature({
-          vault,
-          fileManager,
-          citations: bindNoteCitations(
+      noteFeature: ({ excerptImage }): NoteFeatureHandle =>
+        bindNoteFeature(
+          bridge,
+          runtime.runSync(NoteFeature),
+          bindNoteCitations(
             bridge,
             runtime.runSync(Effect.context<NoteCitationServices>()),
             {
@@ -431,26 +417,7 @@ export async function buildServices(
                 }),
             },
           ),
-          excerptImages: (options) =>
-            createExcerptPreparation({
-              app: plugin.app,
-              resolver: excerptImage,
-              paths: {
-                dataDir: zoteroPref.dataDir,
-                baseAttachmentPath: zoteroPref.baseAttachmentPath,
-              },
-            })(options),
-          profile,
-          app: plugin.app,
-          template,
-          zoteroReads,
-          noteIndex,
-          zoteroPref,
-          settings,
-          bridge,
-          context: runtime.runSync(Effect.context<CreationPlanningServices>()),
-          attachmentImport,
-        }),
+        ),
     })
     .useValue({
       createProfile: ({
@@ -491,22 +458,21 @@ export async function buildServices(
         createNoteImportView(plugin.app, { createProfile, importProfile }),
     })
     .useValue({
-      batchImport: ({ noteFeature, noteImportView }) =>
+      batchImport: ({ noteImportView }) =>
         bindBatchImport(
           bridge,
           runtime.runSync(Effect.context<BatchImportServices>()),
-          { view: noteImportView, noteFeature },
+          { view: noteImportView },
         ),
     })
     .useValue({
-      batchUpdate: ({ noteFeature, noteImportView }) =>
+      batchUpdate: ({ noteImportView }) =>
         bindBatchUpdate(
           bridge,
           runtime.runSync(Effect.context<BatchUpdateServices>()),
           {
             notices: batchUpdateNotices(plugin.app),
             view: noteImportView,
-            noteFeature,
           },
         ),
     })

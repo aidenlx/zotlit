@@ -1,4 +1,5 @@
 // Read-only rendering of a draft Profile against the installed template pipeline.
+import { DateTime } from "effect";
 import { stringifyYaml } from "obsidian";
 import type { App } from "obsidian";
 
@@ -38,6 +39,7 @@ import type {
 import { annotationCitation as renderAnnotationCitation } from "@/lib/annotation-render";
 import { FIELD_DOCUMENT_LANGUAGE } from "@/lib/constants";
 import type { EffectBridge } from "@/lib/effect-bridge";
+import { toInstant } from "@/lib/effect-clock";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { isLanguageTag } from "@/lib/language-tag";
@@ -446,15 +448,18 @@ export async function renderNativeProfile(
       });
     // Update mode keeps the real note's own Properties, so it stops at the
     // preparation and the body; only create mode composes a Properties block.
+    // The preview reads the plugin runtime's clock, as a write does.
+    const now = toInstant(deps.bridge.runSync(DateTime.now));
     const composed =
       request.mode === "update"
-        ? prepareLiteratureNote(composeDeps, { context, document })
+        ? prepareLiteratureNote(composeDeps, { context, document, now })
         : composeLiteratureNote(composeDeps, {
             context,
             itemKey: indexedKey,
             profile,
             document,
             onConflict,
+            now,
           });
     // A write refuses on a failing field; the preview keeps going and shows
     // the field with its position, reading the view the refusal carries.

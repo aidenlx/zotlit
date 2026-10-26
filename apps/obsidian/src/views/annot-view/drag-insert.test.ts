@@ -16,7 +16,7 @@ import { expect, it, vi } from "vitest";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
-import type { NoteFeature } from "@/services/note-feature";
+import type { NoteFeatureHandle } from "@/services/note-feature";
 import { ProfileAnnotationError } from "@/services/template/service";
 
 import { stateEditor } from "./__fixtures__/editor";
@@ -36,7 +36,7 @@ const card: AnnotationRecord = {
   lock: null,
   position: { kind: "pdf-rects", pageIndex: 0, rects: [[1, 2, 3, 4]] },
 };
-type Result = Awaited<ReturnType<NoteFeature["prepareAnnotationInsert"]>>;
+type Result = Awaited<ReturnType<NoteFeatureHandle["prepareAnnotationInsert"]>>;
 function fixture() {
   const cm = stateEditor({
     doc: "one two",
@@ -94,7 +94,7 @@ function fixture() {
     }
   };
   const pending: ReturnType<typeof Promise.withResolvers<Result>>[] = [];
-  const prepare = vi.fn<NoteFeature["prepareAnnotationInsert"]>(() => {
+  const prepare = vi.fn<NoteFeatureHandle["prepareAnnotationInsert"]>(() => {
     const request = Promise.withResolvers<Result>();
     pending.push(request);
     return request.promise;
@@ -102,12 +102,11 @@ function fixture() {
   const notify = vi.fn();
   const insert = createInsertHandler({
     app: stubService<App>("App", { workspace }),
-    noteFeature: stubService<Pick<NoteFeature, "prepareAnnotationInsert">>(
-      "NoteFeature",
-      {
-        prepareAnnotationInsert: prepare,
-      },
-    ),
+    noteFeature: stubService<
+      Pick<NoteFeatureHandle, "prepareAnnotationInsert">
+    >("NoteFeatureHandle", {
+      prepareAnnotationInsert: prepare,
+    }),
     notify,
     snapshot: () => ({
       source: { kind: "zotero-local-api", serverID: "SERVER000001" },
@@ -313,7 +312,7 @@ function dragFixture() {
     }
   };
   const pending: ReturnType<typeof Promise.withResolvers<Result>>[] = [];
-  const prepare = vi.fn<NoteFeature["prepareAnnotationInsert"]>(() => {
+  const prepare = vi.fn<NoteFeatureHandle["prepareAnnotationInsert"]>(() => {
     preparing = true;
     const request = Promise.withResolvers<Result>();
     pending.push(request);
@@ -322,12 +321,11 @@ function dragFixture() {
   const notify = vi.fn();
   const handler = createDragInsertHandler({
     app: stubService<App>("App", { workspace }),
-    noteFeature: stubService<Pick<NoteFeature, "prepareAnnotationInsert">>(
-      "NoteFeature",
-      {
-        prepareAnnotationInsert: prepare,
-      },
-    ),
+    noteFeature: stubService<
+      Pick<NoteFeatureHandle, "prepareAnnotationInsert">
+    >("NoteFeatureHandle", {
+      prepareAnnotationInsert: prepare,
+    }),
     notify,
     snapshot: () => ({
       source: { kind: "zotero-local-api", serverID: "SERVER000001" },

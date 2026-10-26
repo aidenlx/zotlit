@@ -18,7 +18,7 @@ import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
-import type { NoteFeature } from "./operations";
+import type { NoteFeatureHandle } from "./operations";
 import { noteOperationDiagnosticContent } from "./update-single";
 
 const logger = getLogger("note-feature");
@@ -27,7 +27,10 @@ export interface InteractiveProfileSwitchDeps {
   createProfile: CreateProfile;
   importProfile: ImportProfile;
   app: App;
-  noteFeature: Pick<NoteFeature, "prepareProfileSwitch" | "switchNoteProfile">;
+  noteFeature: Pick<
+    NoteFeatureHandle,
+    "prepareProfileSwitch" | "switchNoteProfile"
+  >;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
 }
 

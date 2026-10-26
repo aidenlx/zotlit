@@ -93,6 +93,8 @@ import { layerLocalServer } from "./local-server/service";
 import type { LocalServer } from "./local-server/service";
 import { layerLogging, layerLogOutput } from "./log/service";
 import { layerManagedBinaryPlatform } from "./managed-binary/service";
+import { layerNoteFeature } from "./note-feature/service";
+import type { NoteFeature } from "./note-feature/service";
 import { layerNoteImporter } from "./note-import/service";
 import type { NoteImporter, NoteImportPorts } from "./note-import/service";
 import { layerNoteIndex } from "./note-index/service";
@@ -202,6 +204,7 @@ export function pluginLayer(
   | ChineseSegmenter
   | PandocEngine
   | NoteIndex
+  | NoteFeature
   | NoteImporter
   | LocalServer
   | ZoteroLocalApi
@@ -372,11 +375,18 @@ export function pluginLayer(
     layerWikilinkEditor.pipe(startingAs("WikilinkEditor")),
     layerWikilinkReading.pipe(startingAs("WikilinkReading")),
   ).pipe(Layer.provide(Layer.mergeAll(layerPluginHost(plugin), obsidian)));
+  // The Note Feature plans creations through ZotLit Query, so it builds above
+  // the other services. Its note writes call the excerpt preparation through
+  // the same legacy port as the note importer.
+  const noteFeature = layerNoteFeature(noteImport).pipe(
+    startingAs("NoteFeature"),
+    Layer.provideMerge(services),
+  );
   // The Node file system, once for the whole graph: the temp sweeps read it.
   // The Notifier is the one the layers share: the setting tab's Language Pack
   // toast shows through it.
   return registrations.pipe(
-    Layer.provideMerge(services),
+    Layer.provideMerge(noteFeature),
     Layer.provide(NodeFileSystem.layer),
     Layer.merge(layerNotifier),
   );

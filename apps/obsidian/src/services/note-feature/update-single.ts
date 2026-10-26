@@ -1,23 +1,37 @@
+import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
 
 import type { Item } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { LegacyPortError } from "@/lib/legacy-port";
 import { BaseNotice } from "@/lib/notice";
+import { withProgress } from "@/lib/notifier";
+import type { NoticeMessage, ProgressCopy } from "@/lib/notifier";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
 import { missingPartialNotice } from "@/lib/workbench-recovery";
+import { plainNoteError } from "@/services/note-feature/errors";
 import { EmptyFilenameError } from "@/services/note-feature/filename";
 import type {
   CreateNoteResult,
-  NoteFeature,
+  NoteFeatureHandle,
   NoteOperationDiagnostic,
   UpdateResult,
   UpdateScope,
 } from "@/services/note-feature/operations";
 import { InertTemplateError } from "@/services/template/errors";
+
+import { NoteFeature } from "./service";
+import type { UpdateNoteOptions } from "./write-pipeline";
+
+/** The progress notice of a single-note update, with its messages as functions. */
+export interface UpdateNoteCopy extends ProgressCopy<UpdateResult> {
+  readonly loading: string;
+  readonly success: (result: UpdateResult) => NoticeMessage;
+  /** The message for what the update failed with; a Note Feature failure shows what its render or rewrite threw. */
+  readonly error: (error: unknown) => NoticeMessage;
+}
 
 /** Toast copy for a single-note update, framed by `scope`. A `metadata` update
  *  never touches the body, so it reports as "metadata updated" rather than the
@@ -25,20 +39,20 @@ import { InertTemplateError } from "@/services/template/errors";
 export function updateNoteToast(
   scope: UpdateScope,
   options: { app?: App } = {},
-): {
-  loading: string;
-  success: (result: UpdateResult) => string | DocumentFragment;
-  error: (_msg: string, e: unknown) => string | DocumentFragment;
-} {
+): UpdateNoteCopy {
   const diagnosticContent = (diagnostic: NoteOperationDiagnostic) =>
     options.app
       ? noteOperationDiagnosticContent(options.app, diagnostic)
       : noteOperationDiagnosticNotice(diagnostic);
-  const error = (_msg: string, e: unknown): string | DocumentFragment =>
-    missingPartialNotice(e, options) ??
-    (e instanceof InertTemplateError
-      ? e.message
-      : m.notice_update_note_failed());
+  const error = (failure: unknown): NoticeMessage => {
+    const cause = plainNoteError(failure);
+    return (
+      missingPartialNotice(cause, options) ??
+      (cause instanceof InertTemplateError
+        ? cause.message
+        : m.notice_update_note_failed())
+    );
+  };
   if (scope === "metadata") {
     return {
       loading: m.notice_updating_note_metadata(),
@@ -69,7 +83,7 @@ export function updateNoteToast(
  * the failure, so callers only need to skip their follow-up.
  */
 export async function createNoteWithToast(
-  noteFeature: Pick<NoteFeature, "createNote">,
+  noteFeature: Pick<NoteFeatureHandle, "createNote">,
   item: Item,
   options: { profile?: ProfileSelector; app?: App } = {},
 ): Promise<TFile | null> {
@@ -85,17 +99,9 @@ export async function createNoteWithToast(
  */
 export interface BatchUpdateNotices {
   /** The single update's toast copy for `scope`. */
-  readonly updateToast: (
-    scope: UpdateScope,
-  ) => ReturnType<typeof updateNoteToast>;
-  /**
-   * Run one note create behind the standard create toast. Resolves with the
-   * created file, or `null` when the create wrote nothing; the toast already
-   * told the user.
-   */
-  readonly createWithToast: (
-    create: () => Promise<CreateNoteResult>,
-  ) => Promise<TFile | null>;
+  readonly updateToast: (scope: UpdateScope) => UpdateNoteCopy;
+  /** The standard create notice of one note create. */
+  readonly createToast: ProgressCopy<CreateNoteResult>;
   /** The batch modal's notice when its run fails. */
   readonly runFailed: (error: unknown) => string | DocumentFragment;
 }
@@ -104,11 +110,11 @@ export interface BatchUpdateNotices {
 export function batchUpdateNotices(app: App): BatchUpdateNotices {
   return {
     updateToast: (scope) => updateNoteToast(scope, { app }),
-    createWithToast: (create) => createNoteTaskWithToast(create, { app }),
+    createToast: createNoteToast({ app }, plainNoteError),
     runFailed: (error) => {
       // The modal hands back what the run failed with; a Note Feature
-      // rejection arrives as the port error around it.
-      const cause = error instanceof LegacyPortError ? error.cause : error;
+      // failure carries what the render or the rewrite threw.
+      const cause = plainNoteError(error);
       return (
         missingPartialNotice(cause, { app }) ??
         (cause instanceof InertTemplateError
@@ -120,6 +126,21 @@ export function batchUpdateNotices(app: App): BatchUpdateNotices {
 }
 
 /**
+ * Update `file` behind its progress notice. The notice tells the user how the
+ * update went, so a typed failure ends here; a defect or an interrupt passes.
+ */
+export const updateWithNotice = Effect.fnUntraced(function* (
+  file: TFile,
+  options: UpdateNoteOptions,
+  copy: ProgressCopy<UpdateResult>,
+) {
+  yield* withProgress(
+    (yield* NoteFeature).updateNote(file, options),
+    copy,
+  ).pipe(Effect.ignore);
+});
+
+/**
  * Start the create notice only after the user's Profile decision has settled.
  * `created` replaces the plain success notice, e.g. to name the Profile and
  * path a resolved selection wrote to.
@@ -128,21 +149,43 @@ export async function createNoteTaskWithToast(
   create: () => Promise<CreateNoteResult>,
   options: { app?: App; created?: (file: TFile) => string } = {},
 ): Promise<TFile | null> {
+  const copy = createNoteToast(options);
   try {
     const result = await toast.promise(create(), {
-      loading: m.notice_creating_note(),
-      success: (result) => createNoteSuccessNotice(result, options),
-      error: (_msg, e) =>
-        missingPartialNotice(e, options) ??
-        (e instanceof EmptyFilenameError || e instanceof InertTemplateError
-          ? e.message
-          : m.notice_create_note_failed()),
+      loading: copy.loading,
+      success: copy.success,
+      error: (_msg, e) => copy.error(e),
       swallowError: false,
     });
     return result.outcome === "created" ? result.file : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * The create notice's messages. `plainError` gives what a failure threw, for
+ * a caller that holds the failure around it.
+ */
+function createNoteToast(
+  options: { app?: App; created?: (file: TFile) => string },
+  plainError: (error: unknown) => unknown = (error) => error,
+): ProgressCopy<CreateNoteResult> & {
+  error: (error: unknown) => string | DocumentFragment;
+} {
+  return {
+    loading: m.notice_creating_note(),
+    success: (result) => createNoteSuccessNotice(result, options),
+    error: (error) => {
+      const e = plainError(error);
+      return (
+        missingPartialNotice(e, options) ??
+        (e instanceof EmptyFilenameError || e instanceof InertTemplateError
+          ? e.message
+          : m.notice_create_note_failed())
+      );
+    },
+  };
 }
 
 /** The caller's words for a created note, a Profile recovery when the app can offer one, else the plain outcome. */

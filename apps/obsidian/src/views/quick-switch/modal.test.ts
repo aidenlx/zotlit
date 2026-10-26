@@ -87,9 +87,12 @@ function makeModal(): QuickSwitchModal {
     lookup: stubService<QuickSwitchDeps["lookup"]>("ItemLookup", {
       openSession: vi.fn(),
     }),
-    noteFeature: stubService<QuickSwitchDeps["noteFeature"]>("NoteFeature", {
-      createNote: vi.fn(),
-    }),
+    noteFeature: stubService<QuickSwitchDeps["noteFeature"]>(
+      "NoteFeatureHandle",
+      {
+        createNote: vi.fn(),
+      },
+    ),
     noteIndex: stubService<QuickSwitchDeps["noteIndex"]>("NoteIndex", {
       getNotesByItemKey: vi.fn().mockReturnValue([]),
     }),
@@ -221,9 +224,12 @@ describe("QuickSwitchModal PDF chord", () => {
       lookup: stubService<QuickSwitchDeps["lookup"]>("ItemLookup", {
         openSession: vi.fn(),
       }),
-      noteFeature: stubService<QuickSwitchDeps["noteFeature"]>("NoteFeature", {
-        createNote: vi.fn(),
-      }),
+      noteFeature: stubService<QuickSwitchDeps["noteFeature"]>(
+        "NoteFeatureHandle",
+        {
+          createNote: vi.fn(),
+        },
+      ),
       noteIndex: stubService<QuickSwitchDeps["noteIndex"]>("NoteIndex", {
         getNotesByItemKey,
         whenIndexed: vi.fn(),
@@ -343,23 +349,26 @@ describe("QuickSwitchModal Profile creation", () => {
         whenIndexed: async () => {},
         getNotesByItemKey: () => (existing ? [existing] : []),
       }),
-      noteFeature: stubService<QuickSwitchDeps["noteFeature"]>("NoteFeature", {
-        createNote: vi.fn(async () => ({
-          outcome: "created" as const,
-          file: file("Literature/Paper.md"),
-        })),
-        planCreations: vi.fn(async (keys: readonly string[]) =>
-          creationPlans(
-            keys,
-            {
-              selector: books,
-              source: "headless" as const,
-              shouldAsk: true,
-            },
-            [preview],
+      noteFeature: stubService<QuickSwitchDeps["noteFeature"]>(
+        "NoteFeatureHandle",
+        {
+          createNote: vi.fn(async () => ({
+            outcome: "created" as const,
+            file: file("Literature/Paper.md"),
+          })),
+          planCreations: vi.fn(async (keys: readonly string[]) =>
+            creationPlans(
+              keys,
+              {
+                selector: books,
+                source: "headless" as const,
+                shouldAsk: true,
+              },
+              [preview],
+            ),
           ),
-        ),
-      }),
+        },
+      ),
       zoteroPref: stubService<QuickSwitchDeps["zoteroPref"]>("ZoteroPref", {
         dataDir: undefined,
       }),
@@ -516,9 +525,12 @@ describe("QuickSwitchModal Show in Library chord", () => {
       lookup: stubService<QuickSwitchDeps["lookup"]>("ItemLookup", {
         openSession: vi.fn(),
       }),
-      noteFeature: stubService<QuickSwitchDeps["noteFeature"]>("NoteFeature", {
-        createNote: vi.fn(),
-      }),
+      noteFeature: stubService<QuickSwitchDeps["noteFeature"]>(
+        "NoteFeatureHandle",
+        {
+          createNote: vi.fn(),
+        },
+      ),
       noteIndex: stubService<QuickSwitchDeps["noteIndex"]>("NoteIndex", {
         getNotesByItemKey,
         whenIndexed: vi.fn(),

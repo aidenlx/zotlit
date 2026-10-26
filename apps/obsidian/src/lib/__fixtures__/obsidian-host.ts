@@ -103,6 +103,16 @@ export class MockVault {
     return source;
   }
 
+  /** As Obsidian's adapter: the text at a path, rejecting with `ENOENT` when none. */
+  readonly adapter = {
+    read: async (path: string): Promise<string> => {
+      const text = this.contents.get(path);
+      if (text === undefined)
+        throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" });
+      return text;
+    },
+  };
+
   async modify(file: TFile, content: string): Promise<void> {
     this.modifyFile(file.path, content);
   }
@@ -154,6 +164,11 @@ export class MockVault {
     this.files.delete(path);
     this.contents.delete(path);
     this.#emit("delete", file);
+  }
+
+  /** As Obsidian: remove `file`; this vault keeps no trash to move it to. */
+  async trash(file: TAbstractFile, _system: boolean): Promise<void> {
+    this.deleteFile(file.path);
   }
 
   #ensureFolder(path: string): TFolder {
@@ -342,6 +357,22 @@ class HostMetadataCache {
   #held = false;
 
   constructor(readonly vault: MockVault) {}
+
+  /** No note in this host links to another. */
+  readonly resolvedLinks: Record<string, Record<string, number>> = {};
+
+  getCache(path: string): CachedMetadata | null {
+    const file = this.vault.getFileByPath(path);
+    return file ? this.getFileCache(file) : null;
+  }
+
+  /** The file at `linkpath`, with or without `.md`; no shortest-path search. */
+  getFirstLinkpathDest(linkpath: string, _sourcePath: string): TFile | null {
+    return (
+      this.vault.getFileByPath(linkpath) ??
+      this.vault.getFileByPath(`${linkpath}.md`)
+    );
+  }
 
   getFileCache(file: TFile): CachedMetadata | null {
     const text = this.#held

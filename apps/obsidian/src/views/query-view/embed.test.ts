@@ -123,7 +123,10 @@ function setup() {
       "ExcerptDisplay",
       { open: vi.fn(), refresh: vi.fn() },
     ),
-    noteFeature: stubService<QueryViewDeps["noteFeature"]>("NoteFeature", {}),
+    noteFeature: stubService<QueryViewDeps["noteFeature"]>(
+      "NoteFeatureHandle",
+      {},
+    ),
     literatureNotes: noLiteratureNotes(),
   });
 

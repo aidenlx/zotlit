@@ -24,6 +24,7 @@ import type {
 } from "@/services/zotero-reads/service";
 
 import { bindBatchUpdate } from "./batch-update-handle";
+import { NoteFeature } from "./service";
 import type { BatchUpdatePorts, BatchUpdateServices } from "./update-batch";
 import { batchUpdateNotices } from "./update-single";
 
@@ -50,6 +51,7 @@ function services(
     Layer.mock(LibraryScope, {}),
     Layer.mock(MetadataCache, {}),
     Layer.mock(NoteIndex, {}),
+    Layer.mock(NoteFeature, {}),
     Layer.mock(Notifier, {}),
     Layer.mock(PluginSettings, {}),
     Layer.mock(Profile, {}),
@@ -75,10 +77,6 @@ function handleOver(layer: Layer.Layer<BatchUpdateServices>) {
     view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {
       openBatchModal: vi.fn(),
     }),
-    noteFeature: stubService<BatchUpdatePorts["noteFeature"]>(
-      "NoteFeature",
-      {},
-    ),
   };
   const handle = bindBatchUpdate(
     bridge,

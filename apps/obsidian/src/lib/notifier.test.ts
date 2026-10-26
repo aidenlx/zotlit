@@ -1,10 +1,11 @@
 import { it } from "@effect/vitest";
-import { Effect, Exit, Fiber, Scope } from "effect";
+import { Effect, Exit, Fiber, Layer, Scope } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect } from "vitest";
 
 import { testNotifier } from "./__fixtures__/notifier";
 import { AbortError } from "./abort-error";
-import { Notifier, reportOutcome } from "./notifier";
+import { Notifier, reportOutcome, withProgress } from "./notifier";
 
 describe("Notifier test layer", () => {
   it.effect("records a shown notice with its duration until it hides", () =>
@@ -127,5 +128,43 @@ describe("reportOutcome", () => {
       expect(Exit.hasInterrupts(exit)).toBe(true);
       expect(notifier.notices).toEqual([]);
     }),
+  );
+});
+
+describe("withProgress", () => {
+  const copy = {
+    loading: "Creating",
+    success: (result: string) => `Created ${result}`,
+    error: "Failed",
+  };
+
+  it.effect(
+    "returns the task's result while its notice stays, until the Notifier's layer closes",
+    () =>
+      Effect.gen(function* () {
+        const notifier = testNotifier();
+        const scope = yield* Scope.make();
+        const context = yield* Layer.buildWithScope(notifier.layer, scope);
+        const task = Effect.sleep("1 second").pipe(Effect.as("Paper"));
+        const fiber = yield* withProgress(task, copy).pipe(
+          Effect.provideContext(context),
+          Effect.forkChild,
+        );
+        yield* TestClock.adjust("1 second");
+
+        expect(yield* Fiber.join(fiber)).toBe("Paper");
+        yield* Effect.yieldNow;
+        // The notice outlives the task: it shows the result for 2 s.
+        expect(notifier.notices).toEqual([
+          {
+            messages: ["Creating", "Created Paper"],
+            duration: 0,
+            hidden: false,
+          },
+        ]);
+        // Unload closes the layer, which ends the notice before its 2 s.
+        yield* Scope.close(scope, Exit.void);
+        expect(notifier.notices[0]?.hidden).toBe(true);
+      }),
   );
 });

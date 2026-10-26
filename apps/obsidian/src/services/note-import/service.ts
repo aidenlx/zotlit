@@ -41,7 +41,8 @@ import type {
   AttachmentFlushError,
   AttachmentImportBatch,
 } from "@/services/attachment-import/service";
-import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
+import { outcomeScope } from "@/services/excerpt-image/outcome-scope";
+import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type {
   ExcerptPreparation,
   ExcerptSummary,
@@ -276,12 +277,6 @@ const writeScoped = (
     }),
   );
 
-/** The batch's scope, or one this write owns until its Scope closes. */
-const outcomeScope = (provided: ExcerptOutcomeScope | undefined) =>
-  provided === undefined
-    ? Effect.acquireDisposable(Effect.sync(() => new ExcerptOutcomeScope()))
-    : Effect.succeed(provided);
-
 const prepareExplicitImport = Effect.fnUntraced(function* (
   ctx: Ctx,
   note: ChildNote,
@@ -488,40 +483,50 @@ const writeNote = Effect.fnUntraced(function* (
   };
   const content = `---\n${stringifyYaml(frontmatter)}---\n${body}`;
 
-  let outcome: WriteOutcome;
-  if (mode.action === "create") {
-    const created = yield* (yield* Vault).create(mode.path, content).pipe(
-      Effect.as(true),
-      Effect.catchTag("FileExists", () => Effect.succeed(false)),
-    );
-    if (!created) {
-      yield* Effect.logWarning("Imported note already exists; skipped").pipe(
-        Effect.annotateLogs({ path }),
-        logged,
-      );
-      const skipped: WriteOutcome = "skipped";
-      return skipped;
-    }
-    outcome = "created";
-  } else {
-    yield* processLiveText(mode.file, () => content);
-    outcome = "overwritten";
-  }
+  // The write and its attachment copies run to the end: an interrupt never
+  // leaves a written note that names attachments not yet copied.
+  return yield* Effect.uninterruptible(
+    Effect.gen(function* () {
+      let outcome: WriteOutcome;
+      if (mode.action === "create") {
+        const created = yield* (yield* Vault).create(mode.path, content).pipe(
+          Effect.as(true),
+          Effect.catchTag("FileExists", () => Effect.succeed(false)),
+        );
+        if (!created) {
+          yield* Effect.logWarning(
+            "Imported note already exists; skipped",
+          ).pipe(Effect.annotateLogs({ path }), logged);
+          const skipped: WriteOutcome = "skipped";
+          return skipped;
+        }
+        outcome = "created";
+      } else {
+        // The rewrite returns a fixed text, so it cannot throw.
+        yield* processLiveText(mode.file, () => content).pipe(
+          Effect.catchTag("LiveTextRewriteFailed", (error) =>
+            Effect.die(error),
+          ),
+        );
+        outcome = "overwritten";
+      }
 
-  if (excerpts) run.reportExcerpts?.(excerpts.summary());
-  if (attachmentBatch) {
-    const copied = yield* attachmentBatch.flush;
-    yield* Effect.logDebug("Imported note attachments").pipe(
-      Effect.annotateLogs({
-        path,
-        copied: copied.copied,
-        skipped: copied.skipped,
-        missing: copied.missing,
-      }),
-      logged,
-    );
-  }
-  return outcome;
+      if (excerpts) run.reportExcerpts?.(excerpts.summary());
+      if (attachmentBatch) {
+        const copied = yield* attachmentBatch.flush;
+        yield* Effect.logDebug("Imported note attachments").pipe(
+          Effect.annotateLogs({
+            path,
+            copied: copied.copied,
+            skipped: copied.skipped,
+            missing: copied.missing,
+          }),
+          logged,
+        );
+      }
+      return outcome;
+    }),
+  );
 });
 
 /** The parent Literature Note an explicitly created note inherits its Profile from. */

@@ -1,4 +1,4 @@
-import { Effect, Predicate, Schema } from "effect";
+import { Effect, Option, Predicate, Schema } from "effect";
 import type { TFile } from "obsidian";
 
 import type { ItemRef } from "@zotlit/db";
@@ -6,13 +6,11 @@ import type { ItemRef } from "@zotlit/db";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import { portCall } from "@/lib/legacy-port";
-import { Notifier } from "@/lib/notifier";
+import { Notifier, withProgress } from "@/lib/notifier";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Workspace } from "@/lib/obsidian-workspace";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { DEFAULT_PROFILE, unknownProfileDiagnostic } from "@/lib/profile-stamp";
-import * as toast from "@/lib/toast";
 import { batchProfileSummary } from "@/services/batch-profile-summary";
 import type { BatchProfileCount } from "@/services/batch-profile-summary";
 import {
@@ -34,7 +32,6 @@ import {
 } from "@/services/batch-scope";
 import type { BatchTarget } from "@/services/batch-scope";
 import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
-import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import type { LibraryScope } from "@/services/library-scope/service";
 import type { NoteImportView } from "@/services/note-import/view";
@@ -61,23 +58,27 @@ import type {
 } from "@/views/batch-modal";
 
 import type {
+  PlannedCreation,
+  PlannedCreationProfile,
+} from "./creation-planning";
+import { plainNoteError } from "./errors";
+import type {
   CreateNoteDiagnostic,
   CreateNoteResult,
-  NoteFeature,
   NoteOperationDiagnostic,
   UpdateScope,
-  CreationPlan,
   CreationProfileSelection,
-  PreparedCreationProfile,
 } from "./operations";
 import {
   describeSelectionProblem,
   describeSelectionSource,
 } from "./selection-copy";
+import { collectExcerptReports, NoteFeature } from "./service";
 import {
   createNoteNotice,
   duplicateLiteratureNoteWarning,
   noteOperationDiagnosticNotice,
+  updateWithNotice,
 } from "./update-single";
 import type { BatchUpdateNotices } from "./update-single";
 
@@ -91,6 +92,7 @@ function profileLabel(profile: ResolvedProfile): string {
 export type BatchUpdateServices =
   | LibraryScope
   | MetadataCache
+  | NoteFeature
   | NoteIndex
   | Notifier
   | PluginSettings
@@ -100,24 +102,14 @@ export type BatchUpdateServices =
   | ZoteroReads;
 
 /**
- * The legacy values a note update calls: Note Feature's note writes, the UI
- * port for the batch modal and the Profile picker, the notices the caller
- * builds, and the bridge the modal's callbacks enter Effect through. Note
- * Feature converts in a later slice.
+ * The legacy values a note update calls: the UI port for the batch modal and
+ * the Profile picker, the notices the caller builds, and the bridge the
+ * modal's callbacks enter Effect through.
  */
 export interface BatchUpdatePorts {
   readonly notices: BatchUpdateNotices;
   readonly bridge: Pick<EffectBridge, "runPromiseExit">;
   readonly view: Pick<NoteImportView, "openBatchModal" | "chooseProfile">;
-  readonly noteFeature: Pick<
-    NoteFeature,
-    | "createNote"
-    | "planCreations"
-    | "ready"
-    | "reportExcerptImages"
-    | "updateNote"
-    | "writeNoteUpdate"
-  >;
 }
 
 /**
@@ -142,7 +134,7 @@ type CreateAction = {
   selection?: CreationProfileSelection;
   origin?: CreationOrigin;
   /** Frozen for the run: the destination shown is the destination written. */
-  prepared?: PreparedCreationProfile;
+  prepared?: PlannedCreationProfile;
 };
 
 type BatchAction = {
@@ -175,6 +167,8 @@ interface RunContext {
   profile?: ProfileSelector;
   /** Checks that a frozen creation Profile still exists. */
   profiles: Profile["Service"];
+  /** Writes each row's note. */
+  noteFeature: NoteFeature["Service"];
 }
 
 export type BatchUpdateResult =
@@ -310,15 +304,10 @@ const updateNote = Effect.fnUntraced(function* (
   );
   if (!itemKey) return;
 
-  yield* Effect.promise(() =>
-    toast.promise(
-      ports.noteFeature.updateNote(file, {
-        indexedKey: itemKey,
-        scope,
-        profile,
-      }),
-      ports.notices.updateToast(scope),
-    ),
+  yield* updateWithNotice(
+    file,
+    { indexedKey: itemKey, scope, profile },
+    ports.notices.updateToast(scope),
   );
 });
 
@@ -335,13 +324,13 @@ const createAndOpen = Effect.fnUntraced(function* (
   const item = items.get(ref.indexedKey);
   if (!item) return;
 
-  const file = yield* Effect.promise(() =>
-    ports.notices.createWithToast(() =>
-      ports.noteFeature.createNote(item, { profile }),
-    ),
-  );
-  if (!file) return;
-  yield* (yield* Workspace).openLinkText(file.path, "", {
+  // The notice tells the user how a create failed or why it wrote nothing.
+  const created = yield* withProgress(
+    (yield* NoteFeature).createNote(item, { profile }),
+    ports.notices.createToast,
+  ).pipe(Effect.option);
+  if (Option.isNone(created) || created.value.outcome !== "created") return;
+  yield* (yield* Workspace).openLinkText(created.value.file.path, "", {
     newLeaf: false,
     state: { active: true },
   });
@@ -371,7 +360,8 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
   const { run, settle } = yield* modalRunner<BatchUpdateServices>(ports.bridge);
   const profiles = yield* Profile;
   let actions: BatchAction[] = [];
-  let plans: ReadonlyMap<string, CreationPlan> = new Map();
+  const noteFeature = yield* NoteFeature;
+  let plans: ReadonlyMap<string, PlannedCreation> = new Map();
   let keptCount = 0;
   let notFoundCount = 0;
   const profileCounts = new Map<ProfileSelector, BatchProfileCount>();
@@ -405,11 +395,9 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
       selectors.every((id) => prepared.some((entry) => entry.selector === id))
     )
       return;
-    plans = yield* portCall("plan-creations", () =>
-      ports.noteFeature.planCreations(
-        creations().map((action) => action.indexedKey),
-        { headless: profile },
-      ),
+    plans = yield* noteFeature.planCreations(
+      creations().map((action) => action.indexedKey),
+      { headless: profile },
     );
   });
   const choose = Effect.fnUntraced(function* (
@@ -483,11 +471,9 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
     if (profilesEnabled && creations().length > 0) {
       // Each Item keeps its own result and prepared destination. Overlap
       // rows need a choice; the fallback also covers unmatched Items.
-      plans = yield* portCall("plan-creations", (signal) =>
-        ports.noteFeature.planCreations(
-          creations().map((action) => action.indexedKey),
-          { headless: profile, signal },
-        ),
+      plans = yield* noteFeature.planCreations(
+        creations().map((action) => action.indexedKey),
+        { headless: profile },
       );
       for (const action of creations()) {
         const { selection } = plans.get(action.indexedKey)!;
@@ -814,17 +800,11 @@ const executeBatchActions = Effect.fnUntraced(function* (
   const { actions, scope, profile } = plan;
   const zoteroReads = yield* ZoteroReads;
   const profiles = yield* Profile;
+  const noteFeature = yield* NoteFeature;
   const failures: { itemID: number; error: unknown }[] = [];
   const result = yield* Effect.scoped(
     Effect.gen(function* () {
-      const excerptReports = yield* Effect.acquireDisposable(
-        Effect.sync(() =>
-          collectExcerptSummary((summary) =>
-            ports.noteFeature.reportExcerptImages(summary),
-          ),
-        ),
-      );
-      yield* Effect.promise(() => ports.noteFeature.ready);
+      const excerptReports = yield* collectExcerptReports;
       const settings = yield* (yield* PluginSettings).current;
       // The whole run is one initiating batch, so every row's notes —
       // including the Child Notes they import — reuse one retention; it is
@@ -841,6 +821,7 @@ const executeBatchActions = Effect.fnUntraced(function* (
         profile,
         outcomes,
         profiles,
+        noteFeature,
       };
       return yield* executeBatchRun({
         tasks: actions.map((a) => ({ ...a, id: a.itemID })),
@@ -868,10 +849,8 @@ const executeBatchActions = Effect.fnUntraced(function* (
           failures.push({ itemID: task.itemID, error });
         },
         // A template that cannot render reaches the run as the cause of
-        // the write's rejection.
-        haltOn: (error) =>
-          error._tag === "LegacyPortError" &&
-          error.cause instanceof InertTemplateError,
+        // the write's failure.
+        haltOn: (error) => plainNoteError(error) instanceof InertTemplateError,
       });
     }),
   );
@@ -912,16 +891,14 @@ const runAction = Effect.fnUntraced(function* (
     });
 
   if (action.kind === "update") {
-    const updated = yield* portCall("write-update", () =>
-      ports.noteFeature.writeNoteUpdate(action.file, {
-        reportExcerpts: run.reportExcerpts,
-        reads: run.reads,
-        item,
-        settings: run.settings,
-        scope: run.scope,
-        outcomes: run.outcomes,
-      }),
-    );
+    const updated = yield* run.noteFeature.writeNoteUpdate(action.file, {
+      reportExcerpts: run.reportExcerpts,
+      reads: run.reads,
+      item,
+      settings: run.settings,
+      scope: run.scope,
+      outcomes: run.outcomes,
+    });
     if (updated.diagnostic) {
       return yield* new BatchUpdateRefusedError({
         diagnostic: updated.diagnostic,
@@ -944,24 +921,20 @@ const runAction = Effect.fnUntraced(function* (
         diagnostic: unknownProfileDiagnostic(prepared.selector),
       });
     return yield* batchCreateOutcome(
-      yield* portCall("create-note", () =>
-        prepared.create({
-          reportExcerpts: run.reportExcerpts,
-          outcomes: run.outcomes,
-          reads: run.reads,
-        }),
-      ),
-    );
-  }
-  return yield* batchCreateOutcome(
-    yield* portCall("create-note", () =>
-      ports.noteFeature.createNote(item, {
+      yield* prepared.create({
         reportExcerpts: run.reportExcerpts,
-        profile: action.selection?.selector ?? run.profile,
         outcomes: run.outcomes,
         reads: run.reads,
       }),
-    ),
+    );
+  }
+  return yield* batchCreateOutcome(
+    yield* run.noteFeature.createNote(item, {
+      reportExcerpts: run.reportExcerpts,
+      profile: action.selection?.selector ?? run.profile,
+      outcomes: run.outcomes,
+      reads: run.reads,
+    }),
   );
 });
 

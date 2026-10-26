@@ -31,6 +31,7 @@ import type {
   PreparedCreationProfile,
 } from "./index";
 import type { CreationPlan } from "./operations";
+import { NoteFeature } from "./service";
 
 vi.mock("@/views/quick-switch/profile-picker", () => ({
   chooseLiteratureNoteProfile: vi.fn(),
@@ -62,10 +63,19 @@ interface FlowServices {
   readonly readItems?: ReadsAnswers["ItemsByIndexedKeys"];
   /** Records each notice the flow shows. */
   readonly notifier: ReturnType<typeof testNotifier>;
+  /** Answers the Note Feature's lookups and updates. */
+  readonly feature: Partial<NoteFeature["Service"]>;
 }
 
-function flowLayer({ workspace, excluded, readItems, notifier }: FlowServices) {
+function flowLayer({
+  workspace,
+  excluded,
+  readItems,
+  notifier,
+  feature,
+}: FlowServices) {
   return Layer.mergeAll(
+    Layer.mock(NoteFeature, feature),
     layerWorkspaceFrom(workspace),
     notifier.layer,
     Layer.mock(UseLedger, {
@@ -121,23 +131,25 @@ function creationHarness(selection: CreationProfileSelection) {
     createProfile: vi.fn(),
     importProfile: vi.fn(),
     app: stubService<App>("App", {}),
-    noteFeature: stubService<CompanionNoteDeps["noteFeature"]>("NoteFeature", {
-      resolveCompanionNote: vi.fn(async (): Promise<CompanionNoteTarget> => ({
-        outcome: "create",
-      })),
-      planCreations,
-      createNote: create,
-      updateNote: vi.fn(async () => ({
-        bodyUpdated: true,
-        duplicateRegionCount: 0,
-      })),
-    }),
+    noteFeature: stubService<CompanionNoteDeps["noteFeature"]>(
+      "NoteFeatureHandle",
+      { planCreations, createNote: create },
+    ),
+  };
+  const feature = {
+    resolveCompanionNote: vi.fn<NoteFeature["Service"]["resolveCompanionNote"]>(
+      () => Effect.succeed({ outcome: "create" }),
+    ),
+    updateNote: vi.fn<NoteFeature["Service"]["updateNote"]>(() =>
+      Effect.succeed({ bodyUpdated: true, duplicateRegionCount: 0 }),
+    ),
   };
   const workspace = new MemoryWorkspace({ layoutReady: true });
   const excluded: string[] = [];
   const notifier = testNotifier();
   return {
     deps,
+    feature,
     file,
     item,
     readItems,
@@ -146,7 +158,7 @@ function creationHarness(selection: CreationProfileSelection) {
     workspace,
     excluded,
     notices: notifier.notices,
-    layer: flowLayer({ workspace, excluded, readItems, notifier }),
+    layer: flowLayer({ workspace, excluded, readItems, notifier, feature }),
   };
 }
 
@@ -328,9 +340,9 @@ it.effect(
         outcome: "refused" as const,
         diagnostic: unknownProfileDiagnostic(PAPERS),
       };
-      vi.mocked(
-        harness.deps.noteFeature.resolveCompanionNote,
-      ).mockResolvedValue(target);
+      harness.feature.resolveCompanionNote.mockReturnValue(
+        Effect.succeed(target),
+      );
       yield* openCompanionNote(harness.deps, REF, {
         action: "open",
         profile: PAPERS,
@@ -353,10 +365,9 @@ it.effect("opens a matching existing note and updates under its stamp", () =>
       source: "headless",
       shouldAsk: true,
     });
-    vi.mocked(harness.deps.noteFeature.resolveCompanionNote).mockResolvedValue({
-      outcome: "existing",
-      files: [harness.file],
-    });
+    harness.feature.resolveCompanionNote.mockReturnValue(
+      Effect.succeed({ outcome: "existing", files: [harness.file] }),
+    );
     yield* openCompanionNote(harness.deps, REF, {
       action: "update",
       profile: BOOKS,
@@ -364,7 +375,7 @@ it.effect("opens a matching existing note and updates under its stamp", () =>
     }).pipe(Effect.provide(harness.layer));
     expect(harness.workspace.opened).toHaveLength(1);
     expect(harness.excluded).toEqual([harness.file.path]);
-    expect(harness.deps.noteFeature.updateNote).toHaveBeenCalledExactlyOnceWith(
+    expect(harness.feature.updateNote).toHaveBeenCalledExactlyOnceWith(
       harness.file,
       { indexedKey: "ABCD2345", scope: "metadata" },
     );
@@ -389,15 +400,15 @@ it.effect(
           path: harness.file.path,
         }),
       };
-      vi.mocked(
-        harness.deps.noteFeature.resolveCompanionNote,
-      ).mockResolvedValue(target);
+      harness.feature.resolveCompanionNote.mockReturnValue(
+        Effect.succeed(target),
+      );
       yield* openCompanionNote(harness.deps, REF, {
         action: "update",
         profile: "default",
       }).pipe(Effect.provide(harness.layer));
       expect(harness.workspace.opened).toHaveLength(1);
-      expect(harness.deps.noteFeature.updateNote).not.toHaveBeenCalled();
+      expect(harness.feature.updateNote).not.toHaveBeenCalled();
       expect(harness.create).not.toHaveBeenCalled();
       const notice = companionNoteNotice(
         harness.deps.app,
@@ -421,12 +432,9 @@ it.effect.each(["tab"] as const)(
         source: "headless",
         shouldAsk: false,
       });
-      vi.mocked(
-        harness.deps.noteFeature.resolveCompanionNote,
-      ).mockResolvedValue({
-        outcome: "existing",
-        files: [harness.file],
-      });
+      harness.feature.resolveCompanionNote.mockReturnValue(
+        Effect.succeed({ outcome: "existing", files: [harness.file] }),
+      );
       yield* openCompanionNote(harness.deps, REF, {
         action: "open",
         paneType,
@@ -478,20 +486,18 @@ it.effect.each(["open", "update"] as const)(
         files: [file] as [TFile],
         keptProfile: { selector: BOOKS, label: "Books" },
       };
-      const updateNote = vi.fn();
+      const updateNote = vi.fn<NoteFeature["Service"]["updateNote"]>();
       const createNote = vi.fn();
-      const resolveCompanionNote = vi.fn(async () => target);
+      const resolveCompanionNote = vi.fn<
+        NoteFeature["Service"]["resolveCompanionNote"]
+      >(() => Effect.succeed(target));
       const deps: CompanionNoteDeps = {
         createProfile: vi.fn(),
         importProfile: vi.fn(),
         app: stubService<App>("App", {}),
         noteFeature: stubService<CompanionNoteDeps["noteFeature"]>(
-          "NoteFeature",
-          {
-            resolveCompanionNote,
-            updateNote,
-            createNote,
-          },
+          "NoteFeatureHandle",
+          { createNote },
         ),
       };
       const workspace = new MemoryWorkspace({ layoutReady: true });
@@ -499,7 +505,14 @@ it.effect.each(["open", "update"] as const)(
       const notifier = testNotifier();
 
       yield* openCompanionNote(deps, REF, { action, profile: PAPERS }).pipe(
-        Effect.provide(flowLayer({ workspace, excluded: [], notifier })),
+        Effect.provide(
+          flowLayer({
+            workspace,
+            excluded: [],
+            notifier,
+            feature: { resolveCompanionNote, updateNote },
+          }),
+        ),
       );
 
       expect(workspace.opened).toEqual([openedAt("Books/Paper.md", false)]);

@@ -19,6 +19,7 @@ import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { excerptReuseProbe } from "@/services/excerpt-image/__fixtures__/reuse";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
+import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import type {
   AvailableLibrary,
   LibrarySelector,
@@ -26,6 +27,8 @@ import type {
 } from "@/services/library-scope/scope";
 import { selectorOf } from "@/services/library-scope/scope";
 import { LibraryScope } from "@/services/library-scope/service";
+import type { CreationProfileSelection } from "@/services/note-feature";
+import { NoteFeature } from "@/services/note-feature/service";
 import { NoteIndex } from "@/services/note-index/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { Profile } from "@/services/profile/service";
@@ -278,7 +281,10 @@ interface PromiseNoteImporter {
 
 /** What a case gives the batch import, in the plain shapes it states them in. */
 interface ImportDeps {
-  noteFeature: BatchImportPorts["noteFeature"];
+  noteFeature: {
+    reportExcerptImages: (summary: ExcerptSummary) => void;
+    resolveCreationProfile: () => Promise<CreationProfileSelection>;
+  };
   view: NoteImportView;
   profile: ProfileReader;
   zoteroReads: TestReads;
@@ -321,7 +327,7 @@ function importOver(deps: ImportDeps): BatchImport {
 
 /** The ports a batch import takes, from the case's `deps`. */
 function portsOf(deps: ImportDeps): Omit<BatchImportPorts, "bridge"> {
-  return { view: deps.view, noteFeature: deps.noteFeature };
+  return { view: deps.view };
 }
 
 /** The services a batch import reads, answering from `deps` at each call. */
@@ -346,6 +352,12 @@ function layerOver(deps: ImportDeps): Layer.Layer<BatchImportServices> {
               settled(() => prepared.import(current, runOptions)),
           }),
         ),
+    }),
+    Layer.mock(NoteFeature, {
+      reportExcerptImages: (summary) =>
+        Effect.sync(() => deps.noteFeature.reportExcerptImages(summary)),
+      resolveCreationProfile: () =>
+        Effect.promise(() => deps.noteFeature.resolveCreationProfile()),
     }),
     Layer.mock(NoteIndex, {
       whenIndexed: Effect.promise(() => deps.noteIndex.whenIndexed()),

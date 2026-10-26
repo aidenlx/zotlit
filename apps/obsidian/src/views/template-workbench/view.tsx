@@ -111,7 +111,7 @@ import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
 import type { QueryHandle } from "@/services/item-query/handle";
 import type {
-  NoteFeature,
+  NoteFeatureHandle,
   UpdateResult,
 } from "@/services/note-feature/operations";
 import { updateNoteToast } from "@/services/note-feature/update-single";
@@ -192,7 +192,7 @@ export function originatingNoteUpdateNotice(
     case "not-ready":
       return m.template_workbench_update_not_ready();
     case "failed":
-      return feedback.error("", result.error);
+      return feedback.error(result.error);
     case "refused":
     case "updated": {
       if (result.result.bodyUpdated && !result.result.diagnostic)
@@ -210,7 +210,7 @@ export function originatingNoteUpdateNotice(
 
 export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
-  noteFeature?: Pick<NoteFeature, "updateNote">;
+  noteFeature?: Pick<NoteFeatureHandle, "updateNote">;
   /**
    * ZotLit Query, which tests the Match of a Profile on a real Item and names
    * the custom fields a condition reads.

@@ -1,5 +1,14 @@
 // Obsidian notices as a service the Effect layers show their toasts through.
-import { Cause, Context, Effect, Exit, Layer, Option } from "effect";
+import {
+  Cause,
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  FiberSet,
+  Layer,
+  Option,
+} from "effect";
 import type { Duration } from "effect";
 import type { Scope } from "effect";
 
@@ -36,13 +45,34 @@ export class Notifier extends Context.Service<
     ): Effect.Effect<NoticeHandle>;
     /** In place of `using LazyNotice`: the notice hides when the Scope closes. */
     readonly progress: Effect.Effect<ProgressNotice, never, Scope.Scope>;
+    /**
+     * Run `notice` on a fiber of the Notifier's own, so it outlives the
+     * caller's run and stops when the layer closes.
+     */
+    track(notice: Effect.Effect<void>): Effect.Effect<void>;
   }
 >()("zotlit/obsidian/Notifier") {}
 
+/**
+ * The Notifier over `base`, its `track` forking each notice on a `FiberSet`
+ * of the current Scope.
+ */
+export const noticeFibers = Effect.fnUntraced(function* (
+  base: Omit<Notifier["Service"], "track">,
+) {
+  const fibers = yield* FiberSet.make();
+  return Notifier.of({
+    ...base,
+    track: Effect.fn("Notifier.track")(function* (notice) {
+      yield* FiberSet.run(fibers, notice);
+    }),
+  });
+});
+
 /** Notices drawn by Obsidian, with ZotLit's `BaseNotice` styling. */
-export const layerNotifier: Layer.Layer<Notifier> = Layer.succeed(
+export const layerNotifier: Layer.Layer<Notifier> = Layer.effect(
   Notifier,
-  Notifier.of({
+  noticeFibers({
     show: Effect.fn("Notifier.show")((message, options) =>
       Effect.sync(() => {
         const notice = new BaseNotice(message, options?.duration);
@@ -62,9 +92,13 @@ export const layerNotifier: Layer.Layer<Notifier> = Layer.succeed(
 );
 
 /** The three messages of a task's progress notice. */
-export interface ProgressCopy {
+export interface ProgressCopy<A = unknown> {
   readonly loading: NoticeMessage;
-  readonly success: NoticeMessage;
+  /**
+   * The success message, or the message for the task's result. A message for
+   * the result shows nothing for an interrupted task.
+   */
+  readonly success: NoticeMessage | ((result: A) => NoticeMessage);
   /** The error message, or the message for the error the task failed with. */
   readonly error: NoticeMessage | ((error: unknown) => NoticeMessage);
   /**
@@ -89,14 +123,18 @@ export interface ProgressCopy {
 export const reportProgress = Effect.fn("Notifier.reportProgress")(function* <
   A,
   E,
->(outcome: Effect.Effect<Exit.Exit<A, E>>, copy: ProgressCopy) {
+>(outcome: Effect.Effect<Exit.Exit<A, E>>, copy: ProgressCopy<A>) {
   const notifier = yield* Notifier;
   const notice = yield* notifier.progress;
   const early = yield* Effect.timeoutOption(outcome, "200 millis");
   if (Option.isNone(early)) yield* notice.setMessage(copy.loading);
   const exit = Option.isSome(early) ? early.value : yield* outcome;
   if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) {
-    yield* notice.setMessage(copy.success);
+    const { success } = copy;
+    if (typeof success !== "function") yield* notice.setMessage(success);
+    else if (Exit.isSuccess(exit))
+      yield* notice.setMessage(success(exit.value));
+    else return;
     yield* Effect.sleep(copy.successDuration ?? "2 seconds");
     return;
   }
@@ -130,6 +168,32 @@ const failureMessage = Effect.fnUntraced(function* (
   );
   return message;
 });
+
+/**
+ * Run `task` behind a progress notice, as `toast.promise` did: the task's
+ * result or failure returns once the task ends, while the notice reports the
+ * outcome as {@link reportProgress} does, on the Notifier's fiber
+ * ({@link Notifier.track}): it outlives the task and stops when the plugin
+ * unloads.
+ */
+export const withProgress = <A, E, R>(
+  task: Effect.Effect<A, E, R>,
+  copy: ProgressCopy<A>,
+): Effect.Effect<A, E, R | Notifier> =>
+  Effect.uninterruptibleMask((restore) =>
+    Effect.gen(function* () {
+      const notifier = yield* Notifier;
+      const outcome = yield* Deferred.make<Exit.Exit<A, E>>();
+      yield* notifier.track(
+        reportProgress(Deferred.await(outcome), copy).pipe(
+          Effect.provideService(Notifier, notifier),
+        ),
+      );
+      return yield* restore(task).pipe(
+        Effect.onExit((exit) => Deferred.succeed(outcome, exit)),
+      );
+    }),
+  );
 
 /** The messages of a task's outcome notice; see {@link reportOutcome}. */
 export interface OutcomeCopy<A> {

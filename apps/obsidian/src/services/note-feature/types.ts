@@ -3,7 +3,6 @@ import type { TFile } from "obsidian";
 
 import type { Item, NoteTemplateContext } from "@zotlit/db";
 import type { UpdateScope } from "@zotlit/protocol";
-import type { Emitter } from "@zotlit/shared/nanoevents";
 
 import type {
   ProfileId,
@@ -17,8 +16,6 @@ import type { LiteratureNoteProfile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
-
-import type { NoteFeatureDeps } from "./context";
 
 export interface UpdateResult {
   bodyUpdated: boolean;
@@ -234,7 +231,6 @@ export interface CreateNoteOptions {
 }
 
 interface CreateNoteInternalOptions extends CreateNoteOptions {
-  onFileCreated?: (file: TFile) => void;
   preparedPath?: { path: string };
 }
 
@@ -259,20 +255,30 @@ export interface WriteNoteUpdateOptions {
   outcomes?: ExcerptOutcomeScope;
 }
 
-/** Events the bound note feature emits; a UI subscriber owns any rendering. */
-export interface NoteFeatureEvents {
-  "excerpt-images-reported": (summary: ExcerptSummary) => void;
+/** What each Note Feature event carries, by event name. */
+export interface NoteFeaturePayloads {
+  "excerpt-images-reported": ExcerptSummary;
   /**
    * A legacy settings-held frontmatter expression failed during a write; the
    * write completed with those keys skipped.
    */
-  "frontmatter-eval-failed": (payload: {
-    itemKey: string;
-    fields: string[];
-  }) => void;
+  "frontmatter-eval-failed": { itemKey: string; fields: string[] };
 }
 
-/** Deps plus the feature's emitter, threaded through the internal operations. */
-type OpsContext = NoteFeatureDeps & { events: Emitter<NoteFeatureEvents> };
+/** Events the bound note feature emits; a UI subscriber owns any rendering. */
+export type NoteFeatureEvents = {
+  [K in keyof NoteFeaturePayloads]: (payload: NoteFeaturePayloads[K]) => void;
+};
 
-export type { CreateNoteInternalOptions, OpsContext };
+/** One `event` occurrence, with the payload its callback takes. */
+export interface NoteFeatureEventOf<K extends keyof NoteFeaturePayloads> {
+  readonly _tag: K;
+  readonly payload: NoteFeaturePayloads[K];
+}
+
+/** One {@link NoteFeatureEvents} occurrence, tagged with its event name. */
+export type NoteFeatureEvent = {
+  [K in keyof NoteFeaturePayloads]: NoteFeatureEventOf<K>;
+}[keyof NoteFeaturePayloads];
+
+export type { CreateNoteInternalOptions };

@@ -33,6 +33,7 @@ import type {
   UpdateManyRequest,
 } from "@/services/local-server/service";
 import { openCompanionNote } from "@/services/note-feature";
+import { NoteFeature } from "@/services/note-feature/service";
 import {
   runBatchUpdate,
   runBatchUpdateAll,
@@ -200,7 +201,10 @@ const noteImportView = stubService<NoteImportView>("NoteImportView", {
   openBatchModal: (options) => openBatchModal(options),
 });
 /** Note Feature, which a link-started import receives. */
-const noteFeature = stubService<ProtocolDeps["noteFeature"]>("NoteFeature", {});
+const noteFeature = stubService<ProtocolDeps["noteFeature"]>(
+  "NoteFeatureHandle",
+  {},
+);
 
 /** Protocol handlers registered by the plugin, keyed by their action id. */
 const handlers = new Map<string, (data: ObsidianProtocolData) => unknown>();
@@ -286,6 +290,7 @@ const register = Effect.fn("register")(function* (setup: Setup = {}) {
       Layer.mock(NoteIndex, { whenIndexed: setup.whenIndexed ?? Effect.void }),
       Layer.mock(LibraryScope, {}),
       Layer.mock(MetadataCache, {}),
+      Layer.mock(NoteFeature, {}),
       Layer.mock(NoteImporter, {}),
       Layer.mock(PluginSettings, {}),
       Layer.mock(Profile, {}),
@@ -888,7 +893,7 @@ describe("batch protocol links", () => {
         });
 
         expect(runBatchUpdate).toHaveBeenCalledExactlyOnceWith(
-          expect.objectContaining({ view: noteImportView, noteFeature }),
+          expect.objectContaining({ view: noteImportView }),
           [3, 4],
           { scope: "metadata", profile: "Bk3Qn7XvT2Lp" },
         );

@@ -35,8 +35,8 @@ export const profileCall = <A, R>(
   );
 
 /**
- * The Template's `render`, `renderCitation`, `renderProfileAnnotation` and
- * `frontmatterFields`, run
+ * The Template's `render`, `renderManagedContent`, `renderCitation`,
+ * `renderProfileAnnotation` and `frontmatterFields`, run
  * synchronously on the caller's context. A failure throws what the Template
  * threw, as the getter or helper that runs it expects.
  */
@@ -44,6 +44,7 @@ export const syncTemplate: Effect.Effect<
   Pick<
     TemplateOperations,
     | "render"
+    | "renderManagedContent"
     | "renderCitation"
     | "renderProfileAnnotation"
     | "frontmatterFields"
@@ -63,6 +64,7 @@ export const syncTemplate: Effect.Effect<
   };
   return {
     render: (name, data) => read(template.render(name, data)),
+    renderManagedContent: (data) => read(template.renderManagedContent(data)),
     renderCitation: (refs, variant) =>
       read(template.renderCitation(refs, variant)),
     renderProfileAnnotation: (data, options) =>

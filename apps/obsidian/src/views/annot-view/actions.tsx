@@ -30,7 +30,10 @@ import type {
 import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
 import { menuSections, raiseMenu } from "@/services/menu-events";
-import type { AnnotationCitation, NoteFeature } from "@/services/note-feature";
+import type {
+  AnnotationCitation,
+  NoteFeatureHandle,
+} from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 
 import { chooseAttachment } from "./attachment-suggester";
@@ -293,7 +296,7 @@ export interface AnnotActionDeps {
   /** Add or drop one tag from the list filter, from a card's tag menu. */
   toggleSelectedTag: (tag: string) => void;
   refresh: () => Promise<void>;
-  noteFeature: Pick<NoteFeature, "renderAnnotationCitation">;
+  noteFeature: Pick<NoteFeatureHandle, "renderAnnotationCitation">;
   /** Templated drag-insert handler built by the view (owns the import handle). */
   onDragStart: AnnotActions["onDragStart"];
   /**

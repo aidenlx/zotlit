@@ -2,20 +2,13 @@ import type { TFile } from "obsidian";
 
 import type { Item } from "@zotlit/db";
 import type { UpdateScope } from "@zotlit/protocol";
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
-import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
-import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 
 import type { NoteCitations } from "./citations-handle";
-import type { NoteFeatureDeps } from "./context";
-import { bindCreationPlanning } from "./creation-planning-handle";
-import { refusedCreate } from "./diagnostics";
 import type {
   CompanionNoteTarget,
-  CreateNoteInternalOptions,
   CreateNoteOptions,
   CreateNoteResult,
   CreationPlan,
@@ -23,21 +16,11 @@ import type {
   CreationProfileSelection,
   CreationProfileSources,
   NoteFeatureEvents,
-  OpsContext,
   PreparedProfileSwitch,
   ProfileNotePreview,
   ProfileNotePreviewOptions,
   UpdateResult,
-  WriteNoteUpdateOptions,
 } from "./types";
-import {
-  createNote,
-  overwriteNote,
-  replacedKeys,
-  switchNoteProfile,
-  updateNote,
-  writeNoteUpdate,
-} from "./write-pipeline";
 
 export type {
   CompanionNoteTarget,
@@ -70,20 +53,11 @@ export type {
   WriteNoteUpdateOptions,
 } from "./types";
 
-const MAX_UNINDEXED_CREATES = 256;
-
 /**
- * The bound note-feature operations returned by {@link createNoteFeature}.
- * Consumers hold this object; the collaborators stay behind the seam.
+ * The Note Feature for callers outside Effect, as `bindNoteFeature` builds it
+ * over the `NoteFeature` tag.
  */
-export interface NoteFeature extends NoteCitations {
-  reportExcerptImages(summary: ExcerptSummary): void;
-  /**
-   * Settles when templates and the note index are usable. Single-item methods
-   * gate internally; batch runners await this once per run before a
-   * {@link NoteFeature.writeNoteUpdate} loop (which assumes readiness).
-   */
-  ready: Promise<void>;
+export interface NoteFeatureHandle extends NoteCitations {
   resolveCompanionNote(
     indexedKey: string,
     options?: { profile?: ProfileSelector },
@@ -143,116 +117,9 @@ export interface NoteFeature extends NoteCitations {
     indexedKey: string,
     options?: { outcomes?: ExcerptOutcomeScope },
   ): Promise<UpdateResult>;
-  /** @see writeNoteUpdate */
-  writeNoteUpdate(
-    file: TFile,
-    options: WriteNoteUpdateOptions,
-  ): Promise<UpdateResult>;
   /** Subscribe to {@link NoteFeatureEvents}; returns an unsubscribe. */
   on<K extends keyof NoteFeatureEvents>(
     event: K,
     cb: NoteFeatureEvents[K],
   ): () => void;
-}
-
-/**
- * Bind the note-feature operations to `deps` once (in `build.ts`). The bound
- * object is the module's external seam — consumers call its methods and never
- * see the collaborators. The closure serializes creates by Indexed Key and
- * retains newly created files until the Note Index observes them. Compiled
- * template artifacts live in {@link TemplateService}.
- *
- * Creation planning and Profile selection are Effect functions over
- * `deps.context`; their members run them through `deps.bridge` and hand them
- * the create gate ({@link bindCreationPlanning}).
- */
-export function createNoteFeature(deps: NoteFeatureDeps): NoteFeature {
-  const events = createNanoEvents<NoteFeatureEvents>();
-  const ctx: NoteFeatureDeps & OpsContext = { ...deps, events };
-  const pendingCreates = new Map<string, Promise<CreateNoteResult>>();
-  const createdBeforeIndex = new Map<string, TFile>();
-
-  const createAtGate = (
-    item: Item,
-    options?: CreateNoteInternalOptions,
-  ): Promise<CreateNoteResult> => {
-    const { indexedKey } = item;
-    const pending = pendingCreates.get(indexedKey);
-    if (pending) {
-      return pending.then((result) =>
-        result.outcome === "created"
-          ? refusedCreate(indexedKey, [result.file])
-          : result,
-      );
-    }
-
-    const recent = createdBeforeIndex.get(indexedKey);
-    if (recent) {
-      const indexed = deps.noteIndex.getNotesByItemKey(indexedKey);
-      if (indexed.length > 0) {
-        createdBeforeIndex.delete(indexedKey);
-        return Promise.resolve(refusedCreate(indexedKey, indexed));
-      }
-      if (deps.app.vault.getAbstractFileByPath(recent.path) === recent) {
-        const cache = deps.app.metadataCache.getFileCache(recent);
-        if (cache === null || itemKeyFromFrontmatter(cache) === indexedKey) {
-          return Promise.resolve(refusedCreate(indexedKey, [recent]));
-        }
-      }
-      createdBeforeIndex.delete(indexedKey);
-    }
-
-    const task = createNote(ctx, item, {
-      ...options,
-      onFileCreated: (file) => {
-        if (
-          createdBeforeIndex.size >= MAX_UNINDEXED_CREATES &&
-          !createdBeforeIndex.has(indexedKey)
-        ) {
-          const oldest = createdBeforeIndex.keys().next().value;
-          if (oldest !== undefined) createdBeforeIndex.delete(oldest);
-        }
-        createdBeforeIndex.set(indexedKey, file);
-      },
-    });
-    pendingCreates.set(indexedKey, task);
-    void task.then(
-      () => {
-        if (pendingCreates.get(indexedKey) === task) {
-          pendingCreates.delete(indexedKey);
-        }
-      },
-      () => {
-        if (pendingCreates.get(indexedKey) === task) {
-          pendingCreates.delete(indexedKey);
-        }
-      },
-    );
-    return task;
-  };
-
-  return {
-    reportExcerptImages: (summary) =>
-      events.emit("excerpt-images-reported", summary),
-    ready: Promise.resolve(),
-    createNote: createAtGate,
-    ...bindCreationPlanning(deps.bridge, deps.context, {
-      create: createAtGate,
-      events,
-    }),
-    updateNote: (file, options) => updateNote(ctx, file, options),
-    switchNoteProfile: (file, options) => switchNoteProfile(ctx, file, options),
-    replacedKeys: (file) => replacedKeys(ctx, file),
-    overwriteNote: (file, indexedKey, options) =>
-      overwriteNote(ctx, file, { ...options, indexedKey }),
-    writeNoteUpdate: (file, options) => writeNoteUpdate(ctx, file, options),
-    // Until the Note Feature is a tag, the citation members run on the bridge.
-    renderCitation: (items, variant) =>
-      deps.citations.renderCitation(items, variant),
-    renderAnnotationCitation: (annotationKey) =>
-      deps.citations.renderAnnotationCitation(annotationKey),
-    prepareAnnotationInsert: (options) =>
-      deps.citations.prepareAnnotationInsert(options),
-    on: (event, cb) => events.on(event, cb),
-  };
 }

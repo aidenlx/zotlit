@@ -139,16 +139,19 @@ function fixture(
           >
         >("TemplateDocument", {}),
     }),
-    noteFeature: stubService<ImportProfileDeps["noteFeature"]>("NoteFeature", {
-      prepareProfileNote: () => ({
-        path: "Reading/Paper.md",
-        properties: { "zotlit-profile": "Shared (Ry4Ua8Nv2Mx6)" },
-        body: "Recipient item",
-        create: async () => {
-          throw new Error("The import test does not create the preview");
-        },
-      }),
-    }),
+    noteFeature: stubService<ImportProfileDeps["noteFeature"]>(
+      "NoteFeatureHandle",
+      {
+        prepareProfileNote: () => ({
+          path: "Reading/Paper.md",
+          properties: { "zotlit-profile": "Shared (Ry4Ua8Nv2Mx6)" },
+          body: "Recipient item",
+          create: async () => {
+            throw new Error("The import test does not create the preview");
+          },
+        }),
+      },
+    ),
   });
   const modal = new ImportProfileModal(deps, {
     source: "IMPORTED SOURCE",
@@ -362,7 +365,7 @@ async function importerFixture(kind: "fresh" | "replace" = "fresh") {
           f.deps.template.prepareLiteratureNoteTemplateSource,
       }),
       noteFeature: stubService<ProfileDialogServices["noteFeature"]>(
-        "NoteFeature",
+        "NoteFeatureHandle",
         {
           prepareProfileNote: f.deps.noteFeature.prepareProfileNote,
         },
