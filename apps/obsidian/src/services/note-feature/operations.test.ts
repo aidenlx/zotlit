@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Fiber } from "effect";
 import {
   mkdir,
   mkdtemp,
@@ -173,6 +173,16 @@ function createNoteFeature(deps: TestDeps) {
       know(args[0]);
       return feature.createNote(...args);
     },
+    /** Run a create on the runtime as a fiber, which a case can interrupt. */
+    forkCreateNote: (item: Item) => {
+      know(item);
+      return runtime.runFork(
+        Effect.flatMap(NoteFeature, (service) => service.createNote(item)),
+      );
+    },
+    /** Interrupt `fiber`, and settle once it has ended. */
+    interrupt: (fiber: Fiber.Fiber<unknown, unknown>) =>
+      runtime.runPromise(Fiber.interrupt(fiber)),
     // The batch runners' members, which no Promise caller holds.
     reportExcerptImages: (summary: ExcerptSummary) =>
       runtime.runSync(
@@ -1641,6 +1651,59 @@ describe("createNote", () => {
 
     expect(retry.outcome).toBe("refused");
     expect(app.vault.create).toHaveBeenCalledOnce();
+  });
+
+  it("copies the attachments of a created note when an interrupt reaches its pending write", async () => {
+    const item = makeCreateGateItem();
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
+    const app = makeApp();
+    const write = app.vault.create.getMockImplementation()!;
+    const started = Promise.withResolvers<void>();
+    const held = Promise.withResolvers<void>();
+    app.vault.create.mockImplementationOnce(async (...args) => {
+      started.resolve();
+      await held.promise;
+      return write(...args);
+    });
+    const flush = vi.fn(async () => ({
+      copied: 0,
+      skipped: 0,
+      missing: 0,
+      blocked: 0,
+      refused: 0,
+    }));
+    const template = makeTemplate();
+    template.renderFilename = () => `Root${filenameSuffix()}`;
+    const feature = createNoteFeature({
+      app,
+      template,
+      ...makeDbDeps(),
+      noteIndex: {
+        getImportedNoteByNoteKey: () => [],
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings(),
+      attachmentImport: {
+        prepare: async () => ({
+          decide: blockedDecide,
+          resolveLink: () => () => "",
+          discard: () => undefined,
+          flush,
+        }),
+      },
+    });
+
+    const running = feature.forkCreateNote(item);
+    await started.promise;
+    const interrupted = feature.interrupt(running);
+    held.resolve();
+    await interrupted;
+
+    // The note is written, so its copies are too.
+    expect(app.vault.create).toHaveBeenCalledOnce();
+    expect(flush).toHaveBeenCalledOnce();
   });
 
   it("creates under an explicit Profile with its folder, stamp, and citation style", async () => {

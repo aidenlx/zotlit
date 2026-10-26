@@ -558,6 +558,39 @@ describe("NoteImporter", () => {
   );
 
   it.effect(
+    "commits the copies of a note whose write an interrupt reached while it was pending",
+    () =>
+      Effect.gen(function* () {
+        const { app, host, create } = makeApp();
+        const attachmentImport = makeAttachmentImport();
+        const started = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        const write = host.vault.create.bind(host.vault);
+        create.mockImplementationOnce(async (...args) => {
+          started.resolve();
+          await held.promise;
+          return write(...args);
+        });
+        const service = yield* makeService(app, { attachmentImport });
+        const running = yield* service
+          .importNote(makeNote(), { reads, settings: importSettings() })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.promise(() => started.promise);
+        const interrupted = yield* Fiber.interrupt(running).pipe(
+          Effect.forkChild({ startImmediately: true }),
+        );
+        held.resolve();
+        yield* Fiber.join(interrupted);
+
+        // The note is written, so its copies are too.
+        expect(host.text(create.mock.calls[0]![0])).toContain(
+          "zotero-note-key: NOTE1234",
+        );
+        expect(attachmentImport.flush).toHaveBeenCalledOnce();
+      }),
+  );
+
+  it.effect(
     "mints a bare root-relative path when the import folder is the vault root",
     () =>
       Effect.gen(function* () {

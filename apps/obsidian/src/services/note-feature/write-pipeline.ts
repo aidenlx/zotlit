@@ -353,13 +353,20 @@ const writeNewNote = Effect.fnUntraced(function* <E>(
         return refused;
       }
 
-      const file = yield* options.createFile(composed.content);
-      if (options.onFileCreated) yield* options.onFileCreated(file);
-      yield* flushNoteAttachments(ctx, {
-        attachmentImport,
-        excerptImages,
-        reportExcerpts: options.reportExcerpts,
-      });
+      // The write and its attachment copies run to the end: an interrupt
+      // never leaves a written note that names attachments not yet copied.
+      const file = yield* Effect.uninterruptible(
+        Effect.gen(function* () {
+          const file = yield* options.createFile(composed.content);
+          if (options.onFileCreated) yield* options.onFileCreated(file);
+          yield* flushNoteAttachments(ctx, {
+            attachmentImport,
+            excerptImages,
+            reportExcerpts: options.reportExcerpts,
+          });
+          return file;
+        }),
+      );
       yield* Effect.logDebug("Created literature note").pipe(
         Effect.annotateLogs({ path: file.path, itemKey: item.indexedKey }),
         logged,
@@ -841,20 +848,28 @@ const applyManagedUpdate = Effect.fnUntraced(function* (
       : undefined;
   let replaced = false;
   let duplicateCount = 0;
-  const refused = yield* rewriteNote(ctx, file, {
-    context,
-    itemKey,
-    profile,
-    prepared,
-    beforeWrite,
-    body: (body) => {
-      if (renderRegion === undefined) return body;
-      const result = replaceManagedRegion(body, renderRegion);
-      replaced = result.replaced;
-      duplicateCount = result.duplicateCount;
-      return result.content;
-    },
-  });
+  // The write and its attachment copies run to the end: an interrupt never
+  // leaves a written note that names attachments not yet copied.
+  const refused = yield* Effect.uninterruptible(
+    Effect.gen(function* () {
+      const refused = yield* rewriteNote(ctx, file, {
+        context,
+        itemKey,
+        profile,
+        prepared,
+        beforeWrite,
+        body: (body) => {
+          if (renderRegion === undefined) return body;
+          const result = replaceManagedRegion(body, renderRegion);
+          replaced = result.replaced;
+          duplicateCount = result.duplicateCount;
+          return result.content;
+        },
+      });
+      if (!refused) yield* flushNoteAttachments(ctx, input);
+      return refused;
+    }),
+  );
   if (refused) return { ...NO_BODY_UPDATE, diagnostic: refused };
   if (duplicateCount > 0) {
     yield* Effect.logWarning(
@@ -868,8 +883,6 @@ const applyManagedUpdate = Effect.fnUntraced(function* (
       logged,
     );
   }
-
-  yield* flushNoteAttachments(ctx, input);
 
   yield* Effect.logDebug("Updated literature note").pipe(
     Effect.annotateLogs({
@@ -955,16 +968,27 @@ export const overwriteNote = Effect.fnUntraced(function* (
       const body = document
         ? yield* renderFor(file.path, () => document.renderForCreate(context))
         : yield* (yield* Template).render("note", context);
-      const refused = yield* rewriteNote(ctx, file, {
-        context,
-        itemKey: indexedKey,
-        profile,
-        prepared,
-        body: () => body,
-      });
+      // The write and its attachment copies run to the end: an interrupt
+      // never leaves a written note that names attachments not yet copied.
+      const refused = yield* Effect.uninterruptible(
+        Effect.gen(function* () {
+          const refused = yield* rewriteNote(ctx, file, {
+            context,
+            itemKey: indexedKey,
+            profile,
+            prepared,
+            body: () => body,
+          });
+          if (!refused)
+            yield* flushNoteAttachments(ctx, {
+              attachmentImport,
+              excerptImages,
+            });
+          return refused;
+        }),
+      );
       if (refused) return { ...NO_BODY_UPDATE, diagnostic: refused };
 
-      yield* flushNoteAttachments(ctx, { attachmentImport, excerptImages });
       yield* Effect.logInfo("Overwrote literature note").pipe(
         Effect.annotateLogs({ path: file.path, itemKey: indexedKey }),
         logged,
