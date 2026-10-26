@@ -7,9 +7,14 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Notifier } from "@/lib/notifier";
 import { CapabilityNotices } from "@/services/annotation-repository/notices";
 import { AnnotationRepository } from "@/services/annotation-repository/service";
+import { AttachmentImport } from "@/services/attachment-import/service";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 import { CitationIndex } from "@/services/citation-index/service";
+import { ExcerptDisplays } from "@/services/excerpt-image/display";
+import { ExcerptImages } from "@/services/excerpt-image/layer";
+import { LanguagePack } from "@/services/language-pack/service";
 import { LibraryScope } from "@/services/library-scope/service";
+import { LocalBridge } from "@/services/local-bridge/service";
 import { LocalServer } from "@/services/local-server/service";
 import { PandocEngine } from "@/services/pandoc/service";
 import { Profile } from "@/services/profile/service";
@@ -46,6 +51,21 @@ const unimplemented = Layer.mergeAll(
   Layer.mock(CitationIndex)({}),
   Layer.mock(PandocEngine)({}),
   Layer.mock(ChineseSegmenter)({}),
+  Layer.mock(AttachmentImport)({}),
+  Layer.mock(LocalBridge)({}),
+  // Services with plain members: a read of a member no test gave throws.
+  Layer.succeed(
+    LanguagePack,
+    stubService<LanguagePack["Service"]>("LanguagePack", {}),
+  ),
+  Layer.succeed(
+    ExcerptImages,
+    stubService<ExcerptImages["Service"]>("ExcerptImages", {}),
+  ),
+  Layer.succeed(
+    ExcerptDisplays,
+    stubService<ExcerptDisplays["Service"]>("ExcerptDisplays", {}),
+  ),
 );
 
 /**
