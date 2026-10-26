@@ -1,3 +1,4 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { Effect } from "effect";
 import type { FileSystemAdapter } from "obsidian";
 
@@ -436,6 +437,7 @@ export async function buildServices(
         const importProfile: ImportProfile = (options) =>
           bridge.runPromise(
             importProfileDialog(plugin.app, options).pipe(
+              Effect.provide(NodeFileSystem.layer),
               Effect.provideContext(context),
             ),
           );

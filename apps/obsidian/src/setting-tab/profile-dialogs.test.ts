@@ -1,3 +1,4 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 // @vitest-environment happy-dom
 import { it } from "@effect/vitest";
 import { ButtonComponent, Modal, controlsOf } from "@mock/obsidian";
@@ -122,7 +123,7 @@ it.effect("keeps Share open until it closes, and an interrupt closes it", () =>
     const services = yield* Effect.promise(() => f.runtime.context());
     const pending = yield* shareProfile(f.app, "default").pipe(
       Effect.provideContext(services),
-      Effect.provide(testNotifier().layer),
+      Effect.provide(Layer.merge(testNotifier().layer, NodeFileSystem.layer)),
       Effect.forkChild({ startImmediately: true }),
     );
     yield* until(() => opened.mock.calls.length === 1);

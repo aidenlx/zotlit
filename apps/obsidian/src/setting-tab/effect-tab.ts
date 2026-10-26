@@ -9,6 +9,7 @@
 // starts one with `mount` and returns its interrupt as the row's cleanup.
 // Every fiber lives in the tab layer's Scope, so closing the layer ends them.
 import { Cause, Context, Effect, Fiber, Scope, Stream } from "effect";
+import type { FileSystem } from "effect";
 
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log-category";
@@ -64,7 +65,8 @@ export type SettingTabEnv =
   | NoteFeature
   | NoteIndex
   | Vault
-  | FileManager;
+  | FileManager
+  | FileSystem.FileSystem;
 
 export interface SettingTabShape {
   /**

@@ -1,6 +1,6 @@
 // The tab service over a test's own services, for builders and the tab class.
 
-import { Context, Effect, Exit, Layer, Scope } from "effect";
+import { Context, Effect, Exit, FileSystem, Layer, Scope } from "effect";
 import { onTestFinished } from "vitest";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
@@ -75,6 +75,10 @@ export const unimplementedTabServices = Layer.mergeAll(
   Layer.mock(NoteIndex)({}),
   Layer.mock(Vault)({}),
   Layer.mock(FileManager)({}),
+  Layer.succeed(
+    FileSystem.FileSystem,
+    stubService<FileSystem.FileSystem>("FileSystem", {}),
+  ),
 );
 
 /**

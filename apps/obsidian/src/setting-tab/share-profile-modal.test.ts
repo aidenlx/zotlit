@@ -1,3 +1,4 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { it as effectIt } from "@effect/vitest";
 import {
   ButtonComponent,
@@ -9,7 +10,7 @@ import {
   settingsOf,
   renderRow,
 } from "@mock/obsidian";
-import { Effect, Fiber } from "effect";
+import { Effect, Fiber, Layer } from "effect";
 // @vitest-environment happy-dom
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -411,7 +412,7 @@ const sharing = Effect.fnUntraced(function* (
   const services = yield* Effect.promise(() => f.runtime.context());
   const pending = yield* shareProfile(f.app, id).pipe(
     Effect.provideContext(services),
-    Effect.provide(notifier.layer),
+    Effect.provide(Layer.merge(notifier.layer, NodeFileSystem.layer)),
     Effect.forkChild({ startImmediately: true }),
   );
   yield* until(() => opened.mock.calls.length === 1);

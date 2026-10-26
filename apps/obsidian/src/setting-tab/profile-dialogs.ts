@@ -3,8 +3,7 @@
 // callbacks run on a runner the dialog's Scope owns, so an interrupt closes
 // the modal and stops the work its callbacks started.
 
-import { Cause, Effect, Exit, FiberSet, Schema } from "effect";
-import { readFile, writeFile } from "node:fs/promises";
+import { Cause, Effect, Exit, FiberSet, FileSystem, Schema } from "effect";
 import { basename } from "node:path";
 import type { App } from "obsidian";
 
@@ -14,7 +13,6 @@ import { AbortError } from "@/lib/abort-error";
 import { recover } from "@/lib/effect-cause";
 import { awaitModal } from "@/lib/effect-modal";
 import type { ClosableModal } from "@/lib/effect-modal";
-import { nodeFileSystemCall } from "@/lib/errno";
 import * as m from "@/lib/i18n/generated/messages";
 import { portCall } from "@/lib/legacy-port";
 import { Notifier } from "@/lib/notifier";
@@ -178,9 +176,7 @@ const readProfileFile = Effect.gen(function* () {
   );
   const path = selection.canceled ? undefined : selection.filePaths[0];
   if (!path) return null;
-  return yield* nodeFileSystemCall("readFile", path, () =>
-    readFile(path, "utf8"),
-  );
+  return yield* (yield* FileSystem.FileSystem).readFileString(path);
 });
 
 /** The default Profile, which every dialog's fields fall back to. */
@@ -433,9 +429,7 @@ const shareOutput = Effect.fn("shareOutput")(
       );
       const path = selection.canceled ? undefined : selection.filePath;
       if (!path) return;
-      yield* nodeFileSystemCall("writeFile", path, () =>
-        writeFile(path, source),
-      );
+      yield* (yield* FileSystem.FileSystem).writeFileString(path, source);
       yield* notifier.show(m.profile_share_saved({ file: basename(path) }));
     }
     yield* Effect.logDebug("Shared Profile").pipe(
@@ -468,7 +462,7 @@ export const shareProfile = Effect.fn("shareProfile")(function* (
 ) {
   const plan = yield* (yield* Profile).prepareShare(selector);
   const runSync = Effect.runSyncWith(yield* Effect.context<never>());
-  yield* runDialog<void, Notifier>(
+  yield* runDialog<void, Notifier | FileSystem.FileSystem>(
     (run) =>
       new ShareProfileModal(
         app,

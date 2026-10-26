@@ -1,7 +1,8 @@
 // The setting tab as a scoped layer: it registers the tab, keeps its
 // definitions current, and removes it when its Scope closes.
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { Duration, Effect, Exit, Layer, Scope, Stream } from "effect";
-import type { ManagedRuntime } from "effect";
+import type { FileSystem, ManagedRuntime } from "effect";
 import type { Plugin } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
@@ -127,7 +128,7 @@ export function layerSettingTab(legacy: SettingTabLegacy) {
 export function startSettingTab(
   runtime: Pick<
     ManagedRuntime.ManagedRuntime<
-      Exclude<SettingTabEnv, SettingTab | Notifier>,
+      Exclude<SettingTabEnv, SettingTab | Notifier | FileSystem.FileSystem>,
       never
     >,
     "runSync" | "runPromise" | "scope"
@@ -141,7 +142,13 @@ export function startSettingTab(
     runtime.runSync(
       Layer.buildWithScope(
         layerSettingTab(legacy).pipe(
-          Layer.provide(Layer.mergeAll(layerPluginHost(plugin), layerNotifier)),
+          Layer.provide(
+            Layer.mergeAll(
+              layerPluginHost(plugin),
+              layerNotifier,
+              NodeFileSystem.layer,
+            ),
+          ),
         ),
         scope,
       ),
