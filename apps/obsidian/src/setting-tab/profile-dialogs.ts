@@ -3,24 +3,25 @@
 // callbacks run on a runner the dialog's Scope owns, so an interrupt closes
 // the modal and stops the work its callbacks started.
 
-import { Cause, Effect, Exit, FiberSet, Schema } from "effect";
-import { readFile, writeFile } from "node:fs/promises";
+import { Cause, Effect, Exit, FiberSet, FileSystem } from "effect";
 import { basename } from "node:path";
 import type { App } from "obsidian";
 
 import type { NoteTemplateContext } from "@zotlit/db";
 
+import { AbortError } from "@/lib/abort-error";
 import { recover } from "@/lib/effect-cause";
 import { awaitModal } from "@/lib/effect-modal";
 import type { ClosableModal } from "@/lib/effect-modal";
-import { nodeFileSystemCall } from "@/lib/errno";
 import * as m from "@/lib/i18n/generated/messages";
 import { portCall } from "@/lib/legacy-port";
 import { Notifier } from "@/lib/notifier";
 import { Vault } from "@/lib/obsidian-vault";
+import { PluginHost } from "@/lib/plugin-host";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { requireDialog } from "@/lib/require";
 import type { LibraryScope } from "@/services/library-scope/service";
+import { ProfileDocumentMissingError } from "@/services/local-bridge/reads";
 import { installedStyles } from "@/services/note-feature/creation-view";
 import { NoteFeature } from "@/services/note-feature/service";
 import type { ResolvedProfile } from "@/services/profile/bindings";
@@ -48,7 +49,6 @@ import type {
 import { ImportProfileModal, ImportSourceModal } from "./import-profile-modal";
 import type { ImportSource } from "./import-profile-modal";
 import { ProfileDestinationModal } from "./profile-destination-modal";
-import { DialogClosed } from "./profile-dialog";
 import { ShareProfileModal } from "./share-profile-modal";
 import type { ShareDestination } from "./share-profile-modal";
 
@@ -68,7 +68,7 @@ type DialogServices = Profile | Template | NoteFeature;
 
 /**
  * Runs a modal callback's Effect on the dialog's runner. It rejects with
- * {@link DialogClosed} when the dialog's Scope stops the Effect.
+ * an `AbortError` when the dialog's Scope stops the Effect.
  */
 type DialogRun<R = DialogServices> = <A, E>(
   effect: Effect.Effect<A, E, R>,
@@ -81,16 +81,6 @@ interface DialogModal<A> extends ClosableModal {
   readonly result: Promise<A>;
   /** The close the dialog's Scope calls, when it differs from the user's. */
   teardown?(): void;
-}
-
-/** A Profile document the dialog created is not in the vault. */
-export class ProfileDocumentMissing extends Schema.TaggedError<
-  ProfileDocumentMissing,
-  { readonly brand: unique symbol }
->()("ProfileDocumentMissing", { path: Schema.String }) {
-  override get message(): string {
-    return m.notice_profile_action_failed();
-  }
 }
 
 /**
@@ -109,7 +99,7 @@ function runDialog<A, R = DialogServices>(
           runFork(effect).addObserver((exit) => {
             if (Exit.isSuccess(exit)) resolve(exit.value);
             else if (Cause.hasInterruptsOnly(exit.cause))
-              reject(new DialogClosed());
+              reject(new AbortError());
             else reject(Cause.squash(exit.cause));
           }),
         );
@@ -178,9 +168,7 @@ const readProfileFile = Effect.gen(function* () {
   );
   const path = selection.canceled ? undefined : selection.filePaths[0];
   if (!path) return null;
-  return yield* nodeFileSystemCall("readFile", path, () =>
-    readFile(path, "utf8"),
-  );
+  return yield* (yield* FileSystem.FileSystem).readFileString(path);
 });
 
 /** The default Profile, which every dialog's fields fall back to. */
@@ -395,9 +383,13 @@ export const addProfileDestination = Effect.fn("addProfileDestination")(
         }),
     );
     if (!created) return;
-    app.setting.close();
+    yield* (yield* PluginHost).closeSettings;
     const file = yield* (yield* Vault).getFileByPath(created.path);
-    if (!file) return yield* new ProfileDocumentMissing({ path: created.path });
+    if (!file)
+      return yield* new ProfileDocumentMissingError({
+        profileId: created.id,
+        message: m.notice_profile_action_failed(),
+      });
     yield* portCall("open-template-workbench", () =>
       openTemplateWorkbench(app, file, { tab: "name", customize: true }),
     );
@@ -433,9 +425,7 @@ const shareOutput = Effect.fn("shareOutput")(
       );
       const path = selection.canceled ? undefined : selection.filePath;
       if (!path) return;
-      yield* nodeFileSystemCall("writeFile", path, () =>
-        writeFile(path, source),
-      );
+      yield* (yield* FileSystem.FileSystem).writeFileString(path, source);
       yield* notifier.show(m.profile_share_saved({ file: basename(path) }));
     }
     yield* Effect.logDebug("Shared Profile").pipe(
@@ -468,7 +458,7 @@ export const shareProfile = Effect.fn("shareProfile")(function* (
 ) {
   const plan = yield* (yield* Profile).prepareShare(selector);
   const runSync = Effect.runSyncWith(yield* Effect.context<never>());
-  yield* runDialog<void, Notifier>(
+  yield* runDialog<void, Notifier | FileSystem.FileSystem>(
     (run) =>
       new ShareProfileModal(
         app,

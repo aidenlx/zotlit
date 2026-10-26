@@ -14,10 +14,15 @@ import { expect, it, vi } from "vitest";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
+import { AttachmentImport } from "@/services/attachment-import/service";
+import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
+import { LanguagePack } from "@/services/language-pack/service";
 import { LibraryScope } from "@/services/library-scope/service";
-import type { LocalServer } from "@/services/local-server/service";
-import type { ManagedBinaryApi } from "@/services/managed-binary/service";
+import { LocalBridge } from "@/services/local-bridge/service";
+import { LocalServer } from "@/services/local-server/service";
+import { PandocEngine } from "@/services/pandoc/service";
 import { defaults } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 
 import { profileRowServices, testSettingTab } from "./__fixtures__";
 import { advancedPageItems } from "./advanced";
@@ -52,6 +57,53 @@ function ctx(): SettingTabContext {
             resolveLibraries: () => Effect.die("unread"),
           }),
         ),
+        Context.add(
+          PandocEngine,
+          stubService<PandocEngine["Service"]>("PandocEngine", {
+            getStatus: Effect.succeed({ kind: "absent" }),
+            changes: Stream.empty,
+          }),
+        ),
+        Context.add(
+          LanguagePack,
+          stubService<LanguagePack["Service"]>("LanguagePack", {
+            situation: Effect.succeed({ kind: "unavailable" }),
+            endonym: "English",
+          }),
+        ),
+        Context.add(
+          PluginSettings,
+          stubService<PluginSettings["Service"]>("PluginSettings", {
+            current: Effect.succeed(defaults),
+            changes: Stream.empty,
+          }),
+        ),
+        Context.add(
+          LocalServer,
+          stubService<LocalServer["Service"]>("LocalServer", {
+            effectivePort: Effect.succeed(null),
+            effectivePortChanges: Stream.empty,
+          }),
+        ),
+        Context.add(
+          LocalBridge,
+          stubService<LocalBridge["Service"]>("LocalBridge", {
+            connection: Effect.succeed(null),
+          }),
+        ),
+        Context.add(
+          AttachmentImport,
+          stubService<AttachmentImport["Service"]>("AttachmentImport", {
+            approvedFolders: Effect.succeed([]),
+          }),
+        ),
+        Context.add(
+          ChineseSegmenter,
+          stubService<ChineseSegmenter["Service"]>("ChineseSegmenter", {
+            getStatus: Effect.succeed({ kind: "absent" }),
+            changes: Stream.empty,
+          }),
+        ),
       ),
     ).tab,
     webWorkbenchEnabled: true,
@@ -78,59 +130,7 @@ function ctx(): SettingTabContext {
       current: Effect.succeed(defaults),
       changes: Stream.empty,
     }),
-    localServer: stubService<LocalServer["Service"]>("LocalServer", {
-      effectivePort: Effect.succeed(null),
-      effectivePortChanges: Stream.empty,
-    }),
-    localBridge: stubService<SettingTabContext["localBridge"]>("LocalBridge", {
-      connection: null,
-      disconnect: () => {},
-      on: () => () => {},
-    }),
     customize: async () => {},
-    attachmentImport: stubService<SettingTabContext["attachmentImport"]>(
-      "AttachmentImport",
-      {
-        approvedFolders: [],
-        approveFolder: async () => null,
-        revokeFolder: async () => {},
-      },
-    ),
-    citationIndex: stubService<SettingTabContext["citationIndex"]>(
-      "CitationIndex",
-      { reset: async () => {} },
-    ),
-    release: stubService<SettingTabContext["release"]>("Release", {}),
-    pandocEngine: {
-      binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
-        "PandocEngine",
-        {
-          getStatus: Effect.succeed({ kind: "absent" }),
-          changes: Stream.empty,
-        },
-      ),
-      runSync: Effect.runSync,
-      runPromise: Effect.runPromise,
-    },
-    chineseSegmenter: {
-      binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
-        "ChineseSegmenter",
-        {
-          getStatus: Effect.succeed({ kind: "absent" }),
-          changes: Stream.empty,
-        },
-      ),
-      runSync: Effect.runSync,
-      runPromise: Effect.runPromise,
-    },
-    languagePack: stubService<SettingTabContext["languagePack"]>(
-      "LanguagePack",
-      {
-        getSituation: () => ({ kind: "unavailable" }),
-        endonym: "English",
-      },
-    ),
-    requestUpdate: () => {},
   });
 }
 

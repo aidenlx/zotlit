@@ -206,7 +206,7 @@ describe("LibraryScope", () => {
   it.effect("falls back to My Library for a broken saved value", () =>
     Effect.gen(function* () {
       const f = yield* makeService({ broken: true });
-      expect(f.plain.invalid).toBe(true);
+      expect(yield* f.service.invalid).toBe(true);
       expect(f.plain.current).toMatchObject({
         mode: "selected",
         invalid: true,
@@ -235,7 +235,7 @@ describe("LibraryScope", () => {
         f.settings.update({ [LIBRARY_SCOPE_KEY]: { mode: "all" } }),
       );
       yield* changedScope(f, (scope) => scope?.invalid === false);
-      expect(f.plain.invalid).toBe(false);
+      expect(yield* f.service.invalid).toBe(false);
       expect(f.plain.current?.mode).toBe("all");
       yield* Effect.promise(() =>
         expect.poll(() => f.changed.mock.calls.length).toBe(1),

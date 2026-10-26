@@ -7,12 +7,6 @@ import type { EffectBridge } from "@/lib/effect-bridge";
 import { readCitationData, readTemplateData, withSettings } from "./data";
 import type { TemplateDataLoader, TemplateDataServices } from "./data";
 
-/** What the handle reads: the data's services. */
-export type TemplateDataHandleServices = TemplateDataServices;
-
-/** The edge handle `build.ts` binds; see {@link bindTemplateData}. */
-export type TemplateDataHandle = TemplateDataLoader;
-
 /**
  * The Template data reads over `context`, run through `bridge`. A load
  * resolves with its result and rejects with what failed, as a read or a
@@ -20,9 +14,9 @@ export type TemplateDataHandle = TemplateDataLoader;
  */
 export function bindTemplateData(
   bridge: Pick<EffectBridge, "runPromise">,
-  context: Context.Context<TemplateDataHandleServices>,
-): TemplateDataHandle {
-  const run = <A, E>(effect: Effect.Effect<A, E, TemplateDataHandleServices>) =>
+  context: Context.Context<TemplateDataServices>,
+): TemplateDataLoader {
+  const run = <A, E>(effect: Effect.Effect<A, E, TemplateDataServices>) =>
     bridge.runPromise(Effect.provideContext(effect, context));
   return {
     load: (indexedKey, root, options) => {

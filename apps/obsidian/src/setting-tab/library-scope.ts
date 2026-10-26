@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { Menu } from "obsidian";
 import type {
   Setting,
@@ -230,6 +231,10 @@ function removeSelector(
 
 /** Persist and rebuild the tab, so the list rows follow the new selection. */
 function saveScope(ctx: SettingTabContext, scope: LibraryScope): void {
-  ctx.tab.sync(ctx.settings.update({ "zotero.library-scope": scope }));
-  ctx.requestUpdate();
+  void ctx.tab.run(
+    ctx.settings
+      .update({ "zotero.library-scope": scope })
+      .pipe(Effect.andThen(ctx.tab.update)),
+    m.settings_failed_save(),
+  );
 }

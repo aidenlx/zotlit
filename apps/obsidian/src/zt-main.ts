@@ -271,17 +271,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     stack.defer(
       startSettingTab(services.runtime, this, {
         webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-        localServer: services.localServer,
-        localBridge: services.localBridge,
         customize,
-        attachmentImport: services.attachmentImport,
-        citationIndex: services.citationIndex,
-        excerptImage: services.excerptImage,
-        excerptDisplay: services.excerptDisplay,
-        release: services.release,
-        pandocEngine: services.pandocEngine,
-        chineseSegmenter: services.chineseSegmenter,
-        languagePack: services.languagePack,
       }),
     );
 

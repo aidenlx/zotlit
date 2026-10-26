@@ -1,14 +1,13 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { Effect } from "effect";
 import type { FileSystemAdapter } from "obsidian";
 
 import { passAborted } from "@/lib/abort-error";
 import { cliRunner } from "@/lib/cli-command";
 import { DisposableAbortController } from "@/lib/disposables";
-import { effectBridge } from "@/lib/effect-bridge";
+import { effectBridge, exitOver, valueOr } from "@/lib/effect-bridge";
 import { fromInstant } from "@/lib/effect-clock";
 import { buildRuntime } from "@/lib/effect-layer";
-import { languagePackEdge } from "@/lib/i18n";
-import { Notifier } from "@/lib/notifier";
 import { revealSetting } from "@/lib/open-settings";
 import { ZoteroHttp } from "@/lib/zotero-http";
 import { libraryTagNamesOf } from "@/services/database/library-tag-names";
@@ -31,8 +30,6 @@ import { AnnotationPopover } from "./annotation-popover/service";
 import { CapabilityNotices } from "./annotation-repository/notices";
 import { bindCapabilityNotices } from "./annotation-repository/notices-handle";
 import { AnnotationRepository } from "./annotation-repository/service";
-import { bindAttachmentImport } from "./attachment-import/handle";
-import { AttachmentImport } from "./attachment-import/service";
 import { createPdfReader } from "./attachment-open/actions";
 import { openWithSystem } from "./attachment-open/capture";
 import { bindLiteratureNoteAttachments } from "./attachment-open/handle";
@@ -58,7 +55,6 @@ import { bindItemLookup } from "./item-lookup/handle";
 import { ItemLookup } from "./item-lookup/service";
 import { bindQuery } from "./item-query/handle";
 import { QueryService } from "./item-query/service";
-import { LanguagePack } from "./language-pack/service";
 import type { LanguagePackStartup } from "./language-pack/service";
 import { plainLibraryScope } from "./library-scope/plain";
 import { bindCustomize } from "./local-bridge/customize";
@@ -95,8 +91,8 @@ import { plainQueryClients } from "./query-client/plain";
 import { Release } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import { PluginSettings } from "./settings/service";
+import type { TemplateDataServices } from "./template-workbench/data";
 import { bindTemplateData } from "./template-workbench/data-handle";
-import type { TemplateDataHandleServices } from "./template-workbench/data-handle";
 import type { TemplateMigrationOptions } from "./template/migration";
 import { plainTemplate, plainTemplateMigration } from "./template/plain";
 import { plainUseLedger } from "./use-ledger/plain";
@@ -249,16 +245,6 @@ export async function buildServices(
     })
     .useValue({ release: () => runtime.runSync(Release) })
     .useValue({
-      languagePack: () =>
-        languagePackEdge(
-          {
-            pack: runtime.runSync(LanguagePack),
-            notifier: runtime.runSync(Notifier),
-          },
-          bridge,
-        ),
-    })
-    .useValue({
       template: () => plainTemplate(runtime),
     })
     .useValue({
@@ -371,10 +357,6 @@ export async function buildServices(
         return reader;
       },
     })
-    .useValue({
-      attachmentImport: () =>
-        bindAttachmentImport(bridge, runtime.runSync(AttachmentImport)),
-    })
     .useValue({ libraryScope: () => plainLibraryScope(runtime) })
     .useValue({
       query: () => bindQuery(bridge, runtime.runSync(QueryService)),
@@ -395,7 +377,7 @@ export async function buildServices(
       templateData: () =>
         bindTemplateData(
           bridge,
-          runtime.runSync(Effect.context<TemplateDataHandleServices>()),
+          runtime.runSync(Effect.context<TemplateDataServices>()),
         ),
     })
     .useValue({
@@ -424,28 +406,33 @@ export async function buildServices(
         }),
     })
     .useValue({
+      // Unload closes an open dialog, and the caller sees it dismissed.
       createProfile: (): CreateProfile => {
-        const context = runtime.runSync(
-          Effect.context<ProfileDialogServices>(),
+        const runExit = exitOver(
+          bridge,
+          runtime.runSync(Effect.context<ProfileDialogServices>()),
         );
-        return (options) =>
-          bridge.runPromise(
-            createProfileDialog(plugin.app, options).pipe(
-              Effect.provideContext(context),
-            ),
+        return async (options) =>
+          valueOr(
+            await runExit(createProfileDialog(plugin.app, options)),
+            undefined,
           );
       },
     })
     .useValue({
       importProfile: ({ createProfile }): ImportProfile => {
-        const context = runtime.runSync(
-          Effect.context<ProfileDialogServices>(),
+        const runExit = exitOver(
+          bridge,
+          runtime.runSync(Effect.context<ProfileDialogServices>()),
         );
-        const importProfile: ImportProfile = (options) =>
-          bridge.runPromise(
-            importProfileDialog(plugin.app, options).pipe(
-              Effect.provideContext(context),
+        const importProfile: ImportProfile = async (options) =>
+          valueOr(
+            await runExit(
+              importProfileDialog(plugin.app, options).pipe(
+                Effect.provide(NodeFileSystem.layer),
+              ),
             ),
+            undefined,
           );
         bindProfileDialogs({ createProfile, importProfile });
         return importProfile;

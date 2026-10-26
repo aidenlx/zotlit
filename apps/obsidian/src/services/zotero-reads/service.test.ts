@@ -141,7 +141,7 @@ it.effect("reports the Read Mode of each serving connection", () =>
     yield* Stream.runHead(
       Stream.filter(service.changes, (state) => state.state === "ready"),
     );
-    expect(plain.activeReadMode).toBe("copy");
+    expect((yield* service.current).activeReadMode).toBe("copy");
     const changes = yield* Queue.unbounded<string | null>();
     subscribe(plain.runtime, Stream.drop(plain.changes, 1), (next) =>
       Queue.offerUnsafe(changes, next.activeReadMode),

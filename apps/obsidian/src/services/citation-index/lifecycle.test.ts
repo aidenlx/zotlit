@@ -4,6 +4,7 @@ import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
 import { effectTestParse } from "@/lib/__fixtures__/parse-client";
+import { effectBridge } from "@/lib/effect-bridge";
 import { subscribe } from "@/lib/effect-stream";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
@@ -262,7 +263,6 @@ it.effect(
       await waiting;
       await scan;
       await expect(h.index.whenIndexed()).rejects.toMatchObject(aborted);
-      await expect(h.index.reset()).rejects.toMatchObject(aborted);
       await expect(
         h.index.getDocumentCitationSet(h.draft),
       ).rejects.toMatchObject(aborted);
@@ -372,9 +372,11 @@ it.effect(
       );
       await started.promise;
       // Unload stops the waiting caller; the reset itself runs on.
-      const reset = expect(h.index.reset()).rejects.toMatchObject({
-        name: "AbortError",
-      });
+      const reset = expect(
+        effectBridge(h.runtime).runPromise(
+          h.runtime.runSync(CitationIndex).reset(),
+        ),
+      ).rejects.toMatchObject({ name: "AbortError" });
       await clearing.promise;
       const closing = h.runtime.dispose();
       await stopping.promise;

@@ -3,6 +3,7 @@ import { Modal, Setting } from "obsidian";
 import type { App, ButtonComponent, TextComponent } from "obsidian";
 import inc from "semver/functions/inc";
 
+import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import type {
   PreparedProfileShare,
@@ -10,7 +11,6 @@ import type {
 } from "@/services/profile/service";
 
 import {
-  DialogClosed,
   dialogFooter,
   footerButton,
   frameDialog,
@@ -199,7 +199,7 @@ export class ShareProfileModal extends Modal {
     try {
       await this.#share(destination, source);
     } catch (error) {
-      if (!(error instanceof DialogClosed)) throw error;
+      if (!AbortError.test(error)) throw error;
     } finally {
       this.#busy = false;
       if (!this.#closed) this.#refresh();

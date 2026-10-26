@@ -1,5 +1,6 @@
-import { Context, Effect, Exit, Layer, Scope } from "effect";
 // The tab service over a test's own services, for builders and the tab class.
+
+import { Context, Effect, Exit, FileSystem, Layer, Queue, Scope } from "effect";
 import { onTestFinished } from "vitest";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
@@ -7,11 +8,17 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Notifier } from "@/lib/notifier";
 import { FileManager } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
+import { PluginHost } from "@/lib/plugin-host";
 import { CapabilityNotices } from "@/services/annotation-repository/notices";
 import { AnnotationRepository } from "@/services/annotation-repository/service";
+import { AttachmentImport } from "@/services/attachment-import/service";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 import { CitationIndex } from "@/services/citation-index/service";
+import { ExcerptDisplays } from "@/services/excerpt-image/display";
+import { ExcerptImages } from "@/services/excerpt-image/layer";
+import { LanguagePack } from "@/services/language-pack/service";
 import { LibraryScope } from "@/services/library-scope/service";
+import { LocalBridge } from "@/services/local-bridge/service";
 import { LocalServer } from "@/services/local-server/service";
 import { NoteFeature } from "@/services/note-feature/service";
 import { NoteIndex } from "@/services/note-index/service";
@@ -33,7 +40,7 @@ import type { SettingTabShape } from "./effect-tab";
  * services replace these, and a member no test gave fails that Effect with an
  * unimplemented defect.
  */
-const unimplemented = Layer.mergeAll(
+export const unimplementedTabServices = Layer.mergeAll(
   Layer.mock(PluginSettings)({}),
   Layer.mock(Profile)({}),
   Layer.mock(Template)({}),
@@ -50,10 +57,33 @@ const unimplemented = Layer.mergeAll(
   Layer.mock(CitationIndex)({}),
   Layer.mock(PandocEngine)({}),
   Layer.mock(ChineseSegmenter)({}),
+  Layer.mock(AttachmentImport)({}),
+  Layer.mock(LocalBridge)({}),
+  // Services with plain members: a read of a member no test gave throws.
+  Layer.succeed(
+    LanguagePack,
+    stubService<LanguagePack["Service"]>("LanguagePack", {}),
+  ),
+  Layer.succeed(
+    ExcerptImages,
+    stubService<ExcerptImages["Service"]>("ExcerptImages", {}),
+  ),
+  Layer.succeed(
+    ExcerptDisplays,
+    stubService<ExcerptDisplays["Service"]>("ExcerptDisplays", {}),
+  ),
   Layer.mock(NoteFeature)({}),
   Layer.mock(NoteIndex)({}),
   Layer.mock(Vault)({}),
   Layer.mock(FileManager)({}),
+  Layer.succeed(
+    PluginHost,
+    stubService<PluginHost["Service"]>("PluginHost", {}),
+  ),
+  Layer.succeed(
+    FileSystem.FileSystem,
+    stubService<FileSystem.FileSystem>("FileSystem", {}),
+  ),
 );
 
 /**
@@ -69,9 +99,37 @@ export const scopedSettingTab = Effect.fnUntraced(function* (
   const tab: SettingTabShape = yield* makeSettingTab(update).pipe(
     Effect.provideContext(services),
     Effect.provideService(Notifier, notifier.service),
-    Effect.provide(unimplemented),
+    Effect.provide(unimplementedTabServices),
   );
   return { tab, notices: notifier.notices };
+});
+
+/**
+ * `scopedSettingTab` over the services `layer` builds, for a row whose actions
+ * rebuild the tab or leave the settings window. `rebuilt` takes one element
+ * per definition rebuild an action asks for; the settings window closes
+ * through `close`.
+ */
+export const rebuildingSettingTab = Effect.fnUntraced(function* (
+  layer: Layer.Layer<never>,
+  { close = () => {} }: { close?: () => void } = {},
+) {
+  const services = yield* Layer.build(
+    Layer.merge(
+      layer,
+      Layer.succeed(
+        PluginHost,
+        stubService<PluginHost["Service"]>("PluginHost", {
+          closeSettings: Effect.sync(close),
+        }),
+      ),
+    ),
+  );
+  const rebuilt = yield* Queue.unbounded<void>();
+  const { tab, notices } = yield* scopedSettingTab(services, {
+    update: () => Queue.offerUnsafe(rebuilt, undefined),
+  });
+  return { tab, notices, rebuilt };
 });
 
 /** `scopedSettingTab` for a plain test: its fibers end when the test finishes. */

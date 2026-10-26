@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Context, DateTime, Effect } from "effect";
+import { Context, DateTime, Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 import type { App } from "obsidian";
 import { afterEach, beforeEach, describe, expect, vi } from "vitest";
@@ -24,7 +24,6 @@ import { buildTemplate } from "./__fixtures__";
 import { CITATION_TEMPLATE_SOURCE, DEFAULT_TEMPLATES } from "./defaults";
 import { InertTemplateError } from "./errors";
 import type { MissingPartialError } from "./errors";
-import type { PlainTemplate } from "./plain";
 
 interface Harness {
   app: App & {
@@ -34,7 +33,7 @@ interface Harness {
     };
   };
   plugin: PluginStub;
-  service: PlainTemplate & AsyncDisposable;
+  service: Awaited<ReturnType<typeof buildTemplate>>;
   settings: SettingsFixture;
   vault: MockVault;
   localStorage: Map<string, unknown>;
@@ -157,9 +156,7 @@ frontmatter:
           { key: "title", value: "Paper", merge: "replace", position: 1 },
         ]);
 
-        yield* Effect.promise(() =>
-          service.setJavascriptTemplatesEnabled(true),
-        );
+        yield* service.templateService.setJavascriptTemplatesEnabled(true);
 
         const active = service.getLiteratureNoteTemplate(
           "zotlit-profile.books.md",
@@ -651,9 +648,7 @@ partials:
             path: "templates/zotlit-profile.shared.md",
           }),
         );
-        yield* Effect.promise(() =>
-          service.setJavascriptTemplatesEnabled(true),
-        );
+        yield* service.templateService.setJavascriptTemplatesEnabled(true);
         expect(
           service
             .getLiteratureNoteTemplate("zotlit-profile.shared.md")!
@@ -1851,9 +1846,12 @@ partials:
           service.renderCitation([{ citationKey: "smith2024" }], "alt"),
         ).toBe("EDITED alt");
 
-        const restored = service.restoreCitationTemplate();
+        const restored = yield* Effect.forkChild(
+          service.templateService.restoreCitationTemplate,
+          { startImmediately: true },
+        );
         yield* TestClock.adjust(500);
-        yield* Effect.promise(() => restored);
+        yield* Fiber.join(restored);
 
         expect(vault.getFileByPath(file.path)).toBeNull();
         expect(service.getCitationTemplateStatus().customized).toBe(false);
@@ -2249,13 +2247,13 @@ describe("javascript templates gate", () => {
 
       expect(() => service.render("note", data)).toThrow(InertTemplateError);
 
-      yield* Effect.promise(() => service.setJavascriptTemplatesEnabled(true));
+      yield* service.templateService.setJavascriptTemplatesEnabled(true);
 
       expect(service.render("note", { title: "Paper" })).toBe("custom Paper");
       expect(service.inertEtaFiles.size).toBe(0);
       expect(localStorage.get("zotlit-javascript-templates")).toBe("1");
 
-      yield* Effect.promise(() => service.setJavascriptTemplatesEnabled(false));
+      yield* service.templateService.setJavascriptTemplatesEnabled(false);
 
       expect(() => service.render("note", data)).toThrow(InertTemplateError);
       expect(localStorage.has("zotlit-javascript-templates")).toBe(false);
@@ -2269,7 +2267,7 @@ describe("javascript templates gate", () => {
         makeHarness(undefined, context),
       );
 
-      yield* Effect.promise(() => service.setJavascriptTemplatesEnabled(true));
+      yield* service.templateService.setJavascriptTemplatesEnabled(true);
 
       expect(JSON.stringify(plugin.data)).not.toContain("javascript-templates");
       expect(
@@ -2509,13 +2507,13 @@ describe("frontmatter fields", () => {
       expect(() => service.frontmatterFields).toThrow(InertTemplateError);
 
       yield* TestClock.adjust(0);
-      yield* Effect.promise(() => service.setJavascriptTemplatesEnabled(true));
+      yield* service.templateService.setJavascriptTemplatesEnabled(true);
       expect(service.frontmatterFields.map((field) => field.key)).toEqual([
         "js1",
         "js2",
       ]);
 
-      yield* Effect.promise(() => service.setJavascriptTemplatesEnabled(false));
+      yield* service.templateService.setJavascriptTemplatesEnabled(false);
       expect(() => service.frontmatterFields).toThrow(InertTemplateError);
     }),
   );
@@ -2549,7 +2547,7 @@ describe("Template Document kinds", () => {
         expect(service.render("authors", { authors: "Ada Lovelace" })).toBe(
           "Authors: Ada Lovelace",
         );
-        expect(service.getUnrecognizedFiles()).toEqual([]);
+        expect(yield* service.templateService.getUnrecognizedFiles).toEqual([]);
       }),
   );
 
@@ -2601,9 +2599,7 @@ describe("Template Document kinds", () => {
           service.render("authors", { authors: "Ada Lovelace" }),
         ).toThrow(m.settings_template_inert_eta({ path }));
 
-        yield* Effect.promise(() =>
-          service.setJavascriptTemplatesEnabled(true),
-        );
+        yield* service.templateService.setJavascriptTemplatesEnabled(true);
 
         expect(service.render("authors", { authors: "Ada Lovelace" })).toBe(
           "Authors: Ada Lovelace",
@@ -2796,7 +2792,7 @@ describe("Template Document kinds", () => {
           makeHarness({ vault }, context),
         );
 
-        expect(service.getUnrecognizedFiles()).toEqual([
+        expect(yield* service.templateService.getUnrecognizedFiles).toEqual([
           "templates/zotlit-foo.md",
         ]);
         expect(service.getLiteratureNoteTemplateStatuses()).toEqual([]);
@@ -2804,7 +2800,7 @@ describe("Template Document kinds", () => {
         vault.deleteFile("templates/zotlit-foo.md");
         yield* TestClock.adjust(500);
 
-        expect(service.getUnrecognizedFiles()).toEqual([]);
+        expect(yield* service.templateService.getUnrecognizedFiles).toEqual([]);
       }),
   );
 
@@ -2859,7 +2855,7 @@ describe("Template Document kinds", () => {
         );
         // `citation` is the Citation Template's name; the extension-named file
         // claiming it is reported instead of registered.
-        expect(service.getUnrecognizedFiles()).toEqual([
+        expect(yield* service.templateService.getUnrecognizedFiles).toEqual([
           "templates/zotlit-citation.liquid.md",
         ]);
       }),
@@ -3162,9 +3158,12 @@ describe("Template Document kinds", () => {
         expect(service.getPartialNames()).toEqual(["venue-line"]);
         expect(service.render("venue-line", { venue: "JMLR" })).toBe("JMLR");
 
-        const deleted = service.deletePartial("venue-line");
+        const deleted = yield* Effect.forkChild(
+          service.templateService.deletePartial("venue-line"),
+          { startImmediately: true },
+        );
         yield* TestClock.adjust(500);
-        yield* Effect.promise(() => deleted);
+        yield* Fiber.join(deleted);
 
         expect(vault.getFileByPath(file.path)).toBeNull();
         expect(service.getPartialNames()).toEqual([]);

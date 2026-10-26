@@ -34,7 +34,7 @@ import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import { bindLocalBridge } from "./handle";
 import type { LocalBridgeHandle } from "./handle";
 import { layerLocalBridge, LocalBridge } from "./service";
-import type { WorkbenchLaunch } from "./service";
+import type { WorkbenchConnection, WorkbenchLaunch } from "./service";
 
 const VAULT_NAME = "Research";
 /** A Profile id of the shape the registry mints: twelve alphanumerics. */
@@ -111,8 +111,16 @@ interface CallInit {
 }
 
 interface Harness extends AsyncDisposable {
-  /** The bridge as the setting tab holds it. */
+  /** The bridge as the saved Notice holds it. */
   handle: LocalBridgeHandle;
+  /** The connection standing now, as the setting tab reads it. */
+  connection(): WorkbenchConnection | null;
+  /** End the connection from Obsidian, as the setting tab's button does. */
+  disconnect(): void;
+  /** Follow each connection change, as the setting tab's rebuild stream does. */
+  onConnection(
+    callback: (connection: WorkbenchConnection | null) => void,
+  ): () => void;
   launchUrl(launch: WorkbenchLaunch): string | null;
   /** Close the bridge's layer, as an unload does, while the server stays up. */
   unload(): Promise<void>;
@@ -171,7 +179,8 @@ async function harness(
   );
   await runtime.context();
   const service = runtime.runSync(LocalBridge);
-  const handle = bindLocalBridge(effectBridge(runtime), service);
+  const runner = effectBridge(runtime);
+  const handle = bindLocalBridge(runner, service);
   const bound = await whenListening(localServer);
   const call = (path: string, init: CallInit = {}): Promise<Response> =>
     fetch(`http://127.0.0.1:${bound}${path}`, {
@@ -183,6 +192,11 @@ async function harness(
   const lifetime = stack.move();
   return {
     handle,
+    connection: () => runner.runSync(service.connection),
+    disconnect: () => runner.runSync(service.disconnect),
+    onConnection: (callback) =>
+      // The current connection replays first; the tab follows a change.
+      runner.subscribe(Stream.drop(service.changes, 1), callback),
     launchUrl,
     unload: () => bridgeStack.disposeAsync(),
     settings,
@@ -256,7 +270,7 @@ it("names the built-in Profile the way the settings tab does", async () => {
   await using bridge = await harness();
   await bridge.connect("default");
 
-  expect(bridge.handle.connection).toEqual({
+  expect(bridge.connection()).toEqual({
     origin: DOCS_SITE_URL,
     profileId: "default",
     profileName: m.settings_profile_default_name(),
@@ -300,11 +314,11 @@ it("keeps the installation id across a reload and mints a fresh one per device",
 it("revokes the credential when the plugin unloads", async () => {
   await using bridge = await harness();
   const credential = await bridge.connect();
-  expect(bridge.handle.connection).not.toBe(null);
+  expect(bridge.connection()).not.toBe(null);
 
   await bridge.unload();
 
-  expect(bridge.handle.connection).toBe(null);
+  expect(bridge.connection()).toBe(null);
   const res = await bridge.call(LOCAL_BRIDGE_PATHS.resumeSession, {
     headers: authorized(credential),
   });
@@ -315,9 +329,9 @@ it("ends the session on both sides when Obsidian disconnects", async () => {
   await using bridge = await harness();
   const credential = await bridge.connect();
 
-  bridge.handle.disconnect();
+  bridge.disconnect();
 
-  expect(bridge.handle.connection).toBe(null);
+  expect(bridge.connection()).toBe(null);
   const res = await bridge.call(LOCAL_BRIDGE_PATHS.resumeSession, {
     headers: authorized(credential),
   });
@@ -327,12 +341,12 @@ it("ends the session on both sides when Obsidian disconnects", async () => {
 it("tells the setting tab of each connection change, and only of a change", async () => {
   await using bridge = await harness();
   const seen: (string | null)[] = [];
-  const off = bridge.handle.on("connection", (connection) =>
+  const off = bridge.onConnection((connection) =>
     seen.push(connection?.profileName ?? null),
   );
 
   await bridge.connect();
-  bridge.handle.disconnect();
+  bridge.disconnect();
   off();
   // A change after the subscription ends reaches nothing.
   await bridge.connect();
@@ -343,7 +357,7 @@ it("tells the setting tab of each connection change, and only of a change", asyn
 it("announces a Save that landed in the vault", async () => {
   await using bridge = await harness();
   const saved: string[] = [];
-  const off = bridge.handle.on("profile-saved", (profileId) =>
+  const off = bridge.handle.onProfileSaved((profileId) =>
     saved.push(profileId),
   );
   const credential = await bridge.connect();
@@ -406,5 +420,5 @@ it("ends the live connection when the Workbench toggle is turned off", async () 
     bridge.settings.update({ "server.workbench": false }),
   );
 
-  expect(bridge.handle.connection).toBe(null);
+  expect(bridge.connection()).toBe(null);
 });

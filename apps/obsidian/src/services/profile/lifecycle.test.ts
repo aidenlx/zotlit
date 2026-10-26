@@ -8,7 +8,7 @@ import type { ProfileId } from "@/lib/profile-stamp";
 import { createTemplateHost } from "@/services/template/__fixtures__";
 
 import { profileOver, profileRuntimeOf } from "./__fixtures__";
-import { Profile } from "./service";
+import { Profile, ProfileOperationError } from "./service";
 
 it.effect("#1705: a built Profile exposes and replays its first registry", () =>
   Effect.gen(function* () {
@@ -124,12 +124,12 @@ it.effect(
           }),
         ),
       );
-      const { profile } = yield* profileRuntimeOf(host);
+      const { profile, profileService } = yield* profileRuntimeOf(host);
       yield* Effect.promise(() =>
         expect(profile.materializeDefault()).rejects.toThrow(),
       );
-      yield* Effect.promise(() =>
-        expect(profile.ejectDefault()).rejects.toThrow(),
+      expect(yield* Effect.flip(profileService.ejectDefault())).toBeInstanceOf(
+        ProfileOperationError,
       );
       expect([...host.vault.contents.keys()]).toEqual([]);
     }),
@@ -159,11 +159,6 @@ it.effect(
       expect(profile.resolveProfile("default")).toBeDefined();
       yield* Effect.promise(() =>
         expect(profile.getSource("default")).rejects.toMatchObject({
-          name: "AbortError",
-        }),
-      );
-      yield* Effect.promise(() =>
-        expect(profile.prepareShare("default")).rejects.toMatchObject({
           name: "AbortError",
         }),
       );
@@ -217,7 +212,8 @@ it.effect.each(["read", "create", "duplicate"] as const)(
   (operation) =>
     Effect.gen(function* () {
       const host = createTemplateHost();
-      const { runtime, profile } = yield* profileRuntimeOf(host);
+      const { runtime, profile, profileService } =
+        yield* profileRuntimeOf(host);
       const creating = profile.materializeDefault();
       yield* TestClock.adjust(500);
       yield* Effect.promise(() => creating);
@@ -227,18 +223,24 @@ it.effect.each(["read", "create", "duplicate"] as const)(
         started.resolve();
         return release.promise;
       });
-      const pending =
+      const settled = (pending: Promise<unknown>) => {
+        const caught = pending.catch((error: unknown) => error);
+        return Effect.promise(() => caught);
+      };
+      const reading: Effect.Effect<unknown> =
         operation === "read"
-          ? profile.getSource("default")
+          ? settled(profile.getSource("default"))
           : operation === "create"
-            ? profile.create({ label: "Late creation" })
-            : profile.duplicate("default");
-      const reading = pending.catch((error: unknown) => error);
+            ? settled(profile.create({ label: "Late creation" }))
+            : Fiber.join(
+                yield* Effect.forkChild(
+                  Effect.exit(profileService.duplicate("default")),
+                  { startImmediately: true },
+                ),
+              );
       yield* Effect.promise(() => started.promise);
       yield* Effect.promise(() => runtime.dispose());
-      expect(String(yield* Effect.promise(() => reading))).not.toContain(
-        "ManagedRuntime disposed",
-      );
+      expect(String(yield* reading)).not.toContain("ManagedRuntime disposed");
       release.resolve(profile.getBuiltInSource());
       yield* TestClock.adjust(500);
       expect([...host.vault.contents.keys()]).toEqual([

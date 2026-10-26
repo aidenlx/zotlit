@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
-import { Effect } from "effect";
+import { Context, Effect } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
-import type { ManagedBinaryApi } from "@/services/managed-binary/service";
+import { PandocEngine } from "@/services/pandoc/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -25,27 +25,38 @@ beforeAll(() => {
     document.createElement(tag)) as typeof createEl;
 });
 
+/** The tab over a Pandoc engine that is not installed. */
+const pandocTab = () =>
+  testSettingTab(
+    profileRowServices({ template: { loaded: Effect.succeed(false) } }).pipe(
+      Context.add(
+        PandocEngine,
+        stubService<PandocEngine["Service"]>("PandocEngine", {
+          getStatus: Effect.succeed({ kind: "absent" }),
+        }),
+      ),
+    ),
+  ).tab;
+
+/** The Citations page context over `settings`, with the Graph plugin off. */
+const citationsContext = (settings: Settings) =>
+  stubService<SettingTabContext>("SettingTabContext", {
+    tab: pandocTab(),
+    app: stubService<SettingTabContext["app"]>("App", {
+      internalPlugins: { getEnabledPluginById: () => null },
+    }),
+    settings: stubService<SettingTabContext["settings"]>("Settings", {
+      current: Effect.succeed(settings),
+    }),
+    manifest: stubService<SettingTabContext["manifest"]>("PluginManifest", {
+      version: "test",
+    }),
+  });
+
 describe("hover settings", () => {
   /** The Hover group's rows for a given saved hover action. */
   const hoverRows = (settings: Settings) => {
-    const ctx = {
-      tab: testSettingTab(
-        profileRowServices({ template: { loaded: Effect.succeed(false) } }),
-      ).tab,
-      app: { internalPlugins: { getEnabledPluginById: () => null } },
-      settings: { current: Effect.succeed(settings) },
-      pandocEngine: {
-        binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
-          "PandocEngine",
-          {
-            getStatus: Effect.succeed({ kind: "absent" }),
-          },
-        ),
-        runSync: Effect.runSync,
-        runPromise: Effect.runPromise,
-      },
-      manifest: { version: "test" },
-    } as unknown as SettingTabContext;
+    const ctx = citationsContext(settings);
     const group = citationsPageItems(ctx).find(
       (item) =>
         "type" in item &&
@@ -72,24 +83,7 @@ describe("hover settings", () => {
 
 describe("citation source settings", () => {
   it("offers each citation syntax as a source", () => {
-    const ctx = {
-      tab: testSettingTab(
-        profileRowServices({ template: { loaded: Effect.succeed(false) } }),
-      ).tab,
-      app: { internalPlugins: { getEnabledPluginById: () => null } },
-      settings: { current: Effect.succeed(defaults) },
-      pandocEngine: {
-        binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
-          "PandocEngine",
-          {
-            getStatus: Effect.succeed({ kind: "absent" }),
-          },
-        ),
-        runSync: Effect.runSync,
-        runPromise: Effect.runPromise,
-      },
-      manifest: { version: "test" },
-    } as unknown as SettingTabContext;
+    const ctx = citationsContext(defaults);
     const sourceGroup = citationsPageItems(ctx).find(
       (item) =>
         "type" in item &&

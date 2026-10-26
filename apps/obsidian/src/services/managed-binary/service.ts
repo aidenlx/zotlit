@@ -2,6 +2,7 @@
 
 import {
   Cause,
+  Deferred,
   Effect,
   Exit,
   Fiber,
@@ -14,7 +15,6 @@ import {
 } from "effect";
 import type { Context, Stream } from "effect";
 
-import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
 
@@ -95,10 +95,16 @@ export type ManagedBinaryStatus =
   /** No binary is cached, and this vault dismissed the offer. */
   | { kind: "declined" }
   /**
-   * An install runs. `binary` is the location that stays readable meanwhile:
-   * the one installed before a reinstall, or `null`.
+   * An install runs. `done` completes as the install ends, failing as it
+   * fails, so a second caller sees the same error. `binary` is the location
+   * that stays readable meanwhile: the one installed before a reinstall, or
+   * `null`.
    */
-  | { kind: "installing"; done: Promise<void>; binary: BinaryLocation | null }
+  | {
+      kind: "installing";
+      done: Deferred.Deferred<void, ManagedBinaryError | HashMismatchError>;
+      binary: BinaryLocation | null;
+    }
   /** A verified binary is cached at `binary`. */
   | { kind: "installed"; version: string; binary: BinaryLocation }
   | { kind: "failed"; failure: ManagedBinaryFailure };
@@ -134,23 +140,12 @@ const attempt = <A>(
 ): Effect.Effect<A, ManagedBinaryError> =>
   Effect.tryPromise({ try: run, catch: managedBinaryError });
 
-/** The running install, failing as it fails, so a second caller sees the same error. */
-const joinInstall = (
-  done: Promise<void>,
-): Effect.Effect<void, ManagedBinaryError | HashMismatchError> =>
-  Effect.tryPromise({
-    try: () => done,
-    catch: (error) =>
-      error instanceof HashMismatchError ? error : managedBinaryError(error),
-  });
-
 const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   Engine extends Disposable | AsyncDisposable,
 >(binary: ManagedBinary<Engine>) {
   const platform = yield* ManagedBinaryPlatform;
   const { consent } = platform;
   const scope = yield* Effect.scope;
-  const { runPromise } = yield* scopedBridge;
   const store = yield* platform.openStore(binary.id);
   const name = cachedBinaryName(binary.pin);
   const location = { directory: binary.id, name };
@@ -375,20 +370,29 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   const install = Effect.gen(function* () {
     if (closed) return;
     const current = yield* SubscriptionRef.get(status);
-    if (current.kind === "installing") return yield* joinInstall(current.done);
+    if (current.kind === "installing")
+      return yield* Deferred.await(current.done);
     yield* consent.saveLocalStorage(declinedKey, null);
-    // The inherited Promise belongs to the public status contract. Its work is
-    // a scoped fiber, and this runner retains the layer's services and Clock.
-    const fiber = yield* Effect.forkIn(runInstall(), scope, {
-      uninterruptible: true,
-    });
-    const done = runPromise(Fiber.join(fiber));
-    void done.catch(() => undefined);
-    yield* setStatus({
-      kind: "installing",
-      done,
-      binary: current.kind === "installed" ? current.binary : null,
-    });
+    const done = yield* Deferred.make<
+      void,
+      ManagedBinaryError | HashMismatchError
+    >();
+    // The status names the install before its fiber starts, and nothing can
+    // interrupt in between, so `done` always completes.
+    const fiber = yield* Effect.uninterruptible(
+      Effect.gen(function* () {
+        yield* setStatus({
+          kind: "installing",
+          done,
+          binary: current.kind === "installed" ? current.binary : null,
+        });
+        return yield* Effect.forkIn(
+          runInstall().pipe(Effect.onExit((exit) => Deferred.done(done, exit))),
+          scope,
+          { uninterruptible: true },
+        );
+      }),
+    );
     yield* Fiber.join(fiber);
   }).pipe(Effect.withSpan("ManagedBinary.install"));
   const uninstall = Effect.gen(function* () {
@@ -397,7 +401,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
       Effect.gen(function* () {
         const current = yield* SubscriptionRef.get(status);
         if (current.kind === "installing")
-          yield* joinInstall(current.done).pipe(Effect.ignore);
+          yield* Deferred.await(current.done).pipe(Effect.ignore);
         yield* dropEngine();
         yield* store.clear;
         yield* consent.saveLocalStorage(declinedKey, null);

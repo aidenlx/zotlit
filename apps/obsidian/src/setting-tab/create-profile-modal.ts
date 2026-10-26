@@ -4,6 +4,7 @@ import type { App } from "obsidian";
 
 import type { NoteTemplateContext } from "@zotlit/db";
 
+import { AbortError } from "@/lib/abort-error";
 import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -19,7 +20,6 @@ import type {
 } from "@/services/profile/service";
 
 import {
-  DialogClosed,
   dialogFooter,
   field,
   footerButton,
@@ -193,7 +193,7 @@ export class CreateProfileModal extends Modal {
           this.#decision.resolve({ profile, preview: selectedPreview });
           this.close();
         } catch (error) {
-          if (error instanceof DialogClosed) return;
+          if (AbortError.test(error)) return;
           logger.error("Failed to create Profile from dialog", { error });
           reason.set(
             Error.isError(error)

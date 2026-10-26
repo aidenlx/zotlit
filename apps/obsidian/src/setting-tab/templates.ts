@@ -15,6 +15,7 @@ import { portCall } from "@/lib/legacy-port";
 import { showMenuAtButton } from "@/lib/menu";
 import { Notifier } from "@/lib/notifier";
 import { Vault } from "@/lib/obsidian-vault";
+import { leaveSettingsFor } from "@/lib/plugin-host";
 import type { AutoTrim } from "@/services/settings/schema";
 import { Template } from "@/services/template/service";
 import { openNewPartialPrompt } from "@/views/template-workbench/new-partial";
@@ -238,8 +239,7 @@ function openPartial(ctx: SettingTabContext, path: string) {
   return Effect.gen(function* () {
     const file = yield* (yield* Vault).getFileByPath(path);
     if (!file) return;
-    ctx.app.setting.close();
-    yield* portCall("open-template-workbench", () =>
+    yield* leaveSettingsFor("open-template-workbench", () =>
       openTemplateWorkbench(ctx.app, file, { explainUnsupported: false }),
     );
   });

@@ -13,6 +13,7 @@ import { ButtonComponent, Modal, SuggestModal, TextComponent } from "obsidian";
 import type { App } from "obsidian";
 import { expect, vi } from "vitest";
 
+import { until } from "@/lib/__fixtures__/eventually";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
@@ -32,6 +33,7 @@ import { Profile } from "@/services/profile/service";
 import type {
   PreparedProfileImport,
   ProfileImport,
+  ProfileImportOptions,
 } from "@/services/profile/service";
 import { workbenchContext } from "@/services/template-workbench/__fixtures__";
 import { Template } from "@/services/template/service";
@@ -449,12 +451,6 @@ const importerFixture = Effect.fnUntraced(function* (
   };
 });
 
-/** Let the dialog's fiber and the Promises it waits on run until `done`. */
-const until = Effect.fnUntraced(function* (done: () => boolean) {
-  for (let turn = 0; turn < 1000 && !done(); turn++) yield* Effect.yieldNow;
-  expect(done()).toBe(true);
-});
-
 it.effect(
   "offers two source suggestions and reads only after native close-before-choice selection",
   () =>
@@ -637,13 +633,26 @@ async function realImportFixture(held: boolean, source = incoming) {
       held ? { [importedPath]: incoming.replace("2.0.0", "1.0.0") } : {},
     ),
   );
+  // The modal's Promise members over the Profile service, as the import
+  // dialog builds them.
+  const importOn = (plan: ProfileImport): PreparedProfileImport => ({
+    ...plan,
+    previewSource: (preview) => f.bridge.runSync(plan.previewSource(preview)),
+    import: (choice) => f.bridge.runPromise(plan.import(choice)),
+  });
+  const prepareImport = (text: string, options?: ProfileImportOptions) =>
+    f.bridge.runPromise(
+      f.profileService
+        .prepareImport(text, options)
+        .pipe(Effect.map((next) => importOn(next))),
+    );
   const deps: ImportProfileDeps = {
     app: f.app,
     base: f.profile.resolveProfile("default")!,
-    prepareImport: (text, options) => f.profile.prepareImport(text, options),
+    prepareImport,
     previewNote: async () => draft(),
   };
-  const plan = await f.profile.prepareImport(source);
+  const plan = await prepareImport(source);
   const modal = new ImportProfileModal(deps, { source, plan, styles: [] });
   modal.contentEl = document.createElement("div");
   modal.modalEl = document.createElement("div");

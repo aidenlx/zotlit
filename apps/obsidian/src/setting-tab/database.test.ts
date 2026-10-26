@@ -3,16 +3,16 @@ import { expect, it } from "@effect/vitest";
 import {
   DropdownComponent,
   ExtraButtonComponent,
-  Setting,
+  renderRow,
 } from "@mock/obsidian";
 import { Effect, Layer, PubSub, Queue, Stream, SubscriptionRef } from "effect";
 import { TestClock } from "effect/testing";
-import type { Setting as ObsidianSetting, SettingGroup } from "obsidian";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
+import { SettingsMutationError } from "@/services/settings/service";
 import type {
   ZoteroPrefSnapshot,
   ZoteroProfileInfo,
@@ -63,6 +63,8 @@ const READS: ZoteroReadsState = {
  */
 const setup = Effect.fn("setup")(function* (
   refresh: ZoteroReads["Service"]["refresh"] = Effect.void,
+  update: SettingTabContext["settings"]["update"] = () =>
+    Effect.succeed(defaults),
 ) {
   const notifier = testNotifier();
   const pref = yield* SubscriptionRef.make(SNAPSHOT);
@@ -105,6 +107,7 @@ const setup = Effect.fn("setup")(function* (
     settings: stubService<SettingTabContext["settings"]>("Settings", {
       current: Effect.succeed(defaults),
       changes: Stream.empty,
+      update,
     }),
   });
   return { ctx, pref, reads, events, writes, notices: notifier.notices };
@@ -121,14 +124,9 @@ const render = Effect.fnUntraced(function* (
   const row = [databaseFileItem(ctx), ...databaseLocationItems(ctx)].find(
     (item) => item.id === id,
   );
-  if (!row || !("render" in row) || !row.render)
-    throw new Error(`Expected a render row: ${id}`);
-  const setting = new Setting(document.createElement("div"));
-  const cleanup = row.render(
-    setting as unknown as ObsidianSetting,
-    stubService<SettingGroup>("SettingGroup", {}),
-  );
-  yield* Effect.addFinalizer(() => Effect.sync(() => cleanup?.()));
+  if (!row) throw new Error(`Expected a render row: ${id}`);
+  const setting = renderRow(row);
+  yield* Effect.addFinalizer(() => Effect.sync(() => setting.cleanup?.()));
   const dropdown = setting.components.find(
     (control) => control instanceof DropdownComponent,
   );
@@ -291,6 +289,27 @@ it.effect("reports a refresh from the database row as it ends", () =>
     row.button!.click();
     yield* settle;
     expect(messages(notices)).toEqual([m.notice_db_refreshed()]);
+  }),
+);
+
+it.effect("shows a failed read mode save in a notice", () =>
+  Effect.gen(function* () {
+    const { ctx, notices } = yield* setup(Effect.void, () =>
+      Effect.fail(
+        new SettingsMutationError({
+          message: "Settings are read-only",
+          cause: null,
+        }),
+      ),
+    );
+    const row = yield* render(ctx, "settings_db_read_mode");
+    yield* settle;
+
+    row.dropdown!.choose("immutable");
+    yield* settle;
+    expect(messages(notices)).toEqual([
+      `${m.settings_failed_save()}: Settings are read-only`,
+    ]);
   }),
 );
 

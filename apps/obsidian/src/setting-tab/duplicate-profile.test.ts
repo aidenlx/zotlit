@@ -1,12 +1,12 @@
 // @vitest-environment happy-dom
 import { it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
-import type { App } from "obsidian";
 import { describe, expect, vi } from "vitest";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { PluginHost } from "@/lib/plugin-host";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { Profile } from "@/services/profile/service";
@@ -35,14 +35,9 @@ describe("Duplicate Profile workbench handoff", () => {
         });
         const duplicate = vi.fn(() => Effect.succeed(COPY));
         const notifier = testNotifier();
-        const ctx = stubService<Pick<SettingTabContext, "app" | "customize">>(
+        const ctx = stubService<Pick<SettingTabContext, "customize">>(
           "SettingTabContext",
-          {
-            app: stubService<App>("App", {
-              setting: stubService<App["setting"]>("SettingsModal", { close }),
-            }),
-            customize,
-          },
+          { customize },
         );
 
         yield* duplicateProfileToWorkbench(ctx, id as ProfileSelector).pipe(
@@ -56,6 +51,12 @@ describe("Duplicate Profile workbench handoff", () => {
                   }),
                 duplicate,
               }),
+              Layer.succeed(
+                PluginHost,
+                stubService<PluginHost["Service"]>("PluginHost", {
+                  closeSettings: Effect.sync(close),
+                }),
+              ),
               notifier.layer,
             ),
           ),

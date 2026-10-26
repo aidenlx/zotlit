@@ -5,11 +5,12 @@ import { Deferred, Effect, Exit, Layer, Scope, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect } from "vitest";
 
+import { eventually } from "@/lib/__fixtures__/eventually";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import type { RecordedNotice } from "@/lib/__fixtures__/notifier";
 import * as m from "@/lib/i18n/generated/messages";
 
-import { CHINESE_PACK, eventually, fakeDevice, startOn } from "./__fixtures__";
+import { CHINESE_PACK, fakeDevice, startOn } from "./__fixtures__";
 import type { FakeDevice } from "./__fixtures__";
 import { layerLanguagePackNotices } from "./notices";
 import { LanguagePack } from "./service";

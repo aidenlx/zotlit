@@ -1,7 +1,8 @@
 // The setting tab as a scoped layer: it registers the tab, keeps its
 // definitions current, and removes it when its Scope closes.
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { Duration, Effect, Exit, Layer, Scope, Stream } from "effect";
-import type { ManagedRuntime } from "effect";
+import type { FileSystem, ManagedRuntime } from "effect";
 import type { Plugin } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
@@ -9,8 +10,11 @@ import { forkEach } from "@/lib/effect-stream";
 import { layerNotifier } from "@/lib/notifier";
 import type { Notifier } from "@/lib/notifier";
 import { layerPluginHost, PluginHost } from "@/lib/plugin-host";
+import { AttachmentImport } from "@/services/attachment-import/service";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
+import { LanguagePack } from "@/services/language-pack/service";
 import { LibraryScope, scopeChanges } from "@/services/library-scope/service";
+import { LocalBridge } from "@/services/local-bridge/service";
 import { LocalServer } from "@/services/local-server/service";
 import { PandocEngine } from "@/services/pandoc/service";
 import { Profile } from "@/services/profile/service";
@@ -29,7 +33,7 @@ import { ZotLitSettingTab } from "./index";
  */
 export type SettingTabLegacy = Omit<
   SettingTabContext,
-  "tab" | "app" | "manifest" | "settings" | "requestUpdate"
+  "tab" | "app" | "manifest" | "settings"
 >;
 
 /**
@@ -56,15 +60,13 @@ export function layerSettingTab(legacy: SettingTabLegacy) {
       const host = yield* PluginHost;
       const settings = yield* PluginSettings;
       let tab: ZotLitSettingTab | undefined;
-      const requestUpdate = () => tab?.update();
-      const service = yield* makeSettingTab(requestUpdate);
+      const service = yield* makeSettingTab(() => tab?.update());
       tab = yield* host.addSettingTab(
         (plugin) =>
           new ZotLitSettingTab(plugin, {
             ...legacy,
             settings,
             tab: service,
-            requestUpdate,
           }),
       );
 
@@ -77,17 +79,26 @@ export function layerSettingTab(legacy: SettingTabLegacy) {
       const pandocEngine = yield* PandocEngine;
       const chineseSegmenter = yield* ChineseSegmenter;
       const libraryScope = yield* LibraryScope;
+      const attachmentImport = yield* AttachmentImport;
+      const localBridge = yield* LocalBridge;
+      const languagePack = yield* LanguagePack;
       yield* forkEach(
         Stream.mergeAll(
           [
             // The Local server rows name the port the listener bound.
             signal(Stream.drop(localServer.effectivePortChanges, 1)),
+            // The Workbench Connection row stands only while a connection does.
+            signal(Stream.drop(localBridge.changes, 1)),
+            // The Language Pack row stands only while a pack is offered.
+            signal(Stream.drop(languagePack.changes, 1)),
             signal(Stream.drop(profile.changes, 1)),
             template.compileEvents,
             signal(Stream.drop(pandocEngine.changes, 1)),
             signal(Stream.drop(chineseSegmenter.changes, 1)),
             // A database refresh, a group rename, or a repair moves the scope.
             signal(scopeChanges(libraryScope.changes)),
+            // The Approved folders list names each grant.
+            signal(Stream.drop(attachmentImport.approvedFoldersChanges, 1)),
             signal(
               settings.changes.pipe(
                 Stream.map((current) => reminderFlags(current)),
@@ -102,17 +113,6 @@ export function layerSettingTab(legacy: SettingTabLegacy) {
         ).pipe(Stream.debounce(REBUILD_SETTLE)),
         () => service.update,
       );
-
-      // The Workbench Connection row and the Language Pack rows follow
-      // services that are not tags yet.
-      yield* Effect.acquireRelease(
-        Effect.sync(() => legacy.localBridge.on("connection", requestUpdate)),
-        (off) => Effect.sync(off),
-      );
-      yield* Effect.acquireRelease(
-        Effect.sync(() => legacy.languagePack.subscribe(requestUpdate)),
-        (off) => Effect.sync(off),
-      );
     }),
   );
 }
@@ -126,7 +126,10 @@ export function layerSettingTab(legacy: SettingTabLegacy) {
 export function startSettingTab(
   runtime: Pick<
     ManagedRuntime.ManagedRuntime<
-      Exclude<SettingTabEnv, SettingTab | Notifier>,
+      Exclude<
+        SettingTabEnv,
+        SettingTab | Notifier | FileSystem.FileSystem | PluginHost
+      >,
       never
     >,
     "runSync" | "runPromise" | "scope"
@@ -140,7 +143,13 @@ export function startSettingTab(
     runtime.runSync(
       Layer.buildWithScope(
         layerSettingTab(legacy).pipe(
-          Layer.provide(Layer.mergeAll(layerPluginHost(plugin), layerNotifier)),
+          Layer.provide(
+            Layer.mergeAll(
+              layerPluginHost(plugin),
+              layerNotifier,
+              NodeFileSystem.layer,
+            ),
+          ),
         ),
         scope,
       ),

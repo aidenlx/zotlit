@@ -5,22 +5,21 @@ import {
   ExtraButtonComponent,
   Menu,
   Modal,
-  Setting,
+  renderRow,
 } from "@mock/obsidian";
 import { Effect, Layer, Queue } from "effect";
 import { SuggestModal, TFile } from "obsidian";
 import type {
   App,
   ExtraButtonComponent as ObsidianExtraButton,
-  Setting as ObsidianSetting,
   SettingDefinitionItem,
   SettingDefinitionList,
   SettingDefinitionPage,
-  SettingGroup,
 } from "obsidian";
 import { describe, expect, vi } from "vitest";
 
 import { answerConfirmation } from "@/lib/__fixtures__/confirm";
+import { eventually, until } from "@/lib/__fixtures__/eventually";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { FileManager } from "@/lib/obsidian-file-manager";
@@ -42,7 +41,7 @@ import {
   openTemplateWorkbench,
 } from "@/views/template-workbench/register";
 
-import { scopedSettingTab } from "./__fixtures__";
+import { rebuildingSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
 import { profileControlValue, setProfileControlValue } from "./controls";
 import { literatureNoteItems, profilesPage } from "./profiles";
@@ -96,7 +95,7 @@ const tabOver = Effect.fnUntraced(function* (
     current: Effect.succeed(fakes.settings ?? defaults),
     updateDefaultLiteratureNoteProfileBindings: vi.fn(() => Effect.void),
   };
-  const services = yield* Layer.build(
+  const { tab, rebuilt } = yield* rebuildingSettingTab(
     Layer.mergeAll(
       Layer.mock(Profile, {
         loaded: Effect.succeed(true),
@@ -118,18 +117,10 @@ const tabOver = Effect.fnUntraced(function* (
       Layer.mock(PluginSettings, settings),
     ),
   );
-  const rebuilt = yield* Queue.unbounded<void>();
-  const { tab } = yield* scopedSettingTab(services, {
-    update: () => Queue.offerUnsafe(rebuilt, undefined),
-  });
   const customize = vi.fn<CustomizeAction>(async () => {});
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
     tab,
-    app: stubService<App>("App", {
-      setting: stubService<App["setting"]>("SettingsModal", {
-        close: vi.fn(),
-      }),
-    }),
+    app: stubService<App>("App", {}),
     customize,
     settings: stubService<SettingTabContext["settings"]>("Settings", settings),
   });
@@ -141,28 +132,16 @@ const everyFile = {
   getFileByPath: (path: string) => Effect.succeed(fileAt(path)),
 };
 
-/** The rendered row, so a test reads the controls the user gets. */
-function render(row: SettingDefinitionItem): Setting {
-  if (!("render" in row) || !row.render)
-    throw new Error("Expected a render row");
-  const setting = new Setting(document.createElement("div"));
-  row.render(
-    setting as unknown as ObsidianSetting,
-    stubService<SettingGroup>("SettingGroup", {}),
-  );
-  return setting;
-}
-
 /** What a `render` row's buttons are labelled by, icon tooltip included. */
 function buttonLabels(row: SettingDefinitionItem): string[] {
-  return render(row)
+  return renderRow(row)
     .components.filter((control) => control instanceof ButtonComponent)
     .map((button) => button.text || button.tooltip);
 }
 
 /** The icons a `render` row's buttons carry, in order. */
 function buttonIcons(row: SettingDefinitionItem): string[] {
-  return render(row)
+  return renderRow(row)
     .components.filter((control) => control instanceof ButtonComponent)
     .map((button) => button.icon);
 }
@@ -192,7 +171,7 @@ function documentRow(ctx: SettingTabContext): SettingDefinitionItem {
 
 /** The tooltips a `render` row's icon buttons carry, in order. */
 function extraButtonTooltips(row: SettingDefinitionItem): string[] {
-  return render(row)
+  return renderRow(row)
     .components.filter((control) => control instanceof ExtraButtonComponent)
     .map((button) => button.tooltip);
 }
@@ -211,7 +190,7 @@ function pageRows(ctx: SettingTabContext): {
 
 /** The titles of the menu a row's More actions button opens. */
 function moreActions(row: SettingDefinitionItem): string[] {
-  const more = render(row)
+  const more = renderRow(row)
     .components.filter((control) => control instanceof ExtraButtonComponent)
     .find((button) => button.icon === "more-horizontal")!;
   Object.assign(more, { extraSettingsEl: document.createElement("button") });
@@ -220,7 +199,7 @@ function moreActions(row: SettingDefinitionItem): string[] {
 }
 
 function customizeButton(row: SettingDefinitionItem): ButtonComponent {
-  const button = render(row)
+  const button = renderRow(row)
     .components.filter((control) => control instanceof ButtonComponent)
     .find(({ tooltip }) => tooltip === m.settings_profile_edit());
   if (!button) throw new Error("No Customize button");
@@ -420,7 +399,7 @@ it.effect(
       ).toBe(true);
 
       const excluded = list(page, m.settings_profile_excluded_heading());
-      render(excluded.items![0]!)
+      renderRow(excluded.items![0]!)
         .components.filter((control) => control instanceof ExtraButtonComponent)
         .find((button) => button.tooltip === m.settings_template_open())!
         .click();
@@ -469,7 +448,7 @@ it.effect(
       );
       const before = Modal.instances.length;
       profiles.addItem!.action(document.createElement("div"));
-      while (Modal.instances.length === before) yield* Effect.yieldNow;
+      yield* until(() => Modal.instances.length > before);
       const modal = Modal.instances.at(-1)!;
       modal.onOpen();
       expect(modal.title).toBe(m.settings_profile_add());
@@ -500,7 +479,6 @@ it.effect("asks the import flow for its own source", () =>
     profiles.extraButtons![0]!(button as unknown as ObsidianExtraButton);
     expect(button.tooltip).toBe(m.command_import_profile_name());
     button.click();
-    while (opened.mock.calls.length === 0) yield* Effect.yieldNow;
-    expect(opened).toHaveBeenCalledOnce();
+    yield* eventually(() => expect(opened).toHaveBeenCalledOnce());
   }),
 );

@@ -10,7 +10,14 @@ import type { LiteratureNoteTemplateMigrationResult } from "./migration";
 import { Template } from "./service";
 import type { TemplateOperations, TemplateStatus } from "./service";
 
-export type PlainTemplate = TemplateOperations & {
+/** The Template members views, legacy services and e2e still read. */
+export type PlainTemplate = Omit<
+  TemplateOperations,
+  | "getUnrecognizedFiles"
+  | "restoreCitationTemplate"
+  | "deletePartial"
+  | "setJavascriptTemplatesEnabled"
+> & {
   readonly changes: Stream.Stream<TemplateStatus>;
   readonly "compile-status-changed": Stream.Stream<void>;
   readonly status: TemplateStatus;
@@ -65,11 +72,9 @@ export function plainTemplate(
     get loaded() {
       return read(service.loaded);
     },
-    getUnrecognizedFiles: () => read(service.getUnrecognizedFiles),
     getTemplateFileStatuses: () => read(service.getTemplateFileStatuses),
     getCitationTemplateStatus: () => read(service.getCitationTemplateStatus),
     materializeCitationTemplate: () => run(service.materializeCitationTemplate),
-    restoreCitationTemplate: () => run(service.restoreCitationTemplate),
     getLiteratureNoteTemplate: (reference) =>
       read(service.getLiteratureNoteTemplate(reference)),
     prepareLiteratureNoteTemplateSource: (source) =>
@@ -106,7 +111,6 @@ export function plainTemplate(
       run(service.unpackPartials(plan, options)),
     getReservedPartialFiles: () => read(service.getReservedPartialFiles),
     createPartial: (name, options) => run(service.createPartial(name, options)),
-    deletePartial: (name) => run(service.deletePartial(name)),
     renderPartialSource: (source, data, options) =>
       read(service.renderPartialSource(source, data, options)),
     renderCitationSource: (source, data) =>
@@ -123,8 +127,6 @@ export function plainTemplate(
       run(service.convertLegacyLiteratureNoteTemplates(data)),
     validateFrontmatterExpr: (expr, language) =>
       read(service.validateFrontmatterExpr(expr, language)),
-    setJavascriptTemplatesEnabled: (enabled) =>
-      run(service.setJavascriptTemplatesEnabled(enabled)),
     changes: service.changes,
     "compile-status-changed": service.compileEvents,
   };

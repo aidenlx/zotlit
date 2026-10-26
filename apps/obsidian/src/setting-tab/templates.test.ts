@@ -4,18 +4,12 @@ import {
   ButtonComponent,
   ExtraButtonComponent,
   Menu,
-  Setting,
+  renderRow,
 } from "@mock/obsidian";
+import type { Setting } from "@mock/obsidian";
 import { Effect, Layer, Queue } from "effect";
 import { TFile } from "obsidian";
-import type {
-  App,
-  Modal,
-  Setting as ObsidianSetting,
-  SettingDefinitionItem,
-  SettingDefinitionList,
-  SettingGroup,
-} from "obsidian";
+import type { App, Modal, SettingDefinitionList } from "obsidian";
 import { expect, vi } from "vitest";
 
 import { answerConfirmation } from "@/lib/__fixtures__/confirm";
@@ -27,7 +21,7 @@ import type { CitationTemplateStatus } from "@/services/template/service";
 import { openNewPartialPrompt } from "@/views/template-workbench/new-partial";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
-import { scopedSettingTab } from "./__fixtures__";
+import { rebuildingSettingTab } from "./__fixtures__";
 import type { SettingsKey, SettingTabContext } from "./context";
 import { citationTextItems, partialItems } from "./templates";
 
@@ -38,20 +32,8 @@ vi.mock("@/views/template-workbench/new-partial", () => ({
   openNewPartialPrompt: vi.fn(),
 }));
 
-/** The rendered row, so a test reads the controls the user gets. */
-function renderItem(row: SettingDefinitionItem): Setting {
-  if (!("render" in row) || !row.render)
-    throw new Error("Expected a render row");
-  const setting = new Setting(document.createElement("div"));
-  row.render(
-    setting as unknown as ObsidianSetting,
-    stubService<SettingGroup>("SettingGroup", {}),
-  );
-  return setting;
-}
-
 /**
- * The tab context over `template` and `vault`, in an App whose Settings window
+ * The tab context over `template` and `vault`, with a settings window that
  * closes through `close`. `rebuilt` takes one element per definition rebuild
  * an action asks for.
  */
@@ -62,21 +44,14 @@ const tabOver = Effect.fnUntraced(function* (
     close?: () => void;
   } = {},
 ) {
-  const services = yield* Layer.build(
-    Layer.mergeAll(
+  const { tab, rebuilt } = yield* rebuildingSettingTab(
+    Layer.merge(
       Layer.mock(Template, template),
       Layer.mock(Vault, options.vault ?? {}),
     ),
+    options,
   );
-  const rebuilt = yield* Queue.unbounded<void>();
-  const { tab } = yield* scopedSettingTab(services, {
-    update: () => Queue.offerUnsafe(rebuilt, undefined),
-  });
-  const app = stubService<App>("App", {
-    setting: stubService<App["setting"]>("SettingsModal", {
-      close: options.close ?? vi.fn(),
-    }),
-  });
+  const app = stubService<App>("App", {});
   const ctx = stubService<SettingTabContext>("SettingTabContext", { tab, app });
   return { ctx, rebuilt };
 });
@@ -99,7 +74,7 @@ const citationRow = Effect.fnUntraced(function* (
   });
   const [row] = citationTextItems(ctx);
   if (!row) throw new Error("Expected one Citation text render row");
-  return renderItem(row);
+  return renderRow(row);
 });
 
 /** The row's description, as `setDesc` received it. */
@@ -201,10 +176,10 @@ it.effect("offers Open for each partial", () =>
     });
     const list = partialList(ctx);
 
-    expect(tooltips(renderItem(list.items![0]!))).toEqual([
+    expect(tooltips(renderRow(list.items![0]!))).toEqual([
       m.settings_partial_open(),
     ]);
-    expect(tooltips(renderItem(list.items![1]!))).toEqual([
+    expect(tooltips(renderRow(list.items![1]!))).toEqual([
       m.settings_partial_open(),
     ]);
   }),
@@ -222,7 +197,7 @@ it.effect(
         getReservedPartialFiles: Effect.succeed([]),
         deletePartial,
       });
-      const more = renderItem(partialList(ctx).items![0]!)
+      const more = renderRow(partialList(ctx).items![0]!)
         .components.filter((control) => control instanceof ExtraButtonComponent)
         .find((button) => button.icon === "more-horizontal")!;
       Object.assign(more, {

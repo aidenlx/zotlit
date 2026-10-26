@@ -22,6 +22,18 @@ it.effect(
     }),
 );
 
+it.effect(
+  "only logs what reaches it from a handler that reports its own outcome",
+  () =>
+    Effect.gen(function* () {
+      const { tab, notices } = yield* scopedSettingTab();
+      yield* Effect.promise(() =>
+        tab.run(Effect.fail(new DiskFull({ message: "disk full" }))),
+      );
+      expect(notices).toEqual([]);
+    }),
+);
+
 it.effect("ends an interrupted handler without a notice", () =>
   Effect.gen(function* () {
     const { tab, notices } = yield* scopedSettingTab();

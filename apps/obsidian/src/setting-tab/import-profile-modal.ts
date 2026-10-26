@@ -8,6 +8,7 @@ import {
 } from "obsidian";
 import type { App, ButtonComponent } from "obsidian";
 
+import { AbortError } from "@/lib/abort-error";
 import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -23,7 +24,6 @@ import type {
 } from "@/services/profile/service";
 
 import {
-  DialogClosed,
   NOTE_CLASS,
   dialogFooter,
   field,
@@ -394,7 +394,7 @@ export class ImportProfileModal extends Modal {
       this.close();
       new BaseNotice(profileImportNotice(profile));
     } catch (cause) {
-      if (cause instanceof DialogClosed) return;
+      if (AbortError.test(cause)) return;
       logger.error("Failed to write imported Profile", { cause });
       error.set(
         Error.isError(cause) ? cause.message : m.notice_profile_action_failed(),

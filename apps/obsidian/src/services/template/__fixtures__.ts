@@ -74,7 +74,10 @@ export async function buildTemplate(
     stack,
   );
   await runtime.context();
-  const service = Object.assign(plainTemplate(runtime), { runtime });
+  const service = Object.assign(plainTemplate(runtime), {
+    runtime,
+    templateService: runtime.runSync(Template),
+  });
   const lifetime = stack.move();
   return Object.assign(service, {
     [Symbol.asyncDispose]: () => lifetime.disposeAsync(),

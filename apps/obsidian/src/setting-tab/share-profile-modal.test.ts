@@ -1,32 +1,34 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { it as effectIt } from "@effect/vitest";
 import {
   ButtonComponent,
   ExtraButtonComponent,
   Menu,
   Modal,
-  Setting,
   TextComponent,
   ToggleComponent,
   settingsOf,
+  renderRow,
 } from "@mock/obsidian";
-import { Effect, Fiber } from "effect";
+import { Effect, Fiber, Layer } from "effect";
 // @vitest-environment happy-dom
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Setting as ObsidianSetting, SettingGroup } from "obsidian";
-import { expect, it, vi } from "vitest";
+import { expect, vi } from "vitest";
 
 import { TemplateFacade } from "@zotlit/templates/facade";
 
+import { eventually, until } from "@/lib/__fixtures__/eventually";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
-import type { ProfileId } from "@/lib/profile-stamp";
+import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
 import * as nativeDialog from "@/lib/require";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
+import type { Profile, ProfileShareOptions } from "@/services/profile/service";
 
-import { testSettingTab } from "./__fixtures__";
+import { scopedSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
 import { shareProfile } from "./profile-dialogs";
 import { profilesPage } from "./profiles";
@@ -70,6 +72,19 @@ function recordedOutput() {
   });
 }
 
+/** `selector`'s Share plan, with `render` run as the Share dialog runs it. */
+const sharePlan = Effect.fnUntraced(function* (
+  profile: Profile["Service"],
+  selector: ProfileSelector,
+) {
+  const plan = yield* profile.prepareShare(selector);
+  const runSync = Effect.runSyncWith(yield* Effect.context<never>());
+  return {
+    ...plan,
+    render: (options: ProfileShareOptions) => runSync(plan.render(options)),
+  };
+});
+
 function observeControls(container: HTMLElement) {
   using stack = new DisposableStack();
   const labels = stack.use(
@@ -103,133 +118,151 @@ function observeControls(container: HTMLElement) {
   };
 }
 
-it("edits share metadata, bumps the version, and hands both destinations the same bundle without changing the vault", async () => {
-  await using f = await profileServiceFixture({
-    "templates/zotlit-profile.books.md": source,
-    "templates/zotlit-partial.summary.md": "Shared summary",
-  });
-  const before = new Map(f.vault.contents);
-  const share = recordedOutput();
-  const modal = new ShareProfileModal(
-    f.app,
-    await f.profile.prepareShare(id),
-    share,
-  );
-  modal.contentEl = document.createElement("div");
-  using controls = observeControls(modal.contentEl);
-  modal.onOpen();
-  expect(controls.toggle(m.profile_share_folders()).getValue()).toBe(false);
-  expect(controls.toggle("summary").getValue()).toBe(true);
-  controls.click(m.profile_share_bump());
-  controls.type(m.profile_share_author(), "Research group");
-  controls.type(m.profile_share_description(), "Revised notes");
-  await controls.click(m.profile_share_copy());
-  const output = share.sent("clipboard")[0]!;
-  const parsed = new TemplateFacade().parseLiteratureNoteTemplate(output);
-  expect(parsed.manifest).toMatchObject({
-    id,
-    version: "1.2.4",
-    author: "Research group",
-    description: "Revised notes",
-    partials: [{ name: "summary", source: "Shared summary" }],
-  });
-  expect(parsed.manifest.folder).toBeUndefined();
-  expect(parsed.manifest.importFolder).toBeUndefined();
-  await controls.click(m.profile_share_save());
-  expect(share.sent("file")).toEqual([output]);
-  controls.toggle(m.profile_share_folders()).toggle(true);
-  await controls.click(m.profile_share_copy());
-  expect(
-    new TemplateFacade().parseLiteratureNoteTemplate(
-      share.sent("clipboard")[1]!,
-    ).manifest,
-  ).toMatchObject({
-    folder: "Books",
-    importFolder: "Imported",
-  });
-  expect(f.vault.contents).toEqual(before);
-  modal.onClose();
-});
-
-it("keeps an empty version inline and hands nothing over until it is valid", async () => {
-  await using f = await profileServiceFixture();
-  const share = recordedOutput();
-  const modal = new ShareProfileModal(
-    f.app,
-    await f.profile.prepareShare("default"),
-    share,
-  );
-  modal.contentEl = document.createElement("div");
-  using controls = observeControls(modal.contentEl);
-  modal.onOpen();
-  controls.type(m.profile_share_version(), "");
-  expect(modal.contentEl.textContent).toContain(
-    m.profile_share_version_required(),
-  );
-  await controls.click(m.profile_share_copy());
-  expect(share).not.toHaveBeenCalled();
-  controls.type(m.profile_share_version(), "1.0.0");
-  await controls.click(m.profile_share_save());
-  expect(share).toHaveBeenCalledOnce();
-  expect(f.vault.contents.size).toBe(0);
-  modal.onClose();
-});
-
-it.each(["default", id] as const)(
-  "opens Share from the %s settings row",
-  async (selector) => {
-    await using f = await profileServiceFixture({
-      "templates/zotlit-profile.books.md": source,
-      "templates/zotlit-partial.summary.md": "Shared summary",
-    });
-    using opened = vi.spyOn(Modal.prototype, "open");
-    const container = document.createElement("div");
-    const page = profilesPage(
-      stubService<SettingTabContext>("SettingTabContext", {
-        tab: testSettingTab(await f.runtime.context()).tab,
-        app: f.app,
-        settings: stubService<SettingTabContext["settings"]>("Settings", {
-          current: f.settings.current,
-        }),
-      }),
-    );
-    const label =
-      selector === "default" ? m.settings_profile_default_name() : "Books";
-    // Default sits on the page itself; every other Profile is a list row.
-    const rows = page.items!.flatMap((item) =>
-      "type" in item && item.type === "list" ? (item.items ?? []) : [item],
-    );
-    const row = rows.find((item) => "name" in item && item.name === label);
-    if (!row || !("render" in row)) throw new Error("Profile row missing");
-    const setting = new Setting(container);
-    row.render?.(
-      setting as unknown as ObsidianSetting,
-      stubService<SettingGroup>("SettingGroup", {}),
-    );
-    const more = setting.components
-      .filter((control) => control instanceof ExtraButtonComponent)
-      .find((button) => button.tooltip === m.workbench_more_actions())!;
-    Object.assign(more, { extraSettingsEl: document.createElement("button") });
-    more.click();
-    Menu.instances
-      .at(-1)!
-      .items.find((item) => item.title === m.settings_profile_share())!
-      .click();
-    await vi.waitFor(() => expect(opened).toHaveBeenCalledOnce());
-    const modal = opened.mock.instances[0] as unknown as ShareProfileModal;
-    modal.contentEl = document.createElement("div");
-    modal.onOpen();
-    expect((modal as unknown as Modal).title).toBe(
-      m.profile_share_title({ label }),
-    );
-    modal.onClose();
-  },
+effectIt.effect(
+  "edits share metadata, bumps the version, and hands both destinations the same bundle without changing the vault",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* Effect.acquireDisposable(
+        Effect.promise(() =>
+          profileServiceFixture({
+            "templates/zotlit-profile.books.md": source,
+            "templates/zotlit-partial.summary.md": "Shared summary",
+          }),
+        ),
+      );
+      const before = new Map(f.vault.contents);
+      const share = recordedOutput();
+      const modal = new ShareProfileModal(
+        f.app,
+        yield* sharePlan(f.profileService, id),
+        share,
+      );
+      modal.contentEl = document.createElement("div");
+      using controls = observeControls(modal.contentEl);
+      modal.onOpen();
+      expect(controls.toggle(m.profile_share_folders()).getValue()).toBe(false);
+      expect(controls.toggle("summary").getValue()).toBe(true);
+      controls.click(m.profile_share_bump());
+      controls.type(m.profile_share_author(), "Research group");
+      controls.type(m.profile_share_description(), "Revised notes");
+      yield* Effect.promise(async () => controls.click(m.profile_share_copy()));
+      const output = share.sent("clipboard")[0]!;
+      const parsed = new TemplateFacade().parseLiteratureNoteTemplate(output);
+      expect(parsed.manifest).toMatchObject({
+        id,
+        version: "1.2.4",
+        author: "Research group",
+        description: "Revised notes",
+        partials: [{ name: "summary", source: "Shared summary" }],
+      });
+      expect(parsed.manifest.folder).toBeUndefined();
+      expect(parsed.manifest.importFolder).toBeUndefined();
+      yield* Effect.promise(async () => controls.click(m.profile_share_save()));
+      expect(share.sent("file")).toEqual([output]);
+      controls.toggle(m.profile_share_folders()).toggle(true);
+      yield* Effect.promise(async () => controls.click(m.profile_share_copy()));
+      expect(
+        new TemplateFacade().parseLiteratureNoteTemplate(
+          share.sent("clipboard")[1]!,
+        ).manifest,
+      ).toMatchObject({
+        folder: "Books",
+        importFolder: "Imported",
+      });
+      expect(f.vault.contents).toEqual(before);
+      modal.onClose();
+    }),
 );
 
-it.each([true, false])(
+effectIt.effect(
+  "keeps an empty version inline and hands nothing over until it is valid",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* Effect.acquireDisposable(
+        Effect.promise(() => profileServiceFixture()),
+      );
+      const share = recordedOutput();
+      const modal = new ShareProfileModal(
+        f.app,
+        yield* sharePlan(f.profileService, "default"),
+        share,
+      );
+      modal.contentEl = document.createElement("div");
+      using controls = observeControls(modal.contentEl);
+      modal.onOpen();
+      controls.type(m.profile_share_version(), "");
+      expect(modal.contentEl.textContent).toContain(
+        m.profile_share_version_required(),
+      );
+      yield* Effect.promise(async () => controls.click(m.profile_share_copy()));
+      expect(share).not.toHaveBeenCalled();
+      controls.type(m.profile_share_version(), "1.0.0");
+      yield* Effect.promise(async () => controls.click(m.profile_share_save()));
+      expect(share).toHaveBeenCalledOnce();
+      expect(f.vault.contents.size).toBe(0);
+      modal.onClose();
+    }),
+);
+
+effectIt.effect.each(["default", id] as const)(
+  "opens Share from the %s settings row",
+  (selector) =>
+    Effect.gen(function* () {
+      const f = yield* Effect.acquireDisposable(
+        Effect.promise(() =>
+          profileServiceFixture({
+            "templates/zotlit-profile.books.md": source,
+            "templates/zotlit-partial.summary.md": "Shared summary",
+          }),
+        ),
+      );
+      const opened = yield* Effect.acquireDisposable(
+        Effect.sync(() => vi.spyOn(Modal.prototype, "open")),
+      );
+      const services = yield* Effect.promise(() => f.runtime.context());
+      const page = profilesPage(
+        stubService<SettingTabContext>("SettingTabContext", {
+          tab: (yield* scopedSettingTab(services)).tab,
+          app: f.app,
+          settings: stubService<SettingTabContext["settings"]>("Settings", {
+            current: f.settings.current,
+          }),
+        }),
+      );
+      const label =
+        selector === "default" ? m.settings_profile_default_name() : "Books";
+      // Default sits on the page itself; every other Profile is a list row.
+      const rows = page.items!.flatMap((item) =>
+        "type" in item && item.type === "list" ? (item.items ?? []) : [item],
+      );
+      const row = rows.find((item) => "name" in item && item.name === label);
+      if (!row) throw new Error("Profile row missing");
+      const setting = renderRow(row);
+      const more = setting.components
+        .filter((control) => control instanceof ExtraButtonComponent)
+        .find((button) => button.tooltip === m.workbench_more_actions())!;
+      Object.assign(more, {
+        extraSettingsEl: document.createElement("button"),
+      });
+      more.click();
+      Menu.instances
+        .at(-1)!
+        .items.find((item) => item.title === m.settings_profile_share())!
+        .click();
+      yield* eventually(() => expect(opened).toHaveBeenCalledOnce());
+      const modal = Modal.instances.at(-1)!;
+      expect(modal).toBeInstanceOf(ShareProfileModal);
+      modal.onOpen();
+      expect(modal.title).toBe(m.profile_share_title({ label }));
+      modal.onClose();
+    }),
+);
+
+effectIt.effect.each([true, false])(
   "shares the checkbox choice as exact text with includeMatch=%s",
-  async (includeMatch) => {
-    const prefix = `---
+  (includeMatch) =>
+    Effect.gen(function* () {
+      const prefix = `---
 # Keep sender formatting
 id: Bk3Qn7XvT2Lp
 name: 'Books'
@@ -242,129 +275,159 @@ citationStyle: null
 importColoredHighlights: false
 importAnnotationsAsTemplate: false
 `;
-    const match = `match: 'collections.within("Unknown/Reading")'\n`;
-    const suffix = `---
+      const match = `match: 'collections.within("Unknown/Reading")'\n`;
+      const suffix = `---
 {% managed %}Body{% endmanaged %}
 --- zotlit:annotation ---
 Annotation`;
-    const original = prefix + match + suffix;
-    await using f = await profileServiceFixture({
-      "templates/zotlit-profile.books.md": original,
-    });
-    const share = recordedOutput();
-    const modal = new ShareProfileModal(
-      f.app,
-      await f.profile.prepareShare(id),
-      share,
-    );
-    modal.contentEl = document.createElement("div");
-    using controls = observeControls(modal.contentEl);
-    modal.onOpen();
-    expect(controls.toggle(m.profile_share_include_match()).getValue()).toBe(
-      true,
-    );
-    controls.toggle(m.profile_share_folders()).toggle(true);
-    if (!includeMatch)
-      controls.toggle(m.profile_share_include_match()).toggle(false);
-    await controls.click(m.profile_share_copy());
-    await controls.click(m.profile_share_save());
-    const expected = prefix + (includeMatch ? match : "") + suffix;
-    expect(share.sent("clipboard")).toEqual([expected]);
-    expect(share.sent("file")).toEqual([expected]);
-    expect(f.vault.contents.get("templates/zotlit-profile.books.md")).toBe(
-      original,
-    );
-    modal.onClose();
-  },
+      const original = prefix + match + suffix;
+      const f = yield* Effect.acquireDisposable(
+        Effect.promise(() =>
+          profileServiceFixture({
+            "templates/zotlit-profile.books.md": original,
+          }),
+        ),
+      );
+      const share = recordedOutput();
+      const modal = new ShareProfileModal(
+        f.app,
+        yield* sharePlan(f.profileService, id),
+        share,
+      );
+      modal.contentEl = document.createElement("div");
+      using controls = observeControls(modal.contentEl);
+      modal.onOpen();
+      expect(controls.toggle(m.profile_share_include_match()).getValue()).toBe(
+        true,
+      );
+      controls.toggle(m.profile_share_folders()).toggle(true);
+      if (!includeMatch)
+        controls.toggle(m.profile_share_include_match()).toggle(false);
+      yield* Effect.promise(async () => controls.click(m.profile_share_copy()));
+      yield* Effect.promise(async () => controls.click(m.profile_share_save()));
+      const expected = prefix + (includeMatch ? match : "") + suffix;
+      expect(share.sent("clipboard")).toEqual([expected]);
+      expect(share.sent("file")).toEqual([expected]);
+      expect(f.vault.contents.get("templates/zotlit-profile.books.md")).toBe(
+        original,
+      );
+      modal.onClose();
+    }),
 );
 
-it("checks the partials the profile calls, and drops one the reader clears", async () => {
-  await using f = await profileServiceFixture({
-    "templates/zotlit-profile.books.md": source.replace(
-      '{% render "summary" %}',
-      '{% render "authors" %}',
-    ),
-    "templates/zotlit-partial.authors.md": "{{ zt.creators }}",
-    "templates/zotlit-partial.venue-line.md": "{{ zt.publicationTitle }}",
-  });
-  const share = recordedOutput();
-  const modal = new ShareProfileModal(
-    f.app,
-    await f.profile.prepareShare(id),
-    share,
-  );
-  modal.contentEl = document.createElement("div");
-  using controls = observeControls(modal.contentEl);
-  modal.onOpen();
-  expect(controls.toggle("authors").getValue()).toBe(true);
-  expect(controls.toggle("venue-line").getValue()).toBe(false);
+effectIt.effect(
+  "checks the partials the profile calls, and drops one the reader clears",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* Effect.acquireDisposable(
+        Effect.promise(() =>
+          profileServiceFixture({
+            "templates/zotlit-profile.books.md": source.replace(
+              '{% render "summary" %}',
+              '{% render "authors" %}',
+            ),
+            "templates/zotlit-partial.authors.md": "{{ zt.creators }}",
+            "templates/zotlit-partial.venue-line.md":
+              "{{ zt.publicationTitle }}",
+          }),
+        ),
+      );
+      const share = recordedOutput();
+      const modal = new ShareProfileModal(
+        f.app,
+        yield* sharePlan(f.profileService, id),
+        share,
+      );
+      modal.contentEl = document.createElement("div");
+      using controls = observeControls(modal.contentEl);
+      modal.onOpen();
+      expect(controls.toggle("authors").getValue()).toBe(true);
+      expect(controls.toggle("venue-line").getValue()).toBe(false);
 
-  // Checked: the call is answered inside the one shared file.
-  controls.toggle("venue-line").toggle(true);
-  await controls.click(m.profile_share_copy());
-  expect(
-    new TemplateFacade()
-      .parseLiteratureNoteTemplate(share.sent("clipboard")[0]!)
-      .manifest.partials?.map(({ name }) => name),
-  ).toEqual(["authors", "venue-line"]);
+      // Checked: the call is answered inside the one shared file.
+      controls.toggle("venue-line").toggle(true);
+      yield* Effect.promise(async () => controls.click(m.profile_share_copy()));
+      expect(
+        new TemplateFacade()
+          .parseLiteratureNoteTemplate(share.sent("clipboard")[0]!)
+          .manifest.partials?.map(({ name }) => name),
+      ).toEqual(["authors", "venue-line"]);
 
-  // Cleared: the recipient gets nothing for that name.
-  controls.toggle("venue-line").toggle(false);
-  controls.toggle("authors").toggle(false);
-  await controls.click(m.profile_share_copy());
-  expect(
-    new TemplateFacade().parseLiteratureNoteTemplate(
-      share.sent("clipboard")[1]!,
-    ).manifest.partials,
-  ).toBeUndefined();
-  modal.onClose();
-});
-
-it("shares after missing-partial recovery creates an empty document", async () => {
-  await using f = await profileServiceFixture({
-    "templates/zotlit-profile.books.md": source,
-    "templates/zotlit-partial.summary.md": "",
-  });
-
-  const plan = await f.profile.prepareShare(id);
-  const shared = new TemplateFacade().parseLiteratureNoteTemplate(
-    plan.render({
-      version: "1.2.3",
-      author: "",
-      description: "",
-      partials: ["summary"],
+      // Cleared: the recipient gets nothing for that name.
+      controls.toggle("venue-line").toggle(false);
+      controls.toggle("authors").toggle(false);
+      yield* Effect.promise(async () => controls.click(m.profile_share_copy()));
+      expect(
+        new TemplateFacade().parseLiteratureNoteTemplate(
+          share.sent("clipboard")[1]!,
+        ).manifest.partials,
+      ).toBeUndefined();
+      modal.onClose();
     }),
-  );
+);
 
-  expect(shared.manifest.partials).toEqual([
-    { name: "summary", language: "liquid", source: "" },
-  ]);
-});
+effectIt.effect(
+  "shares after missing-partial recovery creates an empty document",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* Effect.acquireDisposable(
+        Effect.promise(() =>
+          profileServiceFixture({
+            "templates/zotlit-profile.books.md": source,
+            "templates/zotlit-partial.summary.md": "",
+          }),
+        ),
+      );
 
-it("opens for a profile whose call no document answers, and names it", async () => {
-  // Story 43 leaves this behind: the reader renamed the partial file and the
-  // call in the profile still spells the old name.
-  await using f = await profileServiceFixture({
-    "templates/zotlit-profile.books.md": source,
-    "templates/zotlit-partial.venue-line.md": "{{ zt.publicationTitle }}",
-  });
-  const plan = await f.profile.prepareShare(id);
+      const plan = yield* sharePlan(f.profileService, id);
+      const shared = new TemplateFacade().parseLiteratureNoteTemplate(
+        plan.render({
+          version: "1.2.3",
+          author: "",
+          description: "",
+          partials: ["summary"],
+        }),
+      );
 
-  expect(plan.missing).toEqual(["summary"]);
-  expect(plan.reachable).toEqual([]);
-  expect(plan.partials).toEqual(["venue-line"]);
+      expect(shared.manifest.partials).toEqual([
+        { name: "summary", language: "liquid", source: "" },
+      ]);
+    }),
+);
 
-  const modal = new ShareProfileModal(f.app, plan, recordedOutput());
-  modal.contentEl = document.createElement("div");
-  using controls = observeControls(modal.contentEl);
-  modal.onOpen();
+effectIt.effect(
+  "opens for a profile whose call no document answers, and names it",
+  () =>
+    Effect.gen(function* () {
+      // Story 43 leaves this behind: the reader renamed the partial file and the
+      // call in the profile still spells the old name.
+      const f = yield* Effect.acquireDisposable(
+        Effect.promise(() =>
+          profileServiceFixture({
+            "templates/zotlit-profile.books.md": source,
+            "templates/zotlit-partial.venue-line.md":
+              "{{ zt.publicationTitle }}",
+          }),
+        ),
+      );
+      const plan = yield* sharePlan(f.profileService, id);
 
-  expect(modal.contentEl.textContent).toContain(
-    m.profile_share_missing_partials({ names: "summary" }),
-  );
-  expect(controls.toggle("venue-line").getValue()).toBe(false);
-  modal.onClose();
-});
+      expect(plan.missing).toEqual(["summary"]);
+      expect(plan.reachable).toEqual([]);
+      expect(plan.partials).toEqual(["venue-line"]);
+
+      const modal = new ShareProfileModal(f.app, plan, recordedOutput());
+      modal.contentEl = document.createElement("div");
+      using controls = observeControls(modal.contentEl);
+      modal.onOpen();
+
+      expect(modal.contentEl.textContent).toContain(
+        m.profile_share_missing_partials({ names: "summary" }),
+      );
+      expect(controls.toggle("venue-line").getValue()).toBe(false);
+      modal.onClose();
+    }),
+);
 
 /**
  * The Share dialog over a Profile service fixture, started as the settings
@@ -408,7 +471,7 @@ const sharing = Effect.fnUntraced(function* (
   const services = yield* Effect.promise(() => f.runtime.context());
   const pending = yield* shareProfile(f.app, id).pipe(
     Effect.provideContext(services),
-    Effect.provide(notifier.layer),
+    Effect.provide(Layer.merge(notifier.layer, NodeFileSystem.layer)),
     Effect.forkChild({ startImmediately: true }),
   );
   yield* until(() => opened.mock.calls.length === 1);
@@ -425,12 +488,6 @@ const sharing = Effect.fnUntraced(function* (
     folder,
     notices: () => notifier.notices.map(({ messages }) => messages[0]),
   };
-});
-
-/** Let the dialog's fiber and the Promises it waits on run until `done`. */
-const until = Effect.fnUntraced(function* (done: () => boolean) {
-  for (let turn = 0; turn < 1000 && !done(); turn++) yield* Effect.yieldNow;
-  expect(done()).toBe(true);
 });
 
 /** Press `label`, as the user does; the output it starts runs on. */
