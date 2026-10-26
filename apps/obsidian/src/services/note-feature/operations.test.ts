@@ -20,7 +20,6 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildNoteContextFromSource,
-  citekeysToCiteTemplateData,
   itemBaseFields,
   resolveVenue,
 } from "@zotlit/db";
@@ -36,14 +35,8 @@ import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema, rowInstant } from "@zotlit/db/test-utils";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
-import {
-  filenameSuffix,
-  inlineCitation,
-  TemplateEngine,
-} from "@zotlit/templates";
-import defaultCitation from "@zotlit/templates/defaults/citation.liquid?raw";
+import { filenameSuffix, TemplateEngine } from "@zotlit/templates";
 import { MissingTemplateError, TemplateFacade } from "@zotlit/templates/facade";
-import type { TemplateLanguage } from "@zotlit/templates/facade";
 import { compileFrontmatterFields } from "@zotlit/templates/frontmatter";
 import type {
   CompiledFrontmatterField,
@@ -61,6 +54,7 @@ import { fileManagerOver } from "@/lib/__fixtures__/obsidian-file-manager";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import type { ObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   FIELD_CITATION_STYLE,
   FIELD_CITEKEY,
@@ -97,7 +91,10 @@ import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fi
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
+import { InertTemplateError } from "@/services/template/errors";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {
   ATTACHMENT_TYPE_ID,
   inProcessReadsService,
@@ -106,6 +103,9 @@ import {
   worksSql,
 } from "@/services/zotero-reads/test-utils";
 
+import { planningContext } from "./__fixtures__/planning-context";
+import type { PlanningSources } from "./__fixtures__/planning-context";
+import type { NoteCitations } from "./citations-handle";
 import type { NoteFeatureDeps } from "./context";
 /**
  * The note feature's deps, with the fixture database its reads serve. The
@@ -113,14 +113,20 @@ import type { NoteFeatureDeps } from "./context";
  */
 type TestDeps = Omit<
   NoteFeatureDeps,
-  "bridge" | "profile" | "query" | "vault" | "fileManager" | "app"
+  | "bridge"
+  | "profile"
+  | "context"
+  | "vault"
+  | "fileManager"
+  | "app"
+  | "zoteroReads"
+  | "citations"
 > &
   Partial<
-    Pick<
-      NoteFeatureDeps,
-      "bridge" | "profile" | "query" | "vault" | "fileManager"
-    >
+    Pick<NoteFeatureDeps, "bridge" | "vault" | "fileManager" | "citations">
   > & {
+    /** Creation planning reads the registry through the Profile tag. */
+    profile?: NoteFeatureDeps["profile"] & PlanningSources["profile"];
     app: NoteFeatureDeps["app"] & {
       fileManager: Pick<
         FileManagerSource,
@@ -128,9 +134,18 @@ type TestDeps = Omit<
       >;
     };
     db: { client: NodeDatabaseClient };
+    /** Creation planning reads the Snapshot through the ZoteroReads tag. */
+    zoteroReads: NoteFeatureDeps["zoteroReads"] &
+      Pick<PlainZoteroReads, "snapshot">;
   };
 import { createNoteFeature as createFeature } from "./operations";
 function createNoteFeature(deps: TestDeps) {
+  const profile =
+    deps.profile ??
+    profileReader(
+      () => Effect.runSync(deps.settings.current) ?? settingsDefaults,
+      deps.app.metadataCache,
+    );
   const feature = createFeature({
     ...deps,
     // The tag over the test host's vault, so a create sees its cache.
@@ -144,17 +159,28 @@ function createNoteFeature(deps: TestDeps) {
     bridge: deps.bridge ?? {
       runSync: Effect.runSync,
       runPromise: Effect.runPromise,
+      runPromiseExit: Effect.runPromiseExit,
     },
+    // The citation members run no note operation; citation.test.ts covers them.
+    citations:
+      deps.citations ?? stubService<NoteCitations>("NoteCitations", {}),
     // These Profiles name no Match, so creation runs no query.
-    query: deps.query ?? {
-      run: () => Promise.reject(new Error("This test runs no query.")),
-    },
-    profile:
-      deps.profile ??
-      profileReader(
-        () => Effect.runSync(deps.settings.current) ?? settingsDefaults,
-        deps.app.metadataCache,
-      ),
+    context: planningContext({
+      profile,
+      get noteIndex() {
+        return deps.noteIndex;
+      },
+      get zoteroReads() {
+        return deps.zoteroReads;
+      },
+      get template() {
+        return deps.template;
+      },
+      get app() {
+        return deps.app;
+      },
+    }),
+    profile,
   });
   // The caller hands over an Item it read from Zotero, so the database holds it.
   const know = (item: Item) => seedItem(deps.db.client, item);
@@ -245,118 +271,6 @@ function stubNoteContext(
     relatedItems: relatedItems.map(toTemplateItem),
   } as unknown as NoteTemplateContext;
 }
-
-describe("Companion note target", () => {
-  it.each([undefined, "default"] as const)(
-    "opens an existing unknown stamp with recovery data for URL Profile %s",
-    async (profile) => {
-      const harness = makeUpdateHarness({
-        content: "Unchanged",
-        frontmatter: { "zotlit-profile": "Missing (Rz9Wm4YfH6Kd)" },
-      });
-      const file = harness.file("Paper.md");
-      harness.deps.noteIndex.getNotesByItemKey = () => [file];
-      await expect(
-        createNoteFeature(harness.deps).resolveCompanionNote("ABC23456", {
-          profile,
-        }),
-      ).resolves.toMatchObject({
-        outcome: "existing",
-        files: [file],
-        diagnostic: {
-          code: "unknown-literature-note-profile",
-          stamp: "Missing (Rz9Wm4YfH6Kd)",
-          path: "Paper.md",
-          recovery: { action: "switch-profile" },
-        },
-      });
-    },
-  );
-
-  it("returns a matching or unqualified existing note without a kept-Profile notice", async () => {
-    const books = "Bk3Qn7XvT2Lp" as ProfileId;
-    const harness = makeUpdateHarness({
-      content: "Unchanged",
-      frontmatter: { "zotlit-profile": `Books (${books})` },
-      settings: { profiles: [{ id: books, label: "Books" }] },
-    });
-    const file = harness.file("Books/Paper.md");
-    const duplicate = harness.file("Other/Paper.md");
-    harness.deps.noteIndex.getNotesByItemKey = () => [file, duplicate];
-    const feature = createNoteFeature(harness.deps);
-    for (const profile of [undefined, books]) {
-      await expect(
-        feature.resolveCompanionNote("ABC23456", { profile }),
-      ).resolves.toEqual({
-        outcome: "existing",
-        files: [file, duplicate],
-        keptProfile: undefined,
-      });
-    }
-  });
-
-  it("offers creation only when there is no existing note and the requested Profile resolves", async () => {
-    const { deps } = makeUpdateHarness({ content: "" });
-    await expect(
-      createNoteFeature(deps).resolveCompanionNote("ABC23456", {
-        profile: "default",
-      }),
-    ).resolves.toEqual({ outcome: "create" });
-  });
-
-  it.each([false, true])(
-    "refuses an unknown URL Profile before fallback, including a matching stamp (existing: %s)",
-    async (existing) => {
-      const missing = "Rz9Wm4YfH6Kd" as ProfileId;
-      const harness = makeUpdateHarness({
-        content: "Unchanged",
-        frontmatter: { "zotlit-profile": `Missing (${missing})` },
-      });
-      harness.deps.noteIndex.getNotesByItemKey = () =>
-        existing ? [harness.file("Paper.md")] : [];
-      await expect(
-        createNoteFeature(harness.deps).resolveCompanionNote("ABC23456", {
-          profile: missing,
-        }),
-      ).resolves.toMatchObject({
-        outcome: "refused",
-        diagnostic: {
-          code: "unknown-literature-note-profile",
-          stamp: missing,
-          indexedKey: "ABC23456",
-        },
-      });
-      expect(harness.processMock).not.toHaveBeenCalled();
-    },
-  );
-
-  it("keeps the stamped Profile and returns the existing note for a conflicting link", async () => {
-    const books = "Bk3Qn7XvT2Lp" as ProfileId;
-    const papers = "Rz9Wm4YfH6Kd" as ProfileId;
-    const harness = makeUpdateHarness({
-      content: "An unchanged note",
-      frontmatter: { "zotlit-profile": `Old name (${books})` },
-      settings: {
-        profiles: [
-          { id: books, label: "Books" },
-          { id: papers, label: "Papers" },
-        ],
-      },
-    });
-    const file = harness.file("Books/Paper.md");
-    harness.deps.noteIndex.getNotesByItemKey = () => [file];
-    const feature = createNoteFeature(harness.deps);
-
-    await expect(
-      feature.resolveCompanionNote("ABC23456", { profile: papers }),
-    ).resolves.toEqual({
-      outcome: "existing",
-      files: [file],
-      keptProfile: { selector: books, label: "Books" },
-    });
-    expect(harness.processMock).not.toHaveBeenCalled();
-  });
-});
 
 describe("Profile source selection", () => {
   it("reserves batch filename suffixes before creation so two rows have distinct exact paths", async () => {
@@ -476,6 +390,54 @@ describe("Profile source selection", () => {
     const file = createdFile(await preview.create());
     expect(file.path).toBe(preview.path);
     expect(app.vault.contents.get("Reading/Paper.md")).toBe("Occupied");
+  });
+
+  describe("with inert global Managed Frontmatter fields", () => {
+    // The global field set has a JavaScript field while JavaScript Templates
+    // are off: the engine's getter throws, as `TemplateService` does.
+    const inert = new InertTemplateError("Inert global fields");
+    const previewWith = (
+      frontmatter: CompiledManagedFrontmatter | undefined,
+    ) => {
+      const id = "Bk3Qn7XvT2Lp" as ProfileId;
+      const { deps } = makeUpdateHarness({
+        content: "",
+        settings: {
+          profiles: [{ id, label: "Reading", document: "reading.md" }],
+        },
+      });
+      const document = makeDocumentTemplate({ frontmatter });
+      deps.template = {
+        ...makeTemplate(),
+        get frontmatterFields(): never {
+          throw inert;
+        },
+        getLiteratureNoteTemplate: () => document,
+      };
+      const feature = createNoteFeature(deps);
+      return () =>
+        feature.prepareProfileNote({
+          profile: profileReader(
+            deps.bridge!.runSync(deps.settings.current),
+          ).resolveProfile(id)!,
+          document,
+          note: updateContext(),
+          filename: {},
+        });
+    };
+
+    it("previews a document with its own Managed Frontmatter", () => {
+      const preview = previewWith(
+        compileDocumentFrontmatter([
+          { key: "topic", merge: "replace", value: "Research" },
+        ]),
+      )();
+      expect(preview.properties).toMatchObject({ topic: "Research" });
+    });
+
+    it("refuses a legacy document, which composes the global fields", () => {
+      expect(previewWith(undefined)).toThrow("Inert global fields");
+    });
   });
 
   it("keeps the preview's random suffix and refuses when another file takes that path", async () => {
@@ -624,78 +586,6 @@ describe("Profile source selection", () => {
     });
     expect(update).not.toHaveBeenCalled();
   });
-  it("preselects headless over Default, lets an asked choice override it, and ignores a remembered Profile", async () => {
-    const books = "Bk3Qn7XvT2Lp" as ProfileId;
-    const papers = "Rz9Wm4YfH6Kd" as ProfileId;
-    const { deps } = makeUpdateHarness({
-      content: "",
-      settings: {
-        profiles: [
-          { id: books, label: "Books" },
-          { id: papers, label: "Papers" },
-        ],
-      },
-    });
-    seedRememberedProfile(deps.settings, books);
-    using update = vi.spyOn(deps.settings, "update");
-    const feature = createNoteFeature(deps);
-    expect(await feature.resolveCreationProfile()).toEqual({
-      selector: "default",
-      source: "bound",
-      shouldAsk: true,
-    });
-    expect(await feature.resolveCreationProfile({ headless: papers })).toEqual({
-      selector: papers,
-      source: "headless",
-      shouldAsk: true,
-    });
-    expect(
-      await feature.resolveCreationProfile({
-        headless: papers,
-        asked: "default",
-      }),
-    ).toEqual({ selector: "default", source: "asked", shouldAsk: true });
-    expect(update).not.toHaveBeenCalled();
-  });
-  it("reports an invalid explicit selector instead of treating it as absent, even with Default alone", async () => {
-    const missing = "Missing12345" as ProfileId;
-    const withProfiles = makeUpdateHarness({
-      content: "",
-      settings: {
-        profiles: [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }],
-      },
-    }).deps;
-    expect(
-      await createNoteFeature(withProfiles).resolveCreationProfile({
-        headless: missing,
-      }),
-    ).toEqual({
-      selector: "default",
-      source: "bound",
-      shouldAsk: true,
-      problem: {
-        kind: "invalid-selector",
-        source: "headless",
-        selector: missing,
-      },
-    });
-    const { deps } = makeUpdateHarness({ content: "" });
-    seedRememberedProfile(deps.settings, "Bk3Qn7XvT2Lp" as ProfileId);
-    using update = vi.spyOn(deps.settings, "update");
-    const feature = createNoteFeature(deps);
-    expect(await feature.resolveCreationProfile()).toEqual({
-      selector: "default",
-      source: "bound",
-      shouldAsk: false,
-    });
-    expect(await feature.resolveCreationProfile({ asked: missing })).toEqual({
-      selector: "default",
-      source: "bound",
-      shouldAsk: true,
-      problem: { kind: "invalid-selector", source: "asked", selector: missing },
-    });
-    expect(update).not.toHaveBeenCalled();
-  });
 });
 
 describe("createNote", () => {
@@ -752,6 +642,7 @@ describe("createNote", () => {
     const zoteroReads = deps.zoteroReads;
     deps.zoteroReads = {
       reads: zoteroReads.reads,
+      snapshot: zoteroReads.snapshot,
       acquireRead: async () => {
         const lease = await zoteroReads.acquireRead();
         return {
@@ -1410,11 +1301,8 @@ describe("createNote", () => {
       app,
       template: {
         renderManagedContent: () => "",
-        loaded: true,
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
-        renderProfileAnnotation: () => "",
-        renderCitation: () => "",
         renderFilename<T extends object>(data: T): string {
           const d = data as {
             title: string | null;
@@ -1558,11 +1446,8 @@ describe("createNote", () => {
       app,
       template: {
         renderManagedContent: () => "",
-        loaded: true,
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
-        renderProfileAnnotation: () => "",
-        renderCitation: () => "",
         renderFilename: () => "Root",
         render: () => "body",
       },
@@ -2397,11 +2282,8 @@ function makeUpdateHarness(options: {
 
   const template: TestDeps["template"] = {
     renderManagedContent: () => renderContent(),
-    loaded: true,
     frontmatterFields: options.frontmatterFields ?? [],
     getLiteratureNoteTemplate: () => undefined,
-    renderProfileAnnotation: () => "",
-    renderCitation: () => "",
     renderFilename: () => "",
     render: <T extends object>(name: string, _data: T): string =>
       name === "content" ? renderContent() : "",
@@ -2415,7 +2297,11 @@ function makeUpdateHarness(options: {
         renameFile: vi.fn(),
       },
     },
-    bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
+    bridge: {
+      runSync: Effect.runSync,
+      runPromise: Effect.runPromise,
+      runPromiseExit: Effect.runPromiseExit,
+    },
     template,
     ...makeDbDeps(),
     noteIndex: {
@@ -3673,8 +3559,14 @@ describe("updateNote", () => {
       if (failure === "missing item")
         forgetItem(harness.deps.db.client, "ABCD2345");
       else
-        harness.deps.zoteroReads.acquireRead = async () => {
-          throw new Error("Database unavailable");
+        harness.deps.zoteroReads = {
+          ...harness.deps.zoteroReads,
+          snapshot: Effect.fail(
+            new DbUnavailable({ message: "Database unavailable" }),
+          ),
+          acquireRead: async () => {
+            throw new Error("Database unavailable");
+          },
         };
       const file = harness.file("Literature/Paper.md");
       const feature = createNoteFeature(harness.deps);
@@ -4588,169 +4480,6 @@ describe("writeNoteUpdate", () => {
   });
 });
 
-describe("renderCitation", () => {
-  it("returns null instead of throwing when the template isn't loaded yet", () => {
-    // renderCitation runs inside selectSuggestion/onChooseSuggestion, which
-    // can't await `template.ready`; guard on the sync `loaded` flag so a
-    // cold-start citation insert returns null instead of throwing
-    // TemplateService's "service is not ready" through the handler.
-    const render = vi.fn();
-    const deps: TestDeps = {
-      app: makeApp(),
-      template: {
-        renderManagedContent: () => "",
-        loaded: false,
-        frontmatterFields: [],
-        getLiteratureNoteTemplate: () => undefined,
-        renderProfileAnnotation: () => "",
-        renderFilename: () => "",
-        render,
-        renderCitation: (refs, variant) =>
-          inlineCitation(
-            render("citation", citekeysToCiteTemplateData(refs, variant)),
-          ),
-      },
-      ...makeDbDeps(),
-      noteIndex: {
-        getImportedNoteByNoteKey: () => [],
-        whenIndexed: async () => {},
-        getNotesByItemKey: () => [],
-      },
-      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-      settings: makeSettings(),
-      attachmentImport: blockedAttachmentImport,
-    };
-
-    const result = createNoteFeature(deps).renderCitation(
-      [{ citationKey: "root2024" }],
-      "main",
-    );
-
-    expect(result).toBeNull();
-    expect(render).not.toHaveBeenCalled();
-  });
-
-  it("renders the alternate variant from the same document", () => {
-    // One Citation Template answers both gestures: Shift+Enter and a trailing
-    // slash arrive as the alt variant, which the built-in source maps to an
-    // Author-in-text Citation.
-    const result = createNoteFeature(
-      annotDeps(citationTemplate(defaultCitation)),
-    ).renderCitation([{ citationKey: "smith2024" }], "alt");
-
-    expect(result).toBe("@smith2024");
-  });
-
-  it("hands the variant to a document that branches on zt.variant", () => {
-    // The variant names the gesture only: a custom document decides what each
-    // one renders, so a vault can map alt to anything it likes.
-    const feature = createNoteFeature(
-      annotDeps(
-        citationTemplate(
-          "{% if zt.variant == 'alt' %}~{{ zt.citations[0].item.citationKey }}~" +
-            "{% else %}<{{ zt.citations[0].item.citationKey }}>{% endif %}",
-        ),
-      ),
-    );
-
-    expect(feature.renderCitation([{ citationKey: "smith2024" }], "main")).toBe(
-      "<smith2024>",
-    );
-    expect(feature.renderCitation([{ citationKey: "smith2024" }], "alt")).toBe(
-      "~smith2024~",
-    );
-  });
-
-  it("carries the selected item's full narrowed data through to the Citation Template (9.2-CSL #03)", () => {
-    // Citation-suggest passes the selected search hit's full item alongside
-    // its citationKey; a data-driven (author-year) Citation Template should see
-    // the item's title/date, not just a citekey-only stub.
-    const deps: TestDeps = {
-      app: makeApp(),
-      template: {
-        renderManagedContent: () => "",
-        loaded: true,
-        frontmatterFields: [],
-        getLiteratureNoteTemplate: () => undefined,
-        renderProfileAnnotation: () => "",
-        renderFilename: () => "",
-        render: () => "",
-        renderCitation: (refs) =>
-          citekeysToCiteTemplateData(refs, "main")
-            .citations.map((c) => c.item.title)
-            .join("; "),
-      },
-      ...makeDbDeps(),
-      noteIndex: {
-        getImportedNoteByNoteKey: () => [],
-        whenIndexed: async () => {},
-        getNotesByItemKey: () => [],
-      },
-      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-      settings: makeSettings(),
-      attachmentImport: blockedAttachmentImport,
-    };
-
-    const item = makeItem({
-      key: "RTKEY234",
-      indexedKey: "RTKEY234",
-      title: "Stated choice methods",
-      citationKey: "root2024",
-    });
-
-    const result = createNoteFeature(deps).renderCitation(
-      [{ citationKey: "root2024", item }],
-      "main",
-    );
-
-    expect(result).toBe("Stated choice methods");
-  });
-});
-
-/** A template service backed by the real engine, with a `citation` + optional `annotation` pair. */
-function citationTemplate(
-  citationSource = defaultCitation,
-  opts?: { annotation?: string; language?: TemplateLanguage },
-): TestDeps["template"] {
-  const facade = new TemplateFacade();
-  facade.define("citation", citationSource, opts?.language ?? "liquid");
-  if (opts?.annotation !== undefined) {
-    facade.define("annotation", opts.annotation, "eta");
-  }
-  return {
-    renderManagedContent: <T extends object>(data: T): string =>
-      facade.render("content", data),
-    loaded: true,
-    frontmatterFields: [],
-    getLiteratureNoteTemplate: () => undefined,
-    renderProfileAnnotation: <T extends object>(data: T): string =>
-      facade.render("annotation", data),
-    renderFilename: () => "",
-    render: <T extends object>(name: string, data: T): string =>
-      facade.render(name, data),
-    renderCitation: (refs, variant) =>
-      inlineCitation(
-        facade.render("citation", citekeysToCiteTemplateData(refs, variant)),
-      ),
-  };
-}
-
-function annotDeps(template: TestDeps["template"]): TestDeps {
-  return {
-    app: makeApp(),
-    template,
-    ...makeDbDeps(),
-    noteIndex: {
-      getImportedNoteByNoteKey: () => [],
-      whenIndexed: async () => {},
-      getNotesByItemKey: () => [],
-    },
-    zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-    settings: makeSettings(),
-    attachmentImport: blockedAttachmentImport,
-  };
-}
-
 // `render` / `renderFilename` are generic (`<T extends object>`) on the real
 // service, so the mocks mirror that signature and narrow the erased payload to
 // the fixture shape they assert on — the only casts the stub needs.
@@ -4771,8 +4500,6 @@ function makeTemplate() {
     loaded: true,
     frontmatterFields: [],
     getLiteratureNoteTemplate: () => undefined,
-    renderProfileAnnotation: () => "",
-    renderCitation: () => "",
     renderManagedContent: () => "",
     renderFilename<T extends object>(data: T): string {
       const { title, key } = data as { title: string | null; key: string };

@@ -1,6 +1,7 @@
 // Materializes Zotero Child Notes into flat Markdown mirrors on command.
 import { Context, Effect, Layer, Schema, Semaphore } from "effect";
-import { normalizePath, stringifyYaml, TFile, TFolder } from "obsidian";
+import { normalizePath, stringifyYaml } from "obsidian";
+import type { TFile } from "obsidian";
 
 import type {
   AnnotationSources,
@@ -26,14 +27,18 @@ import { processLiveText } from "@/lib/effect-live-text";
 import { withLogCategory } from "@/lib/effect-log";
 import { joinFolderPath, normalizeFolderPath } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
+import { portCall } from "@/lib/legacy-port";
+import type { LegacyPortError } from "@/lib/legacy-port";
 import { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import type { VaultError } from "@/lib/vault-errors";
+import type { VaultError, VaultFolderBlockedError } from "@/lib/vault-errors";
+import { ensureVaultFolder } from "@/lib/vault-folder";
+import { AttachmentImport } from "@/services/attachment-import/service";
 import type {
-  AttachmentImport,
-  AttachmentImportService,
+  AttachmentFlushError,
+  AttachmentImportBatch,
 } from "@/services/attachment-import/service";
 import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type {
@@ -84,12 +89,10 @@ interface RunContext {
 }
 
 /**
- * The legacy pieces a note write calls: Attachment Import's per-note batch and
- * the excerpt preparation. They convert in a later slice; until then
- * `build.ts` binds them once the container holds them.
+ * The legacy piece a note write calls: the excerpt preparation. It converts in
+ * a later slice; until then `build.ts` binds it once the container holds it.
  */
 export interface NoteImportPorts {
-  readonly attachmentImport: Pick<AttachmentImportService, "prepare">;
   readonly excerptImages?: ExcerptPreparation;
 }
 
@@ -122,8 +125,9 @@ interface PrepareExplicitImportOptions {
 export type NoteImportError =
   | NoteImportProfileError
   | NoteImportMintError
-  | NoteImportFolderError
-  | NoteImportPortError
+  | VaultFolderBlockedError
+  | LegacyPortError
+  | AttachmentFlushError
   | NoteImportParseError
   | Effect.Error<ReturnType<typeof readDisplayRef>>
   | ProfileOperationError
@@ -175,7 +179,7 @@ export const layerNoteImporter = (ports: NoteImportPorts) =>
     Effect.gen(function* () {
       const writes = yield* Semaphore.make(WRITE_CONCURRENCY);
       const context = yield* Effect.context<
-        Profile | NoteIndex | Vault | Workspace | ZoteroPref
+        AttachmentImport | Profile | NoteIndex | Vault | Workspace | ZoteroPref
       >();
       const templates = yield* syncTemplate;
       const ctx: Ctx = { ports, templates };
@@ -183,7 +187,12 @@ export const layerNoteImporter = (ports: NoteImportPorts) =>
         effect: Effect.Effect<
           A,
           E,
-          Profile | NoteIndex | Vault | Workspace | ZoteroPref
+          | AttachmentImport
+          | Profile
+          | NoteIndex
+          | Vault
+          | Workspace
+          | ZoteroPref
         >,
       ) => Effect.provideContext(effect, context);
       return NoteImporter.of({
@@ -395,15 +404,13 @@ const writeNote = Effect.fnUntraced(function* (
   const path = mode.action === "create" ? mode.path : mode.file.path;
 
   let body = "";
-  let attachmentBatch: AttachmentImport | undefined;
+  let attachmentBatch: AttachmentImportBatch | undefined;
   let excerpts: PreparedExcerpts | undefined;
   if (note.note) {
     const html = note.note;
-    const batch = yield* portCall("attachment-prepare", () =>
-      ctx.ports.attachmentImport.prepare(path, {
-        folderCache: run.attachmentFolderCache,
-      }),
-    );
+    const batch = yield* (yield* AttachmentImport).prepare(path, {
+      folderCache: run.attachmentFolderCache,
+    });
     attachmentBatch = batch;
     const templateMode = getProfileBinding(
       run.settings,
@@ -502,8 +509,7 @@ const writeNote = Effect.fnUntraced(function* (
 
   if (excerpts) run.reportExcerpts?.(excerpts.summary());
   if (attachmentBatch) {
-    const flushed = attachmentBatch;
-    const copied = yield* portCall("attachment-flush", () => flushed.flush());
+    const copied = yield* attachmentBatch.flush;
     yield* Effect.logDebug("Imported note attachments").pipe(
       Effect.annotateLogs({
         path,
@@ -626,29 +632,6 @@ export class NoteImportProfileError extends Schema.TaggedError<
 }
 
 /**
- * Attachment Import or the excerpt preparation rejected during a note write,
- * for example when a file copy fails. The message is the rejection's own.
- */
-export class NoteImportPortError extends Schema.TaggedError<
-  NoteImportPortError,
-  { readonly brand: unique symbol }
->()("NoteImportPortError", {
-  /** The step that rejected. */
-  step: Schema.Literals([
-    "attachment-prepare",
-    "excerpt-prepare",
-    "attachment-flush",
-  ]),
-  /** What the step rejected with. */
-  cause: Schema.Defect(),
-}) {
-  override get message(): string {
-    if (this.cause instanceof Error) return this.cause.message;
-    return typeof this.cause === "string" ? this.cause : "Unknown error";
-  }
-}
-
-/**
  * The note conversion threw, for example when the Citation Template or the
  * annotation Template fails. The message is the throw's own.
  */
@@ -664,16 +647,6 @@ export class NoteImportParseError extends Schema.TaggedError<
     return typeof this.cause === "string" ? this.cause : "Unknown error";
   }
 }
-
-/** A legacy port's Promise, its rejection a {@link NoteImportPortError}. */
-const portCall = <A>(
-  step: NoteImportPortError["step"],
-  call: () => Promise<A>,
-) =>
-  Effect.tryPromise({
-    try: call,
-    catch: (cause) => new NoteImportPortError({ step, cause }),
-  });
 
 /**
  * Mint a unique import path for a new imported note file. The path includes a
@@ -706,13 +679,7 @@ const ensureImportFolder = Effect.fnUntraced(function* (
   importFolderSetting: string,
 ) {
   const folder = normalizeFolderPath(normalizePath(importFolderSetting));
-  if (folder === "/") return folder;
-  const vault = yield* Vault;
-  const existing = yield* vault.getAbstractFileByPath(folder);
-  if (existing instanceof TFolder) return folder;
-  if (existing instanceof TFile)
-    return yield* new NoteImportFolderError({ path: folder });
-  yield* vault.createFolder(folder);
+  yield* ensureVaultFolder(folder);
   return folder;
 });
 
@@ -729,18 +696,5 @@ export class NoteImportMintError extends Schema.TaggedError<
 }) {
   override get message(): string {
     return `Imported note path collided with an existing file: ${this.path}`;
-  }
-}
-
-/** A file, not a folder, holds the import folder's path. */
-export class NoteImportFolderError extends Schema.TaggedError<
-  NoteImportFolderError,
-  { readonly brand: unique symbol }
->()("NoteImportFolderError", {
-  /** The import folder's vault path. */
-  path: Schema.String,
-}) {
-  override get message(): string {
-    return `Cannot create folder; a file exists at "${this.path}"`;
   }
 }

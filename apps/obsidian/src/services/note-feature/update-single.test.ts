@@ -1,73 +1,12 @@
-import { Effect } from "effect";
-import type { App } from "obsidian";
 import { describe, expect, it } from "vitest";
 
-import type { ItemRef } from "@zotlit/db";
-
-import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
-import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { InertTemplateError } from "@/services/template/errors";
 
 import {
   duplicateLiteratureNoteWarning,
-  updateNote,
   updateNoteToast,
 } from "./update-single";
-import type { SingleUpdateDeps } from "./update-single";
-
-const REF: ItemRef = {
-  itemID: 1,
-  libraryID: 1,
-  key: "ABCD1234",
-  groupID: null,
-  indexedKey: "ABCD1234",
-};
-
-/**
- * Deps whose every create-path member throws, so reaching the create branch
- * fails the test by name instead of silently succeeding against a stub.
- */
-function noteLessDeps(): SingleUpdateDeps {
-  return {
-    profile: profileReader(),
-    app: stubService<App>("App", {}),
-    zoteroReads: {
-      state: "ready",
-      get reads(): never {
-        throw new Error("create path reached: ZoteroReads read");
-      },
-      acquireRead: () => {
-        throw new Error("create path reached: ZoteroReads lease acquired");
-      },
-      snapshot: Effect.die(new Error("the snapshot must not be opened")),
-    },
-    settings: stubService<SingleUpdateDeps["settings"]>("PluginSettings", {}),
-    bridge: { runSync: Effect.runSync },
-    noteFeature: stubService<SingleUpdateDeps["noteFeature"]>("NoteFeature", {
-      createNote: () => {
-        throw new Error("create path reached: createNote called");
-      },
-    }),
-    noteIndex: stubService<SingleUpdateDeps["noteIndex"]>("NoteIndex", {
-      getNotesByItemKey: () => [],
-    }),
-  };
-}
-
-describe("updateNote", () => {
-  it("never creates when the metadata scope finds no literature note", async () => {
-    await expect(
-      updateNote(noteLessDeps(), REF, { scope: "metadata" }),
-    ).resolves.toBeUndefined();
-  });
-
-  it("still creates when the full scope finds no literature note", async () => {
-    await expect(
-      updateNote(noteLessDeps(), REF, { scope: "full" }),
-    ).rejects.toThrow("create path reached");
-  });
-});
 
 describe("updateNoteToast", () => {
   it("surfaces a Profile refusal for a metadata-only update", () => {

@@ -17,6 +17,7 @@ import type { ItemFields } from "@zotlit/zotero-types";
 import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
@@ -35,6 +36,8 @@ import {
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
+import { planningContext } from "./__fixtures__/planning-context";
+import type { NoteCitations } from "./citations-handle";
 import type { NoteFeatureDeps } from "./context";
 import { createNoteFeature } from "./operations";
 import type { CreationPlanOptions } from "./operations";
@@ -271,7 +274,7 @@ async function harness(
     handlers: { sliceSize },
   });
   // ZotLit Query tests the Profile Matches over the same database.
-  const { handle: query } = await buildQueryService(
+  const { service: query } = await buildQueryService(
     {
       reads: zoteroReads.reads,
       source: {
@@ -286,21 +289,30 @@ async function harness(
     },
     stack,
   );
+  const noteIndex: NoteFeatureDeps["noteIndex"] = {
+    whenIndexed: async () => {},
+    getNotesByItemKey: (key) => notesByKey.get(key) ?? [],
+    getImportedNoteByNoteKey: () => [],
+  };
   const deps: NoteFeatureDeps = {
+    context: planningContext(
+      { profile, noteIndex, zoteroReads, template, app },
+      query,
+    ),
     app,
+    citations: stubService<NoteCitations>("NoteCitations", {}),
     vault: vaultOver(app.vault as unknown as VaultSource),
     fileManager: { renameFile: () => Effect.void },
-    bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
+    bridge: {
+      runSync: Effect.runSync,
+      runPromise: Effect.runPromise,
+      runPromiseExit: Effect.runPromiseExit,
+    },
     zoteroReads,
-    query,
     profile,
     template,
     settings,
-    noteIndex: {
-      whenIndexed: async () => {},
-      getNotesByItemKey: (key) => notesByKey.get(key) ?? [],
-      getImportedNoteByNoteKey: () => [],
-    },
+    noteIndex,
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     attachmentImport: {
       prepare: async () => ({
@@ -328,6 +340,7 @@ async function harness(
     ...fixture,
     client,
     deps,
+    query,
     feature,
     /** The creation Profile `planCreations` selects for `item`. */
     select: async (item: Item, sources?: CreationPlanOptions) =>
@@ -496,7 +509,7 @@ describe("Profile document matches at creation preparation", () => {
 
     it("selects each Item's Profile from one Match query", async () => {
       await using f = await batchHarness();
-      const run = vi.spyOn(f.deps.query, "run");
+      const run = vi.spyOn(f.query, "run");
 
       const plans = await f.feature.planCreations(keys);
 
@@ -556,7 +569,7 @@ describe("Profile document matches at creation preparation", () => {
 
     it("rejects a cancelled plan before it reads", async () => {
       await using f = await batchHarness();
-      const run = vi.spyOn(f.deps.query, "run");
+      const run = vi.spyOn(f.query, "run");
       await expect(
         f.feature.planCreations(keys, { signal: AbortSignal.abort() }),
       ).rejects.toThrow();
@@ -662,7 +675,9 @@ describe("Profile document matches at creation preparation", () => {
       shouldAsk: true,
       problem: { kind: "overlap" },
     });
-    vi.spyOn(f.deps.query, "run").mockResolvedValue({ kind: "cancelled" });
+    vi.spyOn(f.query, "run").mockReturnValue(
+      Effect.succeed({ kind: "cancelled" }),
+    );
     // Without it, the catch-all Books does not take the Item alone.
     expect(await f.select(personalBook)).toEqual({
       selector: "default",

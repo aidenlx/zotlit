@@ -52,6 +52,19 @@ export class VaultError extends Schema.TaggedError<
   cause: Schema.Defect(),
 }) {}
 
+/** A file, not a folder, holds the vault path where a folder belongs. */
+export class VaultFolderBlockedError extends Schema.TaggedError<
+  VaultFolderBlockedError,
+  { readonly brand: unique symbol }
+>()("VaultFolderBlockedError", {
+  /** The folder's vault path. */
+  path: Schema.String,
+}) {
+  override get message(): string {
+    return `Cannot create folder; a file exists at "${this.path}"`;
+  }
+}
+
 /** A `VaultError` for `operation` on `path`, from what Obsidian threw. */
 export const vaultError =
   (operation: string, path: string) =>

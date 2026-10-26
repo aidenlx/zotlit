@@ -37,6 +37,7 @@ import {
   runBatchUpdate,
   runBatchUpdateAll,
 } from "@/services/note-feature/update-batch";
+import type { BatchUpdateResult } from "@/services/note-feature/update-batch";
 import { NoteImporter } from "@/services/note-import/service";
 import type { NoteImportView } from "@/services/note-import/view";
 import { NoteIndex } from "@/services/note-index/service";
@@ -57,10 +58,16 @@ import { openTemplateWorkbench } from "@/views/template-workbench/register";
 import { registerProtocolHandlers } from "./register";
 import type { ProtocolDeps } from "./register";
 
-vi.mock("@/services/note-feature/update-batch", () => ({
-  runBatchUpdate: vi.fn(async () => ({ outcome: "batch-modal" })),
-  runBatchUpdateAll: vi.fn(async () => ({ outcome: "batch-modal" })),
-}));
+vi.mock("@/services/note-feature/update-batch", async (importOriginal) => {
+  const { Effect } = await import("effect");
+  return {
+    ...(await importOriginal<
+      typeof import("@/services/note-feature/update-batch")
+    >()),
+    runBatchUpdate: vi.fn(() => Effect.succeed({ outcome: "batch-modal" })),
+    runBatchUpdateAll: vi.fn(() => Effect.succeed({ outcome: "batch-modal" })),
+  };
+});
 
 vi.mock("@/services/note-feature", async (importOriginal) => {
   const { Effect } = await import("effect");
@@ -559,6 +566,35 @@ describe("library-wide protocol links", () => {
     }),
   );
 
+  it.effect(
+    "shows the early-exit notice an update-all link's update ended with",
+    () =>
+      Effect.gen(function* () {
+        vi.mocked(runBatchUpdateAll).mockReturnValueOnce(
+          Effect.succeed<BatchUpdateResult>({ outcome: "empty-selection" }),
+        );
+        yield* register();
+
+        yield* dispatch("zotlit/update-all", { library: "7" });
+
+        expect(shown()).toEqual([m.batch_update_all_empty()]);
+        expect(notifier.notices[0]!.duration).toBe(2000);
+      }),
+  );
+
+  it.effect("shows no notice for an update-all link's update that failed", () =>
+    Effect.gen(function* () {
+      vi.mocked(runBatchUpdateAll).mockReturnValueOnce(
+        Effect.die(new Error("classify failed")),
+      );
+      yield* register();
+
+      yield* dispatch("zotlit/update-all", { library: "7" });
+
+      expect(shown()).toEqual([]);
+    }),
+  );
+
   it.effect("passes the named group as an exact import target", () =>
     Effect.gen(function* () {
       yield* register();
@@ -852,11 +888,40 @@ describe("batch protocol links", () => {
         });
 
         expect(runBatchUpdate).toHaveBeenCalledExactlyOnceWith(
-          expect.anything(),
+          expect.objectContaining({ view: noteImportView, noteFeature }),
           [3, 4],
           { scope: "metadata", profile: "Bk3Qn7XvT2Lp" },
         );
       }),
+  );
+
+  it.effect(
+    "shows the early-exit notice a link's batch update ended with",
+    () =>
+      Effect.gen(function* () {
+        vi.mocked(runBatchUpdate).mockReturnValueOnce(
+          Effect.succeed<BatchUpdateResult>({ outcome: "db-unavailable" }),
+        );
+        yield* register();
+
+        yield* dispatch("zotlit/update-many", { items: "3,4" });
+
+        expect(shown()).toEqual([m.batch_update_db_unavailable()]);
+        expect(notifier.notices[0]!.duration).toBe(2000);
+      }),
+  );
+
+  it.effect("shows no notice for a link's batch update that failed", () =>
+    Effect.gen(function* () {
+      vi.mocked(runBatchUpdate).mockReturnValueOnce(
+        Effect.die(new Error("classify failed")),
+      );
+      yield* register();
+
+      yield* dispatch("zotlit/update-many", { items: "3,4" });
+
+      expect(shown()).toEqual([]);
+    }),
   );
 
   it.effect("imports the one item an import-note link names", () =>
@@ -965,10 +1030,12 @@ describe("requests pushed over the Local Server", () => {
       }).pipe(Scope.provide(scope));
       const request: UpdateManyRequest = { items: [5], scope: "full" };
       const ran = yield* Deferred.make<void>();
-      vi.mocked(runBatchUpdate).mockImplementationOnce(async () => {
-        Deferred.doneUnsafe(ran, Effect.void);
-        return { outcome: "batch-modal" };
-      });
+      vi.mocked(runBatchUpdate).mockImplementationOnce(() =>
+        Effect.sync((): BatchUpdateResult => {
+          Deferred.doneUnsafe(ran, Effect.void);
+          return { outcome: "batch-modal" };
+        }),
+      );
       yield* PubSub.publish(requests, request);
       yield* Deferred.await(ran);
 
