@@ -173,7 +173,7 @@ export async function verifyExternalAnnotationLock({
   expect(
     await obEvalUntil(
       vaultId,
-      `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();const list=await repository.read(${JSON.stringify(attachment.key)});return String(list?.source.kind)+'/'+repository.capabilityFor(${JSON.stringify(attachment.key)}).kind;})()`,
+      `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);const list=await bridge.runPromise(repository.read(${JSON.stringify(attachment.key)}));return String(list?.source.kind)+'/'+bridge.runSync(repository.capabilityFor(${JSON.stringify(attachment.key)})).kind;})()`,
       { expected: "zotero-local-api/writable" },
     ),
   ).toBe(true);

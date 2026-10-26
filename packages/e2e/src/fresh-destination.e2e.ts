@@ -50,7 +50,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     await prepareRunWindow(vaultId);
     await obEval(
       vaultId,
-      "app.plugins.plugins.zotlit.services.settings.update({'server.live-update':false});true",
+      "app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'server.live-update':false}));true",
     );
   }, 180000);
 
