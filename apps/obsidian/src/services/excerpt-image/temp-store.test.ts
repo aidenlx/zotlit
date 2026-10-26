@@ -2,9 +2,11 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { it as effectIt } from "@effect/vitest";
 import {
   Clock,
+  Deferred,
   Duration,
   Effect,
   Exit,
+  Fiber,
   FileSystem,
   Layer,
   PlatformError,
@@ -126,4 +128,39 @@ effectIt.effect("fails with the refused step and removes the staged file", () =>
     expect(exit).toEqual(Exit.fail(denied));
     expect(yield* Effect.promise(() => readdir(directory))).toEqual([]);
   }).pipe(Effect.provide(refusedLink)),
+);
+
+effectIt.effect("removes the staged file when the publish is interrupted", () =>
+  Effect.gen(function* () {
+    const directory = yield* testDirectory;
+    const staged = yield* Deferred.make<void>();
+    // The staged file is written, and the publish then waits.
+    const stalledAfterWrite = Layer.effect(
+      FileSystem.FileSystem,
+      Effect.map(FileSystem.FileSystem, (fs) =>
+        FileSystem.make({
+          ...fs,
+          writeFile: (path, data, options) =>
+            fs
+              .writeFile(path, data, options)
+              .pipe(
+                Effect.andThen(Deferred.succeed(staged, undefined)),
+                Effect.andThen(Effect.never),
+              ),
+        }),
+      ),
+    ).pipe(Layer.provide(NodeFileSystem.layer));
+    const publishing = yield* Effect.forkChild(
+      publishExcerptPng("a".repeat(64), redPng, directory).pipe(
+        Effect.provide(stalledAfterWrite),
+      ),
+      { startImmediately: true },
+    );
+    yield* Deferred.await(staged);
+    expect(yield* Effect.promise(() => readdir(directory))).toHaveLength(1);
+
+    yield* Fiber.interrupt(publishing);
+
+    expect(yield* Effect.promise(() => readdir(directory))).toEqual([]);
+  }),
 );
