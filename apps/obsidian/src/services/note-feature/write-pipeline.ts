@@ -54,6 +54,7 @@ import { Profile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 import { syncTemplate } from "@/services/template-workbench/sync-template";
+import { InertTemplateError } from "@/services/template/errors";
 import { Template } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
@@ -170,12 +171,19 @@ const noteResolvers = Effect.fnUntraced(function* (
   );
 });
 
-/** A render for the note at `path`; a throw fails as {@link NoteWriteAborted}. */
+/**
+ * What a note write at `path` fails with for `cause`, a throw that stopped it:
+ * an inert Template's refusal as itself, so it stays a typed failure, and
+ * anything else as {@link NoteWriteAborted}.
+ */
+const aborted = (path: string, cause: unknown) =>
+  cause instanceof InertTemplateError
+    ? cause
+    : new NoteWriteAborted({ path, cause });
+
+/** A render for the note at `path`; a throw fails as {@link aborted} gives it. */
 const renderFor = (path: string, render: () => string) =>
-  Effect.try({
-    try: render,
-    catch: (cause) => new NoteWriteAborted({ path, cause }),
-  });
+  Effect.try({ try: render, catch: (cause) => aborted(path, cause) });
 
 /**
  * The bound feature serializes calls by Indexed Key before this operation.
@@ -334,7 +342,7 @@ const writeNewNote = Effect.fnUntraced(function* <E>(
               now,
             },
           ),
-        catch: (cause) => new NoteWriteAborted({ path, cause }),
+        catch: (cause) => aborted(path, cause),
       });
       if (composed.outcome === "refused") {
         const refused: CreateNoteResult = {
@@ -675,7 +683,7 @@ const stampNoteFamily = Effect.fnUntraced(function* (
             message: "Note Profile switch and rollback failed",
             cause: new AggregateError([error, ...rollbackErrors]),
           });
-        return yield* error;
+        return yield* Effect.fail(error);
       }),
     ),
   );
@@ -692,13 +700,12 @@ const stampNoteProfile = (file: TFile, stamp: string | undefined) =>
 
 /**
  * Rewrite `file`'s live text with `fn`, as `processLiveText` does. A throw
- * from `fn` leaves the note as it was and fails as {@link NoteWriteAborted}
- * with what was thrown.
+ * from `fn` leaves the note as it was and fails as {@link aborted} gives it.
  */
 const rewriteLiveText = (file: TFile, fn: (text: string) => string) =>
   processLiveText(file, fn).pipe(
     Effect.catchTag("LiveTextRewriteFailed", ({ path, cause }) =>
-      Effect.fail(new NoteWriteAborted({ path, cause })),
+      Effect.fail(aborted(path, cause)),
     ),
   );
 

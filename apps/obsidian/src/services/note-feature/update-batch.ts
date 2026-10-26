@@ -44,7 +44,7 @@ import { Profile } from "@/services/profile/service";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
-import { InertTemplateError } from "@/services/template/errors";
+import { isInertTemplateError } from "@/services/template/errors";
 import type { ZoteroPref } from "@/services/zotero-pref/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type { ItemDisplayRef } from "@/services/zotero-reads/display-ref";
@@ -61,7 +61,6 @@ import type {
   PlannedCreation,
   PlannedCreationProfile,
 } from "./creation-planning";
-import { plainNoteError } from "./errors";
 import type {
   CreateNoteDiagnostic,
   CreateNoteResult,
@@ -838,9 +837,8 @@ const executeBatchActions = Effect.fnUntraced(function* (
         onTaskFailed: (task, error) => {
           failures.push({ itemID: task.itemID, error });
         },
-        // A template that cannot render reaches the run as the cause of
-        // the write's failure.
-        haltOn: (error) => plainNoteError(error) instanceof InertTemplateError,
+        // A template that cannot render fails the write with its refusal.
+        haltOn: isInertTemplateError,
       });
     }),
   );
