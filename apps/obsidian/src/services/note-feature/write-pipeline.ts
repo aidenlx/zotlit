@@ -486,22 +486,6 @@ async function switchNoteProfile(
   return NO_BODY_UPDATE;
 }
 
-async function getImportedNotesForItem(
-  ctx: NoteFeatureDeps,
-  indexedKey: string,
-): Promise<TFile[]> {
-  await ctx.noteIndex.whenIndexed();
-  await using lease = await ctx.zoteroReads.acquireRead();
-  const item = await readItem(lease.reads, indexedKey);
-  if (!item) throw new Error(`Zotero item not found: ${indexedKey}`);
-  const { childNotes } = await Effect.runPromise(
-    lease.reads.ItemFamily({ itemID: item.itemID }),
-  );
-  return childNotes.flatMap((note) =>
-    ctx.noteIndex.getImportedNoteByNoteKey(note.indexedKey),
-  );
-}
-
 async function stampNoteFamily(
   ctx: NoteFeatureDeps,
   files: readonly TFile[],
@@ -848,7 +832,7 @@ async function contextForIndexedKey(
   excerptImages?: PreparedExcerpts;
 }> {
   const { reads, sourcePath, settings } = options;
-  const item = await readItem(reads, indexedKey);
+  const item = await Effect.runPromise(readItem(reads, indexedKey));
   const source = item && (await readNoteSource(reads, item.itemID));
   if (!source) throw new Error(`Zotero item not found: ${indexedKey}`);
   const excerptImages = options.previousNote
@@ -984,7 +968,6 @@ function conversionRequired(
 
 export {
   createNote,
-  getImportedNotesForItem,
   overwriteNote,
   replacedKeys,
   switchNoteProfile,

@@ -160,7 +160,6 @@ export default defineConfig({
         "src/services/attachment-open/actions.ts",
         "src/services/citation-index/sources.ts",
         "src/services/excerpt-image/prepare.ts",
-        "src/services/note-feature/creation-planning.ts",
         "src/services/note-feature/write-pipeline.ts",
         "src/services/pandoc/document-presentation.ts",
         "src/services/template/actions.ts",
@@ -329,7 +328,6 @@ export default defineConfig({
       // Plain async code, or an Effect.fn, that reaches the App through
       // `deps.app`: the deps must carry the tag first.
       files: [
-        "src/services/note-feature/creation-planning.ts",
         "src/views/note-preview/render.ts",
         "src/views/note-preview/session.ts",
       ],
@@ -368,8 +366,6 @@ export default defineConfig({
         "src/services/batch-run.ts",
         "src/services/citation-index/sources.ts",
         "src/services/excerpt-image/prepare.ts",
-        "src/services/note-feature/creation-planning.ts",
-        "src/services/note-feature/note-reads.ts",
         "src/services/note-feature/write-pipeline.ts",
         "src/services/profile/service.ts",
         "src/views/annot-view/view.tsx",

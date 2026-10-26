@@ -15,14 +15,10 @@ function relocationSource(current: NoteProfile): ResolvedProfile | undefined {
 }
 
 /** The live Item an Indexed Key names, or `undefined` when none does. */
-async function readItem(
-  reads: ZoteroReadsApi,
-  indexedKey: string,
-): Promise<Item | undefined> {
-  const items = await Effect.runPromise(
-    reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
-  );
-  return items.values().next().value;
+function readItem(reads: ZoteroReadsApi, indexedKey: string) {
+  return reads
+    .ItemsByIndexedKeys({ indexedKeys: [indexedKey] })
+    .pipe(Effect.map((items): Item | undefined => items.get(indexedKey)));
 }
 
 function resolveProfileDocument(

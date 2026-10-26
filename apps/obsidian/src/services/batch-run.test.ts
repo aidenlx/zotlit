@@ -29,7 +29,7 @@ import {
   classifyStream,
   executeBatchRun,
   makeStopRequest,
-  runBatch,
+  runBatchWith,
 } from "./batch-run";
 import type {
   BatchClassifyControls,
@@ -466,14 +466,14 @@ describe("a task that awaits a rejected Promise", () => {
   );
 });
 
-describe("a halted run through runBatch", () => {
-  it("rejects with the halting failure itself", async () => {
-    const { controls } = makeRunControls();
-    const failure = new WriteFailed({ message: "bad config" });
-    const onTaskFailed = vi.fn();
+describe("a halted run", () => {
+  it.effect("fails with the halting failure itself", () =>
+    Effect.gen(function* () {
+      const { controls } = makeRunControls();
+      const failure = new WriteFailed({ message: "bad config" });
+      const onTaskFailed = vi.fn();
 
-    await expect(
-      runBatch(
+      const error = yield* Effect.flip(
         executeBatchRun({
           tasks: [task(1)],
           controls,
@@ -482,13 +482,20 @@ describe("a halted run through runBatch", () => {
           onTaskFailed,
           haltOn: (error) => error === failure,
         }),
-      ),
-    ).rejects.toBe(failure);
-    expect(onTaskFailed).not.toHaveBeenCalled();
-  });
+      );
+
+      expect(error).toBe(failure);
+      expect(onTaskFailed).not.toHaveBeenCalled();
+    }),
+  );
 });
 
-describe("runBatch", () => {
+/** The Promise edge a batch modal's runner uses, over the default runtime. */
+const runBatch = runBatchWith((effect, options) =>
+  Effect.runPromiseExit(effect, options),
+);
+
+describe("runBatchWith", () => {
   it("keeps a typed failure that lands after the signal aborts", async () => {
     const abort = new AbortController();
     const error = new DbUnavailable({ message: "database degraded" });
@@ -643,7 +650,7 @@ describe("classifyStream", () => {
   );
 
   it.effect(
-    "runBatch rejects a pre-aborted classification before any read",
+    "runBatchWith rejects a pre-aborted classification before any read",
     () =>
       Effect.gen(function* () {
         const { controls, abort } = classifyControls();

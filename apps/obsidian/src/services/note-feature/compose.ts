@@ -171,7 +171,10 @@ export function composeLiteratureNote(
  * @see docs/adr/0030-profile-stamp-carries-a-label-hint-beside-the-id.md
  */
 export function applyComposedFrontmatter(
-  deps: ComposeNoteDeps,
+  deps: {
+    template: Pick<ComposeNoteDeps["template"], "frontmatterFields">;
+    events?: ComposeNoteDeps["events"];
+  },
   fm: Record<string, unknown>,
   input: ComposeFrontmatterInput,
 ): void {
