@@ -11,6 +11,7 @@ import {
 import type { Annotation, AnnotationResolvers, TemplateLink } from "@zotlit/db";
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import { portCall } from "@/lib/legacy-port";
 import { markdownLinker } from "@/lib/obsidian-file-manager";
@@ -30,7 +31,6 @@ import { ExcerptImages } from "./layer";
 import {
   makePublicationGate,
   materializeExcerpt,
-  recover,
   retainExcerpt,
 } from "./materialize";
 import type { MaterializedExcerpt, PublicationGate } from "./materialize";

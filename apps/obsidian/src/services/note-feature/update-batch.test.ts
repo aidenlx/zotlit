@@ -35,6 +35,7 @@ import { Workspace } from "@/lib/obsidian-workspace";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
 import type { AttachmentImportBatch } from "@/services/attachment-import/service";
+import type { BatchRunControls } from "@/services/batch-run";
 import { excerptReuseProbe } from "@/services/excerpt-image/__fixtures__/reuse";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type {
@@ -65,6 +66,7 @@ import {
   recordCalls,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
+import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
 import type {
   BatchModalOptions,
   BatchProfileChoice,
@@ -325,6 +327,7 @@ function makeDeps(
       getNotesByItemKey: () => [],
     },
     layer: Layer.mergeAll(
+      unimplementedProfileDialogServices,
       Layer.mock(LibraryScope, {
         resolveLibraries: () => Effect.sync(() => currentScope),
       }),
@@ -668,6 +671,94 @@ describe("classify through the DisplayRefs stream", () => {
         yield* Effect.promise(() => expect(classified).rejects.toThrow());
         expect(interrupted).toBe(true);
       }),
+  );
+});
+
+describe("unload during a batch run", () => {
+  /**
+   * The case's batch on `[1, 2]`, classified, with its modal's callbacks on a
+   * bridge over `unload`; `run` starts the run.
+   */
+  const classifiedOver = Effect.fnUntraced(function* (
+    deps: UpdateDeps,
+    unload: Scope.Scope,
+  ) {
+    itemsIn(
+      new Map([
+        [1, USER_LIBRARY_ID],
+        [2, USER_LIBRARY_ID],
+      ]),
+    );
+    const bridge = yield* scopedBridge.pipe(Scope.provide(unload));
+    yield* runBatchUpdate(deps, [1, 2], { bridge });
+    const modal = openedModals.at(-1)!;
+    yield* Effect.promise(() =>
+      modal.onClassify({
+        onProgress: vi.fn(),
+        signal: new AbortController().signal,
+      }),
+    );
+    const onItemSettled = vi.fn<BatchRunControls["onItemSettled"]>();
+    return {
+      onItemSettled,
+      run: () =>
+        modal.onRun({ onItemSettled, stop: Deferred.makeUnsafe<void>() }),
+    };
+  });
+
+  it.effect("closes without waiting for a stalled read", () =>
+    Effect.gen(function* () {
+      const deps = makeDeps("ready");
+      const reading = yield* Deferred.make<void>();
+      // The create stalls in its reads, before any write.
+      deps.noteFeature.createNote = () =>
+        Deferred.succeed(reading, undefined).pipe(Effect.andThen(Effect.never));
+      const unload = yield* Scope.make();
+      const { run, onItemSettled } = yield* classifiedOver(deps, unload);
+
+      const running = run();
+      yield* Deferred.await(reading);
+      yield* Scope.close(unload, Exit.void);
+
+      yield* Effect.promise(() => running.catch(() => undefined));
+      // An interrupted row is no failure.
+      expect(onItemSettled).not.toHaveBeenCalled();
+    }),
+  );
+
+  it.effect("waits for a started write step to finish", () =>
+    Effect.gen(function* () {
+      const deps = makeDeps("ready");
+      const writing = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      let written = false;
+      deps.noteFeature.createNote = () =>
+        Effect.uninterruptible(
+          Effect.gen(function* () {
+            yield* Deferred.succeed(writing, undefined);
+            yield* Deferred.await(release);
+            written = true;
+            return {
+              outcome: "created",
+              file: noteAt("Literature/New.md"),
+            } satisfies CreateNoteResult;
+          }),
+        );
+      const unload = yield* Scope.make();
+      const { run } = yield* classifiedOver(deps, unload);
+
+      const running = run();
+      yield* Deferred.await(writing);
+      const closing = yield* Effect.forkChild(Scope.close(unload, Exit.void), {
+        startImmediately: true,
+      });
+      expect(written).toBe(false);
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(closing);
+
+      expect(written).toBe(true);
+      yield* Effect.promise(() => running.catch(() => undefined));
+    }),
   );
 });
 
@@ -1040,6 +1131,7 @@ describe("one item without additional Profiles", () => {
         ),
     });
     const layer = Layer.mergeAll(
+      unimplementedProfileDialogServices,
       Layer.mock(NoteFeature, feature),
       Layer.mock(LibraryScope, {}),
       Layer.mock(MetadataCache, {

@@ -1,9 +1,5 @@
 import { it } from "@effect/vitest";
-import {
-  ButtonComponent as MockButton,
-  ToggleComponent,
-  controlsOf,
-} from "@mock/obsidian";
+import { ToggleComponent, controlsOf } from "@mock/obsidian";
 import { Context, Effect, Fiber, Layer } from "effect";
 // @vitest-environment happy-dom
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -532,24 +528,18 @@ it.effect(
         ),
       );
       f.save.mockImplementationOnce(() => new Promise(() => {}));
+      using buttons = observeButtons();
       const pending = yield* f.run({ source: "clipboard" });
       yield* until(() => f.opened.mock.calls.length === 1);
       const modal = f.opened.mock.instances[0] as ImportProfileModal;
       modal.onOpen();
-      const footer = modal.modalEl.querySelector<HTMLElement>(
-        ".modal-button-container",
-      )!;
-      controlsOf(footer)
-        .find(
-          (control): control is MockButton =>
-            control instanceof MockButton &&
-            control.text === m.profile_import_replace(),
-        )!
-        .click();
+      // The save handler's own Promise ends once its catch has run.
+      const saved: unknown = buttons.click(m.profile_import_replace());
       yield* until(() => f.save.mock.calls.length === 1);
       yield* Fiber.interrupt(pending);
-      // Turns enough for the rejected save to run its catch.
-      for (let turn = 0; turn < 100; turn++) yield* Effect.yieldNow;
+      yield* Effect.promise(async () => {
+        await saved;
+      });
       expect(failed).not.toHaveBeenCalled();
     }),
 );

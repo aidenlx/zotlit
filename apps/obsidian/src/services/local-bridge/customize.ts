@@ -4,8 +4,7 @@
 //
 // The sheet itself is a port (`confirmLaunch`), so the decision this module
 // makes is testable apart from the modal that renders it.
-import { Duration, Effect, Option, Stream } from "effect";
-import type { Context } from "effect";
+import { Context, Duration, Effect, Layer, Option, Stream } from "effect";
 import type { CachedMetadata, TFile } from "obsidian";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
@@ -19,7 +18,9 @@ import { portCall } from "@/lib/legacy-port";
 import { Notifier } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
+import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { LocalServer } from "@/services/local-server/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
@@ -77,6 +78,18 @@ export type ConfirmLaunch = (
   settle: (consent: LaunchConsent | null) => void,
 ) => ClosableModal;
 
+/**
+ * The document the native editor opens: a Profile's own file, or the Default
+ * Profile, whose document may not exist yet. `getSource` answers the Default
+ * Profile's text.
+ */
+export type NativeProfileTarget =
+  | TFile
+  | {
+      readonly defaultDocumentPath: string;
+      readonly getSource: (selector: typeof DEFAULT_PROFILE) => Promise<string>;
+    };
+
 /** What the flow reaches outside the services: the build, the UI and the device. */
 export interface CustomizePorts {
   readonly webWorkbenchEnabled: boolean;
@@ -84,7 +97,11 @@ export interface CustomizePorts {
   readonly pluginVersion: string;
   readonly confirmLaunch: ConfirmLaunch;
   readonly openExternal: (url: string) => void;
-  readonly openNative: (request: CustomizeRequest) => Promise<void>;
+  /** Open `target` in the Template Workbench inside Obsidian. */
+  readonly openNative: (
+    request: CustomizeRequest,
+    target: NativeProfileTarget,
+  ) => Promise<void>;
   /** The destination this device remembers (`views/template-workbench/preferences`). */
   readonly preference: () => ProfileCustomization;
   readonly rememberPreference: (
@@ -102,28 +119,50 @@ export type CustomizeServices =
   | Notifier
   | Workspace
   | MetadataCache
-  | ObsidianEnv;
+  | ObsidianEnv
+  | Vault;
 
 /** Open a template in the chosen editor, with approval for web access. */
 export type CustomizeAction = (request: CustomizeRequest) => Promise<void>;
 
+/** The one Customize flow every entry action shares, the setting tab included. */
+export class Customize extends Context.Service<
+  Customize,
+  {
+    /** @see customize */
+    open(
+      request: CustomizeRequest,
+    ): Effect.Effect<void, Effect.Error<ReturnType<typeof customize>>>;
+  }
+>()("zotlit/local-bridge/Customize") {}
+
+/** The Customize flow over `ports` and the services of the graph. */
+export const layerCustomize = (ports: CustomizePorts) =>
+  Layer.effect(
+    Customize,
+    Effect.gen(function* () {
+      const context = yield* Effect.context<CustomizeServices>();
+      return Customize.of({
+        open: Effect.fn("Customize.open")((request: CustomizeRequest) =>
+          customize(request, ports).pipe(Effect.provideContext(context)),
+        ),
+      });
+    }),
+  );
+
 /**
- * The Customize flow for callers outside Effect: the entry actions, the
- * setting tab and the Workbench view. A run rejects with what failed. Unload
- * interrupts a run, which closes an open launch sheet, and the run resolves.
+ * The Customize flow for callers outside Effect: the entry actions and the
+ * Workbench view. A run rejects with what failed. Unload interrupts a run,
+ * which closes an open launch sheet, and the run resolves.
  */
 export function bindCustomize(
   bridge: Pick<EffectBridge, "runPromiseExit">,
-  context: Context.Context<CustomizeServices>,
-  ports: CustomizePorts,
+  service: Customize["Service"],
 ): CustomizeAction {
   return (request) =>
     bridge
       .runPromiseExit(
-        customize(request, ports).pipe(
-          Effect.mapError(({ cause }) => cause),
-          Effect.provideContext(context),
-        ),
+        service.open(request).pipe(Effect.mapError(({ cause }) => cause)),
       )
       .then((exit) => valueOr(exit, undefined));
 }
@@ -135,9 +174,13 @@ export const customize = Effect.fn("LocalBridge.customize")(function* (
   const item =
     request.item === undefined ? yield* activeNoteItem : request.item;
   const nativeRequest = { ...request, item };
-  const openNative = portCall("open-native", () =>
-    ports.openNative(nativeRequest),
-  );
+  const openNative = Effect.gen(function* () {
+    const target = yield* nativeTarget(request.profileId);
+    if (target)
+      yield* portCall("open-native", () =>
+        ports.openNative(nativeRequest, target),
+      );
+  });
   if (!ports.webWorkbenchEnabled) {
     yield* openNative;
     return;
@@ -214,6 +257,36 @@ export const customize = Effect.fn("LocalBridge.customize")(function* (
     return;
   }
   ports.openExternal(url);
+});
+
+/**
+ * What the native editor opens for `profileId`: the Default Profile, or the
+ * file of a Profile the registry holds; `null` for a Profile it does not hold
+ * or whose file is gone.
+ */
+const nativeTarget = Effect.fn("LocalBridge.nativeTarget")(function* (
+  profileId: ProfileSelector,
+) {
+  const profile = yield* Profile;
+  if (profileId === DEFAULT_PROFILE) {
+    const defaultDocumentPath = yield* profile.defaultDocumentPath;
+    // The editor opens a saved document as written, so one that does not
+    // parse stays open for repair. Only the draft that stands in for a missing
+    // document needs the source.
+    const saved = yield* (yield* Vault).getFileByPath(defaultDocumentPath);
+    const source = saved ? null : yield* profile.getSource(DEFAULT_PROFILE);
+    const target: NativeProfileTarget = {
+      defaultDocumentPath,
+      getSource: async () => {
+        if (source === null)
+          throw new Error(`${defaultDocumentPath} was removed while opening`);
+        return source;
+      },
+    };
+    return target;
+  }
+  const entry = (yield* profile.profiles).find(({ id }) => id === profileId);
+  return entry ? yield* (yield* Vault).getFileByPath(entry.path) : null;
 });
 
 /**

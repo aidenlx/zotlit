@@ -45,7 +45,9 @@ export const publishExcerptPng = Effect.fnUntraced(
             ),
           ),
     );
-    yield* fs.writeFile(staging, bytes, { flag: "wx" });
+    // An interrupt stops waiting for a native write, not the write itself,
+    // so the write ends before the release removes the staged file.
+    yield* Effect.uninterruptible(fs.writeFile(staging, bytes, { flag: "wx" }));
     yield* fs
       .link(staging, path)
       .pipe(

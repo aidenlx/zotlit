@@ -4,14 +4,13 @@ import type { App } from "obsidian";
 
 import { awaitConfirm } from "@/lib/confirm";
 import type { ConfirmOptions } from "@/lib/confirm";
-import type { LegacyPortError } from "@/lib/legacy-port";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { chooseBatchProfile } from "@/services/batch-profile-choice";
 import type {
   BatchProfilePickerDeps,
   BatchProfilePickerOptions,
 } from "@/services/batch-profile-choice";
-import type { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { BatchModal } from "@/views/batch-modal";
 import type { BatchModalOptions } from "@/views/batch-modal";
 
@@ -25,12 +24,12 @@ export interface NoteImportView {
   /** The user's answer; an interrupt closes the modal. */
   confirm(options: ConfirmOptions): Effect.Effect<boolean>;
   /**
-   * The user's Profile, or `undefined`; an interrupt closes the picker. Fails
-   * where the installed styles cannot be listed.
+   * The user's Profile, or `undefined`; an interrupt closes the picker and
+   * the Profile dialog it opened.
    */
   chooseProfile(
     options: BatchProfilePickerOptions,
-  ): Effect.Effect<ProfileSelector | undefined, LegacyPortError, ZoteroPref>;
+  ): Effect.Effect<ProfileSelector | undefined, never, ProfileDialogServices>;
 }
 
 export function createNoteImportView(

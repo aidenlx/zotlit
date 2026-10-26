@@ -22,7 +22,7 @@ import { defaults } from "@/services/settings/schema";
 
 import { buildTemplate } from "./__fixtures__";
 import { CITATION_TEMPLATE_SOURCE, DEFAULT_TEMPLATES } from "./defaults";
-import { InertTemplateError } from "./errors";
+import { InertTemplateError, plainTemplateError } from "./errors";
 import type { MissingPartialError } from "./errors";
 
 interface Harness {
@@ -239,30 +239,34 @@ filename: "{{ zt.title }}"
         };
 
         expect(
-          service.renderProfileAnnotation(data, {
+          yield* service.templateService.renderProfileAnnotation(data, {
             profile: resolveProfile(converted, profiles[0]!.id)!,
           }),
         ).toBe("PROFILE Excerpt");
         // plain.md has no Annotation Section: the document is invalid, and the
         // render refuses instead of substituting the embedded default.
-        expect(() =>
-          service.renderProfileAnnotation(data, {
-            profile: resolveProfile(converted, profiles[1]!.id)!,
-          }),
-        ).toThrow(
+        expect(
+          plainTemplateError(
+            yield* Effect.flip(
+              service.templateService.renderProfileAnnotation(data, {
+                profile: resolveProfile(converted, profiles[1]!.id)!,
+              }),
+            ),
+          ),
+        ).toEqual(
           expect.objectContaining({ code: "missing-annotation-section" }),
         );
         // A documentless Profile predates the required-block rule and keeps the
         // embedded default through the legacy machinery.
         expect(
-          service.renderProfileAnnotation(data, {
+          yield* service.templateService.renderProfileAnnotation(data, {
             profile: resolveProfile(converted, profiles[2]!.id)!,
           }),
         ).toContain(
           "[!note] Page [4](zotero://open/library/items/ATTX2345?annotation=ANNX2345&page=4)",
         );
         expect(
-          service.renderProfileAnnotation(data, {
+          yield* service.templateService.renderProfileAnnotation(data, {
             profile: resolveProfile(
               { ...converted, "note.template-conversion-pending": true },
               profiles[0]!.id,
@@ -290,14 +294,18 @@ filename: "{{ zt.title }}"
         ],
       };
 
-      expect(() =>
-        service.renderProfileAnnotation(
-          { text: "Excerpt" },
-          {
-            profile: resolveProfile(settings, settings.profiles[0]!.id)!,
-          },
+      expect(
+        plainTemplateError(
+          yield* Effect.flip(
+            service.templateService.renderProfileAnnotation(
+              { text: "Excerpt" },
+              {
+                profile: resolveProfile(settings, settings.profiles[0]!.id)!,
+              },
+            ),
+          ),
         ),
-      ).toThrow(
+      ).toEqual(
         expect.objectContaining({
           diagnostic: expect.objectContaining({
             code: "missing-literature-note-template",
@@ -365,7 +373,10 @@ filename: "{{ zt.title }}"
         );
         expect(original.renderForCreate(data)).toContain("PROFILE A");
         expect(
-          service.renderProfileAnnotation(data.annotation, { profile }),
+          yield* service.templateService.renderProfileAnnotation(
+            data.annotation,
+            { profile },
+          ),
         ).toBe("PROFILE A");
         const exported = yield* Effect.promise(() =>
           service.exportLiteratureNotePack("zotlit-profile.books.md"),
@@ -385,7 +396,10 @@ filename: "{{ zt.title }}"
         );
         yield* TestClock.adjust(500);
         expect(
-          service.renderProfileAnnotation(data.annotation, { profile }),
+          yield* service.templateService.renderProfileAnnotation(
+            data.annotation,
+            { profile },
+          ),
         ).toBe("CHANGED A");
         expect(
           service
@@ -710,7 +724,9 @@ partials:
           makeHarness(undefined, context),
         );
 
-        const region = service.renderManagedContent({ notes: [] });
+        const region = yield* service.templateService.renderManagedContent({
+          notes: [],
+        });
 
         expect(region.startsWith("%%zt-managed%%\n## Annotations\n")).toBe(
           true,
@@ -734,9 +750,9 @@ partials:
       expect(
         service.render("note", { title: "Paper", attachments: [] }),
       ).toContain("%%zt-managed%%\nManaged Paper\n\n%%/zt-managed%%");
-      expect(service.renderManagedContent({ title: "Paper" })).toBe(
-        "%%zt-managed%%\nManaged Paper\n\n%%/zt-managed%%",
-      );
+      expect(
+        yield* service.templateService.renderManagedContent({ title: "Paper" }),
+      ).toBe("%%zt-managed%%\nManaged Paper\n\n%%/zt-managed%%");
     }),
   );
 
@@ -1752,7 +1768,9 @@ partials:
             path: "templates/zotlit-citation.md",
           }),
         );
-        expect(service.getCitationTemplateStatus()).toMatchObject({
+        expect(
+          yield* service.templateService.getCitationTemplateStatus,
+        ).toMatchObject({
           customized: true,
           language: "liquid",
           inertPath: "templates/zotlit-citation.md",
@@ -1783,7 +1801,9 @@ partials:
         expect(
           service.renderCitation([{ citationKey: "smith2024" }], "alt"),
         ).toBe("@smith2024");
-        expect(service.getCitationTemplateStatus()).toMatchObject({
+        expect(
+          yield* service.templateService.getCitationTemplateStatus,
+        ).toMatchObject({
           customized: true,
           language: "eta",
           inertPath: null,
@@ -1819,7 +1839,9 @@ partials:
           makeHarness(undefined, context),
         );
 
-        expect(service.getCitationTemplateStatus()).toMatchObject({
+        expect(
+          yield* service.templateService.getCitationTemplateStatus,
+        ).toMatchObject({
           path: "templates/zotlit-citation.md",
           customized: false,
           language: "liquid",
@@ -1832,7 +1854,9 @@ partials:
 
         expect(file.path).toBe("templates/zotlit-citation.md");
         expect(vault.contents.get(file.path)).toBe(CITATION_TEMPLATE_SOURCE);
-        expect(service.getCitationTemplateStatus().customized).toBe(true);
+        expect(
+          (yield* service.templateService.getCitationTemplateStatus).customized,
+        ).toBe(true);
 
         // Opening an existing document hands it back rather than overwriting it.
         vault.modifyFile(file.path, "EDITED {{ zt.variant }}");
@@ -1854,7 +1878,9 @@ partials:
         yield* Fiber.join(restored);
 
         expect(vault.getFileByPath(file.path)).toBeNull();
-        expect(service.getCitationTemplateStatus().customized).toBe(false);
+        expect(
+          (yield* service.templateService.getCitationTemplateStatus).customized,
+        ).toBe(false);
         expect(
           service.renderCitation([{ citationKey: "smith2024" }], "main"),
         ).toBe("[@smith2024]");
@@ -1957,7 +1983,7 @@ partials:
         );
 
         expect(
-          service.renderFilename({
+          yield* service.templateService.renderFilename({
             citationKey: "smith2024",
             DOI: null,
             title: "Paper",
@@ -1965,7 +1991,7 @@ partials:
           }),
         ).toBe("smith2024%zt-suffix:6:_:%");
         expect(
-          service.renderFilename({
+          yield* service.templateService.renderFilename({
             citationKey: null,
             DOI: null,
             title: null,
@@ -1988,7 +2014,7 @@ partials:
         );
 
         expect(
-          service.renderFilename({
+          yield* service.templateService.renderFilename({
             citationKey: null,
             DOI: null,
             title: "Paper",
@@ -2017,7 +2043,7 @@ partials:
         yield* TestClock.adjust(500);
 
         expect(
-          service.renderFilename({
+          yield* service.templateService.renderFilename({
             citationKey: null,
             DOI: null,
             title: "Paper",
@@ -2042,7 +2068,7 @@ partials:
           );
 
           expect(
-            service.renderFilename({
+            yield* service.templateService.renderFilename({
               citationKey: null,
               DOI: null,
               title: "Paper",
@@ -2066,14 +2092,18 @@ partials:
             makeHarness({ vault }, context),
           );
 
-          expect(() =>
-            service.renderFilename({
-              citationKey: null,
-              DOI: null,
-              title: "Paper",
-              key: "AB12CD34",
-            }),
-          ).toThrow();
+          expect(
+            plainTemplateError(
+              yield* Effect.flip(
+                service.templateService.renderFilename({
+                  citationKey: null,
+                  DOI: null,
+                  title: "Paper",
+                  key: "AB12CD34",
+                }),
+              ),
+            ),
+          ).toBeDefined();
           expect(service.compileErrors.get("filename")).toBeDefined();
         }),
     );
@@ -2099,7 +2129,7 @@ partials:
           );
 
           expect(
-            service.renderFilename({
+            yield* service.templateService.renderFilename({
               citationKey: null,
               DOI: null,
               title: "Paper",
@@ -2123,14 +2153,18 @@ partials:
             makeHarness({ vault }, context),
           );
 
-          expect(() =>
-            service.renderFilename({
-              citationKey: null,
-              DOI: null,
-              title: "Paper",
-              key: "AB12CD34",
-            }),
-          ).toThrow(InertTemplateError);
+          expect(
+            plainTemplateError(
+              yield* Effect.flip(
+                service.templateService.renderFilename({
+                  citationKey: null,
+                  DOI: null,
+                  title: "Paper",
+                  key: "AB12CD34",
+                }),
+              ),
+            ),
+          ).toBeInstanceOf(InertTemplateError);
         }),
     );
   });
@@ -3236,7 +3270,7 @@ describe("Template Document kinds", () => {
           makeHarness({ vault }, context),
         );
 
-        expect(service.getReservedPartialFiles()).toEqual([
+        expect(yield* service.templateService.getReservedPartialFiles).toEqual([
           {
             name: "annotation",
             path: "templates/zotlit-partial.annotation.md",
@@ -3252,7 +3286,7 @@ describe("Template Document kinds", () => {
         vault.deleteFile("templates/zotlit-partial.annotation.md");
         yield* TestClock.adjust(500);
 
-        expect(service.getReservedPartialFiles()).toEqual([
+        expect(yield* service.templateService.getReservedPartialFiles).toEqual([
           { name: "citation", path: "templates/zotlit-partial.citation.md" },
         ]);
       }),
@@ -3274,7 +3308,7 @@ describe("Template Document kinds", () => {
 
         // One namespace: registering this file would name every Literature Note.
         expect(
-          service.renderFilename({
+          yield* service.templateService.renderFilename({
             citationKey: "smith2024",
             DOI: null,
             title: "Paper",
@@ -3282,7 +3316,7 @@ describe("Template Document kinds", () => {
           }),
         ).toBe("smith2024%zt-suffix:6:_:%");
         expect(service.getPartialNames()).toEqual([]);
-        expect(service.getReservedPartialFiles()).toEqual([
+        expect(yield* service.templateService.getReservedPartialFiles).toEqual([
           { name: "filename", path: "templates/zotlit-partial.filename.md" },
         ]);
       }),

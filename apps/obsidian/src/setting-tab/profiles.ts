@@ -10,15 +10,16 @@ import type {
 import { awaitConfirm } from "@/lib/confirm";
 import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
-import { portCall } from "@/lib/legacy-port";
 import { showMenuAtButton } from "@/lib/menu";
 import { FileManager } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
 import { leaveSettingsFor } from "@/lib/plugin-host";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { Customize } from "@/services/local-bridge/customize";
 import { installedStyles } from "@/services/note-feature/creation-view";
 import { Profile } from "@/services/profile/service";
+import { PluginSettings } from "@/services/settings/service";
 import { openNativeProfile } from "@/views/template-workbench/register";
 
 import { referencesStyleDefinition } from "./citations";
@@ -59,7 +60,7 @@ function profileActionsLocked(ctx: SettingTabContext): boolean {
   return ctx.tab.sync(
     Effect.gen(function* () {
       const loaded = yield* (yield* Profile).loaded;
-      const settings = yield* ctx.settings.current;
+      const settings = yield* (yield* PluginSettings).current;
       return !loaded || !!settings["note.template-conversion-pending"];
     }),
   );
@@ -90,11 +91,8 @@ function runAction<A, E>(
 }
 
 /** Open a Profile in the configured workbench. */
-function customize(
-  ctx: SettingTabContext,
-  profileId: ProfileId | typeof DEFAULT_PROFILE,
-) {
-  return portCall("customize", () => ctx.customize({ profileId }));
+function customize(profileId: ProfileId | typeof DEFAULT_PROFILE) {
+  return Customize.use((flow) => flow.open({ profileId }));
 }
 
 /**
@@ -198,7 +196,7 @@ function profilesList(
             .setIcon("pencil")
             .setTooltip(m.settings_profile_edit())
             .setDisabled(locked)
-            .onClick(() => runAction(ctx, customize(ctx, profile.id))),
+            .onClick(() => runAction(ctx, customize(profile.id))),
         );
         setting.addExtraButton((button) =>
           button
@@ -212,10 +210,7 @@ function profilesList(
                   .setIcon("copy")
                   .setDisabled(locked)
                   .onClick(() =>
-                    runAction(
-                      ctx,
-                      duplicateProfileToWorkbench(ctx, profile.id),
-                    ),
+                    runAction(ctx, duplicateProfileToWorkbench(profile.id)),
                   ),
               );
               menu.addItem((item) =>
@@ -411,7 +406,7 @@ function defaultDocumentItem(
           .setIcon("pencil")
           .setTooltip(m.settings_profile_edit())
           .setDisabled(profileActionsLocked(ctx))
-          .onClick(() => runAction(ctx, customize(ctx, DEFAULT_PROFILE))),
+          .onClick(() => runAction(ctx, customize(DEFAULT_PROFILE))),
       );
     },
   };
@@ -436,7 +431,7 @@ function defaultProfileItem(
           .setIcon("pencil")
           .setTooltip(m.settings_profile_edit())
           .setDisabled(profileActionsLocked(ctx))
-          .onClick(() => runAction(ctx, customize(ctx, DEFAULT_PROFILE))),
+          .onClick(() => runAction(ctx, customize(DEFAULT_PROFILE))),
       );
 
       setting.addExtraButton((button) =>

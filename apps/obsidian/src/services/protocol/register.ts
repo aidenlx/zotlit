@@ -87,6 +87,7 @@ import type { UseLedger } from "@/services/use-ledger/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
@@ -97,6 +98,7 @@ export type ProtocolServices =
   | LocalServer
   | Notifier
   | ObsidianEnv
+  | ProfileDialogServices
   | UseLedger
   | Vault
   | Workspace
@@ -104,8 +106,9 @@ export type ProtocolServices =
   | ZoteroReads;
 
 /**
- * The legacy values the handlers still hold. The interactive creation, the
- * Profile factories and the Attachment opener convert in later slices.
+ * The legacy values the handlers still hold. The Profile dialogs run in the
+ * handler's fiber; the note import view and the Attachment opener convert in
+ * later slices.
  */
 export interface ProtocolDeps extends InteractiveCreationPorts {
   webWorkbenchEnabled: boolean;
@@ -681,9 +684,7 @@ class ImportedProfileMissing extends Schema.TaggedError<
 const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
   function* (deps: ProtocolDeps, paneType: PaneType | undefined) {
     yield* Effect.logDebug("Opening clipboard Profile import");
-    const profile = yield* portCall("import-profile", () =>
-      deps.importProfile({ source: "clipboard" }),
-    );
+    const profile = yield* deps.importProfile({ source: "clipboard" });
     if (!profile) {
       yield* Effect.logDebug(
         "Clipboard Profile import ended without a document",

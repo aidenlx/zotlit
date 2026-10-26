@@ -18,6 +18,7 @@ import { ExcerptDisplays } from "@/services/excerpt-image/display";
 import { ExcerptImages } from "@/services/excerpt-image/layer";
 import { LanguagePack } from "@/services/language-pack/service";
 import { LibraryScope } from "@/services/library-scope/service";
+import { Customize } from "@/services/local-bridge/customize";
 import { LocalBridge } from "@/services/local-bridge/service";
 import { LocalServer } from "@/services/local-server/service";
 import { NoteFeature } from "@/services/note-feature/service";
@@ -34,6 +35,7 @@ import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 import { makeSettingTab } from "./effect-tab";
 import type { SettingTabShape } from "./effect-tab";
+import type { ProfileDialogServices } from "./profile-dialogs";
 
 /**
  * Every service the tab reads, with no member implemented: a test's own
@@ -59,6 +61,7 @@ export const unimplementedTabServices = Layer.mergeAll(
   Layer.mock(ChineseSegmenter)({}),
   Layer.mock(AttachmentImport)({}),
   Layer.mock(LocalBridge)({}),
+  Layer.mock(Customize)({}),
   // Services with plain members: a read of a member no test gave throws.
   Layer.succeed(
     LanguagePack,
@@ -85,6 +88,31 @@ export const unimplementedTabServices = Layer.mergeAll(
     stubService<FileSystem.FileSystem>("FileSystem", {}),
   ),
 );
+
+/**
+ * Every service a Profile dialog reads, with no member implemented, for a
+ * caller's test whose dialogs are fakes: merge it before the test's own
+ * services, which replace these.
+ */
+export const unimplementedProfileDialogServices = Layer.mergeAll(
+  Layer.mock(Profile)({}),
+  Layer.mock(Template)({}),
+  Layer.mock(NoteFeature)({}),
+  Layer.mock(Vault)({}),
+  Layer.mock(ZoteroPref)({}),
+  Layer.mock(ZoteroReads)({
+    reads: stubService<ZoteroReadsApi>("ZoteroReads.reads", {}),
+  }),
+  Layer.mock(NoteIndex)({}),
+  Layer.mock(PluginSettings)({}),
+  Layer.mock(FileManager)({}),
+  Layer.mock(LibraryScope)({}),
+  Layer.succeed(
+    FileSystem.FileSystem,
+    stubService<FileSystem.FileSystem>("FileSystem", {}),
+  ),
+  testNotifier().layer,
+) satisfies Layer.Layer<ProfileDialogServices>;
 
 /**
  * A tab service whose Effects read `services`, with a recording Notifier

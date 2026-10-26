@@ -7,6 +7,7 @@ import type { ManagedRuntime } from "effect";
 import { resolveIndexedKeyLibraryIn } from "@zotlit/db";
 
 import { effectBridge, valueOr } from "@/lib/effect-bridge";
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
@@ -14,7 +15,7 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
  * The tag names in use in the Annotation's Library, which the tag editor
  * suggests. The Zotero database answers them, so a tag saved moments ago
  * joins once the database has caught up. Any failure answers no tags and
- * warns, so the editor still opens.
+ * warns, so the editor still opens; an interrupt passes on.
  */
 export const libraryTagNames = (
   reads: Pick<ZoteroReads["Service"], "current" | "snapshot">,
@@ -35,12 +36,13 @@ export const libraryTagNames = (
       }),
     );
   }).pipe(
-    Effect.catchCause((cause) =>
-      Effect.logWarning("Failed to read a library's tag names").pipe(
-        Effect.annotateLogs({ annotationKey, error: Cause.squash(cause) }),
-        withLogCategory("database", "library-tag-names"),
-        Effect.as([] as readonly string[]),
-      ),
+    recover(
+      (cause) =>
+        Effect.logWarning("Failed to read a library's tag names").pipe(
+          Effect.annotateLogs({ annotationKey, error: Cause.squash(cause) }),
+          withLogCategory("database", "library-tag-names"),
+        ),
+      Effect.succeed<readonly string[]>([]),
     ),
   );
 

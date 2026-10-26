@@ -14,6 +14,7 @@ import type {
   ConfiguredReadMode,
   EffectiveReadMode,
 } from "@/services/database/read-source";
+import { PluginSettings } from "@/services/settings/service";
 import {
   getZoteroProfilesRoot,
   PREFS_FILENAME,
@@ -343,12 +344,14 @@ function renderReadModeRow(
       .addOption("reflink", modeLabel("reflink"))
       .addOption("copy", modeLabel("copy"))
       .addOption("immutable", modeLabel("immutable"))
-      .setValue(ctx.tab.sync(ctx.settings.current)["zotero.read-mode"])
+      .setValue(ctx.tab.sync(currentSettings)["zotero.read-mode"])
       .onChange((value) => {
         void ctx.tab.run(
-          ctx.settings.update({
-            "zotero.read-mode": value as ConfiguredReadMode,
-          }),
+          PluginSettings.use((settings) =>
+            settings.update({
+              "zotero.read-mode": value as ConfiguredReadMode,
+            }),
+          ),
           m.settings_failed_save(),
         );
       });
@@ -598,24 +601,28 @@ function renderSourceIdRow(
   setting.setDesc(desc);
 
   return ctx.tab.mount(
-    ZoteroPref.use((pref) =>
-      paintEach(
+    Effect.gen(function* () {
+      const pref = yield* ZoteroPref;
+      const settings = yield* PluginSettings;
+      yield* paintEach(
         Stream.merge(
           pathChanges(pref),
-          ctx.settings.changes.pipe(Stream.mapEffect(() => pref.current)),
+          settings.changes.pipe(Stream.mapEffect(() => pref.current)),
         ),
         (snapshot) => {
           profileLine.textContent = snapshot.resolvedProfileDir ?? "—";
           dataLine.textContent = snapshot.dataDir;
           idLine.textContent = snapshot.sourceId ?? "—";
         },
-      ),
-    ),
+      );
+    }),
   );
 }
 
 /** The preference snapshot a row reads on a user's choice. */
 const currentPref = ZoteroPref.use((pref) => pref.current);
+
+const currentSettings = PluginSettings.use((settings) => settings.current);
 
 /** The Zotero data directory the styles and attachments resolve against now. */
 export const zoteroDataDir = Effect.map(

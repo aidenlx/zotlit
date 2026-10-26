@@ -117,7 +117,7 @@ import type {
 } from "@/services/note-feature/operations";
 import { updateNoteToast } from "@/services/note-feature/update-single";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import { listInstalledStyles } from "@/services/pandoc/styles";
+import { listInstalledStylesOrNone } from "@/services/pandoc/styles";
 import type { PlainProfile } from "@/services/profile/plain";
 import { openCitationTemplate } from "@/services/template/actions";
 import type { PlainTemplate } from "@/services/template/plain";
@@ -1851,7 +1851,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     try {
       if (this.#closed) return;
       const dataDir = this.#deps.zoteroPref.dataDir;
-      const styles = dataDir ? await listInstalledStyles(dataDir) : [];
+      const styles = dataDir ? await listInstalledStylesOrNone(dataDir) : [];
       if (this.#closed) return;
       this.#citationStyles = styles;
       this.#stylesUnavailable = false;

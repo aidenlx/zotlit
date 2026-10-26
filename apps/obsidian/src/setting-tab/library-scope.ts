@@ -21,6 +21,7 @@ import type {
   LibrarySelector,
 } from "@/services/library-scope/scope";
 import { LibraryScope as LibraryScopeService } from "@/services/library-scope/service";
+import { PluginSettings } from "@/services/settings/service";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 
@@ -232,9 +233,9 @@ function removeSelector(
 /** Persist and rebuild the tab, so the list rows follow the new selection. */
 function saveScope(ctx: SettingTabContext, scope: LibraryScope): void {
   void ctx.tab.run(
-    ctx.settings
-      .update({ "zotero.library-scope": scope })
-      .pipe(Effect.andThen(ctx.tab.update)),
+    PluginSettings.use((settings) =>
+      settings.update({ "zotero.library-scope": scope }),
+    ).pipe(Effect.andThen(ctx.tab.update)),
     m.settings_failed_save(),
   );
 }

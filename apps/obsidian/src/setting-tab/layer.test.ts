@@ -24,7 +24,6 @@ import { Template } from "@/services/template/service";
 
 import { unimplementedTabServices } from "./__fixtures__";
 import { layerSettingTab } from "./layer";
-import type { SettingTabLegacy } from "./layer";
 
 const CONNECTION: WorkbenchConnection = {
   origin: "https://zotlit.aidenlx.site",
@@ -119,7 +118,7 @@ const tabLayer = Effect.gen(function* () {
     ),
   );
   yield* Layer.build(
-    layerSettingTab(stubService<SettingTabLegacy>("SettingTabLegacy", {})).pipe(
+    layerSettingTab({ webWorkbenchEnabled: true }).pipe(
       Layer.provide(testNotifier().layer),
       // The test gives the services the tab layer itself reads; the rest
       // stay unimplemented.

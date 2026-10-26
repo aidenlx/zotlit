@@ -50,6 +50,7 @@ import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type { ItemDisplayRef } from "@/services/zotero-reads/display-ref";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
+import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { FlatManifest } from "@/views/batch-modal";
 import type {
   BatchProfileChoice,
@@ -87,7 +88,10 @@ function profileLabel(profile: ResolvedProfile): string {
   return profile.label ?? m.settings_profile_default_name();
 }
 
-/** The services a note update reads through their tags. */
+/**
+ * The services a note update reads through their tags, the Profile dialogs
+ * its Profile choice opens included.
+ */
 export type BatchUpdateServices =
   | LibraryScope
   | MetadataCache
@@ -96,6 +100,7 @@ export type BatchUpdateServices =
   | Notifier
   | PluginSettings
   | Profile
+  | ProfileDialogServices
   | Workspace
   | ZoteroPref
   | ZoteroReads;

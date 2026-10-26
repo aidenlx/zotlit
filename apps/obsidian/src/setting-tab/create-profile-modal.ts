@@ -48,9 +48,6 @@ export interface CreateProfileOptions {
   indexedKey?: string;
   useForNote?: boolean;
 }
-export type CreateProfile = (
-  options?: CreateProfileOptions,
-) => Promise<CreatedProfile | undefined>;
 
 /** What the creation dialog reads and runs while it is open. */
 export interface ProfileCreationDeps {

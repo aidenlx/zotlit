@@ -1,3 +1,4 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { Effect, Layer, Stream } from "effect";
 import { expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
@@ -170,6 +171,7 @@ async function harness(
           ),
           PROFILES,
           READ_SERVICES,
+          NodeFileSystem.layer,
           layerHost({ deviceStorage: device }),
           layerTestObsidianEnv({ vaultName: VAULT_NAME }),
         ),

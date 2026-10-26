@@ -25,6 +25,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { buildQueryService } from "@/services/item-query/__fixtures__";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
+import { Template } from "@/services/template/service";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import { listCollectionChoices } from "@/services/zotero-reads/membership";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
@@ -243,7 +244,21 @@ async function harness(
       readsEvents,
     ),
   );
-  const { app, vault, profile, template, settings } = fixture;
+  const { app, vault, profile, settings, runtime } = fixture;
+  // The Template members the Note Feature reads, on the fixture's service.
+  const templateService = runtime.runSync(Template);
+  const template: NoteFeatureSources["template"] = {
+    render: (name, data) => runtime.runSync(templateService.render(name, data)),
+    renderManagedContent: (data) =>
+      runtime.runSync(templateService.renderManagedContent(data)),
+    renderFilename: (data) =>
+      runtime.runSync(templateService.renderFilename(data)),
+    getLiteratureNoteTemplate: (reference) =>
+      runtime.runSync(templateService.getLiteratureNoteTemplate(reference)),
+    get frontmatterFields() {
+      return runtime.runSync(templateService.frontmatterFields);
+    },
+  };
   const root = new TFolder();
   root.path = "";
   Object.assign(app.vault, {
@@ -323,6 +338,7 @@ async function harness(
   const cleanup = stack.move();
   return {
     ...fixture,
+    template,
     client,
     deps,
     query,
@@ -360,7 +376,7 @@ async function harness(
         profileDocument(id, match),
       );
       await vi.advanceTimersByTimeAsync(500);
-      expect(await template.waitUntilSettled(5000)).toBe("settled");
+      expect(await fixture.template.waitUntilSettled(5000)).toBe("settled");
     },
     async deleteProfile(id: ProfileId) {
       vault.deleteFile(`templates/zotlit-profile.${id}.md`);
@@ -662,7 +678,7 @@ describe("Profile document matches at creation preparation", () => {
           entry.match.state === "unevaluable" ? entry.match.problem : "";
         expect(problem).not.toBe("");
         expect(entry.match.summary).toBe(m.profile_match_problem({ problem }));
-        expect(f.profile.diagnostics).toEqual([]);
+        expect(yield* f.profileService.diagnostics).toEqual([]);
         expect(yield* f.select(personalBook)).toEqual({
           selector: "default",
           source: "bound",
@@ -757,7 +773,7 @@ describe("Profile document matches at creation preparation", () => {
         );
         expect(f.profile.profiles).toEqual([]);
         expect(f.profile.resolveProfile("default")).toBeUndefined();
-        expect(f.profile.diagnostics).toEqual(
+        expect(yield* f.profileService.diagnostics).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
               path: "templates/zotlit-profile.default.md",

@@ -8,6 +8,7 @@ import { exitOver, valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import type { Notifier } from "@/lib/notifier";
 import type { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 
 import { createNoteInteractively } from "./creation-view";
 import type {
@@ -16,8 +17,12 @@ import type {
 } from "./creation-view";
 import type { NoteFeature } from "./service";
 
-/** The services the interactive creation reads. */
-export type NoteCreationServices = NoteFeature | Notifier | ZoteroPref;
+/** The services the interactive creation and the Profile dialogs it opens read. */
+export type NoteCreationServices =
+  | NoteFeature
+  | Notifier
+  | ZoteroPref
+  | ProfileDialogServices;
 
 export interface NoteCreation {
   /** @see createNoteInteractively */

@@ -80,6 +80,7 @@ async function runOpenPdfCommand(
 ): Promise<void> {
   const attachments =
     await deps.attachments.literatureNoteAttachments(indexedKey);
+  if (!attachments) return;
   openAttachments(attachments, {
     reader: pdfPickerReader(deps.opener),
     app: deps.app,

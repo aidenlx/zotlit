@@ -1,15 +1,9 @@
 // The setting tab as a scoped layer: it registers the tab, keeps its
 // definitions current, and removes it when its Scope closes.
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
-import { Duration, Effect, Exit, Layer, Scope, Stream } from "effect";
-import type { FileSystem, ManagedRuntime } from "effect";
-import type { Plugin } from "obsidian";
+import { Duration, Effect, Layer, Stream } from "effect";
 
-import type { CliHost } from "@/lib/cli-command";
 import { forkEach } from "@/lib/effect-stream";
-import { layerNotifier } from "@/lib/notifier";
-import type { Notifier } from "@/lib/notifier";
-import { layerPluginHost, PluginHost } from "@/lib/plugin-host";
+import { PluginHost } from "@/lib/plugin-host";
 import { AttachmentImport } from "@/services/attachment-import/service";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 import { LanguagePack } from "@/services/language-pack/service";
@@ -24,17 +18,7 @@ import { Template } from "@/services/template/service";
 
 import type { SettingTabContext } from "./context";
 import { makeSettingTab } from "./effect-tab";
-import type { SettingTab, SettingTabEnv } from "./effect-tab";
 import { ZotLitSettingTab } from "./index";
-
-/**
- * What the tab still takes from the legacy service container. Each field
- * leaves as its service becomes an Effect tag the rows `yield*` instead.
- */
-export type SettingTabLegacy = Omit<
-  SettingTabContext,
-  "tab" | "app" | "manifest" | "settings"
->;
 
 /**
  * How long the tab waits for changes to settle before it rebuilds. Obsidian
@@ -54,7 +38,13 @@ const reminderFlags = (settings: Readonly<Settings>) =>
 const signal = <A>(stream: Stream.Stream<A>): Stream.Stream<void> =>
   Stream.map(stream, () => undefined);
 
-export function layerSettingTab(legacy: SettingTabLegacy) {
+/**
+ * The tab over the plugin's services. `webWorkbenchEnabled` is the build's
+ * Template Workbench flag, which shows or hides the web editor rows.
+ */
+export function layerSettingTab({
+  webWorkbenchEnabled,
+}: Pick<SettingTabContext, "webWorkbenchEnabled">) {
   return Layer.effectDiscard(
     Effect.gen(function* () {
       const host = yield* PluginHost;
@@ -63,11 +53,7 @@ export function layerSettingTab(legacy: SettingTabLegacy) {
       const service = yield* makeSettingTab(() => tab?.update());
       tab = yield* host.addSettingTab(
         (plugin) =>
-          new ZotLitSettingTab(plugin, {
-            ...legacy,
-            settings,
-            tab: service,
-          }),
+          new ZotLitSettingTab(plugin, { webWorkbenchEnabled, tab: service }),
       );
 
       // Rows that are included or left out, not toggled through `visible`,
@@ -115,48 +101,4 @@ export function layerSettingTab(legacy: SettingTabLegacy) {
       );
     }),
   );
-}
-
-/**
- * Start the tab on the plugin's runtime, for startup code outside Effect. The
- * tab lives in a child of the runtime's Scope; the returned close removes it
- * and ends its fibers, so a caller closes it before the container services in
- * `legacy` dispose.
- */
-export function startSettingTab(
-  runtime: Pick<
-    ManagedRuntime.ManagedRuntime<
-      Exclude<
-        SettingTabEnv,
-        SettingTab | Notifier | FileSystem.FileSystem | PluginHost
-      >,
-      never
-    >,
-    "runSync" | "runPromise" | "scope"
-  >,
-  plugin: Plugin & CliHost,
-  legacy: SettingTabLegacy,
-): () => Promise<void> {
-  const scope = runtime.runSync(Scope.fork(runtime.scope));
-  const close = () => runtime.runPromise(Scope.close(scope, Exit.void));
-  try {
-    runtime.runSync(
-      Layer.buildWithScope(
-        layerSettingTab(legacy).pipe(
-          Layer.provide(
-            Layer.mergeAll(
-              layerPluginHost(plugin),
-              layerNotifier,
-              NodeFileSystem.layer,
-            ),
-          ),
-        ),
-        scope,
-      ),
-    );
-  } catch (error) {
-    void close();
-    throw error;
-  }
-  return close;
 }

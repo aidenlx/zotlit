@@ -224,9 +224,6 @@ effectIt.effect.each(["default", id] as const)(
         stubService<SettingTabContext>("SettingTabContext", {
           tab: (yield* scopedSettingTab(services)).tab,
           app: f.app,
-          settings: stubService<SettingTabContext["settings"]>("Settings", {
-            current: f.settings.current,
-          }),
         }),
       );
       const label =

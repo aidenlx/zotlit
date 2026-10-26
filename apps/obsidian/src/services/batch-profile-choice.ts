@@ -8,9 +8,12 @@ import type {
   CreationProfileSelection,
   ProfilePreview,
 } from "@/services/note-feature";
-import { installedStyles } from "@/services/note-feature/creation-view";
+import {
+  installedStyles,
+  settleProfilePick,
+} from "@/services/note-feature/creation-view";
 import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
-import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
+import type { ProfilePick } from "@/views/quick-switch/profile-picker";
 
 export type BatchProfilePickerDeps = Pick<
   InteractiveCreationPorts,
@@ -26,7 +29,8 @@ export interface BatchProfilePickerOptions {
 
 /**
  * The user's Profile for the rows a batch choice governs, or `undefined` when
- * the picker closes. An interrupt closes the picker.
+ * the picker closes. An interrupt closes the picker, or the Profile dialog
+ * opened from it.
  */
 export const chooseBatchProfile = Effect.fnUntraced(function* (
   deps: BatchProfilePickerDeps,
@@ -45,22 +49,14 @@ export const chooseBatchProfile = Effect.fnUntraced(function* (
     problem: options.problem,
     previews: options.previews,
     styles,
-    onNew: async () => {
-      const created = await deps.createProfile({
-        indexedKey: options.indexedKey,
-        useForNote: false,
-      });
-      return created
-        ? { id: created.profile.id, label: created.profile.label }
-        : undefined;
-    },
-    onImport: async () => {
-      await deps.importProfile({ indexedKey: options.indexedKey });
-    },
   };
-  const choice = yield* awaitModal<LiteratureNoteProfileChoice | undefined>(
-    (resolve) => openLiteratureNoteProfile(deps.app, picker, resolve),
+  const pick = yield* awaitModal<ProfilePick | undefined>((resolve) =>
+    openLiteratureNoteProfile(deps.app, picker, resolve),
   );
+  const { choice } = yield* settleProfilePick(deps, pick, {
+    indexedKey: options.indexedKey,
+    useForNote: false,
+  });
   const selector: ProfileSelector | undefined = choice?.id;
   return selector;
 });

@@ -1,6 +1,5 @@
 // Creation planning and Profile selection: which Profile a new or switched note gets, and its preview.
 import { DateTime, Effect, Schema } from "effect";
-import type { Context } from "effect";
 import type { TFile } from "obsidian";
 
 import type { Item, ItemFacets } from "@zotlit/db";
@@ -72,9 +71,6 @@ export type CreationPlanningServices =
   | Template
   | Vault
   | ZoteroReads;
-
-/** The planning services, as the Note Feature's deps hold them. */
-export type CreationPlanningContext = Context.Context<CreationPlanningServices>;
 
 /**
  * The create gate the Note Feature owns: it serializes creates by Indexed Key

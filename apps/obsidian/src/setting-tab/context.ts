@@ -1,8 +1,6 @@
 import type { App, PluginManifest } from "obsidian";
 
-import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { Settings } from "@/services/settings/schema";
-import type { PluginSettings } from "@/services/settings/service";
 
 import type { SettingTabShape } from "./effect-tab";
 
@@ -30,13 +28,4 @@ export interface SettingTabContext {
    * `getSettingDefinitions()` runs inside `onload()`.
    */
   manifest: PluginManifest;
-  settings: Pick<
-    PluginSettings["Service"],
-    | "current"
-    | "update"
-    | "updateDefaultLiteratureNoteProfileBindings"
-    | "changes"
-  >;
-  /** The shared Customize flow the Template document row opens. */
-  customize: CustomizeAction;
 }

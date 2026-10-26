@@ -16,9 +16,9 @@ import {
   noteKeyFromFrontmatter,
 } from "@/services/note-index/service";
 import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
-import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
+import type { ProfilePick } from "@/views/quick-switch/profile-picker";
 
-import { installedStyles } from "./creation-view";
+import { installedStyles, settleProfilePick } from "./creation-view";
 import type { InteractiveCreationPorts } from "./creation-view";
 import { NoteFeature } from "./service";
 import { noteOperationDiagnosticContent } from "./update-single";
@@ -52,32 +52,22 @@ export const switchNoteProfileInteractively = Effect.fn(
       [noteFeature.prepareProfileSwitch(file), installedStyles],
       { concurrency: "unbounded" },
     );
-    let created = false;
-    const choice = yield* awaitModal<LiteratureNoteProfileChoice | undefined>(
-      (resolve) =>
-        openLiteratureNoteProfile(
-          ports.app,
-          {
-            previews: plan.profiles,
-            preselected: plan.current.selector,
-            current: plan.current.selector,
-            styles,
-            onImport: async () => {
-              await ports.importProfile({ indexedKey });
-            },
-            onNew: async () => {
-              const profile = await ports.createProfile({
-                indexedKey,
-                useForNote: true,
-              });
-              if (!profile) return undefined;
-              created = true;
-              return { id: profile.profile.id, label: profile.profile.label };
-            },
-          },
-          resolve,
-        ),
+    const pick = yield* awaitModal<ProfilePick | undefined>((resolve) =>
+      openLiteratureNoteProfile(
+        ports.app,
+        {
+          previews: plan.profiles,
+          preselected: plan.current.selector,
+          current: plan.current.selector,
+          styles,
+        },
+        resolve,
+      ),
     );
+    const { choice, created } = yield* settleProfilePick(ports, pick, {
+      indexedKey,
+      useForNote: true,
+    });
     if (!choice || choice.id === plan.current.selector) {
       yield* Effect.logDebug("Profile switch dismissed without a change").pipe(
         Effect.annotateLogs({ path: file.path }),

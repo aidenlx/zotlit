@@ -33,8 +33,8 @@ import type {
 import type { QueryService } from "@/services/item-query/service";
 import { PluginSettings } from "@/services/settings/service";
 import { snapshotAt } from "@/services/attachment-import/__fixtures__";
-import type { PlainTemplate } from "@/services/template/plain";
 import { Template } from "@/services/template/service";
+import type { TemplateOperations } from "@/services/template/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 
 import type { NoteCitations } from "@/services/note-feature/citations-handle";
@@ -61,7 +61,7 @@ export interface NoteFeatureSources extends Omit<
   "template" | "app"
 > {
   template: PlanningSources["template"] &
-    Pick<PlainTemplate, "render" | "renderManagedContent">;
+    Pick<TemplateOperations, "render" | "renderManagedContent">;
   app: NoteFeatureApp;
   settings: Pick<PluginSettings["Service"], "current" | "update">;
   zoteroPref: { dataDir: string; baseAttachmentPath: string | null };

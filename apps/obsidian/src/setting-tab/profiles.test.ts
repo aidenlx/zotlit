@@ -25,7 +25,8 @@ import * as m from "@/lib/i18n/generated/messages";
 import { FileManager } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
 import type { ProfileId } from "@/lib/profile-stamp";
-import type { CustomizeAction } from "@/services/local-bridge/customize";
+import { Customize } from "@/services/local-bridge/customize";
+import type { CustomizeRequest } from "@/services/local-bridge/customize";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { Profile } from "@/services/profile/service";
 import type {
@@ -95,8 +96,12 @@ const tabOver = Effect.fnUntraced(function* (
     current: Effect.succeed(fakes.settings ?? defaults),
     updateDefaultLiteratureNoteProfileBindings: vi.fn(() => Effect.void),
   };
+  const customize = vi.fn((_request: CustomizeRequest) => {});
   const { tab, rebuilt } = yield* rebuildingSettingTab(
     Layer.mergeAll(
+      Layer.mock(Customize, {
+        open: (request) => Effect.sync(() => customize(request)),
+      }),
       Layer.mock(Profile, {
         loaded: Effect.succeed(true),
         profiles: Effect.succeed([]),
@@ -117,12 +122,9 @@ const tabOver = Effect.fnUntraced(function* (
       Layer.mock(PluginSettings, settings),
     ),
   );
-  const customize = vi.fn<CustomizeAction>(async () => {});
   const ctx = stubService<SettingTabContext>("SettingTabContext", {
     tab,
     app: stubService<App>("App", {}),
-    customize,
-    settings: stubService<SettingTabContext["settings"]>("Settings", settings),
   });
   return { ctx, rebuilt, customize, settings };
 });

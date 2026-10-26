@@ -130,6 +130,8 @@ export type RunOutcome = "created" | "updated" | "skipped";
  *
  * The executor polls {@link BatchRunControls.stop} as each task starts: a stop
  * skips queued tasks and leaves admitted work running to its own completion.
+ * An interrupt, such as unload, stops a task at once, except for the write
+ * steps its `run` makes uninterruptible; the task reports no settle event.
  *
  * @param opts.onTaskFailed Optional per-failure callback (non-abort only),
  *   called after the task is reported as failed; use for structured logging.
@@ -165,14 +167,18 @@ export function executeBatchRun<T extends BatchRunTask, E>(opts: {
       tasks,
       (task) =>
         Effect.exit(
-          Effect.uninterruptible(
+          // The task's reads stay interruptible, so unload does not wait for
+          // them; its write steps are uninterruptible in their own services.
+          Effect.uninterruptibleMask((restore) =>
             Effect.gen(function* () {
               if (yield* Deferred.isDone(controls.stop))
                 return yield* Effect.interrupt;
               if ((yield* Ref.get(halt)) !== null)
                 return yield* Effect.interrupt;
-              const exit = yield* Effect.exit(run(task));
+              const exit = yield* Effect.exit(restore(run(task)));
               if (Exit.isFailure(exit)) {
+                if (Cause.hasInterruptsOnly(exit.cause))
+                  return yield* Effect.failCause(exit.cause);
                 const error = Cause.squash(exit.cause);
                 const failure = Cause.findErrorOption(exit.cause);
                 if (haltOn && Option.isSome(failure) && haltOn(failure.value)) {

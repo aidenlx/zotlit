@@ -126,11 +126,6 @@ function ctx(): SettingTabContext {
       version: "0.0.0",
       dir: "plugins/zotlit",
     }),
-    settings: stubService<SettingTabContext["settings"]>("Settings", {
-      current: Effect.succeed(defaults),
-      changes: Stream.empty,
-    }),
-    customize: async () => {},
   });
 }
 

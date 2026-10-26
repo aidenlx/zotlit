@@ -14,10 +14,12 @@ export interface LiteratureNoteAttachmentsHandle {
   /**
    * The Obsidian-Openable PDF Attachments of the Item `indexedKey` names; none
    * while the database cannot be read, or once the plugin unloads.
+   * `undefined` when unload stops the lookup, so the caller opens nothing and
+   * shows no "No PDF attachment" notice.
    */
   literatureNoteAttachments(
     indexedKey: string,
-  ): Promise<ObsidianOpenableAttachment[]>;
+  ): Promise<ObsidianOpenableAttachment[] | undefined>;
 }
 
 /** {@link literatureNoteAttachments} over `bridge`, which unload interrupts. */
@@ -28,6 +30,9 @@ export function bindLiteratureNoteAttachments(
   const runExit = exitOver(bridge, context);
   return {
     literatureNoteAttachments: async (indexedKey) =>
-      valueOr(await runExit(literatureNoteAttachments(indexedKey)), []),
+      valueOr<ObsidianOpenableAttachment[] | undefined, never>(
+        await runExit(literatureNoteAttachments(indexedKey)),
+        undefined,
+      ),
   };
 }

@@ -6,6 +6,7 @@
 // bodies, attachment contents, and image bytes are kept out by the shared
 // exporter and by the vault-target module, and none is assembled here.
 import { Effect, FiberSet, Schema } from "effect";
+import type { FileSystem } from "effect";
 
 import annotationSchema from "@zotlit/db/contract/annotation.schema.json" with { type: "json" };
 import filenameSchema from "@zotlit/db/contract/filename.schema.json" with { type: "json" };
@@ -29,10 +30,8 @@ import { profileRevision } from "@/lib/profile-revision";
 import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { NoteIndex } from "@/services/note-index/service";
-import {
-  listInstalledStyles,
-  resolveInstalledStyle,
-} from "@/services/pandoc/styles";
+import { listInstalledStyles } from "@/services/pandoc/installed-styles";
+import { resolveInstalledStyle } from "@/services/pandoc/styles";
 import { Profile } from "@/services/profile/service";
 import { Template } from "@/services/template/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
@@ -75,7 +74,8 @@ export type BridgeReadServices =
   | VaultTargetServices
   | Profile
   | Template
-  | ZoteroReads;
+  | ZoteroReads
+  | FileSystem.FileSystem;
 
 /** Who answers a connected Snapshot: this device's id and the vault's name. */
 export interface BridgeProvenance {
@@ -230,10 +230,20 @@ export const readTemplateDependencies = Effect.fn(
   return response;
 });
 
-/** The citation styles this Zotero has installed. */
+/**
+ * The citation styles this Zotero has installed; none when its styles folder
+ * refuses to be read, so the page's style picker still opens.
+ */
 export const readCitationStyles = Effect.gen(function* () {
   const { dataDir } = yield* (yield* ZoteroPref).current;
-  return yield* portCall("citation-styles", () => listInstalledStyles(dataDir));
+  return yield* listInstalledStyles(dataDir).pipe(
+    Effect.catchTag("PlatformError", (error) =>
+      Effect.as(
+        Effect.logWarning("Cannot read the installed CSL styles", error),
+        [],
+      ),
+    ),
+  );
 }).pipe(Effect.withSpan("LocalBridge.citationStyles"));
 
 /** The installed style the page asked for, resolved against this Zotero. */
