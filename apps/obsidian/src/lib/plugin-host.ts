@@ -8,8 +8,8 @@ import type { CliHost } from "@/lib/cli-command";
 
 /**
  * What a layer registers on: Obsidian commands, post-processors, editor
- * extensions, hover link sources, view creation hooks, zotlit:* commands,
- * and the manifest.
+ * extensions, hover link sources, protocol handlers, view creation hooks,
+ * zotlit:* commands, and the manifest.
  *
  * Obsidian removes every registration when the plugin unloads. `addCommand`
  * also removes its command when the caller's Scope closes, so a startup that
@@ -24,6 +24,7 @@ export interface PluginHostShape
       | "registerMarkdownPostProcessor"
       | "registerEditorExtension"
       | "registerHoverLinkSource"
+      | "registerObsidianProtocolHandler"
     >,
     CliHost {
   /** Add a command. Obsidian prefixes its id with the plugin id, as `Plugin.addCommand` does. */
@@ -62,6 +63,8 @@ export function makePluginHost(plugin: Plugin & CliHost): PluginHostShape {
       plugin.registerEditorExtension(extension),
     registerHoverLinkSource: (id, info) =>
       plugin.registerHoverLinkSource(id, info),
+    registerObsidianProtocolHandler: (action, handler) =>
+      plugin.registerObsidianProtocolHandler(action, handler),
     registerCliCommand: (name, command) =>
       plugin.registerCliCommand(name, command),
     addCommand: Effect.fn("PluginHost.addCommand")(function* (command) {

@@ -86,6 +86,7 @@ import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
 import { pluginLayer } from "./plugin-layer";
 import { plainProfile } from "./profile/plain";
 import { Profile } from "./profile/service";
+import type { ProtocolDeps } from "./protocol/register";
 import { plainQueryClients } from "./query-client/plain";
 import { Release } from "./release/service";
 import { ServiceContainer } from "./service-base";
@@ -101,6 +102,9 @@ import { plainZoteroPref } from "./zotero-pref/plain";
 import { ZoteroPref } from "./zotero-pref/service";
 import { plainZoteroReads } from "./zotero-reads/plain";
 import { ZoteroReads } from "./zotero-reads/service";
+
+/** What the protocol handlers open: the note import's modals and the Attachment opener. */
+type ProtocolViews = Pick<ProtocolDeps, "noteImportView" | "opener">;
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -150,6 +154,33 @@ export async function buildServices(
     importProfile: async (options) =>
       (await profileDialogs).importProfile(options),
   };
+  // The protocol handlers open the note import's modals and the Attachment
+  // opener, which the container builds after the graph.
+  let bindProtocolViews!: (views: ProtocolViews) => void;
+  const protocolViews = new Promise<ProtocolViews>((resolve) => {
+    bindProtocolViews = resolve;
+  });
+  const importView = Effect.promise(async () => {
+    const { noteImportView } = await protocolViews;
+    return noteImportView;
+  });
+  const protocol: ProtocolViews = {
+    noteImportView: {
+      openBatchModal: (options) => {
+        void protocolViews.then(({ noteImportView }) =>
+          noteImportView.openBatchModal(options),
+        );
+      },
+      confirm: (options) =>
+        Effect.flatMap(importView, (view) => view.confirm(options)),
+      chooseProfile: (options) =>
+        Effect.flatMap(importView, (view) => view.chooseProfile(options)),
+    },
+    opener: {
+      open: async (target, pane) =>
+        (await protocolViews).opener.open(target, pane),
+    },
+  };
   // The excerpt service is registered before the PDF reader, so the reader
   // hands its documents over through this one holder. A crop asks for a reader
   // document per resolution, and answers detached while the holder is empty.
@@ -165,6 +196,7 @@ export async function buildServices(
       },
       {
         creation,
+        protocol,
         excerpt: {
           openStore: () => openExcerptStore(plugin.app.appId),
           readers,
@@ -431,12 +463,20 @@ export async function buildServices(
       },
     })
     .useValue({
-      noteImportView: ({ createProfile, importProfile, zoteroPref }) =>
-        createNoteImportView(plugin.app, {
+      noteImportView: ({
+        createProfile,
+        importProfile,
+        zoteroPref,
+        targetOpener,
+      }) => {
+        const noteImportView = createNoteImportView(plugin.app, {
           createProfile,
           importProfile,
           zoteroPref,
-        }),
+        });
+        bindProtocolViews({ noteImportView, opener: targetOpener });
+        return noteImportView;
+      },
     })
     .useValue({
       batchImport: ({ noteImportView }) =>

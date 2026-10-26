@@ -38,7 +38,6 @@ import {
   noteFeatureFileMenu,
 } from "./services/note-feature/actions";
 import { addProfileActions } from "./services/profile/actions";
-import { startProtocolHandlers } from "./services/protocol/register";
 import { ServiceStartupFailed } from "./services/startup-failure";
 import { ZotLitSettingTab } from "./setting-tab";
 import { createCommentRenderer } from "./views/annot-view/comment-render";
@@ -386,18 +385,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       opener: services.targetOpener,
       showInLibrary: (indexedKey) => showInLibrary(this.app, indexedKey),
     });
-
-    void stack.use(
-      startProtocolHandlers(services.runtime, this, {
-        webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-        createProfile: services.createProfile,
-        importProfile: services.importProfile,
-        app: this.app,
-        noteImportView: services.noteImportView,
-        opener: services.targetOpener,
-        bridge: services.bridge,
-      }),
-    );
 
     const queryCardFocus = new QueryCardFocus(this.app);
     const queryViewDeps: QueryViewDeps = {

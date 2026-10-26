@@ -18,6 +18,7 @@ import type { Attachment, getItemDisplayRefByID, Library } from "@zotlit/db";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { layerTestObsidianEnv } from "@/lib/__fixtures__/obsidian-env";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import { testPluginHost } from "@/lib/__fixtures__/plugin-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { openAttachments } from "@/lib/attachment-open";
 import * as m from "@/lib/i18n/generated/messages";
@@ -56,7 +57,7 @@ import type {
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
-import { registerProtocolHandlers } from "./register";
+import { layerProtocolHandlers, registerProtocolHandlers } from "./register";
 import type { ProtocolDeps } from "./register";
 
 vi.mock("@/services/note-feature/update-batch", async (importOriginal) => {
@@ -237,6 +238,51 @@ interface Setup {
   readonly whenIndexed?: Effect.Effect<void>;
 }
 
+/** The services the handlers read, over the case's fakes. */
+function servicesFor(setup: Setup = {}) {
+  return Layer.mergeAll(
+    Layer.mock(ZoteroPref, {
+      current: Effect.succeed(
+        stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
+          sourceId: SOURCE_ID,
+          dataDir: "/data",
+          baseAttachmentPath: null,
+        }),
+      ),
+    }),
+    Layer.mock(ZoteroReads, {
+      current: Effect.succeed(
+        stubService<ZoteroReadsState>("ZoteroReadsState", {
+          state: setup.state ?? "ready",
+        }),
+      ),
+      reads: readsApi,
+      snapshot: Effect.succeed(readsApi),
+    }),
+    Layer.mock(LocalServer, {
+      updateManyRequests: setup.updateManyRequests ?? Stream.empty,
+      importNotesRequests: setup.importNotesRequests ?? Stream.empty,
+    }),
+    Layer.mock(UseLedger, {}),
+    // A link import reads only these members before it opens its modal.
+    Layer.mock(NoteIndex, { whenIndexed: setup.whenIndexed ?? Effect.void }),
+    Layer.mock(LibraryScope, {}),
+    Layer.mock(MetadataCache, {}),
+    Layer.mock(NoteFeature, {}),
+    Layer.mock(NoteImporter, {}),
+    Layer.mock(PluginSettings, {}),
+    Layer.mock(Profile, {}),
+    Layer.mock(Vault, {
+      getFileByPath:
+        setup.getFileByPath ??
+        ((path: string) => Effect.succeed(setup.files?.get(path) ?? null)),
+    }),
+    notifier.layer,
+    layerWorkspaceFrom(setup.workspace ?? new MemoryWorkspace()),
+    layerTestObsidianEnv({ basePath: "/vault" }),
+  );
+}
+
 /** Register the handlers over the case's fakes; the case's Scope stops them. */
 const register = Effect.fn("register")(function* (setup: Setup = {}) {
   const plugin = {
@@ -255,49 +301,7 @@ const register = Effect.fn("register")(function* (setup: Setup = {}) {
     app: appStub(),
     ...setup.deps,
   });
-  const context = yield* Layer.build(
-    Layer.mergeAll(
-      Layer.mock(ZoteroPref, {
-        current: Effect.succeed(
-          stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
-            sourceId: SOURCE_ID,
-            dataDir: "/data",
-            baseAttachmentPath: null,
-          }),
-        ),
-      }),
-      Layer.mock(ZoteroReads, {
-        current: Effect.succeed(
-          stubService<ZoteroReadsState>("ZoteroReadsState", {
-            state: setup.state ?? "ready",
-          }),
-        ),
-        reads: readsApi,
-        snapshot: Effect.succeed(readsApi),
-      }),
-      Layer.mock(LocalServer, {
-        updateManyRequests: setup.updateManyRequests ?? Stream.empty,
-        importNotesRequests: setup.importNotesRequests ?? Stream.empty,
-      }),
-      Layer.mock(UseLedger, {}),
-      // A link import reads only these members before it opens its modal.
-      Layer.mock(NoteIndex, { whenIndexed: setup.whenIndexed ?? Effect.void }),
-      Layer.mock(LibraryScope, {}),
-      Layer.mock(MetadataCache, {}),
-      Layer.mock(NoteFeature, {}),
-      Layer.mock(NoteImporter, {}),
-      Layer.mock(PluginSettings, {}),
-      Layer.mock(Profile, {}),
-      Layer.mock(Vault, {
-        getFileByPath:
-          setup.getFileByPath ??
-          ((path: string) => Effect.succeed(setup.files?.get(path) ?? null)),
-      }),
-      notifier.layer,
-      layerWorkspaceFrom(setup.workspace ?? new MemoryWorkspace()),
-      layerTestObsidianEnv({ basePath: "/vault" }),
-    ),
-  );
+  const context = yield* Layer.build(servicesFor(setup));
   return yield* registerProtocolHandlers(plugin, deps).pipe(
     Effect.provide(context),
   );
@@ -530,6 +534,36 @@ describe("open-attachment protocol link", () => {
         expect(opener.open).toHaveBeenCalledExactlyOnceWith(
           { kind: "attachment", attachmentKey: "ATCH1" },
           "split",
+        );
+      }),
+  );
+});
+
+describe("layerProtocolHandlers", () => {
+  it.effect(
+    "registers the handlers on the plugin host, and runs them on the layer's services",
+    () =>
+      Effect.gen(function* () {
+        const host = testPluginHost({
+          registerObsidianProtocolHandler: (action, handler) => {
+            handlers.set(action, handler);
+          },
+        });
+        yield* Layer.build(
+          layerProtocolHandlers(
+            stubService<Omit<ProtocolDeps, "bridge">>("ProtocolDeps", {
+              webWorkbenchEnabled: true,
+              noteImportView,
+              app: appStub(),
+            }),
+          ).pipe(Layer.provide(Layer.merge(host.layer, servicesFor()))),
+        );
+
+        yield* dispatch("zotlit/update-all");
+
+        expect(runBatchUpdateAll).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ view: noteImportView }),
+          { groupID: 0, collectionKey: undefined },
         );
       }),
   );

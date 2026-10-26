@@ -102,6 +102,8 @@ import { layerPandocEngine } from "./pandoc/service";
 import type { PandocEngine } from "./pandoc/service";
 import { layerProfile } from "./profile/service";
 import type { Profile } from "./profile/service";
+import { layerProtocolHandlers } from "./protocol/register";
+import type { ProtocolDeps } from "./protocol/register";
 import { layerQueryClients } from "./query-client/service";
 import type { QueryClients } from "./query-client/service";
 import { layerReleaseActions } from "./release/actions";
@@ -155,8 +157,11 @@ export function pluginLayer(
     creation,
     excerpt,
     languagePack,
+    protocol,
   }: {
     readonly creation: InteractiveCreationPorts;
+    /** The note import's modals and the Attachment opener the protocol handlers call. */
+    readonly protocol: Pick<ProtocolDeps, "noteImportView" | "opener">;
     readonly excerpt: {
       readonly openStore: () => Promise<ExcerptStore>;
       readonly readers: ExcerptReaderDocuments;
@@ -308,7 +313,7 @@ export function pluginLayer(
       ),
     ),
     // The legacy note writers create and move through the tags (`build.ts`).
-    // The protocol handlers (`zt-main.ts`) also open notes through the
+    // The protocol handlers also open notes through the
     // Workspace and read the vault folder from the environment. The Customize
     // flow reads the active note's paper from the metadata cache.
     Layer.provideMerge(
@@ -353,6 +358,11 @@ export function pluginLayer(
     layerLibraryScopeCli.pipe(startingAs("LibraryScopeCli")),
     layerLibraryScopeNotices.pipe(startingAs("LibraryScopeNotices")),
     layerPandocResolve.pipe(startingAs("PandocResolve")),
+    layerProtocolHandlers({
+      ...creation,
+      ...protocol,
+      webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
+    }).pipe(startingAs("ProtocolHandlers")),
     layerQueryCli.pipe(startingAs("QueryCli")),
     // Measurement-only: lets packages/e2e/src/query-measure.ts read the
     // slices, statements, heap, and cancel times of a run. A dev-build port,
