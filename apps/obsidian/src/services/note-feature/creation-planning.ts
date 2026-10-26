@@ -37,7 +37,7 @@ import {
   resolveNotePath,
   resolveRenderedNotePath,
 } from "./note-path";
-import { relocationSource } from "./note-reads";
+import { readItem, relocationSource } from "./note-reads";
 import type {
   CompanionNoteTarget,
   CreateNoteInternalOptions,
@@ -139,12 +139,6 @@ export type PreparedProfileNote = Omit<ProfileNotePreview, "create"> & {
     ZoteroReads
   >;
 };
-
-/** The live Item an Indexed Key names, or `undefined` when none does. */
-const readItem = (reads: ZoteroReadsApi, indexedKey: string) =>
-  reads
-    .ItemsByIndexedKeys({ indexedKeys: [indexedKey] })
-    .pipe(Effect.map((items) => items.get(indexedKey)));
 
 /**
  * The note an existing Companion link opens, or creation when the Item has

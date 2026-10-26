@@ -832,7 +832,7 @@ async function contextForIndexedKey(
   excerptImages?: PreparedExcerpts;
 }> {
   const { reads, sourcePath, settings } = options;
-  const item = await readItem(reads, indexedKey);
+  const item = await Effect.runPromise(readItem(reads, indexedKey));
   const source = item && (await readNoteSource(reads, item.itemID));
   if (!source) throw new Error(`Zotero item not found: ${indexedKey}`);
   const excerptImages = options.previousNote
