@@ -158,7 +158,6 @@ export default defineConfig({
       files: [
         "src/services/attachment-import/service.ts",
         "src/services/attachment-open/actions.ts",
-        "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
         "src/services/excerpt-image/prepare.ts",
         "src/services/note-feature/operations.ts",
@@ -368,7 +367,6 @@ export default defineConfig({
         "src/lib/temp-sweep.ts",
         "src/services/attachment-open/actions.ts",
         "src/services/batch-run.ts",
-        "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
         "src/services/database/reap-temps.ts",
         "src/services/excerpt-image/prepare.ts",
