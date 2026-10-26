@@ -69,7 +69,7 @@ function databaseRowsResolver(
 
 /** One Attachment's rows from the Zotero database, in this task's batch. */
 function databaseRows(
-  core: CoreState,
+  core: Pick<CoreState, "databaseGeneration" | "databaseRows">,
   attachmentKey: string,
 ): Effect.Effect<DatabaseAnswer, DatabaseRowsError> {
   return Effect.request(

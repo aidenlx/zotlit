@@ -25,6 +25,7 @@ import {
   afterWrite,
   FIXTURE_ROWS,
   leaseOver,
+  markExternal,
   nextChange,
   REMEMBERED_KEY,
   scopedStack,
@@ -39,6 +40,13 @@ import {
   annotationRows,
 } from "./__fixtures__";
 import type { AnnotationList } from "./service";
+
+/** Each Annotation's lock, by key. */
+function locksOf(list: AnnotationList | null) {
+  return Object.fromEntries(
+    list?.annotations.map(({ key, lock }) => [key, lock]) ?? [],
+  );
+}
 
 it.effect(
   "reads every type the Fixture carries on one attachment, in Zotero's reading order",
@@ -805,6 +813,51 @@ it.effect(
         requests.filter(({ url }) => url.pathname.endsWith("/children")),
       ).toHaveLength(2);
     }),
+);
+
+it.effect("keeps the locks a cancelled Local API read would have read", () =>
+  Effect.gen(function* () {
+    const stack = yield* scopedStack;
+    const { service, client, serverEvents, acquireRead } =
+      yield* Effect.promise(() => writable(stack));
+    const readSnapshot = acquireRead.getMockImplementation()!;
+    const gate = Promise.withResolvers<void>();
+    const entered = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    // The lock read of the next Local API list waits on its lease, and
+    // reads the database as it stands once the gate opens.
+    acquireRead.mockImplementationOnce(async () => {
+      entered.resolve();
+      await gate.promise;
+      const lease = await readSnapshot();
+      return {
+        reads: lease.reads,
+        [Symbol.asyncDispose]: async () => {
+          await lease[Symbol.asyncDispose]();
+          released.resolve();
+        },
+      };
+    });
+
+    freshnessSignal(serverEvents);
+    yield* Effect.promise(() => entered.promise);
+    // The partition is dropped again under the read: its query is
+    // cancelled, and the read asked after it finds no lock.
+    freshnessSignal(serverEvents);
+    const reread = yield* service.read("RGRPDF24");
+    expect(locksOf(reread).PUPR5FG5).toBeNull();
+
+    // Zotero imports the Annotation from the PDF file, and only then does
+    // the cancelled read's lease open.
+    markExternal(client, "PUPR5FG5");
+    gate.resolve();
+    yield* Effect.promise(() => released.promise);
+    // A lock read that outlived its query would keep its locks now.
+    for (let turn = 0; turn < 5; turn++) yield* Effect.yieldNow;
+
+    const held = yield* service.peek("RGRPDF24");
+    expect(locksOf(held?.value ?? null).PUPR5FG5).toBeNull();
+  }),
 );
 
 it.effect(
