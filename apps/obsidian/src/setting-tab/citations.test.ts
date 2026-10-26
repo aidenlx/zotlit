@@ -38,15 +38,25 @@ const pandocTab = () =>
     ),
   ).tab;
 
+/** The Citations page context over `settings`, with the Graph plugin off. */
+const citationsContext = (settings: Settings) =>
+  stubService<SettingTabContext>("SettingTabContext", {
+    tab: pandocTab(),
+    app: stubService<SettingTabContext["app"]>("App", {
+      internalPlugins: { getEnabledPluginById: () => null },
+    }),
+    settings: stubService<SettingTabContext["settings"]>("Settings", {
+      current: Effect.succeed(settings),
+    }),
+    manifest: stubService<SettingTabContext["manifest"]>("PluginManifest", {
+      version: "test",
+    }),
+  });
+
 describe("hover settings", () => {
   /** The Hover group's rows for a given saved hover action. */
   const hoverRows = (settings: Settings) => {
-    const ctx = {
-      tab: pandocTab(),
-      app: { internalPlugins: { getEnabledPluginById: () => null } },
-      settings: { current: Effect.succeed(settings) },
-      manifest: { version: "test" },
-    } as unknown as SettingTabContext;
+    const ctx = citationsContext(settings);
     const group = citationsPageItems(ctx).find(
       (item) =>
         "type" in item &&
@@ -73,12 +83,7 @@ describe("hover settings", () => {
 
 describe("citation source settings", () => {
   it("offers each citation syntax as a source", () => {
-    const ctx = {
-      tab: pandocTab(),
-      app: { internalPlugins: { getEnabledPluginById: () => null } },
-      settings: { current: Effect.succeed(defaults) },
-      manifest: { version: "test" },
-    } as unknown as SettingTabContext;
+    const ctx = citationsContext(defaults);
     const sourceGroup = citationsPageItems(ctx).find(
       (item) =>
         "type" in item &&
