@@ -4,6 +4,8 @@
 // listener's lifecycle, which the End-to-end Run cannot reach: the pointer
 // moving within one link, a section Obsidian unloads, and a service that is
 // gone while its sections stay rendered.
+import { it } from "@effect/vitest";
+import { Deferred, Effect, Exit, Layer, Scope } from "effect";
 import { Component, MarkdownView } from "obsidian";
 import type {
   MarkdownPostProcessor,
@@ -11,16 +13,23 @@ import type {
   MarkdownRenderChild,
   WorkspaceLeaf,
 } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import { testPluginHost } from "@/lib/__fixtures__/plugin-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import {
   setup,
   useFakeTimers,
 } from "@/services/annotation-repository/__fixtures__";
 
 import { AnnotationPopoverCore } from "./popover";
-import { AnnotationLinkReadingCore } from "./reading";
+import {
+  AnnotationLinkReadingCore,
+  layerAnnotationLinkReading,
+} from "./reading";
+import { AnnotationPopover } from "./service";
 
 const HREF = "zotero://open/library/items/RGRPDF24?annotation=PUPR5FG5&page=1";
 
@@ -35,6 +44,7 @@ async function harness(stack: AsyncDisposableStack) {
   const popover = stack.use(
     new AnnotationPopoverCore({
       annotations: repository,
+      read: (key) => bridge.runPromise(repository.read(key)),
       bridge,
       excerptDisplay: {
         open: () => {
@@ -137,4 +147,74 @@ describe("AnnotationLinkReading", () => {
 
     expect(run.opened()).toBe(false);
   });
+
+  it.effect("interrupts a pending hover when the plugin unloads", () =>
+    Effect.gen(function* () {
+      let interrupted = false;
+      const started = yield* Deferred.make<void>();
+      let process: MarkdownPostProcessor | undefined;
+      const host = testPluginHost({
+        registerMarkdownPostProcessor: (postProcessor) => {
+          process = postProcessor;
+          return postProcessor;
+        },
+      });
+      const container = document.body.appendChild(
+        document.createElement("div"),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(() => container.remove()));
+      const workspace = new MemoryWorkspace();
+      workspace.openLeaf(
+        "markdown",
+        Object.assign(
+          new MarkdownView(stubService<WorkspaceLeaf>("WorkspaceLeaf", {})),
+          { containerEl: container, hoverPopover: null },
+        ),
+      );
+      const scope = yield* Scope.fork(yield* Scope.Scope);
+      yield* Layer.buildWithScope(
+        layerAnnotationLinkReading.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              host.layer,
+              layerWorkspaceFrom(workspace),
+              Layer.mock(AnnotationPopover, {
+                show: () =>
+                  Deferred.succeed(started, undefined).pipe(
+                    Effect.andThen(Effect.never),
+                    Effect.onInterrupt(() =>
+                      Effect.sync(() => {
+                        interrupted = true;
+                      }),
+                    ),
+                  ),
+              }),
+            ),
+          ),
+        ),
+        scope,
+      );
+      const el = container.appendChild(document.createElement("div"));
+      el.innerHTML = `<p><a class="external-link" href="${HREF}">p. 1</a></p>`;
+      const section = new Component();
+      section.load();
+      yield* Effect.addFinalizer(() => Effect.sync(() => section.unload()));
+      void process!(
+        el,
+        stubService<MarkdownPostProcessorContext>(
+          "MarkdownPostProcessorContext",
+          {
+            sourcePath: "drafts/chapter.md",
+            addChild: (child: MarkdownRenderChild) => section.addChild(child),
+          },
+        ),
+      );
+
+      enter(el.querySelector("a")!);
+      yield* Deferred.await(started);
+      yield* Scope.close(scope, Exit.void);
+
+      expect(interrupted).toBe(true);
+    }),
+  );
 });
