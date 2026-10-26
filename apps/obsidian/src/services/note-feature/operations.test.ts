@@ -246,19 +246,20 @@ const blockedDecide = (
 });
 
 /** The `attachmentImport` port every note-feature test runs against. */
-const blockedAttachmentImport = {
-  prepare: async () => ({
-    decide: blockedDecide,
-    resolveLink: () => () => "",
-    flush: async () => ({
-      copied: 0,
-      skipped: 0,
-      missing: 0,
-      blocked: 0,
-      refused: 0,
+const blockedAttachmentImport: NoteFeatureSources["attachmentImport"] = {
+  prepare: () =>
+    Effect.succeed({
+      decide: blockedDecide,
+      resolveLink: () => () => "",
+      flush: Effect.succeed({
+        copied: 0,
+        skipped: 0,
+        missing: 0,
+        blocked: 0,
+        refused: 0,
+      }),
+      discard: Effect.void,
     }),
-    discard: () => undefined,
-  }),
 };
 
 // Every read runs in the in-process handlers over seeded fixture rows. Only
@@ -1745,14 +1746,13 @@ describe("createNote", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
       attachmentImport: {
-        prepare: async () => ({
-          decide: blockedDecide,
-          resolveLink: () => () => "",
-          discard: () => undefined,
-          flush: async () => {
-            throw new Error("File already exists.");
-          },
-        }),
+        prepare: () =>
+          Effect.succeed({
+            decide: blockedDecide,
+            resolveLink: () => () => "",
+            discard: Effect.void,
+            flush: Effect.die(new Error("File already exists.")),
+          }),
       },
     });
 
@@ -1777,7 +1777,7 @@ describe("createNote", () => {
       await held.promise;
       return write(...args);
     });
-    const flush = vi.fn(async () => ({
+    const flush = vi.fn(() => ({
       copied: 0,
       skipped: 0,
       missing: 0,
@@ -1798,12 +1798,13 @@ describe("createNote", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
       attachmentImport: {
-        prepare: async () => ({
-          decide: blockedDecide,
-          resolveLink: () => () => "",
-          discard: () => undefined,
-          flush,
-        }),
+        prepare: () =>
+          Effect.succeed({
+            decide: blockedDecide,
+            resolveLink: () => () => "",
+            discard: Effect.void,
+            flush: Effect.sync(flush),
+          }),
       },
     });
 

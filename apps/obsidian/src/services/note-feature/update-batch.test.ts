@@ -34,6 +34,7 @@ import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
+import type { AttachmentImportBatch } from "@/services/attachment-import/service";
 import { excerptReuseProbe } from "@/services/excerpt-image/__fixtures__/reuse";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type {
@@ -757,20 +758,14 @@ describe("a write that rejects", () => {
               zoteroPref: { dataDir: "", baseAttachmentPath: null },
               attachmentImport: {
                 prepare: () =>
-                  Promise.resolve(
-                    stubService<
-                      Awaited<
-                        ReturnType<
-                          NoteFeatureSources["attachmentImport"]["prepare"]
-                        >
-                      >
-                    >("AttachmentBatch", {
+                  Effect.succeed(
+                    stubService<AttachmentImportBatch>("AttachmentBatch", {
                       // The render stops the create before any attachment.
                       decide: () => {
                         throw new Error("This case copies no attachment.");
                       },
                       resolveLink: () => () => "",
-                      discard: () => undefined,
+                      discard: Effect.void,
                     }),
                   ),
               },

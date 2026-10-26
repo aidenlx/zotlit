@@ -7,20 +7,7 @@ import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 
 import { bindAttachmentImport } from "./handle";
-import type {
-  AttachmentImport,
-  AttachmentImportBatch,
-  AttachmentImportResult,
-  AttachmentSkipSummary,
-} from "./service";
-
-const RESULT: AttachmentImportResult = {
-  copied: 1,
-  skipped: 0,
-  missing: 0,
-  blocked: 0,
-  refused: 0,
-};
+import type { AttachmentImport, AttachmentSkipSummary } from "./service";
 
 const SUMMARY: AttachmentSkipSummary = {
   blocked: 1,
@@ -28,26 +15,9 @@ const SUMMARY: AttachmentSkipSummary = {
   blockedFolders: ["/outside"],
 };
 
-/** A service whose members answer from `folders` and count the batch calls. */
+/** A service whose members answer from `folders`. */
 function fakeService() {
   const folders = Ref.makeUnsafe<readonly string[]>(["/approved"]);
-  const calls = { flush: 0, discard: 0, prepared: [] as string[] };
-  const batch: AttachmentImportBatch = {
-    decide: (path, origin) => ({
-      approved: false,
-      path,
-      origin,
-      reason: "no-trusted-root",
-    }),
-    resolveLink: (opts) => () => `[[${opts.vaultName}]]`,
-    flush: Effect.sync(() => {
-      calls.flush++;
-      return RESULT;
-    }),
-    discard: Effect.sync(() => {
-      calls.discard++;
-    }),
-  };
   const service = stubService<AttachmentImport["Service"]>("AttachmentImport", {
     approvedFolders: Ref.get(folders),
     approveFolder: (folder) =>
@@ -55,19 +25,14 @@ function fakeService() {
     revokeFolder: (folder) =>
       Ref.update(folders, (list) => list.filter((path) => path !== folder)),
     skipped: Stream.make(SUMMARY),
-    prepare: (notePath) =>
-      Effect.sync(() => {
-        calls.prepared.push(notePath);
-        return batch;
-      }),
   });
-  return { service, calls };
+  return { service };
 }
 
 it.effect("resolves each member with the service's answer", () =>
   Effect.promise(async () => {
     await using bridge = openTestBridge();
-    const { service, calls } = fakeService();
+    const { service } = fakeService();
     const handle = bindAttachmentImport(bridge, service);
 
     expect(handle.approvedFolders).toEqual(["/approved"]);
@@ -79,31 +44,14 @@ it.effect("resolves each member with the service's answer", () =>
     const stop = handle.onSkipped((summary) => summaries.push(summary));
     await expect.poll(() => summaries).toEqual([SUMMARY]);
     stop();
-
-    const batch = await handle.prepare("Notes/A.md");
-    expect(calls.prepared).toEqual(["Notes/A.md"]);
-    expect(batch.decide("/x.png", "linked-absolute")).toMatchObject({
-      approved: false,
-      path: "/x.png",
-    });
-    expect(
-      batch.resolveLink({
-        source: batch.decide("/x.png", "linked-absolute"),
-        vaultName: "x.png",
-      })(),
-    ).toBe("[[x.png]]");
-    await expect(batch.flush()).resolves.toEqual(RESULT);
-    batch.discard();
-    expect(calls).toMatchObject({ flush: 1, discard: 1 });
   }),
 );
 
 it.effect("after release, each member settles as the bridge does", () =>
   Effect.promise(async () => {
     await using bridge = openTestBridge();
-    const { service, calls } = fakeService();
+    const { service } = fakeService();
     const handle = bindAttachmentImport(bridge, service);
-    const batch = await handle.prepare("Notes/A.md");
     await bridge[Symbol.asyncDispose]();
 
     // The bridge keeps its captured context, so the runs still answer.
@@ -111,9 +59,6 @@ it.effect("after release, each member settles as the bridge does", () =>
       bridge.runSync(service.approvedFolders),
     );
     await expect(handle.approveFolder("/late")).resolves.toBe("/late");
-    await expect(batch.flush()).resolves.toEqual(RESULT);
-    batch.discard();
-    expect(calls).toMatchObject({ flush: 1, discard: 1 });
 
     // A subscription opened after release receives nothing, and stops cleanly.
     const summaries: AttachmentSkipSummary[] = [];

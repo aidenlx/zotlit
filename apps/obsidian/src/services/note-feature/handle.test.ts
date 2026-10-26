@@ -9,7 +9,7 @@ import { MemoryFileManager } from "@/lib/__fixtures__/obsidian-file-manager";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { ProfileId } from "@/lib/profile-stamp";
-import type { AttachmentImportHandle } from "@/services/attachment-import/handle";
+import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import {
   profileReader,
@@ -62,10 +62,9 @@ function harness() {
         update: () => Effect.succeed(settings),
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-      attachmentImport: stubService<Pick<AttachmentImportHandle, "prepare">>(
-        "AttachmentImport",
-        {},
-      ),
+      attachmentImport: stubService<
+        Pick<AttachmentImport["Service"], "prepare">
+      >("AttachmentImport", {}),
     },
     stack,
   );

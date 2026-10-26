@@ -20,7 +20,6 @@ import { layerVaultFrom, Vault } from "@/lib/obsidian-vault";
 import type { VaultSource } from "@/lib/obsidian-vault";
 import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import type { Workspace, WorkspaceSource } from "@/lib/obsidian-workspace";
-import type { AttachmentImportHandle } from "@/services/attachment-import/handle";
 import { AttachmentImport } from "@/services/attachment-import/service";
 import { ExcerptImages } from "@/services/excerpt-image/layer";
 import {
@@ -66,7 +65,7 @@ export interface NoteFeatureSources extends Omit<
   app: NoteFeatureApp;
   settings: Pick<PluginSettings["Service"], "current" | "update">;
   zoteroPref: { dataDir: string; baseAttachmentPath: string | null };
-  attachmentImport: Pick<AttachmentImportHandle, "prepare">;
+  attachmentImport: Pick<AttachmentImport["Service"], "prepare">;
   /** A fake excerpt preparation for each note write. */
   excerptImages?: (options: NoteExcerptOptions) => PreparedExcerpts;
   /**
@@ -186,25 +185,15 @@ export function noteFeatureServices(
         current: Effect.sync(() => snapshotAt(sources.zoteroPref)),
       }),
     ),
-    Context.add(
-      AttachmentImport,
-      stubService<AttachmentImport["Service"]>("AttachmentImport", {
-        prepare: (notePath, options) =>
-          Effect.promise(() =>
-            sources.attachmentImport.prepare(notePath, options),
-          ).pipe(
-            Effect.map((batch) => ({
-              decide: batch.decide,
-              resolveLink: batch.resolveLink,
-              flush: Effect.promise(() => batch.flush()),
-              discard: Effect.sync(() => batch.discard()),
-            })),
-          ),
-      }),
-    ),
   );
   return Layer.mergeAll(
     host,
+    Layer.mock(AttachmentImport, {
+      prepare: (notePath, options) =>
+        Effect.suspend(() =>
+          sources.attachmentImport.prepare(notePath, options),
+        ),
+    }),
     Layer.succeedContext(Context.merge(planning, plain)),
     layerExcerptPreparationOver(sources, host, plain.pipe(Context.pick(ZoteroPref))),
   );
