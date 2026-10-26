@@ -92,6 +92,8 @@ import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {
   ATTACHMENT_TYPE_ID,
   inProcessReadsService,
@@ -100,6 +102,7 @@ import {
   worksSql,
 } from "@/services/zotero-reads/test-utils";
 
+import { planningContext } from "./__fixtures__/planning-context";
 import type { NoteCitations } from "./citations-handle";
 import type { NoteFeatureDeps } from "./context";
 /**
@@ -108,12 +111,19 @@ import type { NoteFeatureDeps } from "./context";
  */
 type TestDeps = Omit<
   NoteFeatureDeps,
-  "bridge" | "profile" | "query" | "vault" | "fileManager" | "app" | "citations"
+  | "bridge"
+  | "profile"
+  | "context"
+  | "vault"
+  | "fileManager"
+  | "app"
+  | "zoteroReads"
+  | "citations"
 > &
   Partial<
     Pick<
       NoteFeatureDeps,
-      "bridge" | "profile" | "query" | "vault" | "fileManager" | "citations"
+      "bridge" | "profile" | "vault" | "fileManager" | "citations"
     >
   > & {
     app: NoteFeatureDeps["app"] & {
@@ -123,9 +133,18 @@ type TestDeps = Omit<
       >;
     };
     db: { client: NodeDatabaseClient };
+    /** Creation planning reads the Snapshot through the ZoteroReads tag. */
+    zoteroReads: NoteFeatureDeps["zoteroReads"] &
+      Pick<PlainZoteroReads, "snapshot">;
   };
 import { createNoteFeature as createFeature } from "./operations";
 function createNoteFeature(deps: TestDeps) {
+  const profile =
+    deps.profile ??
+    profileReader(
+      () => Effect.runSync(deps.settings.current) ?? settingsDefaults,
+      deps.app.metadataCache,
+    );
   const feature = createFeature({
     ...deps,
     // The tag over the test host's vault, so a create sees its cache.
@@ -139,20 +158,28 @@ function createNoteFeature(deps: TestDeps) {
     bridge: deps.bridge ?? {
       runSync: Effect.runSync,
       runPromise: Effect.runPromise,
+      runPromiseExit: Effect.runPromiseExit,
     },
     // The citation members run no note operation; citation.test.ts covers them.
     citations:
       deps.citations ?? stubService<NoteCitations>("NoteCitations", {}),
     // These Profiles name no Match, so creation runs no query.
-    query: deps.query ?? {
-      run: () => Promise.reject(new Error("This test runs no query.")),
-    },
-    profile:
-      deps.profile ??
-      profileReader(
-        () => Effect.runSync(deps.settings.current) ?? settingsDefaults,
-        deps.app.metadataCache,
-      ),
+    context: planningContext({
+      profile,
+      get noteIndex() {
+        return deps.noteIndex;
+      },
+      get zoteroReads() {
+        return deps.zoteroReads;
+      },
+      get template() {
+        return deps.template;
+      },
+      get app() {
+        return deps.app;
+      },
+    }),
+    profile,
   });
   // The caller hands over an Item it read from Zotero, so the database holds it.
   const know = (item: Item) => seedItem(deps.db.client, item);
@@ -750,6 +777,7 @@ describe("createNote", () => {
     const zoteroReads = deps.zoteroReads;
     deps.zoteroReads = {
       reads: zoteroReads.reads,
+      snapshot: zoteroReads.snapshot,
       acquireRead: async () => {
         const lease = await zoteroReads.acquireRead();
         return {
@@ -2404,7 +2432,11 @@ function makeUpdateHarness(options: {
         renameFile: vi.fn(),
       },
     },
-    bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
+    bridge: {
+      runSync: Effect.runSync,
+      runPromise: Effect.runPromise,
+      runPromiseExit: Effect.runPromiseExit,
+    },
     template,
     ...makeDbDeps(),
     noteIndex: {
@@ -3662,8 +3694,14 @@ describe("updateNote", () => {
       if (failure === "missing item")
         forgetItem(harness.deps.db.client, "ABCD2345");
       else
-        harness.deps.zoteroReads.acquireRead = async () => {
-          throw new Error("Database unavailable");
+        harness.deps.zoteroReads = {
+          ...harness.deps.zoteroReads,
+          snapshot: Effect.fail(
+            new DbUnavailable({ message: "Database unavailable" }),
+          ),
+          acquireRead: async () => {
+            throw new Error("Database unavailable");
+          },
         };
       const file = harness.file("Literature/Paper.md");
       const feature = createNoteFeature(harness.deps);

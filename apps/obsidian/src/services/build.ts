@@ -73,6 +73,7 @@ import type { NoteFeature } from "./note-feature";
 import { bindBatchUpdate } from "./note-feature/batch-update-handle";
 import { bindNoteCitations } from "./note-feature/citations-handle";
 import type { NoteCitationServices } from "./note-feature/citations-handle";
+import type { CreationPlanningServices } from "./note-feature/creation-planning";
 import type { BatchUpdateServices } from "./note-feature/update-batch";
 import { batchUpdateNotices } from "./note-feature/update-single";
 import type { BatchImportServices } from "./note-import/batch-import";
@@ -402,7 +403,6 @@ export async function buildServices(
         profile,
         template,
         zoteroReads,
-        query,
         noteIndex,
         zoteroPref,
         settings,
@@ -436,11 +436,11 @@ export async function buildServices(
           app: plugin.app,
           template,
           zoteroReads,
-          query,
           noteIndex,
           zoteroPref,
           settings,
           bridge,
+          context: runtime.runSync(Effect.context<CreationPlanningServices>()),
           attachmentImport,
         }),
     })

@@ -13,6 +13,7 @@ import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { VaultSource } from "@/lib/obsidian-vault";
 import type { SourceOrigin } from "@/services/attachment-import/source";
+import { planningContext } from "@/services/note-feature/__fixtures__/planning-context";
 import type { NoteFeatureDeps } from "@/services/note-feature/context";
 import { createNoteFeature } from "@/services/note-feature/operations";
 import type { CreateNoteResult } from "@/services/note-feature/operations";
@@ -84,22 +85,32 @@ async function realCreate(
       renameFile: async () => undefined,
     }),
   });
+  const profile = profileReader(current, host.metadataCache);
+  const template = stubService<NoteFeatureDeps["template"]>("Template", {
+    frontmatterFields: [],
+    getLiteratureNoteTemplate: () => document,
+    renderFilename: (data: object) => document.renderFilename(data),
+    render: (name: string, data: object) =>
+      fixture.deps.templates.render(name as "note", data),
+  });
+  const noteIndex: NoteFeatureDeps["noteIndex"] = {
+    whenIndexed: async () => {},
+    getNotesByItemKey: () => [],
+    getImportedNoteByNoteKey: () => [],
+  };
   const deps = stubService<NoteFeatureDeps>("NoteFeatureDeps", {
-    profile: profileReader(current, host.metadataCache),
+    profile,
     app,
-    template: stubService<NoteFeatureDeps["template"]>("Template", {
-      frontmatterFields: [],
-      getLiteratureNoteTemplate: () => document,
-      renderFilename: (data: object) => document.renderFilename(data),
-      render: (name: string, data: object) =>
-        fixture.deps.templates.render(name as "note", data),
-    }),
+    template,
     zoteroReads: fixture.zoteroReads,
-    noteIndex: {
-      whenIndexed: async () => {},
-      getNotesByItemKey: () => [],
-      getImportedNoteByNoteKey: () => [],
-    },
+    noteIndex,
+    context: planningContext({
+      profile,
+      noteIndex,
+      zoteroReads: fixture.zoteroReads,
+      template,
+      app: host,
+    }),
     zoteroPref: { dataDir: "/Zotero", baseAttachmentPath: null },
     settings: stubService<NoteFeatureDeps["settings"]>("PluginSettings", {
       current: Effect.succeed(current),

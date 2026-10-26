@@ -11,13 +11,7 @@ import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 
 import type { NoteCitations } from "./citations-handle";
 import type { NoteFeatureDeps } from "./context";
-import {
-  planCreations,
-  prepareProfileNote,
-  prepareProfileSwitch,
-  resolveCompanionNote,
-  resolveCreationProfile,
-} from "./creation-planning";
+import { bindCreationPlanning } from "./creation-planning-handle";
 import { refusedCreate } from "./diagnostics";
 import type {
   CompanionNoteTarget,
@@ -38,7 +32,6 @@ import type {
 } from "./types";
 import {
   createNote,
-  getImportedNotesForItem,
   overwriteNote,
   replacedKeys,
   switchNoteProfile,
@@ -168,6 +161,10 @@ export interface NoteFeature extends NoteCitations {
  * see the collaborators. The closure serializes creates by Indexed Key and
  * retains newly created files until the Note Index observes them. Compiled
  * template artifacts live in {@link TemplateService}.
+ *
+ * Creation planning and Profile selection are Effect functions over
+ * `deps.context`; their members run them through `deps.bridge` and hand them
+ * the create gate ({@link bindCreationPlanning}).
  */
 export function createNoteFeature(deps: NoteFeatureDeps): NoteFeature {
   const events = createNanoEvents<NoteFeatureEvents>();
@@ -239,18 +236,12 @@ export function createNoteFeature(deps: NoteFeatureDeps): NoteFeature {
       events.emit("excerpt-images-reported", summary),
     ready: Promise.resolve(),
     createNote: createAtGate,
-    resolveCompanionNote: (indexedKey, options) =>
-      resolveCompanionNote(ctx, indexedKey, options),
-    resolveCreationProfile: (sources) => resolveCreationProfile(ctx, sources),
-    planCreations: (indexedKeys, options) =>
-      planCreations(ctx, indexedKeys, { ...options, create: createAtGate }),
-    prepareProfileNote: (options) =>
-      prepareProfileNote(ctx, options, createAtGate),
-    prepareProfileSwitch: (file) => prepareProfileSwitch(ctx, file),
+    ...bindCreationPlanning(deps.bridge, deps.context, {
+      create: createAtGate,
+      events,
+    }),
     updateNote: (file, options) => updateNote(ctx, file, options),
     switchNoteProfile: (file, options) => switchNoteProfile(ctx, file, options),
-    getImportedNotesForItem: (indexedKey) =>
-      getImportedNotesForItem(ctx, indexedKey),
     replacedKeys: (file) => replacedKeys(ctx, file),
     overwriteNote: (file, indexedKey, options) =>
       overwriteNote(ctx, file, { ...options, indexedKey }),

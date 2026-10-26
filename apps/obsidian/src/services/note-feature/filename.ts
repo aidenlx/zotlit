@@ -78,13 +78,36 @@ function resolveAvailable(
   exists: (rel: string) => boolean,
   opts: { resolve: (rendered: string) => string | null },
 ): string {
+  const steps = availableSteps(rendered, opts.resolve);
+  let step = steps.next();
+  while (!step.done) step = steps.next(exists(step.value));
+  return step.value;
+}
+
+/**
+ * {@link resolveFreeNotePath} as steps, for a caller whose vault check is not
+ * synchronous: each step yields a candidate, takes back whether it is taken,
+ * and the steps return the free one. A step throws what
+ * {@link resolveFreeNotePath} throws.
+ */
+export function freeNotePathSteps(
+  rendered: string,
+): Generator<string, string, boolean> {
+  return availableSteps(rendered, resolveNoteRelPath);
+}
+
+/** The candidates of {@link resolveAvailable}, each answered by `exists`. */
+function* availableSteps(
+  rendered: string,
+  resolveName: (rendered: string) => string | null,
+): Generator<string, string, boolean> {
   const resolve = (filled: string) => {
-    const rel = opts.resolve(filled);
+    const rel = resolveName(filled);
     if (rel === null) throw new EmptyFilenameError();
     return rel;
   };
   const baseRel = resolve(replaceSuffixMarkers(rendered, () => ""));
-  if (!hasSuffixMarker(rendered) || !exists(baseRel)) {
+  if (!hasSuffixMarker(rendered) || !(yield baseRel)) {
     return baseRel;
   }
 
@@ -96,7 +119,7 @@ function resolveAvailable(
           `${prepend}${suffixNanoid(length)}${append}`,
       ),
     );
-    if (!exists(candidate)) return candidate;
+    if (!(yield candidate)) return candidate;
   }
   throw new Error(
     `Could not find an available filename for "${baseRel}" after ${MAX_SUFFIX_ATTEMPTS} suffix attempts`,
