@@ -566,6 +566,35 @@ describe("library-wide protocol links", () => {
     }),
   );
 
+  it.effect(
+    "shows the early-exit notice an update-all link's update ended with",
+    () =>
+      Effect.gen(function* () {
+        vi.mocked(runBatchUpdateAll).mockReturnValueOnce(
+          Effect.succeed<BatchUpdateResult>({ outcome: "empty-selection" }),
+        );
+        yield* register();
+
+        yield* dispatch("zotlit/update-all", { library: "7" });
+
+        expect(shown()).toEqual([m.batch_update_all_empty()]);
+        expect(notifier.notices[0]!.duration).toBe(2000);
+      }),
+  );
+
+  it.effect("shows no notice for an update-all link's update that failed", () =>
+    Effect.gen(function* () {
+      vi.mocked(runBatchUpdateAll).mockReturnValueOnce(
+        Effect.die(new Error("classify failed")),
+      );
+      yield* register();
+
+      yield* dispatch("zotlit/update-all", { library: "7" });
+
+      expect(shown()).toEqual([]);
+    }),
+  );
+
   it.effect("passes the named group as an exact import target", () =>
     Effect.gen(function* () {
       yield* register();

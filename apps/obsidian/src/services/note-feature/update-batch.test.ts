@@ -52,6 +52,7 @@ import { InertTemplateError } from "@/services/template/errors";
 import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsState } from "@/services/zotero-reads/service";
 import {
@@ -255,6 +256,8 @@ interface UpdateDeps {
   profile: ProfileReader;
   zoteroReads: TestReads;
   dbState: ZoteroReadsState["state"];
+  /** The Snapshot the runners open; the case's reads by default. */
+  snapshot: ZoteroReads["Service"]["snapshot"];
   settings: Pick<PluginSettings["Service"], "current" | "update">;
   noteFeature: BatchUpdatePorts["noteFeature"];
   noteIndex: {
@@ -278,6 +281,7 @@ function makeDeps(
     profile: profileReader(),
     zoteroReads,
     dbState,
+    snapshot: zoteroReads.snapshot,
     settings: {
       current: Effect.succeed(defaults),
       update: () => Effect.succeed(defaults),
@@ -325,7 +329,7 @@ function makeDeps(
           }),
         ),
         reads: zoteroReads.reads,
-        snapshot: zoteroReads.snapshot,
+        snapshot: Effect.suspend(() => deps.snapshot),
       }),
     ),
   };
@@ -432,6 +436,32 @@ function scopeReads() {
   };
 }
 
+/**
+ * A client whose DisplayRefs stream sends its first slice and then waits until
+ * it is interrupted, which `onInterrupt` hears.
+ */
+function stallAfterFirstSlice(onInterrupt: () => void) {
+  return (client: ZoteroReadsClient): ZoteroReadsClient => ({
+    ...client,
+    DisplayRefs: ((payload: object, options?: object) =>
+      Stream.concat(
+        (
+          client.DisplayRefs as unknown as (
+            payload: object,
+            options?: object,
+          ) => Stream.Stream<unknown>
+        )(payload, options),
+        Stream.never,
+      ).pipe(
+        Stream.onExit((exit) =>
+          Effect.sync(() => {
+            if (Exit.hasInterrupts(exit)) onInterrupt();
+          }),
+        ),
+      )) as unknown as ZoteroReadsClient["DisplayRefs"],
+  });
+}
+
 describe("classify through the DisplayRefs stream", () => {
   it.effect(
     "classifies bounded requests under one Snapshot and writes each item under the run's Snapshot",
@@ -507,26 +537,12 @@ describe("classify through the DisplayRefs stream", () => {
     () =>
       Effect.gen(function* () {
         let interrupted = false;
-        const deps = makeDeps("ready", (client) => ({
-          ...client,
-          // The first slice arrives; the next one never does until interrupted.
-          DisplayRefs: ((payload: object, options?: object) =>
-            Stream.concat(
-              (
-                client.DisplayRefs as unknown as (
-                  payload: object,
-                  options?: object,
-                ) => Stream.Stream<unknown>
-              )(payload, options),
-              Stream.never,
-            ).pipe(
-              Stream.onExit((exit) =>
-                Effect.sync(() => {
-                  interrupted = Exit.hasInterrupts(exit);
-                }),
-              ),
-            )) as unknown as ZoteroReadsClient["DisplayRefs"],
-        }));
+        const deps = makeDeps(
+          "ready",
+          stallAfterFirstSlice(() => {
+            interrupted = true;
+          }),
+        );
         itemsIn(new Map([[1, USER_LIBRARY_ID]]));
         const abort = new AbortController();
 
@@ -537,6 +553,35 @@ describe("classify through the DisplayRefs stream", () => {
         });
 
         yield* Effect.promise(() => expect(classified).rejects.toThrow());
+        expect(interrupted).toBe(true);
+      }),
+  );
+
+  it.effect(
+    "interrupts the DisplayRefs stream when unload lands during classify",
+    () =>
+      Effect.gen(function* () {
+        let interrupted = false;
+        const deps = makeDeps(
+          "ready",
+          stallAfterFirstSlice(() => {
+            interrupted = true;
+          }),
+        );
+        itemsIn(new Map([[1, USER_LIBRARY_ID]]));
+        const unload = yield* Scope.make();
+        const bridge = yield* scopedBridge.pipe(Scope.provide(unload));
+        const sliced = Promise.withResolvers<void>();
+
+        yield* runBatchUpdate(deps, [1, 2], { bridge });
+        const classified = openedModals.at(-1)!.onClassify({
+          onProgress: () => sliced.resolve(),
+          signal: yield* Effect.abortSignal,
+        });
+        yield* Effect.promise(() => sliced.promise);
+        yield* Scope.close(unload, Exit.void);
+        yield* Effect.promise(() => classified.catch(() => undefined));
+
         expect(interrupted).toBe(true);
       }),
   );
@@ -625,6 +670,124 @@ describe("a write that rejects", () => {
             failure: expect.objectContaining({ message: "disk full" }),
           }),
         );
+      }),
+  );
+});
+
+describe("the run's Snapshot", () => {
+  /** Record in `events` each open and close of a Snapshot that `deps` hands out. */
+  function trackSnapshots(deps: UpdateDeps, events: string[]): void {
+    deps.snapshot = deps.zoteroReads.snapshot.pipe(
+      Effect.tap(() => Effect.sync(() => events.push("open"))),
+      Effect.tap(() =>
+        Effect.addFinalizer(() => Effect.sync(() => events.push("close"))),
+      ),
+    );
+  }
+
+  /**
+   * Classify items 1 and 2 in the opened modal, then start its run in a fiber
+   * that succeeds with how the run settled.
+   */
+  const classifyAndRun = Effect.fnUntraced(function* (deps: UpdateDeps) {
+    itemsIn(
+      new Map([
+        [1, USER_LIBRARY_ID],
+        [2, USER_LIBRARY_ID],
+      ]),
+    );
+    yield* runBatchUpdate(deps, [1, 2]);
+    const modal = openedModals.at(-1)!;
+    const signal = yield* Effect.abortSignal;
+    yield* Effect.promise(() =>
+      modal.onClassify({ onProgress: vi.fn(), signal }),
+    );
+    return yield* Effect.promise(() =>
+      modal
+        .onRun({
+          onItemSettled: vi.fn(),
+          stop: Deferred.makeUnsafe<void>(),
+        })
+        .then(
+          () => ({ rejected: false, reason: undefined }),
+          (reason: unknown) => ({ rejected: true, reason }),
+        ),
+    ).pipe(Effect.forkChild);
+  });
+
+  it.effect("holds the Snapshot until every write settles", () =>
+    Effect.gen(function* () {
+      const deps = makeDeps("ready");
+      const events: string[] = [];
+      trackSnapshots(deps, events);
+      const started = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      let writes = 0;
+      deps.noteFeature.createNote = async () => {
+        writes++;
+        if (writes === 2) started.resolve();
+        await release.promise;
+        events.push("write settled");
+        return { outcome: "created", file: noteAt("Literature/New.md") };
+      };
+
+      const run = yield* classifyAndRun(deps);
+      yield* Effect.promise(() => started.promise);
+      // Classify closed its own Snapshot; the run's stays open.
+      expect(events).toEqual(["open", "close", "open"]);
+      release.resolve();
+      expect(yield* Fiber.join(run)).toMatchObject({ rejected: false });
+
+      expect(events).toEqual([
+        "open",
+        "close",
+        "open",
+        "write settled",
+        "write settled",
+        "close",
+      ]);
+    }),
+  );
+
+  it.effect("closes the Snapshot when the run fails", () =>
+    Effect.gen(function* () {
+      const deps = makeDeps("ready");
+      const events: string[] = [];
+      trackSnapshots(deps, events);
+      deps.noteFeature.createNote = () =>
+        Promise.reject(new InertTemplateError("Inert message"));
+
+      const run = yield* classifyAndRun(deps);
+      expect(yield* Fiber.join(run)).toMatchObject({
+        rejected: true,
+        reason: { _tag: "LegacyPortError" },
+      });
+      expect(events).toEqual(["open", "close", "open", "close"]);
+    }),
+  );
+
+  it.effect(
+    "rejects the run with the failure that opening its Snapshot met",
+    () =>
+      Effect.gen(function* () {
+        const deps = makeDeps("ready");
+        const failure = new DbUnavailable({ message: "The database closed." });
+        let opens = 0;
+        deps.snapshot = Effect.suspend(() => {
+          opens++;
+          return opens === 1 ? deps.zoteroReads.snapshot : Effect.fail(failure);
+        });
+        const createNote =
+          vi.fn<BatchUpdatePorts["noteFeature"]["createNote"]>();
+        deps.noteFeature.createNote = createNote;
+
+        const run = yield* classifyAndRun(deps);
+        expect(yield* Fiber.join(run)).toEqual({
+          rejected: true,
+          reason: failure,
+        });
+
+        expect(createNote).not.toHaveBeenCalled();
       }),
   );
 });
