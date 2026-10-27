@@ -110,7 +110,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await prepareRunWindow(imageVaultId);
     await obEval(
       imageVaultId,
-      "(async()=>{app.workspace.detachLeavesOfType('pdf');app.workspace.detachLeavesOfType('zotero-annotation-view');await app.plugins.plugins.zotlit.services.excerptImage.clear();return true;})()",
+      "(async()=>{app.workspace.detachLeavesOfType('pdf');app.workspace.detachLeavesOfType('zotero-annotation-view');await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.excerptImage.clear);return true;})()",
     );
     const imageKey = "FDRFQ7C2";
     const inkKey = "TYY6Z6ZF";

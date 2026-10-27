@@ -29,8 +29,8 @@ import type { AnnotationRecord } from "@/services/annotation-repository/service"
 import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import { redPng } from "@/services/excerpt-image/__fixtures__/png";
 import { PNG_FORMAT } from "@/services/excerpt-image/format";
-import { ExcerptImages } from "@/services/excerpt-image/layer";
 import { layerExcerptPreparation } from "@/services/excerpt-image/prepare";
+import { ExcerptImageService } from "@/services/excerpt-image/service";
 import type {
   ExcerptOutcome,
   ExcerptRequest,
@@ -190,9 +190,10 @@ async function openFixture(mode: string) {
         fileSystem.layer,
         pref,
         Layer.succeed(
-          ExcerptImages,
-          stubService<ExcerptImages["Service"]>("ExcerptImages", {
-            resolve: (request) => resolver.resolve(request),
+          ExcerptImageService,
+          stubService<ExcerptImageService["Service"]>("ExcerptImages", {
+            resolve: (request) =>
+              Effect.tryPromise(() => resolver.resolve(request)),
           }),
         ),
       ),

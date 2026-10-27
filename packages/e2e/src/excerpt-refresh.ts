@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 
+import { EFFECT_MODULE } from "./effect-module.ts";
 import { obEval, obEvalUntil } from "./obsidian-cli.ts";
 
 /** Exercise the real Refresh gesture and subscribed card after a resolver failure. */
@@ -24,23 +25,24 @@ export async function verifyExcerptRefresh(vaultId: string): Promise<void> {
   await obEval(
     vaultId,
     `(async () => {
+      const { Effect } = ${EFFECT_MODULE};
       const services = app.plugins.plugins.zotlit.services;
       const service = services.excerptImage;
       const original = service.resolve;
       const stored = service.stored;
       const state = ${probe} = { service, original, stored, recover: false, calls: 0, completed: 0, leaf: null };
-      service.stored = async function(request) {
-        if (request.annotation.key === "4PE492KU") return null;
-        return stored.call(this, request);
-      };
-      service.resolve = async function(request, signal) {
-        if (request.annotation.key !== "4PE492KU") return original.call(this, request, signal);
+      service.stored = request => Effect.suspend(() => {
+        if (request.annotation.key === "4PE492KU") return Effect.succeed(null);
+        return stored(request);
+      });
+      service.resolve = request => Effect.gen(function* () {
+        if (request.annotation.key !== "4PE492KU") return yield* original(request);
         state.calls++;
         if (!state.recover) { state.completed++; return { kind: "unavailable" }; }
-        const result = await original.call(this, request, signal);
+        const result = yield* original(request);
         state.completed++;
         return result;
-      };
+      });
       services.excerptDisplay.clear();
       state.leaf = app.workspace.getLeaf("tab");
       await state.leaf.setViewState({ type: "zotero-annotation-view", state: { followMode: "pinned", previousMode: "active-tab", pinnedItemKey: "RUGIER24" }, active: true });

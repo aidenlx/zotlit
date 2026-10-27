@@ -1,10 +1,12 @@
+import { Effect } from "effect";
+
 // Runs the production PDF queue in a disposable Electron renderer, so the crop
 // work it schedules is real Chromium canvas encoding and the one window it runs
 // in is hidden — the background-throttled state a minimized Obsidian is in.
 // Nothing here parses a PDF: the renderer's own document load and rasterizer
 // live in Obsidian (see docs/excerpt-image-queue-measurements.md).
 import { check } from "./__fixtures__/check";
-import { encodeExcerptImage } from "./encode";
+import { encodeExcerptImage } from "./__fixtures__/encode";
 import { EXCERPT_JOB_LIMIT, ExcerptPdfQueue } from "./pdf-queue";
 
 export interface ChromiumQueueReport {
@@ -26,7 +28,7 @@ export interface ChromiumQueueReport {
   cacheHitWhileBlocked: { hitMs: number; answeredWhileBlocked: boolean };
   /** `idle` resolves only after an admitted job's teardown ran. */
   teardown: { order: string[] };
-  /** How a 200 ms timer and a 200 ms `AbortSignal.timeout` actually fired here. */
+  /** How a 200 ms timer and a 200 ms `Effect.timeout` actually fired here. */
   throttledTimers: { timerMs: number; deadlineMs: number };
 }
 
@@ -196,14 +198,12 @@ async function throttledTimers(): Promise<
     setTimeout(() => resolve(performance.now() - timerStart), 200);
   });
   const deadlineStart = performance.now();
-  const signal = AbortSignal.timeout(200);
-  const deadline = new Promise<number>((resolve) => {
-    signal.addEventListener(
-      "abort",
-      () => resolve(performance.now() - deadlineStart),
-      { once: true },
-    );
-  });
+  const deadline = Effect.runPromise(
+    Effect.never.pipe(
+      Effect.timeout(200),
+      Effect.orElseSucceed(() => performance.now() - deadlineStart),
+    ),
+  );
   const [timerMs, deadlineMs] = await Promise.all([timer, deadline]);
   return { timerMs, deadlineMs };
 }
@@ -254,7 +254,7 @@ export async function run(): Promise<ChromiumQueueReport> {
   );
   check(
     Number.isFinite(throttled.deadlineMs) && throttled.deadlineMs < 10_000,
-    "AbortSignal.timeout still fires while the window is hidden",
+    "Effect.timeout still fires while the window is hidden",
   );
   passed.push("timers under background throttling");
 

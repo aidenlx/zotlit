@@ -657,7 +657,6 @@ export default defineConfig({
       // when its service converts to Effect (/obsidian-services).
       files: [
         "src/services/excerpt-image/display.ts",
-        "src/services/excerpt-image/service.ts",
         "src/services/pdf-annotation-editor/service.ts",
       ],
       rules: { "zotlit-services/no-legacy-service": "off" },

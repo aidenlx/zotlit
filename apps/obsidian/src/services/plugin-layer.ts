@@ -69,12 +69,12 @@ import { layerDatabaseActions } from "./database/actions";
 import { layerExcerptDisplays } from "./excerpt-image/display";
 import type { ExcerptDisplays } from "./excerpt-image/display";
 import { layerExcerptImages } from "./excerpt-image/layer";
-import type { ExcerptImages } from "./excerpt-image/layer";
 import { layerExcerptPreparation } from "./excerpt-image/prepare";
 import type { ExcerptPreparation } from "./excerpt-image/prepare";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
 import { layerAnnotationImageCli } from "./excerpt-image/register-cli";
 import { layerExcerptRevalidation } from "./excerpt-image/revalidation";
+import type { ExcerptImageService } from "./excerpt-image/service";
 import type { ExcerptStore } from "./excerpt-image/store";
 import { layerGraphCitations } from "./graph-citations/service";
 import type { GraphCitations } from "./graph-citations/service";
@@ -202,7 +202,7 @@ export function pluginLayer(
   | ItemLookup
   | QueryService
   | ExcerptDisplays
-  | ExcerptImages
+  | ExcerptImageService
   | ExcerptPreparation
   | CitationText
   | CitationPopover

@@ -1,13 +1,14 @@
-import { abortable } from "@std/async/abortable";
-import { open } from "node:fs/promises";
+import { Effect } from "effect";
 import { loadPdfJs } from "obsidian";
 
-import { getLogger } from "@/lib/log";
+import { scopedBridge } from "@/lib/effect-bridge";
+import { withLogCategory } from "@/lib/effect-log";
 
 import { excerptSourceIdentity } from "./contract";
 import type { ExcerptRequest } from "./contract";
 import { encodeExcerptImage } from "./encode";
-import type { ExcerptImage } from "./format";
+import { ExcerptImageError } from "./error";
+import { openExcerptFile, pdfStamp, readBounded } from "./file";
 import {
   clipExcerptBounds,
   excerptBounds,
@@ -110,7 +111,7 @@ interface DiagnosticGate {
   release: PromiseWithResolvers<void>;
 }
 
-const logger = getLogger(["excerpt-image", "renderer"]);
+const logged = withLogCategory("excerpt-image", "renderer");
 
 /** Internal acceptance diagnostics. It does not alter work unless a test installs a gate. */
 export class ExcerptRendererDiagnostics {
@@ -178,10 +179,14 @@ export class ExcerptRendererDiagnostics {
     return this.#gate?.phase === phase;
   }
 
-  async enter(phase: ExcerptRendererPhase, signal: AbortSignal): Promise<void> {
-    this.#phase = phase;
-    const gate = this.#gate;
-    if (gate?.phase === phase) await abortable(gate.release.promise, signal);
+  enter(phase: ExcerptRendererPhase) {
+    return Effect.suspend(() => {
+      this.#phase = phase;
+      const gate = this.#gate;
+      return gate?.phase === phase
+        ? Effect.promise(() => gate.release.promise)
+        : Effect.void;
+    });
   }
 
   leave(phase: ExcerptRendererPhase): void {
@@ -250,127 +255,104 @@ export class ExcerptRendererDiagnostics {
   }
 }
 
-/** One resident document serves the service's serial queue; render tasks remain local. */
-export class ExcerptRenderer implements AsyncDisposable {
+/** One resident document serves the serial queue; each render owns a Scope. */
+export class ExcerptRenderer {
   readonly diagnostics = new ExcerptRendererDiagnostics();
   readonly #host;
-  #session?: { key: string; task: LoadingTask; close?: Promise<void> };
+  #session?: { key: string; task: LoadingTask };
   #unusable = false;
-  readonly #shutdown = new AbortController();
-  #active?: Promise<ExcerptImage>;
+  #active = false;
 
   constructor(
     host: {
       load?: typeof loadPdfJs;
       canvas?: () => HTMLCanvasElement;
-      deadline?: (milliseconds: number) => AbortSignal;
-      /** Where a crop may borrow an open reader's document instead of loading. */
       readers?: ExcerptReaderDocuments;
     } = {},
   ) {
     this.#host = host;
   }
 
-  #deadline(milliseconds: number) {
-    return this.#host.deadline
-      ? this.#host.deadline(milliseconds)
-      : AbortSignal.timeout(milliseconds);
-  }
-
-  async #teardown(promise: Promise<unknown>) {
-    await abortable(promise, this.#deadline(5_000)).catch((error) => {
-      // An unconfirmed teardown must not accumulate another resident resource.
-      const transitionedToUnusable = !this.#unusable;
-      this.#unusable = true;
-      logger.debug("Excerpt renderer teardown failed", {
-        error,
-        state: "unusable",
-        transitionedToUnusable,
-      });
-    });
-  }
-
-  async #close() {
+  readonly #close = Effect.gen({ self: this }, function* () {
     const session = this.#session;
     if (!session) return;
-    session.close ??= this.#teardown(
-      Promise.resolve().then(() => session.task.destroy()),
+    yield* Effect.tryPromise(() => session.task.destroy()).pipe(
+      Effect.timeout(5_000),
+      Effect.catch((error) => {
+        const transitionedToUnusable = !this.#unusable;
+        this.#unusable = true;
+        return Effect.logDebug("Excerpt renderer teardown failed").pipe(
+          Effect.annotateLogs({
+            error,
+            state: "unusable",
+            transitionedToUnusable,
+          }),
+          logged,
+        );
+      }),
     );
-    await session.close;
     if (this.#session === session) {
       this.#session = undefined;
       this.diagnostics.document();
     }
-  }
+  });
 
-  /** Release the resident PDF document while keeping the renderer reusable. */
-  async release(): Promise<void> {
-    await this.#active?.catch(() => undefined);
-    await this.#close();
-  }
+  readonly release = this.#close.pipe(
+    Effect.withSpan("ExcerptRenderer.release"),
+  );
 
-  async [Symbol.asyncDispose]() {
+  readonly dispose = Effect.gen({ self: this }, function* () {
     this.#unusable = true;
-    this.#shutdown.abort();
-    await this.release();
+    yield* this.#close;
     this.diagnostics.close();
-  }
+  });
 
-  async render(
+  render = Effect.fn("ExcerptRenderer.render")(
+    (request: ExcerptRequest) =>
+      Effect.suspend(() => {
+        if (this.#unusable)
+          return Effect.fail(
+            new ExcerptImageError({ message: "Excerpt renderer is closed" }),
+          );
+        if (this.#active)
+          return Effect.fail(
+            new ExcerptImageError({ message: "Excerpt renderer is busy" }),
+          );
+        this.#active = true;
+        this.diagnostics.job(true);
+        return this.#render(request).pipe(
+          Effect.timeout(30_000),
+          Effect.onError(() => this.#close),
+          Effect.ensuring(
+            Effect.sync(() => {
+              this.#active = false;
+              this.diagnostics.job(false);
+            }),
+          ),
+        );
+      }),
+    logged,
+  );
+
+  readonly #document = Effect.fnUntraced(function* (
+    this: ExcerptRenderer,
     request: ExcerptRequest,
-    cancellation: AbortSignal,
-  ): Promise<ExcerptImage> {
-    if (this.#unusable) throw new Error("Excerpt renderer is closed");
-    if (this.#active) throw new Error("Excerpt renderer is busy");
-    const signal = AbortSignal.any([
-      cancellation,
-      this.#shutdown.signal,
-      this.#deadline(30_000),
-    ]);
-    const job = this.#render(request, signal).catch(async (error: unknown) => {
-      await this.#close();
-      throw error;
-    });
-    this.diagnostics.job(true);
-    this.#active = job;
-    try {
-      return await job;
-    } finally {
-      this.#active = undefined;
-      this.diagnostics.job(false);
-    }
-  }
-
-  async #document(request: ExcerptRequest, signal: AbortSignal) {
-    const opening = open(request.pdfPath!, "r");
-    let handle: Awaited<typeof opening>;
-    try {
-      handle = await abortable(opening, signal);
-    } catch (error) {
-      // Cancellation can win before open returns. Keep acquisition and its
-      // eventual close inside this job's teardown, including the handoff race.
-      await this.#teardown(
-        opening.then(
-          (file) => file.close(),
-          () => undefined,
-        ),
-      );
-      throw error;
-    }
-    await using handles = new AsyncDisposableStack();
+  ) {
+    const file = yield* openExcerptFile(request.pdfPath!);
     this.diagnostics.file(true);
     this.diagnostics.openedFile();
-    const file = handles.adopt(handle, async (file) => {
-      await this.#teardown(file.close());
-      this.diagnostics.file(false);
-    });
-    const info = await abortable(file.stat(), signal);
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => this.diagnostics.file(false)),
+    );
+    const info = pdfStamp(yield* file.stat);
     if (
       !Number.isSafeInteger(info.size) ||
       info.size < 0 ||
       info.size > MAX_PDF_BYTES
     )
-      throw new Error("PDF exceeds excerpt byte limit");
+      return yield* new ExcerptImageError({
+        message: "PDF exceeds excerpt byte limit",
+      });
     const key = JSON.stringify([
       request.sourceScope,
       excerptSourceIdentity(request.source),
@@ -381,43 +363,35 @@ export class ExcerptRenderer implements AsyncDisposable {
       info.mtimeMs,
     ]);
     if (this.#session?.key !== key) {
-      await this.#close();
-      signal.throwIfAborted();
-      if (this.#unusable) throw new Error("Excerpt renderer is closed");
-      // One extra byte detects growth without an unbounded readFile allocation.
-      const data = new Uint8Array(info.size + 1);
-      let offset = 0;
-      while (offset < data.length) {
-        signal.throwIfAborted();
-        const reading = file.read(data, offset, data.length - offset, offset);
-        void reading.catch(() => undefined);
-        let bytesRead: number;
-        if (offset === 0) {
-          try {
-            await this.diagnostics.enter("pdf-reading", signal);
-            ({ bytesRead } = await abortable(reading, signal));
-          } finally {
-            this.diagnostics.leave("pdf-reading");
-          }
-        } else {
-          ({ bytesRead } = await abortable(reading, signal));
-        }
-        if (!bytesRead) break;
-        offset += bytesRead;
-      }
-      const after = await abortable(file.stat(), signal);
+      yield* this.#close;
+      if (this.#unusable)
+        return yield* new ExcerptImageError({
+          message: "Excerpt renderer is closed",
+        });
+      const data = yield* this.diagnostics
+        .enter("pdf-reading")
+        .pipe(
+          Effect.andThen(readBounded(file, info.size + 1)),
+          Effect.ensuring(
+            Effect.sync(() => this.diagnostics.leave("pdf-reading")),
+          ),
+        );
+      const after = pdfStamp(yield* file.stat);
       if (
-        offset !== info.size ||
+        data.length !== info.size ||
         after.size !== info.size ||
         after.mtimeMs !== info.mtimeMs
       )
-        throw new Error("PDF changed while reading");
-      const lib = await abortable((this.#host.load ?? loadPdfJs)(), signal);
-      signal.throwIfAborted();
+        return yield* new ExcerptImageError({
+          message: "PDF changed while reading",
+        });
+      const lib = yield* Effect.tryPromise(() =>
+        (this.#host.load ?? loadPdfJs)(),
+      );
       this.#session = {
         key,
         task: lib.getDocument({
-          data: data.subarray(0, offset),
+          data,
           cMapUrl: "/lib/pdfjs/cmaps/",
           cMapPacked: true,
           standardFontDataUrl: "/lib/pdfjs/standard_fonts/",
@@ -429,18 +403,21 @@ export class ExcerptRenderer implements AsyncDisposable {
       this.diagnostics.document(this.#session.task);
       this.diagnostics.loadedDocument();
     }
-    try {
-      await this.diagnostics.enter("document-loading", signal);
-      return await abortable(this.#session.task.promise, signal);
-    } finally {
-      this.diagnostics.leave("document-loading");
-    }
-  }
+    const task = this.#session.task;
+    return yield* this.diagnostics
+      .enter("document-loading")
+      .pipe(
+        Effect.andThen(Effect.tryPromise(() => task.promise)),
+        Effect.ensuring(
+          Effect.sync(() => this.diagnostics.leave("document-loading")),
+        ),
+      );
+  }, Effect.scoped);
 
-  async #render(
+  readonly #render = Effect.fnUntraced(function* (
+    this: ExcerptRenderer,
     request: ExcerptRequest,
-    signal: AbortSignal,
-  ): Promise<ExcerptImage> {
+  ) {
     const position = request.annotation.position;
     if (
       !request.pdfPath ||
@@ -450,64 +427,52 @@ export class ExcerptRenderer implements AsyncDisposable {
         (request.annotation.type === "ink" && position.kind === "pdf-ink")
       )
     )
-      throw new Error("Unsupported excerpt");
-    signal.throwIfAborted();
-    const borrowed = await borrowedExcerptPage({
+      return yield* new ExcerptImageError({ message: "Unsupported excerpt" });
+    const borrowed = yield* borrowedExcerptPage({
       readers: this.#host.readers,
       path: request.pdfPath,
       pageIndex: position.pageIndex,
-      signal,
     });
     if (borrowed) {
-      try {
-        const image = await this.#crop(request, borrowed.page, signal);
-        // The reader may have closed or replaced its document while the crop
-        // drew, and the page it withdrew is not this outcome's source: the
-        // file is. Only a document still holding the page publishes here.
-        if (borrowed.current()) {
-          this.diagnostics.borrowed();
-          return image;
-        }
-        logger.debug(
-          "Reader document withdrew under the crop; reading the file",
-          {
-            path: request.pdfPath,
-          },
-        );
-      } catch (error) {
-        // A reader that closed or replaced its document under the crop leaves
-        // the file as the validated source: this resolution goes on detached.
-        signal.throwIfAborted();
-        logger.debug("Borrowed reader page did not render; reading the file", {
-          path: request.pdfPath,
-          error,
-        });
+      const image = yield* this.#crop(request, borrowed.page).pipe(
+        Effect.catch((error) =>
+          Effect.logDebug(
+            "Borrowed reader page did not render; reading the file",
+          ).pipe(
+            Effect.annotateLogs({ path: request.pdfPath, error }),
+            logged,
+            Effect.as(null),
+          ),
+        ),
+      );
+      if (image && borrowed.current()) {
+        this.diagnostics.borrowed();
+        return image;
       }
     }
-    await using stack = new AsyncDisposableStack();
-    const pdf = await this.#document(request, signal);
-    if (this.#unusable) throw new Error("Excerpt renderer is closed");
-    const page = stack.adopt(
-      await abortable(pdf.getPage(position.pageIndex + 1), signal),
-      (page) => {
-        page.cleanup();
-      },
+    const pdf = yield* this.#document(request);
+    if (this.#unusable)
+      return yield* new ExcerptImageError({
+        message: "Excerpt renderer is closed",
+      });
+    const page = yield* Effect.acquireRelease(
+      Effect.tryPromise(() => pdf.getPage(position.pageIndex + 1)),
+      (page) =>
+        Effect.sync(() => {
+          page.cleanup();
+        }),
+      { interruptible: true },
     );
-    const image = await this.#crop(request, page, signal);
+    const image = yield* this.#crop(request, page);
     this.diagnostics.detached();
     return image;
-  }
+  }, Effect.scoped);
 
-  /**
-   * Draw, ink, and encode the requested crop of `page`. The canvas and the
-   * render task belong to this call; a borrowed page keeps its owner.
-   */
-  async #crop(
+  readonly #crop = Effect.fnUntraced(function* (
+    this: ExcerptRenderer,
     request: ExcerptRequest,
     page: ExcerptCropPage,
-    signal: AbortSignal,
-  ): Promise<ExcerptImage> {
-    await using stack = new AsyncDisposableStack();
+  ) {
     const rect = excerptBounds(request.annotation);
     const crop = clipExcerptBounds(rect, page.view);
     const bounds = (scale: number) => {
@@ -517,61 +482,69 @@ export class ExcerptRenderer implements AsyncDisposable {
     let scale = 4;
     let box = bounds(scale);
     if (!box.every(Number.isFinite) || box[2]! <= 0 || box[3]! <= 0)
-      throw new Error("Invalid PDF excerpt bounds");
+      return yield* new ExcerptImageError({
+        message: "Invalid PDF excerpt bounds",
+      });
     scale *= Math.min(
       1,
       Math.sqrt(16_777_216 / (box[2]! * box[3]!)),
       8192 / Math.max(box[2]!, box[3]!),
     );
     box = bounds(scale);
-    const canvas = stack.adopt(
-      // eslint-disable-next-line obsidianmd/prefer-create-el -- renders offscreen, outside any Obsidian window
-      (this.#host.canvas ?? (() => document.createElement("canvas")))(),
-      (canvas) => {
-        canvas.width = 0;
-        canvas.height = 0;
-        this.diagnostics.canvasReset();
-      },
+    const canvas = yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        // eslint-disable-next-line obsidianmd/prefer-create-el -- renders offscreen, outside any Obsidian window
+        (this.#host.canvas ?? (() => document.createElement("canvas")))(),
+      ),
+      (canvas) =>
+        Effect.sync(() => {
+          canvas.width = 0;
+          canvas.height = 0;
+          this.diagnostics.canvasReset();
+        }),
     );
     canvas.width = Math.max(1, Math.floor(box[2]!));
     canvas.height = Math.max(1, Math.floor(box[3]!));
     this.diagnostics.canvas(canvas);
     const context = canvas.getContext("2d", { alpha: false });
-    if (!context) throw new Error("Canvas unavailable");
+    if (!context)
+      return yield* new ExcerptImageError({ message: "Canvas unavailable" });
     const viewport = page.getViewport({
       scale,
       offsetX: -box[0]!,
       offsetY: -box[1]!,
     });
-    const task = stack.adopt(
-      page.render({ canvasContext: context, viewport, intent: "display" }),
-      (task) => {
-        task.cancel();
-        this.diagnostics.renderTask(false);
-      },
+    const task = yield* Effect.acquireRelease(
+      Effect.try(() =>
+        page.render({ canvasContext: context, viewport, intent: "display" }),
+      ),
+      (task) =>
+        Effect.sync(() => {
+          task.cancel();
+          this.diagnostics.renderTask(false);
+        }),
     );
     this.diagnostics.renderTask(true);
-    void task.promise
-      .finally(() => this.diagnostics.renderTask(false))
-      .catch(() => undefined);
-    // Attach a rejection handler before checking the private seam.
     void task.promise.catch(() => undefined);
-    usePromiseScheduling(page, task);
-    try {
-      if (this.diagnostics.held("page-rendering")) {
-        task.onContinue = (continueCallback) => {
-          void this.diagnostics
-            .enter("page-rendering", signal)
-            .then(continueCallback, () => task.cancel());
-        };
-      } else {
-        await this.diagnostics.enter("page-rendering", signal);
-      }
-      await abortable(task.promise, signal);
-    } finally {
-      this.diagnostics.leave("page-rendering");
+    yield* Effect.try(() => usePromiseScheduling(page, task));
+    const bridge = yield* scopedBridge;
+    if (this.diagnostics.held("page-rendering")) {
+      task.onContinue = (continueCallback) => {
+        bridge.runAndForget(
+          this.diagnostics
+            .enter("page-rendering")
+            .pipe(Effect.andThen(Effect.sync(continueCallback))),
+        );
+      };
+    } else {
+      yield* this.diagnostics.enter("page-rendering");
     }
+    yield* Effect.tryPromise(() => task.promise).pipe(
+      Effect.ensuring(
+        Effect.sync(() => this.diagnostics.leave("page-rendering")),
+      ),
+    );
     paintInk({ annotation: request.annotation, viewport, context });
-    return await encodeExcerptImage(canvas, signal);
-  }
+    return yield* encodeExcerptImage(canvas);
+  }, Effect.scoped);
 }

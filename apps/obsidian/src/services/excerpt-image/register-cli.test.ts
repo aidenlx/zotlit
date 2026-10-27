@@ -22,8 +22,8 @@ import {
 } from "@/services/zotero-reads/test-utils";
 
 import { ANNOTATION_IMAGE_COMMAND } from "./cli-image";
-import { ExcerptImages } from "./layer";
 import { layerAnnotationImageCli } from "./register-cli";
+import { ExcerptImageService } from "./service";
 
 /**
  * The command the layer registers, over `reads`, a data directory at
@@ -56,9 +56,9 @@ const registered = (
               ),
             }),
             Layer.succeed(
-              ExcerptImages,
-              stubService<ExcerptImages["Service"]>("ExcerptImages", {
-                resolve: () => Promise.resolve({ kind: "unavailable" }),
+              ExcerptImageService,
+              stubService<ExcerptImageService["Service"]>("ExcerptImages", {
+                resolve: () => Effect.succeed({ kind: "unavailable" }),
               }),
             ),
           ),
