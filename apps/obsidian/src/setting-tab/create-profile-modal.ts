@@ -9,6 +9,7 @@ import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { ProfileSelector } from "@/lib/profile-stamp";
+import { UserCancelled } from "@/lib/user-cancel";
 import type { ProfileNoteDraft } from "@/services/note-feature/service";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import type { ResolvedProfile } from "@/services/profile/bindings";
@@ -190,7 +191,7 @@ export class CreateProfileModal extends Modal {
           this.#decision.resolve({ profile, preview: selectedPreview });
           this.close();
         } catch (error) {
-          if (AbortError.test(error)) return;
+          if (AbortError.test(error) || error instanceof UserCancelled) return;
           logger.error("Failed to create Profile from dialog", { error });
           reason.set(
             Error.isError(error)

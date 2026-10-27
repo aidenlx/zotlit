@@ -5,7 +5,7 @@ import { Effect, Exit, Fiber, Layer, Logger, References } from "effect";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
-import { LegacyPortError } from "@/lib/legacy-port";
+import { LegacyPortError, portCall } from "@/lib/legacy-port";
 import { Notifier } from "@/lib/notifier";
 
 import { explainWorkbenchOpen, templateWorkbenchAction } from "./actions";
@@ -52,7 +52,9 @@ it.effect("logs a failed action under its operation and shows a notice", () =>
   }),
 );
 
-// #1819: an unpack or restore that unload stops is released quietly.
+// #1819: an unpack or restore that unload stops is released quietly. #1824:
+// a port that unload stopped rejects with an abort, which passes on as an
+// interrupt.
 it.effect.each(["interrupt", "abort"] as const)(
   "releases an action stopped by %s without a notice or an error log",
   (reason) =>
@@ -62,14 +64,12 @@ it.effect.each(["interrupt", "abort"] as const)(
         "unpack-partials",
         reason === "interrupt"
           ? Effect.never
-          : Effect.fail(
-              new LegacyPortError({ step: "unpack", cause: new AbortError() }),
-            ),
+          : portCall("unpack", () => Promise.reject(new AbortError())),
       ).pipe(Effect.provide(record.layer), Effect.forkChild);
       yield* Effect.yieldNow;
       if (reason === "interrupt") yield* Fiber.interrupt(fiber);
       const exit = yield* Fiber.await(fiber);
-      expect(Exit.hasInterrupts(exit)).toBe(reason === "interrupt");
+      expect(Exit.hasInterrupts(exit)).toBe(true);
       expect(record.notices()).toEqual([]);
       expect(record.errors).toEqual([]);
     }),

@@ -8,7 +8,6 @@ import {
   FiberSet,
   Layer,
   Option,
-  Predicate,
 } from "effect";
 import type { Duration } from "effect";
 import type { Scope } from "effect";
@@ -16,6 +15,7 @@ import type { Scope } from "effect";
 import { AbortError } from "@/lib/abort-error";
 import { withLogCategory } from "@/lib/effect-log";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
+import { UserCancelled } from "@/lib/user-cancel";
 
 /** What a notice shows: plain text, or a fragment from `BaseNotice.render`. */
 export type NoticeMessage = string | DocumentFragment;
@@ -111,8 +111,8 @@ export interface ProgressCopy<A = unknown> {
  * Report a task's outcome the way `toast.promise` does: the loading message
  * after 200 ms when the task has not finished (so a fast task does not flash
  * it), then the success message for 2 s (or `successDuration`) or the error
- * message for 4 s. An interrupted task or an abort shows nothing, and an
- * error is logged.
+ * message for 4 s. An interrupted task, an abort, or the user's cancel
+ * (`UserCancelled`) shows nothing, and an error is logged.
  *
  * @param outcome Completes with the task's Exit once the task ends. It runs
  *   again after the loading delay, so it awaits a task started elsewhere
@@ -147,23 +147,17 @@ export const reportProgress = Effect.fn("Notifier.reportProgress")(function* <
 }, Effect.scoped);
 
 /**
- * An abort, or a typed failure that wraps one: a Promise port whose run was
- * aborted rejects with an `AbortError`, which `portCall` keeps as the cause.
- */
-const isAbort = (error: unknown): boolean =>
-  AbortError.test(error) ||
-  (Predicate.hasProperty(error, "cause") && AbortError.test(error.cause));
-
-/**
- * The error message for a task that failed with `cause`: none for an abort,
- * else the message `copy` gives for the error, logged with the error.
+ * The error message for a task that failed with `cause`: none for an abort
+ * or the user's cancel (`UserCancelled`), else the message `copy` gives for
+ * the error, logged with the error.
  */
 const failureMessage = Effect.fnUntraced(function* (
   cause: Cause.Cause<unknown>,
   copy: (error: unknown) => NoticeMessage | undefined,
 ) {
   const error = Cause.squash(cause);
-  if (isAbort(error)) return undefined;
+  if (AbortError.test(error) || error instanceof UserCancelled)
+    return undefined;
   const message = copy(error);
   yield* Effect.logError("Toast reported error").pipe(
     Effect.annotateLogs({
@@ -212,8 +206,8 @@ export interface OutcomeCopy<A> {
 /**
  * Run `task` and report its outcome as {@link reportProgress} does, without a
  * loading message: the success message for 2 s, or the error message for 4 s
- * with the error logged. An abort shows nothing. The notice does not hold the
- * run, and an interrupt passes on without a notice.
+ * with the error logged. An abort or the user's cancel shows nothing. The
+ * notice does not hold the run, and an interrupt passes on without a notice.
  */
 export const reportOutcome = Effect.fn("Notifier.reportOutcome")(function* <
   A,

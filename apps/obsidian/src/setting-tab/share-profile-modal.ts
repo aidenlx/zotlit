@@ -5,6 +5,7 @@ import inc from "semver/functions/inc";
 
 import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
+import { UserCancelled } from "@/lib/user-cancel";
 import type {
   PreparedProfileShare,
   ProfileShareOptions,
@@ -199,7 +200,8 @@ export class ShareProfileModal extends Modal {
     try {
       await this.#share(destination, source);
     } catch (error) {
-      if (!AbortError.test(error)) throw error;
+      if (!AbortError.test(error) && !(error instanceof UserCancelled))
+        throw error;
     } finally {
       this.#busy = false;
       if (!this.#closed) this.#refresh();

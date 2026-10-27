@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect, Exit, Fiber, Layer, Scope } from "effect";
+import { Effect, Exit, Fiber, Layer, Option, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect } from "vitest";
 
@@ -7,6 +7,7 @@ import { testNotifier } from "./__fixtures__/notifier";
 import { AbortError } from "./abort-error";
 import { LegacyPortError } from "./legacy-port";
 import { Notifier, reportOutcome, withProgress } from "./notifier";
+import { UserCancelled } from "./user-cancel";
 
 describe("Notifier test layer", () => {
   it.effect("records a shown notice with its duration until it hides", () =>
@@ -116,18 +117,31 @@ describe("reportOutcome", () => {
     }),
   );
 
-  // #1831: a Promise port that a closed view command rejects reaches Effect as
-  // a typed failure around the abort.
-  it.effect("shows nothing when a typed failure wraps an abort", () =>
+  // #1824: the user's cancel is a typed reason, and it is not a failure.
+  it.effect("shows nothing when the user cancels the task", () =>
+    Effect.gen(function* () {
+      const notifier = testNotifier();
+      yield* reportOutcome(Effect.fail(new UserCancelled()), copy).pipe(
+        Effect.provide(notifier.layer),
+      );
+      expect(notifier.notices).toEqual([]);
+    }),
+  );
+
+  // #1824: a typed failure keeps its notice when its cause is an abort, such
+  // as a Zotero transport abort; unload reaches Effect as an interrupt.
+  it.effect("shows the error message when a typed failure wraps an abort", () =>
     Effect.gen(function* () {
       const notifier = testNotifier();
       yield* reportOutcome(
         Effect.fail(
           new LegacyPortError({ step: "open", cause: new AbortError() }),
         ),
-        copy,
+        { ...copy, error: () => "Failed" },
       ).pipe(Effect.provide(notifier.layer));
-      expect(notifier.notices).toEqual([]);
+      expect(notifier.notices).toEqual([
+        { messages: ["Failed"], duration: 4000, hidden: false },
+      ]);
     }),
   );
 
@@ -234,6 +248,30 @@ describe("withProgress", () => {
       expect(notifier.notices[0]?.hidden).toBe(false);
       yield* TestClock.adjust("1 millis");
       expect(notifier.notices[0]?.hidden).toBe(true);
+    }),
+  );
+
+  // #1824: a cancellable task that the user cancels ends its notice quietly.
+  it.effect("shows no error message for a task the user cancels", () =>
+    Effect.gen(function* () {
+      const notifier = testNotifier();
+      const context = yield* Layer.build(notifier.layer);
+      const fiber = yield* withProgress(
+        Effect.sleep("1 second").pipe(
+          Effect.andThen(Effect.fail(new UserCancelled())),
+        ),
+        copy,
+      ).pipe(Effect.provideContext(context), Effect.forkChild);
+      yield* TestClock.adjust("1 second");
+      const exit = yield* Fiber.await(fiber);
+      expect(Exit.findErrorOption(exit)).toEqual(
+        Option.some(new UserCancelled()),
+      );
+      yield* Effect.yieldNow;
+
+      expect(notifier.notices).toEqual([
+        { messages: ["Creating"], duration: 0, hidden: true },
+      ]);
     }),
   );
 

@@ -4,7 +4,6 @@
     "apps/docs/src/lib/workbench/fields.ts: fieldValueText",
     "apps/obsidian/src/components/obsidian/dropdown.tsx: DropdownGroup",
     "apps/obsidian/src/lib/disposables.ts: registerInterval",
-    "apps/obsidian/src/lib/toast.ts: toast.cancellableLoading",
     "apps/obsidian/src/lib/toast.ts: toast.rethrowWithNotice",
     "apps/obsidian/src/services/citation-index/service.ts: toZoteroOpenableAttachments",
     "apps/obsidian/src/services/citekey-navigation/index.ts: citationTarget",
