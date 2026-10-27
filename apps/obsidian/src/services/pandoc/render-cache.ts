@@ -5,6 +5,7 @@ import {
   Cause,
   Context,
   Effect,
+  FileSystem,
   Fiber,
   Layer,
   Option,
@@ -181,6 +182,7 @@ export const layerBibliographyRender = Layer.effect(
     const scope = yield* Scope.Scope;
     const { runPromise } = yield* scopedBridge;
     const styles = new InstalledStyleCache();
+    const fileSystem = yield* FileSystem.FileSystem;
     let closed = false;
     const state = yield* SubscriptionRef.make<BibliographyRenderState>({
       vaultPresentation: vaultPresentation(yield* settings.current),
@@ -294,10 +296,9 @@ export const layerBibliographyRender = Layer.effect(
         const selected = (yield* SubscriptionRef.get(state)).vaultPresentation;
         const request = effectivePresentation(presentation ?? {}, selected);
         const dataDir = (yield* pref.current).dataDir;
-        const style = yield* Effect.tryPromise({
-          try: () => styles.resolve(dataDir, request),
-          catch: renderError,
-        });
+        const style = yield* styles
+          .resolve(dataDir, request)
+          .pipe(Effect.provideService(FileSystem.FileSystem, fileSystem));
         if (style.kind !== "failed") return { request, style };
         yield* Effect.logDebug(
           "Cannot resolve the requested citation style",

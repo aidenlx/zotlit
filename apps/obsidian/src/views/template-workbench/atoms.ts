@@ -7,7 +7,7 @@ import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature
 
 import { itemSummary } from "@/lib/item-summary";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
-import { listInstalledStylesOrNone } from "@/services/pandoc/styles";
+import { listInstalledStylesOrNone } from "@/services/pandoc/installed-styles";
 import { Profile } from "@/services/profile/service";
 import { openCitationTemplate } from "@/services/template/actions";
 import { Template } from "@/services/template/service";
@@ -80,12 +80,7 @@ export function makeWorkbenchCommands(registry: ViewRegistryHandle) {
     styles: makeWorkbenchTask(registry, () =>
       Effect.gen(function* () {
         const { dataDir } = yield* (yield* ZoteroPref).current;
-        return dataDir
-          ? yield* Effect.tryPromise((signal) => {
-              signal.throwIfAborted();
-              return listInstalledStylesOrNone(dataDir);
-            })
-          : [];
+        return dataDir ? yield* listInstalledStylesOrNone(dataDir) : [];
       }),
     ),
   };

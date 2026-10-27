@@ -6,6 +6,7 @@ import type { App, TextComponent } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { citationLocaleError } from "@/setting-tab/citations";
+import type { StyleDropdownOptions } from "@/views/style-dropdown";
 import { addStyleDropdown } from "@/views/style-dropdown";
 
 import { STYLE_INHERITED, stylePickerOptions } from "./presentation";
@@ -14,7 +15,10 @@ import type {
   DeclaredPresentation,
 } from "./presentation";
 
-export interface CitationPresentationModalOptions {
+export interface CitationPresentationModalOptions extends Pick<
+  StyleDropdownOptions,
+  "fileSystem" | "bridge"
+> {
   /** Zotero data directory the installed styles are listed from. */
   dataDir: string;
   /** The vault Citation and References Style; `null` selects Default. */
@@ -36,6 +40,8 @@ export function openCitationPresentationModal(
   app: App,
   {
     dataDir,
+    fileSystem,
+    bridge,
     vaultStyleId,
     vaultLocale,
     declared,
@@ -57,6 +63,8 @@ export function openCitationPresentationModal(
       .setDesc(m.citation_presentation_style_desc()),
     {
       dataDir,
+      fileSystem,
+      bridge,
       value: styleId ?? STYLE_INHERITED,
       options: (styles, selected) =>
         stylePickerOptions(styles, {

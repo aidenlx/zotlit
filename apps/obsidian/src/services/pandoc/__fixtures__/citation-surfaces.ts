@@ -1,5 +1,6 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { delay } from "@std/async";
-import { DateTime, Effect, Layer, Stream } from "effect";
+import { DateTime, Effect, FileSystem, Layer, Stream } from "effect";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -740,6 +741,7 @@ function exportAdapter({
 }): PandocExportDeps {
   return {
     citationParse: inProcessParseClient,
+    fileSystem: Effect.runSync(FileSystem.FileSystem.pipe(Effect.provide(NodeFileSystem.layer))),
     profile: profileReader(profileSettings, harness.metadataCache),
     app: stubService<App>("App", {
       metadataCache: harness.metadataCache as unknown as MetadataCache,

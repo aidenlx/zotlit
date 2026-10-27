@@ -438,6 +438,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     registerPandocExport(this, {
+      fileSystem: services.fileSystem,
       citationParse: services.citationParseService,
       profile: services.profile,
       app: this.app,
@@ -455,6 +456,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     const citationPresentationDeps = {
+      fileSystem: services.fileSystem,
       app: this.app,
       zoteroPref: services.zoteroPref,
       settings: services.settings,
