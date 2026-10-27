@@ -6,6 +6,7 @@ import type { DragEvent } from "react";
 
 import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 
+import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
@@ -88,7 +89,8 @@ export async function prepareAndCommit(
       );
     return true;
   } catch (error) {
-    if (target.signal.aborted || !target.valid()) return false;
+    if (target.signal.aborted || !target.valid() || AbortError.test(error))
+      return false;
     if (error instanceof ProfileAnnotationError) {
       deps.notify(
         error.diagnostic.code === "unknown-literature-note-profile"

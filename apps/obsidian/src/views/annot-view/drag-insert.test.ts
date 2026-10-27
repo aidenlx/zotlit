@@ -14,6 +14,7 @@ import type { DragEvent as ReactDragEvent } from "react";
 import { expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type { NoteFeatureHandle } from "@/services/note-feature";
@@ -201,6 +202,15 @@ it("keeps internal insertion errors out of the notice", async () => {
   f.pending[0]!.reject(new Error("private failure detail"));
   await operation;
   expect(f.notify).toHaveBeenCalledWith(m.annot_view_insert_failed());
+});
+
+it("stays silent and inserts nothing when unload ends the insert", async () => {
+  using f = fixture();
+  const operation = f.insert(card);
+  f.pending[0]!.reject(new AbortError("The plugin unloaded during the run."));
+  await operation;
+  expect(f.cm.state.doc.toString()).toBe("one two");
+  expect(f.notify).not.toHaveBeenCalled();
 });
 
 it("supersedes the pending action and inserts once with one undo", async () => {

@@ -6,6 +6,7 @@ import { expect, vi } from "vitest";
 import type { CiteRef } from "@zotlit/db";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { AbortError } from "@/lib/abort-error";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
@@ -218,19 +219,22 @@ it.effect("settles as the bridge does after the runtime is disposed", () =>
   }),
 );
 
-it.effect("rejects a pending insert when the runtime is disposed", () =>
-  Effect.promise(async () => {
-    const handle = await openHandle(() => "", pendingReads);
-    const pending = handle.citations.prepareAnnotationInsert(
-      insertRequest({ valid: true }),
-    );
-    const settled = pending.then(
-      () => "resolved",
-      () => "rejected",
-    );
-    await handle.dispose();
-    expect(await settled).toBe("rejected");
-  }),
+it.effect(
+  "rejects a pending insert with an AbortError when the runtime is disposed",
+  () =>
+    Effect.promise(async () => {
+      const handle = await openHandle(() => "", pendingReads);
+      const pending = handle.citations.prepareAnnotationInsert(
+        insertRequest({ valid: true }),
+      );
+      const settled = pending.then(
+        () => "resolved",
+        (error: unknown) => error,
+      );
+      await handle.dispose();
+      // The view's insert reads an AbortError as unload, which shows nothing.
+      expect(AbortError.test(await settled)).toBe(true);
+    }),
 );
 
 it.effect("rejects a pending insert with the reason its caller aborted", () =>
