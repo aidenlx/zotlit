@@ -22,7 +22,7 @@ import {
 
 const EXIT_USAGE = 2;
 
-const epilogue = `The Memory Gate admits a heavy run while the OS reports memory to spare and no gated run has started in the last 30 s (ADR 0077). It holds nothing once it admits.
+const epilogue = `The Memory Gate admits a heavy run in arrival order while the OS reports memory to spare. It holds nothing once it admits.
 
 Exit codes:
   ${EXIT_ADMISSION_BLOCKED}   the Admission Deadline passed with the gate still closed; blocked, not a failure.
