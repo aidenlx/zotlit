@@ -8,11 +8,12 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
-import { Effect, Schema } from "effect";
+import { Effect, Layer } from "effect";
 import type { CliData } from "obsidian";
 
 import type { CliCommandHandler, CliHost } from "@/lib/cli-command";
 import { catchRejection } from "@/lib/cli-params";
+import { PluginHost } from "@/lib/plugin-host";
 
 import {
   envelope,
@@ -30,39 +31,44 @@ import {
 import type { QueryCliCommand } from "./contract";
 import { decodeCancelArguments, decodeGuideArguments } from "./decode";
 import { GUIDE_TOPIC_NAMES, renderGuide } from "./guide";
+import { QueryService } from "./service";
+import type { ItemQueryError, QueryCancelled } from "./service";
 
-/** The runs of the service; interrupting a handler aborts its `signal`. */
-export interface QueryRuns {
-  query(params: CliData, signal: AbortSignal): Promise<string>;
-  values(params: CliData, signal: AbortSignal): Promise<string>;
-  schema(params: CliData, signal: AbortSignal): Promise<string>;
-  cancel(id: string): boolean;
-}
+/** The runs of the service; interrupting a handler interrupts its run. */
+export type QueryRuns = Pick<
+  QueryService["Service"],
+  "query" | "values" | "schema" | "cancel"
+>;
+
+/** The `zotlit:query*` commands, over the plugin's ZotLit Query. */
+export const layerQueryCli: Layer.Layer<
+  never,
+  never,
+  PluginHost | QueryService
+> = Layer.effectDiscard(
+  Effect.gen(function* () {
+    registerQueryCli(yield* PluginHost, yield* QueryService);
+  }),
+);
 
 export function registerQueryCli(host: CliHost, runs: QueryRuns): void {
   host.registerCliCommand(QUERY_COMMAND, {
     description:
       "Query Zotero items and annotations as JSON; read zotlit:query-guide for syntax and zotlit:query-schema for the field catalog",
     flags: queryFlags,
-    handler: runHandler("QueryCli.query", (params, signal) =>
-      runs.query(params, signal),
-    ),
+    handler: runHandler("QueryCli.query", (params) => runs.query(params)),
   });
   host.registerCliCommand(QUERY_SCHEMA_COMMAND, {
     description:
       "Get the version-pinned schema download, source custom fields, and CLI defaults as JSON",
     flags: { from: queryFlags.from },
-    handler: runHandler("QueryCli.schema", (params, signal) =>
-      runs.schema(params, signal),
-    ),
+    handler: runHandler("QueryCli.schema", (params) => runs.schema(params)),
   });
   host.registerCliCommand(QUERY_VALUES_COMMAND, {
     description:
       "List exact Collection paths or Tag names per Library before writing a filter",
     flags: queryValuesFlags,
-    handler: runHandler("QueryCli.values", (params, signal) =>
-      runs.values(params, signal),
-    ),
+    handler: runHandler("QueryCli.values", (params) => runs.values(params)),
   });
   host.registerCliCommand(QUERY_GUIDE_COMMAND, {
     description:
@@ -84,38 +90,17 @@ export function registerQueryCli(host: CliHost, runs: QueryRuns): void {
 }
 
 /**
- * A run of the service rejected. `message` is the original's (its name where
- * it has no message), which Obsidian prints; `cause` holds it.
- */
-export class QueryRunRejected extends Schema.TaggedError<
-  QueryRunRejected,
-  { readonly brand: unique symbol }
->()("QueryRunRejected", {
-  message: Schema.String,
-  cause: Schema.Defect(),
-}) {}
-
-/**
- * A handler over one run of the service. The run's rejection, as a cancel by
- * `zotlit:query-cancel`, is the handler's failure; interrupting the handler
- * aborts the run.
+ * A handler over one run of the service. A cancel by `zotlit:query-cancel` is
+ * the handler's failure, whose message Obsidian prints; interrupting the
+ * handler interrupts the run.
  */
 function runHandler(
   name: string,
-  run: (params: CliData, signal: AbortSignal) => Promise<string>,
+  run: (
+    params: CliData,
+  ) => Effect.Effect<string, QueryCancelled | ItemQueryError>,
 ): CliCommandHandler {
-  return Effect.fn(name)(function* (params: CliData) {
-    return yield* Effect.tryPromise({
-      try: (signal) => run(params, signal),
-      catch: (cause) =>
-        new QueryRunRejected({
-          message: Error.isError(cause)
-            ? cause.message || cause.name
-            : String(cause),
-          cause,
-        }),
-    });
-  });
+  return Effect.fn(name)((params: CliData) => run(params));
 }
 
 /** A rejected request answers the diagnostic envelope of `command`. */
@@ -135,14 +120,14 @@ export const guideHandler: CliCommandHandler = (params) =>
  * answers `cancelRequested: false`.
  */
 export function createQueryCancelHandler(
-  cancel: (id: string) => boolean,
+  cancel: (id: string) => Effect.Effect<boolean>,
 ): CliCommandHandler {
   return Effect.fn("QueryCli.cancel")(function* (params: CliData) {
     const id = yield* decodeCancelArguments(params);
     return envelope(QUERY_CANCEL_COMMAND, {
       ok: true,
       id,
-      cancelRequested: cancel(id),
+      cancelRequested: yield* cancel(id),
     });
   }, answerRejection(QUERY_CANCEL_COMMAND));
 }

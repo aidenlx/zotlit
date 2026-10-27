@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 
 import {
   noEffectRunInTest,
+  noNoticeMock,
   noRealTimerInEffectTest,
   serviceStub,
   typedFake,
@@ -108,6 +109,25 @@ tester.run("no-real-timer-in-effect-test", noRealTimerInEffectTest, {
   ],
 });
 
+const mock = [{ messageId: "mock" }];
+
+// Failure modes: a test mocks a notice module and goes unflagged, or a mock
+// of the Notifier or another module is flagged.
+tester.run("no-notice-mock", noNoticeMock, {
+  valid: [
+    'vi.mock("@/lib/notifier")',
+    'vi.mock("zustand", async (importOriginal) => ({ ...(await importOriginal()) }))',
+  ],
+  invalid: [
+    {
+      code: 'vi.mock("@/lib/notice", async (importOriginal) => ({ ...(await importOriginal()) }))',
+      errors: mock,
+    },
+    { code: 'vi.mock("@/lib/toast")', errors: mock },
+    { code: 'vi.doMock("@/lib/notice")', errors: mock },
+  ],
+});
+
 const stub = [{ messageId: "stub" }];
 
 tester.run("service-stub", serviceStub, {
@@ -152,6 +172,9 @@ tester.run("typed-fake", typedFake, {
     `${host}const cache: CachedMetadata = { frontmatter: {} };`,
     // A cast of a value that is no literal fake, outside a layer.
     `${host}const app = host.app as unknown as App;`,
+    `${layer}layerHost({ vault: host.vault });`,
+    // A cast in a property of an object no layer takes.
+    `${layer}const sources = { vault: host.vault as unknown as VaultSource };`,
     `${host}const target = event.target as HTMLElement;`,
     "const shape = { hoverEl } as unknown as { hoverEl: HTMLElement };",
     "const value = read() as never;",
@@ -188,6 +211,10 @@ tester.run("typed-fake", typedFake, {
     },
     {
       code: `${layer}layerHostApp(host.app as unknown as App);`,
+      errors: layerFake,
+    },
+    {
+      code: `${layer}layerHost({ vault: host.vault as unknown as VaultSource });`,
       errors: layerFake,
     },
     {

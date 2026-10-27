@@ -1,9 +1,11 @@
 import { join } from "node:path";
 import { defineConfig } from "vitest/config";
 
+import { pageTransform } from "./page-transform.ts";
 import { e2eResultsDir } from "./src/results-dir.ts";
 
 export default defineConfig({
+  oxc: pageTransform,
   resolve: {
     tsconfigPaths: true,
   },

@@ -2,20 +2,13 @@
 import { Context, Effect, Layer } from "effect";
 import { basename } from "node:path/posix";
 import { TFile } from "obsidian";
-import type {
-  App,
-  CachedMetadata,
-  EventRef,
-  FileManager,
-  MetadataCache,
-  Vault,
-  Workspace,
-} from "obsidian";
+import type { CachedMetadata } from "obsidian";
 
-import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
+import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
+import type { HostSources } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
-import { stubService } from "@/lib/__fixtures__/service-stub";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { buildRuntime } from "@/lib/effect-layer";
 
@@ -23,17 +16,17 @@ import type { PlainNoteIndex } from "./plain";
 import { plainNoteIndex } from "./plain";
 import { layerNoteIndex, NoteIndex } from "./service";
 
-export const noteIndexOver = (app: App) =>
-  layerNoteIndex.pipe(Layer.provide(layerHostApp(app)));
+export const noteIndexOver = (host: HostSources) =>
+  layerNoteIndex.pipe(Layer.provide(layerHost(host)));
 
 export const noteIndexOf = Effect.fn("fixture.noteIndexOf")(function* (
-  app: App,
+  host: HostSources,
 ) {
-  return Context.get(yield* Layer.build(noteIndexOver(app)), NoteIndex);
+  return Context.get(yield* Layer.build(noteIndexOver(host)), NoteIndex);
 });
 
-export function buildNoteIndex(app: App, stack: AsyncDisposableStack) {
-  const runtime = buildRuntime(noteIndexOver(app), stack);
+export function buildNoteIndex(host: HostSources, stack: AsyncDisposableStack) {
+  const runtime = buildRuntime(noteIndexOver(host), stack);
   return Object.assign(plainNoteIndex(runtime), { runtime });
 }
 
@@ -57,7 +50,7 @@ export async function openNoteVault(
     ),
     { enabledAtRuntime: true },
   );
-  const noteIndex = buildNoteIndex(host.app, stack);
+  const noteIndex = buildNoteIndex(host, stack);
   await noteIndex.whenIndexed();
   return {
     ...host,
@@ -76,9 +69,6 @@ export async function openNoteVault(
     },
   };
 }
-
-type Callback = (...args: unknown[]) => void;
-type VaultEvent = "create" | "modify" | "rename" | "delete";
 
 /** The in-memory metadata cache, following the vault as Obsidian's does. */
 class MockMetadataCache extends MemoryMetadataCache {
@@ -102,33 +92,9 @@ class MockMetadataCache extends MemoryMetadataCache {
   }
 }
 
-class MockVault {
-  readonly files = new Map<string, TFile>();
-
-  readonly #listeners: Record<VaultEvent, Set<Callback>> = {
-    create: new Set(),
-    modify: new Set(),
-    rename: new Set(),
-    delete: new Set(),
-  };
-
-  getMarkdownFiles(): TFile[] {
-    return [...this.files.values()].filter((file) => file.extension === "md");
-  }
-
-  on(name: VaultEvent, callback: Callback): EventRef {
-    this.#listeners[name].add(callback);
-    return stubService<EventRef>("EventRef", { e: this, name, callback });
-  }
-
-  offref(ref: EventRef): void {
-    const { name, callback } = ref as unknown as {
-      name: VaultEvent;
-      callback: Callback;
-    };
-    this.#listeners[name].delete(callback);
-  }
-
+/** The in-memory vault, whose files carry the name, extension and mtime the index reads. */
+class MockVault extends MemoryVault {
+  /** Hold a file at `path`, without `create`: a file the vault loaded with. */
   addFile(path: string, mtime = 0): TFile {
     const file = makeFile(path, mtime);
     this.files.set(path, file);
@@ -142,7 +108,7 @@ class MockVault {
     this.files.delete(oldPath);
     updateFilePath(file, newPath);
     this.files.set(newPath, file);
-    this.#emit("rename", file, oldPath);
+    this.trigger("rename", file, oldPath);
     return file;
   }
 
@@ -151,16 +117,11 @@ class MockVault {
     if (!file) throw new Error(`Missing file: ${path}`);
 
     this.files.delete(path);
-    this.#emit("delete", file);
-  }
-
-  #emit(name: VaultEvent, ...args: unknown[]): void {
-    for (const callback of this.#listeners[name]) callback(...args);
+    this.trigger("delete", file);
   }
 }
 
 export interface Harness {
-  app: App;
   metadataCache: MockMetadataCache;
   workspace: MemoryWorkspace;
   service: PlainNoteIndex & {
@@ -179,19 +140,13 @@ export const makeHarness = Effect.fn("fixture.makeHarness")(function* (
   files: Record<string, CachedMetadata>,
   options: { enabledAtRuntime?: boolean } = {},
 ) {
-  const { app, metadataCache, workspace, vault } = createNoteHost(
-    files,
-    options,
-  );
+  const host = createNoteHost(files, options);
   const resource = yield* Effect.acquireDisposable(
-    Effect.tryPromise(async () => makeResource(app)),
+    Effect.tryPromise(async () => makeResource(host)),
   );
   return {
-    app,
-    metadataCache,
-    workspace,
+    ...host,
     service: resource.service,
-    vault,
     close: resource.close,
   };
 });
@@ -240,15 +195,16 @@ function updateFilePath(file: TFile, path: string): void {
   file.extension = name.includes(".") ? name.split(".").at(-1)! : "";
 }
 
-function makeResource(app: App) {
+function makeResource(host: HostSources) {
   const stack = new AsyncDisposableStack();
   return {
-    service: buildNoteIndex(app, stack),
+    service: buildNoteIndex(host, stack),
     close: () => stack.disposeAsync(),
     [Symbol.asyncDispose]: () => stack.disposeAsync(),
   };
 }
 
+/** The vault, metadata cache and workspace of a test host holding `files`. */
 export function createNoteHost(
   files: Record<string, CachedMetadata>,
   options: { enabledAtRuntime?: boolean } = {},
@@ -259,12 +215,6 @@ export function createNoteHost(
   });
   metadataCache.clean = options.enabledAtRuntime ?? false;
   const vault = new MockVault();
-  const app = stubService<App>("App", {
-    metadataCache: metadataCache as unknown as MetadataCache,
-    vault: vault as unknown as Vault,
-    workspace: workspace as unknown as Workspace,
-    fileManager: stubService<FileManager>("FileManager", {}),
-  });
   if (options.enabledAtRuntime) metadataCache.watchVault(vault);
 
   for (const [path, fileCache] of Object.entries(files)) {
@@ -272,5 +222,5 @@ export function createNoteHost(
     metadataCache.setCache(path, fileCache);
   }
 
-  return { app, metadataCache, workspace, vault };
+  return { metadataCache, workspace, vault };
 }

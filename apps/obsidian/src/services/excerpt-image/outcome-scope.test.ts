@@ -1,12 +1,20 @@
+import { it } from "@effect/vitest";
+import { Context, Effect, Exit, Fiber, FileSystem, Layer } from "effect";
+import { TestClock } from "effect/testing";
 // What one initiating batch retains, and what it refuses to retain.
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
+
+import { NodeExcerptImageFixture as ExcerptImageService } from "@/services/excerpt-image/__fixtures__/node-service";
 
 import { availableOutcome } from "./__fixtures__/outcome";
 import { redPng } from "./__fixtures__/png";
 import { PNG_FORMAT } from "./format";
 import type { ExcerptImage } from "./format";
 import { ExcerptOutcomeScope } from "./outcome-scope";
-import { ExcerptImageService } from "./service";
+import {
+  ExcerptImageService as ExcerptImages,
+  layerExcerptImage,
+} from "./service";
 import type { ExcerptEntry, ExcerptRequest } from "./service";
 
 const request: ExcerptRequest = {
@@ -298,93 +306,54 @@ describe("Excerpt outcome scope", () => {
     expect(second.diagnostics).toMatchObject({ retained: 1, hits: 0 });
   });
 
-  it("does not retain a stopped queue's unavailable answer", async () => {
-    const limits = new Map<number, AbortController>();
-    const grace = Promise.withResolvers<void>();
-    using _deadlines = vi
-      .spyOn(AbortSignal, "timeout")
-      .mockImplementation((milliseconds) => {
-        const controller = new AbortController();
-        limits.set(milliseconds, controller);
-        if (milliseconds === 5_000) grace.resolve();
-        return controller.signal;
-      });
-    const started = Promise.withResolvers<void>();
-    const render = vi.fn(() => {
-      started.resolve();
-      return new Promise<ExcerptImage>(() => {});
-    });
-    await using service = new ExcerptImageService({ render });
-    await using outcomes = new ExcerptOutcomeScope();
-    const operation = service.operation({ outcomes });
-    const stalled = expect(operation.resolve(request)).rejects.toThrow(
-      "job deadline",
-    );
-    await started.promise;
-    limits.get(35_000)!.abort(new Error("job deadline"));
-    await grace.promise;
-    limits.get(5_000)!.abort(new Error("cleanup deadline"));
-    await stalled;
-    expect(await operation.resolve(movedRequest)).toEqual({
-      kind: "unavailable",
-    });
-    // The stopped queue is a scheduler artifact: the batch keeps nothing from
-    // it, so a later excerpt cannot be answered from a timeout.
-    expect(outcomes.diagnostics).toMatchObject({
-      retained: 0,
-      hits: 0,
-      consumers: 0,
-    });
-    await operation[Symbol.asyncDispose]();
-    await service[Symbol.asyncDispose]();
-  });
-
-  it("keeps an already-admitted request out of the renderer once the queue stalls", async () => {
-    const limits = new Map<number, AbortController>();
-    using _deadlines = vi
-      .spyOn(AbortSignal, "timeout")
-      .mockImplementation((milliseconds) => {
-        const controller = new AbortController();
-        limits.set(milliseconds, controller);
-        return controller.signal;
-      });
-    const started = Promise.withResolvers<void>();
-    const render = vi.fn(async (): Promise<ExcerptImage> => {
-      // The first job never settles, so the queue's teardown stops it. A job
-      // that reached the renderer after the stall would settle like this.
-      if (render.mock.calls.length > 1)
-        return { bytes: redPng, format: PNG_FORMAT };
-      started.resolve();
-      return new Promise<ExcerptImage>(() => {});
-    });
-    await using service = new ExcerptImageService({
-      render,
-      stamp: async () => ({ size: 100, mtimeMs: 10 }),
-    });
-    await using outcomes = new ExcerptOutcomeScope();
-    const operation = service.operation({ outcomes });
-    const stalled = expect(operation.resolve(request)).rejects.toThrow(
-      "job deadline",
-    );
-    await started.promise;
-    limits.get(35_000)!.abort(new Error("job deadline"));
-    // Admitted while the first job still holds the render slot: this request is
-    // already waiting in the queue when the stall lands.
-    const queued = operation.resolve(movedRequest);
-    await vi.waitFor(() =>
-      expect(service.queueDiagnostics).toMatchObject({ queued: 1 }),
-    );
-    await vi.waitFor(() => expect(limits.has(5_000)).toBe(true));
-    limits.get(5_000)!.abort(new Error("cleanup deadline"));
-    await stalled;
-    // The stalled queue answers the admitted request without rendering it.
-    expect(await queued).toEqual({ kind: "unavailable" });
-    expect(render).toHaveBeenCalledTimes(1);
-    // ...and the batch keeps nothing from a queue that stopped.
-    expect(outcomes.diagnostics).toMatchObject({ retained: 0, hits: 0 });
-    await operation[Symbol.asyncDispose]();
-    await service[Symbol.asyncDispose]();
-  });
+  it.effect.each([false, true])(
+    "does not retain a stopped queue's answer (already queued: %s)",
+    (queued) =>
+      Effect.gen(function* () {
+        const started = Promise.withResolvers<void>();
+        const render = vi.fn(() => {
+          started.resolve();
+          return new Promise<ExcerptImage>(() => {});
+        });
+        const context = yield* Layer.build(
+          layerExcerptImage({ render }).pipe(
+            Layer.provide(
+              Layer.succeed(FileSystem.FileSystem, FileSystem.makeNoop({})),
+            ),
+          ),
+        );
+        const service = Context.get(context, ExcerptImages);
+        const outcomes = yield* Effect.acquireDisposable(
+          Effect.sync(() => new ExcerptOutcomeScope()),
+        );
+        const operation = yield* service.operation({ outcomes });
+        const first = yield* operation
+          .resolve(request)
+          .pipe(Effect.exit, Effect.forkChild);
+        yield* Effect.promise(() => started.promise);
+        yield* TestClock.adjust(35_000);
+        const nextRequest = {
+          ...request,
+          annotation: { ...request.annotation, key: "SECOND" },
+        };
+        const next = queued
+          ? yield* operation.resolve(nextRequest).pipe(Effect.forkChild)
+          : undefined;
+        if (next)
+          yield* Effect.promise(() =>
+            vi.waitFor(() => expect(service.queueDiagnostics.queued).toBe(1)),
+          );
+        yield* TestClock.adjust(5_000);
+        expect(Exit.isFailure(yield* Fiber.join(first))).toBe(true);
+        expect(
+          next
+            ? yield* Fiber.join(next)
+            : yield* operation.resolve(nextRequest),
+        ).toEqual({ kind: "unavailable" });
+        expect(render).toHaveBeenCalledTimes(1);
+        expect(outcomes.diagnostics).toMatchObject({ retained: 0, hits: 0 });
+      }),
+  );
 
   it("does not retain a cancelled resolution", async () => {
     const gate = Promise.withResolvers<ExcerptImage>();

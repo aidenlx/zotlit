@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { EditorView } from "@codemirror/view";
 import { Menu } from "@mock/obsidian";
+import { Effect } from "effect";
 import { Keymap } from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
@@ -12,6 +13,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { useFakeTimers } from "@/services/annotation-repository/__fixtures__";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import type { MutationState } from "@/services/annotation-repository/write";
 import {
   libraryReadOnly,
   staleVersionPatch,
@@ -31,21 +33,7 @@ import {
   setCommenting,
 } from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
-
-/** Every notice the reader shows, by its text. */
-const notices = vi.hoisted(() => ({ shown: [] as string[] }));
-vi.mock("@/lib/notice", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/notice")>();
-  return {
-    ...actual,
-    BaseNotice: class extends actual.BaseNotice {
-      constructor(message: string | DocumentFragment, duration?: number) {
-        super(message, duration);
-        if (typeof message === "string") notices.shown.push(message);
-      }
-    },
-  };
-});
+import { geometryFailureMessage } from "./selection";
 
 /**
  * Two marks on page one, the second inside the first, in PDF points. A US
@@ -641,7 +629,7 @@ it("keeps a comment editor open when an ordinary draft settles", async () => {
   });
 
   // The autosave comes due, and the draft goes once Zotero holds its text.
-  await vi.advanceTimersByTimeAsync(1_000);
+  await h.adjustRepositoryClock("1 second");
   await vi.waitFor(() =>
     expect(h.zotero.at("WRDS2222")?.comment).toBe("worth quoting"),
   );
@@ -1701,10 +1689,17 @@ it("refuses every edit key on a Locked Annotation with the Lock Reason, on every
   expect(h.gestures.reportBlockedGesture).not.toHaveBeenCalled();
 });
 
-it("says the Lock Reason alone for a Geometry Edit the lock refuses on release", async () => {
+it("refuses a Geometry Edit the lock takes on during the drag, on release", async () => {
   await using h = await setup([LOCKED_FIGURE]);
   click(h.page.div, ON_FIGURE);
-  notices.shown.length = 0;
+  /** What the repository answers each Geometry Edit with. */
+  const answered: MutationState[] = [];
+  const patch = h.service.patchGeometry;
+  vi.spyOn(h.service, "patchGeometry").mockImplementation((...args) =>
+    patch(...args).pipe(
+      Effect.tap((state) => Effect.sync(() => answered.push(state))),
+    ),
+  );
 
   pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
   pointer(h.containerEl, "pointermove", { x: 340, y: 517 });
@@ -1717,7 +1712,18 @@ it("says the Lock Reason alone for a Geometry Edit the lock refuses on release",
   await geometrySaved(h, "PUPR5FG5");
 
   expect(h.writes()).toEqual([]);
-  expect(notices.shown).toEqual([LOCK_REASON]);
+  expect(answered).toEqual([
+    { kind: "failed", failure: { kind: "locked", reason: "external" } },
+  ]);
+});
+
+it("names a Geometry Edit in its failure, and gives a lock its Lock Reason alone", () => {
+  expect(
+    geometryFailureMessage({ kind: "locked", reason: "external" }, READER_NOW),
+  ).toBe(LOCK_REASON);
+  expect(geometryFailureMessage({ kind: "not-found" }, READER_NOW)).toBe(
+    m.pdf_adjust_failed({ reason: m.annot_view_write_reason_deleted() }),
+  );
 });
 
 it("refuses a group Delete or colour key with one Locked Annotation before the confirmation, with its Lock Reason", async () => {

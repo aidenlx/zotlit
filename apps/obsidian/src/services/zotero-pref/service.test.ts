@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Exit, Fiber, Queue, Stream } from "effect";
+import { Deferred, Effect, Exit, Fiber, Logger, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -248,5 +248,25 @@ it.effect("ends its changes Stream when the layer scope closes", () =>
     yield* Queue.take(observed);
     yield* f.runtime.disposeEffect;
     yield* Fiber.join(listener);
+  }),
+);
+
+// A setting row that closes mid-read interrupts the profile list: no failure.
+it.effect("passes an interrupted profile list through without a warning", () =>
+  Effect.gen(function* () {
+    const f = yield* zoteroPrefFixture((path) =>
+      path.endsWith("profiles.ini")
+        ? Effect.interrupt
+        : Effect.fail(systemCallError(new Error("unreadable"))),
+    );
+    const logged: unknown[] = [];
+    const exit = yield* f.pref.listProfiles.pipe(
+      Effect.provide(
+        Logger.layer([Logger.make(({ message }) => void logged.push(message))]),
+      ),
+      Effect.exit,
+    );
+    expect(Exit.hasInterrupts(exit)).toBe(true);
+    expect(logged).toEqual([]);
   }),
 );

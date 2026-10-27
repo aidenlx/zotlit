@@ -2,10 +2,12 @@
 import { it } from "@effect/vitest";
 import { Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
+import type { App, Vault } from "obsidian";
 import { expect } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { effectTestParse } from "@/lib/__fixtures__/parse-client";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   annotationRows,
   annotationUri,
@@ -17,10 +19,11 @@ import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { registerCitationsCli } from "./register";
 
 function commands(h: CitationIndexHarness) {
-  Object.assign(h.app.vault, { getName: () => "Test" });
   const cli = fakeCliHost();
   registerCitationsCli(cli.host, {
-    app: h.app,
+    app: stubService<App>("App", {
+      vault: stubService<Vault>("Vault", { getName: () => "Test" }),
+    }),
     basePath: "/test",
     citationIndex: h.index,
     zoteroPref: {

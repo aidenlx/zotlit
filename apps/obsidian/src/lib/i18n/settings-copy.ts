@@ -4,10 +4,8 @@
 // available and not yet active. Copy names the language by its Endonym, never
 // the artifact or its origin — those stay in the logs.
 
-import type { LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
-
-import { installLanguagePack } from "./install-toast";
+import type { LanguagePackSituation } from "@/services/language-pack/service";
 
 export type LanguagePackSettingCopy = {
   name: string;
@@ -30,18 +28,20 @@ export type LanguagePackSettingCopy = {
  * hidden — either no pack ships for the resolved locale, or the installed pack
  * is already running.
  */
-export function languagePackSettingCopy(
-  lifecycle: LanguagePackLifecycle,
-): LanguagePackSettingCopy | undefined {
-  const situation = lifecycle.getSituation();
-  const { endonym } = lifecycle;
+export function languagePackSettingCopy(lifecycle: {
+  readonly endonym: string;
+  readonly situation: LanguagePackSituation;
+  /** Installs behind the download toast, which reports the outcome. */
+  install(): void;
+}): LanguagePackSettingCopy | undefined {
+  const { endonym, situation } = lifecycle;
   const name = m.settings_language_pack_name();
-  // `install()` returns the in-flight promise, so the disabled button's action
+  // `install()` joins the download in flight, so the disabled button's action
   // stays the real one rather than a stand-in that could never run.
   const install = (disabled: boolean): LanguagePackSettingCopy["install"] => ({
     label: m.notice_language_pack_install_action(),
     disabled,
-    run: () => installLanguagePack(lifecycle),
+    run: () => lifecycle.install(),
   });
 
   switch (situation.kind) {

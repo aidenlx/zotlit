@@ -4,49 +4,112 @@ import { describe, expect, it } from "vitest";
 
 import { discardFixture, getFixtureLayout } from "@zotlit/scripts/fixture";
 
+import type { AnnotationView } from "@/views/annot-view/view";
+
 import { prepareRunWindow } from "./background-throttling.ts";
 import { reachable } from "./e2e-run-fixture.ts";
 import { annotationAttachment, workspaceRoot } from "./e2e-run-fixture.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
-import { cliCommand, obEval, obEvalUntil } from "./obsidian-cli.ts";
-import { PAGE } from "./page-gestures.ts";
+import { obRun, obRunUntil } from "./obsidian-cli.ts";
+import { cliCommand } from "./obsidian-cli.ts";
 import { clearVault, e2eVaultDir, vaultScript } from "./vault-script.ts";
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
 
   it("renders the header menu's Follow Mode entries inside the popup's own box", async () => {
-    const trigger =
-      "app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.contentEl.querySelector('button.zt-annot-header')";
-    const popup =
-      "app.workspace.getLeavesOfType('zotero-annotation-view')[0].view.contentEl.doc.querySelector('.menu')";
-
     // An earlier case leaves the settings modal open over the workspace.
-    await obEval(
+    await obRun(
       run.vaultId,
-      "(async function(){app.setting.close();var type='zotero-annotation-view';var leaf=app.workspace.getLeavesOfType(type)[0];if(!leaf){leaf=app.workspace.getRightLeaf(false);await leaf.setViewState({type:type,active:true});}app.workspace.revealLeaf(leaf);return true;})()",
+      async ({ app }) => {
+        app.setting.close();
+        var type = "zotero-annotation-view";
+        var leaf = app.workspace.getLeavesOfType(type)[0];
+        if (!leaf) {
+          leaf = app.workspace.getRightLeaf(false)!;
+          await leaf.setViewState({ type: type, active: true });
+        }
+        void app.workspace.revealLeaf(leaf!);
+      },
+      undefined,
     );
-    expect(
-      await obEvalUntil(run.vaultId, `String(!!${trigger})`, {
-        expected: "true",
-      }),
-    ).toBe(true);
-    await obEval(
+    await obRunUntil(
       run.vaultId,
-      `(async function(){${PAGE}press(await stands(${trigger},'Annotation View header'),'Annotation View header');return true;})()`,
+      async ({ app }) => {
+        return !!(
+          app.workspace.getLeavesOfType("zotero-annotation-view")[0]?.view as
+            | AnnotationView
+            | undefined
+        )?.contentEl.querySelector("button.zt-annot-header");
+      },
+      undefined,
+      { what: "the Annotation View header menu button to render" },
     );
-    expect(
-      await obEvalUntil(run.vaultId, `String(!!${popup})`, {
-        expected: "true",
-      }),
-    ).toBe(true);
+    await obRun(
+      run.vaultId,
+      async ({ app, page }) => {
+        const { press, stands } = page;
+        press(
+          await stands(
+            (
+              app.workspace.getLeavesOfType("zotero-annotation-view")[0]
+                ?.view as AnnotationView | undefined
+            )?.contentEl.querySelector<HTMLElement>("button.zt-annot-header"),
+            "Annotation View header",
+          ),
+          "Annotation View header",
+        );
+      },
+      undefined,
+    );
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return !!(
+          app.workspace.getLeavesOfType("zotero-annotation-view")[0]?.view as
+            | AnnotationView
+            | undefined
+        )?.contentEl.doc.querySelector(".menu");
+      },
+      undefined,
+      { what: "the header menu popup to open in the Annotation View document" },
+    );
 
-    const report = JSON.parse(
-      await obEval(
-        run.vaultId,
-        `(function(){var popup=${popup};var box=popup.getBoundingClientRect();var anchor=${trigger}.getBoundingClientRect();var items=Array.from(popup.querySelectorAll('.menu-item'));return JSON.stringify({labels:items.map(function(item){return item.textContent.trim();}),covered:items.filter(function(item){var rect=item.getBoundingClientRect();return rect.height>0&&rect.top>=box.top-1&&rect.bottom<=box.bottom+1;}).length,belowTriggerBy:Math.round(box.top-anchor.bottom),overlapsTriggerX:box.left<anchor.right&&box.right>anchor.left});})()`,
-      ),
-    ) as {
+    const report = (await obRun(
+      run.vaultId,
+      async ({ app }) => {
+        var popup = (
+          app.workspace.getLeavesOfType("zotero-annotation-view")[0]?.view as
+            | AnnotationView
+            | undefined
+        )?.contentEl.doc.querySelector<HTMLElement>(".menu")!;
+        var box = popup.getBoundingClientRect();
+        var anchor = (
+          app.workspace.getLeavesOfType("zotero-annotation-view")[0]?.view as
+            | AnnotationView
+            | undefined
+        )?.contentEl
+          .querySelector<HTMLElement>("button.zt-annot-header")!
+          .getBoundingClientRect()!;
+        var items = Array.from(popup.querySelectorAll(".menu-item"));
+        return {
+          labels: items.map(function (item) {
+            return item.textContent!.trim();
+          }),
+          covered: items.filter(function (item) {
+            var rect = item.getBoundingClientRect();
+            return (
+              rect.height > 0 &&
+              rect.top >= box.top - 1 &&
+              rect.bottom <= box.bottom + 1
+            );
+          }).length,
+          belowTriggerBy: Math.round(box.top - anchor.bottom),
+          overlapsTriggerX: box.left < anchor.right && box.right > anchor.left,
+        };
+      },
+      undefined,
+    )) as {
       labels: string[];
       covered: number;
       belowTriggerBy: number;
@@ -75,19 +138,52 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // A second press closes it. The press is itself what dismisses an open
     // menu, so a trigger that does not check for that reopens the menu it just
     // closed and the menu never appears to shut.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async function(){${PAGE}press(await stands(${trigger},'Annotation View header'),'Annotation View header');return true;})()`,
+      async ({ app, page }) => {
+        const { press, stands } = page;
+        press(
+          await stands(
+            (
+              app.workspace.getLeavesOfType("zotero-annotation-view")[0]
+                ?.view as AnnotationView | undefined
+            )?.contentEl.querySelector<HTMLElement>("button.zt-annot-header"),
+            "Annotation View header",
+          ),
+          "Annotation View header",
+        );
+      },
+      undefined,
     );
-    expect(
-      await obEvalUntil(run.vaultId, `String(${popup}===null)`, {
-        expected: "true",
-      }),
-    ).toBe(true);
-
-    await obEval(
+    await obRunUntil(
       run.vaultId,
-      "(function(){var doc=app.workspace.getLeavesOfType('zotero-annotation-view')[0].view.contentEl.doc;doc.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));app.workspace.detachLeavesOfType('zotero-annotation-view');return true;})()",
+      async ({ app }) => {
+        return (
+          (
+            app.workspace.getLeavesOfType("zotero-annotation-view")[0]?.view as
+              | AnnotationView
+              | undefined
+          )?.contentEl.doc.querySelector(".menu") === null
+        );
+      },
+      undefined,
+      { what: "the header menu popup to close" },
+    );
+
+    await obRun(
+      run.vaultId,
+      async ({ app }) => {
+        var doc = (
+          app.workspace.getLeavesOfType("zotero-annotation-view")[0]?.view as
+            | AnnotationView
+            | undefined
+        )?.contentEl.doc!;
+        doc.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+        );
+        app.workspace.detachLeavesOfType("zotero-annotation-view");
+      },
+      undefined,
     );
   });
 
@@ -108,9 +204,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const created = await imageVaultScript(["create", imageVaultPath]);
     const imageVaultId = created.stdout.trim().split("\n")[0]!.trim();
     await prepareRunWindow(imageVaultId);
-    await obEval(
+    await obRun(
       imageVaultId,
-      "(async()=>{app.workspace.detachLeavesOfType('pdf');app.workspace.detachLeavesOfType('zotero-annotation-view');await app.plugins.plugins.zotlit.services.excerptImage.clear();return true;})()",
+      async ({ app, zotlit }) => {
+        app.workspace.detachLeavesOfType("pdf");
+        app.workspace.detachLeavesOfType("zotero-annotation-view");
+        await zotlit.services.bridge.runPromise(
+          zotlit.services.excerptImage.clear,
+        );
+      },
+      undefined,
     );
     const imageKey = "FDRFQ7C2";
     const inkKey = "TYY6Z6ZF";
@@ -163,12 +266,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect((await readFile(rendered.path)).subarray(0, 8)).toEqual(
         Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
       );
-      const dimensions = JSON.parse(
-        await obEval(
-          imageVaultId,
-          `(async()=>{const bytes=require('node:fs').readFileSync(${JSON.stringify(rendered.path)});const bitmap=await createImageBitmap(new Blob([bytes],{type:'image/png'}));const result={width:bitmap.width,height:bitmap.height};bitmap.close();return JSON.stringify(result);})()`,
-        ),
-      ) as { width: number; height: number };
+      const dimensions = (await obRun(
+        imageVaultId,
+        async (_context, { renderedPath }) => {
+          const bytes = (
+            require("node:fs") as typeof import("node:fs")
+          ).readFileSync(renderedPath);
+          const bitmap = await createImageBitmap(
+            new Blob([bytes], { type: "image/png" }),
+          );
+          const result = { width: bitmap.width, height: bitmap.height };
+          bitmap.close();
+          return result;
+        },
+        { renderedPath: rendered.path },
+      )) as { width: number; height: number };
       expect(dimensions.width).toBeGreaterThan(0);
       expect(dimensions.height).toBeGreaterThan(0);
       const reused = await answer(inkKey);

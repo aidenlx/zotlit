@@ -1,14 +1,7 @@
 // Per-view graph options: restore before rendering, serialize with the leaf, and keep global defaults independent.
 
 import { around } from "monkey-around";
-import type {
-  App,
-  GraphEngine,
-  GraphOptions,
-  GraphView,
-  View,
-  WorkspaceLeaf,
-} from "obsidian";
+import type { GraphEngine, GraphOptions, GraphView, View } from "obsidian";
 
 import { disposable } from "@/lib/disposables";
 
@@ -19,39 +12,6 @@ import {
   WIKILINK_CITATIONS,
 } from "./filters";
 import { membersPresent } from "./install";
-
-/** Installs before `load` / `setState`, so bookmark options find their controls. */
-export function installGraphViewCreation(
-  app: App,
-  created: (leaf: WorkspaceLeaf, view: View) => void,
-): Disposable {
-  const registry = app.viewRegistry;
-  if (
-    !membersPresent(
-      "Graph view factory unavailable; new views install on layout change",
-      {
-        "viewRegistry.getViewCreatorByType":
-          typeof registry?.getViewCreatorByType === "function",
-      },
-      {},
-    )
-  )
-    return new DisposableStack();
-  return disposable(
-    around(registry!, {
-      getViewCreatorByType: (getCreator) => (type) => {
-        const creator = getCreator.call(registry, type);
-        if (!creator || (type !== "graph" && type !== "localgraph"))
-          return creator;
-        return (leaf) => {
-          const view = creator(leaf);
-          created(leaf, view);
-          return view;
-        };
-      },
-    }),
-  );
-}
 
 /** Local graphs already persist options through their native view state. */
 export function installGraphViewState(

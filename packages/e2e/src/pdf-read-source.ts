@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { expect } from "vitest";
 
-import { obEval, obJson, waitFor } from "./obsidian-cli.ts";
+import { obRun } from "./obsidian-cli.ts";
+import { waitFor } from "./obsidian-cli.ts";
 import { zoteroFetch } from "./paired-zotero.ts";
 
 export async function verifyPdfReadSource(
@@ -15,21 +16,38 @@ export async function verifyPdfReadSource(
     cleanup,
   }: { vaultPath: string; api: string; cleanup: AsyncDisposableStack },
 ): Promise<void> {
-  const services = "app.plugins.plugins.zotlit.services";
-  const saved = await obJson<{
-    dataDir: string;
-    override: string | null;
-    log: Record<string, unknown>;
-  }>(
+  const saved = await obRun(
     vaultId,
-    `JSON.stringify({dataDir:${services}.zoteroPref.dataDir,override:${services}.zoteroPref.dataDirOverride,log:{'log.level':${services}.settings.current['log.level'],'log.to-file':${services}.settings.current['log.to-file']}})`,
+    async ({ zotlit }) => {
+      return {
+        dataDir: zotlit.services.zoteroPref.dataDir,
+        override: zotlit.services.zoteroPref.dataDirOverride,
+        log: {
+          "log.level": zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["log.level"],
+          "log.to-file": zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["log.to-file"],
+        },
+      };
+    },
+    undefined,
   );
   const oldDir = await mkdtemp(join(vaultPath, "../read-source-"));
   const oldPdf = "old-source.pdf";
   cleanup.defer(async () => {
-    await obEval(
+    await obRun(
       vaultId,
-      `(async()=>{app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());await ${services}.zoteroPref.setDataDir(${JSON.stringify(saved.override)});${services}.settings.update(${JSON.stringify(saved.log)});await ${services}.settings.flush();const file=app.vault.getFileByPath('${oldPdf}');if(file)await app.vault.delete(file);return true;})()`,
+      async ({ app, zotlit }, { override, log }) => {
+        app.workspace.getLeavesOfType("pdf").forEach((l) => l.detach());
+        zotlit.services.zoteroPref.setDataDir(override);
+        zotlit.services.bridge.runSync(zotlit.services.settings.update(log));
+        await zotlit.services.bridge.runPromise(zotlit.services.settings.flush);
+        const file = app.vault.getFileByPath("old-source.pdf")!;
+        if (file) await app.vault.delete(file);
+      },
+      { override: saved.override, log: saved.log },
     );
     await rm(oldDir, { recursive: true, force: true });
   });
@@ -56,9 +74,32 @@ export async function verifyPdfReadSource(
       )
       .run(join(vaultPath, oldPdf));
   }
-  await obEval(
+  await obRun(
     vaultId,
-    `(async()=>{app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());${services}.settings.update({'log.level':'trace','log.to-file':true});await ${services}.settings.flush();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();await oldServices.useLedger[Symbol.asyncDispose]();await oldServices.zoteroLocalApi[Symbol.asyncDispose]();await app.plugins.enablePlugin('zotlit');await ${services}.log.ready;await app.vault.copy(app.vault.getFileByPath('attachments/rougier-2014.pdf'),'${oldPdf}');await ${services}.zoteroPref.setDataDir(${JSON.stringify(oldDir)});return true;})()`,
+    async ({ app, zotlit }, { oldDir }) => {
+      app.workspace.getLeavesOfType("pdf").forEach((l) => l.detach());
+      zotlit.services.bridge.runSync(
+        zotlit.services.settings.update({
+          "log.level": "trace",
+          "log.to-file": true,
+        }),
+      );
+      await zotlit.services.bridge.runPromise(zotlit.services.settings.flush);
+      const oldServices = zotlit.services;
+      await app.plugins.disablePlugin("zotlit");
+      await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();
+      for (let i = 0; i < 200 && !oldServices.bridge.closed(); i++)
+        await new Promise((r) => setTimeout(r, 25));
+      if (!oldServices.bridge.closed())
+        throw new Error("The ZotLit services did not close");
+      await app.plugins.enablePlugin("zotlit");
+      await app.vault.copy(
+        app.vault.getFileByPath("attachments/rougier-2014.pdf")!,
+        "old-source.pdf",
+      );
+      zotlit.services.zoteroPref.setDataDir(oldDir);
+    },
+    { oldDir },
   );
   const read = async () => {
     const reply = await zoteroFetch(api, "users/0/items/RGRPDF24");
@@ -71,36 +112,68 @@ export async function verifyPdfReadSource(
   expect(
     await waitFor(
       async () =>
-        (await obEval(
+        (await obRun(
           vaultId,
-          `String(${services}.attachmentResolver.resolve(${JSON.stringify(join(vaultPath, oldPdf))}).kind==='resolved')`,
+          async ({ zotlit }, { pdfPath }) => {
+            return String(
+              zotlit.services.bridge.runSync(
+                zotlit.services.attachmentResolver.resolve(pdfPath),
+              ).kind === "resolved",
+            );
+          },
+          { pdfPath: join(vaultPath, oldPdf) },
         )) === "true",
     ),
   ).toBe(true);
   const before = await read();
-  await obEval(
+  await obRun(
     vaultId,
-    `(async()=>{await app.workspace.getLeaf('tab').openFile(app.vault.getFileByPath('${oldPdf}'));return true;})()`,
+    async ({ app }) => {
+      await app.workspace
+        .getLeaf("tab")
+        .openFile(app.vault.getFileByPath("old-source.pdf")!);
+    },
+    undefined,
   );
   expect(
     await waitFor(
       async () =>
-        (await obEval(
+        (await obRun(
           vaultId,
-          `String(${services}.pdfAnnotationEditor.bindings.find((b)=>b.filePath==='${oldPdf}')?.session?.target?.attachmentKey==='RGRPDF24')`,
+          async ({ zotlit }) => {
+            return String(
+              zotlit.services.pdfAnnotationEditor.bindings.find(
+                (b) => b.filePath === "old-source.pdf",
+              )?.session?.target?.attachmentKey === "RGRPDF24",
+            );
+          },
+          undefined,
         )) === "true",
     ),
   ).toBe(true);
-  await obEval(
+  await obRun(
     vaultId,
-    `(async()=>{await ${services}.zoteroPref.setDataDir(${JSON.stringify(saved.dataDir)});await ${services}.zoteroLocalApi.probe();return true;})()`,
+    async ({ zotlit }, { dataDir }) => {
+      zotlit.services.zoteroPref.setDataDir(dataDir);
+      await zotlit.services.bridge.runPromise(
+        zotlit.services.zoteroLocalApi.probe,
+      );
+    },
+    { dataDir: saved.dataDir },
   );
   expect(
     await waitFor(
       async () =>
-        (await obEval(
+        (await obRun(
           vaultId,
-          `String(${services}.attachmentResolver.resolve(${JSON.stringify(join(vaultPath, oldPdf))}).kind==='unresolved')`,
+          async ({ zotlit }, { pdfPath }) => {
+            return String(
+              zotlit.services.bridge.runSync(
+                zotlit.services.attachmentResolver.resolve(pdfPath),
+              ).kind === "unresolved",
+            );
+          },
+          { pdfPath: join(vaultPath, oldPdf) },
         )) === "true",
     ),
   ).toBe(true);
@@ -113,20 +186,49 @@ export async function verifyPdfReadSource(
   ).toBe(true);
   // Keep the client alive while the close write would finish. This catches a
   // retained binding adopting the newly selected database's identity.
-  await obEval(
+  await obRun(
     vaultId,
-    "app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());true",
+    async ({ app }) => {
+      app.workspace.getLeavesOfType("pdf").forEach((l) => l.detach());
+    },
+    undefined,
   );
   // The trace records the completed write-back decision. Keep Zotero and the
   // client alive until it lands, then check the external record.
   let outcome:
     | { message: string; properties: { reason?: string; outcome?: string } }
+    | null
     | undefined;
   expect(
     await waitFor(async () => {
-      outcome = await obJson(
+      outcome = await obRun(
         vaultId,
-        `(async()=>{const records=(await app.vault.adapter.read(app.plugins.plugins.zotlit.manifest.dir+'/zotlit.log.jsonl')).split('\\n').filter(Boolean).map(line=>JSON.parse(line));const close=records.findLastIndex(record=>record.message==='PDF read accepted'&&record.properties.event==='close');return JSON.stringify(close<0?null:records.slice(close+1).find(record=>record.message.startsWith('Read write-back'))??null);})()`,
+        async ({ app }) => {
+          const records = (
+            await app.vault.adapter.read(
+              `${
+                (app.plugins.plugins.zotlit as import("obsidian").Plugin)
+                  .manifest.dir
+              }/zotlit.log.jsonl`,
+            )
+          )
+            .split("\n")
+            .filter(Boolean)
+            .map((line) => JSON.parse(line));
+          const close = records.findLastIndex(
+            (record) =>
+              record.message === "PDF read accepted" &&
+              record.properties.event === "close",
+          );
+          return close < 0
+            ? null
+            : (records
+                .slice(close + 1)
+                .find((record) =>
+                  record.message.startsWith("Read write-back"),
+                ) ?? null);
+        },
+        undefined,
       );
       return !!outcome;
     }),

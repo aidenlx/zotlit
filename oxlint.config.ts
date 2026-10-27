@@ -28,6 +28,20 @@ export default defineConfig({
   ],
   overrides: [
     {
+      files: ["packages/e2e/src/**/*.ts"],
+      jsPlugins: ["./packages/config/oxlint-plugin-tests.ts"],
+      rules: {
+        "zotlit-tests/no-eval-capture": "error",
+        "zotlit-tests/no-typed-arg-name": "error",
+        "zotlit-tests/no-poll-adapter": "error",
+        "zotlit-tests/no-poll-wrapper": "error",
+        "zotlit-tests/no-generated-poll-label": "error",
+        "zotlit-tests/no-string-transport": "error",
+        "typescript/await-thenable": "error",
+        "typescript/no-unnecessary-type-conversion": "error",
+      },
+    },
+    {
       files: ["**/*.{test,spec}.{ts,tsx,js,jsx}"],
       plugins: ["vitest"],
       rules: {

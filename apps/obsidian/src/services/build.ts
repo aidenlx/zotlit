@@ -1,34 +1,43 @@
+import { Effect, FileSystem } from "effect";
 import type { FileSystemAdapter } from "obsidian";
 
+import { passAborted } from "@/lib/abort-error";
 import { cliRunner } from "@/lib/cli-command";
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
-import { effectBridge } from "@/lib/effect-bridge";
+import { effectBridge, exitOver, valueOr } from "@/lib/effect-bridge";
 import { fromInstant } from "@/lib/effect-clock";
 import { buildRuntime } from "@/lib/effect-layer";
-import { FileManager } from "@/lib/obsidian-file-manager";
-import { Vault } from "@/lib/obsidian-vault";
 import { revealSetting } from "@/lib/open-settings";
 import { ZoteroHttp } from "@/lib/zotero-http";
 import { libraryTagNamesOf } from "@/services/database/library-tag-names";
+import type { ImportProfile } from "@/setting-tab/import-profile-modal";
 import {
-  createProfileCreator,
-  createProfileImporter,
-} from "@/setting-tab/profiles";
+  createProfileDialog,
+  importProfileDialog,
+} from "@/setting-tab/profile-dialogs";
+import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { blockedNotice } from "@/views/annot-view/card-verbs";
 import {
   annotationCardShown,
   revealAnnotationInView,
 } from "@/views/annot-view/register";
+import {
+  profileCustomization,
+  saveProfileCustomization,
+} from "@/views/template-workbench/preferences";
+import { openNativeProfile } from "@/views/template-workbench/register";
 import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
 import { AnnotationPopover } from "./annotation-popover/service";
 import { CapabilityNotices } from "./annotation-repository/notices";
+import { bindCapabilityNotices } from "./annotation-repository/notices-handle";
 import { AnnotationRepository } from "./annotation-repository/service";
-import { AttachmentImportService } from "./attachment-import/service";
 import { createPdfReader } from "./attachment-open/actions";
 import { openWithSystem } from "./attachment-open/capture";
+import { bindLiteratureNoteAttachments } from "./attachment-open/handle";
+import type { LiteratureNoteServices } from "./attachment-open/literature-note";
 import { createTargetOpener } from "./attachment-open/open-target";
 import { AttachmentResolver } from "./attachment-resolver/service";
 import { ChineseSegmenter } from "./chinese-segmenter/service";
@@ -37,29 +46,39 @@ import {
   plainCitationLookup,
 } from "./citation-index/plain";
 import { plainCitationParse } from "./citation-parse/plain";
+import { CitationParse } from "./citation-parse/service";
 import { CitationPopover } from "./citation-popover/service";
 import { plainCitationText } from "./citation-text/plain";
 import { CitekeyEditor } from "./citekey-editor/service";
-import { CitekeyReading } from "./citekey-reading/service";
 import { ExcerptDisplays } from "./excerpt-image/display";
-import { ExcerptImages } from "./excerpt-image/layer";
-import { createExcerptPreparation } from "./excerpt-image/prepare";
-import { prepareSingleExcerpt } from "./excerpt-image/prepare-single";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
+import { ExcerptImageService } from "./excerpt-image/service";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
+import { bindItemLookup } from "./item-lookup/handle";
 import { ItemLookup } from "./item-lookup/service";
+import { bindQuery } from "./item-query/handle";
 import { QueryService } from "./item-query/service";
+import type { LanguagePackStartup } from "./language-pack/service";
 import { plainLibraryScope } from "./library-scope/plain";
-import { LocalBridgeService } from "./local-bridge/service";
+import { bindCustomize, Customize } from "./local-bridge/customize";
+import { bindLocalBridge } from "./local-bridge/handle";
+import { createLaunchSheet } from "./local-bridge/launch-sheet";
+import { LocalBridge } from "./local-bridge/service";
 import { LocalServer } from "./local-server/service";
 import { bindManagedBinary } from "./managed-binary/handle";
-import { createNoteFeature } from "./note-feature";
-import type { NoteFeature } from "./note-feature";
-import { createBatchImport } from "./note-import/batch-import";
-import type { BatchImport } from "./note-import/batch-import";
-import { createNoteImporter } from "./note-import/service";
-import type { NoteImporter } from "./note-import/service";
+import { bindNoteFeature, NoteFeature } from "./note-feature";
+import type { NoteFeatureHandle } from "./note-feature";
+import { bindNoteActions } from "./note-feature/actions-handle";
+import type { NoteActionServices } from "./note-feature/actions-view";
+import { bindNoteCitations } from "./note-feature/citations-handle";
+import type { NoteCitationServices } from "./note-feature/citations-handle";
+import { bindNoteCreation } from "./note-feature/creation-handle";
+import type { NoteCreationServices } from "./note-feature/creation-handle";
+import type { InteractiveCreationPorts } from "./note-feature/creation-view";
+import { batchUpdateNotices } from "./note-feature/update-single";
+import type { BatchImportServices } from "./note-import/batch-import";
+import { bindBatchImport } from "./note-import/batch-import-handle";
 import { createNoteImportView } from "./note-import/view";
 import { plainNoteIndex } from "./note-index/plain";
 import { plainBibliographyRender } from "./pandoc/render-cache/plain";
@@ -67,21 +86,25 @@ import { PandocEngine } from "./pandoc/service";
 import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
 import { pluginLayer } from "./plugin-layer";
 import { plainProfile } from "./profile/plain";
+import { Profile } from "./profile/service";
+import type { ProtocolDeps } from "./protocol/register";
 import { plainQueryClients } from "./query-client/plain";
 import { Release } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import { PluginSettings } from "./settings/service";
-import { loadLiteratureNoteTemplateMigrationData } from "./template/migration";
+import type { TemplateDataServices } from "./template-workbench/data";
+import { bindTemplateData } from "./template-workbench/data-handle";
 import type { TemplateMigrationOptions } from "./template/migration";
 import { plainTemplate, plainTemplateMigration } from "./template/plain";
 import { plainUseLedger } from "./use-ledger/plain";
-import { WikilinkEditor } from "./wikilink-editor/service";
-import { WikilinkReading } from "./wikilink-reading/service";
 import { writeReadUse } from "./zotero-local-api/last-read";
 import { ZoteroLocalApi } from "./zotero-local-api/service";
 import { plainZoteroPref } from "./zotero-pref/plain";
 import { plainZoteroReads } from "./zotero-reads/plain";
 import { ZoteroReads } from "./zotero-reads/service";
+
+/** What the protocol handlers open: the note import's modals and the Attachment opener. */
+type ProtocolViews = Pick<ProtocolDeps, "noteImportView" | "opener">;
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -104,11 +127,50 @@ import { ZoteroReads } from "./zotero-reads/service";
 export async function buildServices(
   plugin: ZotLitPlugin,
   stack: AsyncDisposableStack,
+  languagePack: LanguagePackStartup,
 ) {
-  let bindMigration!: (actions: TemplateMigrationOptions) => void;
-  const migrationActions = new Promise<TemplateMigrationOptions>((resolve) => {
+  let bindMigration!: (
+    actions: Pick<TemplateMigrationOptions, "openPrompt">,
+  ) => void;
+  const migrationActions = new Promise<
+    Pick<TemplateMigrationOptions, "openPrompt">
+  >((resolve) => {
     bindMigration = resolve;
   });
+  // The note creation opens the setting tab's Profile dialogs, which run in
+  // the caller's fiber with the caller's services.
+  const creation: InteractiveCreationPorts = {
+    app: plugin.app,
+    createProfile: (options) => createProfileDialog(plugin.app, options),
+    importProfile: (options) => importProfileDialog(plugin.app, options),
+  };
+  // The protocol handlers open the note import's modals and the Attachment
+  // opener, which the container builds after the graph.
+  let bindProtocolViews!: (views: ProtocolViews) => void;
+  const protocolViews = new Promise<ProtocolViews>((resolve) => {
+    bindProtocolViews = resolve;
+  });
+  const importView = Effect.promise(async () => {
+    const { noteImportView } = await protocolViews;
+    return noteImportView;
+  });
+  const protocol: ProtocolViews = {
+    noteImportView: {
+      openBatchModal: (options) => {
+        void protocolViews.then(({ noteImportView }) =>
+          noteImportView.openBatchModal(options),
+        );
+      },
+      confirm: (options) =>
+        Effect.flatMap(importView, (view) => view.confirm(options)),
+      chooseProfile: (options) =>
+        Effect.flatMap(importView, (view) => view.chooseProfile(options)),
+    },
+    opener: {
+      open: async (target, pane) =>
+        (await protocolViews).opener.open(target, pane),
+    },
+  };
   // The excerpt service is registered before the PDF reader, so the reader
   // hands its documents over through this one holder. A crop asks for a reader
   // document per resolution, and answers detached while the holder is empty.
@@ -120,13 +182,44 @@ export async function buildServices(
     pluginLayer(
       plugin,
       {
-        loadVerificationData: async (options) =>
-          (await migrationActions).loadVerificationData(options),
         openPrompt: async () => (await migrationActions).openPrompt(),
       },
       {
-        openStore: () => openExcerptStore(plugin.app.appId),
-        readers,
+        capabilityNotices: {
+          openEditingSettings: () =>
+            revealSetting(
+              plugin.app,
+              plugin.manifest.id,
+              "settings_zotero_editing",
+            ),
+          cardShown: (annotationKey) =>
+            annotationCardShown(plugin.app, annotationKey),
+          revealAnnotation: (annotationKey) =>
+            void revealAnnotationInView(plugin, annotationKey),
+        },
+        creation,
+        customize: {
+          webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
+          pluginVersion: plugin.manifest.version,
+          confirmLaunch: createLaunchSheet(plugin.app),
+          openExternal: (url) => window.open(url),
+          preference: () => profileCustomization(plugin.app),
+          rememberPreference: (value) =>
+            saveProfileCustomization(plugin.app, value),
+          openNative: ({ item, originatingNote }, target) =>
+            openNativeProfile(plugin.app, target, {
+              ...(item ? { itemIndexedKey: item.key } : {}),
+              originatingNote,
+              explainUnsupported: false,
+              customize: true,
+            }),
+        },
+        protocol,
+        excerpt: {
+          openStore: () => openExcerptStore(plugin.app.appId),
+          readers,
+        },
+        languagePack,
       },
     ),
     stack,
@@ -135,8 +228,6 @@ export async function buildServices(
   const bridge = effectBridge(runtime);
   const zoteroReadsService = runtime.runSync(ZoteroReads);
   const zoteroLocalApiService = runtime.runSync(ZoteroLocalApi);
-  const vault = runtime.runSync(Vault);
-  const fileManager = runtime.runSync(FileManager);
   const container = new ServiceContainer(stack, (key, error) => {
     console.error(`Service "${key}" failed to initialize`, error);
   });
@@ -144,6 +235,7 @@ export async function buildServices(
   return container
     .useValue({ runtime: () => runtime })
     .useValue({ bridge: () => bridge })
+    .useValue({ fileSystem: () => runtime.runSync(FileSystem.FileSystem) })
     .useValue({
       settings: () => runtime.runSync(PluginSettings),
     })
@@ -181,16 +273,10 @@ export async function buildServices(
     .useValue({
       libraryTagNames: () => libraryTagNamesOf(runtime),
     })
-    .useValue({ excerptImage: () => runtime.runSync(ExcerptImages) })
+    .useValue({ excerptImage: () => runtime.runSync(ExcerptImageService) })
     .useValue({ excerptDisplay: () => runtime.runSync(ExcerptDisplays) })
-    .use({
-      attachmentResolver: ({ zoteroReads, queryClient, zoteroPref }) =>
-        new AttachmentResolver({
-          runtime,
-          reads: zoteroReads,
-          queries: queryClient,
-          zoteroPref,
-        }),
+    .useValue({
+      attachmentResolver: () => runtime.runSync(AttachmentResolver),
     })
     .useValue({
       // Every ZotLit gesture that opens an Attachment, and File Link Capture
@@ -208,27 +294,20 @@ export async function buildServices(
           ).getBasePath(),
         }),
     })
+    .useValue({
+      literatureNoteAttachments: () =>
+        bindLiteratureNoteAttachments(
+          bridge,
+          runtime.runSync(Effect.context<LiteratureNoteServices>()),
+        ),
+    })
     .useValue({ zoteroLocalApi: () => zoteroLocalApiService })
     .useValue({
       annotationRepository: () => runtime.runSync(AnnotationRepository),
     })
-    .use({
-      capabilityNotices: ({ annotationRepository }) =>
-        new CapabilityNotices({
-          capabilities: annotationRepository,
-          bridge,
-          writes: zoteroLocalApiService,
-          openEditingSettings: () =>
-            revealSetting(
-              plugin.app,
-              plugin.manifest.id,
-              "settings_zotero_editing",
-            ),
-          cardShown: (annotationKey) =>
-            annotationCardShown(plugin.app, annotationKey),
-          revealAnnotation: (annotationKey) =>
-            void revealAnnotationInView(plugin, annotationKey),
-        }),
+    .useValue({
+      capabilityNotices: () =>
+        bindCapabilityNotices(bridge, runtime.runSync(CapabilityNotices)),
     })
     .use({
       pdfAnnotationEditor: ({
@@ -244,13 +323,15 @@ export async function buildServices(
         reader = new PdfAnnotationEditor({
           recordRead: ({ attachmentKey, itemKey, serverID, instant }) => {
             useLedger.record(itemKey, "read", instant);
-            void writeReadUse(
-              {
-                reads: zoteroReadsService,
-                bridge,
-                api: zoteroLocalApi,
-              },
-              { attachmentKey, instant: fromInstant(instant), serverID },
+            void bridge.runPromiseExit(
+              writeReadUse({
+                attachmentKey,
+                instant: fromInstant(instant),
+                serverID,
+              }).pipe(
+                Effect.provideService(ZoteroReads, zoteroReadsService),
+                Effect.provideService(ZoteroLocalApi, zoteroLocalApi),
+              ),
             );
           },
           app: plugin.app,
@@ -263,7 +344,8 @@ export async function buildServices(
           capabilityGestures: {
             reportBlockedGesture: (attachmentKey) =>
               capabilityNotices.reportBlockedGesture(attachmentKey),
-            allowEditing: () => void capabilityNotices.showEditingCapability(),
+            allowEditing: () =>
+              void capabilityNotices.showEditingCapability().catch(passAborted),
           },
           markGestures: {
             revealAnnotation: (annotationKey) =>
@@ -273,243 +355,98 @@ export async function buildServices(
             blockedPress: (block) =>
               blockedNotice(
                 block,
-                () => void capabilityNotices.showEditingCapability(),
+                () =>
+                  void capabilityNotices
+                    .showEditingCapability()
+                    .catch(passAborted),
               ),
           },
         });
         return reader;
       },
     })
-    .use({
-      attachmentImport: ({ settings, zoteroPref }) =>
-        new AttachmentImportService({
-          bridge,
-          app: plugin.app,
-          settings,
-          zoteroPref,
-        }),
-    })
     .useValue({ libraryScope: () => plainLibraryScope(runtime) })
-    .use({
-      query: ({ zoteroReads, libraryScope, zoteroPref, useLedger }) =>
-        new QueryService({
-          runtime,
-          pluginVersion: plugin.manifest.version,
-          reads: zoteroReads,
-          libraryScope,
-          zoteroPref,
-          vault: plugin.app.vault,
-          useLedger,
-        }),
+    .useValue({
+      query: () => bindQuery(bridge, runtime.runSync(QueryService)),
     })
     .useValue({ profile: () => plainProfile(runtime) })
-    .use({
-      localBridge: ({
-        settings,
-        profile,
-        localServer,
-        zoteroReads,
-        noteIndex,
-        template,
-        zoteroPref,
-      }) =>
-        new LocalBridgeService({
-          bridge,
-          webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-          app: plugin.app,
-          settings,
-          profile,
-          localServer,
-          zoteroReads,
-          noteIndex,
-          template,
-          zoteroPref,
-          pluginVersion: plugin.manifest.version,
-        }),
+    .useValue({ profileService: () => runtime.runSync(Profile) })
+    .useValue({
+      localBridge: () => bindLocalBridge(bridge, runtime.runSync(LocalBridge)),
     })
     .useValue({
-      noteImport: ({
-        profile,
-        noteIndex,
-        template,
-        zoteroPref,
-        attachmentImport,
-        excerptImage,
-      }): NoteImporter =>
-        createNoteImporter({
-          profile,
-          app: plugin.app,
-          vault,
-          bridge,
-          noteIndex,
-          template,
-          zoteroPref,
-          attachmentImport,
-          excerptImages: (options) =>
-            createExcerptPreparation({
-              app: plugin.app,
-              resolver: excerptImage,
-              paths: {
-                dataDir: zoteroPref.dataDir,
-                baseAttachmentPath: zoteroPref.baseAttachmentPath,
-              },
-            })(options),
-        }),
+      customize: () => bindCustomize(bridge, runtime.runSync(Customize)),
     })
     .useValue({
-      templateMigration: ({
-        zoteroReads,
-        libraryScope,
-        noteIndex,
-        settings,
-        template,
-        zoteroPref,
-      }) => {
+      templateData: () =>
+        bindTemplateData(
+          bridge,
+          runtime.runSync(Effect.context<TemplateDataServices>()),
+        ),
+    })
+    .useValue({
+      templateMigration: () => {
         bindMigration({
-          loadVerificationData: (options) =>
-            loadLiteratureNoteTemplateMigrationData(
-              {
-                app: plugin.app,
-                zoteroReads,
-                libraryScope,
-                noteIndex,
-                settings,
-                templates: template,
-                zoteroPref,
-              },
-              options,
-            ),
-          openPrompt: () => openWelcomeView(plugin.app, settings, bridge),
+          openPrompt: () => openWelcomeView(plugin.app),
         });
         return plainTemplateMigration(runtime);
       },
     })
-    .use({
-      itemLookup: ({ zoteroReads, libraryScope, useLedger }) =>
-        new ItemLookup({
-          runtime,
-          reads: zoteroReads,
-          libraryScope,
-          useLedger,
+    .useValue({
+      itemLookup: () => bindItemLookup(bridge, runtime.runSync(ItemLookup)),
+    })
+    .useValue({
+      noteFeature: (): NoteFeatureHandle =>
+        bindNoteFeature(bridge, runtime.runSync(NoteFeature), {
+          ...bindNoteCitations(
+            bridge,
+            runtime.runSync(Effect.context<NoteCitationServices>()),
+          ),
+          ...bindNoteCreation(
+            bridge,
+            runtime.runSync(Effect.context<NoteCreationServices>()),
+            creation,
+          ),
         }),
     })
     .useValue({
-      noteFeature: ({
-        excerptImage,
-        profile,
-        template,
-        zoteroReads,
-        query,
-        noteIndex,
-        zoteroPref,
-        settings,
-        attachmentImport,
-      }): NoteFeature =>
-        createNoteFeature({
-          vault,
-          fileManager,
-          singleExcerpt: (options) =>
-            prepareSingleExcerpt({
-              ...options,
-              app: plugin.app,
-              resolver: excerptImage,
-            }),
-          excerptImages: (options) =>
-            createExcerptPreparation({
-              app: plugin.app,
-              resolver: excerptImage,
-              paths: {
-                dataDir: zoteroPref.dataDir,
-                baseAttachmentPath: zoteroPref.baseAttachmentPath,
-              },
-            })(options),
-          profile,
-          app: plugin.app,
-          template,
-          zoteroReads,
-          query,
-          noteIndex,
-          zoteroPref,
-          settings,
+      // The Import profile command. Unload closes an open dialog, and the
+      // caller sees it dismissed.
+      importProfile: (): ImportProfile => {
+        const runExit = exitOver(
           bridge,
-          attachmentImport,
-        }),
+          runtime.runSync(Effect.context<ProfileDialogServices>()),
+        );
+        return async (options) =>
+          valueOr(await runExit(creation.importProfile(options)), undefined);
+      },
     })
     .useValue({
-      createProfile: ({
-        profile,
-        template,
-        zoteroReads,
-        noteIndex,
-        zoteroPref,
-        settings,
-        libraryScope,
-        noteFeature,
-      }) =>
-        createProfileCreator({
-          app: plugin.app,
-          profile,
-          template,
-          zoteroReads,
-          noteIndex,
-          zoteroPref,
-          settings,
-          libraryScope,
-          noteFeature,
-        }),
+      noteImportView: ({ targetOpener }) => {
+        const noteImportView = createNoteImportView(plugin.app, creation);
+        bindProtocolViews({ noteImportView, opener: targetOpener });
+        return noteImportView;
+      },
     })
     .useValue({
-      importProfile: ({
-        profile,
-        template,
-        zoteroReads,
-        noteIndex,
-        zoteroPref,
-        settings,
-        libraryScope,
-        noteFeature,
-      }) =>
-        createProfileImporter({
-          app: plugin.app,
-          profile,
-          template,
-          zoteroReads,
-          noteIndex,
-          zoteroPref,
-          settings,
-          libraryScope,
-          noteFeature,
-        }),
-    })
-    .useValue({
-      batchImport: ({
-        profile,
-        noteFeature,
-        createProfile,
-        importProfile,
-        zoteroPref,
-        zoteroReads,
-        settings,
-        libraryScope,
-        noteImport,
-        noteIndex,
-      }): BatchImport =>
-        createBatchImport({
-          view: createNoteImportView(plugin.app, {
-            createProfile,
-            importProfile,
-            zoteroPref,
-          }),
-          profile,
-          noteFeature,
-          zoteroReads,
-          settings,
+      batchImport: ({ noteImportView }) =>
+        bindBatchImport(
           bridge,
-          libraryScope,
-          noteImport,
-          noteIndex,
-          metadataCache: plugin.app.metadataCache,
-        }),
+          runtime.runSync(Effect.context<BatchImportServices>()),
+          { view: noteImportView },
+        ),
+    })
+    .useValue({
+      noteActions: ({ noteImportView }) =>
+        bindNoteActions(
+          bridge,
+          runtime.runSync(Effect.context<NoteActionServices>()),
+          {
+            creation,
+            view: noteImportView,
+            notices: batchUpdateNotices(plugin.app),
+          },
+        ),
     })
     .useValue({
       citationLookup: () => plainCitationLookup(runtime),
@@ -517,6 +454,7 @@ export async function buildServices(
     .useValue({
       citationParse: () => plainCitationParse(runtime),
     })
+    .useValue({ citationParseService: () => runtime.runSync(CitationParse) })
     .useValue({ citationIndex: () => plainCitationIndex(runtime) })
     .useValue({
       pandocEngine: () =>
@@ -528,130 +466,6 @@ export async function buildServices(
     .useValue({ citationText: () => plainCitationText(runtime) })
     .useValue({ citationPopover: () => runtime.runSync(CitationPopover) })
     .useValue({ annotationPopover: () => runtime.runSync(AnnotationPopover) })
-    .use({
-      citekeyEditor: ({
-        noteIndex,
-        noteFeature,
-        createProfile,
-        importProfile,
-        zoteroPref,
-        zoteroReads,
-        citationText,
-        citationPopover,
-        annotationPopover,
-        settings,
-        citationLookup,
-        libraryScope,
-        bridge,
-      }) =>
-        new CitekeyEditor({
-          runtime,
-          app: plugin.app,
-          plugin,
-          noteIndex,
-          noteFeature,
-          createProfile,
-          importProfile,
-          zoteroPref,
-          db: zoteroReads,
-          citationText,
-          citationPopover,
-          annotationPopover,
-          settings,
-          citationLookup,
-          libraryScope,
-          bridge,
-        }),
-    })
-    .use({
-      wikilinkEditor: ({
-        noteIndex,
-        citationText,
-        citekeyEditor,
-        citationPopover,
-        settings,
-        citationLookup,
-        bridge,
-      }) =>
-        new WikilinkEditor({
-          runtime,
-          app: plugin.app,
-          plugin,
-          noteIndex,
-          citationText,
-          citekeyEditor,
-          citationPopover,
-          settings,
-          citationLookup,
-          bridge,
-        }),
-    })
-    .use({
-      wikilinkReading: ({
-        noteIndex,
-        citationText,
-        citekeyEditor,
-        citationPopover,
-        settings,
-        bridge,
-      }) =>
-        new WikilinkReading({
-          runtime,
-          app: plugin.app,
-          plugin,
-          noteIndex,
-          citationText,
-          citekeyEditor,
-          citationPopover,
-          settings,
-          bridge,
-        }),
-    })
-    .use({
-      citekeyReading: ({
-        citationText,
-        citationLookup,
-        citationPopover,
-        citekeyEditor,
-        settings,
-        bridge,
-      }) =>
-        new CitekeyReading({
-          runtime,
-          app: plugin.app,
-          plugin,
-          citationText,
-          citationLookup,
-          citationPopover,
-          citekeyEditor,
-          settings,
-          bridge,
-        }),
-    })
-    .use({
-      graphCitations: ({
-        zoteroReads,
-        libraryScope,
-        citationIndex,
-        citationLookup,
-        noteIndex,
-        citekeyEditor,
-        citationPopover,
-        settings,
-        bridge,
-      }) =>
-        new GraphCitations({
-          runtime,
-          app: plugin.app,
-          reads: zoteroReads,
-          libraryScope,
-          citationIndex,
-          citationLookup,
-          noteIndex,
-          citekeyEditor,
-          citationPopover,
-          settings,
-          bridge,
-        }),
-    });
+    .useValue({ citekeyEditor: () => runtime.runSync(CitekeyEditor) })
+    .useValue({ graphCitations: () => runtime.runSync(GraphCitations) });
 }

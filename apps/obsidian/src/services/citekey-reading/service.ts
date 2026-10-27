@@ -1,35 +1,36 @@
-import { MarkdownRenderChild, setTooltip } from "obsidian";
-import type {
-  App,
-  MarkdownPostProcessorContext,
-  MarkdownView,
-  Plugin,
-} from "obsidian";
 // The reading-mode surface of the Citekey Editor Treatment: literal citekey
 // citations show formatted in the reading view, navigate like links, and are
 // rewritten in place while Obsidian shows their section.
+import { Effect, Layer } from "effect";
+import { MarkdownRenderChild, setTooltip } from "obsidian";
+import type { MarkdownPostProcessorContext } from "obsidian";
 
-import type { EffectBridge } from "@/lib/effect-bridge";
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
+import { scopedBridge } from "@/lib/effect-bridge";
+import { withLogCategory } from "@/lib/effect-log";
+import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
+import { Vault } from "@/lib/obsidian-vault";
+import { Workspace, workspaceTrigger } from "@/lib/obsidian-workspace";
+import { PluginHost } from "@/lib/plugin-host";
 import { renderProfileRecovery } from "@/lib/profile-recovery";
+import {
+  rerenderReadingViewsIn,
+  retireReadingSurface,
+} from "@/lib/reading-surface";
 import {
   LiveSections,
   isDraftMarkdown,
   markdownViewOf,
-  rerenderReadingViews,
   sectionRange,
 } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
 import { heldResolution } from "@/services/citation-index/lookup";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
 import type {
   CitationLookupAnswer,
   CitationLookupObservation,
 } from "@/services/citation-index/service";
-import type { CitationPopover } from "@/services/citation-popover/service";
-import type { PlainCitationText } from "@/services/citation-text/plain";
+import { CitationPopover } from "@/services/citation-popover/service";
 import {
   citationContent,
   citationElement,
@@ -44,9 +45,11 @@ import {
 } from "@/services/citation-text/present";
 import type {
   CitationKeyState,
+  DocumentCitations,
   PresentedCitation,
 } from "@/services/citation-text/present";
-import type { CitekeyEditor } from "@/services/citekey-editor/service";
+import { CitationText } from "@/services/citation-text/service";
+import { CitekeyEditor } from "@/services/citekey-editor/service";
 import {
   attachCitationHover,
   attachCitationNavigation,
@@ -59,16 +62,14 @@ import type {
   HoverPreferences,
 } from "@/services/citekey-navigation";
 import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
-import { Service } from "@/services/service-base";
+import type { Held } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
-import type { PluginSettings } from "@/services/settings/service";
+import { PluginSettings } from "@/services/settings/service";
 
 import { replaceCitations, sectionCitations } from "./render";
 import type { SectionCitation } from "./render";
 import "./style.css";
-
-const logger = getLogger("citekey-reading");
 
 /** One element standing in a citation's place, and what it was built from. */
 interface PlacedCitation {
@@ -103,24 +104,6 @@ function shownEqual(
   return presentedCitationEqual(left, right);
 }
 
-export interface CitekeyReadingDeps {
-  runtime: SubscriptionRuntime;
-  app: App;
-  plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
-  /** The formatted citations every surface of one document shares. */
-  citationText: Pick<PlainCitationText, "peek" | "changed" | "invalidated">;
-  /** What a literal citekey names, which is what tells missing from Ambiguous. */
-  citationLookup: {
-    observe(changed: () => void): CitationLookupObservation;
-  };
-  /** The open-or-create flow every citekey surface shares, and what hover previews. */
-  citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "hoverNotePath">;
-  /** What a hovered citation shows. */
-  citationPopover: Pick<CitationPopover["Service"], "show">;
-  bridge: Pick<EffectBridge, "runSync">;
-  settings: Pick<PluginSettings["Service"], "current" | "changes">;
-}
-
 /**
  * Renders literal citekey citations in reading mode, so a shared or published
  * view of a note shows formatted citations.
@@ -147,334 +130,314 @@ export interface CitekeyReadingDeps {
  * else in the view. A toggle that changes whether the surface touches a
  * citation at all still renders the views again.
  */
-export class CitekeyReading extends Service<void> {
-  readonly #runtime;
-  readonly #app;
-  readonly #plugin;
-  readonly #citationText;
-  readonly #citationLookup;
-  readonly #citekeyEditor;
-  readonly #citationPopover;
-  readonly #bridge;
-  readonly #settings;
+export const layerCitekeyReading = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const host = yield* PluginHost;
+    const vault = yield* Vault;
+    const workspace = yield* Workspace;
+    const settings = yield* PluginSettings;
+    const citationText = yield* CitationText;
+    const citationLookup = yield* CitationLookup;
+    const citationPopover = yield* CitationPopover;
+    const citekeyEditor = yield* CitekeyEditor;
+    const bridge = yield* scopedBridge;
+    const run = Effect.runSyncWith(yield* Effect.context<never>());
 
-  /** `undefined` until the first settings snapshot decides the treatment. */
-  #active: boolean | undefined;
-  #showFormatted = false;
-  #navigationEnabled = false;
-  #hover: HoverPreferences = hoverPreferences(defaults);
-  /** The sections this surface rendered into and Obsidian still shows. */
-  readonly #sections = new LiveSections();
+    /** `undefined` until the first settings snapshot decides the treatment. */
+    let active: boolean | undefined;
+    let showFormatted = false;
+    let navigationEnabled = false;
+    let hover: HoverPreferences = hoverPreferences(defaults);
+    /** The sections this surface rendered into and Obsidian still shows. */
+    const sections = new LiveSections();
+    /** What a hover raises its `hover-link` on, and a recovery button its Profile switch. */
+    const hoverWorkspace = workspaceTrigger(workspace, run);
+    /** A reading view holds what a post-processor produced until it renders again. */
+    const rerender = rerenderReadingViewsIn(workspace);
 
-  ready: Promise<void>;
+    const applySettings = Effect.fnUntraced(function* (
+      next: Readonly<Settings>,
+    ) {
+      // Read straight through: hover answers from the newest snapshot, and
+      // nothing rendered depends on it.
+      hover = hoverPreferences(next);
+      const pandocCitations = next["citation.pandoc-citations"];
+      const formatted = pandocCitations && next["citation.show-formatted"];
+      const navigation = pandocCitations && next["citation.open-as-links"];
+      const nextActive = formatted || navigation;
+      if (
+        nextActive === active &&
+        formatted === showFormatted &&
+        navigation === navigationEnabled
+      ) {
+        return;
+      }
+      const initial = active === undefined;
+      const activeChanged = nextActive !== active;
+      active = nextActive;
+      showFormatted = formatted;
+      navigationEnabled = navigation;
+      if (activeChanged) {
+        yield* Effect.logInfo(
+          nextActive ? "Citekey reading enabled" : "Citekey reading disabled",
+        );
+      } else {
+        yield* Effect.logDebug("Citekey reading treatment changed").pipe(
+          Effect.annotateLogs({
+            navigationEnabled: navigation,
+            showFormatted: formatted,
+          }),
+        );
+      }
+      if (initial) return;
+      yield* rerender;
+    });
 
-  constructor(deps: CitekeyReadingDeps) {
-    super();
-    this.#runtime = deps.runtime;
-    this.#app = deps.app;
-    this.#plugin = deps.plugin;
-    this.#citationText = deps.citationText;
-    this.#citationLookup = deps.citationLookup;
-    this.#citekeyEditor = deps.citekeyEditor;
-    this.#citationPopover = deps.citationPopover;
-    this.#bridge = deps.bridge;
-    this.#settings = deps.settings;
-    this.ready = this.#load();
-  }
+    /**
+     * Builds the element one citation shows as, with its handlers attached,
+     * and the navigation those handlers read.
+     */
+    const buildCitationElement = (
+      doc: Document,
+      sourcePath: string,
+      {
+        content,
+        states,
+        works,
+        at,
+        failure,
+        lookup,
+      }: {
+        content: PresentedCitation | string;
+        states: readonly CitationKeyState[];
+        works: CitationNavigation["works"];
+        /** The occurrence shown in the citation's place, where formatted text is. */
+        at: CitationNavigation["shown"];
+        /** The Profile failure the document's presentation reports, if any. */
+        failure: ProfilePresentationFailure | undefined;
+        /** The section-owned lookup used by hover while this element stays live. */
+        lookup: CitationLookupAnswer | null;
+      },
+    ): { element: HTMLElement; navigation: CitationNavigation } => {
+      const themeClasses = [
+        themeHook.citationKey,
+        ...citationStateHooks(citationState(states)),
+      ];
+      const element = citationElement(doc, content, themeClasses);
+      if (failure) {
+        element.dataset["citationPresentationError"] = "profile";
+        setTooltip(
+          element,
+          m.notice_imported_note_profile_unknown({
+            stamp: failure.diagnostic.stamp,
+            target: failure.target,
+          }),
+        );
+      }
+      const navigation: CitationNavigation = {
+        works,
+        // The occurrence this section shows in the citation's place, which is
+        // where a note-class style's own note text is read from, however often
+        // the popover reads it again. A citation left as source text shows
+        // none.
+        shown: at,
+        where: { surface: "reading" },
+        // Unload interrupts a pending open.
+        open: (citekey, pane) => {
+          bridge.runAndForget(citekeyEditor.openCitekey(citekey, pane));
+        },
+        showPopover: (request) => run(citationPopover.show(request)),
+        hoverPreferences: () => hover,
+        hoverNotePath: (citekey) =>
+          run(citekeyEditor.hoverNotePath(citekey, lookup)),
+        workspace: hoverWorkspace,
+        hoverTarget: () => {
+          // The Markdown view a rendered citation sits in, which Obsidian
+          // hangs the popover off. Markdown rendered outside such a view — an
+          // export, a popover of its own — belongs to none, and hover stays
+          // silent there.
+          const hoverParent = markdownViewOf(
+            run(workspace.markdownViews),
+            element,
+          );
+          return hoverParent === null
+            ? null
+            : { workspace: hoverWorkspace, hoverParent, sourcePath };
+        },
+      };
+      // Hover belongs to the Hover Action, so every rendered citation carries
+      // it. Click is Citekey Navigation's alone: it opens the work the
+      // citation names, and wherever Citations stay closed as links a plain
+      // click does nothing, the way it does on any other rendered text. A
+      // citation none of whose keys reaches a Zotero Item has nothing to open
+      // anyway; it stays wrapped so themes can style its error state, and its
+      // entries say as much. An Ambiguous Citation Key names no one Item
+      // either, so a citation resting on those alone opens nothing.
+      if (navigationEnabled && states.includes("resolved")) {
+        markCitationClick(element, "open");
+        attachCitationNavigation(element, navigation);
+        return { element, navigation };
+      }
+      markCitationClick(element, "none");
+      if (!navigationEnabled && showFormatted) {
+        attachClosedCitationGestures(element, navigation);
+        return { element, navigation };
+      }
+      attachCitationHover(element, navigation);
+      return { element, navigation };
+    };
 
-  async #load(): Promise<void> {
-    await using stack = new AsyncDisposableStack();
+    /**
+     * Shows every citation of a section what the document's Held Read holds
+     * for it. The first show splits the source text and puts an element in
+     * each citation's place. Every later one keeps an element whose content
+     * and key states the fresh answer equals, refreshing only the navigation
+     * its handlers read — so a hover or popover anchored on it stays anchored
+     * — and swaps a rebuilt element for one they differ from, so its theme
+     * hooks and handlers follow the current answer. A citation the fresh text
+     * holds nothing for keeps what it shows.
+     *
+     * `text` is the document's Held Read, as `CitationText.peek` reads it.
+     */
+    const show = (
+      el: HTMLElement,
+      ctx: MarkdownPostProcessorContext,
+      {
+        citations,
+        lookup,
+        placed,
+        text,
+      }: HeldSection & { text: Held<DocumentCitations> | null },
+    ): void => {
+      const answer = text?.value.lookup ?? lookup.current?.value ?? null;
+      const resolutionPending = answer === null;
+      // Source stays until a first answer: native text while the read
+      // settles, and what a placed element shows until fresh text replaces it.
+      if (text === null && !resolutionPending) return;
+      renderProfileRecovery(
+        el,
+        { workspace: hoverWorkspace },
+        {
+          path: text?.value.presentationFailure?.target,
+        },
+      );
+      const snapshotState = (citekey: string) =>
+        citekeyState(heldResolution(answer, citekey));
+      const stateOf =
+        text === null ? snapshotState : literalKeyStateOf(text.value);
+      // Which occurrence each citation of the section is, so a
+      // position-dependent style shows every one of them the text rendered
+      // for its own place.
+      const coordinates = sectionCoordinates(citations, sectionRange(ctx, el));
+      /**
+       * The element citation `index` shows as: the one placed, where the
+       * fresh answer equals what it was built from, or a rebuilt one recorded
+       * in its place.
+       */
+      const place = (citation: SectionCitation, index: number): HTMLElement => {
+        const content = showFormatted
+          ? text === null
+            ? null
+            : citationContent(citation, text.value, coordinates[index])
+          : null;
+        const previous = placed[index];
+        const shown = content ?? previous?.shown ?? citation.source;
+        const states = citationKeyStates(citation, stateOf);
+        const works = text === null ? [] : citedWorks(citation, text.value);
+        const at =
+          content === null ? undefined : { citation, at: coordinates[index] };
+        if (
+          previous !== undefined &&
+          shownEqual(previous.shown, shown) &&
+          previous.states.length === states.length &&
+          previous.states.every((state, i) => state === states[i])
+        ) {
+          Object.assign(previous.navigation, {
+            works,
+            shown: at,
+            hoverNotePath: (citekey: string) =>
+              run(citekeyEditor.hoverNotePath(citekey, answer)),
+          });
+          return previous.element;
+        }
+        const built = buildCitationElement(el.ownerDocument, ctx.sourcePath, {
+          content: shown,
+          states,
+          works,
+          at,
+          failure: text?.value.presentationFailure,
+          lookup: answer,
+        });
+        placed[index] = { ...built, shown, states };
+        return built.element;
+      };
+      if (placed.length === 0) {
+        replaceCitations(citations, place);
+        return;
+      }
+      for (const [index, citation] of citations.entries()) {
+        const previous = placed[index]!.element;
+        const next = place(citation, index);
+        if (next !== previous) previous.replaceWith(next);
+      }
+    };
 
-    this.#plugin.registerMarkdownPostProcessor((el, ctx) =>
-      this.#process(el, ctx),
-    );
-    stack.defer(
-      subscribe(this.#runtime, this.#settings.changes, (settings) => {
-        if (settings) this.#applySettings(settings);
-      }),
-    );
+    /**
+     * Holds one rendered section and shows its citations, which are rewritten
+     * in place for as long as Obsidian shows the section.
+     */
+    const process = (
+      el: HTMLElement,
+      ctx: MarkdownPostProcessorContext,
+    ): void => {
+      if (isDraftMarkdown(el)) return;
+      if (active !== true) return;
+      const citations = sectionCitations(el);
+      if (citations.length === 0) return;
+      const file = run(vault.getFileByPath(ctx.sourcePath));
+      if (!file) return;
+
+      let rewrite: Effect.Effect<void> = Effect.void;
+      const lookup = run(citationLookup.observe(() => run(rewrite)));
+      const child = new MarkdownRenderChild(el);
+      child.onunload = () => lookup[Symbol.dispose]();
+      ctx.addChild(child);
+      const held: HeldSection = { citations, lookup, placed: [] };
+      rewrite = Effect.gen(function* () {
+        if (active !== true) return;
+        const text = yield* citationText.peek(ctx.sourcePath);
+        show(el, ctx, { ...held, text });
+      });
+      lookup.set({
+        citekeys: [
+          ...new Set(
+            citations.flatMap((citation) =>
+              citation.keys.map(({ citekey }) => citekey),
+            ),
+          ),
+        ],
+      });
+      sections.hold(el, ctx, rewrite);
+      run(rewrite);
+    };
+
+    host.registerMarkdownPostProcessor((el, ctx) => process(el, ctx));
+    yield* forkEach(settings.changes, applySettings);
     // What a placed citation says follows its document's Held Read: the live
     // sections of that document rewrite on its change, and every live section
     // rewrites when all text goes stale — which a citekey resolution snapshot
     // rebuild counts as.
-    stack.defer(
-      subscribe(this.#runtime, this.#citationText.invalidated, () =>
-        this.#sections.refresh(),
-      ),
+    yield* forkEach(citationText.events, (event) =>
+      event.type === "changed"
+        ? sections.refresh(event.path)
+        : event.type === "invalidated"
+          ? sections.refresh()
+          : undefined,
     );
-    stack.defer(
-      subscribe(this.#runtime, this.#citationText.changed, (path) =>
-        this.#sections.refresh(path),
-      ),
-    );
-    // A rendered citation carries this service's own click and hover handlers,
-    // so the reading views render again without it once it is gone. The flag
-    // goes first: the post-processor may still be registered while this runs.
-    stack.defer(() => {
-      this.#active = false;
-      this.#rerenderReadingViews();
+    // A rendered citation carries this layer's own click and hover handlers,
+    // so the reading views render again without it once it is gone.
+    yield* retireReadingSurface(workspace, () => {
+      active = false;
     });
-
-    this.commit(stack.move());
-  }
-
-  #applySettings(settings: Readonly<Settings>): void {
-    // Read straight through: hover answers from the newest snapshot, and
-    // nothing rendered depends on it.
-    this.#hover = hoverPreferences(settings);
-    const pandocCitations = settings["citation.pandoc-citations"];
-    const showFormatted =
-      pandocCitations && settings["citation.show-formatted"];
-    const navigationEnabled =
-      pandocCitations && settings["citation.open-as-links"];
-    const active = showFormatted || navigationEnabled;
-    if (
-      active === this.#active &&
-      showFormatted === this.#showFormatted &&
-      navigationEnabled === this.#navigationEnabled
-    ) {
-      return;
-    }
-    const initial = this.#active === undefined;
-    const activeChanged = active !== this.#active;
-    this.#active = active;
-    this.#showFormatted = showFormatted;
-    this.#navigationEnabled = navigationEnabled;
-    if (activeChanged) {
-      logger.info(
-        active ? "Citekey reading enabled" : "Citekey reading disabled",
-      );
-    } else {
-      logger.debug("Citekey reading treatment changed", {
-        navigationEnabled,
-        showFormatted,
-      });
-    }
-    if (initial) return;
-    this.#rerenderReadingViews();
-  }
-
-  /**
-   * Holds one rendered section and shows its citations, which are rewritten in
-   * place for as long as Obsidian shows the section.
-   */
-  #process(el: HTMLElement, ctx: MarkdownPostProcessorContext): void {
-    if (isDraftMarkdown(el)) return;
-    if (this.#active !== true) return;
-    const citations = sectionCitations(el);
-    if (citations.length === 0) return;
-    const file = this.#app.vault.getFileByPath(ctx.sourcePath);
-    if (!file) return;
-
-    let show = (): void => undefined;
-    const lookup = this.#citationLookup.observe(() => show());
-    const child = new MarkdownRenderChild(el);
-    child.onunload = () => lookup[Symbol.dispose]();
-    ctx.addChild(child);
-    const held: HeldSection = { citations, lookup, placed: [] };
-    show = () => {
-      if (this.#active !== true) return;
-      this.#show(el, ctx, held);
-    };
-    lookup.set({
-      citekeys: [
-        ...new Set(
-          citations.flatMap((citation) =>
-            citation.keys.map(({ citekey }) => citekey),
-          ),
-        ),
-      ],
-    });
-    this.#sections.hold(el, ctx, show);
-    show();
-  }
-
-  /**
-   * Shows every citation of a section what the document's Held Read holds for
-   * it. The first show splits the source text and puts an element in each
-   * citation's place. Every later one keeps an element whose content and key
-   * states the fresh answer equals, refreshing only the navigation its handlers
-   * read — so a hover or popover anchored on it stays anchored — and swaps a
-   * rebuilt element for one they differ from, so its theme hooks and handlers
-   * follow the current answer. A citation the fresh text holds nothing for
-   * keeps what it shows.
-   */
-  #show(
-    el: HTMLElement,
-    ctx: MarkdownPostProcessorContext,
-    { citations, lookup, placed }: HeldSection,
-  ): void {
-    const text = this.#citationText.peek(ctx.sourcePath);
-    const answer = text?.value.lookup ?? lookup.current?.value ?? null;
-    const resolutionPending = answer === null;
-    // Source stays until a first answer: native text while the read settles,
-    // and what a placed element shows until fresh text replaces it.
-    if (text === null && !resolutionPending) return;
-    renderProfileRecovery(el, this.#app, {
-      path: text?.value.presentationFailure?.target,
-    });
-    const snapshotState = (citekey: string) =>
-      citekeyState(heldResolution(answer, citekey));
-    const stateOf =
-      text === null ? snapshotState : literalKeyStateOf(text.value);
-    // Which occurrence each citation of the section is, so a position-dependent
-    // style shows every one of them the text rendered for its own place.
-    const coordinates = sectionCoordinates(citations, sectionRange(ctx, el));
-    /**
-     * The element citation `index` shows as: the one placed, where the fresh
-     * answer equals what it was built from, or a rebuilt one recorded in its
-     * place.
-     */
-    const place = (citation: SectionCitation, index: number): HTMLElement => {
-      const content = this.#showFormatted
-        ? text === null
-          ? null
-          : citationContent(citation, text.value, coordinates[index])
-        : null;
-      const previous = placed[index];
-      const shown = content ?? previous?.shown ?? citation.source;
-      const states = citationKeyStates(citation, stateOf);
-      const works = text === null ? [] : citedWorks(citation, text.value);
-      const at =
-        content === null ? undefined : { citation, at: coordinates[index] };
-      if (
-        previous !== undefined &&
-        shownEqual(previous.shown, shown) &&
-        previous.states.length === states.length &&
-        previous.states.every((state, i) => state === states[i])
-      ) {
-        Object.assign(previous.navigation, {
-          works,
-          shown: at,
-          hoverNotePath: (citekey: string) =>
-            this.#citekeyEditor.hoverNotePath(citekey, answer),
-        });
-        return previous.element;
-      }
-      const built = this.#citationElement(el.ownerDocument, ctx.sourcePath, {
-        content: shown,
-        states,
-        works,
-        at,
-        failure: text?.value.presentationFailure,
-        lookup: answer,
-      });
-      placed[index] = { ...built, shown, states };
-      return built.element;
-    };
-    if (placed.length === 0) {
-      replaceCitations(citations, place);
-      return;
-    }
-    for (const [index, citation] of citations.entries()) {
-      const previous = placed[index]!.element;
-      const next = place(citation, index);
-      if (next !== previous) previous.replaceWith(next);
-    }
-  }
-
-  /**
-   * Builds the element one citation shows as, with its handlers attached, and
-   * the navigation those handlers read.
-   */
-  #citationElement(
-    doc: Document,
-    sourcePath: string,
-    {
-      content,
-      states,
-      works,
-      at,
-      failure,
-      lookup,
-    }: {
-      content: PresentedCitation | string;
-      states: readonly CitationKeyState[];
-      works: CitationNavigation["works"];
-      /** The occurrence shown in the citation's place, where formatted text is. */
-      at: CitationNavigation["shown"];
-      /** The Profile failure the document's presentation reports, if any. */
-      failure: ProfilePresentationFailure | undefined;
-      /** The section-owned lookup used by hover while this element stays live. */
-      lookup: CitationLookupAnswer | null;
-    },
-  ): { element: HTMLElement; navigation: CitationNavigation } {
-    const themeClasses = [
-      themeHook.citationKey,
-      ...citationStateHooks(citationState(states)),
-    ];
-    const element = citationElement(doc, content, themeClasses);
-    if (failure) {
-      element.dataset["citationPresentationError"] = "profile";
-      setTooltip(
-        element,
-        m.notice_imported_note_profile_unknown({
-          stamp: failure.diagnostic.stamp,
-          target: failure.target,
-        }),
-      );
-    }
-    const navigation: CitationNavigation = {
-      works,
-      // The occurrence this section shows in the citation's place, which is
-      // where a note-class style's own note text is read from, however often
-      // the popover reads it again. A citation left as source text shows none.
-      shown: at,
-      where: { surface: "reading" },
-      open: (citekey, pane) => {
-        void this.#citekeyEditor.openCitekey(citekey, pane);
-      },
-      showPopover: (request) =>
-        this.#bridge.runSync(this.#citationPopover.show(request)),
-      hoverPreferences: () => this.#hover,
-      hoverNotePath: (citekey) =>
-        this.#citekeyEditor.hoverNotePath(citekey, lookup),
-      workspace: this.#app.workspace,
-      hoverTarget: () => {
-        const hoverParent = this.#viewOf(element);
-        return hoverParent === null
-          ? null
-          : {
-              workspace: this.#app.workspace,
-              hoverParent,
-              sourcePath,
-            };
-      },
-    };
-    // Hover belongs to the Hover Action, so every rendered citation carries
-    // it. Click is Citekey Navigation's alone: it opens the work the citation
-    // names, and wherever Citations stay closed as links a plain click does
-    // nothing, the way it does on any other rendered text. A citation none of
-    // whose keys reaches a Zotero Item has nothing to open anyway; it stays
-    // wrapped so themes can style its error state, and its entries say as
-    // much. An Ambiguous Citation Key names no one Item either, so a citation
-    // resting on those alone opens nothing.
-    if (this.#navigationEnabled && states.includes("resolved")) {
-      markCitationClick(element, "open");
-      attachCitationNavigation(element, navigation);
-      return { element, navigation };
-    }
-    markCitationClick(element, "none");
-    if (!this.#navigationEnabled && this.#showFormatted) {
-      attachClosedCitationGestures(element, navigation);
-      return { element, navigation };
-    }
-    attachCitationHover(element, navigation);
-    return { element, navigation };
-  }
-
-  /**
-   * The Markdown view a rendered citation sits in, which Obsidian hangs the
-   * popover off. Markdown rendered outside such a view — an export, a popover
-   * of its own — belongs to none, and hover stays silent there.
-   */
-  #viewOf(element: HTMLElement): MarkdownView | null {
-    return markdownViewOf(this.#app, element);
-  }
-
-  /** A reading view holds what a post-processor produced until it renders again. */
-  #rerenderReadingViews(): void {
-    const count = rerenderReadingViews(this.#app);
-    logger.debug("Rerendering reading views", { count });
-  }
-}
+  }).pipe(withLogCategory("citekey-reading")),
+);

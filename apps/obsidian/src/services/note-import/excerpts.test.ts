@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // Exercises live and frozen Child Note images through the import writer.
-import { Effect, Stream } from "effect";
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import {
   mkdir,
   mkdtemp,
@@ -19,7 +20,7 @@ import type {
   Workspace,
 } from "obsidian";
 import Turndown from "turndown";
-import { expect, it, vi } from "vitest";
+import { expect, vi } from "vitest";
 
 import { getNoteByKey } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
@@ -28,16 +29,11 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
-import { vaultOver } from "@/lib/__fixtures__/obsidian-vault";
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge } from "@/lib/effect-bridge";
-import type { VaultSource } from "@/lib/obsidian-vault";
-import { AttachmentImportService } from "@/services/attachment-import/service";
+import { AttachmentCopyError } from "@/services/attachment-import/service";
 import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import { bluePng, redPng } from "@/services/excerpt-image/__fixtures__/png";
 import { PNG_FORMAT } from "@/services/excerpt-image/format";
-import { createExcerptPreparation } from "@/services/excerpt-image/prepare";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import type {
   ExcerptOutcome,
@@ -51,13 +47,14 @@ import {
 } from "@/services/zotero-reads/test-utils";
 
 import { diskImageHost } from "./__fixtures__/disk-image-host";
-import { createNoteImporter } from "./service";
+import { noteImporterOver } from "./__fixtures__/importer";
+import type { ImporterFakes } from "./__fixtures__/importer";
 
 const paragraph = (key: string, image: string) =>
   `<p><img data-attachment-key="${image}" data-annotation="${encodeURIComponent(JSON.stringify({ attachmentURI: "http://zotero.org/users/local/LOCAL/items/RGRPDF24", annotationKey: key }))}"></p>`;
 const html = `<div data-schema-version="9">${paragraph("FDRFQ7C2", "SNAP2345")}${paragraph("TYY6Z6ZF", "SNAP3456")}<p>Saved snapshot <img data-attachment-key="FRZN2345"></p><p>Keep this prose.</p></div>`;
 
-async function fixture(mode = "normal") {
+async function setupFixture(mode = "normal") {
   await using stack = new AsyncDisposableStack();
   const parent = join(
     await getWorkspaceRoot(import.meta.dirname),
@@ -125,19 +122,6 @@ async function fixture(mode = "normal") {
     },
   };
   const paths = { dataDir, baseAttachmentPath: null };
-  const runtime = testRuntime();
-  const attachments = stack.use(
-    new AttachmentImportService({
-      bridge: effectBridge(runtime),
-      app,
-      settings: {
-        current: Effect.succeed(settings),
-        changes: Stream.empty,
-      },
-      zoteroPref: { ...paths, "resolved-changed": Stream.empty },
-    }),
-  );
-  await attachments.ready;
   let outcome: ExcerptOutcome = availableOutcome({
     bytes: bluePng,
     format: PNG_FORMAT,
@@ -162,10 +146,9 @@ async function fixture(mode = "normal") {
             language: "liquid",
           }),
   );
-  const importer = createNoteImporter({
-    app,
-    vault: vaultOver(app.vault as unknown as VaultSource),
-    bridge: effectBridge(runtime),
+  const fakes: ImporterFakes = {
+    vault: host.app.vault,
+    workspace: host.app.workspace,
     profile: profileReader(settings),
     noteIndex: {
       getImportedNoteByNoteKey: () => [],
@@ -177,19 +160,23 @@ async function fixture(mode = "normal") {
       renderProfileAnnotation: render,
     },
     zoteroPref: paths,
-    attachmentImport: attachments,
-    excerptImages: (options) =>
-      createExcerptPreparation({
-        app,
-        paths,
-        resolver: {
-          operation: () => ({
-            resolve,
-            [Symbol.asyncDispose]: async () => {},
-          }),
-        },
-      })(options),
-  });
+    attachmentImport: {
+      settings,
+      fileManager: app.fileManager,
+      basePath: vaultRoot,
+    },
+    excerptImages: {
+      resolver: {
+        operation: () => ({
+          resolve,
+          [Symbol.asyncDispose]: async () => {},
+        }),
+        resolve,
+      },
+      fileManager: app.fileManager,
+      metadataCache: app.metadataCache,
+    },
+  };
   const { reads } = await stack.use(
     inProcessReadsService(sharedClientOpener(client)),
   ).ready;
@@ -213,92 +200,125 @@ async function fixture(mode = "normal") {
     host,
     vaultRoot,
     client,
-    importer,
+    fakes,
+    reads,
+    settings,
     resolve,
     render,
     reports,
     setOutcome: (next: ExcerptOutcome) => {
       outcome = next;
     },
-    import: async (targetFile?: TFile) =>
-      importer.importNote(getNoteByKey(client, "NTES2345", { libraryID: 1 })!, {
-        reads,
-        settings,
-        targetFile,
-        reportExcerpts: (summary) => reports.push(summary),
-      }),
     note: () => host.vault.getMarkdownFiles()[0]!,
     images: () => readdir(join(vaultRoot, "Images")),
     [Symbol.asyncDispose]: () => cleanup[Symbol.asyncDispose](),
   };
 }
 
-it("refreshes live image and ink versions while preserving frozen snapshots and old assets", async () => {
-  await using f = await fixture();
-  await f.import();
-  const file = f.note();
-  const original = await f.app.vault.read(file);
-  const names = await f.images();
-  expect(names).toHaveLength(3);
-  expect(names).toContain("FRZN2345-snapshot.png");
-  expect(original).toContain("Keep this prose.");
-  for (const name of names) expect(original).toContain(`![[Images/${name}]]`);
-  expect(f.render).toHaveBeenCalledTimes(2);
-  await f.app.vault.create("Other.md", original);
-  f.setOutcome(
-    availableOutcome({
-      bytes: redPng,
-      format: PNG_FORMAT,
-      provenance: "rendered",
-      freshness: "checked",
-    }),
+/** {@link setupFixture} for the case's Scope, with the real importer over its fakes. */
+const fixture = Effect.fnUntraced(function* (mode = "normal") {
+  const f = yield* Effect.acquireDisposable(
+    Effect.promise(() => setupFixture(mode)),
   );
-  await f.import(file);
-  const updated = await f.app.vault.read(file);
-  expect(updated).not.toBe(original);
-  expect(f.host.text("Other.md")).toBe(original);
-  expect(await f.images()).toHaveLength(5);
-  for (const name of names)
-    expect(await readFile(join(f.vaultRoot, "Images", name))).toEqual(
-      name === "FRZN2345-snapshot.png" ? redPng : bluePng,
-    );
-  f.setOutcome({ kind: "unavailable" });
-  await f.import(file);
-  expect(await f.app.vault.read(file)).toBe(updated);
-  expect(f.reports.at(-1)).toEqual({
-    zotero: 0,
-    unchecked: 0,
-    unavailable: 0,
-    notRefreshed: 2,
-  });
-  expect(f.render).toHaveBeenCalledTimes(6);
+  const importer = yield* noteImporterOver(f.fakes);
+  return {
+    ...f,
+    import: (targetFile?: TFile) =>
+      importer.importNote(
+        getNoteByKey(f.client, "NTES2345", { libraryID: 1 })!,
+        {
+          reads: f.reads,
+          settings: f.settings,
+          targetFile,
+          reportExcerpts: (summary) => f.reports.push(summary),
+        },
+      ),
+  };
 });
 
-it("reports committed excerpt outcomes when a frozen image copy fails", async () => {
-  await using f = await fixture();
-  f.setOutcome({ kind: "unavailable" });
-  await mkdir(join(f.vaultRoot, "Images/FRZN2345-snapshot.png"), {
-    recursive: true,
-  });
-  await expect(f.import()).rejects.toThrow();
-  const content = await f.app.vault.read(f.note());
-  expect(content).toContain("Keep this prose.");
-  expect(content).not.toContain("zotlit-excerpt-");
-  expect(f.reports).toEqual([{ zotero: 0, unchecked: 0, unavailable: 2 }]);
-});
+it.effect(
+  "refreshes live image and ink versions while preserving frozen snapshots and old assets",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture();
+      yield* f.import();
+      const file = f.note();
+      const original = yield* Effect.promise(() => f.app.vault.read(file));
+      const names = yield* Effect.promise(() => f.images());
+      expect(names).toHaveLength(3);
+      expect(names).toContain("FRZN2345-snapshot.png");
+      expect(original).toContain("Keep this prose.");
+      for (const name of names)
+        expect(original).toContain(`![[Images/${name}]]`);
+      expect(f.render).toHaveBeenCalledTimes(2);
+      yield* Effect.promise(() => f.app.vault.create("Other.md", original));
+      f.setOutcome(
+        availableOutcome({
+          bytes: redPng,
+          format: PNG_FORMAT,
+          provenance: "rendered",
+          freshness: "checked",
+        }),
+      );
+      yield* f.import(file);
+      const updated = yield* Effect.promise(() => f.app.vault.read(file));
+      expect(updated).not.toBe(original);
+      expect(f.host.text("Other.md")).toBe(original);
+      expect(yield* Effect.promise(() => f.images())).toHaveLength(5);
+      for (const name of names)
+        expect(
+          yield* Effect.promise(() =>
+            readFile(join(f.vaultRoot, "Images", name)),
+          ),
+        ).toEqual(name === "FRZN2345-snapshot.png" ? redPng : bluePng);
+      f.setOutcome({ kind: "unavailable" });
+      yield* f.import(file);
+      expect(yield* Effect.promise(() => f.app.vault.read(file))).toBe(updated);
+      expect(f.reports.at(-1)).toEqual({
+        zotero: 0,
+        unchecked: 0,
+        unavailable: 0,
+        notRefreshed: 2,
+      });
+      expect(f.render).toHaveBeenCalledTimes(6);
+    }),
+);
 
-it("finishes mixed content when one live excerpt throws", async () => {
-  await using f = await fixture("partial");
-  await f.import();
-  const content = await f.app.vault.read(f.note());
-  const names = await f.images();
-  expect(names).toHaveLength(2);
-  for (const name of names) expect(content).toContain(`![[Images/${name}]]`);
-  expect(content).toContain("Keep this prose.");
-  expect(content).not.toContain("SNAP3456");
-  expect(f.reports).toEqual([{ zotero: 0, unchecked: 0, unavailable: 1 }]);
-  expect(f.render).toHaveBeenCalledTimes(2);
-});
+it.effect(
+  "reports committed excerpt outcomes when a frozen image copy fails",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture();
+      f.setOutcome({ kind: "unavailable" });
+      yield* Effect.promise(() =>
+        mkdir(join(f.vaultRoot, "Images/FRZN2345-snapshot.png"), {
+          recursive: true,
+        }),
+      );
+      expect(yield* Effect.flip(f.import())).toBeInstanceOf(
+        AttachmentCopyError,
+      );
+      const content = yield* Effect.promise(() => f.app.vault.read(f.note()));
+      expect(content).toContain("Keep this prose.");
+      expect(content).not.toContain("zotlit-excerpt-");
+      expect(f.reports).toEqual([{ zotero: 0, unchecked: 0, unavailable: 2 }]);
+    }),
+);
+
+it.effect("finishes mixed content when one live excerpt throws", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("partial");
+    yield* f.import();
+    const content = yield* Effect.promise(() => f.app.vault.read(f.note()));
+    const names = yield* Effect.promise(() => f.images());
+    expect(names).toHaveLength(2);
+    for (const name of names) expect(content).toContain(`![[Images/${name}]]`);
+    expect(content).toContain("Keep this prose.");
+    expect(content).not.toContain("SNAP3456");
+    expect(f.reports).toEqual([{ zotero: 0, unchecked: 0, unavailable: 1 }]);
+    expect(f.render).toHaveBeenCalledTimes(2);
+  }),
+);
 
 const live = [
   "![[Images/SNAP2345-snapshot.png]]",
@@ -312,7 +332,7 @@ const sourceLinks = [
   "[Zotero](zotero://open/library/items/RGRPDF24?annotation=TYY6Z6ZF&page=1)",
 ];
 // `expect.any` leaves a count or report unconstrained for that mode.
-it.each([
+it.effect.each([
   {
     mode: "disabled",
     contains: sourceLinks,
@@ -363,19 +383,20 @@ it.each([
   },
 ])(
   "preserves parser and image outcomes ($mode)",
-  async ({ mode, contains, excludes, reports, resolves, renders }) => {
-    await using f = await fixture(mode);
-    if (mode === "unavailable" || mode === "unused")
-      f.setOutcome({ kind: "unavailable" });
-    if (mode === "missing")
-      f.client.$client.exec("delete from itemAnnotations");
-    await f.import();
-    const content = await f.app.vault.read(f.note());
-    expect(content).toContain("Keep this prose.");
-    for (const text of contains) expect(content).toContain(text);
-    for (const text of excludes) expect(content).not.toContain(text);
-    expect(f.reports).toEqual(reports);
-    expect(f.resolve.mock.calls.length).toEqual(resolves);
-    expect(f.render.mock.calls.length).toEqual(renders);
-  },
+  ({ mode, contains, excludes, reports, resolves, renders }) =>
+    Effect.gen(function* () {
+      const f = yield* fixture(mode);
+      if (mode === "unavailable" || mode === "unused")
+        f.setOutcome({ kind: "unavailable" });
+      if (mode === "missing")
+        f.client.$client.exec("delete from itemAnnotations");
+      yield* f.import();
+      const content = yield* Effect.promise(() => f.app.vault.read(f.note()));
+      expect(content).toContain("Keep this prose.");
+      for (const text of contains) expect(content).toContain(text);
+      for (const text of excludes) expect(content).not.toContain(text);
+      expect(f.reports).toEqual(reports);
+      expect(f.resolve.mock.calls.length).toEqual(resolves);
+      expect(f.render.mock.calls.length).toEqual(renders);
+    }),
 );

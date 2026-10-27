@@ -1,9 +1,9 @@
 import { it } from "@effect/vitest";
 import { Effect } from "effect";
-import type { App, CachedMetadata, MetadataCache, TFile } from "obsidian";
+import type { CachedMetadata } from "obsidian";
 import { describe, expect } from "vitest";
 
-import { stubService } from "@/lib/__fixtures__/service-stub";
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { subscribe } from "@/lib/effect-stream";
 import type { ProfileId } from "@/lib/profile-stamp";
 
@@ -550,34 +550,34 @@ describe("NoteIndex", () => {
 
   it.effect("checks literature notes from frontmatter only", () =>
     Effect.gen(function* () {
-      const { app, vault } = yield* makeHarness({
+      const host = yield* makeHarness({
         "paper.md": cache({ itemKey: ITEM_A }),
         "invalid.md": cache({ itemKey: "INVALID" }),
       });
 
-      expect(isLiteratureNote(vault.files.get("paper.md")!, app)).toBe(true);
-      expect(isLiteratureNote("paper.md", app)).toBe(true);
-      expect(isLiteratureNote("invalid.md", app)).toBe(false);
+      expect(isLiteratureNote(host.vault.files.get("paper.md")!, host)).toBe(
+        true,
+      );
+      expect(isLiteratureNote("paper.md", host)).toBe(true);
+      expect(isLiteratureNote("invalid.md", host)).toBe(false);
     }),
   );
 
   it("resolves a linkpath to the Indexed Key of the Literature Note it points at", () => {
-    const notes = new Map([
-      ["Doe 2024.md", cache({ itemKey: ITEM_A })],
-      ["Ordinary.md", cache({})],
-    ]);
+    const metadataCache = new MemoryMetadataCache();
     // Exact-path resolution; enough to tell a hit from a dangling link.
-    const app = stubService<App>("App", {
-      metadataCache: stubService<MetadataCache>("MetadataCache", {
-        getFirstLinkpathDest: (linkpath: string) =>
-          notes.has(`${linkpath}.md`) ? makeFile(`${linkpath}.md`) : null,
-        getFileCache: (file: TFile) => notes.get(file.path) ?? null,
-      }),
-    });
+    for (const [linkpath, fileCache] of [
+      ["Doe 2024", cache({ itemKey: ITEM_A })],
+      ["Ordinary", cache({})],
+    ] as const) {
+      metadataCache.setCache(`${linkpath}.md`, fileCache);
+      metadataCache.links.set(linkpath, makeFile(`${linkpath}.md`));
+    }
+    const host = { metadataCache };
 
-    expect(resolveIndexedKey("Doe 2024", "source.md", app)).toBe(ITEM_A);
-    expect(resolveIndexedKey("Ordinary", "source.md", app)).toBeNull();
-    expect(resolveIndexedKey("Missing", "source.md", app)).toBeNull();
+    expect(resolveIndexedKey("Doe 2024", "source.md", host)).toBe(ITEM_A);
+    expect(resolveIndexedKey("Ordinary", "source.md", host)).toBeNull();
+    expect(resolveIndexedKey("Missing", "source.md", host)).toBeNull();
   });
 });
 

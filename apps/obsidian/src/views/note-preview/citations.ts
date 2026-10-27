@@ -1,6 +1,5 @@
 // Draft citations use their own source and presentation, without entering the saved-note cache.
 import { Effect } from "effect";
-import type { App } from "obsidian";
 
 import { isChildItemFields, itemToCsl } from "@zotlit/db";
 import type { CslItemData } from "@zotlit/db";
@@ -8,6 +7,8 @@ import type { RenderDiagnostic } from "@zotlit/workbench/render";
 
 import type { CitationSource } from "@/lib/citation-source";
 import * as m from "@/lib/i18n/generated/messages";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import type { ViewServices } from "@/lib/view-atoms";
 import type { WikilinkCitation } from "@/lib/wikilink-citation";
 import {
   citationOfRun,
@@ -15,31 +16,14 @@ import {
   citationTarget,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
-import type { PlainCitationLookup } from "@/services/citation-index/plain";
-import type { PlainCitationParse } from "@/services/citation-parse/plain";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
+import { CitationParse } from "@/services/citation-parse/service";
 import type { PresentedCitation } from "@/services/citation-text/present";
-import { resolveLiteratureNote } from "@/services/note-index/service";
+import { resolveLiteratureNoteIn } from "@/services/note-index/service";
 import { holdsNote } from "@/services/pandoc/inline-content";
-import type { PlainBibliographyRender } from "@/services/pandoc/render-cache/plain";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import { BibliographyRender } from "@/services/pandoc/render-cache";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 
-export interface NativeCitationDeps {
-  app: App;
-  citationParse: Pick<PlainCitationParse, "parse">;
-  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
-  bibliographyRender: Pick<
-    PlainBibliographyRender,
-    | "renderCitations"
-    | "readCitations"
-    | "readBibliography"
-    | "vaultPresentation"
-    | "changed"
-    | "settled"
-    | "invalidated"
-    | "style-missing"
-  >;
-  citationLookup: Pick<PlainCitationLookup, "read">;
-}
 export interface PreviewCitation extends PresentedCitation {
   source: string;
   start: number;
@@ -52,23 +36,27 @@ interface DraftCitation extends CitationSource {
   links: readonly { target: string; citation: WikilinkCitation }[];
 }
 
-export async function renderDraftCitations(
-  deps: NativeCitationDeps,
-  input: {
-    markdown: string;
-    sourcePath: string;
-    styleId: string | null;
-    locale: string | null;
-    wikilinks: boolean;
-  },
-): Promise<{
-  citations: readonly PreviewCitation[];
-  diagnostics: RenderDiagnostic[];
-}> {
-  const { record } = await deps.citationParse.parse(
-    { path: input.sourcePath, generation: 0, text: input.markdown },
-    new AbortController().signal,
-  );
+export const renderDraftCitations = Effect.fn(
+  "NotePreview.renderDraftCitations",
+)(function* (input: {
+  markdown: string;
+  sourcePath: string;
+  styleId: string | null;
+  locale: string | null;
+  wikilinks: boolean;
+}): Effect.fn.Return<
+  { citations: readonly PreviewCitation[]; diagnostics: RenderDiagnostic[] },
+  unknown,
+  ViewServices
+> {
+  const citationParse = yield* CitationParse;
+  const citationLookup = yield* CitationLookup;
+  const bibliographyRender = yield* BibliographyRender;
+  const { record } = yield* citationParse.parse({
+    path: input.sourcePath,
+    generation: 0,
+    text: input.markdown,
+  });
   const scanned = record.citations;
   const links = input.wikilinks
     ? record.wikilinks.map(({ position }) => ({
@@ -80,20 +68,25 @@ export async function renderDraftCitations(
         ),
       }))
     : [];
-  const notes = new Map(
-    links.flatMap((link) => {
-      const target = citationTarget(link.target);
-      return target === null
-        ? []
-        : [
-            [
-              target.linkpath,
-              resolveLiteratureNote(target.linkpath, input.sourcePath, deps),
-            ] as const,
-          ];
-    }),
-  );
-  const lookup = await deps.citationLookup.read({
+  const metadata = yield* MetadataCache;
+  const notes = new Map<
+    string,
+    Effect.Success<ReturnType<typeof resolveLiteratureNoteIn>>
+  >();
+  for (const link of links) {
+    const target = citationTarget(link.target);
+    if (target)
+      notes.set(
+        target.linkpath,
+        yield* resolveLiteratureNoteIn(
+          metadata,
+          target.linkpath,
+          input.sourcePath,
+        ),
+      );
+  }
+
+  const lookup = yield* citationLookup.read({
     citekeys: scanned.flatMap((citation) =>
       citation.keys.map((key) => key.citekey),
     ),
@@ -150,16 +143,17 @@ export async function renderDraftCitations(
     const keys = [...new Set(placed.flatMap(({ works }) => works))].filter(
       (key) => key !== null,
     );
-    await using lease = await deps.zoteroReads.acquireRead();
-    const { reads } = lease;
-    const [user, found] = await Effect.runPromise(
-      Effect.all(
-        [
-          reads.DatabaseIdentity({}),
-          reads.ItemsByIndexedKeys({ indexedKeys: keys }),
-        ],
-        { concurrency: "unbounded" },
-      ),
+    const [user, found] = yield* Effect.scoped(
+      Effect.gen(function* () {
+        const reads = yield* (yield* ZoteroReads).snapshot;
+        return yield* Effect.all(
+          [
+            reads.DatabaseIdentity({}),
+            reads.ItemsByIndexedKeys({ indexedKeys: keys }),
+          ],
+          { concurrency: "unbounded" },
+        );
+      }),
     );
     for (const key of keys) {
       const item = found.get(key);
@@ -176,16 +170,16 @@ export async function renderDraftCitations(
   // The outcome says which of the three reasons a preview shows; the read that
   // follows it answers with the render that stands, rather than with one an
   // invalidation superseded halfway.
-  const outcome = await deps.bibliographyRender.renderCitations(
+  const outcome = yield* bibliographyRender.renderCitations(
     sources,
     [...items.values()],
     presentation,
   );
   const formatted =
     outcome.kind === "held"
-      ? await deps.bibliographyRender
+      ? yield* bibliographyRender
           .readCitations(sources, [...items.values()], { presentation })
-          .catch(() => null)
+          .pipe(Effect.orElseSucceed(() => null))
       : null;
   if (formatted === null)
     return {
@@ -206,9 +200,9 @@ export async function renderDraftCitations(
     };
   const serials = new Map<string, number>();
   if (formatted.some(({ content }) => holdsNote(content))) {
-    const bibliography = await deps.bibliographyRender
+    const bibliography = yield* bibliographyRender
       .readBibliography([...items.values()], { presentation })
-      .catch(() => null);
+      .pipe(Effect.orElseSucceed(() => null));
     bibliography?.entries.forEach(({ id }, index) =>
       serials.set(id, index + 1),
     );
@@ -225,7 +219,7 @@ export async function renderDraftCitations(
     })),
     diagnostics: [],
   };
-}
+});
 function namedSource(citation: DraftCitation): string {
   let source = citation.source;
   for (let index = citation.keys.length - 1; index >= 0; index--) {

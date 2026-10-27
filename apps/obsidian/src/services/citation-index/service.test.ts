@@ -8,6 +8,7 @@ import { afterEach, describe, expect } from "vitest";
 import { effectTestParse } from "@/lib/__fixtures__/parse-client";
 import { subscribe } from "@/lib/effect-stream";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
+import { ParseFailed } from "@/services/citation-parse/client";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { buildSeededSettings } from "@/services/settings/__fixtures__";
 
@@ -20,6 +21,7 @@ import {
 } from "./__fixtures__/ambiguous";
 import type { CitationSyntax } from "./scan";
 import type { CitedBySnapshot, Citation } from "./service";
+import { CitationIndex } from "./service";
 import {
   createCitationIndexHarness,
   DatabaseStub,
@@ -51,6 +53,11 @@ async function citationsOf(
   file: TFile,
 ): Promise<Citation[]> {
   return (await index.getDocumentCitationSet(file)).citations;
+}
+
+/** Clears the stored scans and starts a new pass, through the CitationIndex service. */
+function resetIndex(runtime: CitationIndexHarness["runtime"]): Promise<void> {
+  return runtime.runPromise(CitationIndex.use((index) => index.reset));
 }
 
 describe("CitationIndex", () => {
@@ -614,17 +621,20 @@ describe("CitationIndex", () => {
     }),
   );
 
-  it.effect("settles whenIndexed when disposal precedes the backfill", () =>
+  it.effect("stops whenIndexed when disposal precedes the backfill", () =>
     Effect.promise(async () => {
       const { index, closeIndex } = await makeHarness({
         "draft.md": "As @doe2024 wrote.",
       });
-      const waiting = index.whenIndexed();
+      const aborted = { name: "AbortError" };
+      const waiting = expect(index.whenIndexed()).rejects.toMatchObject(
+        aborted,
+      );
 
       await closeIndex();
 
-      await expect(waiting).resolves.toBeUndefined();
-      await expect(index.whenIndexed()).resolves.toBeUndefined();
+      await waiting;
+      await expect(index.whenIndexed()).rejects.toMatchObject(aborted);
     }),
   );
 
@@ -635,6 +645,7 @@ describe("CitationIndex", () => {
         lookup,
         index,
         metadataCache,
+        runtime,
         settings,
         vault,
         workspace,
@@ -679,7 +690,7 @@ describe("CitationIndex", () => {
       workspace.layoutReady();
       await index.whenIndexed();
       vault.reads.length = 0;
-      await index.reset();
+      await resetIndex(runtime);
       await index.whenIndexed();
       expect(vault.reads).toContain("draft.md");
     }),
@@ -780,7 +791,7 @@ describe("CitationIndex persistence", () => {
   it.effect("clears the stored scans and rebuilds on reset", () =>
     Effect.promise(async () => {
       const store = new MemoryStore();
-      const { draft, index, vault, workspace } = await makeHarness(
+      const { draft, index, runtime, vault, workspace } = await makeHarness(
         { "draft.md": "As @doe2024 wrote." },
         { store },
       );
@@ -788,7 +799,7 @@ describe("CitationIndex persistence", () => {
       await index.whenIndexed();
       vault.reads.length = 0;
 
-      await index.reset();
+      await resetIndex(runtime);
       await index.whenIndexed();
 
       expect(vault.reads).toContain("draft.md");
@@ -804,7 +815,7 @@ describe("CitationIndex persistence", () => {
     () =>
       Effect.promise(async () => {
         const store = new MemoryStore();
-        const { draft, index, vault, workspace } = await makeHarness(
+        const { draft, index, runtime, vault, workspace } = await makeHarness(
           { "draft.md": "As @doe2024 wrote." },
           { store },
         );
@@ -814,7 +825,7 @@ describe("CitationIndex persistence", () => {
         await expect.poll(() => vault.reads).toContain("draft.md");
 
         vault.write(draft, "As @roe2025 wrote.");
-        await index.reset();
+        await resetIndex(runtime);
         await index.whenIndexed();
         release();
 
@@ -1183,7 +1194,7 @@ describe("CitationIndex resolution", () => {
 
   it.effect("returns to indexing when reset starts a new pass", () =>
     Effect.promise(async () => {
-      const { index, vault, workspace } = await makeHarness({
+      const { index, runtime, vault, workspace } = await makeHarness({
         "draft.md": "@doe2024.",
       });
       const snapshots: CitedBySnapshot[] = [];
@@ -1192,7 +1203,7 @@ describe("CitationIndex resolution", () => {
       await index.whenIndexed();
       const release = vault.hold("draft.md");
 
-      await index.reset();
+      await resetIndex(runtime);
 
       await expect.poll(() => snapshots.at(-1)?.coverage).toBe("indexing");
 
@@ -1504,7 +1515,7 @@ describe("CitationIndex resolution", () => {
     "keeps a superseded backfill read out of reverse publications",
     () =>
       Effect.promise(async () => {
-        const { draft, index, metadataCache, vault, workspace } =
+        const { draft, index, metadataCache, runtime, vault, workspace } =
           await makeHarness({ "draft.md": "@doe2024." });
         const snapshots: CitedBySnapshot[] = [];
         index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
@@ -1512,7 +1523,7 @@ describe("CitationIndex resolution", () => {
         await index.whenIndexed();
         const release = vault.hold(draft.path);
 
-        await index.reset();
+        await resetIndex(runtime);
 
         await expect.poll(() => vault.reads.at(-1)).toBe(draft.path);
         metadataCache.change(draft, "@roe2025.");
@@ -2014,6 +2025,106 @@ describe("CitationIndex one-shot reads", () => {
       workspace.layoutReady();
       await expect(index.waitUntilSettled(1_000)).resolves.toBe("settled");
       await expect(index.getCitedBy(KEY_A)).rejects.toThrow();
+    }),
+  );
+});
+
+describe("CitationIndex parsed notes", () => {
+  it.effect("#1789 keeps the VaultError of a parsed-document read", () =>
+    Effect.gen(function* () {
+      const { runtime, draft, vault } = yield* Effect.promise(() =>
+        makeHarness({ "draft.md": "See @doe2024." }),
+      );
+      vault.fail(draft.path);
+      const index = runtime.runSync(CitationIndex);
+      const failure = yield* Effect.flip(index.getParsedDocument(draft));
+      expect(failure).toMatchObject({
+        _tag: "VaultError",
+        operation: "cachedRead",
+        path: draft.path,
+      });
+    }),
+  );
+
+  it.effect("#1789 keeps the parser failure of a parsed-document read", () =>
+    Effect.gen(function* () {
+      const refused = new ParseFailed({
+        message: "The scanner rejected this note",
+      });
+      const { runtime, draft } = yield* Effect.promise(() =>
+        makeHarness(
+          { "draft.md": "See @doe2024." },
+          {
+            parseClient: { parse: () => Effect.fail(refused) },
+          },
+        ),
+      );
+      const index = runtime.runSync(CitationIndex);
+      expect(yield* Effect.flip(index.getParsedDocument(draft))).toBe(refused);
+    }),
+  );
+
+  it.effect(
+    "#1789 unload interrupts a scan read in flight before parsing",
+    () =>
+      Effect.promise(async () => {
+        const parsed: string[] = [];
+        const h = await makeHarness(
+          { "draft.md": "See @doe2024." },
+          {
+            parseClient: {
+              parse: (request) =>
+                Effect.gen(function* () {
+                  parsed.push(request.path);
+                  return yield* inProcessParseClient.parse(request);
+                }),
+            },
+          },
+        );
+        const entered = Promise.withResolvers<void>();
+        const release = h.vault.hold(h.draft.path);
+        const cachedRead = h.vault.cachedRead.bind(h.vault);
+        h.vault.cachedRead = (file) => {
+          const reading = cachedRead(file);
+          if (file.path === h.draft.path) entered.resolve();
+          return reading;
+        };
+        const reading = h.index
+          .getFileScan(h.draft)
+          .catch((error: unknown) => error);
+        await entered.promise;
+        await h.closeIndex();
+        release();
+        expect(await reading).toMatchObject({ name: "AbortError" });
+        expect(parsed).not.toContain(h.draft.path);
+      }),
+  );
+
+  it.effect("parses a note's current source", () =>
+    Effect.promise(async () => {
+      const { index, draft } = await makeHarness({
+        "draft.md": "See @doe2024.",
+      });
+
+      const parsed = await index.getParsedNote(draft);
+
+      expect(parsed.source).toBe("See @doe2024.");
+      expect(
+        parsed.record.citations.flatMap(({ items }) =>
+          items.map(({ citationKey }) => citationKey),
+        ),
+      ).toEqual(["doe2024"]);
+    }),
+  );
+
+  it.effect("rejects with the read failure of an unreadable note", () =>
+    Effect.promise(async () => {
+      const { index, draft, vault } = await makeHarness({
+        "draft.md": "See @doe2024.",
+      });
+      vault.fail("draft.md");
+
+      await expect(index.getParsedNote(draft)).rejects.toThrow("read failed");
     }),
   );
 });

@@ -1,3 +1,4 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 /** The real bibliography layer over the dependency ports used by consumer fixtures. */
 import { Context, Effect, Layer, PubSub, Stream } from "effect";
 
@@ -20,7 +21,6 @@ import {
 } from "@/services/query-client/service";
 import type { HeldReadChange } from "@/services/query-client/service";
 import { PluginSettings } from "@/services/settings/service";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { ZoteroReads } from "@/services/zotero-reads/service";
@@ -55,10 +55,11 @@ export interface BibliographyRenderFixtureOptions {
     | "refresh-requested"
   >;
   pandocEngine: Pick<ManagedBinaryHandle<CitationEngine>, "binary">;
-  zoteroPref: Pick<
-    PlainZoteroPref,
-    "dataDir" | "changed" | "data-dir-changed" | "resolved-changed"
-  >;
+  zoteroPref: {
+    readonly dataDir: string;
+    /** Each move of the profile or data folder Zotero reads from. */
+    readonly moves: Stream.Stream<void>;
+  };
   settings: Pick<PluginSettings["Service"], "current" | "changes">;
   queryClient?: Pick<
     PlainQueryClients,
@@ -131,6 +132,7 @@ export async function bibliographyRenderFixture(
     Layer.provide(
       Layer.mergeAll(
         queryLayer,
+        NodeFileSystem.layer,
         Layer.succeed(
           Profile,
           stubService<Profile["Service"]>("Profile", {
@@ -160,7 +162,7 @@ export async function bibliographyRenderFixture(
           ZoteroPref,
           stubService<ZoteroPref["Service"]>("ZoteroPref", {
             current: Effect.sync(prefSnapshot),
-            changes: options.zoteroPref["resolved-changed"].pipe(
+            changes: options.zoteroPref.moves.pipe(
               Stream.map(() => ({ ...prefSnapshot(), prefs: new Map() })),
             ),
           }),

@@ -36,13 +36,34 @@ export type MetadataEvent =
 /** The Obsidian object the tag reads: what `app.metadataCache` gives. */
 export type MetadataCacheSource = Pick<
   ObsidianMetadataCache,
-  "getFileCache" | "onCleanCache"
+  | "getFileCache"
+  | "getCache"
+  | "getFirstLinkpathDest"
+  | "onCleanCache"
+  | "resolvedLinks"
 > &
   ObsidianEventEmitter;
 
 export interface MetadataCacheShape {
   /** The cache entry of the file now, `null` when the cache holds none. */
   fileCache(file: TFile): Effect.Effect<CachedMetadata | null>;
+  /** The cache entry at `path` now, by Obsidian's `getCache`; `null` when the cache holds none. */
+  cache(path: string): Effect.Effect<CachedMetadata | null>;
+  /**
+   * Obsidian's `resolvedLinks` now: for each source path, the count of links
+   * to each target path. Obsidian's own object, which it updates in place.
+   */
+  readonly resolvedLinks: Effect.Effect<
+    Readonly<Record<string, Readonly<Record<string, number>>>>
+  >;
+  /**
+   * The file `linkpath` resolves to from the note at `sourcePath`, by
+   * Obsidian's `getFirstLinkpathDest`; `null` when no file matches.
+   */
+  firstLinkpathDest(
+    linkpath: string,
+    sourcePath: string,
+  ): Effect.Effect<TFile | null>;
   /** Each metadata cache event, in Obsidian's order, from when the consumer's Stream starts. */
   readonly changes: Stream.Stream<MetadataEvent>;
   /**
@@ -94,6 +115,19 @@ export const makeMetadataCache = Effect.fnUntraced(function* (
     // Untraced: the Note Index reads it per note in a loop over the vault.
     fileCache: Effect.fnUntraced(function* (file) {
       return yield* Effect.sync(() => source.getFileCache(file));
+    }),
+    // Untraced: the graph reads it per drawn node.
+    cache: Effect.fnUntraced(function* (path) {
+      return yield* Effect.sync(() => source.getCache(path));
+    }),
+    resolvedLinks: Effect.sync(() => source.resolvedLinks).pipe(
+      Effect.withSpan("MetadataCache.resolvedLinks"),
+    ),
+    // Untraced: an editor resolves each visible wikilink per decoration build.
+    firstLinkpathDest: Effect.fnUntraced(function* (linkpath, sourcePath) {
+      return yield* Effect.sync(() =>
+        source.getFirstLinkpathDest(linkpath, sourcePath),
+      );
     }),
     changes: events.stream,
     whenResolved: whenResolved(source),

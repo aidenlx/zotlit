@@ -1,11 +1,9 @@
-// Resolves a Literature Note to its Item's PDF Attachments, and the `open-pdf` command that opens them.
+// Opens a Literature Note's PDF Attachments: the PDF reader, the picker's reader, and the `open-pdf` command.
 
-import { Effect } from "effect";
 import { TFile } from "obsidian";
-import type { App, FileSystemAdapter, Plugin } from "obsidian";
+import type { App, Plugin } from "obsidian";
 
-import type { Attachment } from "@zotlit/db";
-
+import { passAborted } from "@/lib/abort-error";
 import {
   createObsidianAttachmentReader,
   openAttachments,
@@ -13,26 +11,14 @@ import {
 import type { AttachmentReader } from "@/lib/attachment-open";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { PluginSettings } from "@/services/settings/service";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { activateAnnotView } from "@/views/annot-view/register";
 
+import type { LiteratureNoteAttachmentsHandle } from "./handle";
 import type { TargetOpener, TargetReader } from "./open-target";
 import type { ObsidianOpenableAttachment } from "./resolve";
-import { toObsidianOpenableAttachments } from "./resolve";
-
-const logger = getLogger("attachment-open");
-
-/** What resolving a Literature Note's Attachments needs. */
-export interface AttachmentOpenLookupDeps {
-  app: App;
-  reads: Pick<PlainZoteroReads, "acquireRead">;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
-}
 
 /** What opening a PDF in Obsidian needs, wherever the gesture came from. */
 export interface PdfReaderDeps {
@@ -62,6 +48,8 @@ export function createPdfReader(deps: PdfReaderDeps): TargetReader {
 /**
  * A picker's reader that opens each row through the Target Opener, by the
  * row's key, so a picked Attachment is opened by the same rule as every other.
+ * The picker fires the open and forgets it, so the unload's `AbortError` ends
+ * it quietly.
  */
 export function pdfPickerReader(
   opener: Pick<TargetOpener, "open">,
@@ -70,81 +58,29 @@ export function pdfPickerReader(
     icon: "file-text",
     onEmpty: () => new BaseNotice(m.notice_no_pdf_attachment()),
     open: (attachment, pane) =>
-      opener.open(
-        { kind: "attachment", attachmentKey: attachment.indexedKey },
-        pane,
-      ),
+      opener
+        .open(
+          { kind: "attachment", attachmentKey: attachment.indexedKey },
+          pane,
+        )
+        .catch(passAborted),
   };
 }
 
-export interface AttachmentOpenDeps extends AttachmentOpenLookupDeps {
+export interface AttachmentOpenDeps {
+  app: App;
+  /** Resolves a Literature Note's Indexed Key to its Item's PDF Attachments. */
+  attachments: LiteratureNoteAttachmentsHandle;
   opener: Pick<TargetOpener, "open">;
-}
-
-/**
- * Attachments already fetched from the database, narrowed to the
- * Obsidian-Openable ones — the vault-adapter cast and path-context setup
- * `resolveLiteratureNoteAttachments` and the `open-attachment` protocol
- * handler both need, written once here.
- */
-export function toObsidianOpenable(
-  attachments: readonly Attachment[],
-  deps: Pick<AttachmentOpenLookupDeps, "app" | "zoteroPref">,
-): ObsidianOpenableAttachment[] {
-  // Desktop-only plugin: the adapter is always a `FileSystemAdapter`.
-  const vaultBasePath = (
-    deps.app.vault.adapter as FileSystemAdapter
-  ).getBasePath();
-  return toObsidianOpenableAttachments(attachments, {
-    pathContext: {
-      dataDir: deps.zoteroPref.dataDir,
-      baseAttachmentPath: deps.zoteroPref.baseAttachmentPath,
-    },
-    vaultBasePath,
-    platform: process.platform,
-  });
-}
-
-/**
- * Resolve a Literature Note's Indexed Key to its Item's Obsidian-Openable PDF
- * Attachments — shared by the `open-pdf` command, the file menu, and the
- * Quick Switcher's PDF chords, so a key→itemID lookup is written once.
- *
- * Both reads share one Snapshot, so a database swap between them cannot pair
- * an itemID with another database's Attachments.
- *
- * @returns no Attachments while the database cannot be read.
- */
-export async function resolveLiteratureNoteAttachments(
-  deps: AttachmentOpenLookupDeps,
-  indexedKey: string,
-): Promise<ObsidianOpenableAttachment[]> {
-  try {
-    await using lease = await deps.reads.acquireRead();
-    const { reads } = lease;
-    const items = await Effect.runPromise(
-      reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
-    );
-    const itemID = items.get(indexedKey)?.itemID;
-    if (itemID === undefined) return [];
-    const attachments = await Effect.runPromise(
-      reads.AttachmentsOf({ itemIDs: [itemID] }),
-    );
-    return toObsidianOpenable(attachments, deps);
-  } catch (error) {
-    logger.warn("Literature Note Attachments unavailable", {
-      indexedKey,
-      error,
-    });
-    return [];
-  }
 }
 
 async function runOpenPdfCommand(
   deps: AttachmentOpenDeps,
   indexedKey: string,
 ): Promise<void> {
-  const attachments = await resolveLiteratureNoteAttachments(deps, indexedKey);
+  const attachments =
+    await deps.attachments.literatureNoteAttachments(indexedKey);
+  if (!attachments) return;
   openAttachments(attachments, {
     reader: pdfPickerReader(deps.opener),
     app: deps.app,

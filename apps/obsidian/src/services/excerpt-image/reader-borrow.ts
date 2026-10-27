@@ -1,15 +1,14 @@
 // Borrowing the PDF document an open reader already holds, and the revision
 // proof a borrowed document passes before excerpt work crops from it.
 
-import { abortable } from "@std/async/abortable";
-import { open } from "node:fs/promises";
-import type { FileHandle } from "node:fs/promises";
+import { Effect } from "effect";
 
-import { getLogger } from "@/lib/log";
+import { withLogCategory } from "@/lib/effect-log";
 
+import { openExcerptFile, pdfStamp, readBounded } from "./file";
 import type { ExcerptViewport } from "./geometry";
 
-const logger = getLogger(["excerpt-image", "reader"]);
+const logged = withLogCategory("excerpt-image", "reader");
 
 /**
  * The largest PDF the excerpt path parses, borrowed or detached. The renderer
@@ -137,88 +136,49 @@ const verdicts = new WeakMap<object, BorrowVerdict>();
  * whose bytes are byte-for-byte the file's is borrowed, however long ago the
  * reader loaded it.
  *
- * Both reads the reader answers are bounded by `signal`: a host that never
- * settles one of them cannot hold a resolution open past its deadline. So are
- * the file's own reads — the stat and the bytes the proof compares — and the
- * close of every handle this borrow opened, which waits under the detached
- * path's own 5s teardown. Nothing of the reader's is cancelled, cleaned up, or
- * closed to end a wait — the borrow stops waiting and the caller renders from
- * the file.
+ * The calling fiber bounds the reader and file reads. Interruption stops
+ * waiting on the reader and closes the scoped file. The reader keeps
+ * ownership of its document, page, and render tasks.
  *
  * @see apps/obsidian/docs/adr/0054-reader-and-detached-excerpts-share-cache-publication.md
  */
-export async function borrowedExcerptPage(options: {
-  readers: ExcerptReaderDocuments | undefined;
-  path: string | null;
-  pageIndex: number;
-  signal: AbortSignal;
-}): Promise<BorrowedExcerptCrop | null> {
-  const { readers, path, pageIndex, signal } = options;
-  if (!readers || !path) return null;
-  const borrowed = await provenDocument({ readers, path, signal });
-  if (!borrowed) return null;
-  // The reader owns the read it answers: stopping to wait for one that never
-  // settles is this call's alone to do, and it leaves the reader's own task,
-  // page, and document untouched.
-  const page = await abortable(borrowed.page(pageIndex), signal);
-  // The reader may have closed or replaced its document while the page read
-  // was in flight, so the page is re-checked against the document it came from
-  // rather than trusted for having been asked of it.
-  if (!page || !borrowed.current()) {
-    logger.debug("Reader document closed before its page could be borrowed", {
-      path,
-      page: pageIndex + 1,
-    });
-    return null;
-  }
-  return { page, current: () => borrowed.current() };
-}
+export const borrowedExcerptPage = Effect.fn("ExcerptImage.borrowedPage")(
+  function* (options: {
+    readers: ExcerptReaderDocuments | undefined;
+    path: string | null;
+    pageIndex: number;
+  }) {
+    const { readers, path, pageIndex } = options;
+    if (!readers || !path) return null;
+    const borrowed = readers.borrow(path);
+    if (!borrowed) return null;
+    const verdict = yield* verdictFor(borrowed).pipe(
+      Effect.catch((error) =>
+        Effect.logDebug("Reader document proof failed").pipe(
+          Effect.annotateLogs({ path, error }),
+          Effect.as(null),
+        ),
+      ),
+    );
+    if (!verdict?.match) return null;
+    // The reader owns this work. Interruption stops waiting and leaves its
+    // document and page untouched.
+    const page = yield* Effect.tryPromise(() => borrowed.page(pageIndex));
+    if (!page || !borrowed.current()) return null;
+    return {
+      page,
+      current: () => borrowed.current(),
+    } satisfies BorrowedExcerptCrop;
+  },
+  logged,
+);
 
-/**
- * The reader's document for `path`, or `null` unless its own bytes are the
- * file's current bytes. A proven pair is remembered until the file's size or
- * modification time moves, so a batch pays the proof for its first excerpt
- * alone; a refusal is remembered the same way, so a file no reader matches is
- * not read again for every excerpt.
- */
-async function provenDocument(options: {
-  readers: ExcerptReaderDocuments;
-  path: string;
-  signal: AbortSignal;
-}): Promise<BorrowedExcerptDocument | null> {
-  const { readers, path, signal } = options;
-  const borrowed = readers.borrow(path);
-  if (!borrowed) return null;
-  let verdict: BorrowVerdict | null;
-  try {
-    verdict = await verdictFor(borrowed, signal);
-  } catch (error) {
-    signal.throwIfAborted();
-    logger.debug("Reader document proof failed", { path, error });
-    return null;
-  }
-  if (!verdict?.match) {
-    logger.debug("Reader document does not hold the file's current bytes", {
-      path,
-    });
-    return null;
-  }
-  logger.debug("Reader document holds the file's current bytes", { path });
-  return borrowed;
-}
-
-/** The remembered verdict for this document and file revision, or a fresh one. */
-async function verdictFor(
+/** One proof per document and stable file revision, shared by all its crops. */
+const verdictFor = Effect.fnUntraced(function* (
   borrowed: BorrowedExcerptDocument,
-  signal: AbortSignal,
-): Promise<BorrowVerdict | null> {
-  await using handles = new AsyncDisposableStack();
-  const file = handles.adopt(
-    await openAbortable(borrowed.path, signal),
-    (file) => closeBounded(file.close(), borrowed.path),
-  );
-  const info = await abortable(file.stat(), signal);
-  signal.throwIfAborted();
+) {
+  const file = yield* openExcerptFile(borrowed.path);
+  const info = pdfStamp(yield* file.stat);
   const remembered = verdicts.get(borrowed.document);
   if (
     remembered &&
@@ -226,106 +186,28 @@ async function verdictFor(
     remembered.mtimeMs === info.mtimeMs
   )
     return remembered;
-  const verdict = await verify({
-    borrowed,
-    size: info.size,
-    mtimeMs: info.mtimeMs,
-    signal,
-  });
-  if (verdict) verdicts.set(borrowed.document, verdict);
-  return verdict;
-}
-
-/**
- * The bound a close of a handle this module opened waits under, the same 5s
- * the detached path gives its own teardown: a filesystem that never settles a
- * close must not hold a borrow — and the renderer release waiting behind it —
- * open past a bound.
- */
-const CLOSE_DEADLINE_MS = 5_000;
-
-/**
- * Close a handle this module opened, giving up on a close that outlasts that
- * bound: the failure is logged rather than thrown, so a borrow settles on what
- * its proof answered. Nothing of a reader's is closed this way.
- */
-async function closeBounded(
-  closing: Promise<unknown>,
-  path: string,
-): Promise<void> {
-  await abortable(closing, AbortSignal.timeout(CLOSE_DEADLINE_MS)).catch(
-    (error: unknown) => {
-      logger.debug("File handle could not be closed", {
-        path,
-        error,
-      });
-    },
-  );
-}
-
-/**
- * Open a file for reading, closing the handle even when cancellation wins the
- * race with `open`. A handle that arrives after the caller's signal aborted
- * belongs to this call alone and has no other owner, so it is closed rather
- * than leaked; the cancellation is what the caller sees.
- */
-async function openAbortable(
-  path: string,
-  signal: AbortSignal,
-): Promise<FileHandle> {
-  const opening = open(path, "r");
-  try {
-    return await abortable(opening, signal);
-  } catch (error) {
-    // Cancellation can win before open returns. Keep acquisition and its
-    // eventual close inside this call's teardown, including the handoff race:
-    // the close is this module's own wait, and is bounded like the rest.
-    await closeBounded(
-      opening.then(
-        (file) => file.close(),
-        () => undefined,
-      ),
-      path,
-    );
-    throw error;
+  if (info.size > MAX_PDF_BYTES) {
+    const verdict = { ...info, match: false };
+    verdicts.set(borrowed.document, verdict);
+    return verdict;
   }
-}
-
-/**
- * Compare the document's own bytes with a stable read of the file. `null` when
- * the read cannot be trusted, which leaves the verdict unremembered so a later
- * excerpt proves the revision again.
- */
-async function verify(options: {
-  borrowed: BorrowedExcerptDocument;
-  size: number;
-  mtimeMs: number;
-  signal: AbortSignal;
-}): Promise<BorrowVerdict | null> {
-  const { borrowed, size, mtimeMs, signal } = options;
-  logger.trace("Proving the reader's document against the file", {
-    path: borrowed.path,
-    size,
-  });
-  // A file past the excerpt limit is refused before its document's bytes are
-  // read: it is also past what the detached renderer parses.
-  if (size > MAX_PDF_BYTES) return { size, mtimeMs, match: false };
-  // `getData()` on a reader's document is the reader's own work: a host that
-  // never settles it must not hold this proof — and the resolution behind it —
-  // open past the caller's bound.
-  const data = await abortable(borrowed.bytes(), signal);
-  signal.throwIfAborted();
-  if (!data || data.byteLength !== size) return { size, mtimeMs, match: false };
-  const bytes = await readVerifiedBytes(
-    borrowed.path,
-    { size, mtimeMs },
-    signal,
-  );
-  if (!bytes) return null;
-  // Both reads hold the same revision's bytes, and both are already in memory:
-  // the proof is the comparison itself, and no digest of either is consumed.
-  return { size, mtimeMs, match: sameBytes(data, bytes) };
-}
+  const data = yield* Effect.tryPromise(() => borrowed.bytes());
+  let match = false;
+  if (data && data.byteLength === info.size) {
+    const bytes = yield* readBounded(file, info.size + 1);
+    const after = pdfStamp(yield* file.stat);
+    if (
+      bytes.length !== info.size ||
+      after.size !== info.size ||
+      after.mtimeMs !== info.mtimeMs
+    )
+      return null;
+    match = sameBytes(data, bytes);
+  }
+  const verdict = { ...info, match };
+  verdicts.set(borrowed.document, verdict);
+  return verdict;
+}, Effect.scoped);
 
 /** Whether two byte views hold the same bytes, however either was read. */
 function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
@@ -333,41 +215,4 @@ function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
   for (let index = 0; index < left.byteLength; index++)
     if (left[index] !== right[index]) return false;
   return true;
-}
-
-/**
- * Read exactly the stamped revision's bytes, and answer `null` when the file
- * moved under the read.
- */
-async function readVerifiedBytes(
-  path: string,
-  stamp: { size: number; mtimeMs: number },
-  signal: AbortSignal,
-): Promise<Uint8Array | null> {
-  await using handles = new AsyncDisposableStack();
-  const file = handles.adopt(await openAbortable(path, signal), (file) =>
-    closeBounded(file.close(), path),
-  );
-  const before = await abortable(file.stat(), signal);
-  if (before.size !== stamp.size || before.mtimeMs !== stamp.mtimeMs)
-    return null;
-  const bytes = new Uint8Array(stamp.size);
-  let offset = 0;
-  while (offset < bytes.length) {
-    signal.throwIfAborted();
-    const { bytesRead } = await abortable(
-      file.read(bytes, offset, bytes.length - offset, offset),
-      signal,
-    );
-    if (!bytesRead) break;
-    offset += bytesRead;
-  }
-  const after = await abortable(file.stat(), signal);
-  if (
-    offset !== bytes.length ||
-    after.size !== stamp.size ||
-    after.mtimeMs !== stamp.mtimeMs
-  )
-    return null;
-  return bytes;
 }

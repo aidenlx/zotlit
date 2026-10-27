@@ -1,10 +1,12 @@
 // Parses the current note's links independently of the asynchronous metadata cache.
 import { parser } from "@lezer/markdown";
 import { regex } from "arkregex";
+import { Effect } from "effect";
 import { parseLinktext } from "obsidian";
-import type { App, TFile } from "obsidian";
+import type { TFile } from "obsidian";
 
-import { readLiveText } from "@/lib/live-text";
+import { readLiveText } from "@/lib/effect-live-text";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 
 const markdown = parser.configure({
   defineNodes: ["WikiLink"],
@@ -45,11 +47,25 @@ function markdownTarget(raw: string): string {
   }
 }
 
-export async function referencedExcerptPaths(
-  app: App,
-  file: TFile,
-): Promise<string[]> {
-  const content = await readLiveText(app, file);
+/**
+ * The vault files `note`'s live text links to: its loaded view's text, else
+ * the vault's, read apart from the asynchronous metadata cache.
+ */
+export const referencedExcerptPaths = Effect.fnUntraced(function* (
+  note: TFile,
+) {
+  const content = yield* readLiveText(note);
+  const metadata = yield* MetadataCache;
+  const paths = new Set<string>();
+  for (const link of linkTargets(content)) {
+    const target = yield* metadata.firstLinkpathDest(link, note.path);
+    if (target) paths.add(target.path);
+  }
+  return [...paths];
+});
+
+/** The link texts a note's `content` points at: wikilinks, links and images. */
+export function linkTargets(content: string): string[] {
   const definitions = new Map<string, string>();
   const targets: string[] = [];
   const labels: string[] = [];
@@ -88,10 +104,5 @@ export async function referencedExcerptPaths(
     const target = definitions.get(label);
     if (target) targets.push(target);
   }
-  const paths = new Set<string>();
-  for (const link of targets) {
-    const target = app.metadataCache.getFirstLinkpathDest(link, file.path);
-    if (target) paths.add(target.path);
-  }
-  return [...paths];
+  return targets;
 }

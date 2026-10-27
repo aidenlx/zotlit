@@ -1,5 +1,9 @@
 {
-  "extends": ["@zotlit/config/tsconfig", "@zotlit/config/tsconfig.node26"],
+  "extends": [
+    "@zotlit/config/tsconfig",
+    "@zotlit/config/tsconfig.node26",
+    "@zotlit/config/tsconfig.obsidian"
+  ],
   "compilerOptions": {
     "isolatedDeclarations": false,
     "module": "esnext",
@@ -10,9 +14,16 @@
     "paths": {
       "@obsidian-messages": [
         "../../apps/obsidian/src/lib/i18n/generated/messages.ts"
-      ]
-    }
+      ],
+      "@/*": ["../../apps/obsidian/src/*"],
+      "@brand/*": ["../../assets/logo/*"]
+    },
+    "jsx": "react-jsx"
   },
-  "include": ["./src/**/*.ts"],
+  "include": [
+    "./src/**/*.ts",
+    "../../apps/obsidian/src/typings/**/*.d.ts",
+    "../../apps/obsidian/src/env.d.ts"
+  ],
   "exclude": ["./node_modules"]
 }

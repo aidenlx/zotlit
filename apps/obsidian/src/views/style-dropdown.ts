@@ -1,15 +1,19 @@
+import { Effect, FileSystem } from "effect";
 // The installed-style picker the dialogs are built with: one dropdown over the
 // styles the Zotero data directory holds.
-
 import type { Setting } from "obsidian";
 
 import type { ReferencesStyleOption } from "@/lib/citation-style";
-import { listInstalledStyles } from "@/services/pandoc/styles";
+import { valueOr } from "@/lib/effect-bridge";
+import type { EffectBridge } from "@/lib/effect-bridge";
+import { listInstalledStylesOrNone } from "@/services/pandoc/installed-styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 
 export interface StyleDropdownOptions {
   /** Zotero data directory the installed styles are listed from. */
   dataDir: string;
+  fileSystem: FileSystem.FileSystem;
+  bridge: Pick<EffectBridge, "runPromiseExit">;
   /** The picker value the dialog opens on. */
   value: string;
   /** The entries the picker offers over the styles listed so far. */
@@ -30,7 +34,14 @@ export interface StyleDropdownOptions {
  */
 export function addStyleDropdown(
   setting: Setting,
-  { dataDir, value, options, onChange }: StyleDropdownOptions,
+  {
+    dataDir,
+    fileSystem,
+    bridge,
+    value,
+    options,
+    onChange,
+  }: StyleDropdownOptions,
 ): void {
   setting.addDropdown((dropdown) => {
     let styles: readonly InstalledCslStyle[] = [];
@@ -51,9 +62,17 @@ export function addStyleDropdown(
       selected = next;
       onChange(next);
     });
-    void listInstalledStyles(dataDir).then((installed) => {
-      styles = installed;
-      repopulate();
-    });
+    void bridge
+      .runPromiseExit(
+        listInstalledStylesOrNone(dataDir).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+        ),
+      )
+      .then((exit) => {
+        const installed = valueOr(exit, null);
+        if (installed === null) return;
+        styles = installed;
+        repopulate();
+      });
   });
 }

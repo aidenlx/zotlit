@@ -1,3 +1,4 @@
+import { DateTime } from "effect";
 import { expect, it } from "vitest";
 
 import type {
@@ -6,11 +7,11 @@ import type {
   WriteAuthorizationState,
 } from "@/services/zotero-local-api/service";
 
-import { cooldownFailureOf, utcAt } from "./__fixtures__/capability";
+import { cooldownFailureOf } from "./__fixtures__/capability";
 import { editingCapabilityOf } from "./capability";
 import type { EditingCapability } from "./capability";
 
-const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
+const NOW = DateTime.makeUnsafe("2026-09-16T15:52:21Z");
 
 const SOURCE = {
   kind: "zotero-local-api",
@@ -72,7 +73,7 @@ it("turns Zotero's cooldown into the instant it ends", () => {
 
   expect(capabilityOf({ kind: "unavailable", failure })).toEqual({
     kind: "cooldown",
-    retryAfter: Temporal.Instant.from("2026-09-16T15:53:58Z"),
+    retryAfter: DateTime.makeUnsafe("2026-09-16T15:53:58Z"),
   });
 });
 
@@ -87,7 +88,7 @@ function capabilityOf(
   state: LocalApiState,
   writes: WriteAuthorizationState = NO_WRITES,
 ): EditingCapability {
-  return editingCapabilityOf(state, writes, () => NOW);
+  return editingCapabilityOf(state, writes, NOW);
 }
 
 it("says it is asking while a gesture stands at Zotero's dialog", () => {
@@ -113,11 +114,8 @@ it("reads a library Zotero refuses writes to as read-only, whatever else holds",
 });
 
 it("counts down Zotero's dialog cooldown only while it blocks the asking", () => {
-  const cooldownUntil = NOW.add({ seconds: 44 });
-  const cooling = {
-    ...NO_WRITES,
-    cooldownUntil: utcAt(cooldownUntil.epochMilliseconds),
-  };
+  const cooldownUntil = DateTime.add(NOW, { seconds: 44 });
+  const cooling = { ...NO_WRITES, cooldownUntil };
 
   expect(
     capabilityOf(
@@ -137,7 +135,7 @@ it("counts down Zotero's dialog cooldown only while it blocks the asking", () =>
   expect(
     capabilityOf(
       { kind: "available", source: SOURCE, authorized: false },
-      { ...NO_WRITES, cooldownUntil: utcAt(NOW.epochMilliseconds) },
+      { ...NO_WRITES, cooldownUntil: NOW },
     ),
   ).toEqual({ kind: "authorization-required" });
 });

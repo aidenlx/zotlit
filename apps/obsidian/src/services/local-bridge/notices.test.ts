@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 
+import type { LocalBridgeHandle } from "./handle";
 import { subscribeWorkbenchSaved, workbenchSavedNotice } from "./notices";
-import type { LocalBridgeService } from "./service";
 
 describe("workbenchSavedNotice", () => {
   it("carries the approved copy and runs Update all notes through its action", () => {
@@ -24,11 +24,11 @@ describe("subscribeWorkbenchSaved", () => {
   it("shows one Notice per Save that landed and drops its subscription at the end", () => {
     const listeners = new Set<(profileId: string) => void>();
     const localBridge = {
-      on: (_event: "profile-saved", callback: (profileId: string) => void) => {
+      onProfileSaved: (callback: (profileId: string) => void) => {
         listeners.add(callback);
         return () => listeners.delete(callback);
       },
-    } as unknown as Pick<LocalBridgeService, "on">;
+    } as unknown as Pick<LocalBridgeHandle, "onProfileSaved">;
     const showNotice = vi.fn();
 
     const dispose = subscribeWorkbenchSaved(localBridge, showNotice);

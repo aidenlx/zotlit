@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { Deferred } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 import { act } from "preact/test-utils";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -8,16 +10,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { ViewRegistryProvider } from "@/lib/view-atoms";
 import { ambiguousCandidates } from "@/services/citation-index/__fixtures__/ambiguous-candidates";
 import type {
   CitationOccurrence,
   ReferenceSource,
 } from "@/services/citation-index/service";
 
+import { makeReferencesHost } from "./__fixtures__";
+import type { ReferencesHost } from "./__fixtures__";
 import type { ReferenceActions } from "./actions";
+import { ReferenceActionsContext } from "./actions";
 import type { ReferenceEntry } from "./entries";
+import { makeReferencesModel, ReferencesModelContext } from "./model";
 import { References } from "./References";
-import type { ReferencesListMode, ReferencesState } from "./store";
+import type { ReferencesListMode, ReferencesState } from "./state";
 
 vi.mock("@/components/obsidian/icon-button", async () => {
   const { createElement } = await import("react");
@@ -26,15 +33,6 @@ vi.mock("@/components/obsidian/icon-button", async () => {
       createElement("button", { ...props, "data-icon": icon }),
   };
 });
-
-vi.mock("./actions", () => ({
-  useReferenceActions: () => actions,
-}));
-
-vi.mock("./store", () => ({
-  useReferencesStore: <T>(selector: (current: ReferencesState) => T) =>
-    selector(state),
-}));
 
 const actions: ReferenceActions = {
   onSelect: () => undefined,
@@ -71,10 +69,13 @@ const source: ReferenceSource = {
 
 let state: ReferencesState;
 let root: Root | undefined;
+let host: ReferencesHost | undefined;
 
 afterEach(async () => {
   await act(() => root?.unmount());
   root = undefined;
+  await host?.close();
+  host = undefined;
   document.body.replaceChildren();
   vi.clearAllMocks();
 });
@@ -113,11 +114,27 @@ async function render(
     citekeyResolution,
     copy,
   };
+  host = await makeReferencesHost();
+  const model = { ...makeReferencesModel(), state: Atom.make(state) };
   const container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   await act(() => {
-    root!.render(createElement(References));
+    root!.render(
+      createElement(
+        ViewRegistryProvider,
+        { registry: host!.registry },
+        createElement(
+          ReferencesModelContext,
+          { value: model },
+          createElement(
+            ReferenceActionsContext,
+            { value: actions },
+            createElement(References),
+          ),
+        ),
+      ),
+    );
   });
   return container;
 }
@@ -500,7 +517,11 @@ describe("References banners", () => {
     [
       "the install progress",
       {
-        engine: { kind: "installing", done: Promise.resolve(), binary: null },
+        engine: {
+          kind: "installing",
+          done: Deferred.makeUnsafe(),
+          binary: null,
+        },
       } satisfies Partial<ReferencesState>,
       "Downloading the Pandoc engine…",
     ],
@@ -618,7 +639,11 @@ describe("References toolbar", () => {
       [summaryEntry],
       { kind: "minimal" },
       {
-        engine: { kind: "installing", done: Promise.resolve(), binary: null },
+        engine: {
+          kind: "installing",
+          done: Deferred.makeUnsafe(),
+          binary: null,
+        },
       },
     );
     await activateStyleAction(container);

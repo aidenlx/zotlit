@@ -1,9 +1,20 @@
+import { it } from "@effect/vitest";
 import { settingsOf } from "@mock/obsidian";
 import type { ToggleComponent } from "@mock/obsidian";
 // @vitest-environment happy-dom
 import { Keymap, Menu } from "@mock/obsidian";
-import { Effect } from "effect";
-import { Stream } from "effect";
+import {
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  Layer,
+  Logger,
+  References,
+  Scope,
+  Stream,
+} from "effect";
+import { TestClock } from "effect/testing";
 import { around } from "monkey-around";
 import { PopoverState, TFile, debounce } from "obsidian";
 import type {
@@ -18,34 +29,52 @@ import type {
   GraphTextContainer,
   GraphTextDisplay,
   HoverPopover,
+  Plugin,
   WorkspaceLeaf,
 } from "obsidian";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, vi } from "vitest";
 import type { Mock } from "vitest";
 
-import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
-import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { testEvent } from "@/lib/__fixtures__/event-stream";
-import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { layerTestObsidianEnv } from "@/lib/__fixtures__/obsidian-env";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import type { CliHost } from "@/lib/cli-command";
 import * as m from "@/lib/i18n/generated/messages";
+import { layerMetadataCacheFrom } from "@/lib/obsidian-metadata-cache";
+import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
+import { makePluginHost, PluginHost } from "@/lib/plugin-host";
 import { themeProperty } from "@/lib/theme-hooks";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
 import { lookupAnswerFor } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { CitationOccurrence } from "@/services/citation-index/scan";
-import type { CitekeyResolution } from "@/services/citation-index/service";
+import { CitationIndex } from "@/services/citation-index/service";
+import type {
+  CitationIndexEvent,
+  CitekeyResolution,
+} from "@/services/citation-index/service";
+import { CitationPopover } from "@/services/citation-popover/service";
+import { CitekeyEditor } from "@/services/citekey-editor/service";
 import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
-import { openNoteVault } from "@/services/note-index/__fixtures__";
-import { buildSeededSettings } from "@/services/settings/__fixtures__";
+import type { NavigationPane } from "@/services/citekey-navigation";
+import { LibraryScope } from "@/services/library-scope/service";
+import {
+  cache,
+  createNoteHost,
+  noteIndexOver,
+} from "@/services/note-index/__fixtures__";
+import { NoteIndex } from "@/services/note-index/service";
+import { settingsFeed } from "@/services/settings/__fixtures__";
 import type { Settings } from "@/services/settings/schema";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import type { WorkLabelSource } from "@/services/zotero-reads/rpc";
-import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsEvent } from "@/services/zotero-reads/service";
 
 import type { LinkMap } from "./adapter";
-import { GraphCitations } from "./service";
-import type { GraphCitationsDeps } from "./service";
+import { GRAPH_CORE_PLUGIN_ID } from "./install";
+import { GraphCitations, layerGraphCitations } from "./service";
 import { FakeColorGroupSection, FakeControlSection } from "./test-double";
 import { graphNode, themeStates, themeStatesNothing } from "./test-stub";
 
@@ -295,12 +324,63 @@ const NODE_POSITIONS: Record<string, { x: number; y: number }> = {
   "Literature/Kay 2020.md": { x: 1, y: 1 },
 };
 
+/**
+ * The interval timers of the window a graph's container answers, which a case
+ * advances by hand: the hover hold beats on them, outside Effect's clock.
+ */
+class FakeWindowTimers {
+  readonly devicePixelRatio = window.devicePixelRatio;
+  #now = 0;
+  #nextId = 1;
+  readonly #intervals = new Map<
+    number,
+    { callback: () => void; every: number; due: number }
+  >();
+
+  setInterval(callback: () => void, every: number): number {
+    const id = this.#nextId++;
+    this.#intervals.set(id, { callback, every, due: this.#now + every });
+    return id;
+  }
+
+  clearInterval(id: number | undefined): void {
+    if (id !== undefined) this.#intervals.delete(id);
+  }
+
+  /** Runs each interval due within the next `millis`, in time order. */
+  advance(millis: number): void {
+    const end = this.#now + millis;
+    for (;;) {
+      const next = [...this.#intervals.values()].sort(
+        (left, right) => left.due - right.due,
+      )[0];
+      if (!next || next.due > end) break;
+      this.#now = next.due;
+      next.due += next.every;
+      next.callback();
+    }
+    this.#now = end;
+  }
+}
+
+/** A container whose `win` is `timers`, as Obsidian's `Node.win` answers its window. */
+function containerOn(timers: FakeWindowTimers): HTMLElement {
+  const containerEl = document.createElement("div");
+  Object.defineProperty(containerEl, "win", {
+    configurable: true,
+    value: timers,
+  });
+  return containerEl;
+}
+
 class FakeRenderer {
   onNodeClick!: (evt: MouseEvent, id: string, type: string) => void;
   onNodeRightClick!: (evt: MouseEvent, id: string, type: string) => void;
   onNodeHover!: (evt: MouseEvent, id: string, type: string) => void;
   onNodeUnhover!: () => void;
-  containerEl = document.createElement("div");
+  /** The timers of the window the container answers. */
+  readonly timers = new FakeWindowTimers();
+  containerEl = containerOn(this.timers);
   /** Copied, so a test that takes a node out leaves the fixture as it found it. */
   nodeLookup: Record<string, { x: number; y: number } | undefined> = {
     ...NODE_POSITIONS,
@@ -491,21 +571,17 @@ function fakeLeaf(
   };
 }
 
+/** The Citation Index events the stub publishes; any other name it emits only to the lookup. */
+const INDEX_EVENTS = new Set<string>([
+  "changed",
+  "membership-changed",
+  "cited-by-invalidated",
+]);
+
 class CitationIndexStub {
-  readonly ready = Promise.resolve();
-  readonly #events = testEvent<string>();
-  readonly changed = this.#events.stream.pipe(
-    Stream.filter((event) => event === "changed"),
-  );
-  readonly backfilled = Stream.empty;
-  readonly "membership-changed" = this.#events.stream.pipe(
-    Stream.filter((event) => event === "membership-changed"),
-    Stream.map(() => undefined),
-  );
-  readonly "cited-by-invalidated" = this.#events.stream.pipe(
-    Stream.filter((event) => event === "cited-by-invalidated"),
-    Stream.map(() => undefined),
-  );
+  readonly #events = testEvent<CitationIndexEvent>();
+  /** The index's events: `changed`, `membership-changed` and `cited-by-invalidated`. */
+  readonly events = this.#events.stream;
   /** What the wikilink syntax adds to {@link OCCURRENCES}, per path. */
   wikilinks = new Map<string, readonly CitationOccurrence[]>();
   citationsByPath = vi.fn((syntaxes: readonly string[]) => {
@@ -530,7 +606,12 @@ class CitationIndexStub {
       this.#revision += 1;
       this.lookup.refresh();
     }
-    this.#events.emit(event);
+    if (event === "changed")
+      this.#events.emit({ type: "changed", path: "Draft.md" });
+    else if (INDEX_EVENTS.has(event))
+      this.#events.emit({
+        type: event as "membership-changed" | "cited-by-invalidated",
+      });
   }
 
   get lookupCount(): number {
@@ -560,11 +641,30 @@ interface FixtureOptions {
   notes?: Record<string, string>;
   /** The serialized layout Obsidian restored this session's leaves from. */
   savedLayout?: unknown;
+  /** The workspace file read rejects with this error instead. */
+  workspaceFileError?: Error;
   /** What the vault-wide settings say beyond the Wikilink Citations choice. */
   settings?: Partial<Settings>;
+  /** What the lookup's `observe` waits for before it answers; nothing by default. */
+  observeGate?: Effect.Effect<void>;
 }
 
-async function makeFixture(options: FixtureOptions = {}) {
+/** How long the service lets a burst of events settle before it draws again. */
+const SETTLE = "150 millis";
+
+/** What a FixtureOptions-built fixture logs at warning level, into `warn`. */
+const warnings = Logger.make(({ logLevel, message, fiber }) => {
+  if (logLevel !== "Warn") return;
+  const [text] = Array.isArray(message) ? message : [message];
+  warn(String(text), fiber.getRef(References.CurrentLogAnnotations));
+});
+
+/**
+ * Graph Citations over fakes of everything it reads, built as the plugin
+ * layer builds it on a Scope of the case's own: `unload` closes it, which is
+ * the plugin's unload.
+ */
+const makeFixture = Effect.fnUntraced(function* (options: FixtureOptions = {}) {
   const listeners = new Map<string, Set<(...data: unknown[]) => unknown>>();
   const leaves: WorkspaceLeaf[] = [];
   /** What unloads each leaf's view, which is what closing the leaf runs. */
@@ -591,10 +691,15 @@ async function makeFixture(options: FixtureOptions = {}) {
     },
     getLeavesOfType: (type: string) =>
       leaves.filter((leaf) => leaf.view.getViewType() === type),
-    readWorkspaceFile: () => Promise.resolve(options.savedLayout ?? {}),
+    readWorkspaceFile: () =>
+      options.workspaceFileError
+        ? Promise.reject(options.workspaceFileError)
+        : Promise.resolve(options.savedLayout ?? {}),
     trigger,
     requestSaveLayout: debounce(() => Promise.resolve()),
   });
+  /** The metadata cache's listeners; the tag registers its own, which the graph never fires. */
+  const metadataListeners = new Set<EventRef>();
   const graphPlugin = { options: options.savedGlobal ?? {} };
   const app = stubService<App>("App", {
     workspace,
@@ -610,13 +715,6 @@ async function makeFixture(options: FixtureOptions = {}) {
         },
       },
     ),
-    internalPlugins: stubService<NonNullable<App["internalPlugins"]>>(
-      "InternalPlugins",
-      {
-        getEnabledPluginById: (id: string) =>
-          id === "graph" && (options.graphEnabled ?? true) ? graphPlugin : null,
-      },
-    ),
     metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
       resolvedLinks: options.links ?? VAULT_LINKS,
       unresolvedLinks: options.unresolved ?? {},
@@ -630,21 +728,37 @@ async function makeFixture(options: FixtureOptions = {}) {
       },
       getCache: (path: string) => CACHES[path] ?? null,
       getFileCache: ({ path }: { path: string }) => CACHES[path] ?? null,
+      on: (name: string) => {
+        const ref = stubService<EventRef>("EventRef", { name });
+        metadataListeners.add(ref);
+        return ref;
+      },
+      offref: (ref: EventRef) => {
+        metadataListeners.delete(ref);
+      },
     }),
   });
   const citationIndex = new CitationIndexStub();
-  const { noteIndex, writeNote } = await openNoteVault(
-    options.notes ?? { "Literature/Doe 2024.md": "DEE23456" },
-    owned,
+  const notes = createNoteHost(
+    Object.fromEntries(
+      Object.entries(
+        options.notes ?? { "Literature/Doe 2024.md": "DEE23456" },
+      ).map(([path, itemKey]) => [path, cache({ itemKey })]),
+    ),
+    { enabledAtRuntime: true },
   );
-  const settings = owned.use(
-    await buildSeededSettings({
-      "citation.wikilink-citations": options.wikilinkCitations ?? false,
-      ...options.settings,
-    }),
+  const settings = settingsFeed({
+    "citation.wikilink-citations": options.wikilinkCitations ?? false,
+    ...options.settings,
+  });
+  const openCitekey = vi.fn(
+    (_citekey: string, _pane: NavigationPane): Effect.Effect<void> =>
+      Effect.void,
   );
-  const openCitekey = vi.fn(() => Promise.resolve());
-  const openIndexedKey = vi.fn(() => Promise.resolve());
+  const openIndexedKey = vi.fn(
+    (_indexedKey: string, _pane: NavigationPane): Effect.Effect<void> =>
+      Effect.void,
+  );
   const citationPopover = stubService<
     import("@/services/citation-popover/service").CitationPopover["Service"] & {
       showWork: ReturnType<typeof vi.fn>;
@@ -653,90 +767,143 @@ async function makeFixture(options: FixtureOptions = {}) {
     showWork: vi.fn(() => Effect.void),
     hide: vi.fn(() => Effect.void),
   });
-  const bridge = owned.use(openTestBridge());
-  const readsEvents = testEvents<ZoteroReadsEvents>(["changed", "degraded"]);
-  const reads = {
-    reads: stubService<GraphCitationsDeps["reads"]["reads"]>("ZoteroReadsApi", {
-      WorkLabels: (({ indexedKeys }: { indexedKeys: readonly string[] }) =>
-        options.labelDatabase
-          ? Effect.promise(
-              async () =>
-                new Map(
-                  ((await labelReads([...indexedKeys])) as LabelRow[]).map(
-                    (row) => [
-                      row.key,
-                      {
-                        libraryID: 1,
-                        creators: row.creators,
-                        primaryCreatorType: row.primaryCreatorType,
-                        title: row.fields.title ?? null,
-                        shortTitle: row.fields.shortTitle ?? null,
-                        date: row.fields.date ?? null,
-                      },
-                    ],
-                  ),
-                ),
-            )
-          : Effect.fail(
-              new DbUnavailable({ message: "disconnected" }),
-            )) as GraphCitationsDeps["reads"]["reads"]["WorkLabels"],
-    }),
-    ...readsEvents.streams,
-    emit: readsEvents.emit.bind(readsEvents),
-  };
-  const service = new GraphCitations({
-    runtime: testRuntime(),
-    app,
-    reads: stubService<GraphCitationsDeps["reads"] & typeof reads>(
-      "ZoteroReads",
-      reads,
-    ),
-    libraryScope: {
-      current: {
-        mode: "all",
-        invalid: false,
-        available: (options.labelLibraryScope ?? [1]).map((libraryID) => ({
-          libraryID,
-          name: "Library",
-          selector: { type: "personal" as const },
-        })),
-        unavailable: [],
-      },
+  const readsEvents = testEvent<ZoteroReadsEvent>();
+  /** One work's label inputs, as the database answers them for a row. */
+  const labelSource = (row: LabelRow): [string, WorkLabelSource] => [
+    row.key,
+    {
+      libraryID: 1,
+      creators: row.creators,
+      primaryCreatorType: row.primaryCreatorType,
+      title: row.fields.title ?? null,
+      shortTitle: row.fields.shortTitle ?? null,
+      date: row.fields.date ?? null,
     },
-    citationIndex,
-    citationLookup: citationIndex.lookup,
-    noteIndex,
-    citekeyEditor: { openCitekey, openIndexedKey },
-    citationPopover,
-    bridge,
-    settings,
+  ];
+  /** The rows `labelReads` answers: at once, or when the promise a case hands it settles. */
+  const labelRows = (keys: readonly string[]) =>
+    Effect.suspend(() => {
+      const rows = labelReads([...keys]) as LabelRow[] | Promise<LabelRow[]>;
+      return rows instanceof Promise
+        ? Effect.promise(() => rows)
+        : Effect.succeed(rows);
+    }).pipe(Effect.map((rows) => new Map(rows.map(labelSource))));
+  const reads = stubService<ZoteroReads["Service"]["reads"]>("ZoteroReadsApi", {
+    WorkLabels: (({
+      indexedKeys,
+    }: {
+      readonly indexedKeys: readonly string[];
+    }) =>
+      options.labelDatabase
+        ? labelRows(indexedKeys)
+        : Effect.fail(
+            new DbUnavailable({ message: "disconnected" }),
+          )) as ZoteroReads["Service"]["reads"]["WorkLabels"],
   });
+  const scope = yield* Scope.fork(yield* Effect.scope);
+  const context = yield* Layer.buildWithScope(
+    layerGraphCitations.pipe(
+      Layer.provideMerge(noteIndexOver(notes)),
+      Layer.provide(
+        Layer.mergeAll(
+          layerWorkspaceFrom(workspace),
+          layerMetadataCacheFrom(app.metadataCache),
+          layerTestObsidianEnv({
+            corePlugins: new Set(
+              (options.graphEnabled ?? true) ? [GRAPH_CORE_PLUGIN_ID] : [],
+            ),
+          }),
+          Layer.succeed(
+            PluginHost,
+            makePluginHost(stubService<Plugin & CliHost>("Plugin", { app })),
+          ),
+          Layer.mock(ZoteroReads, { reads, events: readsEvents.stream }),
+          Layer.mock(LibraryScope, {
+            current: Effect.succeed({
+              mode: "all" as const,
+              invalid: false,
+              available: (options.labelLibraryScope ?? [1]).map(
+                (libraryID) => ({
+                  libraryID,
+                  name: "Library",
+                  selector: { type: "personal" as const },
+                }),
+              ),
+              unavailable: [],
+            }),
+          }),
+          Layer.mock(CitationIndex, {
+            events: citationIndex.events,
+            changes: Stream.empty,
+            citationsByPath: (syntaxes) =>
+              Effect.sync(() => citationIndex.citationsByPath(syntaxes)),
+          }),
+          Layer.mock(CitationLookup, {
+            observe: (changed) =>
+              (options.observeGate ?? Effect.void).pipe(
+                Effect.andThen(
+                  Effect.sync(() => citationIndex.lookup.observe(changed)),
+                ),
+              ),
+          }),
+          Layer.mock(CitekeyEditor, { openCitekey, openIndexedKey }),
+          Layer.mock(CitationPopover, citationPopover),
+          settings.layer,
+          Logger.layer([warnings]),
+        ),
+      ),
+    ),
+    scope,
+  );
+  const service = Context.get(context, GraphCitations);
+  const noteIndex = Context.get(context, NoteIndex);
+  yield* noteIndex.whenIndexed;
   const engines: FakeEngine[] = [];
-  const settleLookup = async (): Promise<void> => {
+  /** Lets every runnable fiber the case started go on, then lets a burst of events settle. */
+  const advance = (millis: number) =>
+    Effect.gen(function* () {
+      yield* TestClock.adjust(millis);
+      for (const engine of engines) engine.renderer.timers.advance(millis);
+    });
+  /** The first answered frame: the lookup delivers, and the render it asks for draws. */
+  const settleLookup = Effect.gen(function* () {
     if (!citationIndex.lookup.pending) return;
     const installed = engines.filter((engine) =>
       Object.hasOwn(engine, "render"),
     );
-    const rendered = installed.map((engine) => engine.rendered.promise);
     // General graph tests start from its first answered frame. The lookup
     // suite tests the pending frame and request-change placeholder directly.
     for (const engine of installed) {
       engine.renders.length = 0;
       engine.cachedFiles.length = 0;
     }
-    await citationIndex.lookup.settle();
-    if (vi.isFakeTimers()) await vi.runOnlyPendingTimersAsync();
-    await Promise.all(rendered);
-  };
+    yield* Effect.promise(() => citationIndex.lookup.settle());
+    yield* TestClock.adjust(SETTLE);
+  });
   return {
     app,
     service,
+    /** Closes the layer, which is the plugin's unload. */
+    unload: Scope.close(scope, Exit.void),
+    advance,
     settleLookup,
     citationIndex,
     citationLookup: citationIndex.lookup,
-    writeNote,
+    /**
+     * The note at `path`, created when the vault holds none, now carries
+     * `itemKey`, or no key; completes once the Note Index has read the edit.
+     */
+    writeNote: (path: string, itemKey: string | undefined) =>
+      Effect.gen(function* () {
+        const file = notes.vault.files.get(path) ?? notes.vault.addFile(path);
+        notes.metadataCache.change(file, cache({ itemKey }));
+        yield* noteIndex.whenSettled;
+      }),
     settings,
-    reads,
+    /** The database's events: `emit("changed")` is a database change. */
+    reads: {
+      emit: (tag: "changed") => readsEvents.emit({ _tag: tag }),
+    },
     openCitekey,
     openIndexedKey,
     citationPopover,
@@ -800,1090 +967,1228 @@ async function makeFixture(options: FixtureOptions = {}) {
       const leaf = leaves.find((candidate) => candidate.id === id);
       return leaf!.view.getState();
     },
-    layoutReady: async () => {
+    /** The layout is ready, and the first answered frame drawn. */
+    layoutReady: Effect.gen(function* () {
       layoutReady?.();
-      await settleLookup();
-    },
+      yield* settleLookup;
+    }),
     fire: (name: string) => {
       for (const cb of listeners.get(name) ?? []) cb();
     },
     listenerCount: () =>
       [...listeners.values()].reduce((sum, set) => sum + set.size, 0),
   };
-}
-
-/** What each fixture's Note Index and settings store hold, released after the test. */
-let owned = new AsyncDisposableStack();
+});
 
 function makePresentationFixture(options: FixtureOptions = {}) {
   return makeFixture({ ...options, presentation: true });
 }
 
-afterEach(async () => {
-  vi.useRealTimers();
-  await owned.disposeAsync();
-  owned = new AsyncDisposableStack();
+afterEach(() => {
   warn.mockClear();
   themeStatesNothing();
 });
 
 describe("GraphCitations installation", () => {
-  it("keeps current view choices after the graph feature is toggled off and on", async () => {
-    const fixture = await makeFixture({
-      savedLayout: {
-        id: "leaf-0",
-        type: "leaf",
-        state: {
-          type: "graph",
-          state: { options: { "zotlit-citation-popover": false } },
-        },
-      },
-    });
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-    engine.setOptions({ "zotlit-citation-popover": true });
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.graph-citations": false }),
-    );
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.graph-citations": true }),
-    );
-    expect(engine.getOptions()["zotlit-citation-popover"]).toBe(true);
-  });
+  // Failure mode: the unload interrupts the first install while it waits for
+  // the lookup, and the wrapped render outlives the plugin.
+  it.effect(
+    "restores the render of a leaf whose first install the unload interrupts",
+    () =>
+      Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>();
+        const fixture = yield* makeFixture({
+          observeGate: Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Effect.never),
+          ),
+        });
+        const engine = fixture.addLeaf("graph");
+        const nativeRender = engine.render;
+        yield* fixture.layoutReady;
+        yield* Deferred.await(entered);
 
-  it("installs before a new view loads and ignores shared presentation choices", async () => {
-    const fixture = await makeFixture({
-      savedGlobal: {
-        "zotlit-color-citation-links": true,
-        "zotlit-citation-popover": true,
-      },
-    });
-    await using service = fixture.service;
-    await service.ready;
-    const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", { id: "new" });
-    const create = fixture.app.viewRegistry!.getViewCreatorByType("graph")!;
-    const view = create(leaf);
-    Object.assign(leaf, { view });
-    view.onload();
-    expect(
-      (view.getState() as { options: GraphOptions }).options,
-    ).toMatchObject({
-      "zotlit-color-citation-links": false,
-      "zotlit-citation-popover": false,
-      "zotlit-author-title-labels": false,
-    });
-    await view.setState(
-      { options: { "zotlit-citation-popover": true } },
-      { history: false },
-    );
-    expect(
-      (view.getState() as { options: GraphOptions }).options,
-    ).toMatchObject({
-      "zotlit-color-citation-links": false,
-      "zotlit-citation-popover": true,
-    });
-  });
+        yield* fixture.unload;
 
-  it("restores independent global graph view states", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const first = fixture.addLeaf("graph", "first");
-    await fixture.layoutReady();
-    first.setOptions({
-      "zotlit-color-citation-links": true,
-      "zotlit-citation-popover": true,
-    });
-    const state = fixture.leafState("first");
-    expect((state as { options: GraphOptions }).options).toMatchObject({
-      "zotlit-color-citation-links": true,
-      "zotlit-citation-popover": true,
-    });
-    const second = fixture.addLeaf("graph", "second");
-    fixture.fire("layout-change");
-    expect(second.getOptions()).toMatchObject({
-      "zotlit-color-citation-links": false,
-      "zotlit-citation-popover": false,
-      "zotlit-author-title-labels": false,
-    });
-    await fixture.leaf("second").view.setState(state, { history: false });
-    expect(second.getOptions()).toMatchObject({
-      "zotlit-color-citation-links": true,
-      "zotlit-citation-popover": true,
-    });
-    await fixture.leaf("second").view.setState(
-      {
-        options: {
+        expect(engine.render).toBe(nativeRender);
+      }),
+  );
+
+  it.effect(
+    "keeps current view choices after the graph feature is toggled off and on",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture({
+          savedLayout: {
+            id: "leaf-0",
+            type: "leaf",
+            state: {
+              type: "graph",
+              state: { options: { "zotlit-citation-popover": false } },
+            },
+          },
+        });
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+        engine.setOptions({ "zotlit-citation-popover": true });
+        fixture.settings.update({ "citation.graph-citations": false });
+        fixture.settings.update({ "citation.graph-citations": true });
+        expect(engine.getOptions()["zotlit-citation-popover"]).toBe(true);
+      }),
+  );
+
+  it.effect(
+    "installs before a new view loads and ignores shared presentation choices",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture({
+          savedGlobal: {
+            "zotlit-color-citation-links": true,
+            "zotlit-citation-popover": true,
+          },
+        });
+        const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", { id: "new" });
+        const create = fixture.app.viewRegistry!.getViewCreatorByType("graph")!;
+        const view = create(leaf);
+        Object.assign(leaf, { view });
+        view.onload();
+        expect(
+          (view.getState() as { options: GraphOptions }).options,
+        ).toMatchObject({
           "zotlit-color-citation-links": false,
           "zotlit-citation-popover": false,
           "zotlit-author-title-labels": false,
-        },
-      },
-      { history: false },
-    );
-    expect(second.getOptions()).toMatchObject({
-      "zotlit-color-citation-links": false,
-      "zotlit-citation-popover": false,
-      "zotlit-author-title-labels": false,
-    });
-    expect(first.getOptions()).toMatchObject({
-      "zotlit-color-citation-links": true,
-      "zotlit-citation-popover": true,
-    });
-  });
+        });
+        yield* Effect.promise(() =>
+          view.setState(
+            { options: { "zotlit-citation-popover": true } },
+            { history: false },
+          ),
+        );
+        expect(
+          (view.getState() as { options: GraphOptions }).options,
+        ).toMatchObject({
+          "zotlit-color-citation-links": false,
+          "zotlit-citation-popover": true,
+        });
+      }),
+  );
 
-  it("keeps ordinary graphs native until presentation controls are enabled", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const graph = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-    expect(graph.getOptions()).toMatchObject({
-      "zotlit-color-citation-links": false,
-      "zotlit-citation-popover": false,
-      "zotlit-author-title-labels": false,
-    });
-    graph.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "Literature/Doe 2024.md",
-      "",
-    );
-    expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
-    graph.setOptions({ "zotlit-citation-popover": true });
-    graph.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "Literature/Doe 2024.md",
-      "",
-    );
-    expect(fixture.citationPopover.showWork).toHaveBeenCalled();
-  });
+  it.effect("restores independent global graph view states", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture();
+      const first = fixture.addLeaf("graph", "first");
+      yield* fixture.layoutReady;
+      first.setOptions({
+        "zotlit-color-citation-links": true,
+        "zotlit-citation-popover": true,
+      });
+      const state = fixture.leafState("first");
+      expect((state as { options: GraphOptions }).options).toMatchObject({
+        "zotlit-color-citation-links": true,
+        "zotlit-citation-popover": true,
+      });
+      const second = fixture.addLeaf("graph", "second");
+      fixture.fire("layout-change");
+      expect(second.getOptions()).toMatchObject({
+        "zotlit-color-citation-links": false,
+        "zotlit-citation-popover": false,
+        "zotlit-author-title-labels": false,
+      });
+      yield* Effect.promise(() =>
+        fixture.leaf("second").view.setState(state, { history: false }),
+      );
+      expect(second.getOptions()).toMatchObject({
+        "zotlit-color-citation-links": true,
+        "zotlit-citation-popover": true,
+      });
+      yield* Effect.promise(() =>
+        fixture.leaf("second").view.setState(
+          {
+            options: {
+              "zotlit-color-citation-links": false,
+              "zotlit-citation-popover": false,
+              "zotlit-author-title-labels": false,
+            },
+          },
+          { history: false },
+        ),
+      );
+      expect(second.getOptions()).toMatchObject({
+        "zotlit-color-citation-links": false,
+        "zotlit-citation-popover": false,
+        "zotlit-author-title-labels": false,
+      });
+      expect(first.getOptions()).toMatchObject({
+        "zotlit-color-citation-links": true,
+        "zotlit-citation-popover": true,
+      });
+    }),
+  );
 
-  it("installs once per renderer across repeated layout events and draws the additions", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const global = fixture.addLeaf("graph");
-    const local = fixture.addLeaf("localgraph");
+  it.effect(
+    "keeps ordinary graphs native until presentation controls are enabled",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const graph = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+        expect(graph.getOptions()).toMatchObject({
+          "zotlit-color-citation-links": false,
+          "zotlit-citation-popover": false,
+          "zotlit-author-title-labels": false,
+        });
+        graph.renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "Literature/Doe 2024.md",
+          "",
+        );
+        expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
+        graph.setOptions({ "zotlit-citation-popover": true });
+        graph.renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "Literature/Doe 2024.md",
+          "",
+        );
+        expect(fixture.citationPopover.showWork).toHaveBeenCalled();
+      }),
+  );
 
-    await fixture.layoutReady();
-    fixture.fire("layout-change");
-    fixture.fire("active-leaf-change");
+  it.effect(
+    "installs once per renderer across repeated layout events and draws the additions",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const global = fixture.addLeaf("graph");
+        const local = fixture.addLeaf("localgraph");
 
-    for (const engine of [global, local]) {
-      expect(engine.renders).toEqual([
-        {
-          facaded: true,
-          resolved: EXPECTED_RESOLVED,
-          unresolved: EXPECTED_UNRESOLVED,
-        },
-      ]);
+        yield* fixture.layoutReady;
+        fixture.fire("layout-change");
+        fixture.fire("active-leaf-change");
+
+        for (const engine of [global, local]) {
+          expect(engine.renders).toEqual([
+            {
+              facaded: true,
+              resolved: EXPECTED_RESOLVED,
+              unresolved: EXPECTED_UNRESOLVED,
+            },
+          ]);
+          expect(engine.app).toBe(fixture.app);
+        }
+        global.renderer.onNodeClick(new MouseEvent("click"), "Other.md", "");
+        expect(global.nativeClicks).toEqual([["Other.md", ""]]);
+        // Wikilink occurrences cost a link-cache pass, so a graph that cannot
+        // take those edges away does not ask for them.
+        expect(fixture.citationIndex.citationsByPath).toHaveBeenCalledWith([
+          "citekey",
+        ]);
+      }),
+  );
+
+  it.effect(
+    "installs a graph opened after layout ready on the next layout change",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        yield* fixture.layoutReady;
+
+        const engine = fixture.addLeaf("graph");
+        expect(engine.renders).toEqual([]);
+        fixture.fire("layout-change");
+
+        expect(engine.renders).toHaveLength(1);
+        expect(engine.renders[0]!.facaded).toBe(true);
+      }),
+  );
+
+  it.effect("restores the real app when the native render throws", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture();
+      const engine = fixture.addLeaf("graph");
+      yield* fixture.layoutReady;
+
+      engine.throwNext = true;
+      fixture.citationIndex.emit("backfilled");
+      fixture.citationIndex.emit("changed");
+      yield* fixture.advance(150);
+
       expect(engine.app).toBe(fixture.app);
-    }
-    global.renderer.onNodeClick(new MouseEvent("click"), "Other.md", "");
-    expect(global.nativeClicks).toEqual([["Other.md", ""]]);
-    // Wikilink occurrences cost a link-cache pass, so a graph that cannot
-    // take those edges away does not ask for them.
-    expect(fixture.citationIndex.citationsByPath).toHaveBeenCalledWith([
-      "citekey",
-    ]);
-  });
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        "Graph render failed",
+        expect.objectContaining({ viewType: "graph" }),
+      );
+    }),
+  );
 
-  it("installs a graph opened after layout ready on the next layout change", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    await fixture.layoutReady();
+  it.effect(
+    "leaves a leaf with a missing member native and reports it once",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("graph");
+        delete (engine.renderer as { onNodeClick?: unknown }).onNodeClick;
+        yield* fixture.layoutReady;
+        fixture.fire("layout-change");
+        fixture.fire("active-leaf-change");
 
-    const engine = fixture.addLeaf("graph");
-    expect(engine.renders).toEqual([]);
-    fixture.fire("layout-change");
+        expect(engine.renders).toEqual([]);
+        expect(Object.hasOwn(engine, "render")).toBe(false);
+        expect(warn).toHaveBeenCalledExactlyOnceWith(
+          "Graph leaf is missing an internal member; left native",
+          { viewType: "graph", missing: ["renderer.onNodeClick"] },
+        );
+      }),
+  );
 
-    expect(engine.renders).toHaveLength(1);
-    expect(engine.renders[0]!.facaded).toBe(true);
-  });
+  it.effect("installs nothing while the Graph core plugin is disabled", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture({ graphEnabled: false });
+      const engine = fixture.addLeaf("graph");
+      yield* fixture.layoutReady;
 
-  it("restores the real app when the native render throws", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
+      expect(engine.renders).toEqual([]);
+      expect(Object.hasOwn(engine, "render")).toBe(false);
+    }),
+  );
 
-    engine.throwNext = true;
-    fixture.citationIndex.emit("backfilled");
-    vi.useFakeTimers();
-    fixture.citationIndex.emit("changed");
-    vi.runAllTimers();
+  it.effect(
+    "waits for a deferred leaf without a report, then installs on the layout change its load fires",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const { engine, load } = fixture.addDeferredLeaf("localgraph");
+        yield* fixture.layoutReady;
+        fixture.fire("layout-change");
+        fixture.fire("active-leaf-change");
 
-    expect(engine.app).toBe(fixture.app);
-    expect(warn).toHaveBeenCalledExactlyOnceWith(
-      "Graph render failed",
-      expect.objectContaining({ viewType: "graph" }),
-    );
-  });
+        expect(engine.renders).toEqual([]);
+        expect(warn).not.toHaveBeenCalled();
 
-  it("leaves a leaf with a missing member native and reports it once", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    delete (engine.renderer as { onNodeClick?: unknown }).onNodeClick;
-    await fixture.layoutReady();
-    fixture.fire("layout-change");
-    fixture.fire("active-leaf-change");
+        load();
+        fixture.fire("layout-change");
+        yield* fixture.settleLookup;
 
-    expect(engine.renders).toEqual([]);
-    expect(Object.hasOwn(engine, "render")).toBe(false);
-    expect(warn).toHaveBeenCalledExactlyOnceWith(
-      "Graph leaf is missing an internal member; left native",
-      { viewType: "graph", missing: ["renderer.onNodeClick"] },
-    );
-  });
-
-  it("installs nothing while the Graph core plugin is disabled", async () => {
-    const fixture = await makeFixture({ graphEnabled: false });
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-
-    expect(engine.renders).toEqual([]);
-    expect(Object.hasOwn(engine, "render")).toBe(false);
-  });
-
-  it("waits for a deferred leaf without a report, then installs on the layout change its load fires", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const { engine, load } = fixture.addDeferredLeaf("localgraph");
-    await fixture.layoutReady();
-    fixture.fire("layout-change");
-    fixture.fire("active-leaf-change");
-
-    expect(engine.renders).toEqual([]);
-    expect(warn).not.toHaveBeenCalled();
-
-    load();
-    fixture.fire("layout-change");
-    await fixture.settleLookup();
-
-    expect(engine.renders).toEqual([
-      {
-        facaded: true,
-        resolved: EXPECTED_RESOLVED,
-        unresolved: EXPECTED_UNRESOLVED,
-      },
-    ]);
-    expect(warn).not.toHaveBeenCalled();
-  });
+        expect(engine.renders).toEqual([
+          {
+            facaded: true,
+            resolved: EXPECTED_RESOLVED,
+            unresolved: EXPECTED_UNRESOLVED,
+          },
+        ]);
+        expect(warn).not.toHaveBeenCalled();
+      }),
+  );
 });
 
 describe("GraphCitations clicks", () => {
-  it("opens a Cited Work Node through the citekey action and never natively", async () => {
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-
-    engine.renderer.onNodeClick(
-      new MouseEvent("click"),
-      "@typo2024",
-      "unresolved",
-    );
-
-    expect(fixture.openCitekey).toHaveBeenCalledExactlyOnceWith(
-      "typo2024",
-      false,
-    );
-    expect(engine.nativeClicks).toEqual([]);
-  });
-
-  it("opens an ambiguous Cited Work Node through the citekey action, which offers the candidates", async () => {
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("localgraph");
-    await fixture.layoutReady();
-
-    engine.renderer.onNodeClick(
-      new MouseEvent("click"),
-      "@roe2025",
-      "unresolved",
-    );
-
-    expect(fixture.openCitekey).toHaveBeenCalledExactlyOnceWith(
-      "roe2025",
-      false,
-    );
-    expect(engine.nativeClicks).toEqual([]);
-  });
-
-  it.each([false, true])(
-    "replaces the hover target when a Literature Note is created and deleted (pointer in popover: %s)",
-    async (inPopover) => {
-      vi.useFakeTimers();
-      const fixture = await makePresentationFixture({ notes: {} });
-      await using service = fixture.service;
-      await service.ready;
-      const engine = fixture.addLeaf("graph");
-      await fixture.layoutReady();
-      const { renderer } = engine;
-      renderer.nodeLookup["@doe2024"] = { x: 2, y: 3 };
-      renderer.onNodeHover(
-        new MouseEvent("mouseover"),
-        "@doe2024",
-        "unresolved",
+  it.effect("interrupts a pending open when the plugin unloads", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makePresentationFixture();
+      let interrupted = false;
+      fixture.openCitekey.mockImplementation(() =>
+        Effect.never.pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              interrupted = true;
+            }),
+          ),
+        ),
       );
-      const initial = fixture.citationPopover.showWork.mock.lastCall![0];
-      expect(initial.work).toEqual({ kind: "citekey", citekey: "doe2024" });
-      const old = fakePopover(initial.targetEl);
-      const hide = vi.fn();
-      old.hide = hide;
-      engine.hoverPopover = old;
-      if (inPopover) renderer.onNodeUnhover();
+      const engine = fixture.addLeaf("graph");
+      yield* fixture.layoutReady;
+
       engine.renderer.onNodeClick(
         new MouseEvent("click"),
-        "@doe2024",
+        "@typo2024",
         "unresolved",
       );
-      expect(fixture.openCitekey).toHaveBeenCalledExactlyOnceWith(
-        "doe2024",
-        false,
+      expect(fixture.openCitekey).toHaveBeenCalledOnce();
+      yield* fixture.unload;
+
+      expect(interrupted).toBe(true);
+    }),
+  );
+
+  it.effect(
+    "opens a Cited Work Node through the citekey action and never natively",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture();
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+
+        engine.renderer.onNodeClick(
+          new MouseEvent("click"),
+          "@typo2024",
+          "unresolved",
+        );
+
+        expect(fixture.openCitekey).toHaveBeenCalledExactlyOnceWith(
+          "typo2024",
+          false,
+        );
+        expect(engine.nativeClicks).toEqual([]);
+      }),
+  );
+
+  it.effect(
+    "opens an ambiguous Cited Work Node through the citekey action, which offers the candidates",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture();
+        const engine = fixture.addLeaf("localgraph");
+        yield* fixture.layoutReady;
+
+        engine.renderer.onNodeClick(
+          new MouseEvent("click"),
+          "@roe2025",
+          "unresolved",
+        );
+
+        expect(fixture.openCitekey).toHaveBeenCalledExactlyOnceWith(
+          "roe2025",
+          false,
+        );
+        expect(engine.nativeClicks).toEqual([]);
+      }),
+  );
+
+  it.effect.each([false, true])(
+    "replaces the hover target when a Literature Note is created and deleted (pointer in popover: %s)",
+    (inPopover) =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture({ notes: {} });
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+        const { renderer } = engine;
+        renderer.nodeLookup["@doe2024"] = { x: 2, y: 3 };
+        renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "@doe2024",
+          "unresolved",
+        );
+        const initial = fixture.citationPopover.showWork.mock.lastCall![0];
+        expect(initial.work).toEqual({ kind: "citekey", citekey: "doe2024" });
+        const old = fakePopover(initial.targetEl);
+        const hide = vi.fn();
+        old.hide = hide;
+        engine.hoverPopover = old;
+        if (inPopover) renderer.onNodeUnhover();
+        engine.renderer.onNodeClick(
+          new MouseEvent("click"),
+          "@doe2024",
+          "unresolved",
+        );
+        expect(fixture.openCitekey).toHaveBeenCalledExactlyOnceWith(
+          "doe2024",
+          false,
+        );
+
+        delete renderer.nodeLookup["@doe2024"];
+        yield* fixture.writeNote("Literature/Doe 2024.md", "DEE23456");
+        yield* fixture.advance(400);
+        expect(hide).toHaveBeenCalledOnce();
+        renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "Literature/Doe 2024.md",
+          "",
+        );
+        const created = fixture.citationPopover.showWork.mock.lastCall![0];
+        expect(created.work).toEqual({ kind: "item", indexedKey: "DEE23456" });
+        created.open("DEE23456", "tab");
+        expect(fixture.openIndexedKey).toHaveBeenCalledExactlyOnceWith(
+          "DEE23456",
+          "tab",
+        );
+        const notePopover = fakePopover(created.targetEl);
+        const hideNote = vi.fn();
+        notePopover.hide = hideNote;
+        engine.hoverPopover = notePopover;
+        if (inPopover) renderer.onNodeUnhover();
+
+        delete renderer.nodeLookup["Literature/Doe 2024.md"];
+        renderer.nodeLookup["@doe2024"] = { x: 2, y: 3 };
+        yield* fixture.writeNote("Literature/Doe 2024.md", undefined);
+        yield* fixture.advance(400);
+        expect(hideNote).toHaveBeenCalledOnce();
+        renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "@doe2024",
+          "unresolved",
+        );
+        expect(fixture.citationPopover.showWork.mock.lastCall![0].work).toEqual(
+          {
+            kind: "citekey",
+            citekey: "doe2024",
+          },
+        );
+      }),
+  );
+
+  it.effect("calls through for every other node", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makePresentationFixture();
+      const engine = fixture.addLeaf("graph");
+      yield* fixture.layoutReady;
+
+      engine.renderer.onNodeClick(
+        new MouseEvent("click"),
+        "Literature/Doe 2024.md",
+        "",
+      );
+      engine.renderer.onNodeClick(
+        new MouseEvent("click"),
+        "missing",
+        "unresolved",
       );
 
-      delete renderer.nodeLookup["@doe2024"];
-      await fixture.writeNote("Literature/Doe 2024.md", "DEE23456");
-      await vi.advanceTimersByTimeAsync(400);
-      expect(hide).toHaveBeenCalledOnce();
-      renderer.onNodeHover(
+      expect(engine.nativeClicks).toEqual([
+        ["Literature/Doe 2024.md", ""],
+        ["missing", "unresolved"],
+      ]);
+      expect(fixture.openCitekey).not.toHaveBeenCalled();
+    }),
+  );
+});
+
+describe("GraphCitations right-clicks", () => {
+  it.effect(
+    "offers every action for a Cited Work Node whose key names one item",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+
+        const menu = rightClick(engine, "@pine2023");
+
+        expect(menu?.items.map((item) => item.title)).toEqual([
+          m.graph_citations_menu_create_note(),
+          m.references_open_in_zotero(),
+          m.graph_citations_menu_copy_citekey(),
+        ]);
+        expect(engine.nativeRightClicks).toEqual([]);
+        expect(fixture.trigger).toHaveBeenCalledWith(
+          "zotlit:graph-cited-work-menu",
+          menu,
+          expect.objectContaining({ citekey: "pine2023" }),
+        );
+
+        const opened = vi.spyOn(window, "open").mockReturnValue(null);
+        const copied = vi
+          .spyOn(navigator.clipboard, "writeText")
+          .mockResolvedValue();
+        for (const item of menu!.items) item.click();
+
+        expect(fixture.openCitekey).toHaveBeenCalledExactlyOnceWith(
+          "pine2023",
+          false,
+        );
+        expect(opened).toHaveBeenCalledExactlyOnceWith(
+          "zotero://select/groups/4/items/PINE2345",
+        );
+        expect(copied).toHaveBeenCalledExactlyOnceWith("pine2023");
+      }),
+  );
+
+  it.effect(
+    "leaves out Open in Zotero for an ambiguous key, which names no single item",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("localgraph");
+        yield* fixture.layoutReady;
+
+        const menu = rightClick(engine, "@roe2025");
+
+        expect(menu?.items.map((item) => item.title)).toEqual([
+          m.graph_citations_menu_create_note(),
+          m.graph_citations_menu_copy_citekey(),
+        ]);
+        menu!.items[0]!.click();
+        expect(fixture.openCitekey).toHaveBeenCalledExactlyOnceWith(
+          "roe2025",
+          false,
+        );
+      }),
+  );
+
+  it.effect("offers the citation key alone for a key that names no item", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture();
+      const engine = fixture.addLeaf("graph");
+      yield* fixture.layoutReady;
+
+      const menu = rightClick(engine, "@typo2024");
+
+      expect(menu?.items.map((item) => item.title)).toEqual([
+        m.graph_citations_menu_copy_citekey(),
+      ]);
+      const copied = vi
+        .spyOn(navigator.clipboard, "writeText")
+        .mockResolvedValue();
+      menu!.items[0]!.click();
+
+      expect(copied).toHaveBeenCalledExactlyOnceWith("typo2024");
+      expect(fixture.openCitekey).not.toHaveBeenCalled();
+    }),
+  );
+
+  it.effect(
+    "offers the create action while the resolution snapshot is cold",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        fixture.citationIndex.cold = true;
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+
+        // The key names one Item once the snapshot warms, and the menu cannot read
+        // that yet: create shows, and Open in Zotero waits for a named Item.
+        const menu = rightClick(engine, "@doe2024");
+
+        expect(menu?.items.map((item) => item.title)).toEqual([
+          m.graph_citations_menu_create_note(),
+          m.graph_citations_menu_copy_citekey(),
+        ]);
+        menu!.items[0]!.click();
+        expect(fixture.openCitekey).toHaveBeenCalledExactlyOnceWith(
+          "doe2024",
+          false,
+        );
+      }),
+  );
+
+  it.effect(
+    "calls through for every node while the additions carry no Cited Work Node",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        fixture.citationIndex.citationsByPath.mockReturnValue(
+          new Map<string, readonly CitationOccurrence[]>(),
+        );
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+
+        engine.renderer.onNodeClick(
+          new MouseEvent("click"),
+          "@pine2023",
+          "unresolved",
+        );
+
+        expect(rightClick(engine, "@pine2023")).toBeNull();
+        expect(engine.nativeClicks).toEqual([["@pine2023", "unresolved"]]);
+        expect(engine.nativeRightClicks).toEqual([["@pine2023", "unresolved"]]);
+        expect(fixture.openCitekey).not.toHaveBeenCalled();
+      }),
+  );
+
+  it.effect("calls through to the native menu for every other node", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture();
+      const engine = fixture.addLeaf("graph");
+      yield* fixture.layoutReady;
+
+      expect(rightClick(engine, "Literature/Doe 2024.md", "")).toBeNull();
+      expect(rightClick(engine, "missing", "unresolved")).toBeNull();
+
+      expect(engine.nativeRightClicks).toEqual([
+        ["Literature/Doe 2024.md", ""],
+        ["missing", "unresolved"],
+      ]);
+      expect(fixture.openCitekey).not.toHaveBeenCalled();
+    }),
+  );
+});
+
+describe("GraphCitations hovers", () => {
+  it.effect(
+    "closes citation details when this view's popover control is turned off",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture();
+        const engine = fixture.addLeaf("graph");
+        engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
+        yield* fixture.layoutReady;
+        engine.renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "Literature/Doe 2024.md",
+          "",
+        );
+        const target =
+          fixture.citationPopover.showWork.mock.calls[0]![0].targetEl;
+        const popover = Object.assign(fakePopover(target), { hide: vi.fn() });
+        engine.hoverPopover = popover;
+        engine.setOptions({ "zotlit-citation-popover": false });
+        expect(popover.hide).toHaveBeenCalledOnce();
+      }),
+  );
+
+  it.effect(
+    "requires the platform modifier for graph popovers only when enabled",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture({
+          settings: { "citation.hover-require-mod-graph": true },
+        });
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+        vi.spyOn(Keymap, "isModifier").mockImplementation(
+          (event) => event.metaKey,
+        );
+
+        hoverEach(engine);
+        expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
+        expect(engine.nativeHovers).toEqual([]);
+        expect(
+          engine.renderer.containerEl.querySelector(".zt-graph-hover-anchor"),
+        ).toBeNull();
+
+        engine.renderer.onNodeHover(
+          new MouseEvent("mouseover", { metaKey: true }),
+          "Literature/Doe 2024.md",
+          "",
+        );
+        expect(
+          fixture.citationPopover.showWork,
+        ).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({
+            work: { kind: "item", indexedKey: "DEE23456" },
+          }),
+        );
+        engine.renderer.onNodeHover(
+          new MouseEvent("mouseover", { metaKey: true }),
+          "@typo2024",
+          "unresolved",
+        );
+        expect(fixture.citationPopover.showWork).toHaveBeenCalledTimes(2);
+
+        fixture.citationPopover.showWork.mockClear();
+        fixture.settings.update({ "citation.hover-require-mod-graph": false });
+        hoverEach(engine);
+        expect(fixture.citationPopover.showWork).toHaveBeenCalledTimes(2);
+      }),
+  );
+
+  it.effect(
+    "shows the Citation Popover of a Cited Work Node, anchored at the node",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture();
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+
+        engine.renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "@typo2024",
+          "unresolved",
+        );
+
+        expect(fixture.citationPopover.showWork).toHaveBeenCalledOnce();
+        const request = fixture.citationPopover.showWork.mock.calls[0]![0];
+        expect(request).toMatchObject({
+          hoverParent: engine,
+          work: { kind: "citekey", citekey: "typo2024" },
+        });
+        expect(request).not.toHaveProperty("sourcePath");
+        // The node sits at world (10, 20), drawn at scale 2 with pan (4, 6).
+        const anchor = request.targetEl as HTMLElement;
+        expect(anchor.parentElement).toBe(engine.renderer.containerEl);
+        expect([anchor.style.left, anchor.style.top]).toEqual(["24px", "46px"]);
+        expect(engine.nativeHovers).toEqual([]);
+      }),
+  );
+
+  it.effect("interrupts a pending popover when the plugin unloads", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makePresentationFixture();
+      let interrupted = false;
+      fixture.citationPopover.showWork.mockImplementation(() =>
+        Effect.never.pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              interrupted = true;
+            }),
+          ),
+        ),
+      );
+      const engine = fixture.addLeaf("graph");
+      yield* fixture.layoutReady;
+
+      engine.renderer.onNodeHover(
+        new MouseEvent("mouseover"),
+        "@typo2024",
+        "unresolved",
+      );
+      expect(fixture.citationPopover.showWork).toHaveBeenCalledOnce();
+      yield* fixture.unload;
+
+      expect(interrupted).toBe(true);
+    }),
+  );
+
+  it.effect(
+    "shows the Citation Popover of the Item a Literature Note carries",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture();
+        const engine = fixture.addLeaf("localgraph");
+        yield* fixture.layoutReady;
+
+        engine.renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "Literature/Doe 2024.md",
+          "",
+        );
+
+        expect(fixture.citationPopover.showWork).toHaveBeenCalledOnce();
+        const request = fixture.citationPopover.showWork.mock.calls[0]![0];
+        expect(request).toMatchObject({
+          work: { kind: "item", indexedKey: "DEE23456" },
+        });
+        // The node sits at world (-5, 5), drawn at scale 2 with pan (4, 6).
+        const anchor = request.targetEl as HTMLElement;
+        expect([anchor.style.left, anchor.style.top]).toEqual(["-6px", "16px"]);
+        expect(engine.nativeHovers).toEqual([]);
+      }),
+  );
+
+  it.effect(
+    "keeps the native hover on every node while the Hover Action is off",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture({
+          settings: {
+            "citation.hover-action": "off",
+            "citation.hover-require-mod-graph": true,
+          },
+        });
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+
+        hoverEach(engine);
+
+        expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
+        expect(engine.nativeHovers).toEqual([
+          ["@typo2024", "unresolved"],
+          ["Literature/Doe 2024.md", ""],
+        ]);
+      }),
+  );
+
+  it.effect(
+    "asks for a Literature Note's page preview under the shared citekey source, and shows nothing for a Cited Work Node",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture({
+          settings: {
+            "citation.hover-action": "page-preview",
+            "citation.hover-require-mod-graph": true,
+          },
+        });
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+
+        hoverEach(engine);
+
+        expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
+        // Both node kinds are answered here, so neither reaches the graph's own
+        // hover — and with it the graph's row of Obsidian's Page preview settings.
+        expect(engine.nativeHovers).toEqual([]);
+        expect(fixture.trigger).toHaveBeenCalledExactlyOnceWith(
+          "hover-link",
+          expect.objectContaining({
+            source: CITEKEY_HOVER_SOURCE,
+            hoverParent: engine,
+            linktext: "Literature/Doe 2024.md",
+            sourcePath: "",
+          }),
+        );
+        // The node sits at world (-5, 5), drawn at scale 2 with pan (4, 6).
+        const link = fixture.trigger.mock.calls[0]![1] as {
+          targetEl: HTMLElement;
+        };
+        expect(link.targetEl.parentElement).toBe(engine.renderer.containerEl);
+        expect([link.targetEl.style.left, link.targetEl.style.top]).toEqual([
+          "-6px",
+          "16px",
+        ]);
+      }),
+  );
+
+  it.effect(
+    "shows the Citation Popover of a Literature Note only a wikilink Citation cites",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture({
+          wikilinkCitations: true,
+          notes: {
+            "Literature/Doe 2024.md": "DEE23456",
+            "Literature/Lee 2019.md": "LEE56789",
+          },
+        });
+        // Wiki cites Lee by wikilink alone, which adds no edge of its own.
+        fixture.citationIndex.wikilinks.set("Notes/Wiki.md", [
+          occurrence("Literature/Lee 2019", "wikilink"),
+        ]);
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+
+        engine.renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "Literature/Lee 2019.md",
+          "",
+        );
+
+        expect(fixture.citationPopover.showWork).toHaveBeenCalledOnce();
+        expect(
+          fixture.citationPopover.showWork.mock.calls[0]![0],
+        ).toMatchObject({
+          work: { kind: "item", indexedKey: "LEE56789" },
+        });
+        expect(engine.nativeHovers).toEqual([]);
+      }),
+  );
+
+  it.effect(
+    "shows a source-less popover on a Literature Note no document cites",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture();
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+
+        engine.renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "Literature/Kay 2020.md",
+          "",
+        );
+
+        expect(
+          fixture.citationPopover.showWork,
+        ).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({
+            work: { kind: "item", indexedKey: "KAY23456" },
+          }),
+        );
+        expect(engine.nativeHovers).toEqual([]);
+      }),
+  );
+
+  it.effect("calls through for every other node", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makePresentationFixture();
+      const engine = fixture.addLeaf("graph");
+      yield* fixture.layoutReady;
+
+      engine.renderer.onNodeHover(new MouseEvent("mouseover"), "Other.md", "");
+      engine.renderer.onNodeHover(
+        new MouseEvent("mouseover"),
+        "missing",
+        "unresolved",
+      );
+
+      expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
+      expect(engine.nativeHovers).toEqual([
+        ["Other.md", ""],
+        ["missing", "unresolved"],
+      ]);
+    }),
+  );
+
+  it.effect(
+    "retires the anchor on the unhover no popover outlives, and keeps it for one that does",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture();
+        const engine = fixture.addLeaf("graph");
+        const { containerEl } = engine.renderer;
+        yield* fixture.layoutReady;
+
+        engine.renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "@typo2024",
+          "unresolved",
+        );
+        expect(containerEl.children).toHaveLength(1);
+
+        engine.hoverPopover = fakePopover(
+          containerEl.children[0] as HTMLElement,
+        );
+        engine.renderer.onNodeUnhover();
+        expect(containerEl.children).toHaveLength(1);
+        expect(engine.nativeUnhovers).toBe(1);
+
+        engine.hoverPopover = null;
+        engine.renderer.onNodeUnhover();
+        expect(containerEl.children).toHaveLength(0);
+        expect(engine.nativeUnhovers).toBe(2);
+      }),
+  );
+
+  it.effect(
+    "gives a second hovered node an anchor of its own, so its preview is not read as the first one again",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture();
+        const engine = fixture.addLeaf("graph");
+        const { containerEl } = engine.renderer;
+        yield* fixture.layoutReady;
+        engine.renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "@typo2024",
+          "unresolved",
+        );
+        const first = containerEl.children[0] as HTMLElement;
+        // The first popover is still on its way out, so its anchor stays.
+        engine.hoverPopover = fakePopover(first);
+        engine.renderer.onNodeUnhover();
+
+        engine.renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "Literature/Doe 2024.md",
+          "",
+        );
+
+        const shown = fixture.citationPopover.showWork.mock.lastCall![0];
+        expect(shown.targetEl).not.toBe(first);
+        expect(containerEl.children).toHaveLength(2);
+      }),
+  );
+
+  it.effect("lets go of a hold when the hovered graph closes", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makePresentationFixture();
+      const engine = fixture.addLeaf("graph", "hovered");
+      const other = fixture.addLeaf("localgraph", "remaining");
+      const { containerEl } = engine.renderer;
+      yield* fixture.layoutReady;
+      engine.renderer.onNodeHover(
+        new MouseEvent("mouseover"),
+        "@typo2024",
+        "unresolved",
+      );
+      const popover = fakePopover();
+      engine.hoverPopover = popover;
+      yield* fixture.advance(200);
+      expect(popover.transition).toHaveBeenCalledOnce();
+
+      // Closing by keyboard leaves the pointer where it was, so nothing
+      // unhovers the node on the way out.
+      fixture.closeLeaf("hovered");
+      expect(fixture.citationIndex.lookupCount).toBe(1);
+      expect(rowNames(other).length).toBeGreaterThan(0);
+
+      popover.onTarget = false;
+      yield* fixture.advance(600);
+      expect(popover.onTarget).toBe(false);
+      expect(popover.transition).toHaveBeenCalledOnce();
+      expect(containerEl.children).toHaveLength(0);
+      expect(rowNames(engine)).toEqual([]);
+      fixture.closeLeaf("remaining");
+      expect(fixture.citationIndex.lookupCount).toBe(0);
+    }),
+  );
+
+  it.effect(
+    "lets go of a hold on the window that armed it, after the graph moved to a pop-out",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture();
+        const engine = fixture.addLeaf("graph", "hovered");
+        const { containerEl } = engine.renderer;
+        yield* fixture.layoutReady;
+        engine.renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "@typo2024",
+          "unresolved",
+        );
+        const popover = fakePopover();
+        engine.hoverPopover = popover;
+        yield* fixture.advance(200);
+        expect(popover.transition).toHaveBeenCalledOnce();
+
+        // The reader moves the graph to a pop-out window: its container answers
+        // that window now, and the hold is the main window's still.
+        const popout = { clearInterval: vi.fn() };
+        Object.defineProperty(containerEl, "win", {
+          configurable: true,
+          value: popout,
+        });
+        fixture.closeLeaf("hovered");
+
+        popover.onTarget = false;
+        yield* fixture.advance(600);
+        expect(popover.onTarget).toBe(false);
+        expect(popover.transition).toHaveBeenCalledOnce();
+        expect(popout.clearInterval).not.toHaveBeenCalled();
+      }),
+  );
+
+  it.effect(
+    "states the popover's target again after Obsidian's sweep drops it, until the pointer leaves",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture();
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+
+        engine.renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "@typo2024",
+          "unresolved",
+        );
+        const popover = fakePopover();
+        engine.hoverPopover = popover;
+        // What Obsidian's own sweep does to a popover it finds no pointer on.
+        popover.onTarget = false;
+        yield* fixture.advance(200);
+
+        expect(popover.onTarget).toBe(true);
+        expect(popover.transition).toHaveBeenCalledOnce();
+
+        popover.onTarget = false;
+        engine.renderer.onNodeUnhover();
+        yield* fixture.advance(600);
+
+        expect(popover.onTarget).toBe(false);
+        expect(popover.transition).toHaveBeenCalledOnce();
+      }),
+  );
+
+  it.effect(
+    "stops holding a popover that has hidden, with no unhover of its own",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture();
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+
+        engine.renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "@typo2024",
+          "unresolved",
+        );
+        const popover = fakePopover();
+        engine.hoverPopover = popover;
+        yield* fixture.advance(200);
+        expect(popover.transition).toHaveBeenCalledOnce();
+
+        // What Obsidian's own transition leaves behind once the popover is gone.
+        Object.assign(popover, { state: PopoverState.Hidden });
+        yield* fixture.advance(200);
+
+        // The hold released itself, so a popover shown again is no longer held.
+        Object.assign(popover, { state: PopoverState.Shown, onTarget: false });
+        yield* fixture.advance(600);
+
+        expect(popover.onTarget).toBe(false);
+        expect(popover.transition).toHaveBeenCalledOnce();
+      }),
+  );
+
+  it.effect(
+    "waits for a page preview that opens on Obsidian's own delay, then holds it",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture({
+          settings: {
+            "citation.hover-action": "page-preview",
+            "citation.hover-require-mod-graph": true,
+          },
+        });
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+
+        engine.renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "Literature/Doe 2024.md",
+          "",
+        );
+        // Obsidian's page preview opens well after the hover that asked for it,
+        // so the engine carries no popover for the first few beats of the hold.
+        yield* fixture.advance(400);
+        const popover = fakePopover();
+        popover.onTarget = false;
+        engine.hoverPopover = popover;
+        yield* fixture.advance(200);
+
+        expect(popover.onTarget).toBe(true);
+        expect(popover.transition).toHaveBeenCalledOnce();
+      }),
+  );
+
+  it.effect("gives up on a hover no popover ever answers", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makePresentationFixture({
+        settings: {
+          "citation.hover-action": "page-preview",
+          "citation.hover-require-mod-graph": true,
+        },
+      });
+      const engine = fixture.addLeaf("graph");
+      yield* fixture.layoutReady;
+
+      engine.renderer.onNodeHover(
         new MouseEvent("mouseover"),
         "Literature/Doe 2024.md",
         "",
       );
-      const created = fixture.citationPopover.showWork.mock.lastCall![0];
-      expect(created.work).toEqual({ kind: "item", indexedKey: "DEE23456" });
-      created.open("DEE23456", "tab");
-      expect(fixture.openIndexedKey).toHaveBeenCalledExactlyOnceWith(
-        "DEE23456",
-        "tab",
-      );
-      const notePopover = fakePopover(created.targetEl);
-      const hideNote = vi.fn();
-      notePopover.hide = hideNote;
-      engine.hoverPopover = notePopover;
-      if (inPopover) renderer.onNodeUnhover();
+      // Page preview waits for a held Mod, so a hover without one is answered
+      // by nothing at all and the hold has no popover to wait for.
+      yield* fixture.advance(2200);
+      const popover = fakePopover();
+      popover.onTarget = false;
+      engine.hoverPopover = popover;
+      yield* fixture.advance(600);
 
-      delete renderer.nodeLookup["Literature/Doe 2024.md"];
-      renderer.nodeLookup["@doe2024"] = { x: 2, y: 3 };
-      await fixture.writeNote("Literature/Doe 2024.md", undefined);
-      await vi.advanceTimersByTimeAsync(400);
-      expect(hideNote).toHaveBeenCalledOnce();
-      renderer.onNodeHover(
-        new MouseEvent("mouseover"),
-        "@doe2024",
-        "unresolved",
-      );
-      expect(fixture.citationPopover.showWork.mock.lastCall![0].work).toEqual({
-        kind: "citekey",
-        citekey: "doe2024",
-      });
-    },
+      expect(popover.onTarget).toBe(false);
+      expect(popover.transition).not.toHaveBeenCalled();
+    }),
   );
 
-  it("calls through for every other node", async () => {
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
+  it.effect(
+    "keeps the native hover on a node the renderer holds no place for",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture();
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+        delete engine.renderer.nodeLookup["Literature/Doe 2024.md"];
 
-    engine.renderer.onNodeClick(
-      new MouseEvent("click"),
-      "Literature/Doe 2024.md",
-      "",
-    );
-    engine.renderer.onNodeClick(
-      new MouseEvent("click"),
-      "missing",
-      "unresolved",
-    );
+        engine.renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "Literature/Doe 2024.md",
+          "",
+        );
 
-    expect(engine.nativeClicks).toEqual([
-      ["Literature/Doe 2024.md", ""],
-      ["missing", "unresolved"],
-    ]);
-    expect(fixture.openCitekey).not.toHaveBeenCalled();
-  });
-});
-
-describe("GraphCitations right-clicks", () => {
-  it("offers every action for a Cited Work Node whose key names one item", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-
-    const menu = rightClick(engine, "@pine2023");
-
-    expect(menu?.items.map((item) => item.title)).toEqual([
-      m.graph_citations_menu_create_note(),
-      m.references_open_in_zotero(),
-      m.graph_citations_menu_copy_citekey(),
-    ]);
-    expect(engine.nativeRightClicks).toEqual([]);
-    expect(fixture.trigger).toHaveBeenCalledWith(
-      "zotlit:graph-cited-work-menu",
-      menu,
-      expect.objectContaining({ citekey: "pine2023" }),
-    );
-
-    const opened = vi.spyOn(window, "open").mockReturnValue(null);
-    const copied = vi
-      .spyOn(navigator.clipboard, "writeText")
-      .mockResolvedValue();
-    for (const item of menu!.items) item.click();
-
-    expect(fixture.openCitekey).toHaveBeenCalledExactlyOnceWith(
-      "pine2023",
-      false,
-    );
-    expect(opened).toHaveBeenCalledExactlyOnceWith(
-      "zotero://select/groups/4/items/PINE2345",
-    );
-    expect(copied).toHaveBeenCalledExactlyOnceWith("pine2023");
-  });
-
-  it("leaves out Open in Zotero for an ambiguous key, which names no single item", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("localgraph");
-    await fixture.layoutReady();
-
-    const menu = rightClick(engine, "@roe2025");
-
-    expect(menu?.items.map((item) => item.title)).toEqual([
-      m.graph_citations_menu_create_note(),
-      m.graph_citations_menu_copy_citekey(),
-    ]);
-    menu!.items[0]!.click();
-    expect(fixture.openCitekey).toHaveBeenCalledExactlyOnceWith(
-      "roe2025",
-      false,
-    );
-  });
-
-  it("offers the citation key alone for a key that names no item", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-
-    const menu = rightClick(engine, "@typo2024");
-
-    expect(menu?.items.map((item) => item.title)).toEqual([
-      m.graph_citations_menu_copy_citekey(),
-    ]);
-    const copied = vi
-      .spyOn(navigator.clipboard, "writeText")
-      .mockResolvedValue();
-    menu!.items[0]!.click();
-
-    expect(copied).toHaveBeenCalledExactlyOnceWith("typo2024");
-    expect(fixture.openCitekey).not.toHaveBeenCalled();
-  });
-
-  it("offers the create action while the resolution snapshot is cold", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    fixture.citationIndex.cold = true;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-
-    // The key names one Item once the snapshot warms, and the menu cannot read
-    // that yet: create shows, and Open in Zotero waits for a named Item.
-    const menu = rightClick(engine, "@doe2024");
-
-    expect(menu?.items.map((item) => item.title)).toEqual([
-      m.graph_citations_menu_create_note(),
-      m.graph_citations_menu_copy_citekey(),
-    ]);
-    menu!.items[0]!.click();
-    expect(fixture.openCitekey).toHaveBeenCalledExactlyOnceWith(
-      "doe2024",
-      false,
-    );
-  });
-
-  it("calls through for every node while the additions carry no Cited Work Node", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    fixture.citationIndex.citationsByPath.mockReturnValue(
-      new Map<string, readonly CitationOccurrence[]>(),
-    );
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-
-    engine.renderer.onNodeClick(
-      new MouseEvent("click"),
-      "@pine2023",
-      "unresolved",
-    );
-
-    expect(rightClick(engine, "@pine2023")).toBeNull();
-    expect(engine.nativeClicks).toEqual([["@pine2023", "unresolved"]]);
-    expect(engine.nativeRightClicks).toEqual([["@pine2023", "unresolved"]]);
-    expect(fixture.openCitekey).not.toHaveBeenCalled();
-  });
-
-  it("calls through to the native menu for every other node", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-
-    expect(rightClick(engine, "Literature/Doe 2024.md", "")).toBeNull();
-    expect(rightClick(engine, "missing", "unresolved")).toBeNull();
-
-    expect(engine.nativeRightClicks).toEqual([
-      ["Literature/Doe 2024.md", ""],
-      ["missing", "unresolved"],
-    ]);
-    expect(fixture.openCitekey).not.toHaveBeenCalled();
-  });
-});
-
-describe("GraphCitations hovers", () => {
-  it("closes citation details when this view's popover control is turned off", async () => {
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
-    await fixture.layoutReady();
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "Literature/Doe 2024.md",
-      "",
-    );
-    const target = fixture.citationPopover.showWork.mock.calls[0]![0].targetEl;
-    const popover = Object.assign(fakePopover(target), { hide: vi.fn() });
-    engine.hoverPopover = popover;
-    engine.setOptions({ "zotlit-citation-popover": false });
-    expect(popover.hide).toHaveBeenCalledOnce();
-  });
-
-  it("requires the platform modifier for graph popovers only when enabled", async () => {
-    const fixture = await makePresentationFixture({
-      settings: { "citation.hover-require-mod-graph": true },
-    });
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-    vi.spyOn(Keymap, "isModifier").mockImplementation((event) => event.metaKey);
-
-    hoverEach(engine);
-    expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
-    expect(engine.nativeHovers).toEqual([]);
-    expect(
-      engine.renderer.containerEl.querySelector(".zt-graph-hover-anchor"),
-    ).toBeNull();
-
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover", { metaKey: true }),
-      "Literature/Doe 2024.md",
-      "",
-    );
-    expect(fixture.citationPopover.showWork).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({
-        work: { kind: "item", indexedKey: "DEE23456" },
+        expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
+        expect(engine.nativeHovers).toEqual([["Literature/Doe 2024.md", ""]]);
       }),
-    );
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover", { metaKey: true }),
-      "@typo2024",
-      "unresolved",
-    );
-    expect(fixture.citationPopover.showWork).toHaveBeenCalledTimes(2);
+  );
 
-    fixture.citationPopover.showWork.mockClear();
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.hover-require-mod-graph": false }),
-    );
-    hoverEach(engine);
-    expect(fixture.citationPopover.showWork).toHaveBeenCalledTimes(2);
-  });
+  it.effect(
+    "restores both hover members and takes the anchor away on teardown",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makePresentationFixture();
+        const engine = fixture.addLeaf("graph");
+        const nativeHover = engine.renderer.onNodeHover;
+        const nativeUnhover = engine.renderer.onNodeUnhover;
+        yield* fixture.layoutReady;
+        engine.renderer.onNodeHover(
+          new MouseEvent("mouseover"),
+          "@typo2024",
+          "unresolved",
+        );
 
-  it("shows the Citation Popover of a Cited Work Node, anchored at the node", async () => {
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
+        yield* fixture.unload;
 
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "@typo2024",
-      "unresolved",
-    );
-
-    expect(fixture.citationPopover.showWork).toHaveBeenCalledOnce();
-    const request = fixture.citationPopover.showWork.mock.calls[0]![0];
-    expect(request).toMatchObject({
-      hoverParent: engine,
-      work: { kind: "citekey", citekey: "typo2024" },
-    });
-    expect(request).not.toHaveProperty("sourcePath");
-    // The node sits at world (10, 20), drawn at scale 2 with pan (4, 6).
-    const anchor = request.targetEl as HTMLElement;
-    expect(anchor.parentElement).toBe(engine.renderer.containerEl);
-    expect([anchor.style.left, anchor.style.top]).toEqual(["24px", "46px"]);
-    expect(engine.nativeHovers).toEqual([]);
-  });
-
-  it("shows the Citation Popover of the Item a Literature Note carries", async () => {
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("localgraph");
-    await fixture.layoutReady();
-
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "Literature/Doe 2024.md",
-      "",
-    );
-
-    expect(fixture.citationPopover.showWork).toHaveBeenCalledOnce();
-    const request = fixture.citationPopover.showWork.mock.calls[0]![0];
-    expect(request).toMatchObject({
-      work: { kind: "item", indexedKey: "DEE23456" },
-    });
-    // The node sits at world (-5, 5), drawn at scale 2 with pan (4, 6).
-    const anchor = request.targetEl as HTMLElement;
-    expect([anchor.style.left, anchor.style.top]).toEqual(["-6px", "16px"]);
-    expect(engine.nativeHovers).toEqual([]);
-  });
-
-  it("keeps the native hover on every node while the Hover Action is off", async () => {
-    const fixture = await makePresentationFixture({
-      settings: {
-        "citation.hover-action": "off",
-        "citation.hover-require-mod-graph": true,
-      },
-    });
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-
-    hoverEach(engine);
-
-    expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
-    expect(engine.nativeHovers).toEqual([
-      ["@typo2024", "unresolved"],
-      ["Literature/Doe 2024.md", ""],
-    ]);
-  });
-
-  it("asks for a Literature Note's page preview under the shared citekey source, and shows nothing for a Cited Work Node", async () => {
-    const fixture = await makePresentationFixture({
-      settings: {
-        "citation.hover-action": "page-preview",
-        "citation.hover-require-mod-graph": true,
-      },
-    });
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-
-    hoverEach(engine);
-
-    expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
-    // Both node kinds are answered here, so neither reaches the graph's own
-    // hover — and with it the graph's row of Obsidian's Page preview settings.
-    expect(engine.nativeHovers).toEqual([]);
-    expect(fixture.trigger).toHaveBeenCalledExactlyOnceWith(
-      "hover-link",
-      expect.objectContaining({
-        source: CITEKEY_HOVER_SOURCE,
-        hoverParent: engine,
-        linktext: "Literature/Doe 2024.md",
-        sourcePath: "",
+        expect(engine.renderer.onNodeHover).toBe(nativeHover);
+        expect(engine.renderer.onNodeUnhover).toBe(nativeUnhover);
+        expect(engine.renderer.containerEl.children).toHaveLength(0);
       }),
-    );
-    // The node sits at world (-5, 5), drawn at scale 2 with pan (4, 6).
-    const link = fixture.trigger.mock.calls[0]![1] as { targetEl: HTMLElement };
-    expect(link.targetEl.parentElement).toBe(engine.renderer.containerEl);
-    expect([link.targetEl.style.left, link.targetEl.style.top]).toEqual([
-      "-6px",
-      "16px",
-    ]);
-  });
-
-  it("shows the Citation Popover of a Literature Note only a wikilink Citation cites", async () => {
-    const fixture = await makePresentationFixture({
-      wikilinkCitations: true,
-      notes: {
-        "Literature/Doe 2024.md": "DEE23456",
-        "Literature/Lee 2019.md": "LEE56789",
-      },
-    });
-    // Wiki cites Lee by wikilink alone, which adds no edge of its own.
-    fixture.citationIndex.wikilinks.set("Notes/Wiki.md", [
-      occurrence("Literature/Lee 2019", "wikilink"),
-    ]);
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "Literature/Lee 2019.md",
-      "",
-    );
-
-    expect(fixture.citationPopover.showWork).toHaveBeenCalledOnce();
-    expect(fixture.citationPopover.showWork.mock.calls[0]![0]).toMatchObject({
-      work: { kind: "item", indexedKey: "LEE56789" },
-    });
-    expect(engine.nativeHovers).toEqual([]);
-  });
-
-  it("shows a source-less popover on a Literature Note no document cites", async () => {
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "Literature/Kay 2020.md",
-      "",
-    );
-
-    expect(fixture.citationPopover.showWork).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({
-        work: { kind: "item", indexedKey: "KAY23456" },
-      }),
-    );
-    expect(engine.nativeHovers).toEqual([]);
-  });
-
-  it("calls through for every other node", async () => {
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-
-    engine.renderer.onNodeHover(new MouseEvent("mouseover"), "Other.md", "");
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "missing",
-      "unresolved",
-    );
-
-    expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
-    expect(engine.nativeHovers).toEqual([
-      ["Other.md", ""],
-      ["missing", "unresolved"],
-    ]);
-  });
-
-  it("retires the anchor on the unhover no popover outlives, and keeps it for one that does", async () => {
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    const { containerEl } = engine.renderer;
-    await fixture.layoutReady();
-
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "@typo2024",
-      "unresolved",
-    );
-    expect(containerEl.children).toHaveLength(1);
-
-    engine.hoverPopover = fakePopover(containerEl.children[0] as HTMLElement);
-    engine.renderer.onNodeUnhover();
-    expect(containerEl.children).toHaveLength(1);
-    expect(engine.nativeUnhovers).toBe(1);
-
-    engine.hoverPopover = null;
-    engine.renderer.onNodeUnhover();
-    expect(containerEl.children).toHaveLength(0);
-    expect(engine.nativeUnhovers).toBe(2);
-  });
-
-  it("gives a second hovered node an anchor of its own, so its preview is not read as the first one again", async () => {
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    const { containerEl } = engine.renderer;
-    await fixture.layoutReady();
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "@typo2024",
-      "unresolved",
-    );
-    const first = containerEl.children[0] as HTMLElement;
-    // The first popover is still on its way out, so its anchor stays.
-    engine.hoverPopover = fakePopover(first);
-    engine.renderer.onNodeUnhover();
-
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "Literature/Doe 2024.md",
-      "",
-    );
-
-    const shown = fixture.citationPopover.showWork.mock.lastCall![0];
-    expect(shown.targetEl).not.toBe(first);
-    expect(containerEl.children).toHaveLength(2);
-  });
-
-  it("lets go of a hold when the hovered graph closes", async () => {
-    vi.useFakeTimers();
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph", "hovered");
-    const other = fixture.addLeaf("localgraph", "remaining");
-    const { containerEl } = engine.renderer;
-    await fixture.layoutReady();
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "@typo2024",
-      "unresolved",
-    );
-    const popover = fakePopover();
-    engine.hoverPopover = popover;
-    vi.advanceTimersByTime(200);
-    expect(popover.transition).toHaveBeenCalledOnce();
-
-    // Closing by keyboard leaves the pointer where it was, so nothing
-    // unhovers the node on the way out.
-    fixture.closeLeaf("hovered");
-    expect(fixture.citationIndex.lookupCount).toBe(1);
-    expect(rowNames(other).length).toBeGreaterThan(0);
-
-    popover.onTarget = false;
-    vi.advanceTimersByTime(600);
-    expect(popover.onTarget).toBe(false);
-    expect(popover.transition).toHaveBeenCalledOnce();
-    expect(containerEl.children).toHaveLength(0);
-    expect(rowNames(engine)).toEqual([]);
-    fixture.closeLeaf("remaining");
-    expect(fixture.citationIndex.lookupCount).toBe(0);
-  });
-
-  it("lets go of a hold on the window that armed it, after the graph moved to a pop-out", async () => {
-    vi.useFakeTimers();
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph", "hovered");
-    const { containerEl } = engine.renderer;
-    await fixture.layoutReady();
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "@typo2024",
-      "unresolved",
-    );
-    const popover = fakePopover();
-    engine.hoverPopover = popover;
-    vi.advanceTimersByTime(200);
-    expect(popover.transition).toHaveBeenCalledOnce();
-
-    // The reader moves the graph to a pop-out window: its container answers
-    // that window now, and the hold is the main window's still.
-    const popout = { clearInterval: vi.fn() };
-    Object.defineProperty(containerEl, "win", {
-      configurable: true,
-      value: popout,
-    });
-    fixture.closeLeaf("hovered");
-
-    popover.onTarget = false;
-    vi.advanceTimersByTime(600);
-    expect(popover.onTarget).toBe(false);
-    expect(popover.transition).toHaveBeenCalledOnce();
-    expect(popout.clearInterval).not.toHaveBeenCalled();
-  });
-
-  it("states the popover's target again after Obsidian's sweep drops it, until the pointer leaves", async () => {
-    vi.useFakeTimers();
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "@typo2024",
-      "unresolved",
-    );
-    const popover = fakePopover();
-    engine.hoverPopover = popover;
-    // What Obsidian's own sweep does to a popover it finds no pointer on.
-    popover.onTarget = false;
-    vi.advanceTimersByTime(200);
-
-    expect(popover.onTarget).toBe(true);
-    expect(popover.transition).toHaveBeenCalledOnce();
-
-    popover.onTarget = false;
-    engine.renderer.onNodeUnhover();
-    vi.advanceTimersByTime(600);
-
-    expect(popover.onTarget).toBe(false);
-    expect(popover.transition).toHaveBeenCalledOnce();
-  });
-
-  it("stops holding a popover that has hidden, with no unhover of its own", async () => {
-    vi.useFakeTimers();
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "@typo2024",
-      "unresolved",
-    );
-    const popover = fakePopover();
-    engine.hoverPopover = popover;
-    vi.advanceTimersByTime(200);
-    expect(popover.transition).toHaveBeenCalledOnce();
-
-    // What Obsidian's own transition leaves behind once the popover is gone.
-    Object.assign(popover, { state: PopoverState.Hidden });
-    vi.advanceTimersByTime(200);
-
-    // The hold released itself, so a popover shown again is no longer held.
-    Object.assign(popover, { state: PopoverState.Shown, onTarget: false });
-    vi.advanceTimersByTime(600);
-
-    expect(popover.onTarget).toBe(false);
-    expect(popover.transition).toHaveBeenCalledOnce();
-  });
-
-  it("waits for a page preview that opens on Obsidian's own delay, then holds it", async () => {
-    vi.useFakeTimers();
-    const fixture = await makePresentationFixture({
-      settings: {
-        "citation.hover-action": "page-preview",
-        "citation.hover-require-mod-graph": true,
-      },
-    });
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "Literature/Doe 2024.md",
-      "",
-    );
-    // Obsidian's page preview opens well after the hover that asked for it,
-    // so the engine carries no popover for the first few beats of the hold.
-    vi.advanceTimersByTime(400);
-    const popover = fakePopover();
-    popover.onTarget = false;
-    engine.hoverPopover = popover;
-    vi.advanceTimersByTime(200);
-
-    expect(popover.onTarget).toBe(true);
-    expect(popover.transition).toHaveBeenCalledOnce();
-  });
-
-  it("gives up on a hover no popover ever answers", async () => {
-    vi.useFakeTimers();
-    const fixture = await makePresentationFixture({
-      settings: {
-        "citation.hover-action": "page-preview",
-        "citation.hover-require-mod-graph": true,
-      },
-    });
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "Literature/Doe 2024.md",
-      "",
-    );
-    // Page preview waits for a held Mod, so a hover without one is answered
-    // by nothing at all and the hold has no popover to wait for.
-    vi.advanceTimersByTime(2200);
-    const popover = fakePopover();
-    popover.onTarget = false;
-    engine.hoverPopover = popover;
-    vi.advanceTimersByTime(600);
-
-    expect(popover.onTarget).toBe(false);
-    expect(popover.transition).not.toHaveBeenCalled();
-  });
-
-  it("keeps the native hover on a node the renderer holds no place for", async () => {
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-    delete engine.renderer.nodeLookup["Literature/Doe 2024.md"];
-
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "Literature/Doe 2024.md",
-      "",
-    );
-
-    expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
-    expect(engine.nativeHovers).toEqual([["Literature/Doe 2024.md", ""]]);
-  });
-
-  it("restores both hover members and takes the anchor away on teardown", async () => {
-    const fixture = await makePresentationFixture();
-    const service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    const nativeHover = engine.renderer.onNodeHover;
-    const nativeUnhover = engine.renderer.onNodeUnhover;
-    await fixture.layoutReady();
-    engine.renderer.onNodeHover(
-      new MouseEvent("mouseover"),
-      "@typo2024",
-      "unresolved",
-    );
-
-    await service[Symbol.asyncDispose]();
-
-    expect(engine.renderer.onNodeHover).toBe(nativeHover);
-    expect(engine.renderer.onNodeUnhover).toBe(nativeUnhover);
-    expect(engine.renderer.containerEl.children).toHaveLength(0);
-  });
+  );
 });
 
 /** A popover already shown, as the engine holds the one its nodes stand on. */
@@ -1923,48 +2228,49 @@ function hoverEach(engine: FakeEngine): void {
 }
 
 describe("GraphCitations re-rendering", () => {
-  it("requests only the citekeys in the current graph facts", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    fixture.addLeaf("graph");
-    await fixture.layoutReady();
+  it.effect("requests only the citekeys in the current graph facts", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture();
+      fixture.addLeaf("graph");
+      yield* fixture.layoutReady;
 
-    expect(fixture.citationIndex.lookupRequests.at(-1)).toEqual([
-      "doe2024",
-      "pine2023",
-      "roe2025",
-      "typo2024",
-    ]);
-  });
+      expect(fixture.citationIndex.lookupRequests.at(-1)).toEqual([
+        "doe2024",
+        "pine2023",
+        "roe2025",
+        "typo2024",
+      ]);
+    }),
+  );
 
-  it("re-renders every installed leaf once per burst of index events", async () => {
-    vi.useFakeTimers();
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const global = fixture.addLeaf("graph");
-    const local = fixture.addLeaf("localgraph");
-    await fixture.layoutReady();
+  it.effect(
+    "re-renders every installed leaf once per burst of index events",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const global = fixture.addLeaf("graph");
+        const local = fixture.addLeaf("localgraph");
+        yield* fixture.layoutReady;
 
-    fixture.citationIndex.emit("changed");
-    fixture.citationIndex.emit("changed");
-    fixture.citationIndex.emit("backfilled");
-    vi.runAllTimers();
-    expect(global.renders).toHaveLength(2);
-    expect(local.renders).toHaveLength(2);
+        fixture.citationIndex.emit("changed");
+        fixture.citationIndex.emit("changed");
+        fixture.citationIndex.emit("backfilled");
+        yield* fixture.advance(150);
+        expect(global.renders).toHaveLength(2);
+        expect(local.renders).toHaveLength(2);
 
-    for (const event of ["resolution-changed", "membership-changed"]) {
-      fixture.citationIndex.emit(event);
-      vi.runAllTimers();
-    }
-    await fixture.writeNote("Literature/Poe 2026.md", "PEE45678");
-    vi.runAllTimers();
+        for (const event of ["resolution-changed", "membership-changed"]) {
+          fixture.citationIndex.emit(event);
+          yield* fixture.advance(150);
+        }
+        yield* fixture.writeNote("Literature/Poe 2026.md", "PEE45678");
+        yield* fixture.advance(150);
 
-    expect(global.renders).toHaveLength(5);
-    expect(local.renders).toHaveLength(5);
-    expect(global.renders.every((render) => render.facaded)).toBe(true);
-  });
+        expect(global.renders).toHaveLength(5);
+        expect(local.renders).toHaveLength(5);
+        expect(global.renders.every((render) => render.facaded)).toBe(true);
+      }),
+  );
 });
 
 describe("GraphCitations node colours", () => {
@@ -1986,128 +2292,131 @@ describe("GraphCitations node colours", () => {
     "Literature/Doe 2024.md": graphNode("", GROUP),
   });
 
-  it("colors only Cited Work Nodes without a group", async () => {
-    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    engine.nodes = nodes;
+  it.effect("colors only Cited Work Nodes without a group", () =>
+    Effect.gen(function* () {
+      themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
+      const fixture = yield* makeFixture();
+      const engine = fixture.addLeaf("graph");
+      engine.nodes = nodes;
 
-    await fixture.layoutReady();
+      yield* fixture.layoutReady;
 
-    expect(colorsOf(engine.handedOff)).toEqual({
-      "Literature/Doe 2024.md": undefined,
-      "@typo2024": { a: 1, rgb: 0x888888 },
-      "@roe2025": { a: 1, rgb: 0x888888 },
-      "Draft.md": undefined,
-    });
-  });
+      expect(colorsOf(engine.handedOff)).toEqual({
+        "Literature/Doe 2024.md": undefined,
+        "@typo2024": { a: 1, rgb: 0x888888 },
+        "@roe2025": { a: 1, rgb: 0x888888 },
+        "Draft.md": undefined,
+      });
+    }),
+  );
 
-  it("keeps a Literature Note native while the Pandoc citations row is off", async () => {
-    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    engine.nodes = nodes;
-    await fixture.layoutReady();
+  it.effect(
+    "keeps a Literature Note native while the Pandoc citations row is off",
+    () =>
+      Effect.gen(function* () {
+        themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("graph");
+        engine.nodes = nodes;
+        yield* fixture.layoutReady;
 
-    rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
+        rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
 
-    // The row takes every citekey edge away, and with it every Cited Work
-    // Node; a Literature Note is one whatever the rows say.
-    expect(colorsOf(engine.handedOff)).toEqual({
-      "Literature/Doe 2024.md": undefined,
-      "@typo2024": undefined,
-      "@roe2025": undefined,
-      "Draft.md": undefined,
-    });
-  });
+        // The row takes every citekey edge away, and with it every Cited Work
+        // Node; a Literature Note is one whatever the rows say.
+        expect(colorsOf(engine.handedOff)).toEqual({
+          "Literature/Doe 2024.md": undefined,
+          "@typo2024": undefined,
+          "@roe2025": undefined,
+          "Draft.md": undefined,
+        });
+      }),
+  );
 
-  it("keeps native colors on a Literature Note only a Wikilink Citation reaches", async () => {
-    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
-    const fixture = await makeFixture({
-      wikilinkCitations: true,
-      // Reading cites Roe's note by `[[Roe 2025]]` and no citekey reaches it:
-      // `roe2025` is ambiguous, so it draws a Cited Work Node of its own.
-      notes: {
-        "Literature/Doe 2024.md": "DEE23456",
-        "Literature/Roe 2025.md": "REE34567",
-      },
-      links: {
-        "Draft.md": { "Other.md": 1 },
-        "Reading.md": { "Literature/Roe 2025.md": 1 },
-      },
-    });
-    fixture.citationIndex.wikilinks.set("Reading.md", [
-      occurrence("Roe 2025", "wikilink"),
-    ]);
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    engine.nodes = () => ({
-      ...nodes(),
-      "Literature/Roe 2025.md": graphNode(""),
-    });
+  it.effect(
+    "keeps native colors on a Literature Note only a Wikilink Citation reaches",
+    () =>
+      Effect.gen(function* () {
+        themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
+        const fixture = yield* makeFixture({
+          wikilinkCitations: true,
+          // Reading cites Roe's note by `[[Roe 2025]]` and no citekey reaches it:
+          // `roe2025` is ambiguous, so it draws a Cited Work Node of its own.
+          notes: {
+            "Literature/Doe 2024.md": "DEE23456",
+            "Literature/Roe 2025.md": "REE34567",
+          },
+          links: {
+            "Draft.md": { "Other.md": 1 },
+            "Reading.md": { "Literature/Roe 2025.md": 1 },
+          },
+        });
+        fixture.citationIndex.wikilinks.set("Reading.md", [
+          occurrence("Roe 2025", "wikilink"),
+        ]);
+        const engine = fixture.addLeaf("graph");
+        engine.nodes = () => ({
+          ...nodes(),
+          "Literature/Roe 2025.md": graphNode(""),
+        });
 
-    await fixture.layoutReady();
+        yield* fixture.layoutReady;
 
-    expect(colorsOf(engine.handedOff)).toEqual({
-      "Literature/Doe 2024.md": undefined,
-      "Literature/Roe 2025.md": undefined,
-      "@typo2024": { a: 1, rgb: 0x888888 },
-      "@roe2025": { a: 1, rgb: 0x888888 },
-      "Draft.md": undefined,
-    });
-  });
+        expect(colorsOf(engine.handedOff)).toEqual({
+          "Literature/Doe 2024.md": undefined,
+          "Literature/Roe 2025.md": undefined,
+          "@typo2024": { a: 1, rgb: 0x888888 },
+          "@roe2025": { a: 1, rgb: 0x888888 },
+          "Draft.md": undefined,
+        });
+      }),
+  );
 
-  it("reads the theme again on a css change and colours the next render from it", async () => {
-    vi.useFakeTimers();
-    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    engine.nodes = nodes;
-    await fixture.layoutReady();
+  it.effect(
+    "reads the theme again on a css change and colours the next render from it",
+    () =>
+      Effect.gen(function* () {
+        themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("graph");
+        engine.nodes = nodes;
+        yield* fixture.layoutReady;
 
-    document.body.style.setProperty(
-      themeProperty.graphLiteratureNote,
-      "rgb(0, 0, 255)",
-    );
-    fixture.fire("css-change");
-    vi.runAllTimers();
+        document.body.style.setProperty(
+          themeProperty.graphLiteratureNote,
+          "rgb(0, 0, 255)",
+        );
+        fixture.fire("css-change");
+        yield* fixture.advance(150);
 
-    expect(engine.renders).toHaveLength(2);
-    expect(colorsOf(engine.handedOff)).toEqual({
-      "Literature/Doe 2024.md": undefined,
-      "@typo2024": { a: 1, rgb: 0x888888 },
-      "@roe2025": { a: 1, rgb: 0x888888 },
-      "Draft.md": undefined,
-    });
-  });
+        expect(engine.renders).toHaveLength(2);
+        expect(colorsOf(engine.handedOff)).toEqual({
+          "Literature/Doe 2024.md": undefined,
+          "@typo2024": { a: 1, rgb: 0x888888 },
+          "@roe2025": { a: 1, rgb: 0x888888 },
+          "Draft.md": undefined,
+        });
+      }),
+  );
 
-  it("hands off the native node set once the feature is off", async () => {
-    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    engine.nodes = grouped;
-    await fixture.layoutReady();
+  it.effect("hands off the native node set once the feature is off", () =>
+    Effect.gen(function* () {
+      themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
+      const fixture = yield* makeFixture();
+      const engine = fixture.addLeaf("graph");
+      engine.nodes = grouped;
+      yield* fixture.layoutReady;
 
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.graph-citations": false }),
-    );
+      fixture.settings.update({ "citation.graph-citations": false });
 
-    expect(colorsOf(engine.handedOff)).toEqual({
-      "Literature/Doe 2024.md": GROUP,
-      "@typo2024": undefined,
-      "@roe2025": undefined,
-      "Draft.md": undefined,
-    });
-  });
+      expect(colorsOf(engine.handedOff)).toEqual({
+        "Literature/Doe 2024.md": GROUP,
+        "@typo2024": undefined,
+        "@roe2025": undefined,
+        "Draft.md": undefined,
+      });
+    }),
+  );
 });
 
 function colorsOf(
@@ -2119,143 +2428,137 @@ function colorsOf(
 }
 
 describe("GraphCitations teardown", () => {
-  it("restores every member and draws natively once per leaf when the setting turns off", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const global = fixture.addLeaf("graph");
-    const local = fixture.addLeaf("localgraph");
-    const nativeClick = global.renderer.onNodeClick;
-    const nativeRightClick = global.renderer.onNodeRightClick;
-    await fixture.layoutReady();
-    expect(Object.hasOwn(global, "render")).toBe(true);
-    expect(global.renderer.onNodeClick).not.toBe(nativeClick);
-    expect(global.renderer.onNodeRightClick).not.toBe(nativeRightClick);
+  it.effect(
+    "restores every member and draws natively once per leaf when the setting turns off",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const global = fixture.addLeaf("graph");
+        const local = fixture.addLeaf("localgraph");
+        const nativeClick = global.renderer.onNodeClick;
+        const nativeRightClick = global.renderer.onNodeRightClick;
+        yield* fixture.layoutReady;
+        expect(Object.hasOwn(global, "render")).toBe(true);
+        expect(global.renderer.onNodeClick).not.toBe(nativeClick);
+        expect(global.renderer.onNodeRightClick).not.toBe(nativeRightClick);
 
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.graph-citations": false }),
-    );
+        fixture.settings.update({ "citation.graph-citations": false });
 
-    for (const engine of [global, local]) {
-      expect(Object.hasOwn(engine, "render")).toBe(false);
-      expect(engine.renders).toHaveLength(2);
-      expect(engine.renders[1]).toEqual({
-        facaded: false,
-        resolved: { "Draft.md": { "Other.md": 1 } },
-        unresolved: {},
-      });
-    }
-    expect(global.renderer.onNodeClick).toBe(nativeClick);
-    expect(global.renderer.onNodeRightClick).toBe(nativeRightClick);
+        for (const engine of [global, local]) {
+          expect(Object.hasOwn(engine, "render")).toBe(false);
+          expect(engine.renders).toHaveLength(2);
+          expect(engine.renders[1]).toEqual({
+            facaded: false,
+            resolved: { "Draft.md": { "Other.md": 1 } },
+            unresolved: {},
+          });
+        }
+        expect(global.renderer.onNodeClick).toBe(nativeClick);
+        expect(global.renderer.onNodeRightClick).toBe(nativeRightClick);
 
-    fixture.fire("layout-change");
-    fixture.citationIndex.emit("backfilled");
-    expect(global.renders).toHaveLength(2);
-  });
-
-  it("keeps another plugin's render wrapper when ZotLit is disabled", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-    const otherPlugin = vi.fn();
-    using patches = new DisposableStack();
-    patches.defer(
-      around(engine, {
-        render: (native) =>
-          function (this: FakeEngine) {
-            otherPlugin();
-            return native.call(this);
-          },
+        fixture.fire("layout-change");
+        fixture.citationIndex.emit("backfilled");
+        expect(global.renders).toHaveLength(2);
       }),
-    );
+  );
 
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.graph-citations": false }),
-    );
-    engine.render();
+  it.effect(
+    "keeps another plugin's render wrapper when ZotLit is disabled",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+        const otherPlugin = vi.fn();
+        using patches = new DisposableStack();
+        patches.defer(
+          around(engine, {
+            render: (native) =>
+              function (this: FakeEngine) {
+                otherPlugin();
+                return native.call(this);
+              },
+          }),
+        );
 
-    expect(otherPlugin).toHaveBeenCalledTimes(2);
-    expect(engine.renders.at(-1)?.facaded).toBe(false);
-  });
+        fixture.settings.update({ "citation.graph-citations": false });
+        engine.render();
 
-  it("installs again when the setting turns back on", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    expect(fixture.citationIndex.lookupCount).toBe(0);
-    const engine = fixture.addLeaf("graph");
-    const nativeClick = engine.renderer.onNodeClick;
-    const nativeRightClick = engine.renderer.onNodeRightClick;
-    await fixture.layoutReady();
-    expect(fixture.citationIndex.lookupCount).toBe(1);
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.graph-citations": false }),
-    );
-    expect(fixture.citationIndex.lookupCount).toBe(0);
-    expect(engine.renderer.onNodeClick).toBe(nativeClick);
-    expect(engine.renderer.onNodeRightClick).toBe(nativeRightClick);
+        expect(otherPlugin).toHaveBeenCalledTimes(2);
+        expect(engine.renders.at(-1)?.facaded).toBe(false);
+      }),
+  );
 
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.graph-citations": true }),
-    );
+  it.effect("installs again when the setting turns back on", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture();
+      expect(fixture.citationIndex.lookupCount).toBe(0);
+      const engine = fixture.addLeaf("graph");
+      const nativeClick = engine.renderer.onNodeClick;
+      const nativeRightClick = engine.renderer.onNodeRightClick;
+      yield* fixture.layoutReady;
+      expect(fixture.citationIndex.lookupCount).toBe(1);
+      fixture.settings.update({ "citation.graph-citations": false });
+      expect(fixture.citationIndex.lookupCount).toBe(0);
+      expect(engine.renderer.onNodeClick).toBe(nativeClick);
+      expect(engine.renderer.onNodeRightClick).toBe(nativeRightClick);
 
-    expect(fixture.citationIndex.lookupCount).toBe(1);
-    expect(engine.renders).toHaveLength(3);
-    expect(engine.renders[2]!.facaded).toBe(true);
-    expect(engine.renderer.onNodeClick).not.toBe(nativeClick);
-    expect(engine.renderer.onNodeRightClick).not.toBe(nativeRightClick);
-  });
+      fixture.settings.update({ "citation.graph-citations": true });
 
-  it("lets go of what the view holds for its unload once the installation ends", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph", "hovered");
-    await fixture.layoutReady();
-    // What the view would run on its own unload, from the installation the
-    // feature going off is about to end.
-    const [stale] = fixture.viewCallbacks("hovered");
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.graph-citations": false }),
-    );
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.graph-citations": true }),
-    );
+      expect(fixture.citationIndex.lookupCount).toBe(1);
+      expect(engine.renders).toHaveLength(3);
+      expect(engine.renders[2]!.facaded).toBe(true);
+      expect(engine.renderer.onNodeClick).not.toBe(nativeClick);
+      expect(engine.renderer.onNodeRightClick).not.toBe(nativeRightClick);
+    }),
+  );
 
-    stale!();
+  it.effect(
+    "lets go of what the view holds for its unload once the installation ends",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("graph", "hovered");
+        yield* fixture.layoutReady;
+        // What the view would run on its own unload, from the installation the
+        // feature going off is about to end.
+        const [stale] = fixture.viewCallbacks("hovered");
+        fixture.settings.update({ "citation.graph-citations": false });
+        fixture.settings.update({ "citation.graph-citations": true });
 
-    // The installation the re-enable made is the service's still, so the next
-    // feature-off restores its leaf.
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.graph-citations": false }),
-    );
-    expect(rowNames(engine)).toEqual([]);
-    expect(Object.hasOwn(engine, "render")).toBe(false);
-  });
+        stale!();
 
-  it("restores every member, draws natively once, and unsubscribes on dispose", async () => {
-    const fixture = await makeFixture();
-    const service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    const nativeClick = engine.renderer.onNodeClick;
-    const nativeRightClick = engine.renderer.onNodeRightClick;
-    await fixture.layoutReady();
+        // The installation the re-enable made is the service's still, so the next
+        // feature-off restores its leaf.
+        fixture.settings.update({ "citation.graph-citations": false });
+        expect(rowNames(engine)).toEqual([]);
+        expect(Object.hasOwn(engine, "render")).toBe(false);
+      }),
+  );
 
-    await service[Symbol.asyncDispose]();
+  it.effect(
+    "restores every member, draws natively once, and unsubscribes on dispose",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("graph");
+        const nativeClick = engine.renderer.onNodeClick;
+        const nativeRightClick = engine.renderer.onNodeRightClick;
+        yield* fixture.layoutReady;
 
-    expect(Object.hasOwn(engine, "render")).toBe(false);
-    expect(engine.renderer.onNodeClick).toBe(nativeClick);
-    expect(engine.renderer.onNodeRightClick).toBe(nativeRightClick);
-    expect(engine.renders).toHaveLength(2);
-    expect(engine.renders[1]!.facaded).toBe(false);
-    expect(fixture.listenerCount()).toBe(0);
-    fixture.citationIndex.emit("backfilled");
-    await fixture.writeNote("Literature/Poe 2026.md", "PEE45678");
-    expect(engine.renders).toHaveLength(2);
-  });
+        yield* fixture.unload;
+
+        expect(Object.hasOwn(engine, "render")).toBe(false);
+        expect(engine.renderer.onNodeClick).toBe(nativeClick);
+        expect(engine.renderer.onNodeRightClick).toBe(nativeRightClick);
+        expect(engine.renders).toHaveLength(2);
+        expect(engine.renders[1]!.facaded).toBe(false);
+        expect(fixture.listenerCount()).toBe(0);
+        fixture.citationIndex.emit("backfilled");
+        yield* fixture.writeNote("Literature/Poe 2026.md", "PEE45678");
+        expect(engine.renders).toHaveLength(2);
+      }),
+  );
 });
 
 /** The rows one section of the panel shows, in the order the user reads them. */
@@ -2278,277 +2581,317 @@ function rowToggle(
 }
 
 describe("GraphCitations Filters rows", () => {
-  it("builds the rows in the Filters section, without the Wikilink row while the vault-wide setting excludes the syntax", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
+  it.effect(
+    "builds the rows in the Filters section, without the Wikilink row while the vault-wide setting excludes the syntax",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("graph");
 
-    await fixture.layoutReady();
+        yield* fixture.layoutReady;
 
-    expect(rowNames(engine)).toEqual([
-      m.graph_option_pandoc_citations_name(),
-      m.graph_option_citation_connected_only_name(),
-    ]);
-    expect(engine.getOptions()).toEqual({
-      "zotlit-pandoc-citations": true,
-      "zotlit-citation-connected-only": false,
-      "zotlit-color-citation-links": false,
-      "zotlit-citation-popover": false,
-      "zotlit-author-title-labels": false,
-    });
-  });
+        expect(rowNames(engine)).toEqual([
+          m.graph_option_pandoc_citations_name(),
+          m.graph_option_citation_connected_only_name(),
+        ]);
+        expect(engine.getOptions()).toEqual({
+          "zotlit-pandoc-citations": true,
+          "zotlit-citation-connected-only": false,
+          "zotlit-color-citation-links": false,
+          "zotlit-citation-popover": false,
+          "zotlit-author-title-labels": false,
+        });
+      }),
+  );
 
-  it("adds the Wikilink row while the vault-wide setting admits the syntax, and rebuilds the rows when that choice changes", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
+  it.effect(
+    "adds the Wikilink row while the vault-wide setting admits the syntax, and rebuilds the rows when that choice changes",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
 
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.wikilink-citations": true }),
-    );
+        fixture.settings.update({ "citation.wikilink-citations": true });
 
-    expect(rowNames(engine)).toEqual([
-      m.graph_option_pandoc_citations_name(),
-      m.graph_option_wikilink_citations_name(),
-      m.graph_option_citation_connected_only_name(),
-    ]);
+        expect(rowNames(engine)).toEqual([
+          m.graph_option_pandoc_citations_name(),
+          m.graph_option_wikilink_citations_name(),
+          m.graph_option_citation_connected_only_name(),
+        ]);
 
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.wikilink-citations": false }),
-    );
+        fixture.settings.update({ "citation.wikilink-citations": false });
 
-    expect(rowNames(engine)).toEqual([
-      m.graph_option_pandoc_citations_name(),
-      m.graph_option_citation_connected_only_name(),
-    ]);
-  });
+        expect(rowNames(engine)).toEqual([
+          m.graph_option_pandoc_citations_name(),
+          m.graph_option_citation_connected_only_name(),
+        ]);
+      }),
+  );
 
-  it("starts a local graph at what its leaf carried while deferred", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const { engine, load } = fixture.addDeferredLeaf("localgraph", {
-      "zotlit-citation-connected-only": true,
-    });
-    await fixture.layoutReady();
+  it.effect(
+    "starts a local graph at what its leaf carried while deferred",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const { engine, load } = fixture.addDeferredLeaf("localgraph", {
+          "zotlit-citation-connected-only": true,
+        });
+        yield* fixture.layoutReady;
 
-    load();
-    fixture.fire("layout-change");
-    await fixture.settleLookup();
+        load();
+        fixture.fire("layout-change");
+        yield* fixture.settleLookup;
 
-    expect(
-      rowToggle(
-        engine,
-        m.graph_option_citation_connected_only_name(),
-      ).getValue(),
-    ).toBe(true);
-    expect(engine.cachedFiles.at(-1)).toEqual([
-      "Draft.md",
-      "Literature/Doe 2024.md",
-    ]);
-  });
+        expect(
+          rowToggle(
+            engine,
+            m.graph_option_citation_connected_only_name(),
+          ).getValue(),
+        ).toBe(true);
+        expect(engine.cachedFiles.at(-1)).toEqual([
+          "Draft.md",
+          "Literature/Doe 2024.md",
+        ]);
+      }),
+  );
 
-  it("starts a local graph the layout loaded straight away from the workspace file", async () => {
-    const fixture = await makeFixture({
-      savedLayout: {
-        main: {
-          type: "split",
-          children: [
-            {
-              id: "local-1",
-              type: "leaf",
-              state: {
-                type: "localgraph",
-                state: { options: { "zotlit-pandoc-citations": false } },
-              },
+  it.effect(
+    "starts a local graph the layout loaded straight away from the workspace file",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture({
+          savedLayout: {
+            main: {
+              type: "split",
+              children: [
+                {
+                  id: "local-1",
+                  type: "leaf",
+                  state: {
+                    type: "localgraph",
+                    state: { options: { "zotlit-pandoc-citations": false } },
+                  },
+                },
+              ],
             },
-          ],
-        },
-      },
-    });
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("localgraph", "local-1");
+          },
+        });
+        const engine = fixture.addLeaf("localgraph", "local-1");
 
-    await fixture.layoutReady();
+        yield* fixture.layoutReady;
 
-    expect(
-      rowToggle(engine, m.graph_option_pandoc_citations_name()).getValue(),
-    ).toBe(false);
-    expect(engine.renders.at(-1)).toEqual({
-      facaded: true,
-      resolved: VAULT_LINKS,
-      unresolved: {},
-    });
-  });
+        expect(
+          rowToggle(engine, m.graph_option_pandoc_citations_name()).getValue(),
+        ).toBe(false);
+        expect(engine.renders.at(-1)).toEqual({
+          facaded: true,
+          resolved: VAULT_LINKS,
+          unresolved: {},
+        });
+      }),
+  );
 
-  it("returns the rows to their defaults when the panel restores default settings", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-    rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
-    rowToggle(engine, m.graph_option_citation_connected_only_name()).toggle(
-      true,
-    );
+  it.effect(
+    "starts the rows fresh, and says so, when the workspace file cannot be read",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture({
+          workspaceFileError: new Error("EACCES: workspace.json"),
+        });
+        const engine = fixture.addLeaf("localgraph", "local-1");
 
-    engine.filterOptions.setDefaultOptions();
+        yield* fixture.layoutReady;
 
-    expect(engine.getOptions()).toEqual({
-      "zotlit-pandoc-citations": true,
-      "zotlit-citation-connected-only": false,
-      "zotlit-color-citation-links": false,
-      "zotlit-citation-popover": false,
-      "zotlit-author-title-labels": false,
-    });
-    expect(engine.filterOptions.natives).toBe(1);
-    expect(engine.renders.at(-1)).toEqual({
-      facaded: true,
-      resolved: EXPECTED_RESOLVED,
-      unresolved: EXPECTED_UNRESOLVED,
-    });
-  });
+        expect(warn).toHaveBeenCalledWith(
+          "Workspace file unreadable; local graph rows start fresh",
+          expect.objectContaining({ cause: expect.anything() }),
+        );
+        expect(
+          rowToggle(engine, m.graph_option_pandoc_citations_name()).getValue(),
+        ).toBe(true);
+        // The fresh Pandoc row is on, so the citations are drawn.
+        expect(engine.renders.at(-1)).toMatchObject({
+          facaded: true,
+          unresolved: {
+            "Draft.md": expect.objectContaining({ "@pine2023": 1 }),
+          },
+        });
+      }),
+  );
 
-  it("draws no citation edge while Pandoc citations is off", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
+  it.effect(
+    "returns the rows to their defaults when the panel restores default settings",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+        rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
+        rowToggle(engine, m.graph_option_citation_connected_only_name()).toggle(
+          true,
+        );
 
-    rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
+        engine.filterOptions.setDefaultOptions();
 
-    expect(engine.renders.at(-1)).toEqual({
-      facaded: true,
-      resolved: VAULT_LINKS,
-      unresolved: {},
-    });
-  });
+        expect(engine.getOptions()).toEqual({
+          "zotlit-pandoc-citations": true,
+          "zotlit-citation-connected-only": false,
+          "zotlit-color-citation-links": false,
+          "zotlit-citation-popover": false,
+          "zotlit-author-title-labels": false,
+        });
+        expect(engine.filterOptions.natives).toBe(1);
+        expect(engine.renders.at(-1)).toEqual({
+          facaded: true,
+          resolved: EXPECTED_RESOLVED,
+          unresolved: EXPECTED_UNRESOLVED,
+        });
+      }),
+  );
 
-  it("takes a citing note's own links to narrowed-away targets away with them", async () => {
-    const fixture = await makeFixture({
-      links: { "Draft.md": { "Other.md": 1 } },
-      unresolved: { "Draft.md": { todo: 1 } },
-    });
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
+  it.effect("draws no citation edge while Pandoc citations is off", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture();
+      const engine = fixture.addLeaf("graph");
+      yield* fixture.layoutReady;
 
-    rowToggle(engine, m.graph_option_citation_connected_only_name()).toggle(
-      true,
-    );
+      rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
 
-    // Draft cites, so it survives; Other and todo have no citation of their
-    // own, and each would draw a node where Draft's link stands.
-    expect(engine.renders.at(-1)!.resolved).toEqual({
-      "Draft.md": { "Literature/Doe 2024.md": 1 },
-    });
-    expect(engine.renders.at(-1)!.unresolved).toEqual({
-      "Draft.md": EXPECTED_UNRESOLVED["Draft.md"],
-    });
-  });
+      expect(engine.renders.at(-1)).toEqual({
+        facaded: true,
+        resolved: VAULT_LINKS,
+        unresolved: {},
+      });
+    }),
+  );
 
-  it("takes each note's Wikilink Citations away while that row is off, and leaves every other link to a Literature Note alone", async () => {
-    const fixture = await makeFixture({
-      wikilinkCitations: true,
-      links: {
-        "Draft.md": { "Other.md": 1 },
-        // Reading writes `[[Doe 2024]]`, a Citation; Alias writes
-        // `[[Doe 2024|that paper]]` and Heading writes `[[Doe 2024#Notes]]`,
-        // which ADR 0022 leaves as ordinary Obsidian links.
-        "Reading.md": { "Literature/Doe 2024.md": 1 },
-        "Alias.md": { "Literature/Doe 2024.md": 1 },
-        "Heading.md": { "Literature/Doe 2024.md": 1 },
-      },
-    });
-    fixture.citationIndex.wikilinks.set("Reading.md", [
-      occurrence("Doe 2024", "wikilink"),
-    ]);
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
+  it.effect(
+    "takes a citing note's own links to narrowed-away targets away with them",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture({
+          links: { "Draft.md": { "Other.md": 1 } },
+          unresolved: { "Draft.md": { todo: 1 } },
+        });
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
 
-    rowToggle(engine, m.graph_option_wikilink_citations_name()).toggle(false);
+        rowToggle(engine, m.graph_option_citation_connected_only_name()).toggle(
+          true,
+        );
 
-    expect(engine.renders.at(-1)!.resolved).toEqual({
-      "Draft.md": { "Other.md": 1, "Literature/Doe 2024.md": 1 },
-      "Reading.md": {},
-      "Alias.md": { "Literature/Doe 2024.md": 1 },
-      "Heading.md": { "Literature/Doe 2024.md": 1 },
-    });
-    expect(fixture.citationIndex.citationsByPath).toHaveBeenCalledWith([
-      "citekey",
-      "wikilink",
-    ]);
-  });
+        // Draft cites, so it survives; Other and todo have no citation of their
+        // own, and each would draw a node where Draft's link stands.
+        expect(engine.renders.at(-1)!.resolved).toEqual({
+          "Draft.md": { "Literature/Doe 2024.md": 1 },
+        });
+        expect(engine.renders.at(-1)!.unresolved).toEqual({
+          "Draft.md": EXPECTED_UNRESOLVED["Draft.md"],
+        });
+      }),
+  );
 
-  it("keeps a local graph's row in the leaf state Obsidian persists", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("localgraph", "local-1");
-    await fixture.layoutReady();
+  it.effect(
+    "takes each note's Wikilink Citations away while that row is off, and leaves every other link to a Literature Note alone",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture({
+          wikilinkCitations: true,
+          links: {
+            "Draft.md": { "Other.md": 1 },
+            // Reading writes `[[Doe 2024]]`, a Citation; Alias writes
+            // `[[Doe 2024|that paper]]` and Heading writes `[[Doe 2024#Notes]]`,
+            // which ADR 0022 leaves as ordinary Obsidian links.
+            "Reading.md": { "Literature/Doe 2024.md": 1 },
+            "Alias.md": { "Literature/Doe 2024.md": 1 },
+            "Heading.md": { "Literature/Doe 2024.md": 1 },
+          },
+        });
+        fixture.citationIndex.wikilinks.set("Reading.md", [
+          occurrence("Doe 2024", "wikilink"),
+        ]);
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
 
-    rowToggle(engine, m.graph_option_citation_connected_only_name()).toggle(
-      true,
-    );
+        rowToggle(engine, m.graph_option_wikilink_citations_name()).toggle(
+          false,
+        );
 
-    expect(fixture.leafState("local-1")).toEqual({
-      options: {
-        "zotlit-pandoc-citations": true,
-        "zotlit-citation-connected-only": true,
-        "zotlit-color-citation-links": false,
-        "zotlit-citation-popover": false,
-        "zotlit-author-title-labels": false,
-      },
-    });
-  });
+        expect(engine.renders.at(-1)!.resolved).toEqual({
+          "Draft.md": { "Other.md": 1, "Literature/Doe 2024.md": 1 },
+          "Reading.md": {},
+          "Alias.md": { "Literature/Doe 2024.md": 1 },
+          "Heading.md": { "Literature/Doe 2024.md": 1 },
+        });
+        expect(fixture.citationIndex.citationsByPath).toHaveBeenCalledWith([
+          "citekey",
+          "wikilink",
+        ]);
+      }),
+  );
 
-  it("rebuilds the rows without drawing the graph natively in between", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-    const drawn = engine.renders.length;
+  it.effect(
+    "keeps a local graph's row in the leaf state Obsidian persists",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("localgraph", "local-1");
+        yield* fixture.layoutReady;
 
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.wikilink-citations": true }),
-    );
+        rowToggle(engine, m.graph_option_citation_connected_only_name()).toggle(
+          true,
+        );
 
-    expect(engine.renders.slice(drawn).map((render) => render.facaded)).toEqual(
-      [true],
-    );
-    expect(rowNames(engine)).toEqual([
-      m.graph_option_pandoc_citations_name(),
-      m.graph_option_wikilink_citations_name(),
-      m.graph_option_citation_connected_only_name(),
-    ]);
-  });
+        expect(fixture.leafState("local-1")).toEqual({
+          options: {
+            "zotlit-pandoc-citations": true,
+            "zotlit-citation-connected-only": true,
+            "zotlit-color-citation-links": false,
+            "zotlit-citation-popover": false,
+            "zotlit-author-title-labels": false,
+          },
+        });
+      }),
+  );
 
-  it("removes every row when the feature turns off", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
+  it.effect(
+    "rebuilds the rows without drawing the graph natively in between",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+        const drawn = engine.renders.length;
 
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.graph-citations": false }),
-    );
+        fixture.settings.update({ "citation.wikilink-citations": true });
 
-    expect(rowNames(engine)).toEqual([]);
-    expect(engine.filterOptions.optionListeners).toEqual({});
-    expect(Object.hasOwn(engine.filterOptions, "setDefaultOptions")).toBe(
-      false,
-    );
-  });
+        expect(
+          engine.renders.slice(drawn).map((render) => render.facaded),
+        ).toEqual([true]);
+        expect(rowNames(engine)).toEqual([
+          m.graph_option_pandoc_citations_name(),
+          m.graph_option_wikilink_citations_name(),
+          m.graph_option_citation_connected_only_name(),
+        ]);
+      }),
+  );
+
+  it.effect("removes every row when the feature turns off", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture();
+      const engine = fixture.addLeaf("graph");
+      yield* fixture.layoutReady;
+
+      fixture.settings.update({ "citation.graph-citations": false });
+
+      expect(rowNames(engine)).toEqual([]);
+      expect(engine.filterOptions.optionListeners).toEqual({});
+      expect(Object.hasOwn(engine.filterOptions, "setDefaultOptions")).toBe(
+        false,
+      );
+    }),
+  );
 });
 
 /** Every button the Groups section carries, in the order the panel shows them. */
@@ -2570,129 +2913,133 @@ function groupsButton(engine: FakeEngine): HTMLButtonElement {
 }
 
 describe("GraphCitations Groups button", () => {
-  it("adds one literature notes group, keeps the groups the user has, and saves", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-    const mine = { query: "tag:#paper", color: { a: 1, rgb: 0x00ff00 } };
-    engine.colorGroupOptions.setColorQueries([mine]);
+  it.effect(
+    "adds one literature notes group, keeps the groups the user has, and saves",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+        const mine = { query: "tag:#paper", color: { a: 1, rgb: 0x00ff00 } };
+        engine.colorGroupOptions.setColorQueries([mine]);
 
-    groupsButton(engine).click();
+        groupsButton(engine).click();
 
-    expect(engine.colorGroupOptions.getColoredQueries()).toEqual([
-      mine,
-      { query: '["zotero-key"]', color: DEFAULT_COLOR },
-    ]);
-    expect(engine.onOptionsChange).toHaveBeenCalledOnce();
-  });
+        expect(engine.colorGroupOptions.getColoredQueries()).toEqual([
+          mine,
+          { query: '["zotero-key"]', color: DEFAULT_COLOR },
+        ]);
+        expect(engine.onOptionsChange).toHaveBeenCalledOnce();
+      }),
+  );
 
-  it("takes the button away when the feature turns off, and brings it back on", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
+  it.effect(
+    "takes the button away when the feature turns off, and brings it back on",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
 
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.graph-citations": false }),
-    );
+        fixture.settings.update({ "citation.graph-citations": false });
 
-    expect(groupsButtons(engine)).toEqual(["New group"]);
-    expect(Object.hasOwn(engine.colorGroupOptions, "setColorQueries")).toBe(
-      false,
-    );
+        expect(groupsButtons(engine)).toEqual(["New group"]);
+        expect(Object.hasOwn(engine.colorGroupOptions, "setColorQueries")).toBe(
+          false,
+        );
 
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.graph-citations": true }),
-    );
+        fixture.settings.update({ "citation.graph-citations": true });
 
-    expect(groupsButtons(engine)).toEqual([
-      "New group",
-      m.graph_citations_add_literature_notes_group(),
-    ]);
-  });
+        expect(groupsButtons(engine)).toEqual([
+          "New group",
+          m.graph_citations_add_literature_notes_group(),
+        ]);
+      }),
+  );
 });
 
 describe("GraphCitations Display row", () => {
-  it("prepends controls so native last-row CSS still targets the Animate row", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    const section = engine.displayOptions.childrenEl;
-    const arrows = section.createDiv("setting-item");
-    const animate = section.createDiv("setting-item");
-    await fixture.layoutReady();
-    expect(section.lastElementChild).toBe(animate);
-    expect([...section.children].indexOf(arrows)).toBe(3);
-    expect(rowNames(engine, engine.displayOptions)).toEqual([
-      m.graph_option_color_citation_links_name(),
-      m.graph_option_citation_popover_name(),
-      m.graph_option_author_title_labels_name(),
-    ]);
-  });
+  it.effect(
+    "prepends controls so native last-row CSS still targets the Animate row",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("graph");
+        const section = engine.displayOptions.childrenEl;
+        const arrows = section.createDiv("setting-item");
+        const animate = section.createDiv("setting-item");
+        yield* fixture.layoutReady;
+        expect(section.lastElementChild).toBe(animate);
+        expect([...section.children].indexOf(arrows)).toBe(3);
+        expect(rowNames(engine, engine.displayOptions)).toEqual([
+          m.graph_option_color_citation_links_name(),
+          m.graph_option_citation_popover_name(),
+          m.graph_option_author_title_labels_name(),
+        ]);
+      }),
+  );
 
-  it("returns to its default when the panel restores default settings", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-    rowToggle(
-      engine,
-      m.graph_option_color_citation_links_name(),
-      engine.displayOptions,
-    ).toggle(true);
+  it.effect(
+    "returns to its default when the panel restores default settings",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+        rowToggle(
+          engine,
+          m.graph_option_color_citation_links_name(),
+          engine.displayOptions,
+        ).toggle(true);
 
-    engine.displayOptions.setDefaultOptions();
+        engine.displayOptions.setDefaultOptions();
 
-    expect(engine.getOptions()["zotlit-color-citation-links"]).toBe(false);
-    expect(engine.displayOptions.natives).toBe(1);
-  });
+        expect(engine.getOptions()["zotlit-color-citation-links"]).toBe(false);
+        expect(engine.displayOptions.natives).toBe(1);
+      }),
+  );
 
-  it("stays as the user left it while the Filters rows are rebuilt", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
-    rowToggle(
-      engine,
-      m.graph_option_color_citation_links_name(),
-      engine.displayOptions,
-    ).toggle(true);
+  it.effect(
+    "stays as the user left it while the Filters rows are rebuilt",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
+        rowToggle(
+          engine,
+          m.graph_option_color_citation_links_name(),
+          engine.displayOptions,
+        ).toggle(true);
 
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.wikilink-citations": true }),
-    );
+        fixture.settings.update({ "citation.wikilink-citations": true });
 
-    expect(rowNames(engine, engine.displayOptions)).toEqual([
-      m.graph_option_color_citation_links_name(),
-      m.graph_option_citation_popover_name(),
-      m.graph_option_author_title_labels_name(),
-    ]);
-    expect(engine.getOptions()["zotlit-color-citation-links"]).toBe(true);
-  });
+        expect(rowNames(engine, engine.displayOptions)).toEqual([
+          m.graph_option_color_citation_links_name(),
+          m.graph_option_citation_popover_name(),
+          m.graph_option_author_title_labels_name(),
+        ]);
+        expect(engine.getOptions()["zotlit-color-citation-links"]).toBe(true);
+      }),
+  );
 
-  it("leaves the Display section as found when the feature turns off", async () => {
-    const fixture = await makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    await fixture.layoutReady();
+  it.effect(
+    "leaves the Display section as found when the feature turns off",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const engine = fixture.addLeaf("graph");
+        yield* fixture.layoutReady;
 
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.graph-citations": false }),
-    );
+        fixture.settings.update({ "citation.graph-citations": false });
 
-    expect(rowNames(engine, engine.displayOptions)).toEqual([]);
-    expect(engine.displayOptions.optionListeners).toEqual({});
-    expect(Object.hasOwn(engine.displayOptions, "setDefaultOptions")).toBe(
-      false,
-    );
-  });
+        expect(rowNames(engine, engine.displayOptions)).toEqual([]);
+        expect(engine.displayOptions.optionListeners).toEqual({});
+        expect(Object.hasOwn(engine.displayOptions, "setDefaultOptions")).toBe(
+          false,
+        );
+      }),
+  );
 });
 
 describe("GraphCitations citation edge colour", () => {
@@ -2704,273 +3051,323 @@ describe("GraphCitations citation edge colour", () => {
   ] as const;
 
   /** A graph whose edges are drawn and whose theme states a citation colour. */
-  async function drawn(options: FixtureOptions = {}) {
+  const drawn = Effect.fnUntraced(function* (options: FixtureOptions = {}) {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = await makePresentationFixture(options);
-    const service = fixture.service;
-    await service.ready;
+    const fixture = yield* makePresentationFixture(options);
     const engine = fixture.addLeaf("graph");
     engine.renderer.drawEdges(EDGES);
-    await fixture.layoutReady();
-    return { fixture, service, engine };
-  }
-
-  it("draws the edges a citation named in its own colour and every other edge natively", async () => {
-    const { service, engine } = await drawn();
-    await using _service = service;
-
-    expect(paint(engine.renderer)).toEqual({
-      "Draft.md -> Other.md": NATIVE_LINE,
-      "Draft.md -> Literature/Doe 2024.md": CITATION_LINK,
-      "Draft.md -> @typo2024": CITATION_LINK,
-    });
+    yield* fixture.layoutReady;
+    return { fixture, engine };
   });
 
-  it("draws the one line a reciprocal pair shows in the citation colour", async () => {
-    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    // Doe links back to Draft, so Obsidian keeps both edges and draws one:
-    // the citation Draft → Doe is the line it hides, and Doe → Draft is the
-    // one the reader sees.
-    engine.renderer.drawEdges([
-      ["Draft.md", "Literature/Doe 2024.md"],
-      ["Literature/Doe 2024.md", "Draft.md"],
-    ]);
-    await fixture.layoutReady();
+  it.effect(
+    "draws the edges a citation named in its own colour and every other edge natively",
+    () =>
+      Effect.gen(function* () {
+        const { engine } = yield* drawn();
 
-    expect(paint(engine.renderer)).toEqual({
-      "Draft.md -> Literature/Doe 2024.md": CITATION_LINK,
-      "Literature/Doe 2024.md -> Draft.md": CITATION_LINK,
-    });
-  });
+        expect(paint(engine.renderer)).toEqual({
+          "Draft.md -> Other.md": NATIVE_LINE,
+          "Draft.md -> Literature/Doe 2024.md": CITATION_LINK,
+          "Draft.md -> @typo2024": CITATION_LINK,
+        });
+      }),
+  );
 
-  it("draws an ordinary edge natively while the citation the other way is out of the render", async () => {
-    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("localgraph");
-    // Doe's local graph, showing outgoing links alone: Draft's citation of
-    // Doe is no edge of this render, and the link Doe carries back to Draft
-    // is the one line there is — an ordinary one.
-    engine.renderer.drawEdges([["Literature/Doe 2024.md", "Draft.md"]]);
-    await fixture.layoutReady();
+  it.effect(
+    "draws the one line a reciprocal pair shows in the citation colour",
+    () =>
+      Effect.gen(function* () {
+        themeStates(
+          "rgb(120, 82, 238)",
+          "rgb(136, 136, 136)",
+          "rgb(0, 0, 255)",
+        );
+        const fixture = yield* makePresentationFixture();
+        const engine = fixture.addLeaf("graph");
+        // Doe links back to Draft, so Obsidian keeps both edges and draws one:
+        // the citation Draft → Doe is the line it hides, and Doe → Draft is the
+        // one the reader sees.
+        engine.renderer.drawEdges([
+          ["Draft.md", "Literature/Doe 2024.md"],
+          ["Literature/Doe 2024.md", "Draft.md"],
+        ]);
+        yield* fixture.layoutReady;
 
-    expect(paint(engine.renderer)).toEqual({
-      "Literature/Doe 2024.md -> Draft.md": NATIVE_LINE,
-    });
-  });
+        expect(paint(engine.renderer)).toEqual({
+          "Draft.md -> Literature/Doe 2024.md": CITATION_LINK,
+          "Literature/Doe 2024.md -> Draft.md": CITATION_LINK,
+        });
+      }),
+  );
 
-  it("asks for the frame that draws an edge natively once the citation that drew it is gone", async () => {
-    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = await makePresentationFixture({
-      // Draft links Doe the ordinary way too, so the edge outlives the
-      // citation the row takes away.
-      links: { "Draft.md": { "Literature/Doe 2024.md": 1 } },
-    });
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    engine.renderer.drawEdges([["Draft.md", "Literature/Doe 2024.md"]]);
-    await fixture.layoutReady();
-    // The frame the install asked for, so what follows stands on an idle graph.
-    expect(paint(engine.renderer)).toEqual({
-      "Draft.md -> Literature/Doe 2024.md": CITATION_LINK,
-    });
+  it.effect(
+    "draws an ordinary edge natively while the citation the other way is out of the render",
+    () =>
+      Effect.gen(function* () {
+        themeStates(
+          "rgb(120, 82, 238)",
+          "rgb(136, 136, 136)",
+          "rgb(0, 0, 255)",
+        );
+        const fixture = yield* makePresentationFixture();
+        const engine = fixture.addLeaf("localgraph");
+        // Doe's local graph, showing outgoing links alone: Draft's citation of
+        // Doe is no edge of this render, and the link Doe carries back to Draft
+        // is the one line there is — an ordinary one.
+        engine.renderer.drawEdges([["Literature/Doe 2024.md", "Draft.md"]]);
+        yield* fixture.layoutReady;
 
-    rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
+        expect(paint(engine.renderer)).toEqual({
+          "Literature/Doe 2024.md -> Draft.md": NATIVE_LINE,
+        });
+      }),
+  );
 
-    expect(paint(engine.renderer)).toEqual({
-      "Draft.md -> Literature/Doe 2024.md": NATIVE_LINE,
-    });
-  });
+  it.effect(
+    "asks for the frame that draws an edge natively once the citation that drew it is gone",
+    () =>
+      Effect.gen(function* () {
+        themeStates(
+          "rgb(120, 82, 238)",
+          "rgb(136, 136, 136)",
+          "rgb(0, 0, 255)",
+        );
+        const fixture = yield* makePresentationFixture({
+          // Draft links Doe the ordinary way too, so the edge outlives the
+          // citation the row takes away.
+          links: { "Draft.md": { "Literature/Doe 2024.md": 1 } },
+        });
+        const engine = fixture.addLeaf("graph");
+        engine.renderer.drawEdges([["Draft.md", "Literature/Doe 2024.md"]]);
+        yield* fixture.layoutReady;
+        // The frame the install asked for, so what follows stands on an idle graph.
+        expect(paint(engine.renderer)).toEqual({
+          "Draft.md -> Literature/Doe 2024.md": CITATION_LINK,
+        });
 
-  it("asks for the frame that draws an edge in the citation colour once a citation names it", async () => {
-    vi.useFakeTimers();
-    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = await makePresentationFixture({
-      wikilinkCitations: true,
-      links: { "Reading.md": { "Literature/Doe 2024.md": 1 } },
-    });
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    engine.renderer.drawEdges([["Reading.md", "Literature/Doe 2024.md"]]);
-    await fixture.layoutReady();
-    expect(paint(engine.renderer)).toEqual({
-      "Reading.md -> Literature/Doe 2024.md": NATIVE_LINE,
-    });
+        rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
 
-    // The reader writes the link Reading already carried as a Citation: the
-    // edge is the one that was there, drawn in another colour.
-    fixture.citationIndex.wikilinks.set("Reading.md", [
-      occurrence("Doe 2024", "wikilink"),
-    ]);
-    fixture.citationIndex.emit("changed");
-    vi.advanceTimersByTime(200);
+        expect(paint(engine.renderer)).toEqual({
+          "Draft.md -> Literature/Doe 2024.md": NATIVE_LINE,
+        });
+      }),
+  );
 
-    expect(paint(engine.renderer)).toEqual({
-      "Reading.md -> Literature/Doe 2024.md": CITATION_LINK,
-    });
-  });
+  it.effect(
+    "asks for the frame that draws an edge in the citation colour once a citation names it",
+    () =>
+      Effect.gen(function* () {
+        themeStates(
+          "rgb(120, 82, 238)",
+          "rgb(136, 136, 136)",
+          "rgb(0, 0, 255)",
+        );
+        const fixture = yield* makePresentationFixture({
+          wikilinkCitations: true,
+          links: { "Reading.md": { "Literature/Doe 2024.md": 1 } },
+        });
+        const engine = fixture.addLeaf("graph");
+        engine.renderer.drawEdges([["Reading.md", "Literature/Doe 2024.md"]]);
+        yield* fixture.layoutReady;
+        expect(paint(engine.renderer)).toEqual({
+          "Reading.md -> Literature/Doe 2024.md": NATIVE_LINE,
+        });
 
-  it("leaves a coloured edge answering the one sprite the renderer built", async () => {
-    const { service, engine } = await drawn();
-    await using _service = service;
-    const cited = engine.renderer.links[1]!;
+        // The reader writes the link Reading already carried as a Citation: the
+        // edge is the one that was there, drawn in another colour.
+        fixture.citationIndex.wikilinks.set("Reading.md", [
+          occurrence("Doe 2024", "wikilink"),
+        ]);
+        fixture.citationIndex.emit("changed");
+        yield* fixture.advance(200);
 
-    expect(cited.line).toBe(cited.sprite);
-  });
+        expect(paint(engine.renderer)).toEqual({
+          "Reading.md -> Literature/Doe 2024.md": CITATION_LINK,
+        });
+      }),
+  );
 
-  it("yields to the native highlight on the edges of the node under the pointer", async () => {
-    const { service, engine } = await drawn();
-    await using _service = service;
+  it.effect(
+    "leaves a coloured edge answering the one sprite the renderer built",
+    () =>
+      Effect.gen(function* () {
+        const { engine } = yield* drawn();
+        const cited = engine.renderer.links[1]!;
 
-    engine.renderer.highlightNode = engine.renderer.node(
-      "Literature/Doe 2024.md",
-    );
+        expect(cited.line).toBe(cited.sprite);
+      }),
+  );
 
-    expect(paint(engine.renderer)).toEqual({
-      "Draft.md -> Other.md": NATIVE_LINE,
-      "Draft.md -> Literature/Doe 2024.md": NATIVE_HIGHLIGHT,
-      "Draft.md -> @typo2024": CITATION_LINK,
-    });
-  });
+  it.effect(
+    "yields to the native highlight on the edges of the node under the pointer",
+    () =>
+      Effect.gen(function* () {
+        const { engine } = yield* drawn();
 
-  it("draws an edge whose sprite is built after the hand-off, and again after it is destroyed", async () => {
-    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    engine.renderer.drawEdges(EDGES, false);
-    await fixture.layoutReady();
-    const cited = engine.renderer.links[1]!;
+        engine.renderer.highlightNode = engine.renderer.node(
+          "Literature/Doe 2024.md",
+        );
 
-    cited.initGraphics();
+        expect(paint(engine.renderer)).toEqual({
+          "Draft.md -> Other.md": NATIVE_LINE,
+          "Draft.md -> Literature/Doe 2024.md": NATIVE_HIGHLIGHT,
+          "Draft.md -> @typo2024": CITATION_LINK,
+        });
+      }),
+  );
 
-    expect(paint(engine.renderer)["Draft.md -> Literature/Doe 2024.md"]).toBe(
-      CITATION_LINK,
-    );
+  it.effect(
+    "draws an edge whose sprite is built after the hand-off, and again after it is destroyed",
+    () =>
+      Effect.gen(function* () {
+        themeStates(
+          "rgb(120, 82, 238)",
+          "rgb(136, 136, 136)",
+          "rgb(0, 0, 255)",
+        );
+        const fixture = yield* makePresentationFixture();
+        const engine = fixture.addLeaf("graph");
+        engine.renderer.drawEdges(EDGES, false);
+        yield* fixture.layoutReady;
+        const cited = engine.renderer.links[1]!;
 
-    cited.clearGraphics();
-    expect(cited.line).toBeNull();
-    cited.initGraphics();
+        cited.initGraphics();
 
-    expect(paint(engine.renderer)["Draft.md -> Literature/Doe 2024.md"]).toBe(
-      CITATION_LINK,
-    );
-  });
+        expect(
+          paint(engine.renderer)["Draft.md -> Literature/Doe 2024.md"],
+        ).toBe(CITATION_LINK);
 
-  it("draws every edge natively while the row is off", async () => {
-    const { service, engine } = await drawn();
-    await using _service = service;
+        cited.clearGraphics();
+        expect(cited.line).toBeNull();
+        cited.initGraphics();
 
-    rowToggle(
-      engine,
-      m.graph_option_color_citation_links_name(),
-      engine.displayOptions,
-    ).toggle(false);
+        expect(
+          paint(engine.renderer)["Draft.md -> Literature/Doe 2024.md"],
+        ).toBe(CITATION_LINK);
+      }),
+  );
 
-    expect(paint(engine.renderer)).toEqual({
-      "Draft.md -> Other.md": NATIVE_LINE,
-      "Draft.md -> Literature/Doe 2024.md": NATIVE_LINE,
-      "Draft.md -> @typo2024": NATIVE_LINE,
-    });
-  });
+  it.effect("draws every edge natively while the row is off", () =>
+    Effect.gen(function* () {
+      const { engine } = yield* drawn();
 
-  it("draws natively the edges the Pandoc citations row took away", async () => {
-    const { service, engine } = await drawn();
-    await using _service = service;
+      rowToggle(
+        engine,
+        m.graph_option_color_citation_links_name(),
+        engine.displayOptions,
+      ).toggle(false);
 
-    rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
+      expect(paint(engine.renderer)).toEqual({
+        "Draft.md -> Other.md": NATIVE_LINE,
+        "Draft.md -> Literature/Doe 2024.md": NATIVE_LINE,
+        "Draft.md -> @typo2024": NATIVE_LINE,
+      });
+    }),
+  );
 
-    expect(paint(engine.renderer)).toEqual({
-      "Draft.md -> Other.md": NATIVE_LINE,
-      "Draft.md -> Literature/Doe 2024.md": NATIVE_LINE,
-      "Draft.md -> @typo2024": NATIVE_LINE,
-    });
-  });
+  it.effect("draws natively the edges the Pandoc citations row took away", () =>
+    Effect.gen(function* () {
+      const { engine } = yield* drawn();
 
-  it("draws a Wikilink Citation the vault already carried in the citation colour", async () => {
-    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = await makePresentationFixture({
-      wikilinkCitations: true,
-      links: {
-        "Reading.md": { "Literature/Doe 2024.md": 1 },
-        "Alias.md": { "Literature/Doe 2024.md": 1 },
-      },
-    });
-    fixture.citationIndex.wikilinks.set("Reading.md", [
-      occurrence("Doe 2024", "wikilink"),
-    ]);
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    engine.renderer.drawEdges([
-      ["Reading.md", "Literature/Doe 2024.md"],
-      ["Alias.md", "Literature/Doe 2024.md"],
-    ]);
+      rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
 
-    await fixture.layoutReady();
+      expect(paint(engine.renderer)).toEqual({
+        "Draft.md -> Other.md": NATIVE_LINE,
+        "Draft.md -> Literature/Doe 2024.md": NATIVE_LINE,
+        "Draft.md -> @typo2024": NATIVE_LINE,
+      });
+    }),
+  );
 
-    expect(paint(engine.renderer)).toEqual({
-      "Reading.md -> Literature/Doe 2024.md": CITATION_LINK,
-      "Alias.md -> Literature/Doe 2024.md": NATIVE_LINE,
-    });
+  it.effect(
+    "draws a Wikilink Citation the vault already carried in the citation colour",
+    () =>
+      Effect.gen(function* () {
+        themeStates(
+          "rgb(120, 82, 238)",
+          "rgb(136, 136, 136)",
+          "rgb(0, 0, 255)",
+        );
+        const fixture = yield* makePresentationFixture({
+          wikilinkCitations: true,
+          links: {
+            "Reading.md": { "Literature/Doe 2024.md": 1 },
+            "Alias.md": { "Literature/Doe 2024.md": 1 },
+          },
+        });
+        fixture.citationIndex.wikilinks.set("Reading.md", [
+          occurrence("Doe 2024", "wikilink"),
+        ]);
+        const engine = fixture.addLeaf("graph");
+        engine.renderer.drawEdges([
+          ["Reading.md", "Literature/Doe 2024.md"],
+          ["Alias.md", "Literature/Doe 2024.md"],
+        ]);
 
-    fixture.settings.bridge.runSync(
-      fixture.settings.update({ "citation.graph-citations": false }),
-    );
+        yield* fixture.layoutReady;
 
-    expect(paint(engine.renderer)).toEqual({
-      "Reading.md -> Literature/Doe 2024.md": NATIVE_LINE,
-      "Alias.md -> Literature/Doe 2024.md": NATIVE_LINE,
-    });
-  });
+        expect(paint(engine.renderer)).toEqual({
+          "Reading.md -> Literature/Doe 2024.md": CITATION_LINK,
+          "Alias.md -> Literature/Doe 2024.md": NATIVE_LINE,
+        });
 
-  it("leaves every edge holding its own sprite on teardown", async () => {
-    const { service, engine } = await drawn();
-    const cited = engine.renderer.links[1]!;
+        fixture.settings.update({ "citation.graph-citations": false });
 
-    await service[Symbol.asyncDispose]();
+        expect(paint(engine.renderer)).toEqual({
+          "Reading.md -> Literature/Doe 2024.md": NATIVE_LINE,
+          "Alias.md -> Literature/Doe 2024.md": NATIVE_LINE,
+        });
+      }),
+  );
 
-    expect(cited.line).toBe(cited.sprite);
-    expect(paint(engine.renderer)).toEqual({
-      "Draft.md -> Other.md": NATIVE_LINE,
-      "Draft.md -> Literature/Doe 2024.md": NATIVE_LINE,
-      "Draft.md -> @typo2024": NATIVE_LINE,
-    });
-  });
+  it.effect("leaves every edge holding its own sprite on teardown", () =>
+    Effect.gen(function* () {
+      const { fixture, engine } = yield* drawn();
+      const cited = engine.renderer.links[1]!;
 
-  it("leaves the edges native when a build moved a renderer member, and says so once", async () => {
-    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    engine.renderer.drawEdges(EDGES);
-    // The member is inherited, as the renderer's own is; the build this
-    // stands for declares none at all.
-    Object.defineProperty(engine.renderer, "getHighlightNode", {
-      value: undefined,
-      configurable: true,
-    });
+      yield* fixture.unload;
 
-    await fixture.layoutReady();
+      expect(cited.line).toBe(cited.sprite);
+      expect(paint(engine.renderer)).toEqual({
+        "Draft.md -> Other.md": NATIVE_LINE,
+        "Draft.md -> Literature/Doe 2024.md": NATIVE_LINE,
+        "Draft.md -> @typo2024": NATIVE_LINE,
+      });
+    }),
+  );
 
-    const cited = engine.renderer.links[2]!;
-    cited.line!.tint = NATIVE_LINE;
+  it.effect(
+    "leaves the edges native when a build moved a renderer member, and says so once",
+    () =>
+      Effect.gen(function* () {
+        themeStates(
+          "rgb(120, 82, 238)",
+          "rgb(136, 136, 136)",
+          "rgb(0, 0, 255)",
+        );
+        const fixture = yield* makePresentationFixture();
+        const engine = fixture.addLeaf("graph");
+        engine.renderer.drawEdges(EDGES);
+        // The member is inherited, as the renderer's own is; the build this
+        // stands for declares none at all.
+        Object.defineProperty(engine.renderer, "getHighlightNode", {
+          value: undefined,
+          configurable: true,
+        });
 
-    expect(cited.sprite.tint).toBe(NATIVE_LINE);
-    expect(warn).toHaveBeenCalledOnce();
-    expect(warn.mock.calls[0]![1]).toMatchObject({
-      missing: ["renderer.getHighlightNode"],
-    });
-  });
+        yield* fixture.layoutReady;
+
+        const cited = engine.renderer.links[2]!;
+        cited.line!.tint = NATIVE_LINE;
+
+        expect(cited.sprite.tint).toBe(NATIVE_LINE);
+        expect(warn).toHaveBeenCalledOnce();
+        expect(warn.mock.calls[0]![1]).toMatchObject({
+          missing: ["renderer.getHighlightNode"],
+        });
+      }),
+  );
 });
 
 /**
@@ -3013,10 +3410,10 @@ function addNativeRows(
 }
 
 /** A graph leaf carrying the native rows, ready for the preset. */
-async function presetFixture(
+const presetFixture = Effect.fnUntraced(function* (
   options: FixtureOptions & { viewType?: "graph" | "localgraph" } = {},
 ) {
-  const fixture = await makePresentationFixture(options);
+  const fixture = yield* makePresentationFixture(options);
   const viewType = options.viewType ?? "graph";
   const engine = fixture.addLeaf(viewType, "preset-leaf");
   addNativeRows(engine, viewType);
@@ -3026,7 +3423,7 @@ async function presetFixture(
     leaf: fixture.leaf("preset-leaf"),
     apply: () => fixture.service.applyPreset(fixture.leaf("preset-leaf")),
   };
-}
+});
 
 /** What the preset leaves a graph's options at, beside the native keys. */
 const PRESET_ROWS = {
@@ -3038,139 +3435,148 @@ const PRESET_ROWS = {
 };
 
 describe("GraphCitations Citation Graph preset", () => {
-  it("presets the global graph, and adds the literature notes group", async () => {
-    const fixture = await presetFixture();
-    await using service = fixture.service;
-    await service.ready;
-    await fixture.layoutReady();
+  it.effect(
+    "presets the global graph, and adds the literature notes group",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* presetFixture();
+        yield* fixture.layoutReady;
 
-    fixture.apply();
+        yield* fixture.apply();
 
-    expect(fixture.engine.options).toMatchObject({
-      ...PRESET_ROWS,
-      showTags: false,
-      showAttachments: false,
-      hideUnresolved: false,
-      showOrphans: false,
-      showArrow: true,
-    });
-    expect(
-      rowToggle(
-        fixture.engine,
-        m.graph_option_citation_connected_only_name(),
-      ).getValue(),
-    ).toBe(true);
-    expect(fixture.engine.colorGroupOptions.getColoredQueries()).toEqual([
-      { query: '["zotero-key"]', color: DEFAULT_COLOR },
-    ]);
-  });
+        expect(fixture.engine.options).toMatchObject({
+          ...PRESET_ROWS,
+          showTags: false,
+          showAttachments: false,
+          hideUnresolved: false,
+          showOrphans: false,
+          showArrow: true,
+        });
+        expect(
+          rowToggle(
+            fixture.engine,
+            m.graph_option_citation_connected_only_name(),
+          ).getValue(),
+        ).toBe(true);
+        expect(fixture.engine.colorGroupOptions.getColoredQueries()).toEqual([
+          { query: '["zotero-key"]', color: DEFAULT_COLOR },
+        ]);
+      }),
+  );
 
-  it("names the Wikilink citations key only where its row stands", async () => {
-    const off = await presetFixture();
-    await using offService = off.service;
-    await offService.ready;
-    await off.layoutReady();
-    off.apply();
+  it.effect("names the Wikilink citations key only where its row stands", () =>
+    Effect.gen(function* () {
+      const off = yield* presetFixture();
+      yield* off.layoutReady;
+      yield* off.apply();
 
-    expect(off.engine.options["zotlit-wikilink-citations"]).toBeUndefined();
+      expect(off.engine.options["zotlit-wikilink-citations"]).toBeUndefined();
 
-    const on = await presetFixture({ wikilinkCitations: true });
-    await using onService = on.service;
-    await onService.ready;
-    await on.layoutReady();
-    on.apply();
+      const on = yield* presetFixture({ wikilinkCitations: true });
+      yield* on.layoutReady;
+      yield* on.apply();
 
-    expect(on.engine.options["zotlit-wikilink-citations"]).toBe(true);
-    expect(
-      rowToggle(on.engine, m.graph_option_wikilink_citations_name()).getValue(),
-    ).toBe(true);
-  });
+      expect(on.engine.options["zotlit-wikilink-citations"]).toBe(true);
+      expect(
+        rowToggle(
+          on.engine,
+          m.graph_option_wikilink_citations_name(),
+        ).getValue(),
+      ).toBe(true);
+    }),
+  );
 
-  it("preserves the user's forces when applying the preset", async () => {
-    const fixture = await presetFixture();
-    await using service = fixture.service;
-    await service.ready;
-    await fixture.layoutReady();
-    fixture.engine.options.centerStrength = 0.42;
-    fixture.engine.options.textFadeMultiplier = -0.5;
+  it.effect("preserves the user's forces when applying the preset", () =>
+    Effect.gen(function* () {
+      const fixture = yield* presetFixture();
+      yield* fixture.layoutReady;
+      fixture.engine.options.centerStrength = 0.42;
+      fixture.engine.options.textFadeMultiplier = -0.5;
 
-    fixture.apply();
+      yield* fixture.apply();
 
-    expect(fixture.engine.options.centerStrength).toBe(0.42);
-    expect(fixture.engine.options.textFadeMultiplier).toBe(-0.5);
-  });
+      expect(fixture.engine.options.centerStrength).toBe(0.42);
+      expect(fixture.engine.options.textFadeMultiplier).toBe(-0.5);
+    }),
+  );
 
-  it("leaves the local graph's orphans alone, which its panel has no row for", async () => {
-    const fixture = await presetFixture({ viewType: "localgraph" });
-    await using service = fixture.service;
-    await service.ready;
-    await fixture.layoutReady();
+  it.effect(
+    "leaves the local graph's orphans alone, which its panel has no row for",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* presetFixture({ viewType: "localgraph" });
+        yield* fixture.layoutReady;
 
-    fixture.apply();
+        yield* fixture.apply();
 
-    expect(fixture.engine.options).toMatchObject({
-      ...PRESET_ROWS,
-      showTags: false,
-      showArrow: true,
-      // No row answers the key, so the graph keeps Obsidian's own default.
-      showOrphans: true,
-    });
-  });
+        expect(fixture.engine.options).toMatchObject({
+          ...PRESET_ROWS,
+          showTags: false,
+          showArrow: true,
+          // No row answers the key, so the graph keeps Obsidian's own default.
+          showOrphans: true,
+        });
+      }),
+  );
 
-  it("installs the leaf first, so a graph opened by the command hears ZotLit's keys", async () => {
-    const fixture = await presetFixture();
-    await using service = fixture.service;
-    await service.ready;
-    // No layout event has reached the service, which is where a command that
-    // just opened a leaf stands: Obsidian fires `layout-change` a frame later.
-    expect(rowNames(fixture.engine)).toEqual([]);
+  it.effect(
+    "installs the leaf first, so a graph opened by the command hears ZotLit's keys",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* presetFixture();
+        // No layout event has reached the service, which is where a command that
+        // just opened a leaf stands: Obsidian fires `layout-change` a frame later.
+        expect(rowNames(fixture.engine)).toEqual([]);
 
-    fixture.apply();
+        yield* fixture.apply();
 
-    expect(rowNames(fixture.engine)).toEqual([
-      m.graph_option_pandoc_citations_name(),
-      m.graph_option_citation_connected_only_name(),
-    ]);
-    expect(fixture.engine.options).toMatchObject(PRESET_ROWS);
-  });
+        expect(rowNames(fixture.engine)).toEqual([
+          m.graph_option_pandoc_citations_name(),
+          m.graph_option_citation_connected_only_name(),
+        ]);
+        expect(fixture.engine.options).toMatchObject(PRESET_ROWS);
+      }),
+  );
 
-  it("adds no second literature notes group on a second run", async () => {
-    const fixture = await presetFixture();
-    await using service = fixture.service;
-    await service.ready;
-    await fixture.layoutReady();
-    fixture.apply();
-    const firstOptions = structuredClone(fixture.engine.options);
+  it.effect("adds no second literature notes group on a second run", () =>
+    Effect.gen(function* () {
+      const fixture = yield* presetFixture();
+      yield* fixture.layoutReady;
+      yield* fixture.apply();
+      const firstOptions = structuredClone(fixture.engine.options);
 
-    fixture.apply();
+      yield* fixture.apply();
 
-    expect(fixture.engine.options).toEqual(firstOptions);
-    expect(fixture.engine.colorGroupOptions.getColoredQueries()).toEqual([
-      { query: '["zotero-key"]', color: DEFAULT_COLOR },
-    ]);
-  });
+      expect(fixture.engine.options).toEqual(firstOptions);
+      expect(fixture.engine.colorGroupOptions.getColoredQueries()).toEqual([
+        { query: '["zotero-key"]', color: DEFAULT_COLOR },
+      ]);
+    }),
+  );
 
-  it("leaves a graph whose set-options path moved as Obsidian opened it", async () => {
-    const fixture = await presetFixture();
-    await using service = fixture.service;
-    await service.ready;
-    await fixture.layoutReady();
-    warn.mockClear();
-    Object.defineProperty(fixture.engine, "setOptions", {
-      value: undefined,
-      configurable: true,
-    });
+  it.effect(
+    "leaves a graph whose set-options path moved as Obsidian opened it",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* presetFixture();
+        yield* fixture.layoutReady;
+        warn.mockClear();
+        Object.defineProperty(fixture.engine, "setOptions", {
+          value: undefined,
+          configurable: true,
+        });
 
-    fixture.apply();
+        yield* fixture.apply();
 
-    expect(fixture.engine.options["zotlit-citation-connected-only"]).toBe(
-      false,
-    );
-    expect(warn).toHaveBeenCalledOnce();
-    expect(warn.mock.calls[0]![1]).toMatchObject({
-      missing: ["engine.setOptions"],
-    });
-  });
+        expect(fixture.engine.options["zotlit-citation-connected-only"]).toBe(
+          false,
+        );
+        expect(warn).toHaveBeenCalledOnce();
+        expect(warn.mock.calls[0]![1]).toMatchObject({
+          missing: ["engine.setOptions"],
+        });
+      }),
+  );
 });
 
 /** Native text/container lifecycle sufficient to exercise lazy node graphics. */
@@ -3285,309 +3691,324 @@ function installFakeLabelPixi(): Disposable {
 }
 
 describe("Graph Work Labels", () => {
-  it("persists the Display row and restores its default", async () => {
-    const fixture = await makePresentationFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    engine.nodes = () => ({
-      "Literature/Doe 2024.md": graphNode(""),
-      "@pine2023": graphNode("unresolved"),
-      "@roe2025": graphNode("unresolved"),
-      "@typo2024": graphNode("unresolved"),
-      "Other.md": graphNode(""),
-    });
-    await fixture.layoutReady();
-    expect(rowNames(engine, engine.displayOptions)).toContain(
-      m.graph_option_author_title_labels_name(),
-    );
-    expect(engine.getOptions()["zotlit-author-title-labels"]).toBe(false);
-    engine.setOptions({ "zotlit-author-title-labels": true });
-    expect(engine.getOptions()["zotlit-author-title-labels"]).toBe(true);
-    engine.displayOptions.setDefaultOptions();
-    expect(engine.getOptions()["zotlit-author-title-labels"]).toBe(false);
-  });
+  it.effect("persists the Display row and restores its default", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makePresentationFixture();
+      const engine = fixture.addLeaf("graph");
+      engine.nodes = () => ({
+        "Literature/Doe 2024.md": graphNode(""),
+        "@pine2023": graphNode("unresolved"),
+        "@roe2025": graphNode("unresolved"),
+        "@typo2024": graphNode("unresolved"),
+        "Other.md": graphNode(""),
+      });
+      yield* fixture.layoutReady;
+      expect(rowNames(engine, engine.displayOptions)).toContain(
+        m.graph_option_author_title_labels_name(),
+      );
+      expect(engine.getOptions()["zotlit-author-title-labels"]).toBe(false);
+      engine.setOptions({ "zotlit-author-title-labels": true });
+      expect(engine.getOptions()["zotlit-author-title-labels"]).toBe(true);
+      engine.displayOptions.setDefaultOptions();
+      expect(engine.getOptions()["zotlit-author-title-labels"]).toBe(false);
+    }),
+  );
 
-  it("fills only drawn works outside render and covers lazy rebuild, width, refresh, and native restoration", async () => {
-    vi.useFakeTimers();
-    using _pixi = installFakeLabelPixi();
-    const fixture = await makePresentationFixture({ labelDatabase: true });
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    engine.nodes = () => ({
-      "Literature/Doe 2024.md": graphNode(""),
-      "@pine2023": graphNode("unresolved"),
-      "@roe2025": graphNode("unresolved"),
-      "@typo2024": graphNode("unresolved"),
-      "Other.md": graphNode(""),
-    });
-    await fixture.layoutReady();
-    engine.setOptions({ "zotlit-author-title-labels": true });
-    expect(labelReads).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(150);
-    expect(labelReads.mock.calls.map(([keys]) => keys)).toEqual([
-      ["DEE23456", "PINE2345g4"],
-    ]);
-    const doe = engine.renderer.nodes.find(
-      (node) => node.id === "Literature/Doe 2024.md",
-    )!;
-    const pine = engine.renderer.nodes.find((node) => node.id === "@pine2023")!;
-    const init = Reflect.get(doe, "initGraphics");
-    doe.initGraphics();
-    pine.initGraphics();
-    expect(labelLines(doe).map((line) => line.text)).toEqual([
-      "Doe 2024",
-      "Graph study",
-    ]);
-    expect(labelLines(pine).map((line) => line.text)).toEqual([
-      "Doe 2024",
-      "Graph study",
-    ]);
-    expect(doe.text).not.toBe(pine.text);
-    expect(labelLines(doe)[1]!.alpha).toBe(0.6);
-    const labelContainer = doe.text as FakeLabelContainer;
-    const titleY = labelLines(doe)[1]!.y;
-    engine.renderer.scale = 0.25;
-    labelContainer.updateTransform();
-    expect(labelLines(doe)[1]!.alpha).toBe(0);
-    expect(labelLines(doe)[1]!.y).toBe(titleY);
-    engine.renderer.highlightNode = doe;
-    labelContainer.updateTransform();
-    expect(labelLines(doe)[1]!.alpha).toBe(0.6);
-    engine.renderer.highlightNode = null;
-    engine.renderer.scale = 2;
-    engine.renderer.fTextShowMult = 0.5;
-    labelContainer.updateTransform();
-    expect(labelLines(doe)[1]!.alpha).toBe(0.3);
-    engine.renderer.fTextShowMult = undefined;
-    labelContainer.updateTransform();
-    expect(labelLines(doe)[1]!.alpha).toBe(0.6);
-    expect(labelLines(doe)[0]!.anchor.y).toBe(0);
-    expect(labelLines(doe)[0]!.style.wordWrap).toBe(false);
-    engine.render();
-    expect(doe).toHaveProperty("initGraphics", init);
-    expect(labelReads).toHaveBeenCalledOnce();
-    const oldLines = labelLines(doe);
-    doe.clearGraphics();
-    expect(oldLines.every((line) => line.destroyed)).toBe(true);
-    doe.initGraphics();
-    expect(labelLines(doe)[0]!.text).toBe("Doe 2024");
-    for (const id of ["@roe2025", "@typo2024", "Other.md"]) {
+  it.effect(
+    "fills only drawn works outside render and covers lazy rebuild, width, refresh, and native restoration",
+    () =>
+      Effect.gen(function* () {
+        using _pixi = installFakeLabelPixi();
+        const fixture = yield* makePresentationFixture({ labelDatabase: true });
+        const engine = fixture.addLeaf("graph");
+        engine.nodes = () => ({
+          "Literature/Doe 2024.md": graphNode(""),
+          "@pine2023": graphNode("unresolved"),
+          "@roe2025": graphNode("unresolved"),
+          "@typo2024": graphNode("unresolved"),
+          "Other.md": graphNode(""),
+        });
+        yield* fixture.layoutReady;
+        engine.setOptions({ "zotlit-author-title-labels": true });
+        expect(labelReads).not.toHaveBeenCalled();
+        yield* fixture.advance(150);
+        expect(labelReads.mock.calls.map(([keys]) => keys)).toEqual([
+          ["DEE23456", "PINE2345g4"],
+        ]);
+        const doe = engine.renderer.nodes.find(
+          (node) => node.id === "Literature/Doe 2024.md",
+        )!;
+        const pine = engine.renderer.nodes.find(
+          (node) => node.id === "@pine2023",
+        )!;
+        const init = Reflect.get(doe, "initGraphics");
+        doe.initGraphics();
+        pine.initGraphics();
+        expect(labelLines(doe).map((line) => line.text)).toEqual([
+          "Doe 2024",
+          "Graph study",
+        ]);
+        expect(labelLines(pine).map((line) => line.text)).toEqual([
+          "Doe 2024",
+          "Graph study",
+        ]);
+        expect(doe.text).not.toBe(pine.text);
+        expect(labelLines(doe)[1]!.alpha).toBe(0.6);
+        const labelContainer = doe.text as FakeLabelContainer;
+        const titleY = labelLines(doe)[1]!.y;
+        engine.renderer.scale = 0.25;
+        labelContainer.updateTransform();
+        expect(labelLines(doe)[1]!.alpha).toBe(0);
+        expect(labelLines(doe)[1]!.y).toBe(titleY);
+        engine.renderer.highlightNode = doe;
+        labelContainer.updateTransform();
+        expect(labelLines(doe)[1]!.alpha).toBe(0.6);
+        engine.renderer.highlightNode = null;
+        engine.renderer.scale = 2;
+        engine.renderer.fTextShowMult = 0.5;
+        labelContainer.updateTransform();
+        expect(labelLines(doe)[1]!.alpha).toBe(0.3);
+        engine.renderer.fTextShowMult = undefined;
+        labelContainer.updateTransform();
+        expect(labelLines(doe)[1]!.alpha).toBe(0.6);
+        expect(labelLines(doe)[0]!.anchor.y).toBe(0);
+        expect(labelLines(doe)[0]!.style.wordWrap).toBe(false);
+        engine.render();
+        expect(doe).toHaveProperty("initGraphics", init);
+        expect(labelReads).toHaveBeenCalledOnce();
+        const oldLines = labelLines(doe);
+        doe.clearGraphics();
+        expect(oldLines.every((line) => line.destroyed)).toBe(true);
+        doe.initGraphics();
+        expect(labelLines(doe)[0]!.text).toBe("Doe 2024");
+        for (const id of ["@roe2025", "@typo2024", "Other.md"]) {
+          const node = engine.renderer.nodes.find(
+            (candidate) => candidate.id === id,
+          )!;
+          node.initGraphics();
+          expect(node.text).toBeInstanceOf(FakeLabelText);
+        }
+        labelReads.mockImplementation((keys: string[]) =>
+          keys.map((key) => ({
+            key,
+            primaryCreatorType: "author",
+            creators: [
+              { creatorType: "author", lastName: "Lee", firstName: "" },
+            ],
+            fields: {
+              itemType: "book",
+              shortTitle: "文献关系图谱研究文献关系图谱研究文献关系图谱研究",
+              date: "2025",
+            },
+          })),
+        );
+        fixture.citationIndex.emit("resolution-changed");
+        yield* fixture.advance(150);
+        expect(labelLines(doe)[0]!.text).toBe("Lee 2025");
+        expect(labelLines(doe)[1]!.text).toBe("文献关系图谱研究文献关…");
+        expect(labelLines(doe)[1]!.width).toBeLessThanOrEqual(240);
+        doe.text!.style = { fontFamily: "Arial", fontSize: 20, fill: 0xabcdef };
+        expect(labelLines(doe)[0]!.style.fill).toBe(0xabcdef);
+        const renders = engine.renders.length;
+        engine.displayOptions.optionListeners["zotlit-author-title-labels"]!(
+          false,
+        );
+        yield* fixture.advance(150);
+        expect(engine.renders.length).toBe(renders + 1);
+        expect(doe.text).toBeInstanceOf(FakeLabelText);
+        expect(doe).toHaveProperty(
+          "initGraphics",
+          Reflect.get(FakeLabelNode.prototype, "initGraphics"),
+        );
+      }),
+  );
+
+  it.effect(
+    "keeps the held labels on screen while a database change reads them again",
+    () =>
+      Effect.gen(function* () {
+        using _pixi = installFakeLabelPixi();
+        const fixture = yield* makePresentationFixture({ labelDatabase: true });
+        const engine = fixture.addLeaf("graph");
+        engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
+        yield* fixture.layoutReady;
+        engine.setOptions({ "zotlit-author-title-labels": true });
+        yield* fixture.advance(150);
+        const doe = engine.renderer.nodes[0]!;
+        doe.initGraphics();
+        expect(labelLines(doe)[0]!.text).toBe("Doe 2024");
+
+        const reading = Promise.withResolvers<LabelRow[]>();
+        labelReads.mockReturnValue(reading.promise);
+        fixture.reads.emit("changed");
+        yield* fixture.advance(150);
+
+        expect(labelReads).toHaveBeenCalledTimes(2);
+        expect(labelLines(doe)[0]!.text).toBe("Doe 2024");
+        reading.resolve([
+          {
+            key: "DEE23456",
+            primaryCreatorType: "author",
+            creators: [
+              {
+                creatorType: "author",
+                lastName: "Lee",
+                firstName: "",
+                fieldMode: 0,
+              },
+            ],
+            fields: { title: "Graph study", date: "2025" },
+          },
+        ]);
+        yield* fixture.advance(0);
+        expect(labelLines(doe)[0]!.text).toBe("Lee 2025");
+      }),
+  );
+
+  it.effect("keeps native labels for unreadable items and missing PIXI", () =>
+    Effect.gen(function* () {
+      using _pixi = installFakeLabelPixi();
+      const fixture = yield* makePresentationFixture({ labelDatabase: true });
+      const engine = fixture.addLeaf("graph");
+      engine.nodes = () => ({
+        "Literature/Doe 2024.md": graphNode(""),
+        "@pine2023": graphNode("unresolved"),
+        "@roe2025": graphNode("unresolved"),
+        "@typo2024": graphNode("unresolved"),
+        "Other.md": graphNode(""),
+      });
+      yield* fixture.layoutReady;
+      labelReads.mockReturnValue([]);
+      engine.setOptions({ "zotlit-author-title-labels": true });
+      yield* fixture.advance(150);
       const node = engine.renderer.nodes.find(
-        (candidate) => candidate.id === id,
+        (node) => node.id === "Literature/Doe 2024.md",
       )!;
       node.initGraphics();
       expect(node.text).toBeInstanceOf(FakeLabelText);
-    }
-    labelReads.mockImplementation((keys: string[]) =>
-      keys.map((key) => ({
-        key,
-        primaryCreatorType: "author",
-        creators: [{ creatorType: "author", lastName: "Lee", firstName: "" }],
-        fields: {
-          itemType: "book",
-          shortTitle: "文献关系图谱研究文献关系图谱研究文献关系图谱研究",
-          date: "2025",
-        },
-      })),
-    );
-    fixture.citationIndex.emit("resolution-changed");
-    await vi.advanceTimersByTimeAsync(150);
-    expect(labelLines(doe)[0]!.text).toBe("Lee 2025");
-    expect(labelLines(doe)[1]!.text).toBe("文献关系图谱研究文献关…");
-    expect(labelLines(doe)[1]!.width).toBeLessThanOrEqual(240);
-    doe.text!.style = { fontFamily: "Arial", fontSize: 20, fill: 0xabcdef };
-    expect(labelLines(doe)[0]!.style.fill).toBe(0xabcdef);
-    const renders = engine.renders.length;
-    engine.displayOptions.optionListeners["zotlit-author-title-labels"]!(false);
-    await vi.advanceTimersByTimeAsync(150);
-    expect(engine.renders.length).toBe(renders + 1);
-    expect(doe.text).toBeInstanceOf(FakeLabelText);
-    expect(doe).toHaveProperty(
-      "initGraphics",
-      Reflect.get(FakeLabelNode.prototype, "initGraphics"),
-    );
-  });
-
-  it("keeps the held labels on screen while a database change reads them again", async () => {
-    vi.useFakeTimers();
-    using _pixi = installFakeLabelPixi();
-    const fixture = await makePresentationFixture({ labelDatabase: true });
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
-    await fixture.layoutReady();
-    engine.setOptions({ "zotlit-author-title-labels": true });
-    await vi.advanceTimersByTimeAsync(150);
-    const doe = engine.renderer.nodes[0]!;
-    doe.initGraphics();
-    expect(labelLines(doe)[0]!.text).toBe("Doe 2024");
-
-    const reading = Promise.withResolvers<LabelRow[]>();
-    labelReads.mockReturnValue(reading.promise);
-    fixture.reads.emit("changed");
-    await vi.advanceTimersByTimeAsync(150);
-
-    expect(labelReads).toHaveBeenCalledTimes(2);
-    expect(labelLines(doe)[0]!.text).toBe("Doe 2024");
-    reading.resolve([
-      {
-        key: "DEE23456",
-        primaryCreatorType: "author",
-        creators: [
-          {
-            creatorType: "author",
-            lastName: "Lee",
-            firstName: "",
-            fieldMode: 0,
-          },
-        ],
-        fields: { title: "Graph study", date: "2025" },
-      },
-    ]);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(labelLines(doe)[0]!.text).toBe("Lee 2025");
-  });
-
-  it("keeps native labels for unreadable items and missing PIXI", async () => {
-    vi.useFakeTimers();
-    using _pixi = installFakeLabelPixi();
-    const fixture = await makePresentationFixture({ labelDatabase: true });
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    engine.nodes = () => ({
-      "Literature/Doe 2024.md": graphNode(""),
-      "@pine2023": graphNode("unresolved"),
-      "@roe2025": graphNode("unresolved"),
-      "@typo2024": graphNode("unresolved"),
-      "Other.md": graphNode(""),
-    });
-    await fixture.layoutReady();
-    labelReads.mockReturnValue([]);
-    engine.setOptions({ "zotlit-author-title-labels": true });
-    await vi.advanceTimersByTimeAsync(150);
-    const node = engine.renderer.nodes.find(
-      (node) => node.id === "Literature/Doe 2024.md",
-    )!;
-    node.initGraphics();
-    expect(node.text).toBeInstanceOf(FakeLabelText);
-    labelReads.mockImplementation((keys: string[]) =>
-      keys.map((key) => ({
-        key,
-        primaryCreatorType: "author",
-        creators: [
-          { creatorType: "author", lastName: "Doe", firstName: "Jane" },
-        ],
-        fields: { itemType: "book", title: "Graph study" },
-      })),
-    );
-    vi.stubGlobal("PIXI", undefined);
-    fixture.citationIndex.emit("changed");
-    await vi.advanceTimersByTimeAsync(150);
-    expect(node.text).toBeInstanceOf(FakeLabelText);
-    expect(warn).toHaveBeenCalledWith(
-      "Graph Work Label graphics failed; left native",
-      expect.objectContaining({ nodeId: node.id }),
-    );
-  });
-
-  it("leaves excluded Library items native", async () => {
-    vi.useFakeTimers();
-    using _pixi = installFakeLabelPixi();
-    const fixture = await makePresentationFixture({
-      labelDatabase: true,
-      labelLibraryScope: [],
-    });
-    await using service = fixture.service;
-    await service.ready;
-    const first = fixture.addLeaf("graph");
-    const second = fixture.addLeaf("localgraph");
-    for (const engine of [first, second]) {
-      engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
-    }
-    await fixture.layoutReady();
-    for (const engine of [first, second])
-      engine.setOptions({ "zotlit-author-title-labels": true });
-    await vi.advanceTimersByTimeAsync(150);
-    for (const engine of [first, second]) {
-      engine.renderer.nodes[0]!.initGraphics();
-      expect(engine.renderer.nodes[0]!.text).toBeInstanceOf(FakeLabelText);
-    }
-  });
-
-  it("destroys owned sprites and restores native labels once per leaf on unload", async () => {
-    vi.useFakeTimers();
-    using _pixi = installFakeLabelPixi();
-    const fixture = await makePresentationFixture({ labelDatabase: true });
-    await using service = fixture.service;
-    await service.ready;
-    const engines = [fixture.addLeaf("graph"), fixture.addLeaf("localgraph")];
-    for (const engine of engines)
-      engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
-    await fixture.layoutReady();
-    for (const engine of engines)
-      engine.setOptions({ "zotlit-author-title-labels": true });
-    await vi.advanceTimersByTimeAsync(150);
-    const snapshots = engines.map((engine) => {
-      const node = engine.renderer.nodes[0]!;
-      node.initGraphics();
-      return {
-        engine,
-        node,
-        lines: labelLines(node),
-        renders: engine.renders.length,
-      };
-    });
-    expect(labelReads).toHaveBeenCalledOnce();
-    await service[Symbol.asyncDispose]();
-    for (const { engine, node, lines, renders } of snapshots) {
+      labelReads.mockImplementation((keys: string[]) =>
+        keys.map((key) => ({
+          key,
+          primaryCreatorType: "author",
+          creators: [
+            { creatorType: "author", lastName: "Doe", firstName: "Jane" },
+          ],
+          fields: { itemType: "book", title: "Graph study" },
+        })),
+      );
+      vi.stubGlobal("PIXI", undefined);
+      fixture.citationIndex.emit("changed");
+      yield* fixture.advance(150);
       expect(node.text).toBeInstanceOf(FakeLabelText);
-      expect(lines.every((line) => line.destroyed)).toBe(true);
-      expect(engine.renders.length).toBe(renders + 1);
-    }
-  });
+      expect(warn).toHaveBeenCalledWith(
+        "Graph Work Label graphics failed; left native",
+        expect.objectContaining({ nodeId: node.id }),
+      );
+    }),
+  );
 
-  it("restores native text after a failed style update and requests a frame", async () => {
-    vi.useFakeTimers();
-    using _pixi = installFakeLabelPixi();
-    const fixture = await makePresentationFixture({ labelDatabase: true });
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
-    await fixture.layoutReady();
-    engine.setOptions({ "zotlit-author-title-labels": true });
-    await vi.advanceTimersByTimeAsync(150);
-    const node = engine.renderer.nodes[0]!;
-    node.initGraphics();
-    const container = node.text;
-    const lines = labelLines(node);
-    Object.defineProperty(lines[0], "width", {
-      get: () => {
-        throw new Error("font measurement failed");
-      },
-    });
-    engine.renderer.pending = false;
-    const frameRequested = Promise.withResolvers<void>();
-    const changed = engine.renderer.changed.bind(engine.renderer);
-    using _changed = vi
-      .spyOn(engine.renderer, "changed")
-      .mockImplementation(() => {
-        changed();
-        frameRequested.resolve();
+  it.effect("leaves excluded Library items native", () =>
+    Effect.gen(function* () {
+      using _pixi = installFakeLabelPixi();
+      const fixture = yield* makePresentationFixture({
+        labelDatabase: true,
+        labelLibraryScope: [],
       });
-    node.text!.style = { fontFamily: "Arial", fontSize: 22, fill: 0xffffff };
-    expect(node.text).toBe(container);
-    await frameRequested.promise;
-    expect(node.text).toBeInstanceOf(FakeLabelText);
-    expect(lines.every((line) => line.destroyed)).toBe(true);
-    expect(engine.renderer.pending).toBe(true);
-    expect(warn).toHaveBeenCalledWith(
-      "Graph Work Label style refresh failed; restoring native text",
-      expect.objectContaining({ nodeId: node.id }),
-    );
-  });
+      const first = fixture.addLeaf("graph");
+      const second = fixture.addLeaf("localgraph");
+      for (const engine of [first, second]) {
+        engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
+      }
+      yield* fixture.layoutReady;
+      for (const engine of [first, second])
+        engine.setOptions({ "zotlit-author-title-labels": true });
+      yield* fixture.advance(150);
+      for (const engine of [first, second]) {
+        engine.renderer.nodes[0]!.initGraphics();
+        expect(engine.renderer.nodes[0]!.text).toBeInstanceOf(FakeLabelText);
+      }
+    }),
+  );
+
+  it.effect(
+    "destroys owned sprites and restores native labels once per leaf on unload",
+    () =>
+      Effect.gen(function* () {
+        using _pixi = installFakeLabelPixi();
+        const fixture = yield* makePresentationFixture({ labelDatabase: true });
+        const engines = [
+          fixture.addLeaf("graph"),
+          fixture.addLeaf("localgraph"),
+        ];
+        for (const engine of engines)
+          engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
+        yield* fixture.layoutReady;
+        for (const engine of engines)
+          engine.setOptions({ "zotlit-author-title-labels": true });
+        yield* fixture.advance(150);
+        const snapshots = engines.map((engine) => {
+          const node = engine.renderer.nodes[0]!;
+          node.initGraphics();
+          return {
+            engine,
+            node,
+            lines: labelLines(node),
+            renders: engine.renders.length,
+          };
+        });
+        expect(labelReads).toHaveBeenCalledOnce();
+        yield* fixture.unload;
+        for (const { engine, node, lines, renders } of snapshots) {
+          expect(node.text).toBeInstanceOf(FakeLabelText);
+          expect(lines.every((line) => line.destroyed)).toBe(true);
+          expect(engine.renders.length).toBe(renders + 1);
+        }
+      }),
+  );
+
+  it.effect(
+    "restores native text after a failed style update and requests a frame",
+    () =>
+      Effect.gen(function* () {
+        using _pixi = installFakeLabelPixi();
+        const fixture = yield* makePresentationFixture({ labelDatabase: true });
+        const engine = fixture.addLeaf("graph");
+        engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
+        yield* fixture.layoutReady;
+        engine.setOptions({ "zotlit-author-title-labels": true });
+        yield* fixture.advance(150);
+        const node = engine.renderer.nodes[0]!;
+        node.initGraphics();
+        const container = node.text;
+        const lines = labelLines(node);
+        Object.defineProperty(lines[0], "width", {
+          get: () => {
+            throw new Error("font measurement failed");
+          },
+        });
+        engine.renderer.pending = false;
+        const frameRequested = Promise.withResolvers<void>();
+        const changed = engine.renderer.changed.bind(engine.renderer);
+        using _changed = vi
+          .spyOn(engine.renderer, "changed")
+          .mockImplementation(() => {
+            changed();
+            frameRequested.resolve();
+          });
+        node.text!.style = {
+          fontFamily: "Arial",
+          fontSize: 22,
+          fill: 0xffffff,
+        };
+        expect(node.text).toBe(container);
+        yield* Effect.promise(() => frameRequested.promise);
+        expect(node.text).toBeInstanceOf(FakeLabelText);
+        expect(lines.every((line) => line.destroyed)).toBe(true);
+        expect(engine.renderer.pending).toBe(true);
+        expect(warn).toHaveBeenCalledWith(
+          "Graph Work Label style refresh failed; restoring native text",
+          expect.objectContaining({ nodeId: node.id }),
+        );
+      }),
+  );
 });

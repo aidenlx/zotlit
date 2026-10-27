@@ -4,6 +4,7 @@ import {
   Effect,
   Exit,
   Fiber,
+  Layer,
   Logger,
   References,
   Schema,
@@ -16,21 +17,19 @@ import type { Library } from "@zotlit/db";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { LogCategory } from "@/lib/effect-log";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
+import { LibraryScope } from "@/services/library-scope/service";
 import { BatchUpdateRefusedError } from "@/services/note-feature/update-batch";
 import { NoteImportProfileError } from "@/services/note-import/service";
+import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
-import type {
-  ZoteroReads,
-  ZoteroReadsApi,
-} from "@/services/zotero-reads/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 import {
   classifyStream,
   executeBatchRun,
   makeStopRequest,
-  runBatch,
-  runBatchWrite,
-  TaskRejected,
+  runBatchWith,
 } from "./batch-run";
 import type {
   BatchClassifyControls,
@@ -70,25 +69,17 @@ function task(id: number): BatchRunTask {
   return { id, label: `Item ${id}` };
 }
 
-const sentinelReads = { $sentinel: true } as unknown as ZoteroReadsApi;
-
 /** A ZoteroReads service whose Snapshot acquisition is observable. */
-function makeSnapshotReads(
-  reads: ZoteroReadsApi = sentinelReads,
-  options: { failWith?: DbUnavailable } = {},
-): {
+function makeSnapshotReads(reads: ZoteroReadsApi): {
   zoteroReads: Pick<ZoteroReads["Service"], "snapshot">;
   dispose: ReturnType<typeof vi.fn>;
 } {
   const dispose = vi.fn();
-  const snapshot = options.failWith
-    ? Effect.fail(options.failWith)
-    : Effect.acquireRelease(Effect.succeed(reads), () =>
-        Effect.sync(() => dispose()),
-      );
   return {
     zoteroReads: stubService<ZoteroReads["Service"]>("ZoteroReads", {
-      snapshot,
+      snapshot: Effect.acquireRelease(Effect.succeed(reads), () =>
+        Effect.sync(() => dispose()),
+      ),
     }),
     dispose,
   };
@@ -273,10 +264,12 @@ describe("executeBatchRun", () => {
   );
 
   it.effect.each([
-    new BatchUpdateRefusedError(
-      unknownProfileDiagnostic("Missing", { path: "Reading/Paper.md" }),
-    ),
-    new NoteImportProfileError("Missing", { path: "Reading/Paper.md" }),
+    new BatchUpdateRefusedError({
+      diagnostic: unknownProfileDiagnostic("Missing", {
+        path: "Reading/Paper.md",
+      }),
+    }),
+    NoteImportProfileError.unknown("Missing", { path: "Reading/Paper.md" }),
   ])("keeps note recovery on a per-item Profile failure: $name", (error) =>
     Effect.gen(function* () {
       const { controls, settled } = makeRunControls();
@@ -412,183 +405,20 @@ describe("executeBatchRun", () => {
   );
 });
 
-describe("runBatchWrite", () => {
-  it.effect("pins one Snapshot and threads its reads to each task", () =>
+describe("a task that awaits a rejected Promise", () => {
+  it.effect("reports the rejection's own error on its failure row", () =>
     Effect.gen(function* () {
-      const { zoteroReads, dispose } = makeSnapshotReads();
-      const { controls } = makeRunControls();
-      const seenReads: ZoteroReadsApi[] = [];
-
-      const result = yield* runBatchWrite({
-        zoteroReads,
-        tasks: [task(1), task(2), task(3)],
-        controls,
-        concurrency: 4,
-        run: async (_t, reads) => {
-          seenReads.push(reads);
-          return "updated";
-        },
-      });
-
-      expect(seenReads).toEqual([sentinelReads, sentinelReads, sentinelReads]);
-      expect(result).toMatchObject({ updated: 3 });
-      expect(dispose).toHaveBeenCalledTimes(1);
-    }),
-  );
-
-  it.effect(
-    "memoizes a shared fetch once per run across items sharing a key",
-    () =>
-      Effect.gen(function* () {
-        const { zoteroReads } = makeSnapshotReads();
-        const { controls } = makeRunControls();
-        const fetchSpy = vi.fn((_reads: ZoteroReadsApi, key: string) => key);
-        // A per-run cache the caller closes over, mirroring the real tagMemo /
-        // collectionCache threading.
-        const memo = new Map<string, string>();
-        const cachedFetch = (reads: ZoteroReadsApi, key: string): string => {
-          const hit = memo.get(key);
-          if (hit !== undefined) return hit;
-          const value = fetchSpy(reads, key);
-          memo.set(key, value);
-          return value;
-        };
-
-        yield* runBatchWrite({
-          zoteroReads,
-          // Three tasks, two of which resolve to the same shared "author:1" key.
-          tasks: [task(1), task(2), task(3)],
-          controls,
-          concurrency: 1,
-          run: async (t, reads) => {
-            cachedFetch(reads, t.id === 3 ? "author:2" : "author:1");
-            return "updated";
-          },
-        });
-
-        expect(fetchSpy).toHaveBeenCalledTimes(2);
-      }),
-  );
-
-  it.effect("holds the Snapshot until every task settles", () =>
-    Effect.gen(function* () {
-      const { zoteroReads, dispose } = makeSnapshotReads();
-      const { controls } = makeRunControls();
-      const release = Promise.withResolvers<void>();
-      const started = Promise.withResolvers<void>();
-
-      const pending = yield* Effect.forkChild(
-        runBatchWrite({
-          zoteroReads,
-          tasks: [task(1)],
-          controls,
-          concurrency: 4,
-          run: async () => {
-            started.resolve();
-            await release.promise;
-            return "created";
-          },
-        }),
-      );
-
-      yield* Effect.promise(() => started.promise);
-      expect(dispose).not.toHaveBeenCalled();
-      release.resolve();
-      yield* Fiber.join(pending);
-      expect(dispose).toHaveBeenCalledTimes(1);
-    }),
-  );
-
-  it.effect(
-    "closes the Snapshot when the stop is requested before any task runs",
-    () =>
-      Effect.gen(function* () {
-        const { zoteroReads, dispose } = makeSnapshotReads();
-        const { controls, requestStop } = makeRunControls();
-        requestStop();
-        const run = vi.fn(async () => "created" as const);
-
-        const result = yield* runBatchWrite({
-          zoteroReads,
-          tasks: [task(1), task(2)],
-          controls,
-          concurrency: 4,
-          run,
-        });
-
-        expect(run).not.toHaveBeenCalled();
-        expect(result.cancelled).toBe(true);
-        expect(dispose).toHaveBeenCalledTimes(1);
-      }),
-  );
-
-  it.effect("closes the Snapshot when the run fails", () =>
-    Effect.gen(function* () {
-      const { zoteroReads, dispose } = makeSnapshotReads();
-      const { controls } = makeRunControls();
-      const failure = new Error("write failed");
-
-      const exit = yield* Effect.exit(
-        runBatchWrite({
-          zoteroReads,
-          tasks: [task(1)],
-          controls,
-          concurrency: 4,
-          run: async () => {
-            throw failure;
-          },
-          haltOn: (error) => error === failure,
-        }),
-      );
-
-      const error = Exit.isFailure(exit) && Cause.squash(exit.cause);
-      expect(error).toBeInstanceOf(TaskRejected);
-      expect(error instanceof TaskRejected && error.cause).toBe(failure);
-      expect(dispose).toHaveBeenCalledTimes(1);
-    }),
-  );
-
-  it("rejects a halted run with the task's own rejection through runBatch", async () => {
-    const { zoteroReads } = makeSnapshotReads();
-    const { controls } = makeRunControls();
-    const failure = new Error("bad config");
-    const onTaskFailed = vi.fn();
-
-    await expect(
-      runBatch(
-        runBatchWrite({
-          zoteroReads,
-          tasks: [task(1)],
-          controls,
-          concurrency: 4,
-          run: async () => {
-            throw failure;
-          },
-          onTaskFailed,
-          haltOn: (error) => error === failure,
-        }),
-      ),
-    ).rejects.toBe(failure);
-    expect(onTaskFailed).not.toHaveBeenCalled();
-  });
-
-  it.effect("reports a rejected task's own error on its failure row", () =>
-    Effect.gen(function* () {
-      const { zoteroReads } = makeSnapshotReads();
       const { controls, settled } = makeRunControls();
-      const failure = new NoteImportProfileError("Missing", {
+      const failure = NoteImportProfileError.unknown("Missing", {
         path: "Reading/Paper.md",
       });
       const onTaskFailed = vi.fn();
 
-      const result = yield* runBatchWrite({
-        zoteroReads,
+      const result = yield* executeBatchRun({
         tasks: [task(1)],
         controls,
         concurrency: 1,
-        run: async () => {
-          throw failure;
-        },
+        run: () => Effect.promise(() => Promise.reject(failure)),
         onTaskFailed,
       });
 
@@ -611,28 +441,61 @@ describe("runBatchWrite", () => {
     }),
   );
 
-  it("preserves a typed Snapshot-open failure through runBatch", async () => {
-    const error = new DbUnavailable({ message: "database degraded" });
-    const { zoteroReads } = makeSnapshotReads(sentinelReads, {
-      failWith: error,
-    });
-    const { controls } = makeRunControls();
+  it.effect("never halts the run on a defect", () =>
+    Effect.gen(function* () {
+      const { controls, settled } = makeRunControls();
+      const failure = new Error("bad config");
 
-    await expect(
-      runBatch(
-        runBatchWrite({
-          zoteroReads,
+      const result = yield* executeBatchRun({
+        tasks: [task(1)],
+        controls,
+        concurrency: 1,
+        run: () => Effect.promise(() => Promise.reject(failure)),
+        haltOn: () => true,
+      });
+
+      expect(result).toMatchObject({ failed: 1 });
+      expect(settled).toEqual([
+        {
+          id: 1,
+          status: "failed",
+          failure: { label: "Item 1", message: "bad config" },
+        },
+      ]);
+    }),
+  );
+});
+
+describe("a halted run", () => {
+  it.effect("fails with the halting failure itself", () =>
+    Effect.gen(function* () {
+      const { controls } = makeRunControls();
+      const failure = new WriteFailed({ message: "bad config" });
+      const onTaskFailed = vi.fn();
+
+      const error = yield* Effect.flip(
+        executeBatchRun({
           tasks: [task(1)],
           controls,
           concurrency: 4,
-          run: async () => "created",
+          run: () => Effect.fail(failure),
+          onTaskFailed,
+          haltOn: (error) => error === failure,
         }),
-      ),
-    ).rejects.toBe(error);
-  });
+      );
+
+      expect(error).toBe(failure);
+      expect(onTaskFailed).not.toHaveBeenCalled();
+    }),
+  );
 });
 
-describe("runBatch", () => {
+/** The Promise edge a batch modal's runner uses, over the default runtime. */
+const runBatch = runBatchWith((effect, options) =>
+  Effect.runPromiseExit(effect, options),
+);
+
+describe("runBatchWith", () => {
   it("keeps a typed failure that lands after the signal aborts", async () => {
     const abort = new AbortController();
     const error = new DbUnavailable({ message: "database degraded" });
@@ -787,7 +650,7 @@ describe("classifyStream", () => {
   );
 
   it.effect(
-    "runBatch rejects a pre-aborted classification before any read",
+    "runBatchWith rejects a pre-aborted classification before any read",
     () =>
       Effect.gen(function* () {
         const { controls, abort } = classifyControls();
@@ -936,6 +799,21 @@ describe("planBatchScope", () => {
     return { ...makeSnapshotReads(reads), libraries, scopeItemIDs };
   }
 
+  /** The tags planBatchScope reads: the Snapshot and Library Scope. */
+  function planningServices(
+    zoteroReads: Pick<ZoteroReads["Service"], "snapshot">,
+    resolveLibraries: LibraryScope["Service"]["resolveLibraries"],
+  ) {
+    return Layer.mergeAll(
+      Layer.mock(ZoteroReads, {
+        // The plan reads only through its Snapshot.
+        reads: readsAnswering({}),
+        snapshot: zoteroReads.snapshot,
+      }),
+      Layer.mock(LibraryScope, { resolveLibraries }),
+    );
+  }
+
   it.effect("does not resolve Library Scope for an exact target", () =>
     Effect.gen(function* () {
       const { zoteroReads, dispose, scopeItemIDs } = planningReads();
@@ -943,11 +821,9 @@ describe("planBatchScope", () => {
         Effect.die(new Error("Library Scope read")),
       );
 
-      const plan = yield* planBatchScope(
-        { zoteroReads, libraryScope: { resolveLibraries } },
-        "literature-items",
-        { groupID: 7 },
-      );
+      const plan = yield* planBatchScope("literature-items", {
+        groupID: 7,
+      }).pipe(Effect.provide(planningServices(zoteroReads, resolveLibraries)));
 
       expect(plan).toEqual({
         outcome: "resolved",
@@ -969,18 +845,14 @@ describe("planBatchScope", () => {
       Effect.gen(function* () {
         const { zoteroReads, dispose, scopeItemIDs } = planningReads();
 
-        const plan = yield* planBatchScope(
-          {
-            zoteroReads,
-            libraryScope: {
-              resolveLibraries: (libraries) =>
-                Effect.sync(() =>
-                  resolveLibraryScope(libraries, { mode: "all" }),
-                ),
-            },
-          },
-          "notes",
-          {},
+        const plan = yield* planBatchScope("notes", {}).pipe(
+          Effect.provide(
+            planningServices(zoteroReads, (libraries) =>
+              Effect.sync(() =>
+                resolveLibraryScope(libraries, { mode: "all" }),
+              ),
+            ),
+          ),
         );
 
         expect(plan).toEqual({
@@ -1032,22 +904,21 @@ describe("planBatchScope", () => {
       }).pipe(Effect.provide(logger));
 
       const { zoteroReads } = planningReads();
-      yield* planBatchScope(
-        {
-          zoteroReads,
-          libraryScope: {
-            resolveLibraries: () =>
+      yield* planBatchScope("notes", {}).pipe(
+        Effect.provide(
+          Layer.merge(
+            planningServices(zoteroReads, () =>
               Effect.succeed({
                 mode: "selected",
                 invalid: false,
                 available: [],
                 unavailable: [{ type: "group", groupID: 99 }],
               }),
-          },
-        },
-        "notes",
-        {},
-      ).pipe(Effect.provide(logger));
+            ),
+            logger,
+          ),
+        ),
+      );
 
       expect(logs).toHaveLength(3);
       expect(logs[0]).toMatchObject({

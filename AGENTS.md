@@ -32,6 +32,7 @@ Run these from the repo root. `build` / `test` / `lint` go through turbo, which 
 | `pnpm dev`                        | `turbo run dev` (persistent, no cache).                                                                                     |
 | `pnpm test`                       | `turbo run test` behind the Memory Gate: Vitest in each package that defines a `test` script.                              |
 | `pnpm lint` / `pnpm lint:fix`     | Type-aware `oxlint` over the whole tree after dependencies build. **A clean run is the typecheck.**                          |
+| `pnpm lint:unused`                | Part of `pnpm lint`: knip fails on an export, type or enum member with no reader. Older findings sit in `packages/scripts/unused-code.json` until their code goes; a reader knip cannot see gets an entry in `knip.config.ts`. |
 | `pnpm format` / `pnpm format:fix` | Root-level `oxfmt` over the whole tree, run directly. A full pass takes under a second.                                      |
 | `pnpm review` / `pnpm review:fix` | Obsidian guideline scan of `apps/obsidian`, release-time only (see below).                                                  |
 | `pnpm quality:fix`                | Fixes lint, then format. `pnpm verify` is the check.                                                                        |

@@ -91,6 +91,5 @@ _Avoid_: lock timeout, wait timeout
 
 **Memory Gate**:
 The machine-wide check that admits a heavy run (a test invocation or an
-End-to-end Run) only while the OS reports that memory can grow and no other
-gated run has just started. It admits a run; it does not hold anything for it.
+End-to-end Run) in arrival order while the OS reports that memory can grow. It admits a run; it does not hold anything for it.
 _Avoid_: memory lock, memory slot

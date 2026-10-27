@@ -9,15 +9,13 @@ import type { App } from "obsidian";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
-import { BaseNotice } from "@/lib/notice";
 import {
   normalizePartialName,
   partialFilename,
   partialNameRefusal,
 } from "@/services/template/defaults";
 import type { PartialNameRefusal } from "@/services/template/defaults";
-import type { PlainTemplate } from "@/services/template/plain";
+import type { TemplateOperations } from "@/services/template/service";
 import {
   dialogFooter,
   field,
@@ -26,13 +24,9 @@ import {
   note,
 } from "@/setting-tab/profile-dialog";
 
-import { openTemplateWorkbench } from "./register";
-
-const logger = getLogger(["views", "template-workbench"]);
-
 /** The template surface every Shared Partial entry point reads. */
 export type SharedPartialActions = Pick<
-  PlainTemplate,
+  TemplateOperations,
   "getPartialNames" | "createPartial"
 >;
 
@@ -53,38 +47,18 @@ export interface CreateSharedPartialOptions {
 }
 
 /**
- * Ask a name, create the Shared Partial, and open it.
- *
- * @returns the created name, which a caller writes into the call it is
- *   completing, or `null` when the reader dismisses the prompt.
+ * Open the name prompt alone, for a caller that creates the partial itself.
+ * `settle` gets the accepted name, or `null` when the prompt closes.
  */
-export async function createSharedPartial(
+export function openNewPartialPrompt(
   app: App,
-  template: SharedPartialActions,
-  options: CreateSharedPartialOptions = {},
-): Promise<string | null> {
-  const taken = template.getPartialNames();
-  const modal = new NewPartialModal(app, taken, options.name ?? "");
+  taken: readonly string[],
+  settle: (name: string | null) => void,
+): Modal {
+  const modal = new NewPartialModal(app, taken, "");
+  void modal.result.then(settle);
   modal.open();
-  const name = await modal.result;
-  if (name === null) return null;
-  try {
-    const file = await template.createPartial(name, {
-      ...(options.source === undefined ? {} : { source: options.source }),
-      ...(options.language === undefined ? {} : { language: options.language }),
-    });
-    const open = options.open ?? "split";
-    if (open !== false)
-      await openTemplateWorkbench(app, file, {
-        leaf: app.workspace.getLeaf(open === "split" ? "split" : "tab"),
-        explainUnsupported: false,
-      });
-    return name;
-  } catch (error) {
-    logger.error("Failed to create a Shared Partial", { name, error });
-    new BaseNotice(m.notice_partial_create_failed());
-    return null;
-  }
+  return modal;
 }
 
 /** The refusal as the prompt words it, under the name field. */
@@ -105,7 +79,7 @@ function refusalText(refusal: PartialNameRefusal, name: string): string {
  * The name prompt: one field, the resulting filename under it, and a Create
  * button that stays disabled until the rule accepts what is typed.
  */
-class NewPartialModal extends Modal {
+export class NewPartialModal extends Modal {
   readonly #taken: readonly string[];
   readonly #seed: string;
   readonly #decision = Promise.withResolvers<string | null>();

@@ -1105,7 +1105,7 @@ it("counts a cooldown down on the toolbar's window, under the binding's disposer
   const cooling = (): void =>
     annotations.setCapability({
       kind: "cooldown",
-      retryAfter: toInstant(RETRY_AFTER),
+      retryAfter: RETRY_AFTER,
     });
 
   const service = new PdfAnnotationEditor({
@@ -1319,13 +1319,11 @@ it("records a read of the other Attachment an open names in a restored tab", asy
     },
   });
   const attachments = attachmentReads(RESOLVED);
-  attachments.resolve.mockImplementation(((
-    _path: string,
-    named?: { attachmentKey: string | null },
-  ) =>
-    named?.attachmentKey === SHARED.attachmentKey
-      ? SHARED
-      : RESOLVED) as never);
+  attachments.resolve.mockImplementation((_path, named) =>
+    Effect.succeed(
+      named?.attachmentKey === SHARED.attachmentKey ? SHARED : RESOLVED,
+    ),
+  );
   const recordRead = vi.fn();
 
   await using service = new PdfAnnotationEditor({

@@ -5,7 +5,9 @@
 // `MetadataCache`; policies/events.md (Capability tags) describes it.
 import { Context, Effect, Layer } from "effect";
 import type { Stream } from "effect";
+import { FileSystemAdapter } from "obsidian";
 import type {
+  DataAdapter,
   DataWriteOptions,
   TAbstractFile,
   TFile,
@@ -13,10 +15,11 @@ import type {
   Vault as ObsidianVault,
 } from "obsidian";
 
+import { isErrno } from "@/lib/errno";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { obsidianEventSource } from "@/lib/obsidian-event-source";
 import type { ObsidianEventEmitter } from "@/lib/obsidian-event-source";
-import { FileExists, vaultError } from "@/lib/vault-errors";
+import { FileExists, FileNotFound, vaultError } from "@/lib/vault-errors";
 import type { VaultError } from "@/lib/vault-errors";
 
 /** One vault event, tagged with its Obsidian event name. */
@@ -41,18 +44,28 @@ export type VaultSource = Pick<
   | "cachedRead"
   | "process"
   | "create"
+  | "createFolder"
   | "trash"
   | "getFileByPath"
   | "getFolderByPath"
   | "getAbstractFileByPath"
-> &
-  ObsidianEventEmitter;
+  | "getMarkdownFiles"
+> & {
+  /** The vault's adapter, read by path. */
+  readonly adapter: Pick<DataAdapter, "read">;
+} & ObsidianEventEmitter;
 
 export interface VaultShape {
   /** The file's content, read from disk. */
   read(file: TFile): Effect.Effect<string, VaultError>;
   /** The file's content, from Obsidian's cache when it holds it. */
   cachedRead(file: TFile): Effect.Effect<string, VaultError>;
+  /**
+   * The text at the vault path `path`, read from disk through the vault's
+   * adapter, whether or not the vault cache holds a file there. Fails with
+   * `FileNotFound` when the adapter rejects with `ENOENT`.
+   */
+  readPath(path: string): Effect.Effect<string, FileNotFound | VaultError>;
   /** Rewrite the file's content with `fn` in one step; the new content. */
   process(
     file: TFile,
@@ -69,6 +82,8 @@ export interface VaultShape {
     data: string,
     options?: DataWriteOptions,
   ): Effect.Effect<TFile, FileExists | VaultError>;
+  /** Create a folder at `path`; its parent folders must exist. */
+  createFolder(path: string): Effect.Effect<TFolder, VaultError>;
   /** Move the file to the system trash, or to the vault's `.trash` when `system` is false. */
   trash(file: TAbstractFile, system: boolean): Effect.Effect<void, VaultError>;
   /** The file at `path` now, `null` when there is none. */
@@ -77,6 +92,20 @@ export interface VaultShape {
   getFolderByPath(path: string): Effect.Effect<TFolder | null>;
   /** The file or folder at `path` in the vault cache (case-sensitive), `null` when there is none. */
   getAbstractFileByPath(path: string): Effect.Effect<TAbstractFile | null>;
+  /** Every Markdown file in the vault now, in Obsidian's order. */
+  readonly getMarkdownFiles: Effect.Effect<TFile[]>;
+  /**
+   * The file-system path of the vault path `path`, by the adapter's
+   * `getFullPath`; `null` when the vault is not on a file system.
+   */
+  fullPath(path: string): Effect.Effect<string | null>;
+  /**
+   * Add the file that was written to disk at the vault path `path` to the
+   * vault cache now, before the file watcher reports it (Obsidian's internal
+   * `reconcileInternalFile`). Fails with `VaultError` when the vault is not
+   * on a file system or Obsidian rejects.
+   */
+  reconcileFile(path: string): Effect.Effect<void, VaultError>;
   /** Each vault event, in Obsidian's order, from when the consumer's Stream starts. */
   readonly changes: Stream.Stream<VaultEvent>;
 }
@@ -125,6 +154,15 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
     cachedRead: Effect.fn("Vault.cachedRead")((file) =>
       call("cachedRead", file.path, () => source.cachedRead(file)),
     ),
+    readPath: Effect.fn("Vault.readPath")((path) =>
+      Effect.tryPromise({
+        try: () => source.adapter.read(path),
+        catch: (cause) =>
+          isErrno(cause, "ENOENT")
+            ? new FileNotFound({ path, cause })
+            : vaultError("readPath", path)(cause),
+      }),
+    ),
     process: Effect.fn("Vault.process")((file, fn, options) =>
       call("process", file.path, () => source.process(file, fn, options)),
     ),
@@ -133,6 +171,9 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
         source.getAbstractFileByPath(path) === null
           ? call("create", path, () => source.create(path, data, options))
           : Effect.fail(new FileExists({ path })),
+    ),
+    createFolder: Effect.fn("Vault.createFolder")((path) =>
+      call("createFolder", path, () => source.createFolder(path)),
     ),
     trash: Effect.fn("Vault.trash")((file, system) =>
       call("trash", file.path, () => source.trash(file, system)),
@@ -145,6 +186,23 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
     ),
     getAbstractFileByPath: Effect.fn("Vault.getAbstractFileByPath")((path) =>
       Effect.sync(() => source.getAbstractFileByPath(path)),
+    ),
+    getMarkdownFiles: Effect.sync(() => source.getMarkdownFiles()).pipe(
+      Effect.withSpan("Vault.getMarkdownFiles"),
+    ),
+    fullPath: Effect.fn("Vault.fullPath")((path) =>
+      Effect.sync(() =>
+        source.adapter instanceof FileSystemAdapter
+          ? source.adapter.getFullPath(path)
+          : null,
+      ),
+    ),
+    reconcileFile: Effect.fn("Vault.reconcileFile")((path) =>
+      call("reconcileFile", path, async () => {
+        if (!(source.adapter instanceof FileSystemAdapter))
+          throw new Error("The vault is not on a file system");
+        await source.adapter.reconcileInternalFile(path);
+      }),
     ),
     changes: events.stream,
   });

@@ -1,8 +1,9 @@
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Exit, Fiber } from "effect";
+import { Context, Deferred, Effect, Exit, Fiber } from "effect";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import { apiVersion } from "obsidian";
 import type { CliData } from "obsidian";
 import { beforeEach, describe, expect, vi } from "vitest";
 import { parse } from "yaml";
@@ -16,16 +17,26 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import { TemplateError } from "@zotlit/templates/facade";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { NoteIndex } from "@/services/note-index/service";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import { getProfileBinding } from "@/services/profile/bindings";
+import type { Settings } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
+import { Template } from "@/services/template/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
-import { workbenchRegistrationDeps } from "./__fixtures__";
+import {
+  fixtureServices,
+  workbenchContext,
+  workbenchIdentity,
+} from "./__fixtures__";
 import { TEMPLATE_CHECK_COMMAND } from "./check";
 import { readTemplateData } from "./data";
 import { registerTemplateWorkbench } from "./register";
@@ -36,6 +47,9 @@ vi.mock("./data", async (original) => ({
 }));
 
 const PATH = "templates/zotlit-profile.books.md";
+
+/** The settings each mocked data load read, in order. */
+const loadedSettings: Readonly<Settings>[] = [];
 function annotationOf(
   members: Partial<TemplateAnnotation>,
 ): TemplateAnnotation {
@@ -83,9 +97,7 @@ async function fixture(
   stack.defer(() => rm(scratch, { recursive: true, force: true }));
   Object.assign(f.vault, {
     read: async (file: { path: string }) => f.vault.contents.get(file.path)!,
-    getName: () => "Check fixture",
     adapter: {
-      getBasePath: () => "/fixture",
       read: async (path: string) => {
         const text = f.vault.contents.get(path);
         if (text === undefined)
@@ -98,12 +110,19 @@ async function fixture(
   const noteFiles = Object.entries(notes).map(([path, text]) =>
     f.vault.addFile(path, text),
   );
-  const noteIndex = {
-    whenIndexed: async () => {},
-    getNotesByItemKey: (key: string) => (key === "ABCD2345" ? noteFiles : []),
-    getImportedNoteByNoteKey: () => [],
-  };
-  const zoteroPref = {
+  const noteIndex = stubService<NoteIndex["Service"]>("NoteIndex", {
+    whenIndexed: Effect.void,
+    getNotesByItemKey: (key: string) =>
+      Effect.succeed(key === "ABCD2345" ? noteFiles : []),
+    getImportedNoteByNoteKey: () => Effect.succeed([]),
+  });
+  // A test changes the source this reports between reads.
+  const zoteroPref: {
+    sourceId: string | null;
+    databasePath: string;
+    dataDir: string;
+    baseAttachmentPath: string | null;
+  } = {
     sourceId: "fixture",
     databasePath: "/fixture/db",
     dataDir: "/fixture",
@@ -111,23 +130,37 @@ async function fixture(
   };
   const zoteroReads =
     client && stack.use(inProcessReadsService(sharedClientOpener(client)));
+  if (zoteroReads) await zoteroReads.ready;
+  const services = fixtureServices(f.runtime);
   registerTemplateWorkbench(
     { ...host, manifest: { version: "test" } },
-    workbenchRegistrationDeps({
-      runtime: testRuntime(),
-      app: f.app,
-      templates: f.template,
-      settings: f.settings,
-      bridge: f.bridge,
-      profile: f.profile,
-      zoteroPref,
-      noteIndex,
-      ...(zoteroReads === undefined ? {} : { zoteroReads }),
-    }),
+    workbenchContext(
+      services,
+      workbenchIdentity({
+        vaultName: "Check fixture",
+        basePath: "/fixture",
+        apiVersion,
+        ...zoteroPref,
+      }),
+      Context.make(NoteIndex, noteIndex),
+      Context.make(
+        ZoteroPref,
+        stubService<ZoteroPref["Service"]>("ZoteroPref", {
+          current: Effect.sync(() =>
+            stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", zoteroPref),
+          ),
+        }),
+      ),
+      zoteroReads === undefined
+        ? Context.empty()
+        : Context.make(ZoteroReads, zoteroReads.runtime.runSync(ZoteroReads)),
+    ),
   );
   const cleanup = stack.move();
   return {
     ...f,
+    /** The Template service the commands read. */
+    templates: Context.get(services, Template),
     zoteroPref,
     draft: (text: string) =>
       Effect.promise(async () => {
@@ -279,13 +312,19 @@ describe("plain document checks", () => {
         yield* Effect.promise(() =>
           f.template.createPartial("changing", { source: "Before" }),
         );
-        const original = f.template.renderPartialSource.bind(f.template);
-        vi.spyOn(f.template, "renderPartialSource").mockImplementationOnce(
-          (...args) => {
-            const output = original(...args);
-            f.vault.modifyFile("templates/zotlit-partial.changing.md", "After");
-            return output;
-          },
+        const original = f.templates.renderPartialSource.bind(f.templates);
+        vi.spyOn(f.templates, "renderPartialSource").mockImplementationOnce(
+          (...args) =>
+            original(...args).pipe(
+              Effect.tap(() =>
+                Effect.sync(() =>
+                  f.vault.modifyFile(
+                    "templates/zotlit-partial.changing.md",
+                    "After",
+                  ),
+                ),
+              ),
+            ),
         );
         const result = yield* f.check({
           document: "partial:changing",
@@ -440,10 +479,7 @@ describe("plain document checks", () => {
           selectedProfile: { id: "Bk3Qn7XvT2Lp" },
           outputs: { partial: "Paper" },
         });
-        const loadedSettings = yield* vi
-          .mocked(readTemplateData)
-          .mock.calls.at(-1)![0].settings.current;
-        expect(loadedSettings).toMatchObject({
+        expect(loadedSettings.at(-1)).toMatchObject({
           "note.literature-folder": "Selected folder",
         });
         yield* f.draft("---\nlanguage: liquid\n---\n{% render 'missing' %}");
@@ -616,25 +652,31 @@ describe("plain document checks", () => {
 });
 
 beforeEach(() => {
-  vi.mocked(readTemplateData).mockImplementation((_deps, _key, root) =>
-    Effect.succeed({
-      kind: "data",
-      data:
-        root === "filename"
-          ? { title: "Paper", indexedKey: "ABCD2345" }
-          : root === "annotation"
-            ? {
-                indexedKey: "ANNQ2345",
-                comment: "An observation",
-                citation: "(Paper)",
-              }
-            : {
-                indexedKey: "ABCD2345",
-                title: "Paper",
-                annotations: [
-                  { indexedKey: "ANNQ2345", comment: "An observation" },
-                ],
-              },
+  loadedSettings.length = 0;
+  vi.mocked(readTemplateData).mockImplementation((_key, root) =>
+    Effect.gen(function* () {
+      loadedSettings.push(
+        yield* PluginSettings.use((settings) => settings.current),
+      );
+      return {
+        kind: "data" as const,
+        data:
+          root === "filename"
+            ? { title: "Paper", indexedKey: "ABCD2345" }
+            : root === "annotation"
+              ? {
+                  indexedKey: "ANNQ2345",
+                  comment: "An observation",
+                  citation: "(Paper)",
+                }
+              : {
+                  indexedKey: "ABCD2345",
+                  title: "Paper",
+                  annotations: [
+                    { indexedKey: "ANNQ2345", comment: "An observation" },
+                  ],
+                },
+      };
     }),
   );
 });
@@ -847,11 +889,11 @@ describe("registered template-check", () => {
           },
         });
         expect(inherited.outputs.fold["zotlit-csl"]).toBeUndefined();
-        const loadedSettings = yield* vi
-          .mocked(readTemplateData)
-          .mock.calls.at(-1)![0].settings.current;
         expect(
-          getProfileBinding(loadedSettings, "citation.references-style"),
+          getProfileBinding(
+            loadedSettings.at(-1)!,
+            "citation.references-style",
+          ),
         ).toBe("inherited-style");
         expect(
           f.profile.resolveProfile("Bk3Qn7XvT2Lp" as never)?.bindings[
@@ -904,7 +946,19 @@ describe("registered template-check", () => {
         expect(yield* f.check({ draft: missing })).toMatchObject({
           ok: false,
           input: { origin: "draft", path: missing, revision: null },
-          diagnostic: { code: "DRAFT_READ_FAILED", hint: expect.any(String) },
+          diagnostic: {
+            code: "DRAFT_READ_FAILED",
+            // Node's own message for the failed read.
+            message: `ENOENT: no such file or directory, open '${missing}'`,
+            hint: expect.any(String),
+          },
+        });
+        expect(yield* f.check({ draft: "draft.md" })).toMatchObject({
+          ok: false,
+          diagnostic: {
+            code: "DRAFT_READ_FAILED",
+            message: "Use an absolute scratch-file path for draft.",
+          },
         });
       }),
   );
@@ -1631,7 +1685,7 @@ Annotation`;
         );
         const load = vi.mocked(readTemplateData).getMockImplementation()!;
         let broken = false;
-        vi.mocked(readTemplateData).mockImplementation((deps, key, root) =>
+        vi.mocked(readTemplateData).mockImplementation((key, root) =>
           root === "annotation"
             ? Effect.succeed({
                 kind: "data",
@@ -1644,7 +1698,7 @@ Annotation`;
                   },
                 ),
               })
-            : load(deps, key, root),
+            : load(key, root),
         );
         expect(
           yield* f.check({
@@ -1699,7 +1753,7 @@ Annotation`;
         const f = yield* scopedFixture();
         const load = vi.mocked(readTemplateData).getMockImplementation()!;
         let firstComment = "First revision";
-        vi.mocked(readTemplateData).mockImplementation((deps, key, root) =>
+        vi.mocked(readTemplateData).mockImplementation((key, root) =>
           Effect.gen(function* () {
             if (root === "annotation")
               return {
@@ -1718,7 +1772,7 @@ Annotation`;
                   },
                 ),
               };
-            const loaded = yield* load(deps, key, root);
+            const loaded = yield* load(key, root);
             if (root !== "note" || loaded.kind !== "data") return loaded;
             return {
               kind: "data" as const,

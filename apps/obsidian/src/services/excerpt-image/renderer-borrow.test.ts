@@ -1,12 +1,13 @@
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 // The render seam: a crop drawn from the reader's own document once that
 // document proves it holds the file's bytes, and from the file otherwise.
-
-import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadPdfJs } from "obsidian";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
+
+import { NodeExcerptImageFixture as ExcerptImageService } from "@/services/excerpt-image/__fixtures__/node-service";
 
 import { sizedWebp } from "./__fixtures__/webp";
 import type {
@@ -14,7 +15,7 @@ import type {
   ExcerptCropPage,
   ExcerptReaderDocuments,
 } from "./reader-borrow";
-import { ExcerptImageService, excerptKey } from "./service";
+import { excerptKey } from "./service";
 import type { ExcerptEntry, ExcerptRequest } from "./service";
 
 vi.mock("obsidian", async (original) => ({
@@ -527,6 +528,38 @@ it("cancels a borrowed crop when its caller aborts, and publishes nothing", asyn
   await rejected;
   expect(held.tasks[0]!.cancel).toHaveBeenCalledTimes(1);
   expect(held.readerTask.cancel).not.toHaveBeenCalled();
+  expect(f.entries.size).toBe(0);
+  expect(f.detached.load).not.toHaveBeenCalled();
+});
+
+// #1790: unload interrupts the layer's in-flight crop and releases its resources.
+it("unload cancels a borrowed crop and releases the reader page without publishing", async () => {
+  const held = cropPage({
+    task: () => ({
+      promise: new Promise<void>(() => {}),
+      cancel: () => undefined,
+    }),
+  });
+  const reader = readerDocument({
+    bytes: PDF_BYTES,
+    page: async () => held.page,
+  });
+  await using f = await harness({ reader: holdingReader(reader) });
+  const pending = f.service.resolve(f.request);
+  const rejected = expect(pending).rejects.toMatchObject({
+    name: "AbortError",
+  });
+  await vi.waitFor(() => expect(held.tasks).toHaveLength(1));
+  await f.service[Symbol.asyncDispose]();
+  await rejected;
+  expect(held.tasks[0]!.cancel).toHaveBeenCalledTimes(1);
+  expect(held.readerTask.cancel).not.toHaveBeenCalled();
+  expect(held.cleanup).not.toHaveBeenCalled();
+  expect(f.service.rendererDiagnostics?.snapshot()).toMatchObject({
+    jobActive: false,
+    renderTaskActive: false,
+    canvas: null,
+  });
   expect(f.entries.size).toBe(0);
   expect(f.detached.load).not.toHaveBeenCalled();
 });

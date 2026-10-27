@@ -2,7 +2,6 @@
 
 import { openDB } from "idb";
 import type { DBSchema } from "idb";
-import type { App } from "obsidian";
 
 import type { NoteScanRecord } from "./scan-note";
 
@@ -61,9 +60,9 @@ interface CitationIndexSchema extends DBSchema {
  * persists its metadata cache: one IndexedDB database per app id, written a
  * record at a time.
  */
-export async function openCitekeyStore(app: App): Promise<CitekeyStore> {
+export async function openCitekeyStore(appId: string): Promise<CitekeyStore> {
   const db = await openDB<CitationIndexSchema>(
-    `${app.appId}-zotlit-citation-index`,
+    `${appId}-zotlit-citation-index`,
     SCHEMA_VERSION,
     {
       upgrade(database) {

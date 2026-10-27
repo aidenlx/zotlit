@@ -2,10 +2,16 @@ import { describe, it } from "node:test";
 import { RuleTester } from "oxlint/plugins-dev";
 
 import {
+  noEvalCapture,
   noClassAssertion,
   noMarkupAssertion,
   noSourceText,
   noInternalMock,
+  noTypedArgName,
+  noPollAdapter,
+  noPollWrapper,
+  noGeneratedPollLabel,
+  noStringTransport,
 } from "./oxlint-plugin-tests.ts";
 
 RuleTester.describe = describe;
@@ -169,4 +175,169 @@ tester.run("no-internal-mock", noInternalMock, {
     'vi.mock(import("./module"))',
     'vi["doMock"](`@/module`)',
   ].map((code) => ({ code, errors: [{ messageId: "internalMock" }] })),
+});
+
+// Serialized page callbacks can use page globals and types, but no host bindings.
+tester.run("no-eval-capture", noEvalCapture, {
+  valid: [
+    "readQueryViewUntil(id, ({page}, args) => page.revealQueryView(args.handle), {handle}, {ready: value => value !== null})",
+    "obRun(id, ({app}, args) => app.vault.getFileByPath(args.path), {path})",
+    "obRunUntil(id, () => document.readyState === 'complete', undefined, {what:'ready'})",
+    "type Result = {value: string}; obRun(id, (): Result => ({value:'ok'}))",
+    "import type { App } from 'obsidian'; obRun(id, ({app}) => { const typed: App = app; return typed.vault.getName(); })",
+    "obRun(id, () => { const inner = () => 1; return inner(); })",
+    "const cb = () => document.title; obRun(id, cb)",
+    "obRun(id, () => { const listener = function () { return this.value; }; return listener.call({value: 1}); })",
+    "obRun(id, () => { class Counter { #value = 1; read() { return this.#value; } } return new Counter().read(); })",
+    "obRun(id, function recur(_, n) { return n > 0 ? recur(_, n - 1) : n; }, 2)",
+  ],
+  invalid: [
+    {
+      code: "readQueryViewUntil(id, 'JSON.stringify(1)', {ready: Boolean})",
+      errors: [{ messageId: "callback" }],
+    },
+    {
+      code: "const handle = {}; readQueryViewUntil(id, ({page}) => page.revealQueryView(handle), undefined, {ready: Boolean})",
+      errors: [{ messageId: "capture" }],
+    },
+    {
+      code: "const path = 'note'; obRun(id, ({app}) => app.vault.getFileByPath(path))",
+      errors: [{ messageId: "capture" }],
+    },
+    {
+      code: "import {helper} from './helper'; obRun(id, () => helper())",
+      errors: [{ messageId: "capture" }],
+    },
+    {
+      code: "const x = 1; const cb = () => x; obRun(id, cb)",
+      errors: [{ messageId: "capture" }],
+    },
+    {
+      code: "const x = 1; obRun(id, () => {const inner = () => x; return inner()})",
+      errors: [{ messageId: "capture" }],
+    },
+    {
+      code: "obRun(id, function () { return this.value })",
+      errors: [{ messageId: "thisValue" }],
+    },
+    {
+      code: "obRun(id, () => (() => this.value)())",
+      errors: [{ messageId: "thisValue" }],
+    },
+    {
+      code: "obRun(id, { callback() {return 1} }.callback)",
+      errors: [{ messageId: "callback" }],
+    },
+  ],
+});
+
+// Readable page callbacks (#1873): role names, direct polls, typed values.
+tester.run("no-typed-arg-name", noTypedArgName, {
+  valid: [
+    "obRun(id, ({app}, {attachmentPath}) => app.vault.getFileByPath(attachmentPath), {attachmentPath})",
+    "const typedArguments = 1",
+  ],
+  invalid: [
+    {
+      code: "obRun(id, ({app}, {__typedArg0}) => app.vault.getFileByPath(__typedArg0), {__typedArg0: path})",
+      errors: [
+        { messageId: "placeholder" },
+        { messageId: "placeholder" },
+        { messageId: "placeholder" },
+        { messageId: "placeholder" },
+      ],
+    },
+  ],
+});
+
+tester.run("no-poll-adapter", noPollAdapter, {
+  valid: [
+    "await obRunUntil(id, () => true, undefined, {what: 'ready'})",
+    "promise.then(() => true)",
+    "promise.then((value) => value, () => false)",
+    "promise.then(() => false, () => true)",
+    "promise.then(() => 1, () => 0)",
+  ],
+  invalid: [
+    {
+      code: "const done = await obRunUntil(id, cb, undefined, {what: 'x'}).then(() => true, () => false)",
+      errors: [{ messageId: "adapter" }],
+    },
+    {
+      code: "const done = poll().then(\n() => true,\n() => false,\n)",
+      errors: [{ messageId: "adapter" }],
+    },
+  ],
+});
+
+tester.run("no-poll-wrapper", noPollWrapper, {
+  valid: [
+    "await obRunUntil(id, cb, undefined, {what: 'x', tries: 80})",
+    "const finds = (query) => obRunUntil(id, cb, {query}, {what: 'x'})",
+    "(() => { const value = obRunUntil(id, cb, undefined, {what: 'x'}); return value })()",
+    "(() => other())()",
+  ],
+  invalid: [
+    {
+      code: "((options) => obRunUntil(id, cb, undefined, {ready: (v) => v === options.expected, what: 'x'}))({expected: 'true'})",
+      errors: [{ messageId: "wrapper" }],
+    },
+    {
+      code: "check(((options) => obRunUntil(id, cb, undefined, {what: 'x'}).then(() => true, () => false))({expected: 'true'}))",
+      errors: [{ messageId: "wrapper" }],
+    },
+    {
+      code: "(async () => await readQueryViewUntil(id, cb, args, {what: 'x'}))()",
+      errors: [{ messageId: "wrapper" }],
+    },
+  ],
+});
+
+tester.run("no-generated-poll-label", noGeneratedPollLabel, {
+  valid: [
+    "obRunUntil(id, cb, undefined, {what: 'the card in the note embed'})",
+    "const file = {name: 'paired-run.e2e.ts:12'}",
+    "obRunUntil(id, cb, undefined, {what: 'section 1.2: the title'})",
+  ],
+  invalid: [
+    {
+      code: "obRunUntil(id, cb, undefined, {what: 'annotation-drag.ts:34'})",
+      errors: [{ messageId: "label" }],
+    },
+    {
+      code: "obRunUntil(id, cb, undefined, {what: 'paired-run.e2e.ts:6683', tries: 2})",
+      errors: [{ messageId: "label" }],
+    },
+  ],
+});
+
+tester.run("no-string-transport", noStringTransport, {
+  valid: [
+    "String(count)",
+    "String(value.toFixed(2))",
+    "obRunUntil(id, cb, undefined, {what: 'x', ready: (value) => value === true})",
+    "obRunUntil(id, () => el.getAttribute('aria-pressed'), undefined, {what: 'x', ready: (value) => value === 'false'})",
+    "obRunUntil(id, cb, undefined, {what: 'x', ready: (value) => value === expected})",
+    "expect(button.getAttribute('aria-pressed')).toBe('true')",
+    "const open = el.ariaExpanded === 'true'",
+  ],
+  invalid: [
+    { code: "String(String(flag))", errors: [{ messageId: "nested" }] },
+    {
+      code: "(() => String(String(!!el)))()",
+      errors: [{ messageId: "nested" }],
+    },
+    {
+      code: "obRunUntil(id, () => { return row ? 'true' : 'false' }, undefined, {what: 'x', ready: (value) => value === 'true'})",
+      errors: [{ messageId: "boolean" }],
+    },
+    {
+      code: "obRunUntil(id, () => { if (!row) return 'false'; return 'true' }, undefined, {ready: (value) => 'false' === value, what: 'x'})",
+      errors: [{ messageId: "boolean" }],
+    },
+    {
+      code: "obRunUntil(id, ({app}) => app.vault.adapter.exists(path).then(String), undefined, {what: 'x', ready: (value) => value === 'true'})",
+      errors: [{ messageId: "boolean" }],
+    },
+  ],
 });

@@ -5,7 +5,9 @@ import { TFile } from "obsidian";
 import type { App, Command, MetadataCache, Workspace } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { fileMenuHandler } from "@/services/__fixtures__/file-menu";
@@ -76,10 +78,11 @@ function harness(
         "server.workbench": workbench,
       })),
     }),
-    profile: stubService<CustomizeActionDeps["profile"]>("PlainProfile", {
-      loaded,
-      profileOf: () => stampedProfile(note?.stamp),
+    profile: stubService<CustomizeActionDeps["profile"]>("Profile", {
+      loaded: Effect.succeed(loaded),
+      profileOf: () => Effect.succeed(stampedProfile(note?.stamp)),
     }),
+    bridge: effectBridge(testRuntime()),
     customize,
   };
 

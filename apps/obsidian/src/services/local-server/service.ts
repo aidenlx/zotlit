@@ -19,7 +19,7 @@ import type {
   UpdateScope,
 } from "@zotlit/protocol";
 
-import { valueOr } from "@/lib/effect-bridge";
+import { scopedBridge, valueOr } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import { NoteIndex } from "@/services/note-index/service";
@@ -172,9 +172,7 @@ export const layerLocalServer: Layer.Layer<
     const noteIndex = yield* NoteIndex;
 
     // Node callbacks and Hono handlers run outside Effect.
-    const context = yield* Effect.context<never>();
-    const run = Effect.runSyncWith(context);
-    const runPromiseExit = Effect.runPromiseExitWith(context);
+    const { runSync: run, runPromiseExit } = yield* scopedBridge;
 
     const available = yield* SubscriptionRef.make(false);
     const boundPort = yield* SubscriptionRef.make<number | null>(null);
@@ -373,8 +371,11 @@ export const layerLocalServer: Layer.Layer<
     const noteStatus: NoteStatusSource = {
       getIndexedItemKeys: () => run(noteIndex.getIndexedItemKeys),
       whenIndexed: async () => {
-        if (stoppedFlag) return;
-        valueOr(await runPromiseExit(noteIndex.whenIndexed), undefined);
+        if (stoppedFlag) return false;
+        return valueOr(
+          await runPromiseExit(Effect.as(noteIndex.whenIndexed, true)),
+          false,
+        );
       },
     };
 

@@ -1,7 +1,7 @@
 // Saved-source checking and attempt retention. Output flags only disclose completed work.
-import { Clock, Effect, Result, Schema } from "effect";
+import { Clock, Effect, FileSystem, Result, Schema } from "effect";
+import type { PlatformError } from "effect";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import type { CliData, CliFlag } from "obsidian";
 
@@ -17,7 +17,6 @@ import type {
   PartialContext,
 } from "@zotlit/workbench/render";
 
-import type { CliCommandHandler } from "@/lib/cli-command";
 import {
   catchRejection,
   cliDefault,
@@ -37,6 +36,7 @@ import {
 } from "@/lib/cli-params";
 import type { CliOutput, CliParamName, CliRejection } from "@/lib/cli-params";
 import { instantClock } from "@/lib/effect-clock";
+import { Profile } from "@/services/profile/service";
 import { PROFILE_OUTPUTS } from "@/views/note-preview/check-profile";
 import type { ProfileCheck } from "@/views/note-preview/check-profile";
 
@@ -51,10 +51,14 @@ import {
   PROFILE_ID_MISMATCH,
 } from "./check-profile-document";
 import { readTemplateData } from "./data";
-import type { TemplateDataDeps } from "./data";
+import type { TemplateDataServices } from "./data";
 import { CONTRACT_VERSION, rejectionDiagnostic } from "./envelope";
 import { createInspectHandler, sourceRevision } from "./inspect";
-import type { InspectDeps, InspectDocument, SourceVersion } from "./inspect";
+import type {
+  InspectDocument,
+  InspectServices,
+  SourceVersion,
+} from "./inspect";
 import {
   choices,
   CITATION_EXAMPLE_NAMES,
@@ -224,11 +228,28 @@ export interface CheckContext {
   readonly selectedProfile?: { id: string; label: string };
 }
 
-export interface CheckDeps extends InspectDeps {
-  data: TemplateDataDeps;
+export interface CheckDeps {
   pluginVersion: string;
   hostVersion: string;
 }
+
+/** What a check reads: the inspection's services and the item data's. */
+export type CheckServices =
+  | InspectServices
+  | TemplateDataServices
+  | FileSystem.FileSystem;
+
+/**
+ * The message of what the draft read threw, as Node's own `readFile` gave it:
+ * the CLI shows it in `DRAFT_READ_FAILED`.
+ */
+const draftReadMessage = (error: PlatformError.PlatformError): string =>
+  error.cause instanceof Error
+    ? error.cause.message
+    : (error.reason.description ?? error.message);
+
+/** A command's answer to the caller's parameters, over the services it reads. */
+type CheckHandler<R> = (params: CliData) => Effect.Effect<string, unknown, R>;
 
 /** Attaches the attempt's render report to one diagnostic the branch raises. */
 type AttachReport = <
@@ -287,12 +308,11 @@ export interface CheckOutcome {
  * module owns.
  */
 export interface CheckBranch {
-  deps: CheckDeps;
   params: CheckRequest;
   mode: "create" | "update";
   draft: { source: string; path: string } | undefined;
   /** Reruns the source inspection to detect a superseded source. */
-  inspect: CliCommandHandler;
+  inspect: CheckHandler<InspectServices>;
   inspectRequest: CliData;
   inspected: InspectedSource;
   /** Checked source text, acquired before the branch runs. */
@@ -487,7 +507,9 @@ function reported(diagnostic: FaultDiagnostic): FaultDiagnostic {
 export type CheckRequest = CliOutput<typeof checkParams>;
 type CheckParam = CliParamName<typeof checkParams>;
 
-export function createCheckHandler(deps: CheckDeps): CliCommandHandler {
+export function createCheckHandler(
+  deps: CheckDeps,
+): CheckHandler<CheckServices> {
   const attempts = new Map<string, object>();
   let sequence = 0;
   return Effect.fn("TemplateWorkbenchCli.check")(
@@ -735,21 +757,21 @@ export function createCheckHandler(deps: CheckDeps): CliCommandHandler {
         const input = { origin: "draft", path: params.draft, revision: null };
         sourceContext = { ...sourceContext, documentPath: params.draft };
         const path = params.draft;
+        const fs = yield* FileSystem.FileSystem;
         const read = yield* Effect.result(
-          Effect.tryPromise((signal) => {
-            if (!isAbsolute(path))
-              throw new Error("Use an absolute scratch-file path for draft.");
-            return readFile(path, { encoding: "utf8", signal });
-          }),
+          isAbsolute(path)
+            ? fs
+                .readFileString(path)
+                .pipe(Effect.mapError((error) => draftReadMessage(error)))
+            : Effect.fail("Use an absolute scratch-file path for draft."),
         );
         if (Result.isFailure(read)) {
-          const error = read.failure.cause;
           return finish(sourceContext, {
             ok: false,
             input,
             diagnostic: {
               code: "DRAFT_READ_FAILED",
-              message: error instanceof Error ? error.message : String(error),
+              message: read.failure,
               hint: "Write a complete Profile document to a readable scratch file and supply its absolute path as draft.",
             },
           });
@@ -761,7 +783,6 @@ export function createCheckHandler(deps: CheckDeps): CliCommandHandler {
         // Any failure to read the baseline refuses the check.
         const refused = yield* Effect.gen(function* () {
           const parent = yield* readTemplateData(
-            deps.data,
             sourceContext.itemKey,
             "filename",
           );
@@ -782,7 +803,7 @@ export function createCheckHandler(deps: CheckDeps): CliCommandHandler {
             ...sourceContext,
             itemKey: parent.data.indexedKey,
           };
-          const selected = yield* selectCheckBaseline(deps.data, {
+          const selected = yield* selectCheckBaseline({
             key: sourceContext.itemKey,
             note: params.note as string | undefined,
             existing: params.existing as string | undefined,
@@ -795,7 +816,7 @@ export function createCheckHandler(deps: CheckDeps): CliCommandHandler {
             params.draft === undefined &&
             selected.stamp &&
             (!selected.stamp.id ||
-              !deps.profile.resolveProfile(selected.stamp.id))
+              !(yield* (yield* Profile).resolveProfile(selected.stamp.id)))
           )
             return finish(sourceContext, {
               ok: false,
@@ -824,7 +845,7 @@ export function createCheckHandler(deps: CheckDeps): CliCommandHandler {
         );
         if (refused !== undefined) return refused;
       }
-      const inspect = createInspectHandler(deps, draft);
+      const inspect = createInspectHandler(draft);
       const inspectRequest = {
         ...(params.document !== undefined
           ? { document: params.document }
@@ -915,7 +936,6 @@ export function createCheckHandler(deps: CheckDeps): CliCommandHandler {
             },
           });
         const plain = yield* checkPlainDocument({
-          deps,
           params,
           mode,
           draft,
@@ -954,7 +974,6 @@ export function createCheckHandler(deps: CheckDeps): CliCommandHandler {
         });
       const inspectedDocument = inspected.document;
       const profile = yield* checkProfileDocument({
-        deps,
         params,
         mode,
         draft,

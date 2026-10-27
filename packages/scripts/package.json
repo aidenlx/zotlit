@@ -47,6 +47,7 @@
   },
   "devDependencies": {
     "@clack/prompts": "^0.11.0",
+    "@effect/vitest": "catalog:",
     "@hono/node-server": "catalog:",
     "@js-temporal/polyfill": "catalog:",
     "@pnpm/find-workspace-dir": "catalog:",
@@ -58,6 +59,7 @@
     "@zotlit/templates": "workspace:*",
     "@zotlit/workbench": "workspace:*",
     "arkregex": "catalog:",
+    "effect": "catalog:",
     "get-port": "^7.2.0",
     "hono": "catalog:",
     "semver": "^7.8.0",

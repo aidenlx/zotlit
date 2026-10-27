@@ -1,7 +1,6 @@
+import { open } from "node:fs/promises";
 // The live display read of one Annotation, as a card demands it and a saved
 // edit replaces it.
-
-import { open } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { loadPdfJs } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
@@ -11,6 +10,7 @@ import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
+import { NodeExcerptImageFixture as ExcerptImageService } from "@/services/excerpt-image/__fixtures__/node-service";
 import {
   queryClientsFixture,
   taggedQueryClients,
@@ -18,6 +18,7 @@ import {
 import type { PlainQueryClients } from "@/services/query-client/plain";
 
 import { settledDisplay } from "./__fixtures__/display-state";
+import { layerExcerptFiles } from "./__fixtures__/files";
 import { redPng } from "./__fixtures__/png";
 import { renderGate } from "./__fixtures__/render-gate";
 import type { GatedRender } from "./__fixtures__/render-gate";
@@ -31,7 +32,6 @@ import type {
   ExcerptRendererDiagnosticSnapshot,
 } from "./renderer";
 import {
-  ExcerptImageService,
   excerptAnnotationRecord,
   excerptFingerprint,
   excerptKey,
@@ -317,9 +317,12 @@ function resident(): Resident {
     vi.unstubAllGlobals();
   });
   const service = stack.use(
-    new ExcerptImageService({
-      stamp: async () => ({ size: bytes.length, mtimeMs: 1 }),
-    }),
+    new ExcerptImageService(
+      {
+        stamp: async () => ({ size: bytes.length, mtimeMs: 1 }),
+      },
+      layerExcerptFiles(open),
+    ),
   );
   const queries = stack.use(queryClientsFixture());
   const bridge = stack.use(openTestBridge());
@@ -895,6 +898,7 @@ describe("Excerpt Image live display", () => {
 
   it("holds the renderer for the live read alone, and releases it when the read settles", async () => {
     await using live = resident();
+    await live.service.ready;
     // The marker this fixture has to lack first: no file, no document, and no
     // render task is open, so every one of them below is the read's own. A
     // demand the renderer never engages — no PDF path, say — can only report

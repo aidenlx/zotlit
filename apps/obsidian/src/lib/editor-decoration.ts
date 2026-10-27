@@ -8,8 +8,8 @@
 import { syntaxTree, tokenClassNodeProp } from "@codemirror/language";
 import type { EditorState, StateEffect } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { editorLivePreviewField, MarkdownView } from "obsidian";
-import type { App } from "obsidian";
+import { editorLivePreviewField } from "obsidian";
+import type { MarkdownView } from "obsidian";
 
 /**
  * A half-open range of document offsets — a decoration's extent, a selection
@@ -43,22 +43,21 @@ export function overlapsSelection(
 }
 
 /**
- * Dispatches one effect to every open Markdown editor, which is how a service
- * asks their decorations to be built again when something outside the
+ * Dispatches one effect to the editor of each Markdown view, which is how a
+ * service asks their decorations to be built again when something outside the
  * documents changed what a decoration should say.
  *
+ * @param views the open Markdown views: the Workspace tag's `markdownViews`.
  * @param options.path the one document to reach; omitted, every editor is.
  * @returns how many editors the effect reached.
  */
 export function dispatchToMarkdownEditors(
-  app: App,
+  views: readonly MarkdownView[],
   effect: StateEffect<unknown>,
   options: { path?: string } = {},
 ): number {
   let reached = 0;
-  for (const leaf of app.workspace.getLeavesOfType("markdown")) {
-    const { view } = leaf;
-    if (!(view instanceof MarkdownView)) continue;
+  for (const view of views) {
     if (options.path !== undefined && view.file?.path !== options.path) {
       continue;
     }

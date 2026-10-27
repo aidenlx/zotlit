@@ -3,12 +3,10 @@
 import { Cause, Context, Deferred, Effect, Layer } from "effect";
 import { TFile } from "obsidian";
 
-import { DOCS_COMPANION } from "@/lib/constants";
+import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
-import * as m from "@/lib/i18n/generated/messages";
-import { BaseNotice } from "@/lib/notice";
-import { Notifier } from "@/lib/notifier";
+import type { Notifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -22,6 +20,7 @@ import type {
 import { releaseNoteUrl, V1_TEMPLATE_FOLDER } from "./constants";
 import { decideRelease } from "./decide";
 import type { ReleaseDecision } from "./decide";
+import { companionNotice, showCompanionNotice } from "./notices";
 
 const WEBVIEWER_PLUGIN_ID = "webviewer";
 const WEBVIEWER_VIEW_TYPE = "webviewer";
@@ -75,10 +74,9 @@ export function layerRelease(options: {
       const vault = yield* Vault;
       const workspace = yield* Workspace;
       const settings = yield* PluginSettings;
-      const notifier = yield* Notifier;
       const checked = yield* Deferred.make<void>();
       const events = yield* obsidianEvents<{ layoutReady: [] }>();
-      const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+      const bridge = yield* scopedBridge;
       let stopped = false;
 
       const hasV1Templates = (folderPath: string): Effect.Effect<boolean> =>
@@ -169,25 +167,6 @@ export function layerRelease(options: {
         if (Object.keys(patch).length > 0) yield* settings.update(patch);
       });
 
-      const showCompanionNotice = Effect.suspend(() =>
-        notifier.show(
-          BaseNotice.render((renderer) => {
-            renderer.setTitle(m.companion_zotero_10_guidance());
-            renderer.addAction((button) => {
-              button
-                .setButtonText(m.notice_update_see_whats_new())
-                .onClick(() => void runPromise(openReleaseNote));
-            });
-            renderer.addAction((button) => {
-              button
-                .setButtonText(m.notice_companion_install_action())
-                .onClick(() => window.open(DOCS_COMPANION));
-            });
-          }),
-          { duration: 0 },
-        ),
-      );
-
       const runCheck = Effect.fn("Release.runCheck")(function* () {
         const current = yield* settings.current;
         if (stopped) return;
@@ -223,7 +202,11 @@ export function layerRelease(options: {
         );
         switch (decision.branch) {
           case "companion-notice":
-            yield* showCompanionNotice;
+            yield* showCompanionNotice(
+              companionNotice({
+                openReleaseNote: () => bridge.runAndForget(openReleaseNote),
+              }),
+            );
             break;
           // An update opens the first screen too: its banner announces the update
           // while `release.update-pending` holds.

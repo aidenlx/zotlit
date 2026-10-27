@@ -15,19 +15,65 @@ afterEach(() => {
 });
 
 describe("layerObsidianEnv", () => {
-  it.effect("reads the platform, version, language and vault folder once", () =>
+  it.effect(
+    "reads the platform, version, language, vault name, folder and app id once",
+    () =>
+      Effect.gen(function* () {
+        setMockPlatform({ isMacOS: true, isWin: false, isDesktopApp: true });
+        let reads = 0;
+        const app = stubService<App>("App", {
+          appId: "0123456789abcdef",
+          vault: stubService<Vault>("Vault", {
+            getName: () => "Research",
+            adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
+              getBasePath: () => {
+                reads += 1;
+                return "/Users/me/vault";
+              },
+            }),
+          }),
+        });
+        const env = yield* ObsidianEnv.pipe(
+          Effect.provide(
+            layerObsidianEnv.pipe(
+              Layer.provide(Layer.succeed(ObsidianApp, app)),
+            ),
+          ),
+        );
+
+        expect(env).toMatchObject({
+          platform: { isMacOS: true, isWin: false, isDesktopApp: true },
+          apiVersion: "1.0.0-test",
+          language: "en",
+          vaultName: "Research",
+          basePath: "/Users/me/vault",
+          appId: "0123456789abcdef",
+        });
+        // The mock flags are reset: a later read of the env must not reach them.
+        resetMockPlatform();
+        expect(env.platform.isMacOS).toBe(true);
+        expect(env.basePath).toBe("/Users/me/vault");
+        expect(reads).toBe(1);
+      }),
+  );
+});
+
+describe("ObsidianEnv.corePluginEnabled", () => {
+  it.effect("reads the enabled core plugins on each run", () =>
     Effect.gen(function* () {
       setMockPlatform({ isMacOS: true, isWin: false, isDesktopApp: true });
-      let reads = 0;
+      const enabled = new Set(["graph"]);
       const app = stubService<App>("App", {
+        appId: "0123456789abcdef",
         vault: stubService<Vault>("Vault", {
+          getName: () => "Research",
           adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
-            getBasePath: () => {
-              reads += 1;
-              return "/Users/me/vault";
-            },
+            getBasePath: () => "/Users/me/vault",
           }),
         }),
+        internalPlugins: {
+          getEnabledPluginById: (id: string) => (enabled.has(id) ? {} : null),
+        },
       });
       const env = yield* ObsidianEnv.pipe(
         Effect.provide(
@@ -35,17 +81,10 @@ describe("layerObsidianEnv", () => {
         ),
       );
 
-      expect(env).toMatchObject({
-        platform: { isMacOS: true, isWin: false, isDesktopApp: true },
-        apiVersion: "1.0.0-test",
-        language: "en",
-        basePath: "/Users/me/vault",
-      });
-      // The mock flags are reset: a later read of the env must not reach them.
-      resetMockPlatform();
-      expect(env.platform.isMacOS).toBe(true);
-      expect(env.basePath).toBe("/Users/me/vault");
-      expect(reads).toBe(1);
+      expect(yield* env.corePluginEnabled("graph")).toBe(true);
+      expect(yield* env.corePluginEnabled("canvas")).toBe(false);
+      enabled.delete("graph");
+      expect(yield* env.corePluginEnabled("graph")).toBe(false);
     }),
   );
 });

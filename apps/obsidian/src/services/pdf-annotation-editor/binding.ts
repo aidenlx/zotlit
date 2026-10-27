@@ -18,6 +18,7 @@ import type {
   SelectedText,
 } from "@zotlit/pdf-structure";
 
+import { AbortError, passAborted } from "@/lib/abort-error";
 import {
   registerDomEvent,
   registerMigratingWindowEvent,
@@ -169,7 +170,10 @@ export type AnnotationReads = Pick<
 >;
 
 /** What a binding names its Attachment through, and hears a re-resolution on. */
-export type AttachmentReads = Pick<AttachmentResolver, "resolve" | "on">;
+export type AttachmentReads = Pick<
+  AttachmentResolver["Service"],
+  "resolve" | "resolutionsChanged"
+>;
 
 /**
  * The two gestures the Editing Capability affordance drives, which render and
@@ -200,7 +204,10 @@ export interface PdfViewBindingDeps {
   adapter: FileSystemAdapter;
   attachments: AttachmentReads;
   annotations: AnnotationReads;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
+  bridge: Pick<
+    EffectBridge,
+    "runSync" | "runPromise" | "runAndForget" | "subscribe"
+  >;
   capabilityGestures: CapabilityGestures;
   /**
    * The gestures the Mark Popup reaches outside the reader's own surfaces:
@@ -533,7 +540,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   /** Revalidates this PDF surface when Obsidian activates its leaf. */
   activate(): void {
     if (this.#attachment.kind === "resolved") {
-      void this.#bridge.runPromise(
+      this.#bridge.runAndForget(
         this.#annotations.refresh(this.#attachment.attachmentKey),
       );
     }
@@ -563,7 +570,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     // over an open PDF tab — is told `pending`, and takes its answer here.
     this.#surfaces.defer(() => this.#cancelScroll());
     this.#surfaces.defer(
-      this.#attachments.on("resolutions-changed", () =>
+      this.#bridge.subscribe(this.#attachments.resolutionsChanged, () =>
         this.#resolve(absolutePath),
       ),
     );
@@ -597,9 +604,9 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     const named = peekPendingAnchor(this.#view.leaf)?.attachment ?? null;
     if (named === null || named === this.#attachment.attachmentKey)
       return false;
-    const resolution = this.#attachments.resolve(this.#absolutePath, {
-      attachmentKey: named,
-    });
+    const resolution = this.#bridge.runSync(
+      this.#attachments.resolve(this.#absolutePath, { attachmentKey: named }),
+    );
     return (
       resolution.kind === "resolved" &&
       resolution.attachmentKey !== this.#attachment.attachmentKey
@@ -616,9 +623,11 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
    */
   #resolve(absolutePath: string): void {
     if (this.#surfaces.disposed || this.#attachment.kind !== "pending") return;
-    this.#attachment = this.#attachments.resolve(absolutePath, {
-      attachmentKey: peekPendingAnchor(this.#view.leaf)?.attachment ?? null,
-    });
+    this.#attachment = this.#bridge.runSync(
+      this.#attachments.resolve(absolutePath, {
+        attachmentKey: peekPendingAnchor(this.#view.leaf)?.attachment ?? null,
+      }),
+    );
     logger.debug("PDF view resolved", {
       path: this.#filePath,
       attachment: this.#attachment,
@@ -676,12 +685,12 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
         // The Text Draft focuses itself as it opens; a read started then would
         // race the create its finish sends.
         if (event.target === this.#draftArea) return;
-        void this.#bridge.runPromise(this.#annotations.refresh(attachmentKey));
+        this.#bridge.runAndForget(this.#annotations.refresh(attachmentKey));
       }),
     );
     this.#surfaces.use(
       registerMigratingWindowEvent(this.#view.containerEl, "focus", () => {
-        void this.#bridge.runPromise(this.#annotations.refresh(attachmentKey));
+        this.#bridge.runAndForget(this.#annotations.refresh(attachmentKey));
       }),
     );
     this.#surfaces.defer(() => this.#unpaint());
@@ -1292,7 +1301,8 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
         if (this.#surfaces.disposed) return;
         if (this.#attachment.kind !== "resolved") return;
         this.#gestures.reportBlockedGesture(this.#attachment.attachmentKey);
-      });
+      })
+      .catch(passAborted);
   }
 
   /**
@@ -1501,6 +1511,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
         this.#draw(list);
       })
       .catch((error: unknown) => {
+        if (AbortError.test(error)) return;
         logger.warn("Failed to read the annotations of an open PDF", {
           error,
           path: this.filePath,

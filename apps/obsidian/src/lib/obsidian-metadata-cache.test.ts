@@ -162,6 +162,19 @@ it.effect("carries Obsidian's arguments on each event", () =>
   }),
 );
 
+it.effect("reads a cache entry by path and the resolved links now", () =>
+  Effect.gen(function* () {
+    const cache = new MemoryMetadataCache();
+    const entry: CachedMetadata = { frontmatter: { title: "A" } };
+    cache.setCache("a.md", entry);
+    const { metadata } = yield* open(layerMetadataCacheFrom(cache));
+    expect(yield* metadata.cache("a.md")).toBe(entry);
+    expect(yield* metadata.cache("b.md")).toBeNull();
+    cache.resolvedLinks = { "a.md": { "b.md": 1 } };
+    expect(yield* metadata.resolvedLinks).toEqual({ "a.md": { "b.md": 1 } });
+  }),
+);
+
 it.effect(
   "completes whenResolved at once when the cache is already resolved",
   () =>

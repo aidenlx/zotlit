@@ -1,76 +1,40 @@
-import { Effect } from "effect";
-import type { App } from "obsidian";
+import { TFile } from "obsidian";
 import { describe, expect, it } from "vitest";
 
-import type { ItemRef } from "@zotlit/db";
-
-import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
-import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { InertTemplateError } from "@/services/template/errors";
 
+import { NotePathUnavailable } from "./note-path";
 import {
+  createNoteToast,
   duplicateLiteratureNoteWarning,
-  updateNote,
   updateNoteToast,
 } from "./update-single";
-import type { SingleUpdateDeps } from "./update-single";
 
-const REF: ItemRef = {
-  itemID: 1,
-  libraryID: 1,
-  key: "ABCD1234",
-  groupID: null,
-  indexedKey: "ABCD1234",
-};
+describe("createNoteToast", () => {
+  const file = new TFile();
+  file.path = "Books/Paper.md";
 
-/**
- * Deps whose every create-path member throws, so reaching the create branch
- * fails the test by name instead of silently succeeding against a stub.
- */
-function noteLessDeps(): SingleUpdateDeps {
-  return {
-    profile: profileReader(),
-    app: stubService<App>("App", {}),
-    zoteroReads: {
-      state: "ready",
-      get reads(): never {
-        throw new Error("create path reached: ZoteroReads read");
-      },
-      acquireRead: () => {
-        throw new Error("create path reached: ZoteroReads lease acquired");
-      },
-      snapshot: Effect.die(new Error("the snapshot must not be opened")),
-    },
-    settings: stubService<SingleUpdateDeps["settings"]>("PluginSettings", {}),
-    bridge: { runSync: Effect.runSync },
-    libraryScope: {
-      resolveLibraries: () => {
-        throw new Error("create path reached: library scope resolved");
-      },
-    },
-    noteFeature: stubService<SingleUpdateDeps["noteFeature"]>("NoteFeature", {
-      createNote: () => {
-        throw new Error("create path reached: createNote called");
-      },
-    }),
-    noteIndex: stubService<SingleUpdateDeps["noteIndex"]>("NoteIndex", {
-      getNotesByItemKey: () => [],
-    }),
-  };
-}
+  it("reports a created note, in the caller's words when it gives them", () => {
+    const created = { outcome: "created", file } as const;
 
-describe("updateNote", () => {
-  it("never creates when the metadata scope finds no literature note", async () => {
-    await expect(
-      updateNote(noteLessDeps(), REF, { scope: "metadata" }),
-    ).resolves.toBeUndefined();
+    expect(createNoteToast({}).success(created)).toBe(m.notice_created_note());
+    expect(
+      createNoteToast({ created: (note) => `Made ${note.path}` }).success(
+        created,
+      ),
+    ).toBe("Made Books/Paper.md");
   });
 
-  it("still creates when the full scope finds no literature note", async () => {
-    await expect(
-      updateNote(noteLessDeps(), REF, { scope: "full" }),
-    ).rejects.toThrow("create path reached");
+  it("reports a create that failed", () => {
+    expect(
+      createNoteToast({}).error(
+        new NotePathUnavailable({
+          message: "The filename template rendered nothing",
+          cause: new Error("The filename template rendered nothing"),
+        }),
+      ),
+    ).toBe(m.notice_create_note_failed());
   });
 });
 
@@ -162,7 +126,7 @@ describe("updateNoteToast", () => {
     "surfaces an InertTemplateError's own message for the %s scope",
     (scope) => {
       const { error } = updateNoteToast(scope);
-      expect(error("msg", new InertTemplateError("Inert message"))).toBe(
+      expect(error(new InertTemplateError("Inert message"))).toBe(
         "Inert message",
       );
     },
@@ -172,9 +136,7 @@ describe("updateNoteToast", () => {
     "falls back to the generic failure copy for an untyped error in the %s scope",
     (scope) => {
       const { error } = updateNoteToast(scope);
-      expect(error("msg", new Error("boom"))).toBe(
-        m.notice_update_note_failed(),
-      );
+      expect(error(new Error("boom"))).toBe(m.notice_update_note_failed());
     },
   );
 });

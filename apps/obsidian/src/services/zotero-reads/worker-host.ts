@@ -14,6 +14,7 @@ import {
   Semaphore,
   Stream,
 } from "effect";
+import type { FileSystem } from "effect";
 import { RpcClient, RpcClientError, RpcSchema, RpcWorker } from "effect/rpc";
 import { tmpdir } from "node:os";
 
@@ -104,7 +105,11 @@ export const connectWorker = Effect.fnUntraced(function* (
   {
     reapClones = reapWorkerClones,
   }: { reapClones?: typeof reapWorkerClones } = {},
-): Effect.fn.Return<WorkerConnection, DbUnavailable, Scope.Scope> {
+): Effect.fn.Return<
+  WorkerConnection,
+  DbUnavailable,
+  Scope.Scope | FileSystem.FileSystem
+> {
   const hostScope = yield* Effect.scope;
   const url = URL.createObjectURL(
     new Blob([source], { type: "text/javascript" }),

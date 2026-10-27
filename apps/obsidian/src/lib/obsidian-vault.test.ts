@@ -9,7 +9,7 @@ import {
   Scope,
   Stream,
 } from "effect";
-import { TFile } from "obsidian";
+import { FileSystemAdapter, TFile } from "obsidian";
 import type { Vault as VaultApi } from "obsidian";
 import { assert, expect, vi } from "vitest";
 
@@ -70,6 +70,93 @@ it.effect("reads the live layer's vault from ObsidianApp", () =>
   }),
 );
 
+it.effect(
+  "reads a path through the adapter, failing FileNotFound on ENOENT",
+  () =>
+    Effect.gen(function* () {
+      const source = new MemoryVault();
+      source.contents.set("raw.md", "on disk");
+      const { vault } = yield* open(layerVaultFrom(source));
+      expect(yield* vault.readPath("raw.md")).toBe("on disk");
+      const error = yield* Effect.flip(vault.readPath("gone.md"));
+      expect(error).toMatchObject({
+        _tag: "FileNotFound",
+        path: "gone.md",
+        cause: { code: "ENOENT" },
+      });
+    }),
+);
+
+it.effect("fails any other adapter rejection with VaultError", () =>
+  Effect.gen(function* () {
+    const source = new MemoryVault();
+    const denied = Object.assign(new Error("EACCES: raw.md"), {
+      code: "EACCES",
+    });
+    Object.assign(source.adapter, { read: () => Promise.reject(denied) });
+    const { vault } = yield* open(layerVaultFrom(source));
+    const error = yield* Effect.flip(vault.readPath("raw.md"));
+    expect(error).toMatchObject({
+      _tag: "VaultError",
+      operation: "readPath",
+      path: "raw.md",
+      message: "EACCES: raw.md",
+      cause: denied,
+    });
+  }),
+);
+
+it.effect(
+  "gives a file-system vault's full paths and adds a file written to disk",
+  () =>
+    Effect.gen(function* () {
+      const source = new MemoryVault();
+      const reconcileInternalFile = vi.fn(async (_path: string) => {});
+      Object.assign(source, {
+        adapter: Object.assign(new FileSystemAdapter(), {
+          getFullPath: (path: string) => `/vault/${path}`,
+          reconcileInternalFile,
+        }),
+      });
+      const { vault } = yield* open(layerVaultFrom(source));
+      expect(yield* vault.fullPath("Images/a.png")).toBe("/vault/Images/a.png");
+      yield* vault.reconcileFile("Images/a.png");
+      expect(reconcileInternalFile).toHaveBeenCalledExactlyOnceWith(
+        "Images/a.png",
+      );
+      const rejected = new Error("not a file");
+      reconcileInternalFile.mockRejectedValueOnce(rejected);
+      expect(yield* Effect.flip(vault.reconcileFile("b.png"))).toMatchObject({
+        _tag: "VaultError",
+        operation: "reconcileFile",
+        path: "b.png",
+        cause: rejected,
+      });
+    }),
+);
+
+it.effect("gives no full path, and adds no file, off a file system", () =>
+  Effect.gen(function* () {
+    const { vault } = yield* open(layerVaultFrom(new MemoryVault()));
+    expect(yield* vault.fullPath("a.png")).toBeNull();
+    expect(yield* Effect.flip(vault.reconcileFile("a.png"))).toMatchObject({
+      _tag: "VaultError",
+      operation: "reconcileFile",
+      path: "a.png",
+    });
+  }),
+);
+
+it.effect("lists the vault's Markdown files", () =>
+  Effect.gen(function* () {
+    const source = new MemoryVault();
+    const note = Object.assign(source.add("a.md"), { extension: "md" });
+    Object.assign(source.add("b.pdf"), { extension: "pdf" });
+    const { vault } = yield* open(layerVaultFrom(source));
+    expect(yield* vault.getMarkdownFiles).toEqual([note]);
+  }),
+);
+
 it.effect("writes through process, create and trash", () =>
   Effect.gen(function* () {
     const source = new MemoryVault();
@@ -82,6 +169,23 @@ it.effect("writes through process, create and trash", () =>
     expect(source.trashed).toEqual([note]);
     expect(source.getFileByPath("a.md")).toBeNull();
   }),
+);
+
+it.effect(
+  "creates a folder, and fails with VaultError when Obsidian rejects",
+  () =>
+    Effect.gen(function* () {
+      const source = new MemoryVault();
+      const { vault } = yield* open(layerVaultFrom(source));
+      const folder = yield* vault.createFolder("Notes");
+      expect(source.getFolderByPath("Notes")).toBe(folder);
+      const error = yield* Effect.flip(vault.createFolder("Notes"));
+      expect(error).toMatchObject({
+        _tag: "VaultError",
+        operation: "createFolder",
+        path: "Notes",
+      });
+    }),
 );
 
 it.effect(

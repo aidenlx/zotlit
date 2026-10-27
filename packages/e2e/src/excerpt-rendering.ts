@@ -1,16 +1,21 @@
-// Real Obsidian acceptance for generated excerpt-rendering PDFs.
-
 import { randomUUID } from "node:crypto";
+import type { FileSystemAdapter } from "obsidian";
 import { expect } from "vitest";
 
+import type { FixtureExcerptCase } from "@zotlit/scripts/fixture";
 import {
   EXCERPT_RENDERING_CASES,
   EXCERPT_RENDERING_PDFS,
   EXCERPT_RENDERING_VAULT_DIR,
 } from "@zotlit/scripts/fixture";
 
-import { showBehind } from "./background-throttling.ts";
-import { cli, obEval, obEvalUntil } from "./obsidian-cli.ts";
+import type { ExcerptRequest } from "@/services/excerpt-image/contract";
+import type { ExcerptOutcome } from "@/services/excerpt-image/service";
+// Real Obsidian acceptance for generated excerpt-rendering PDFs.
+
+import { obRun, obRunUntil } from "./obsidian-cli.ts";
+import { cli } from "./obsidian-cli.ts";
+import type { ExcerptProbeState } from "./page-excerpt-types.ts";
 
 interface ProcessMemory {
   private: number;
@@ -29,7 +34,7 @@ interface PixelResult {
   released?: boolean;
 }
 
-interface RenderingResult {
+export interface RenderingResult {
   coldMs: number;
   warmMs: number;
   rerenderMs: number;
@@ -76,56 +81,24 @@ interface ProbeResult {
 }
 
 const relativePdf = `${EXCERPT_RENDERING_VAULT_DIR}/excerpt-rendering.pdf`;
-const excerptRequestBuilder = `(entry,index,pdfPath)=>({annotation:{key:'EXCERPT'+String(index).padStart(2,'0'),parentKey:'EXCERPT1',type:entry.type,color:'#ff0000',comment:null,text:null,pageLabel:String(entry.pageIndex+1),tags:[],version:null,position:entry.type==='image'?{kind:'pdf-rects',pageIndex:entry.pageIndex,rects:[entry.rect]}:{kind:'pdf-ink',pageIndex:entry.pageIndex,width:entry.width,paths:entry.paths}},source:{kind:'zotero-local-api',serverID:'excerpt-acceptance'},sourceScope:'excerpt-acceptance',attachmentKey:'EXCERPT1',libraryID:1,pdfPath,zoteroPngPath:null})`;
-
-function requestScript(index: number): string {
-  return `(()=>{const entry=${JSON.stringify(EXCERPT_RENDERING_CASES[index])};const relative=${JSON.stringify(relativePdf)};const file=app.vault.getAbstractFileByPath(relative);if(!file)throw new Error('Excerpt acceptance PDF missing from Fixture Vault');return (${excerptRequestBuilder})(entry,${index},app.vault.adapter.getFullPath(relative));})()`;
-}
 
 function identity(result: PixelResult): Omit<PixelResult, "released"> {
   const { released: _released, ...value } = result;
   return value;
 }
 
-/** Stage long eval source below Windows' command-line limit, then run it. */
-async function stagedEval(vaultId: string, code: string): Promise<string> {
-  const property = "__zotlitE2EStagedEval";
-  expect(
-    await obEval(
-      vaultId,
-      `(()=>{if(app.${property}!==undefined)throw new Error('Staged eval already active');app.${property}='';return true;})()`,
-    ),
-  ).toBe("true");
-  try {
-    for (let offset = 0; offset < code.length; offset += 2000) {
-      const chunk = code.slice(offset, offset + 2000);
-      expect(
-        await obEval(
-          vaultId,
-          `(()=>{app.${property}+=${JSON.stringify(chunk)};return true;})()`,
-        ),
-      ).toBe("true");
-    }
-    return await obEval(
-      vaultId,
-      `(()=>{const code=app.${property};delete app.${property};return (0,eval)(code);})()`,
-    );
-  } finally {
-    await obEval(
-      vaultId,
-      `(()=>{delete app.${property};return true;})()`,
-    ).catch(() => undefined);
-  }
-}
-
 async function waitForPlugin(vaultId: string): Promise<void> {
-  expect(
-    await obEvalUntil(
-      vaultId,
-      "String(!!app.plugins.plugins.zotlit?.services?.excerptImage)",
-      { expected: "true", tries: 80 },
-    ),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ zotlit }) => {
+      return !!zotlit.services.excerptImage;
+    },
+    undefined,
+    {
+      tries: 80,
+      what: "the excerptImage service to be registered on the plugin",
+    },
+  );
 }
 
 async function resolveDigest(
@@ -133,30 +106,145 @@ async function resolveDigest(
   index: number,
 ): Promise<PixelResult> {
   return JSON.parse(
-    await obEval(
+    await obRun(
       vaultId,
-      `(async()=>{const outcome=await app.plugins.plugins.zotlit.services.excerptImage.resolve(${requestScript(index)});return JSON.stringify(outcome.kind==='available'?{kind:outcome.kind,provenance:outcome.provenance,bytes:outcome.bytes.length,sha256:require('crypto').createHash('sha256').update(outcome.bytes).digest('hex')}:{kind:outcome.kind});})()`,
+      async ({ app, zotlit }, { entry, relative, caseIndex }) => {
+        const outcome = await zotlit.services.bridge.runPromise(
+          zotlit.services.excerptImage.resolve(
+            (() => {
+              const file = app.vault.getAbstractFileByPath(relative);
+              if (!file)
+                throw new Error(
+                  "Excerpt acceptance PDF missing from Fixture Vault",
+                );
+              return ((
+                entry: FixtureExcerptCase,
+                index: number,
+                pdfPath: string,
+              ): ExcerptRequest => ({
+                annotation: {
+                  key: `EXCERPT${String(index).padStart(2, "0")}`,
+                  parentKey: "EXCERPT1",
+                  type: entry.type,
+                  color: "#ff0000",
+                  comment: null,
+                  text: null,
+                  pageLabel: String(entry.pageIndex + 1),
+                  tags: [],
+                  version: null,
+                  sortIndex: "",
+                  lock: null,
+                  position:
+                    entry.type === "image"
+                      ? {
+                          kind: "pdf-rects",
+                          pageIndex: entry.pageIndex,
+                          rects: [[...entry.rect!]],
+                        }
+                      : {
+                          kind: "pdf-ink",
+                          pageIndex: entry.pageIndex,
+                          width: entry.width!,
+                          paths: entry.paths!.map((path) => [...path]),
+                        },
+                },
+                source: {
+                  kind: "zotero-local-api",
+                  serverID: "excerpt-acceptance",
+                },
+                sourceScope: "excerpt-acceptance",
+                attachmentKey: "EXCERPT1",
+                libraryID: 1,
+                pdfPath,
+                zoteroPngPath: null,
+              }))(
+                entry,
+                caseIndex,
+                (app.vault.adapter as FileSystemAdapter).getFullPath(relative),
+              );
+            })(),
+          ),
+        );
+        return JSON.stringify(
+          outcome.kind === "available"
+            ? {
+                kind: outcome.kind,
+                provenance: outcome.provenance,
+                bytes: outcome.bytes.length,
+                sha256: require("crypto")
+                  .createHash("sha256")
+                  .update(outcome.bytes)
+                  .digest("hex"),
+              }
+            : { kind: outcome.kind },
+        );
+      },
+      {
+        entry: EXCERPT_RENDERING_CASES[index]!,
+        relative: relativePdf,
+        caseIndex: index,
+      },
     ),
   ) as PixelResult;
 }
 
 async function disposeRenderProbe(vaultId: string): Promise<void> {
-  const state = await obEval(
+  const state = await obRun(
     vaultId,
-    `(()=>{const state=app.__zotlitExcerptProbe;if(!state)return 'absent';state.controller.abort();state.diagnostics.release();void state.completion.catch(()=>{state.settled=true;});return 'active';})()`,
+    async ({ page: helpers }) => {
+      const state = helpers.scratch.__zotlitExcerptProbe!;
+      if (!state) return "absent";
+      state.controller.abort();
+      state.diagnostics.release();
+      void state.completion!.catch(() => {
+        state.settled = true;
+      });
+      return "active";
+    },
+    undefined,
   );
   if (state === "absent") return;
-  expect(
-    await obEvalUntil(
-      vaultId,
-      "String(app.__zotlitExcerptProbe?.settled&&!app.__zotlitExcerptProbe?.diagnostics.snapshot().jobActive)",
-      { expected: "true", tries: 80 },
-    ),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ page: helpers }) => {
+      return (
+        helpers.scratch.__zotlitExcerptProbe?.settled &&
+        !helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot().jobActive
+      );
+    },
+    undefined,
+    {
+      tries: 80,
+      what: "the excerpt render probe to settle with no job active",
+    },
+  );
   const released = JSON.parse(
-    await obEval(
+    await obRun(
       vaultId,
-      `(()=>{const state=app.__zotlitExcerptProbe;if(!state)return JSON.stringify({snapshot:{phase:'idle',jobActive:false,fileOpen:false,renderTaskActive:false,canvas:null,lastCanvas:null},toBlobRestored:true});const snapshot=state.diagnostics.snapshot();const value={snapshot,toBlobRestored:HTMLCanvasElement.prototype.toBlob===state.originalToBlob};delete app.__zotlitExcerptProbe;return JSON.stringify(value);})()`,
+      async ({ page: helpers }) => {
+        const state = helpers.scratch.__zotlitExcerptProbe!;
+        if (!state)
+          return JSON.stringify({
+            snapshot: {
+              phase: "idle",
+              jobActive: false,
+              fileOpen: false,
+              renderTaskActive: false,
+              canvas: null,
+              lastCanvas: null,
+            },
+            toBlobRestored: true,
+          });
+        const snapshot = state.diagnostics.snapshot();
+        const value = {
+          snapshot,
+          toBlobRestored:
+            HTMLCanvasElement.prototype.toBlob === state.originalToBlob,
+        };
+        delete helpers.scratch.__zotlitExcerptProbe;
+        return JSON.stringify(value);
+      },
+      undefined,
     ),
   ) as Pick<ProbeResult, "snapshot" | "toBlobRestored">;
   expect(released.toBlobRestored).toBe(true);
@@ -186,61 +274,228 @@ async function startRenderProbe(
 > {
   await using stack = new AsyncDisposableStack();
   stack.defer(() => disposeRenderProbe(vaultId));
-  if ((await obEval(vaultId, "String(!!app.__zotlitExcerptProbe)")) === "true")
+  if (
+    (await obRun(
+      vaultId,
+      async ({ page: helpers }) => {
+        return String(!!helpers.scratch.__zotlitExcerptProbe);
+      },
+      undefined,
+    )) === "true"
+  )
     await disposeRenderProbe(vaultId);
   // The resolution ends by destroying its PDF.js document, which terminates
   // that document's Web Worker. A memory dump requested while the worker exits
   // waits out Chromium's 15 s dump timeout and rejects, and the next request
   // answers at once; no event says when the worker is gone. So the `after`
   // sample asks once more after a rejection, well inside `result()`'s wait.
-  await obEval(
+  await obRun(
     vaultId,
-    `(async()=>{if(app.__zotlitExcerptProbe)throw new Error('Excerpt probe already active');const service=app.plugins.plugins.zotlit.services.excerptImage;const diagnostics=service.rendererDiagnostics;if(!diagnostics)throw new Error('Excerpt renderer diagnostics unavailable');diagnostics.hold(${JSON.stringify(phase)});const request=${requestScript(index)};request.sourceScope+=':probe:'+${JSON.stringify(phase)}+':'+performance.now();const state={settled:false,outcome:null,originalToBlob:HTMLCanvasElement.prototype.toBlob,controller:new AbortController(),diagnostics,service,request,before:await process.getProcessMemoryInfo(),after:null,completion:null};app.__zotlitExcerptProbe=state;state.completion=service.resolve(request,state.controller.signal).then(value=>{state.outcome={kind:value.kind};},error=>{state.outcome={name:error?.name??String(error)};}).finally(async()=>{state.after=await process.getProcessMemoryInfo().catch(()=>process.getProcessMemoryInfo()).catch(()=>null);state.settled=true;});void state.completion;return true;})()`,
+    async (
+      { app, zotlit, page: helpers },
+      { phase, entry, relative, caseIndex },
+    ) => {
+      if (helpers.scratch.__zotlitExcerptProbe)
+        throw new Error("Excerpt probe already active");
+      const service = zotlit.services.excerptImage;
+      const diagnostics = service.rendererDiagnostics;
+      if (!diagnostics)
+        throw new Error("Excerpt renderer diagnostics unavailable");
+      diagnostics.hold(phase);
+      const request = (() => {
+        const file = app.vault.getAbstractFileByPath(relative);
+        if (!file)
+          throw new Error("Excerpt acceptance PDF missing from Fixture Vault");
+        return ((
+          entry: FixtureExcerptCase,
+          index: number,
+          pdfPath: string,
+        ): ExcerptRequest => ({
+          annotation: {
+            key: `EXCERPT${String(index).padStart(2, "0")}`,
+            parentKey: "EXCERPT1",
+            type: entry.type,
+            color: "#ff0000",
+            comment: null,
+            text: null,
+            pageLabel: String(entry.pageIndex + 1),
+            tags: [],
+            version: null,
+            sortIndex: "",
+            lock: null,
+            position:
+              entry.type === "image"
+                ? {
+                    kind: "pdf-rects",
+                    pageIndex: entry.pageIndex,
+                    rects: [[...entry.rect!]],
+                  }
+                : {
+                    kind: "pdf-ink",
+                    pageIndex: entry.pageIndex,
+                    width: entry.width!,
+                    paths: entry.paths!.map((path) => [...path]),
+                  },
+          },
+          source: { kind: "zotero-local-api", serverID: "excerpt-acceptance" },
+          sourceScope: "excerpt-acceptance",
+          attachmentKey: "EXCERPT1",
+          libraryID: 1,
+          pdfPath,
+          zoteroPngPath: null,
+        }))(
+          entry,
+          caseIndex,
+          (app.vault.adapter as FileSystemAdapter).getFullPath(relative),
+        );
+      })();
+      request.sourceScope += `:probe:${phase}:${performance.now()}`;
+      const state: ExcerptProbeState = {
+        settled: false,
+        outcome: null,
+        originalToBlob: HTMLCanvasElement.prototype.toBlob,
+        controller: new AbortController(),
+        diagnostics,
+        service,
+        bridge: zotlit.services.bridge,
+        request,
+        before: await process.getProcessMemoryInfo(),
+        after: null,
+        completion: null,
+      };
+      helpers.scratch.__zotlitExcerptProbe = state;
+      state.completion = zotlit.services.bridge
+        .runPromise(service.resolve(request), {
+          signal: state.controller.signal,
+        })
+        .then(
+          (value) => {
+            state.outcome = { kind: value.kind };
+          },
+          (error) => {
+            state.outcome = { name: error?.name ?? String(error) };
+          },
+        )
+        .finally(async () => {
+          state.after = await process
+            .getProcessMemoryInfo()
+            .catch(() => process.getProcessMemoryInfo())
+            .catch(() => null);
+          state.settled = true;
+        });
+      void state.completion;
+    },
+    {
+      phase,
+      entry: EXCERPT_RENDERING_CASES[index]!,
+      relative: relativePdf,
+      caseIndex: index,
+    },
   );
-  expect(
-    await obEvalUntil(
-      vaultId,
-      `String(app.__zotlitExcerptProbe?.diagnostics.snapshot().phase===${JSON.stringify(phase)})`,
-      { expected: "true", tries: 80 },
-    ),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ page: helpers }, { renderPhase }) => {
+      return (
+        helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot().phase ===
+        renderPhase
+      );
+    },
+    { renderPhase: phase },
+    {
+      tries: 80,
+      what: "the excerpt renderer to report the expected render phase",
+    },
+  );
   const ownership = stack.move();
   return {
     abort: async () => {
-      await obEval(vaultId, "app.__zotlitExcerptProbe.controller.abort();true");
+      await obRun(
+        vaultId,
+        async ({ page: helpers }) => {
+          helpers.scratch.__zotlitExcerptProbe!.controller.abort();
+        },
+        undefined,
+      );
     },
     release: async () => {
-      await obEval(
+      await obRun(
         vaultId,
-        "app.__zotlitExcerptProbe.diagnostics.release();true",
+        async ({ page: helpers }) => {
+          helpers.scratch.__zotlitExcerptProbe!.diagnostics.release();
+        },
+        undefined,
       );
     },
     snapshot: async () =>
       JSON.parse(
-        await obEval(
+        await obRun(
           vaultId,
-          "JSON.stringify(app.__zotlitExcerptProbe.diagnostics.snapshot())",
+          async ({ page: helpers }) => {
+            return JSON.stringify(
+              helpers.scratch.__zotlitExcerptProbe!.diagnostics.snapshot(),
+            );
+          },
+          undefined,
         ),
       ),
     retry: async () =>
       JSON.parse(
-        await obEval(
+        await obRun(
           vaultId,
-          `(async()=>{const state=app.__zotlitExcerptProbe;state.diagnostics.release();const outcome=await state.service.resolve(state.request);return JSON.stringify(outcome.kind==='available'?{kind:outcome.kind,provenance:outcome.provenance,bytes:outcome.bytes.length,sha256:require('crypto').createHash('sha256').update(outcome.bytes).digest('hex')}:{kind:outcome.kind});})()`,
+          async ({ page: helpers }) => {
+            const state = helpers.scratch.__zotlitExcerptProbe!;
+            state.diagnostics.release();
+            const outcome = await state.bridge.runPromise(
+              state.service.resolve(state.request),
+            );
+            return JSON.stringify(
+              outcome.kind === "available"
+                ? {
+                    kind: outcome.kind,
+                    provenance: outcome.provenance,
+                    bytes: outcome.bytes.length,
+                    sha256: require("crypto")
+                      .createHash("sha256")
+                      .update(outcome.bytes)
+                      .digest("hex"),
+                  }
+                : { kind: outcome.kind },
+            );
+          },
+          undefined,
         ),
       ),
     result: async () => {
-      expect(
-        await obEvalUntil(
-          vaultId,
-          "String(app.__zotlitExcerptProbe?.settled&&!app.__zotlitExcerptProbe?.diagnostics.snapshot().jobActive)",
-          { expected: "true", tries: 80 },
-        ),
-      ).toBe(true);
+      await obRunUntil(
+        vaultId,
+        async ({ page: helpers }) => {
+          return (
+            helpers.scratch.__zotlitExcerptProbe?.settled &&
+            !helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot()
+              .jobActive
+          );
+        },
+        undefined,
+        {
+          tries: 80,
+          what: "the excerpt render probe to settle again with no job active",
+        },
+      );
       return JSON.parse(
-        await obEval(
+        await obRun(
           vaultId,
-          `(()=>{const state=app.__zotlitExcerptProbe;return JSON.stringify({outcome:state.outcome,before:state.before,after:state.after,snapshot:state.diagnostics.snapshot(),toBlobRestored:HTMLCanvasElement.prototype.toBlob===state.originalToBlob});})()`,
+          async ({ page: helpers }) => {
+            const state = helpers.scratch.__zotlitExcerptProbe!;
+            return JSON.stringify({
+              outcome: state.outcome,
+              before: state.before,
+              after: state.after,
+              snapshot: state.diagnostics.snapshot(),
+              toBlobRestored:
+                HTMLCanvasElement.prototype.toBlob === state.originalToBlob,
+            });
+          },
+          undefined,
         ),
       );
     },
@@ -252,65 +507,320 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
   const owner = randomUUID();
   await using cleanup = new AsyncDisposableStack();
   cleanup.defer(async () => {
-    await obEval(
+    await obRun(
       vaultId,
-      `(async()=>{const acceptance=app.__zotlitExcerptAcceptance;if(!acceptance||acceptance.owner!==${JSON.stringify(owner)})return true;acceptance.controller.abort();if(acceptance.timer!==null){clearTimeout(acceptance.timer);acceptance.timer=null;acceptance.settled=true;}else if(!acceptance.started)acceptance.settled=true;const deadline=performance.now()+5000;while(!acceptance.settled&&performance.now()<deadline)await new Promise(resolve=>setTimeout(resolve,25));const settled=acceptance.settled;if(app.__zotlitExcerptAcceptance===acceptance)delete app.__zotlitExcerptAcceptance;if(!settled)throw new Error('Excerpt acceptance did not settle after abort');return true;})()`,
+      async ({ page: helpers }, { expectedOwner }) => {
+        const acceptance = helpers.scratch.__zotlitExcerptAcceptance;
+        if (!acceptance || acceptance.owner !== expectedOwner) return;
+        acceptance.controller.abort();
+        if (acceptance.timer !== null) {
+          clearTimeout(acceptance.timer);
+          acceptance.timer = null;
+          acceptance.settled = true;
+        } else if (!acceptance.started) acceptance.settled = true;
+        const deadline = performance.now() + 5000;
+        while (!acceptance.settled && performance.now() < deadline)
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        const settled = acceptance.settled;
+        if (helpers.scratch.__zotlitExcerptAcceptance === acceptance)
+          delete helpers.scratch.__zotlitExcerptAcceptance;
+        if (!settled)
+          throw new Error("Excerpt acceptance did not settle after abort");
+      },
+      { expectedOwner: owner },
     );
   });
   expect(
-    await obEval(
+    await obRun(
       vaultId,
-      `(()=>{if(app.__zotlitExcerptAcceptance)throw new Error('Excerpt acceptance already active');app.__zotlitExcerptAcceptance={owner:${JSON.stringify(owner)},started:false,settled:false,timer:null,controller:new AbortController(),result:null,error:null,cases:${JSON.stringify(EXCERPT_RENDERING_CASES)}};return true;})()`,
-    ),
-  ).toBe("true");
-  const code = `(()=>{
-    const acceptance=app.__zotlitExcerptAcceptance;
-    if(!acceptance||acceptance.settled)throw new Error('Excerpt acceptance unavailable');
-    const assertActive=()=>{if(acceptance.controller.signal.aborted)throw new DOMException('Excerpt acceptance aborted','AbortError');};
-    acceptance.timer=setTimeout(()=>{acceptance.started=true;acceptance.timer=null;if(acceptance.controller.signal.aborted){acceptance.settled=true;return;}void (async()=>{
-    const service=app.plugins.plugins.zotlit.services.excerptImage;
-    const clear=async()=>{assertActive();await service.clear();assertActive();};
-    const resolve=async request=>{assertActive();const outcome=await service.resolve(request,acceptance.controller.signal);assertActive();return outcome;};
-    const pdfLeavesBefore=app.workspace.getLeavesOfType('pdf').length;
-    const cases=acceptance.cases;
-    const failuresToCheck=${JSON.stringify(
-      EXCERPT_RENDERING_PDFS.filter(
-        ({ outcome }) => outcome !== "renderable",
-      ).map(({ asset }) => asset.split("/").at(-1)),
-    )};
-    const relative=${JSON.stringify(relativePdf)};
-    const file=app.vault.getAbstractFileByPath(relative);
-    if(!file)throw new Error('Excerpt acceptance PDF missing from Fixture Vault');
-    const pdfPath=app.vault.adapter.getFullPath(relative);
-    const request=(entry,index)=>(${excerptRequestBuilder})(entry,index,pdfPath);
-    const summarize=async(outcome,entry)=>{
-      if(outcome.kind!=='available')return {kind:outcome.kind};
-      const bitmap=await createImageBitmap(new Blob([outcome.bytes],{type:outcome.format.mimeType}));let canvas;let value;
-      try{canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;const context=canvas.getContext('2d');if(!context)throw new Error('Acceptance canvas unavailable');context.drawImage(bitmap,0,0);const samples=entry.expected.samples.map(([x,y])=>Array.from(context.getImageData(x,y,1,1).data));value={kind:outcome.kind,provenance:outcome.provenance,bytes:outcome.bytes.length,sha256:require('crypto').createHash('sha256').update(outcome.bytes).digest('hex'),width:bitmap.width,height:bitmap.height,samples};}finally{if(canvas){canvas.width=0;canvas.height=0;}bitmap.close();}
-      return {...value,released:canvas.width===0&&canvas.height===0};
-    };
-    await clear();const coldStart=performance.now();const cold=[];for(const [index,entry] of cases.entries())cold.push(await summarize(await resolve(request(entry,index)),entry));const coldMs=performance.now()-coldStart;
-    const warmStart=performance.now();const warm=[];for(const [index,entry] of cases.entries())warm.push(await summarize(await resolve(request(entry,index)),entry));const warmMs=performance.now()-warmStart;
-    await clear();const rerenderStart=performance.now();const rerender=await summarize(await resolve(request(cases[0],0)),cases[0]);const rerenderMs=performance.now()-rerenderStart;
-    const failures=[];for(const name of failuresToCheck){const path=app.vault.adapter.getFullPath(${JSON.stringify(EXCERPT_RENDERING_VAULT_DIR)}+'/'+name);const input={...request(cases[0],90+failures.length),attachmentKey:'FAIL'+failures.length,pdfPath:path};failures.push({name,kind:(await resolve(input)).kind});}
-    const electronWindow=require('@electron/remote').getCurrentWindow();const state=()=>({minimized:electronWindow.isMinimized(),visible:electronWindow.isVisible()});const before=state();const waitFor=(check,action)=>new Promise((resolve,reject)=>{const deadline=setTimeout(()=>{clearInterval(interval);reject(new Error('Electron window state did not settle'));},5000);const interval=setInterval(()=>{if(!check())return;clearTimeout(deadline);clearInterval(interval);resolve();},25);action();});let during,after;const minimized=[];try{if(!before.minimized)await waitFor(()=>electronWindow.isMinimized(),()=>electronWindow.minimize());during=state();await clear();for(const [index,entry] of cases.entries())minimized.push(await summarize(await resolve(request(entry,index)),entry));}finally{if(!before.minimized)await waitFor(()=>!electronWindow.isMinimized(),()=>{${showBehind("electronWindow")}});after=state();}
-    assertActive();
-    acceptance.result={coldMs,warmMs,rerenderMs,cold,warm,rerender,minimized,failures,pdfLeaves:{before:pdfLeavesBefore,after:app.workspace.getLeavesOfType('pdf').length},electron:{before,during,after}};
-    })().catch(error=>{acceptance.error=error?.stack??String(error);}).finally(()=>{acceptance.settled=true;});},0);
-    return true;
-  })()`;
-  expect(await stagedEval(vaultId, code)).toBe("true");
-  expect(
-    await obEvalUntil(
-      vaultId,
-      "String(!!app.__zotlitExcerptAcceptance?.settled)",
-      { expected: "true", tries: 120 },
+      async ({ page: helpers }, { ownerName, EXCERPT_RENDERING_CASES }) => {
+        if (helpers.scratch.__zotlitExcerptAcceptance)
+          throw new Error("Excerpt acceptance already active");
+        helpers.scratch.__zotlitExcerptAcceptance = {
+          owner: ownerName,
+          started: false,
+          settled: false,
+          timer: null,
+          controller: new AbortController(),
+          result: null,
+          error: null,
+          cases: EXCERPT_RENDERING_CASES,
+        };
+        return true;
+      },
+      { ownerName: owner, EXCERPT_RENDERING_CASES },
     ),
   ).toBe(true);
-  const result = JSON.parse(
-    await obEval(
+  expect(
+    await obRun(
       vaultId,
-      `(()=>{const acceptance=app.__zotlitExcerptAcceptance;if(!acceptance)throw new Error('Excerpt acceptance missing');if(acceptance.error)throw new Error(acceptance.error);return JSON.stringify(acceptance.result);})()`,
+      async (
+        { app, zotlit, page: helpers },
+        { failuresToCheck, relative, EXCERPT_RENDERING_VAULT_DIR },
+      ) => {
+        const acceptance = helpers.scratch.__zotlitExcerptAcceptance;
+        if (!acceptance || acceptance.settled)
+          throw new Error("Excerpt acceptance unavailable");
+        const assertActive = () => {
+          if (acceptance.controller.signal.aborted)
+            throw new DOMException("Excerpt acceptance aborted", "AbortError");
+        };
+        acceptance.timer = setTimeout(() => {
+          acceptance.started = true;
+          acceptance.timer = null;
+          if (acceptance.controller.signal.aborted) {
+            acceptance.settled = true;
+            return;
+          }
+          void (async () => {
+            const service = zotlit.services.excerptImage;
+            const clear = async () => {
+              assertActive();
+              await zotlit.services.bridge.runPromise(service.clear);
+              assertActive();
+            };
+            const resolve = async (request: ExcerptRequest) => {
+              assertActive();
+              const outcome = await zotlit.services.bridge.runPromise(
+                service.resolve(request),
+                { signal: acceptance.controller.signal },
+              );
+              assertActive();
+              return outcome;
+            };
+            const pdfLeavesBefore = app.workspace.getLeavesOfType("pdf").length;
+            const cases = acceptance.cases;
+            const file = app.vault.getAbstractFileByPath(relative);
+            if (!file)
+              throw new Error(
+                "Excerpt acceptance PDF missing from Fixture Vault",
+              );
+            const pdfPath = (
+              app.vault.adapter as FileSystemAdapter
+            ).getFullPath(relative);
+            const request = (entry: FixtureExcerptCase, index: number) =>
+              ((
+                entry: FixtureExcerptCase,
+                index: number,
+                pdfPath: string,
+              ): ExcerptRequest => ({
+                annotation: {
+                  key: `EXCERPT${String(index).padStart(2, "0")}`,
+                  parentKey: "EXCERPT1",
+                  type: entry.type,
+                  color: "#ff0000",
+                  comment: null,
+                  text: null,
+                  pageLabel: String(entry.pageIndex + 1),
+                  tags: [],
+                  version: null,
+                  sortIndex: "",
+                  lock: null,
+                  position:
+                    entry.type === "image"
+                      ? {
+                          kind: "pdf-rects",
+                          pageIndex: entry.pageIndex,
+                          rects: [[...entry.rect!]],
+                        }
+                      : {
+                          kind: "pdf-ink",
+                          pageIndex: entry.pageIndex,
+                          width: entry.width!,
+                          paths: entry.paths!.map((path) => [...path]),
+                        },
+                },
+                source: {
+                  kind: "zotero-local-api",
+                  serverID: "excerpt-acceptance",
+                },
+                sourceScope: "excerpt-acceptance",
+                attachmentKey: "EXCERPT1",
+                libraryID: 1,
+                pdfPath,
+                zoteroPngPath: null,
+              }))(entry, index, pdfPath);
+            const summarize = async (
+              outcome: ExcerptOutcome,
+              entry: FixtureExcerptCase,
+            ) => {
+              if (outcome.kind !== "available") return { kind: outcome.kind };
+              const bitmap = await createImageBitmap(
+                new Blob([new Uint8Array(outcome.bytes)], {
+                  type: outcome.format.mimeType,
+                }),
+              );
+              let canvas;
+              let value;
+              try {
+                canvas = document.createElement("canvas");
+                canvas.width = bitmap.width;
+                canvas.height = bitmap.height;
+                const context = canvas.getContext("2d");
+                if (!context) throw new Error("Acceptance canvas unavailable");
+                context.drawImage(bitmap, 0, 0);
+                const samples = entry.expected.samples.map(([x, y]) =>
+                  Array.from(context.getImageData(x, y, 1, 1).data),
+                );
+                value = {
+                  kind: outcome.kind,
+                  provenance: outcome.provenance,
+                  bytes: outcome.bytes.length,
+                  sha256: require("crypto")
+                    .createHash("sha256")
+                    .update(outcome.bytes)
+                    .digest("hex"),
+                  width: bitmap.width,
+                  height: bitmap.height,
+                  samples,
+                };
+              } finally {
+                if (canvas) {
+                  canvas.width = 0;
+                  canvas.height = 0;
+                }
+                bitmap.close();
+              }
+              return {
+                ...value,
+                released: canvas.width === 0 && canvas.height === 0,
+              };
+            };
+            await clear();
+            const coldStart = performance.now();
+            const cold = [];
+            for (const [index, entry] of cases.entries())
+              cold.push(
+                await summarize(await resolve(request(entry, index)), entry),
+              );
+            const coldMs = performance.now() - coldStart;
+            const warmStart = performance.now();
+            const warm = [];
+            for (const [index, entry] of cases.entries())
+              warm.push(
+                await summarize(await resolve(request(entry, index)), entry),
+              );
+            const warmMs = performance.now() - warmStart;
+            await clear();
+            const rerenderStart = performance.now();
+            const rerender = await summarize(
+              await resolve(request(cases[0]!, 0)),
+              cases[0]!,
+            );
+            const rerenderMs = performance.now() - rerenderStart;
+            const failures = [];
+            for (const name of failuresToCheck) {
+              const path = (app.vault.adapter as FileSystemAdapter).getFullPath(
+                `${EXCERPT_RENDERING_VAULT_DIR}/${name}`,
+              );
+              const input: ExcerptRequest = {
+                ...request(cases[0]!, 90 + failures.length),
+                attachmentKey: `FAIL${failures.length}`,
+                pdfPath: path,
+              };
+              failures.push({ name, kind: (await resolve(input)).kind });
+            }
+            const electronWindow =
+              require("@electron/remote").getCurrentWindow();
+            const state = () => ({
+              minimized: electronWindow.isMinimized(),
+              visible: electronWindow.isVisible(),
+            });
+            const before = state();
+            const waitFor = (check: () => boolean, action: () => void) =>
+              new Promise<void>((resolve, reject) => {
+                const deadline = setTimeout(() => {
+                  clearInterval(interval);
+                  reject(new Error("Electron window state did not settle"));
+                }, 5000);
+                const interval = setInterval(() => {
+                  if (!check()) return;
+                  clearTimeout(deadline);
+                  clearInterval(interval);
+                  resolve();
+                }, 25);
+                action();
+              });
+            let during, after;
+            const minimized = [];
+            try {
+              if (!before.minimized)
+                await waitFor(
+                  () => electronWindow.isMinimized(),
+                  () => electronWindow.minimize(),
+                );
+              during = state();
+              await clear();
+              for (const [index, entry] of cases.entries())
+                minimized.push(
+                  await summarize(await resolve(request(entry, index)), entry),
+                );
+            } finally {
+              if (!before.minimized)
+                await waitFor(
+                  () => !electronWindow.isMinimized(),
+                  () => {
+                    helpers.showBehind(electronWindow);
+                  },
+                );
+              after = state();
+            }
+            assertActive();
+            acceptance.result = {
+              coldMs,
+              warmMs,
+              rerenderMs,
+              cold,
+              warm,
+              rerender,
+              minimized,
+              failures,
+              pdfLeaves: {
+                before: pdfLeavesBefore,
+                after: app.workspace.getLeavesOfType("pdf").length,
+              },
+              electron: { before, during, after },
+            };
+          })()
+            .catch((error) => {
+              acceptance.error = error?.stack ?? String(error);
+            })
+            .finally(() => {
+              acceptance.settled = true;
+            });
+        }, 0);
+        return true;
+      },
+      {
+        failuresToCheck: EXCERPT_RENDERING_PDFS.filter(
+          ({ outcome }) => outcome !== "renderable",
+        ).map(({ asset }) => asset.split("/").at(-1)!),
+        relative: relativePdf,
+        EXCERPT_RENDERING_VAULT_DIR,
+      },
+    ),
+  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ page: helpers }) => {
+      return !!helpers.scratch.__zotlitExcerptAcceptance?.settled;
+    },
+    undefined,
+    {
+      tries: 120,
+      what: "the excerpt acceptance run to settle",
+    },
+  );
+  const result = JSON.parse(
+    await obRun(
+      vaultId,
+      async ({ page: helpers }) => {
+        const acceptance = helpers.scratch.__zotlitExcerptAcceptance;
+        if (!acceptance) throw new Error("Excerpt acceptance missing");
+        if (acceptance.error) throw new Error(acceptance.error);
+        return JSON.stringify(acceptance.result);
+      },
+      undefined,
     ),
   ) as RenderingResult;
 
@@ -401,9 +911,12 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
       Math.max(active.canvas!.width, active.canvas!.height),
     ).toBeLessThanOrEqual(8192);
     const during = JSON.parse(
-      await obEval(
+      await obRun(
         vaultId,
-        "process.getProcessMemoryInfo().then(JSON.stringify)",
+        async () => {
+          return await process.getProcessMemoryInfo().then(JSON.stringify);
+        },
+        undefined,
       ),
     ) as ProcessMemory;
     await probe.release();
@@ -441,16 +954,29 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
 
   for (const phase of ["document-loading", "page-rendering"] as const) {
     await using probe = await startRenderProbe(vaultId, 0, phase);
-    const workerReady =
-      phase !== "document-loading" ||
-      (await obEvalUntil(
-        vaultId,
-        "app.__zotlitExcerptProbe.diagnostics.snapshot().worker",
-        { expected: "web-worker", tries: 80 },
-      ));
+    let workerTimeout: unknown;
+    if (phase === "document-loading") {
+      try {
+        await obRunUntil(
+          vaultId,
+          async ({ page: helpers }) => {
+            return helpers.scratch.__zotlitExcerptProbe!.diagnostics.snapshot()
+              .worker;
+          },
+          undefined,
+          {
+            ready: (value) => value === "web-worker",
+            tries: 80,
+            what: "the excerpt renderer to run on a web worker",
+          },
+        );
+      } catch (error) {
+        workerTimeout = error;
+      }
+    }
     const active = await probe.snapshot();
     expect(active.jobActive).toBe(true);
-    expect(workerReady, JSON.stringify(active)).toBe(true);
+    expect(workerTimeout, JSON.stringify(active)).toBeUndefined();
     if (phase === "document-loading") expect(active.worker).toBe("web-worker");
     if (phase === "page-rendering") {
       expect(active.renderTaskActive).toBe(true);
@@ -482,9 +1008,12 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
     "page-rendering",
   );
   try {
-    await obEval(
+    await obRun(
       vaultId,
-      "(async()=>{await app.plugins.disablePlugin('zotlit');await app.__zotlitExcerptProbe.service[Symbol.asyncDispose]();return true;})()",
+      async ({ app }) => {
+        await app.plugins.disablePlugin("zotlit");
+      },
+      undefined,
     );
     const reloaded = await reloadProbe.result();
     expect(reloaded.outcome).toEqual({ name: "AbortError" });
@@ -499,9 +1028,12 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
     });
     expect(reloaded.toBlobRestored).toBe(true);
   } finally {
-    await obEval(
+    await obRun(
       vaultId,
-      "(async()=>{await app.plugins.enablePlugin('zotlit');return true;})()",
+      async ({ app }) => {
+        await app.plugins.enablePlugin("zotlit");
+      },
+      undefined,
     );
     await waitForPlugin(vaultId);
   }
@@ -517,9 +1049,194 @@ export async function verifyZoteroExcerptParity(
 ): Promise<void> {
   const keys = ["FDRFQ7C2", "TYY6Z6ZF", "4PE492KU"];
   const result = JSON.parse(
-    await obEval(
+    await obRun(
       vaultId,
-      `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.annotationRepository.ready;await services.zoteroReads.refresh();const list=await services.annotationRepository.read('RGRPDF24');if(!list)throw new Error('Fixture annotations unavailable');const pdfPath=app.vault.adapter.getFullPath('attachments/rougier-2014.pdf');const summarize=async(bytes,type,color)=>{const bitmap=await createImageBitmap(new Blob([bytes],{type}));let canvas;try{canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;const context=canvas.getContext('2d');if(!context)throw new Error('Parity canvas unavailable');context.drawImage(bitmap,0,0);const data=context.getImageData(0,0,bitmap.width,bitmap.height).data;const counts=[0,0,0,0];let foreground=0;let annotationColor=0;const foregroundBounds=[bitmap.width,bitmap.height,-1,-1];const annotationBounds=[bitmap.width,bitmap.height,-1,-1];const mark=(bounds,x,y)=>{bounds[0]=Math.min(bounds[0],x);bounds[1]=Math.min(bounds[1],y);bounds[2]=Math.max(bounds[2],x);bounds[3]=Math.max(bounds[3],y);};const normalized=bounds=>bounds[2]<0?null:[bounds[0]/bitmap.width,bounds[1]/bitmap.height,(bounds[2]+1)/bitmap.width,(bounds[3]+1)/bitmap.height];const rgb=color?color.match(/[0-9a-f]{2}/gi).map(value=>parseInt(value,16)):null;const isColor=(x,y)=>{if(!rgb||x<0||y<0||x>=bitmap.width||y>=bitmap.height)return false;const offset=(y*bitmap.width+x)*4;return Math.abs(data[offset]-rgb[0])<48&&Math.abs(data[offset+1]-rgb[1])<48&&Math.abs(data[offset+2]-rgb[2])<48;};for(let y=0;y<bitmap.height;y++)for(let x=0;x<bitmap.width;x++){const offset=(y*bitmap.width+x)*4;const marked=data[offset]<245||data[offset+1]<245||data[offset+2]<245;if(marked){foreground++;mark(foregroundBounds,x,y);counts[(y>=bitmap.height/2?2:0)+(x>=bitmap.width/2?1:0)]++;}if(isColor(x,y)&&[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]].filter(([dx,dy])=>isColor(x+dx,y+dy)).length>=4){annotationColor++;mark(annotationBounds,x,y);}}return {width:bitmap.width,height:bitmap.height,foreground:foreground/(bitmap.width*bitmap.height),quadrants:counts.map(value=>foreground?value/foreground:0),annotationColor:rgb?annotationColor/(bitmap.width*bitmap.height):undefined,foregroundBox:normalized(foregroundBounds),annotationBox:rgb?normalized(annotationBounds):undefined};}finally{if(canvas){canvas.width=0;canvas.height=0;}bitmap.close();}};await services.excerptImage.clear();const output=[];for(const key of ${JSON.stringify(keys)}){const annotation=list.annotations.find(value=>value.key===key);if(!annotation)throw new Error('Missing Fixture annotation '+key);const fallback=require('path').join(services.zoteroPref.dataDir,'cache','library',key+'.png');const request={annotation,source:list.source,sourceScope:services.zoteroPref.dataDir,attachmentKey:'RGRPDF24',libraryID:1,pdfPath,zoteroPngPath:fallback};const outcome=await services.excerptImage.resolve(request);if(outcome.kind!=='available'||outcome.provenance!=='rendered')throw new Error('PDF render unavailable for '+key);const reference=await require('fs').promises.readFile(fallback);output.push({key,type:annotation.type,rendered:await summarize(outcome.bytes,outcome.format.mimeType,annotation.type==='ink'?annotation.color:null),zotero:await summarize(reference,'image/png',annotation.type==='ink'?annotation.color:null)});}return JSON.stringify(output);})()`,
+      async ({ app, zotlit }, { keys }) => {
+        const services = zotlit.services;
+        await services.zoteroReads.refresh();
+        const list = await services.bridge.runPromise(
+          services.annotationRepository.read("RGRPDF24"),
+        );
+        if (!list) throw new Error("Fixture annotations unavailable");
+        const pdfPath = (app.vault.adapter as FileSystemAdapter).getFullPath(
+          "attachments/rougier-2014.pdf",
+        );
+        const summarize = async (
+          bytes: Uint8Array,
+          type: string,
+          color?: string | null,
+        ) => {
+          const bitmap = await createImageBitmap(
+            new Blob([new Uint8Array(bytes)], { type }),
+          );
+          let canvas;
+          try {
+            canvas = document.createElement("canvas");
+            canvas.width = bitmap.width;
+            canvas.height = bitmap.height;
+            const context = canvas.getContext("2d");
+            if (!context) throw new Error("Parity canvas unavailable");
+            context.drawImage(bitmap, 0, 0);
+            const data = context.getImageData(
+              0,
+              0,
+              bitmap.width,
+              bitmap.height,
+            ).data;
+            const counts = [0, 0, 0, 0];
+            let foreground = 0;
+            let annotationColor = 0;
+            const foregroundBounds: [number, number, number, number] = [
+              bitmap.width,
+              bitmap.height,
+              -1,
+              -1,
+            ];
+            const annotationBounds: [number, number, number, number] = [
+              bitmap.width,
+              bitmap.height,
+              -1,
+              -1,
+            ];
+            const mark = (
+              bounds: [number, number, number, number],
+              x: number,
+              y: number,
+            ) => {
+              bounds[0] = Math.min(bounds[0], x);
+              bounds[1] = Math.min(bounds[1], y);
+              bounds[2] = Math.max(bounds[2], x);
+              bounds[3] = Math.max(bounds[3], y);
+            };
+            const normalized = (bounds: [number, number, number, number]) =>
+              bounds[2] < 0
+                ? null
+                : [
+                    bounds[0] / bitmap.width,
+                    bounds[1] / bitmap.height,
+                    (bounds[2] + 1) / bitmap.width,
+                    (bounds[3] + 1) / bitmap.height,
+                  ];
+            const rgb = color
+              ? color
+                  .match(/[0-9a-f]{2}/gi)!
+                  .map((value) => Number.parseInt(value, 16))
+              : null;
+            const isColor = (x: number, y: number) => {
+              if (
+                !rgb ||
+                x < 0 ||
+                y < 0 ||
+                x >= bitmap.width ||
+                y >= bitmap.height
+              )
+                return false;
+              const offset = (y * bitmap.width + x) * 4;
+              return (
+                Math.abs(data[offset]! - rgb[0]!) < 48 &&
+                Math.abs(data[offset + 1]! - rgb[1]!) < 48 &&
+                Math.abs(data[offset + 2]! - rgb[2]!) < 48
+              );
+            };
+            for (let y = 0; y < bitmap.height; y++)
+              for (let x = 0; x < bitmap.width; x++) {
+                const offset = (y * bitmap.width + x) * 4;
+                const marked =
+                  data[offset]! < 245 ||
+                  data[offset + 1]! < 245 ||
+                  data[offset + 2]! < 245;
+                if (marked) {
+                  foreground++;
+                  mark(foregroundBounds, x, y);
+                  counts[
+                    (y >= bitmap.height / 2 ? 2 : 0) +
+                      (x >= bitmap.width / 2 ? 1 : 0)
+                  ]!++;
+                }
+                if (
+                  isColor(x, y) &&
+                  [
+                    [1, 0],
+                    [-1, 0],
+                    [0, 1],
+                    [0, -1],
+                    [1, 1],
+                    [1, -1],
+                    [-1, 1],
+                    [-1, -1],
+                  ].filter(([dx, dy]) => isColor(x + dx!, y + dy!)).length >= 4
+                ) {
+                  annotationColor++;
+                  mark(annotationBounds, x, y);
+                }
+              }
+            return {
+              width: bitmap.width,
+              height: bitmap.height,
+              foreground: foreground / (bitmap.width * bitmap.height),
+              quadrants: counts.map((value) =>
+                foreground ? value / foreground : 0,
+              ),
+              annotationColor: rgb
+                ? annotationColor / (bitmap.width * bitmap.height)
+                : undefined,
+              foregroundBox: normalized(foregroundBounds),
+              annotationBox: rgb ? normalized(annotationBounds) : undefined,
+            };
+          } finally {
+            if (canvas) {
+              canvas.width = 0;
+              canvas.height = 0;
+            }
+            bitmap.close();
+          }
+        };
+        await services.bridge.runPromise(services.excerptImage.clear);
+        const output = [];
+        for (const key of keys) {
+          const annotation = list.annotations.find(
+            (value) => value.key === key,
+          );
+          if (!annotation) throw new Error(`Missing Fixture annotation ${key}`);
+          const fallback = require("path").join(
+            services.zoteroPref.dataDir,
+            "cache",
+            "library",
+            `${key}.png`,
+          );
+          const request = {
+            annotation,
+            source: list.source,
+            sourceScope: services.zoteroPref.dataDir,
+            attachmentKey: "RGRPDF24",
+            libraryID: 1,
+            pdfPath,
+            zoteroPngPath: fallback,
+          };
+          const outcome = await services.bridge.runPromise(
+            services.excerptImage.resolve(request),
+          );
+          if (outcome.kind !== "available" || outcome.provenance !== "rendered")
+            throw new Error(`PDF render unavailable for ${key}`);
+          const reference = await require("fs").promises.readFile(fallback);
+          output.push({
+            key,
+            type: annotation.type,
+            rendered: await summarize(
+              outcome.bytes,
+              outcome.format.mimeType,
+              annotation.type === "ink" ? annotation.color : null,
+            ),
+            zotero: await summarize(
+              reference,
+              "image/png",
+              annotation.type === "ink" ? annotation.color : null,
+            ),
+          });
+        }
+        return JSON.stringify(output);
+      },
+      { keys },
     ),
   ) as {
     key: string;

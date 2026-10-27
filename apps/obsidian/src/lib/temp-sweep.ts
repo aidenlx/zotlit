@@ -5,25 +5,23 @@
 // producer of temp entries keeps that rule in its own `reap-temps.ts`, next to
 // the code that writes the entries the rule recognizes.
 //
-// The sweep is an Effect so the database reads worker, which carries no
-// LogTape, runs the same walk the renderer does.
+// The sweep is an Effect over `FileSystem`, so the database reads worker,
+// which carries no LogTape, runs the same walk the renderer does. Each runtime
+// provides the Node file system once.
 //
 // A sweep never fails on the filesystem: a directory that refuses to be
-// listed or emptied is a logged warning, never a failed launch. Interrupting
-// the sweep stops the walk and logs nothing; the Promise calls take a signal
-// that interrupts it and reject with its reason.
+// listed, or an entry that refuses to be checked or removed, is a logged
+// warning, never a failed launch. Interrupting the sweep stops the walk and
+// logs nothing.
 
 // The worker build resolves the specifier `effect` to the worker entry, so a
 // relative import of a wrapper here would pull the renderer's LogTape bridge
 // into the worker.
-import { Cause, Effect } from "effect";
-import { readdir, rm } from "node:fs/promises";
+import { Cause, Clock, Duration, Effect, FileSystem, Option } from "effect";
+import type { PlatformError } from "effect";
 import { join } from "node:path";
 
 import { withLogCategory } from "./effect-log-category";
-import { isErrno, systemCallError } from "./errno";
-import type { SystemCallError } from "./errno";
-import { settleAtEdge } from "./signal-edge";
 
 /** What every reap step accepts, so one startup passes the same thing to each. */
 export interface ReapTempsOptions {
@@ -35,65 +33,83 @@ export interface ReapTempsOptions {
   parent?: string;
 }
 
-export interface TempSweepOptions {
+export interface TempSweepOptions<R> {
   /** The directory to walk. Absent is the normal state before a first run. */
   directory: string;
   /** Names the swept entry in logs, e.g. `"database read clone"`. */
   kind: string;
   /** Whether this entry is residue no run still needs. */
-  isResidue: (name: string, path: string) => Promise<boolean> | boolean;
+  isResidue: (
+    name: string,
+    path: string,
+  ) => Effect.Effect<boolean, PlatformError.PlatformError, R>;
 }
 
-/** The options of a reap step that is a Promise; the signal interrupts it. */
-export interface PlainReapTempsOptions extends ReapTempsOptions {
-  signal?: AbortSignal;
-}
-
-export const sweepTempDirectoryEffect = Effect.fnUntraced(function* ({
+export const sweepTempDirectory = Effect.fnUntraced(function* <R>({
   directory,
   kind,
   isResidue,
-}: TempSweepOptions) {
-  const walked = yield* Effect.result(
-    Effect.gen(function* () {
-      const names = yield* fsCall(() => readdir(directory));
-      for (const name of names) {
-        const path = join(directory, name);
-        if (yield* fsCall(async () => isResidue(name, path))) {
-          yield* remove(path, kind);
-        }
-      }
-    }),
+}: TempSweepOptions<R>) {
+  const fs = yield* FileSystem.FileSystem;
+  const names = yield* fs.readDirectory(directory).pipe(
+    Effect.catchReason("PlatformError", "NotFound", () =>
+      Effect.succeed<string[]>([]),
+    ),
+    Effect.catch((error) =>
+      Effect.logWarning(
+        "Failed to sweep a ZotLit temp directory",
+        Cause.fail(error),
+      ).pipe(
+        Effect.annotateLogs({ directory, kind }),
+        withLogCategory("temp-sweep"),
+        Effect.as<string[]>([]),
+      ),
+    ),
   );
-  if (walked._tag === "Success") return;
-  if (isErrno(walked.failure, "ENOENT")) return;
-  yield* Effect.logWarning(
-    "Failed to sweep a ZotLit temp directory",
-    Cause.fail(walked.failure),
-  ).pipe(
-    Effect.annotateLogs({ directory, kind }),
-    withLogCategory("temp-sweep"),
-  );
+  for (const name of names) {
+    const path = join(directory, name);
+    yield* isResidue(name, path).pipe(
+      Effect.matchEffect({
+        onSuccess: (residue) =>
+          residue ? remove(fs, path, kind) : Effect.void,
+        onFailure: (error) =>
+          Effect.logWarning(
+            "Failed to check a ZotLit temp entry",
+            Cause.fail(error),
+          ).pipe(
+            Effect.annotateLogs({ path, kind }),
+            withLogCategory("temp-sweep"),
+          ),
+      }),
+    );
+  }
 });
 
 /**
- * The Promise-shaped call for lifecycle code that is not an Effect. An abort of
- * `signal` interrupts the sweep, which then rejects with the signal's reason
- * and logs nothing.
+ * Whether the entry at `path` was last modified more than `maxAge` before the
+ * Clock's now. An entry that vanished under the walk, or that reports no
+ * modification time, is not older than anything.
  */
-export async function sweepTempDirectory(
-  options: TempSweepOptions,
-  signal?: AbortSignal,
-): Promise<void> {
-  const exit = await Effect.runPromiseExit(
-    sweepTempDirectoryEffect(options),
-    signal === undefined ? undefined : { signal },
+export const isOlderThan = Effect.fnUntraced(function* (
+  path: string,
+  maxAge: Duration.Duration,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const info = yield* fs.stat(path).pipe(
+    Effect.asSome,
+    Effect.catchReason("PlatformError", "NotFound", () => Effect.succeedNone),
   );
-  settleAtEdge(exit, signal);
-}
+  const mtime = Option.flatMap(info, ({ mtime }) => mtime);
+  if (Option.isNone(mtime)) return false;
+  const now = yield* Clock.currentTimeMillis;
+  return Duration.isGreaterThan(
+    Duration.millis(now - mtime.value.getTime()),
+    maxAge,
+  );
+});
 
-function remove(path: string, kind: string) {
-  return fsCall(() => rm(path, { recursive: true, force: true })).pipe(
+function remove(fs: FileSystem.FileSystem, path: string, kind: string) {
+  return fs.remove(path, { recursive: true, force: true }).pipe(
     Effect.matchEffect({
       onSuccess: () =>
         Effect.logDebug("Reaped a stale ZotLit temp entry").pipe(
@@ -110,9 +126,4 @@ function remove(path: string, kind: string) {
         ),
     }),
   );
-}
-
-function fsCall<A>(run: () => Promise<A>): Effect.Effect<A, SystemCallError> {
-  // boundary: node:fs/promises and the residue rule are Promise-based.
-  return Effect.tryPromise({ try: run, catch: systemCallError });
 }

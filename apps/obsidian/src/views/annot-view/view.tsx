@@ -1,4 +1,3 @@
-import { DateTime, Effect, Stream } from "effect";
 import { ItemView, Scope } from "obsidian";
 import type {
   Menu as ObsidianMenu,
@@ -6,44 +5,46 @@ import type {
   WorkspaceLeaf,
 } from "obsidian";
 
-import {
-  annotationOpenUri,
-  isChildItemFields,
-  parseIndexedKey,
-} from "@zotlit/db";
+import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 import type { AnnotViewAttachment } from "@zotlit/db";
 
+import { passAborted } from "@/lib/abort-error";
 import { registerMigratingWindowEvent } from "@/lib/disposables";
 import type { EffectBridge } from "@/lib/effect-bridge";
-import { toInstant } from "@/lib/effect-clock";
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import { itemSummary } from "@/lib/item-summary";
 import type { ItemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
+import {
+  annotationCapabilityAtom,
+  attachmentCapabilityAtom,
+} from "@/services/annotation-repository/atoms";
 import type {
   AnnotationRecord,
   AnnotationSource,
   HistoryDirection,
 } from "@/services/annotation-repository/service";
-import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
+import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { pickItem } from "@/services/item-lookup/search-modal";
-import type { ItemLookup } from "@/services/item-lookup/service";
-import type { PlainLibraryScope } from "@/services/library-scope/plain";
-import type {
-  LocalServer,
-  ReaderTarget,
-} from "@/services/local-server/service";
-import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
+import { libraryRowsAtom } from "@/services/library-scope/atoms";
+import {
+  liveUpdatesAtom,
+  readerClosedAtom,
+} from "@/services/local-server/atoms";
+import {
+  activeKeyAtom,
+  activeNoteAtom,
+  noteSourceAtom,
+} from "@/services/note-index/atoms";
 import type { PdfAnnotationEditor } from "@/services/pdf-annotation-editor/service";
 import type { ReaderSession } from "@/services/reader-session/session";
-import { ZoteroReaderSession } from "@/services/reader-session/zotero";
-import type { ZoteroReaderResolution } from "@/services/reader-session/zotero";
+import { ReaderSessionHost } from "@/services/reader-session/session";
 import type { PluginSettings } from "@/services/settings/service";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import {
+  zoteroRevisionAtom,
+  zoteroStateAtom,
+} from "@/services/zotero-reads/atoms";
 import { readerText } from "@/views/query-view/reader-diagnostic";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps, QueryViewHost } from "@/views/query-view/view";
@@ -51,23 +52,38 @@ import { openTemplateDataExplorer } from "@/views/template-data-explorer/registe
 
 import type { AnnotActions } from "./actions";
 import { AnnotView } from "./AnnotView";
+import {
+  makeTargetRead,
+  readerResolutionAtom,
+  resultValue,
+  enableLiveUpdatesCommand,
+} from "./atoms";
 import { sanitizeSavedFilter } from "./filter";
 import type { SavedFilter } from "./filter";
 import { SidebarFilterModal } from "./filter-modal";
 import type { AnnotationsLayout } from "./layout";
+import {
+  holdAnnotViewModel,
+  observeRead,
+  pinCurrentItem,
+  pinItem,
+  sameAnnotViewState,
+  setFollowMode,
+  unpin,
+} from "./model";
+import type { AnnotViewModel } from "./model";
+import type { AnnotStore } from "./model";
 import { buildPaneMenu } from "./pane-menu";
 import { resolveLoadTarget } from "./resolve-target";
 import type { ActiveLeafTarget, LoadTarget } from "./resolve-target";
 import { saveSidebarAsQueryFile } from "./save-query-file";
 import { addSidebarQueryMenu, sidebarQueryText } from "./sidebar-query";
-import { INITIAL_FILTER_STATE, selectActiveAttachment } from "./store";
-import type { AnnotState, AnnotStore, FollowMode } from "./store";
+import { INITIAL_FILTER_STATE, selectActiveAttachment } from "./state";
+import type { AnnotState, FollowMode } from "./state";
 import {
-  DEFAULT_FOLLOW_MODE,
   parseAnnotViewState,
   readSidebarQuery,
   serializeAnnotViewState,
-  unpinnedMode,
 } from "./view-state";
 import type { AnnotViewState } from "./view-state";
 
@@ -127,43 +143,14 @@ const VIEW_MENU_SECTIONS = [
  * Layout, which may answer from the Zotero Local API.
  */
 export interface AnnotViewDeps extends QueryViewDeps {
-  runtime: SubscriptionRuntime;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
-  reads: Pick<
-    PlainZoteroReads,
-    | "reads"
-    | "state"
-    | "changed"
-    | "degraded"
-    | "refresh-failed"
-    | "refreshing"
-    | "db-file-missing"
-    | "refresh-requested"
-    | "acquireRead"
-  >;
-  libraryScope: Pick<
-    PlainLibraryScope,
-    "libraryRows" | "changed" | "libraries-changed" | "current"
-  >;
-  liveUpdate: Pick<
-    LocalServer["Service"],
-    | "available"
-    | "availableChanges"
-    | "readerTarget"
-    | "readerTargetChanges"
-    | "readerClosed"
-    | "readerClosedChanges"
-  >;
+  /** The shared item picker still consumes settings through its bridge. */
+  bridge: Pick<EffectBridge, "runSync">;
   /** Every open Obsidian PDF view, as the Reader Session it exposes. */
   pdfReaders: Pick<PdfAnnotationEditor, "sessionFor" | "on">;
-  /** The plugin's live display surface for Excerpt Images. */
-  excerptDisplay: Pick<
-    ExcerptDisplayService,
-    "open" | "refresh" | "revalidate"
-  >;
-  noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey">;
-  itemLookup: Pick<ItemLookup, "openSession">;
-  settings: Pick<PluginSettings["Service"], "current" | "update">;
+  itemLookup: Pick<ItemLookupHandle, "openSession">;
+  settings: Pick<PluginSettings["Service"], "current">;
+  /** The plugin's view registry, which holds each leaf's Follow Mode state. */
+  registry: ViewRegistryHandle;
 }
 
 export class AnnotationView extends ItemView implements HistorySurface {
@@ -176,16 +163,23 @@ export class AnnotationView extends ItemView implements HistorySurface {
   /** Whether Zotero's data cannot be read, which the sidebar says in place of cards. */
   #unreadable = false;
   /** The Query File the sidebar runs, once a change made it differ from the default. */
-  #queryText: string | null = null;
+  get #queryText(): string | null {
+    return this.#deps.registry.get(this.model.query);
+  }
   /** The cards, their store, their actions, the Card Selection and the card keys. */
   readonly #layout: AnnotationsLayout;
   readonly #store: AnnotStore;
   readonly #deps: AnnotViewDeps;
+  /** This leaf's Follow Mode state, held in the plugin's view registry. */
+  readonly model: AnnotViewModel;
+  #release: (() => void) | null;
+  #opened: DisposableStack | null = null;
   #loadDisposables: DisposableStack | null = null;
   /** The load whose reads run; a later load or a clear supersedes it. */
   #loading: object | null = null;
   /** The Zotero Reader, translated into Indexed Keys. */
-  #zoteroReader: ZoteroReaderSession | null = null;
+  #zoteroReader: ReaderSessionHost | null = null;
+  #targetRead: Disposable | null = null;
   /** The active leaf's PDF view session, while one is being followed. */
   #leafSession: (() => void) | null = null;
   /** What the attachment choice and the saved filter are remembered against. */
@@ -210,9 +204,13 @@ export class AnnotationView extends ItemView implements HistorySurface {
     return this.#reading.then(() => this.#query.settled);
   }
 
-  /** Follow mode lives in the store (single source of truth); read it here. */
+  /** This leaf's Follow Mode state, as the registry holds it. */
+  get #followState(): AnnotViewState {
+    return this.#deps.registry.get(this.model.state);
+  }
+
   get #followMode(): FollowMode {
-    return this.#store.getState().followMode;
+    return this.#followState.followMode;
   }
 
   constructor(leaf: WorkspaceLeaf, deps: AnnotViewDeps) {
@@ -234,8 +232,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       // The header names the Item the cards belong to, and changes with them.
       keepsRowsOnRebind: true,
       save: (text) => {
-        this.#queryText = text;
-        void this.#deps.app.workspace.requestSaveLayout();
+        this.#deps.registry.set(this.model.query, text);
       },
       layout: {
         ...this.#layoutHost(),
@@ -258,6 +255,13 @@ export class AnnotationView extends ItemView implements HistorySurface {
     });
     this.#layout = this.#query.layout;
     this.#store = this.#layout.store;
+    this.model = this.#store.model;
+    // Obsidian may set the workspace state before the view opens.
+    this.#release = this.#holdModel();
+  }
+
+  #holdModel(): () => void {
+    return holdAnnotViewModel(this.#deps.registry, this.model);
   }
 
   /** The sidebar's own gestures and list frame, which its cards answer through. */
@@ -274,7 +278,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
         onPinItem: () => this.#pickItemToPin(),
         onUnpin: () => this.#unpin(),
         onEnableLiveUpdates: () => this.#enableLiveUpdates(),
-        onOpenPdf: () => void this.#openPdf(),
+        onOpenPdf: () => void this.#openPdf().catch(passAborted),
         fillViewMenu: (menu) => this.#fillViewMenu(menu),
         onExploreAnnotation: (annotationKey) => {
           if (!this.#itemKey) return;
@@ -315,10 +319,9 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   override getState(): Record<string, unknown> {
-    const { followMode, previousMode, pinnedItemKey } = this.#store.getState();
     const query = this.#queryText;
     return {
-      ...serializeAnnotViewState({ followMode, previousMode, pinnedItemKey }),
+      ...serializeAnnotViewState(this.#followState),
       ...(query !== null && { query }),
     };
   }
@@ -331,9 +334,9 @@ export class AnnotationView extends ItemView implements HistorySurface {
     // A mode this build cannot name, or a pin with no Item, takes the default
     // rather than a source that cannot answer. Every other stored mode is kept
     // whether or not its source answers right now.
-    this.#store.setState(parseAnnotViewState(state));
+    this.#deps.registry.set(this.model.state, parseAnnotViewState(state));
     // The restored Query File runs with the Attachment the reload shows.
-    this.#queryText = readSidebarQuery(state);
+    this.#deps.registry.set(this.model.query, readSidebarQuery(state));
     this.#reload();
   }
 
@@ -403,7 +406,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     buildPaneMenu(menu, {
       state: this.snapshot,
       actions,
-      now: toInstant(this.#deps.bridge.runSync(DateTime.now)),
+      now: Temporal.Now.instant(),
       query: (target) =>
         addSidebarQueryMenu(target, {
           view: file ? view : null,
@@ -443,16 +446,50 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   protected override async onOpen(): Promise<void> {
-    this.#zoteroReader = new ZoteroReaderSession({
-      liveUpdate: this.#deps.liveUpdate,
-      bridge: this.#deps.bridge,
-      resolve: (target, signal) => this.#resolveZoteroReader(target, signal),
-      navigate: (annotationKey) => this.#openInZotero(annotationKey),
-    });
-    this.register(() => this.#zoteroReader?.[Symbol.dispose]());
+    const { registry } = this.#deps;
+    const opened = new DisposableStack();
+    this.#opened = opened;
+    this.register(() => opened.dispose());
+    this.#release ??= this.#holdModel();
+    // Nothing else saves the workspace when the Follow Mode changes, so the
+    // view asks for the save that carries it across a restart.
+    let saved = registry.get(this.model.state);
+    opened.defer(
+      registry.subscribe(this.model.state, (state) => {
+        if (sameAnnotViewState(state, saved)) return;
+        saved = state;
+        this.leaf.updateHeader();
+        void this.#deps.app.workspace.requestSaveLayout();
+      }),
+    );
 
+    this.#closed = false;
+    opened.defer(
+      registry.subscribe(this.model.query, () => {
+        void this.#deps.app.workspace.requestSaveLayout();
+      }),
+    );
+    this.#zoteroReader = new ReaderSessionHost({
+      source: "zotero",
+      navigate: (key) => this.#openInZotero(key),
+      select: () => {},
+    });
+    opened.defer(() => this.#zoteroReader?.[Symbol.dispose]());
+    opened.defer(
+      registry.subscribe(
+        readerResolutionAtom,
+        (result) => {
+          const resolution = resultValue(result);
+          if (result.waiting) return;
+          this.#zoteroReader?.setTarget(resolution?.target ?? null);
+          this.#zoteroReader?.reportSelection(resolution?.selected ?? []);
+        },
+        { immediate: true },
+      ),
+    );
+    opened.defer(registry.mount(enableLiveUpdatesCommand));
     this.#query.load();
-    this.register(
+    opened.defer(
       this.#query.state.subscribe(({ phase }, last) => {
         // A run for the next Item that fails shows the next Item, and says
         // so. A run that had failed before it says nothing of the next one.
@@ -466,44 +503,32 @@ export class AnnotationView extends ItemView implements HistorySurface {
       }),
     );
 
-    this.#store.setState({
-      liveUpdatesOn: this.#deps.bridge.runSync(this.#deps.liveUpdate.available),
-      zoteroReaderClosed: this.#deps.bridge.runSync(
-        this.#deps.liveUpdate.readerClosed,
-      ),
-      capability: this.#deps.bridge.runSync(this.#deps.annotations.capability),
-    });
-
     this.#layout.render(this.contentEl, <AnnotView />);
-
-    this.register(
-      subscribe(this.#deps.runtime, this.#deps.reads["changed"], () => {
-        logger.debug("DB changed, refreshing annot view");
-        this.#zoteroReader?.refresh();
-        this.#reload();
-      }),
-    );
-    // The held Libraries settle after the database change that moved them.
-    this.register(
-      subscribe(
-        this.#deps.runtime,
-        this.#deps.libraryScope["libraries-changed"],
-        () => this.#reload(),
+    opened.defer(registry.subscribe(zoteroRevisionAtom, () => this.#reload()));
+    opened.defer(registry.subscribe(zoteroStateAtom, () => this.#reload()));
+    opened.defer(registry.subscribe(libraryRowsAtom, () => this.#reload()));
+    // Evaluating the derived key starts its dependency on the active note.
+    opened.defer(
+      registry.subscribe(
+        activeKeyAtom,
+        () => {
+          if (this.#followMode === "active-tab") this.#reload();
+        },
+        { immediate: true },
       ),
     );
-
     this.registerEvent(
       this.#deps.app.workspace.on("active-leaf-change", () => {
         if (this.#deps.app.workspace.activeLeaf === this.leaf) {
           this.#layout.revalidate();
         }
-        if (this.#followMode === "active-tab") {
-          this.#reload();
-        }
+        // A pane without a file can clear the target while the note atom
+        // still holds the key of the note that becomes active again.
+        if (this.#followMode === "active-tab") this.#reload();
       }),
     );
 
-    this.register(
+    opened.defer(
       this.#deps.pdfReaders.on("session-added", (filePath) => {
         if (
           this.#followMode === "active-tab" &&
@@ -519,58 +544,49 @@ export class AnnotationView extends ItemView implements HistorySurface {
       "focus",
       () => this.#layout.revalidate(),
     );
-    this.register(() => windowFocus[Symbol.dispose]());
-
-    this.registerEvent(
-      this.#deps.app.metadataCache.on("changed", (file) => {
-        if (this.#followMode !== "active-tab") return;
-        const activeFile = this.#deps.app.workspace.getActiveFile();
-        if (activeFile && file.path === activeFile.path) this.#reload();
-      }),
-    );
+    opened.defer(() => windowFocus[Symbol.dispose]());
 
     const zoteroReader = this.#zoteroReader;
-    this.register(
+    opened.defer(
       zoteroReader.on("target-changed", () => {
         if (this.#followMode === "zotero-reader") this.#reload();
       }),
     );
-    this.register(
+    opened.defer(
       zoteroReader.on("selection-changed", () =>
         this.#layout.readerSelectionChanged(zoteroReader),
       ),
     );
 
-    this.register(
-      this.#deps.bridge.subscribe(
-        Stream.drop(this.#deps.liveUpdate.availableChanges, 1),
+    opened.defer(
+      registry.subscribe(
+        liveUpdatesAtom,
         (available) => {
-          // The mode is the user's, so it stands: only the reason the view
-          // shows in place changes with the listener.
           this.#store.setState({ liveUpdatesOn: available });
           if (this.#followMode === "zotero-reader") this.#reload();
         },
+        { immediate: true },
       ),
     );
-
-    this.register(
-      this.#deps.bridge.subscribe(
-        Stream.drop(this.#deps.liveUpdate.readerClosedChanges, 1),
+    opened.defer(
+      registry.subscribe(
+        readerClosedAtom,
         (closed) => {
           this.#store.setState({ zoteroReaderClosed: closed });
         },
+        { immediate: true },
       ),
     );
-
-    this.register(
-      this.#deps.bridge.subscribe(
-        this.#deps.annotations.capabilityChanges,
+    opened.defer(
+      registry.subscribe(
+        annotationCapabilityAtom,
         () => this.#syncCapability(),
+        { immediate: true },
       ),
     );
     // The capability the header reports is the Attachment's, so it moves with
     // the Attachment as well as with the probe.
-    this.register(
+    opened.defer(
       this.#store.subscribe(
         (s) => s.selectedAttachmentKey,
         () => {
@@ -584,7 +600,11 @@ export class AnnotationView extends ItemView implements HistorySurface {
 
   protected override async onClose(): Promise<void> {
     this.#closed = true;
+    this.#opened?.dispose();
+    this.#opened = null;
     this.#loading = null;
+    this.#targetRead?.[Symbol.dispose]();
+    this.#targetRead = null;
     this.#cancelStaged();
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = null;
@@ -592,6 +612,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.#leafSession = null;
     // The layout saves an open card editor and unmounts the cards.
     this.#query.unload();
+    this.#release?.();
+    this.#release = null;
   }
 
   // #region follow mode
@@ -604,12 +626,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
    */
   #setFollowMode(mode: Exclude<FollowMode, "pinned">): void {
-    if (this.#followMode === mode) return;
-    this.#commitMode({
-      followMode: mode,
-      previousMode: DEFAULT_FOLLOW_MODE,
-      pinnedItemKey: null,
-    });
+    this.#commitMode(setFollowMode(mode));
   }
 
   /**
@@ -623,7 +640,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     if (selectedAttachmentKey !== null) {
       this.#saveAttachmentSelection(pinnable, selectedAttachmentKey);
     }
-    this.#pin(pinnable);
+    this.#commitMode(pinCurrentItem(pinnable));
   }
 
   /**
@@ -652,44 +669,28 @@ export class AnnotationView extends ItemView implements HistorySurface {
       // The item index the picker searches excludes every child item type, so
       // a hit is always an Item a pin can name.
       // @see packages/db/src/queries/index-items.ts
-      if (hit) this.#pin(hit.item.indexedKey);
-    });
-  }
-
-  #pin(itemKey: string): void {
-    this.#commitMode({
-      followMode: "pinned",
-      previousMode: unpinnedMode(this.#followMode),
-      pinnedItemKey: itemKey,
+      if (hit) this.#commitMode(pinItem(hit.item.indexedKey));
     });
   }
 
   #unpin(): void {
-    const { previousMode } = this.#store.getState();
-    this.#commitMode({
-      followMode: unpinnedMode(previousMode),
-      previousMode: DEFAULT_FOLLOW_MODE,
-      pinnedItemKey: null,
-    });
+    this.#commitMode(unpin);
   }
 
-  #commitMode(next: AnnotViewState): void {
+  #commitMode(transition: (state: AnnotViewState) => AnnotViewState): void {
+    const current = this.#followState;
+    const next = transition(current);
+    if (next === current) return;
     logger.debug("Follow mode changed by a gesture", { ...next });
     // A Follow Mode change clears the Card Selection; a reader the new mode
     // binds reports its own when the reload binds it.
     this.#layout.resetSelection();
-    this.#store.setState(next);
-    void this.#deps.app.workspace.requestSaveLayout();
+    this.#deps.registry.set(this.model.state, next);
     this.#reload();
   }
 
   #enableLiveUpdates(): void {
-    this.#deps.bridge.runSync(
-      this.#deps.settings.update({
-        "server.enabled": true,
-        "server.live-update": true,
-      }),
-    );
+    this.#deps.registry.set(enableLiveUpdatesCommand, undefined);
   }
 
   // #endregion
@@ -704,10 +705,11 @@ export class AnnotationView extends ItemView implements HistorySurface {
       this.#followMode === "active-tab" ? this.#activePdfSession() : null,
     );
     this.#layout.bindReader(this.#followedSession());
-    if (this.#deps.reads.state !== "ready") {
+    if (this.#deps.registry.get(zoteroStateAtom).state !== "ready") {
       this.#clearState();
       // A database still opening says nothing yet; one that failed says so.
-      this.#unreadable = this.#deps.reads.state === "degraded";
+      this.#unreadable =
+        this.#deps.registry.get(zoteroStateAtom).state === "degraded";
       this.#syncQueryProblem();
       return;
     }
@@ -742,7 +744,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   #resolveTarget(): LoadTarget | null {
-    const libraries = this.#deps.libraryScope.libraryRows;
+    const libraries = this.#deps.registry.get(libraryRowsAtom);
     switch (this.#followMode) {
       case "active-tab":
         return resolveLoadTarget({
@@ -764,7 +766,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       case "pinned":
         return resolveLoadTarget({
           mode: "pinned",
-          pinnedItemKey: this.#store.getState().pinnedItemKey,
+          pinnedItemKey: this.#followState.pinnedItemKey,
           libraries,
         });
     }
@@ -783,8 +785,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     if (session) {
       return session.target ? { kind: "pdf", target: session.target } : null;
     }
-    const cache = this.#deps.app.metadataCache.getFileCache(activeFile);
-    const itemKey = itemKeyFromFrontmatter(cache);
+    const itemKey = this.#deps.registry.get(activeNoteAtom).key;
     return itemKey === null ? null : { kind: "note", itemKey };
   }
 
@@ -821,36 +822,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
     );
   }
 
-  /** Names what one companion reader push points at, in Indexed Keys. */
-  async #resolveZoteroReader(
-    pushed: ReaderTarget,
-    signal: AbortSignal,
-  ): Promise<ZoteroReaderResolution | null> {
-    try {
-      const { reads } = this.#deps.reads;
-      // The wire carries a selection as numeric ids, and this is the last
-      // place they are read: the session speaks Indexed Keys from here on.
-      const named = await Effect.runPromise(
-        reads.ReaderTargetKeys({
-          attachmentID: pushed.attachmentID,
-          selected: pushed.selected,
-        }),
-        { signal },
-      );
-      if (!named) return null;
-      return {
-        target: { attachmentKey: named.attachmentKey, itemKey: named.itemKey },
-        selected: named.selected,
-      };
-    } catch (err) {
-      logger.warn("Failed to name the Zotero reader's attachment", {
-        attachmentID: pushed.attachmentID,
-        error: err,
-      });
-      return null;
-    }
-  }
-
   #loadTarget(target: LoadTarget | null): void {
     if (!target) {
       this.#clearState();
@@ -877,6 +848,12 @@ export class AnnotationView extends ItemView implements HistorySurface {
       this.#loadDisposables = null;
       this.#layout.cancelReads();
     }
+    this.#targetRead?.[Symbol.dispose]();
+    const read = observeRead(
+      this.#deps.registry,
+      makeTargetRead(target, this.#followMode),
+    );
+    this.#targetRead = read;
     const load = {};
     this.#loading = load;
     this.#cancelStaged();
@@ -888,10 +865,14 @@ export class AnnotationView extends ItemView implements HistorySurface {
     } satisfies Partial<AnnotState>;
 
     if (memoryChanged) {
-      this.#reading = this.#stage(target, load, {
-        ...INITIAL_FILTER_STATE,
-        ...state,
-      });
+      this.#reading = this.#stage(
+        target,
+        { load, reading: read.promise },
+        {
+          ...INITIAL_FILTER_STATE,
+          ...state,
+        },
+      );
       return;
     }
 
@@ -902,25 +883,17 @@ export class AnnotationView extends ItemView implements HistorySurface {
       ...state,
       ...(!sameItem && { itemDisplay: null }),
     });
-    void this.#resolveItemSummary(target).then((itemDisplay) => {
-      if (this.#loading === load) this.#store.setState({ itemDisplay });
+    this.#reading = read.promise.then((answer) => {
+      if (!answer || this.#loading !== load) return;
+      const { attachments, itemDisplay } = answer;
+      this.#store.setState({ attachments, itemDisplay });
+      const activeKey = this.#activeAttachment(target, attachments);
+      this.#store.setState({ selectedAttachmentKey: activeKey });
+      return this.#followAttachment(target, activeKey, {
+        attachments,
+        memoryChanged: false,
+      });
     });
-    this.#reading = this.#readAttachments(target).then(
-      (attachments) => {
-        if (this.#loading !== load) return;
-        this.#store.setState({ attachments });
-        const activeKey = this.#activeAttachment(target, attachments);
-        this.#store.setState({ selectedAttachmentKey: activeKey });
-        return this.#followAttachment(target, activeKey, {
-          attachments,
-          memoryChanged: false,
-        });
-      },
-      (err: unknown) => {
-        if (this.#loading !== load) return;
-        logger.warn("Failed to load annot view data", { key, error: err });
-      },
-    );
   }
 
   /**
@@ -931,7 +904,16 @@ export class AnnotationView extends ItemView implements HistorySurface {
    */
   async #stage(
     target: LoadTarget,
-    load: object,
+    {
+      load,
+      reading,
+    }: {
+      load: object;
+      reading: Promise<{
+        attachments: AnnotViewAttachment[];
+        itemDisplay: ItemSummary | null;
+      } | null>;
+    },
     patch: Partial<AnnotState>,
   ): Promise<void> {
     const staged: Staged = {
@@ -955,10 +937,12 @@ export class AnnotationView extends ItemView implements HistorySurface {
     let attachments: AnnotViewAttachment[];
     let itemDisplay: ItemSummary | null;
     try {
-      [itemDisplay, attachments] = await Promise.all([
-        this.#resolveItemSummary(target),
-        this.#readAttachments(target),
-      ]);
+      const answer = await reading;
+      if (!answer) {
+        if (this.#loading === load) this.#clearState();
+        return;
+      }
+      ({ itemDisplay, attachments } = answer);
     } catch (err) {
       if (this.#loading !== load) return;
       logger.warn("Failed to load annot view data", {
@@ -1020,22 +1004,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
 
   #cancelStaged(): void {
     if (this.#staged) this.#takeStaged(this.#staged);
-  }
-
-  /** The attachments the view lists for `target`. */
-  async #readAttachments({
-    itemKey,
-    key,
-    libraryID,
-  }: LoadTarget): Promise<AnnotViewAttachment[]> {
-    const { reads } = this.#deps.reads;
-    return Effect.runPromise(
-      reads.AnnotViewAttachments({
-        libraryID,
-        key,
-        standalone: itemKey === null,
-      }),
-    );
   }
 
   /** The Attachment of `attachments` the view shows first: the locked, the saved, or the first. */
@@ -1162,31 +1130,13 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.#store.setState({
       capability:
         selectedAttachmentKey === null
-          ? this.#deps.bridge.runSync(this.#deps.annotations.capability)
-          : this.#deps.bridge.runSync(
-              this.#deps.annotations.capabilityFor(selectedAttachmentKey),
-            ),
+          ? this.#deps.registry.get(annotationCapabilityAtom)
+          : (resultValue(
+              this.#deps.registry.get(
+                attachmentCapabilityAtom(selectedAttachmentKey),
+              ),
+            ) ?? this.#deps.registry.get(annotationCapabilityAtom)),
     });
-  }
-
-  /**
-   * The identity block names the Item only where nothing else on screen does:
-   * Active Tab always has the note or the PDF in front of the user.
-   */
-  async #resolveItemSummary(target: LoadTarget): Promise<ItemSummary | null> {
-    const { itemKey } = target;
-    if (this.#followMode === "active-tab" || itemKey === null) return null;
-    try {
-      const { reads } = this.#deps.reads;
-      const items = await Effect.runPromise(
-        reads.ItemsByIndexedKeys({ indexedKeys: [itemKey] }),
-      );
-      const item = items.get(itemKey);
-      if (!item || isChildItemFields(item.fields)) return null;
-      return itemSummary(item, item.fields);
-    } catch {
-      return null;
-    }
   }
 
   // #endregion
@@ -1198,7 +1148,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
    */
   #sourcePath(): string {
     if (this.#itemKey === null) return "";
-    return this.#deps.noteIndex.getNotesByItemKey(this.#itemKey)[0]?.path ?? "";
+    return this.#deps.registry.get(noteSourceAtom(this.#itemKey));
   }
 
   /**
@@ -1220,7 +1170,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
    */
   pinItem(itemKey: string): void {
-    this.#pin(itemKey);
+    this.#commitMode(pinItem(itemKey));
   }
 
   /** The reader this view's Follow Mode is driven by, while one answers. */
@@ -1254,6 +1204,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   #clearState(): void {
+    this.#targetRead?.[Symbol.dispose]();
+    this.#targetRead = null;
     this.#cancelStaged();
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = null;

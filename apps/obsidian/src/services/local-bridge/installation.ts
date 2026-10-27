@@ -2,12 +2,11 @@
 // grant carries so the page can key its drafts. It is device state, never a
 // path and never a secret — see `policies/local-storage.md`.
 
-import type { App } from "obsidian";
+import { Effect } from "effect";
+
+import { DeviceStorage } from "@/lib/obsidian-device-storage";
 
 import { randomHex } from "./random";
-
-/** localStorage surface these helpers need — the vault-scoped store. */
-export type DeviceStorage = Pick<App, "loadLocalStorage" | "saveLocalStorage">;
 
 const STORAGE_KEY = "zotlit-local-bridge-installation";
 
@@ -20,10 +19,11 @@ const INSTALLATION_ID_BYTES = 16;
  * record that is not a non-empty string reads as no id at all and is replaced,
  * so a corrupted entry costs the page its drafts rather than the connection.
  */
-export function loadInstallationId(store: DeviceStorage): string {
-  const held: unknown = store.loadLocalStorage(STORAGE_KEY);
+export const loadInstallationId = Effect.gen(function* () {
+  const storage = yield* DeviceStorage;
+  const held = yield* storage.load(STORAGE_KEY);
   if (typeof held === "string" && held.length > 0) return held;
   const minted = randomHex(INSTALLATION_ID_BYTES);
-  store.saveLocalStorage(STORAGE_KEY, minted);
+  yield* storage.save(STORAGE_KEY, minted);
   return minted;
-}
+}).pipe(Effect.withSpan("LocalBridge.loadInstallationId"));

@@ -1,5 +1,7 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
+  "cacheMaxAge": "7d",
+  "cacheMaxSize": "10GB",
   "globalPassThroughEnv": [
     "AI_AGENT",
     "CLAUDE_CODE",
@@ -104,6 +106,10 @@
       "cache": false
     },
     "//#lint:messages": {
+      "cache": false
+    },
+    "//#lint:unused": {
+      "dependsOn": ["//#lint:repo:deps"],
       "cache": false
     },
     "//#review:plugin:deps": {

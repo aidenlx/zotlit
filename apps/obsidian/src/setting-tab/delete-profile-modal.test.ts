@@ -10,7 +10,16 @@ import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ProfileDeletionPlan } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 
-import { confirmProfileDeletion } from "./profiles";
+import type { ProfileDeletionConsent } from "./delete-profile-modal";
+import { openProfileDeletion } from "./delete-profile-modal";
+
+/** The user's answer to the deletion dialog for `plan`. */
+function confirmProfileDeletion(
+  app: App,
+  options: { plan: ProfileDeletionPlan },
+): Promise<ProfileDeletionConsent | undefined> {
+  return new Promise((resolve) => openProfileDeletion(app, options, resolve));
+}
 
 const books = "Bk3Qn7XvT2Lp" as ProfileId;
 const papers = "Rz9Wm4YfH6Kd" as ProfileId;

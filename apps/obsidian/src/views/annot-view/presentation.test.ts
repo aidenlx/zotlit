@@ -4,6 +4,7 @@ import type { AnnotViewAttachment } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { ItemSummary } from "@/lib/item-summary";
+import { deadlineAfter } from "@/services/annotation-repository/__fixtures__/capability";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 
@@ -21,7 +22,7 @@ import type {
   FollowMenuEntry,
   HeaderMenuEntry,
 } from "./presentation";
-import { createAnnotStore } from "./store";
+import { initialAnnotState } from "./state";
 import type { AnnotState } from "./store";
 
 const ATTACHMENTS: AnnotViewAttachment[] = [
@@ -50,12 +51,12 @@ const PAPER: ItemSummary = {
 const WRITABLE: EditingCapability = { kind: "writable" };
 
 const NOW = Temporal.Instant.from("2026-09-22T10:00:00Z");
-const RETRY_AFTER = NOW.add({ seconds: 30 });
+const RETRY_AFTER = deadlineAfter(NOW, 30);
 
 /** A view showing a Literature Note's Item with two attachments. */
 function state(overrides: Partial<AnnotState> = {}): AnnotState {
-  const store = createAnnotStore();
-  store.setState({
+  return {
+    ...initialAnnotState(),
     itemKey: "ABCD2345",
     pinnable: "ABCD2345",
     attachments: ATTACHMENTS,
@@ -77,8 +78,7 @@ function state(overrides: Partial<AnnotState> = {}): AnnotState {
     ]),
     liveUpdatesOn: true,
     ...overrides,
-  });
-  return store.getState();
+  };
 }
 
 /** What the menu runs, in the order it offers it. */

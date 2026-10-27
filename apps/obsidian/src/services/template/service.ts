@@ -4,6 +4,7 @@ import {
   Fiber,
   Layer,
   PubSub,
+  Result,
   Scope,
   Stream,
   SubscriptionRef,
@@ -49,7 +50,7 @@ import type {
   FrontmatterField,
 } from "@zotlit/templates/frontmatter";
 import {
-  exportLiteratureNotePack,
+  exportLiteratureNotePack as formatLiteratureNotePack,
   LiteratureNotePackError,
   unpackLiteratureNotePartials,
 } from "@zotlit/templates/literature-note-pack";
@@ -63,16 +64,23 @@ import {
 } from "@zotlit/templates/obsidian";
 
 import { RESERVED_KEYS } from "@/lib/constants";
+import { processLiveText, readLiveText } from "@/lib/effect-live-text";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { forkEach } from "@/lib/effect-stream";
-import { ensureFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
-import { processLiveText, readLiveText } from "@/lib/live-text";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { FileManager } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
 import type { VaultEvent } from "@/lib/obsidian-vault";
+import type { Workspace } from "@/lib/obsidian-workspace";
 import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
+import {
+  FileExists,
+  VaultError,
+  VaultFolderBlockedError,
+} from "@/lib/vault-errors";
+import { ensureVaultFolder } from "@/lib/vault-folder";
 import type { ResolvedProfile } from "@/services/profile/bindings";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -121,15 +129,11 @@ const EMBEDDED_DEFAULT_WINNER = {
 
 interface TemplateEngineOptions {
   app: App;
-  /** Creates each partial document; a taken path fails as `FileExists`. */
-  vault: Pick<Vault["Service"], "create">;
-  /** Runs an Effect on the layer's context. */
-  runPromise: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>;
-  settings: { readonly current: Readonly<Settings> };
-  changed: () => void;
+  snapshot: Readonly<Settings>;
+  changed: () => Effect.Effect<void>;
   flushRequested: () => void;
   intakePending: () => number;
-  schedule: (millis: number, task: () => void) => () => void;
+  schedule: (millis: number, task: () => void) => Effect.Effect<() => void>;
   log: (
     level: "debug" | "info" | "warn" | "error",
     message: string,
@@ -475,202 +479,137 @@ export type SettleOutcome = "settled" | "timeout" | "init-failed";
 const wrapManagedContent = managedRegionTransform(MANAGED_CONTENT_TEMPLATE);
 
 /** Rendering and vault-document operations; the Template layer owns its lifetime. */
-class TemplateEngine {
-  readonly #app;
-  readonly #vault;
-  readonly #runPromise;
-  readonly #settings;
-  readonly #facade = new TemplateFacade({
-    // The built-in `content` renders inline; only a vault `content` template
-    // keeps its Managed Region on create.
-    transformRender: (name, output) =>
-      this.#contentIsVaultBacked() ? wrapManagedContent(name, output) : output,
-  });
-  readonly #changed;
-  readonly #schedule;
-  readonly #log;
-  readonly #flushRequested;
-  readonly #intakePending;
-  #closed = false;
-  #initFailed = false;
-  readonly #compileErrors = new Map<string, CompileError>();
-  /** Exact bytes observed by reconciliation, including sources that fail parsing. */
-  readonly #loadedDocumentSources = new Map<string, string>();
-  /** Name → the winner {@link #reconcileName} last resolved it to, with the
-   *  JavaScript Templates gate already applied. Read by
-   *  {@link getTemplateFileStatuses}, so status reports the winner the
-   *  reconciler computed instead of re-deriving one from the vault. */
-  readonly #winners = new Map<string, TemplateWinner>();
-  readonly #shadowed = new Map<string, string>();
-  readonly #inertEta = new Map<string, string>();
-  readonly #pending: TemplateWork = emptyTemplateWork();
-  /** Partial name → the `zotlit-partial.<name>.md` document backing it. */
-  readonly #partials = new Map<string, RegisteredPartial>();
-  /** Partial name → the text of a document the JavaScript Templates gate left
-   *  inert. Nothing renders it here; a Share still carries what the reader
-   *  wrote, since the gate rules out running the text, not copying it. */
-  readonly #inertPartials = new Map<string, LiteratureNoteTemplatePartial>();
-  /** Every name the folder holds a `zotlit-partial.<name>.md` for, whether or
-   *  not it compiled: the vault's namespace, which completion offers and the
-   *  name rule checks a new name against. */
-  readonly #partialNames = new Set<string>();
-  /** Reserved name → the partial file claiming it, reported in settings. */
-  readonly #reservedPartialFiles = new Map<string, string>();
-  /** The Citation Template currently registered, `null` while none compiles. */
-  #citation: RegisteredCitationTemplate | null = null;
-  /** Vault paths of the `zotlit-` files no kind claims, reported in settings. */
-  readonly #unrecognizedFiles = new Set<string>();
-  readonly #literatureNoteDocuments = new Map<
-    string,
-    ReconciledLiteratureNoteTemplate
-  >();
-  readonly #literatureNoteDocumentErrors = new Map<string, Error>();
-  readonly #settledWaiters = new Set<SettledWaiter>();
-
-  #javascriptTemplatesEnabled: boolean;
-
-  /** Compiled managed-frontmatter fields, memoized by the settings array
-   *  reference (which changes only when the list is mutated). */
-  #lastFrontmatterFields: readonly FrontmatterField[] | null = null;
-  #compiledFrontmatterFields: readonly CompiledFrontmatterField[] = [];
-  #inertFrontmatterKeys: readonly string[] = [];
-
-  #flushTimer: (() => void) | null = null;
-  #settlingTasks = 0;
-  #folderGeneration = 0;
-  #loaded = false;
-
-  #lastTemplateFolder = "";
-  #lastAutoTrim: [AutoTrim, AutoTrim] = [false, false];
-
-  constructor(options: TemplateEngineOptions) {
-    this.#changed = options.changed;
-    this.#flushRequested = options.flushRequested;
-    this.#intakePending = options.intakePending;
-    this.#schedule = options.schedule;
-    this.#log = options.log;
-    this.#app = options.app;
-    this.#vault = options.vault;
-    this.#runPromise = options.runPromise;
-    this.#settings = options.settings;
-    this.#javascriptTemplatesEnabled =
-      this.#app.loadLocalStorage(JS_TEMPLATES_STORAGE_KEY) === "1";
+function makeTemplateEngine(options: TemplateEngineOptions) {
+  const state = {
+    facade: new TemplateFacade({
+      // The built-in `content` renders inline; only a vault `content` template
+      // keeps its Managed Region on create.
+      transformRender: (name, output) =>
+        coreContentIsVaultBacked() ? wrapManagedContent(name, output) : output,
+    }),
+    closed: false,
+    initFailed: false,
+    compileErrors: new Map<string, CompileError>(),
+    loadedDocumentSources: new Map<string, string>(),
+    winners: new Map<string, TemplateWinner>(),
+    shadowed: new Map<string, string>(),
+    inertEta: new Map<string, string>(),
+    pending: emptyTemplateWork() as TemplateWork,
+    partials: new Map<string, RegisteredPartial>(),
+    inertPartials: new Map<string, LiteratureNoteTemplatePartial>(),
+    partialNames: new Set<string>(),
+    reservedPartialFiles: new Map<string, string>(),
+    citation: null as RegisteredCitationTemplate | null,
+    unrecognizedFiles: new Set<string>(),
+    literatureNoteDocuments: new Map<
+      string,
+      ReconciledLiteratureNoteTemplate
+    >(),
+    literatureNoteDocumentErrors: new Map<string, Error>(),
+    settledWaiters: new Set<SettledWaiter>(),
+    lastFrontmatterFields: null as readonly FrontmatterField[] | null,
+    compiledFrontmatterFields: [] as readonly CompiledFrontmatterField[],
+    inertFrontmatterKeys: [] as readonly string[],
+    flushTimer: null as (() => void) | null,
+    settlingTasks: 0,
+    folderGeneration: 0,
+    loaded: false,
+    lastTemplateFolder: "",
+    lastAutoTrim: [false, false] as [AutoTrim, AutoTrim],
+    app: options.app,
+    settings: { current: options.snapshot },
+    log: options.log,
+    flushRequested: options.flushRequested,
+    intakePending: options.intakePending,
+    schedule: options.schedule,
+    changed: options.changed,
+    javascriptTemplatesEnabled:
+      options.app.loadLocalStorage(JS_TEMPLATES_STORAGE_KEY) === "1",
+  };
+  function readCompileErrors(): ReadonlyMap<string, CompileError> {
+    return state.compileErrors;
   }
-
-  get compileErrors(): ReadonlyMap<string, CompileError> {
-    return this.#compileErrors;
+  function getLoadedDocumentSource(path: string): string | undefined {
+    return state.loadedDocumentSources.get(path);
   }
-
-  getLoadedDocumentSource(path: string): string | undefined {
-    return this.#loadedDocumentSources.get(path);
+  function readShadowedFiles(): ReadonlyMap<string, string> {
+    return state.shadowed;
   }
-
-  /** Name → vault path of a shadowed `.eta.md` file whose Liquid edition currently wins. */
-  get shadowedFiles(): ReadonlyMap<string, string> {
-    return this.#shadowed;
+  function readInertEtaFiles(): ReadonlyMap<string, string> {
+    return state.inertEta;
   }
-
-  /** Name → vault path of an `.eta.md` template file that is inert because the JavaScript Templates gate is off. */
-  get inertEtaFiles(): ReadonlyMap<string, string> {
-    return this.#inertEta;
+  function readJavascriptTemplatesEnabled(): boolean {
+    return state.javascriptTemplatesEnabled;
   }
-
-  /** Per-device consent flag gating all Eta compilation; see {@link setJavascriptTemplatesEnabled}. */
-  get javascriptTemplatesEnabled(): boolean {
-    return this.#javascriptTemplatesEnabled;
+  function readLoaded(): boolean {
+    return state.loaded;
   }
-
-  /** Whether the layer completed the initial template scan successfully. */
-  get loaded(): boolean {
-    return this.#loaded;
+  function getUnrecognizedFiles(): readonly string[] {
+    coreRequireLoaded("getUnrecognizedFiles");
+    return [...state.unrecognizedFiles].sort();
   }
-
-  /**
-   * Vault paths of the `zotlit-` prefixed Markdown files in the template
-   * folder that answer to no Template Document kind, sorted, so the setting
-   * tab can name each one. A file without the prefix is ignored and absent.
-   */
-  getUnrecognizedFiles(): readonly string[] {
-    this.#requireLoaded("getUnrecognizedFiles");
-    return [...this.#unrecognizedFiles].sort();
-  }
-
-  /**
-   * The Legacy Template File slots and how each currently resolves — empty
-   * once conversion has run: a converted vault keeps its note sources in
-   * Profile documents and its citation text in the Citation Template, so no
-   * slot remains.
-   */
-  getTemplateFileStatuses(): readonly TemplateFileStatus[] {
-    this.#requireLoaded("getTemplateFileStatuses");
-    return this.#settings.current?.["note.template-conversion-pending"]
-      ? this.#getTemplateFileStatuses(TEMPLATE_NAMES)
+  function getTemplateFileStatuses(): readonly TemplateFileStatus[] {
+    coreRequireLoaded("getTemplateFileStatuses");
+    return state.settings.current?.["note.template-conversion-pending"]
+      ? coreGetTemplateFileStatuses(TEMPLATE_NAMES)
       : [];
   }
-
-  /**
-   * How the Citation Template currently resolves: the vault's
-   * `zotlit-citation.md`, or the built-in source that stands in for it.
-   */
-  getCitationTemplateStatus(): CitationTemplateStatus {
-    this.#requireLoaded("getCitationTemplateStatus");
-    const path = citationPath(this.#currentTemplateFolder());
-    const inertPath = this.#inertEta.get(CITATION_TEMPLATE_NAME) ?? null;
+  const getCitationTemplateStatus = Effect.fn(
+    "Template.core.getCitationTemplateStatus",
+  )(function* (): Effect.fn.Return<
+    CitationTemplateStatus,
+    TemplateFailure,
+    Vault
+  > {
+    yield* attempt(() => coreRequireLoaded("getCitationTemplateStatus"));
+    const path = citationPath(coreCurrentTemplateFolder());
+    const inertPath = state.inertEta.get(CITATION_TEMPLATE_NAME) ?? null;
     return {
       path,
-      customized: this.#app.vault.getFileByPath(path) !== null,
-      language: this.#citation?.language ?? "liquid",
+      customized: (yield* (yield* Vault).getFileByPath(path)) !== null,
+      language: state.citation?.language ?? "liquid",
       inertPath,
       compileError:
-        this.#compileErrors.get(CITATION_TEMPLATE_NAME)?.message ?? null,
+        state.compileErrors.get(CITATION_TEMPLATE_NAME)?.message ?? null,
     };
-  }
-
-  /**
-   * The Citation Template document, created from the built-in source when the
-   * vault holds none, so a first edit starts from the text ZotLit renders.
-   *
-   * The layer completes the initial folder scan before this operation is available.
-   */
-  async materializeCitationTemplate(): Promise<TFile> {
-    this.#requireLoaded("materializeCitationTemplate");
-    const path = citationPath(this.#currentTemplateFolder());
-    const existing = this.#app.vault.getFileByPath(path);
+  });
+  const materializeCitationTemplate = Effect.fn(
+    "Template.core.materializeCitationTemplate",
+  )(function* (): Effect.fn.Return<TFile, TemplateFailure, Vault> {
+    yield* attempt(() => coreRequireLoaded("materializeCitationTemplate"));
+    const path = citationPath(coreCurrentTemplateFolder());
+    const existing = yield* (yield* Vault).getFileByPath(path);
     if (existing) return existing;
-    await ensureFolder(this.#app, this.#currentTemplateFolder() || "/");
-    const file = await this.#app.vault.create(path, CITATION_TEMPLATE_SOURCE);
-    await this.#settle();
+    yield* ensureVaultFolder(coreCurrentTemplateFolder() || "/");
+    const file = yield* (yield* Vault).create(path, CITATION_TEMPLATE_SOURCE);
+    yield* coreSettle();
     return file;
-  }
-
-  /**
-   * Move the Citation Template document to Obsidian's recoverable trash, so
-   * the built-in citation text renders again and a bad edit is undoable.
-   */
-  async restoreCitationTemplate(): Promise<void> {
-    this.#requireLoaded("restoreCitationTemplate");
-    const file = this.#app.vault.getFileByPath(
-      citationPath(this.#currentTemplateFolder()),
+  });
+  const restoreCitationTemplate = Effect.fn(
+    "Template.core.restoreCitationTemplate",
+  )(function* (): Effect.fn.Return<void, TemplateFailure, Vault | FileManager> {
+    yield* attempt(() => coreRequireLoaded("restoreCitationTemplate"));
+    const file = yield* (yield* Vault).getFileByPath(
+      citationPath(coreCurrentTemplateFolder()),
     );
     if (!file) return;
-    await this.#app.fileManager.trashFile(file);
-    await this.#settle();
-  }
-
-  #getTemplateFileStatuses(
+    yield* (yield* FileManager).trashFile(file);
+    yield* coreSettle();
+  });
+  function coreGetTemplateFileStatuses(
     names: readonly TemplateName[],
   ): readonly TemplateFileStatus[] {
-    const folder = this.#currentTemplateFolder();
+    const folder = coreCurrentTemplateFolder();
 
     return names.map((name) => {
       const liquidPath = templatePath(folder, name, "liquid");
       // Every canonical name is written while a folder rebuild walks it; the
       // fallback covers a read taken inside that walk, before the name's own
       // reconcile resolved.
-      const winner = this.#winners.get(name) ?? EMBEDDED_DEFAULT_WINNER;
+      const winner = state.winners.get(name) ?? EMBEDDED_DEFAULT_WINNER;
 
-      const shadowed = this.#shadowed.get(name);
-      const inert = this.#inertEta.get(name);
+      const shadowed = state.shadowed.get(name);
+      const inert = state.inertEta.get(name);
       return {
         name,
         winner,
@@ -678,36 +617,31 @@ class TemplateEngine {
           winner.source.kind === "vault" ? winner.source.path : liquidPath,
         shadowedFiles: shadowed ? [shadowed] : [],
         inertFiles: inert ? [inert] : [],
-        compileError: this.#compileErrors.get(name)?.message ?? null,
+        compileError: state.compileErrors.get(name)?.message ?? null,
       };
     });
   }
-
-  /** Resolve one document filename from the configured template folder. */
-  getLiteratureNoteTemplate(
+  function getLiteratureNoteTemplate(
     reference: string,
   ): ResolvedLiteratureNoteTemplate | undefined {
-    this.#requireLoaded("getLiteratureNoteTemplate");
-    const error = this.#literatureNoteDocumentErrors.get(reference);
+    coreRequireLoaded("getLiteratureNoteTemplate");
+    const error = state.literatureNoteDocumentErrors.get(reference);
     if (error) throw error;
-    const entry = this.#literatureNoteDocuments.get(reference);
+    const entry = state.literatureNoteDocuments.get(reference);
     if (!entry) return undefined;
-    return this.#resolveLiteratureDocument(entry, reference);
+    return coreResolveLiteratureDocument(entry, reference);
   }
-
-  /** Compile a draft against the installed partials without installing or writing it. */
-  prepareLiteratureNoteTemplateSource(
+  function prepareLiteratureNoteTemplateSource(
     source: string,
   ): ResolvedLiteratureNoteTemplate {
-    this.#requireLoaded("prepareLiteratureNoteTemplateSource");
-    const document = this.#facade.parseLiteratureNoteTemplate(source);
-    return this.#resolveLiteratureDocument(
+    coreRequireLoaded("prepareLiteratureNoteTemplateSource");
+    const document = state.facade.parseLiteratureNoteTemplate(source);
+    return coreResolveLiteratureDocument(
       { document, path: "source override" },
       "source override",
     );
   }
-
-  #resolveLiteratureDocument(
+  function coreResolveLiteratureDocument(
     entry: ReconciledLiteratureNoteTemplate,
     reference: string,
   ): ResolvedLiteratureNoteTemplate {
@@ -717,7 +651,7 @@ class TemplateEngine {
         document.manifest.partials?.some(
           (partial) => partial.language === "eta",
         )) &&
-      !this.#javascriptTemplatesEnabled
+      !state.javascriptTemplatesEnabled
     ) {
       throw new InertTemplateError(m.settings_template_inert_eta({ path }));
     }
@@ -725,12 +659,12 @@ class TemplateEngine {
       ? new TemplateFacade({
           transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
         })
-      : this.#facade;
+      : state.facade;
     for (const partial of document.manifest.partials ?? [])
       facade.define(partial.name, partial.source, partial.language);
     const frontmatter = document.manifest.frontmatter
       ? facade.compileManagedFrontmatterEntries(document.manifest.frontmatter, {
-          javascript: this.#javascriptTemplatesEnabled,
+          javascript: state.javascriptTemplatesEnabled,
         })
       : undefined;
     return {
@@ -740,49 +674,37 @@ class TemplateEngine {
       frontmatter,
       hasManagedBlock: document.managedBlock !== null,
       renderForCreate: <T extends object>(data: T) =>
-        this.#classifyRender(
+        coreClassifyRender(
           () => facade.renderLiteratureNoteTemplateForCreate(document, data),
           path,
         ),
       renderForUpdate: <T extends object>(data: T) =>
-        this.#classifyRender(
+        coreClassifyRender(
           () => facade.renderLiteratureNoteTemplateForUpdate(document, data),
           path,
         ),
       renderAnnotation: <T extends object>(data: T) =>
-        this.#classifyRender(
+        coreClassifyRender(
           () => facade.renderLiteratureNoteTemplateAnnotation(document, data),
           path,
         ),
       renderFilename: <T extends object>(data: T) =>
         toSingleLine(
-          this.#classifyRender(
+          coreClassifyRender(
             () => facade.renderLiteratureNoteTemplateFilename(document, data),
             path,
           ),
         ),
     };
   }
-
-  /**
-   * Run one render and name the artifact any failure belongs to, so a Shared
-   * Partial the JavaScript Templates gate left inert reports the localized
-   * inert notice instead of the facade's bare "not found". Every render path
-   * — {@link render} and every Profile document render — passes through here.
-   *
-   * @param documentPath - the document being rendered, when one is: a call to
-   *   a partial the vault holds no document for is re-raised as a
-   *   {@link MissingPartialError} naming it, which is where the refusal
-   *   notice's Open template workbench action goes.
-   */
-  #classifyRender<T>(render: () => T, documentPath?: string): T {
+  function coreClassifyRender<T>(render: () => T, documentPath?: string): T {
     try {
       return render();
     } catch (error) {
       const failure = classifyRenderFailure(
         error,
-        this.#compileErrors,
-        this.#inertEta,
+        state.compileErrors,
+        state.inertEta,
       );
       throw documentPath !== undefined &&
         failure instanceof MissingTemplateError &&
@@ -791,19 +713,17 @@ class TemplateEngine {
         : failure;
     }
   }
-
-  /** Render one annotation through its Profile document or legacy slot. */
-  renderProfileAnnotation<T extends object>(
+  function renderProfileAnnotation<T extends object>(
     data: T,
     options: { profile: ResolvedProfile },
   ): string {
     const { profile } = options;
     if (profile.settings["note.template-conversion-pending"]) {
-      return this.render("annotation", data);
+      return render("annotation", data);
     }
 
     if (profile.document) {
-      const document = this.getLiteratureNoteTemplate(profile.document);
+      const document = getLiteratureNoteTemplate(profile.document);
       if (!document) {
         throw new ProfileAnnotationError({
           code: "missing-literature-note-template",
@@ -813,22 +733,20 @@ class TemplateEngine {
       }
       return document.renderAnnotation(data);
     }
-    this.#requireLoaded("renderProfileAnnotation");
-    return this.#facade.render("annotation", data, {
+    coreRequireLoaded("renderProfileAnnotation");
+    return state.facade.render("annotation", data, {
       source: DEFAULT_TEMPLATES.annotation,
       language: "liquid",
     });
   }
-
-  /** Report every installed document and its reconciled validation state. */
-  getLiteratureNoteTemplateStatuses(): readonly LiteratureNoteTemplateStatus[] {
-    this.#requireLoaded("getLiteratureNoteTemplateStatuses");
+  function getLiteratureNoteTemplateStatuses(): readonly LiteratureNoteTemplateStatus[] {
+    coreRequireLoaded("getLiteratureNoteTemplateStatuses");
     const references = new Set([
-      ...this.#literatureNoteDocuments.keys(),
-      ...this.#literatureNoteDocumentErrors.keys(),
+      ...state.literatureNoteDocuments.keys(),
+      ...state.literatureNoteDocumentErrors.keys(),
     ]);
     return [...references].sort().map((reference) => {
-      const entry = this.#literatureNoteDocuments.get(reference);
+      const entry = state.literatureNoteDocuments.get(reference);
       if (entry) {
         return {
           reference,
@@ -840,8 +758,8 @@ class TemplateEngine {
           },
         };
       }
-      const error = this.#literatureNoteDocumentErrors.get(reference)!;
-      const path = join(this.#currentTemplateFolder(), reference);
+      const error = state.literatureNoteDocumentErrors.get(reference)!;
+      const path = join(coreCurrentTemplateFolder(), reference);
       return {
         reference,
         path,
@@ -875,43 +793,47 @@ class TemplateEngine {
       };
     });
   }
-
-  /** Parse and render document source in memory without installing it. */
-  renderLiteratureNoteTemplateSource<T extends object>(
+  function renderLiteratureNoteTemplateSource<T extends object>(
     source: string,
     data: T,
   ): { create: string; update: string | null } {
-    const document = this.prepareLiteratureNoteTemplateSource(source);
+    const document = prepareLiteratureNoteTemplateSource(source);
     return {
       create: document.renderForCreate(data),
       update: document.renderForUpdate(data),
     };
   }
-
-  /** Export one installed document with all reachable partials embedded. */
-  async exportLiteratureNotePack(
+  const exportLiteratureNotePack = Effect.fn(
+    "Template.core.exportLiteratureNotePack",
+  )(function* (
     reference: string,
     options: { includeFolders?: boolean } = {},
-  ): Promise<string> {
-    this.#requireLoaded("exportLiteratureNotePack");
-    const reconciled = this.#literatureNoteDocuments.get(reference);
+  ): Effect.fn.Return<string, TemplateFailure, Vault | Workspace> {
+    yield* attempt(() => coreRequireLoaded("exportLiteratureNotePack"));
+    const reconciled = state.literatureNoteDocuments.get(reference);
     if (!reconciled) {
-      throw new Error(
-        `Literature Note Template '${reference}' is not installed`,
+      return yield* Effect.fail(
+        templateFailure(
+          new Error(`Literature Note Template '${reference}' is not installed`),
+        ),
       );
     }
-    const documentFile = this.#app.vault.getFileByPath(reconciled.path);
+    const documentFile = yield* (yield* Vault).getFileByPath(reconciled.path);
     if (!documentFile) {
-      throw new Error(`Literature Note Template '${reference}' is unavailable`);
+      return yield* Effect.fail(
+        templateFailure(
+          new Error(`Literature Note Template '${reference}' is unavailable`),
+        ),
+      );
     }
-    return this.exportLiteratureNotePackSource(
-      await this.#app.vault.cachedRead(documentFile),
+    return yield* exportLiteratureNotePackSource(
+      yield* (yield* Vault).cachedRead(documentFile),
       options,
     );
-  }
-
-  /** Export a Profile snapshot, including a built-in Default that has no file. */
-  async exportLiteratureNotePackSource(
+  });
+  const exportLiteratureNotePackSource = Effect.fn(
+    "Template.core.exportLiteratureNotePackSource",
+  )(function* (
     source: string,
     options: {
       includeFolders?: boolean;
@@ -920,11 +842,12 @@ class TemplateEngine {
       /** Reports a name no partial answers instead of failing the export. */
       onMissingPartial?: (name: string) => void;
     } = {},
-  ): Promise<string> {
-    this.#requireLoaded("exportLiteratureNotePackSource");
-    const partials = (
-      await Promise.all(
-        [...this.#winners.entries()].map(async ([name, winner]) => {
+  ): Effect.fn.Return<string, TemplateFailure, Vault | Workspace> {
+    yield* attempt(() => coreRequireLoaded("exportLiteratureNotePackSource"));
+    const partials = (yield* Effect.forEach(
+      [...state.winners.entries()],
+      ([name, winner]) =>
+        Effect.gen(function* () {
           if (winner.source.kind === "none") return null;
           if (winner.source.kind === "embedded-default") {
             if (!isTemplateName(name)) return null;
@@ -934,114 +857,79 @@ class TemplateEngine {
               source: DEFAULT_TEMPLATES[name],
             } satisfies LiteratureNoteTemplatePartial;
           }
-          const file = this.#app.vault.getFileByPath(winner.source.path);
+          const file = yield* (yield* Vault).getFileByPath(winner.source.path);
           if (!file) return null;
           return {
             name,
             language: winner.language,
-            source: await readLiveText(this.#app, file),
+            source: yield* readLiveText(file),
           } satisfies LiteratureNoteTemplatePartial;
         }),
-      )
-    ).filter((partial) => partial !== null);
+      { concurrency: "unbounded" },
+    )).filter((partial) => partial !== null);
     // A Shared Partial bundles the source its document holds, without the
     // manifest line that named the language — a document the JavaScript
     // Templates gate left inert among them, which is why this reads the same
     // set the Share sheet offers. The Citation Template joins them under its
     // own name, so a host that renders an annotation's citation — the web
     // Workbench — gets the text this vault would produce.
-    partials.push(...this.getPartialEntries());
-    if (this.#citation) {
+    partials.push(...getPartialEntries());
+    if (state.citation) {
       partials.push({
         name: CITATION_TEMPLATE_NAME,
-        language: this.#citation.language,
-        source: this.#citation.source,
+        language: state.citation.language,
+        source: state.citation.source,
       });
     }
-    return exportLiteratureNotePack(source, partials, options);
-  }
-
-  /**
-   * Rebuild the template folder from the vault's current inventory. The
-   * startup scan can run before Obsidian has indexed every file, and files
-   * indexed later arrive without `create` events, so a caller that waited for
-   * layout-ready uses this to pick them up.
-   */
-  async refresh(): Promise<void> {
-    await this.#rebuildFolder(this.#currentTemplateFolder());
-    await this.#settle();
-  }
-
-  /**
-   * Wait until every template edit **Obsidian has observed** before or during
-   * this call has passed through the debounced compiler. The predicate reads
-   * the intake backlog and compiler work. Obsidian owns observation: an edit
-   * reaches the service through a vault event, so a write made outside Obsidian
-   * settles only once Obsidian notices the file.
-   *
-   * @returns `"timeout"` when the bounded wait expires, `"init-failed"` when
-   *   service startup itself failed, and `"settled"` otherwise.
-   */
-  async waitUntilSettled(timeoutMs: number): Promise<SettleOutcome> {
-    if (timeoutMs <= 0) return "timeout";
-    if (this.#initFailed) return "init-failed";
-    if (this.#closed || this.#isSettled()) return "settled";
-    return await new Promise<SettleOutcome>((resolve) => {
-      const waiter = { resolve: () => finish("settled") };
-      const finish = (outcome: SettleOutcome): void => {
-        cancel();
-        this.#settledWaiters.delete(waiter);
-        resolve(outcome);
-      };
-      const cancel = this.#schedule(timeoutMs, () => finish("timeout"));
-      this.#settledWaiters.add(waiter);
-      this.#resolveSettledWaiters();
-    });
-  }
-
-  /**
-   * Managed-frontmatter fields compiled from `note.frontmatter-fields`,
-   * recompiled on settings change. Consumed by the note feature when writing a
-   * note's frontmatter; reserved system keys are already filtered out.
-   *
-   * @throws {@link InertTemplateError} when one or more `"javascript"`-language
-   *   fields are inert because the JavaScript Templates gate is off (see
-   *   {@link javascriptTemplatesEnabled}) — consuming a partial field set
-   *   could half-apply a synced field configuration to a note.
-   */
-  get frontmatterFields(): readonly CompiledFrontmatterField[] {
-    if (this.#inertFrontmatterKeys.length > 0) {
+    return yield* attempt(() =>
+      formatLiteratureNotePack(source, partials, options),
+    );
+  });
+  const refresh = Effect.fn("Template.core.refresh")(
+    function* (): Effect.fn.Return<void, TemplateFailure, Vault> {
+      yield* coreRebuildFolder(coreCurrentTemplateFolder());
+      yield* coreSettle();
+    },
+  );
+  const waitUntilSettled = Effect.fn("Template.core.waitUntilSettled")(
+    function* (
+      timeoutMs: number,
+    ): Effect.fn.Return<SettleOutcome, never, never> {
+      if (timeoutMs <= 0) return "timeout";
+      if (state.initFailed) return "init-failed";
+      if (state.closed || coreIsSettled()) return "settled";
+      return yield* Effect.callback<SettleOutcome>((resume) => {
+        const waiter = { resolve: () => resume(Effect.succeed("settled")) };
+        state.settledWaiters.add(waiter);
+        coreResolveSettledWaiters();
+        return Effect.sync(() => {
+          state.settledWaiters.delete(waiter);
+        });
+      }).pipe(
+        Effect.timeoutOrElse({
+          duration: timeoutMs,
+          orElse: () => Effect.succeed("timeout" as const),
+        }),
+      );
+    },
+  );
+  function readFrontmatterFields(): readonly CompiledFrontmatterField[] {
+    if (state.inertFrontmatterKeys.length > 0) {
       throw new InertTemplateError(
         m.notice_frontmatter_js_inert({
-          fields: this.#inertFrontmatterKeys.join(", "),
+          fields: state.inertFrontmatterKeys.join(", "),
         }),
       );
     }
-    return this.#compiledFrontmatterFields;
+    return state.compiledFrontmatterFields;
   }
-
-  /**
-   * Managed-frontmatter field configuration in configuration order, and which
-   * keys are inert because the JavaScript Templates gate is off. Non-throwing
-   * counterpart to {@link frontmatterFields}, for read-only inspection (the
-   * Template Workbench's `frontmatter-status` command).
-   */
-  getFrontmatterFieldStatus(): FrontmatterFieldStatus {
+  function getFrontmatterFieldStatus(): FrontmatterFieldStatus {
     return {
-      fields: this.#lastFrontmatterFields ?? [],
-      inertKeys: this.#inertFrontmatterKeys,
+      fields: state.lastFrontmatterFields ?? [],
+      inertKeys: state.inertFrontmatterKeys,
     };
   }
-
-  /**
-   * Evaluate `fields` over `zt`, gate-aware: a `"javascript"` field is
-   * skipped (never compiled) while the JavaScript Templates gate is off, its
-   * key reported in `inertKeys` rather than `values`/`errors`. A field whose
-   * evaluator throws is reported in `errors` rather than aborting the rest.
-   * Non-throwing counterpart to the plugin's frontmatter write path, for the
-   * Template Workbench's `frontmatter-eval` command.
-   */
-  evaluateFrontmatterFields(
+  function evaluateFrontmatterFields(
     fields: readonly FrontmatterField[],
     zt: object,
   ): {
@@ -1049,10 +937,10 @@ class TemplateEngine {
     errors: Readonly<Record<string, string>>;
     inertKeys: readonly string[];
   } {
-    this.#requireLoaded("evaluateFrontmatterFields");
-    const { compiled, inertKeys } = this.#facade.compileFrontmatterFields(
+    coreRequireLoaded("evaluateFrontmatterFields");
+    const { compiled, inertKeys } = state.facade.compileFrontmatterFields(
       fields,
-      { javascript: this.#javascriptTemplatesEnabled },
+      { javascript: state.javascriptTemplatesEnabled },
     );
     const errors: Record<string, string> = {};
     const values = evalFrontmatterFields(compiled, zt, (key, error) => {
@@ -1060,164 +948,79 @@ class TemplateEngine {
     });
     return { values, errors, inertKeys };
   }
-
-  /**
-   * @throws {@link InertTemplateError} when `name`'s winning file is an
-   *   `.eta.md` template left inert by the JavaScript Templates gate.
-   * @throws when the named template has a recorded compile error; or `TemplateError`
-   *   when the facade cannot resolve or render it — including an `include()` of
-   *   a template that failed to compile (such a template is left undefined, so
-   *   rendering never silently falls back to a default).
-   */
-  render<T extends object>(name: string, data: T): string {
-    this.#requireLoaded("render");
-    const inertPath = this.#inertEta.get(name);
+  function render<T extends object>(name: string, data: T): string {
+    coreRequireLoaded("render");
+    const inertPath = state.inertEta.get(name);
     if (inertPath !== undefined) {
       throw new InertTemplateError(
         m.settings_template_inert_eta({ path: inertPath }),
         name,
       );
     }
-    const compileError = this.#compileErrors.get(name);
+    const compileError = state.compileErrors.get(name);
     if (compileError !== undefined) {
       throw new TemplateError(
         compileErrorMessage(name, compileError.message),
         name,
       );
     }
-    return this.#classifyRender(() => this.#facade.render(name, data));
+    return coreClassifyRender(() => state.facade.render(name, data));
   }
-
-  /**
-   * The `content` slot's output as a Managed Region: what an Update of a
-   * documentless Literature Note writes into the region the note already has.
-   */
-  renderManagedContent<T extends object>(data: T): string {
-    const output = this.render(MANAGED_CONTENT_TEMPLATE, data);
-    return this.#contentIsVaultBacked() ? output : formatManagedRegion(output);
+  function renderManagedContent<T extends object>(data: T): string {
+    const output = render(MANAGED_CONTENT_TEMPLATE, data);
+    return coreContentIsVaultBacked() ? output : formatManagedRegion(output);
   }
-
-  /** Whether a vault file backs the `content` slot; the facade wraps only that render. */
-  #contentIsVaultBacked(): boolean {
-    return this.#winners.get(MANAGED_CONTENT_TEMPLATE)?.source.kind === "vault";
+  function coreContentIsVaultBacked(): boolean {
+    return state.winners.get(MANAGED_CONTENT_TEMPLATE)?.source.kind === "vault";
   }
-
-  /**
-   * Render one in-text Citation through the Citation Template: `refs` become
-   * `zt.citations` and `zt.items`, and `variant` names the gesture as
-   * `zt.variant`. The output is normalized to its inline form, so a template
-   * that spans lines still inserts one in-text token.
-   *
-   * @throws {@link InertTemplateError} when the Citation Template document is
-   *   Eta and the JavaScript Templates gate is off.
-   * @throws when the document has a compile error or fails to render.
-   */
-  renderCitation(refs: readonly CiteRef[], variant: CitationVariant): string {
-    return this.renderCitationData(citekeysToCiteTemplateData(refs, variant));
+  function renderCitation(
+    refs: readonly CiteRef[],
+    variant: CitationVariant,
+  ): string {
+    return renderCitationData(citekeysToCiteTemplateData(refs, variant));
   }
-
-  /**
-   * Render one in-text Citation from Citation Template data that is already
-   * built — a built-in example set, or a set another leg assembled — and
-   * normalize the output to its inline form.
-   *
-   * @throws {@link InertTemplateError} when the Citation Template document is
-   *   Eta and the JavaScript Templates gate is off.
-   * @throws when the document has a compile error or fails to render.
-   */
-  renderCitationData(data: CitationTemplateData): string {
-    return inlineCitation(this.render(CITATION_TEMPLATE_NAME, data));
+  function renderCitationData(data: CitationTemplateData): string {
+    return inlineCitation(render(CITATION_TEMPLATE_NAME, data));
   }
-
-  /**
-   * The Shared Partial document `name` answers to, read off the folder scan: a
-   * document the JavaScript Templates gate left inert or the parser refused
-   * still owns the name, and still names the language its manifest declares.
-   *
-   * @returns null while the template folder holds no `zotlit-partial.<name>.md`.
-   */
-  getPartialDocument(name: string): SharedPartialDocument | null {
-    this.#requireLoaded("getPartialDocument");
-    const registered = this.#partials.get(name);
+  function getPartialDocument(name: string): SharedPartialDocument | null {
+    coreRequireLoaded("getPartialDocument");
+    const registered = state.partials.get(name);
     if (registered)
       return { name, path: registered.path, language: registered.language };
-    const path = partialPath(this.#currentTemplateFolder(), name);
-    if (this.#inertEta.get(name) === path)
+    const path = partialPath(coreCurrentTemplateFolder(), name);
+    if (state.inertEta.get(name) === path)
       return { name, path, language: "eta" };
     // A document the parser refused names no language, so it reads as the
     // Liquid default a manifest-less document declares.
-    return this.#app.vault.getFileByPath(path) === null
+    return !state.partialNames.has(name)
       ? null
       : { name, path, language: "liquid" };
   }
-
-  /**
-   * Every Shared Partial the template folder holds a document for, sorted by
-   * name — the vault's one flat namespace, which completion offers, the
-   * settings list shows, and a new name is checked against. A document that
-   * failed to compile keeps its name here: the file exists, so the name is
-   * taken.
-   */
-  getPartialNames(): readonly string[] {
-    this.#requireLoaded("getPartialNames");
-    return [...this.#partialNames].sort();
+  function getPartialNames(): readonly string[] {
+    coreRequireLoaded("getPartialNames");
+    return [...state.partialNames].sort();
   }
-
-  /** {@link getPartialNames} as documents, for a caller that shows the file. */
-  getPartialDocuments(): readonly SharedPartialDocument[] {
-    return this.getPartialNames()
-      .map((name) => this.getPartialDocument(name))
+  function getPartialDocuments(): readonly SharedPartialDocument[] {
+    return getPartialNames()
+      .map((name) => getPartialDocument(name))
       .filter((document) => document !== null);
   }
-
-  /**
-   * {@link getPartialNames} as bundle entries — the name, the language, and
-   * the source under the manifest — which is what a Share writes into a
-   * Profile manifest's transport list.
-   *
-   * A document the JavaScript Templates gate left inert is carried all the
-   * same: the gate rules out running the text on this device, not copying it,
-   * and the recipient's own gate decides there. A document that failed to
-   * parse has no source to separate from its manifest, so it is left out and
-   * the Share sheet reports the name as one the bundle could not answer.
-   */
-  getPartialEntries(): readonly LiteratureNoteTemplatePartial[] {
-    this.#requireLoaded("getPartialEntries");
-    return this.getPartialNames().flatMap((name) => {
-      const registered = this.#partials.get(name);
+  function getPartialEntries(): readonly LiteratureNoteTemplatePartial[] {
+    coreRequireLoaded("getPartialEntries");
+    return getPartialNames().flatMap((name) => {
+      const registered = state.partials.get(name);
       if (registered)
         return [
           { name, language: registered.language, source: registered.source },
         ];
-      const inert = this.#inertPartials.get(name);
+      const inert = state.inertPartials.get(name);
       return inert ? [inert] : [];
     });
   }
-
-  /**
-   * What each partial a Profile manifest bundles does to the template folder,
-   * read against the documents the vault holds right now.
-   *
-   * A name another Template already answers — `citation`, which the Citation
-   * Template carries — reads as `unchanged`: this vault renders that name with
-   * a document of its own, so no partial file is written for it and its
-   * transport entry simply goes.
-   *
-   * A name the vault answers only under another case — a bundled `Authors`
-   * against the vault's own `authors` — reads as `other-case`: one file
-   * answers both on a case-insensitive filesystem, while a call resolves by
-   * exact name, so the bundle keeps the copy that still answers `Authors`.
-   *
-   * A name the Shared Partial name rule refuses outright reads as `refused`,
-   * so an import says which names stay in the profile rather than promising a
-   * file the write then declines to make.
-   *
-   * @see unpackPartials for the write this plan feeds.
-   */
-  planPartialUnpack(
+  function planPartialUnpack(
     bundled: readonly LiteratureNoteTemplatePartial[],
   ): readonly LiteratureNotePartialUnpack[] {
-    this.#requireLoaded("planPartialUnpack");
+    coreRequireLoaded("planPartialUnpack");
     const held = new Map<
       string,
       Pick<LiteratureNoteTemplatePartial, "language" | "source"> | null
@@ -1228,12 +1031,12 @@ class TemplateEngine {
         held.set(partial.name, partial);
         continue;
       }
-      const name = this.#heldPartialName(partial.name);
+      const name = coreHeldPartialName(partial.name);
       if (name !== partial.name) {
         if (name !== undefined) otherCase.add(partial.name);
         continue;
       }
-      const registered = this.#partials.get(name);
+      const registered = state.partials.get(name);
       held.set(
         partial.name,
         registered
@@ -1246,7 +1049,7 @@ class TemplateEngine {
       held,
       // A name the vault answers under this very spelling is settled above, so
       // `taken` speaks for the case-folded ones alone.
-      (name) => partialNameRefusal(name, this.#partialNames) === null,
+      (name) => partialNameRefusal(name, state.partialNames) === null,
     );
     // The name rule refuses a case-folded name only because the vault answers
     // it, which is a reason of its own. This plan says so once, and every
@@ -1257,26 +1060,17 @@ class TemplateEngine {
         : step,
     );
   }
-
-  /**
-   * Write the planned partials into the template folder, leaving every
-   * document the vault already holds exactly as it is: a `conflict` the reader
-   * did not name in `replace` keeps their file, and so does a file that
-   * appeared between the plan and this write.
-   *
-   * Either way that name has no transport left — the reader's own document
-   * answers it from now on — so it lands in `dropped` beside the ones written.
-   * The names that stay out of `dropped` are the ones the manifest copy alone
-   * answers: a `refused` name no Shared Partial file can carry, and an
-   * `other-case` name the folder holds a file for under another case.
-   */
-  async unpackPartials(
+  const unpackPartials = Effect.fn("Template.core.unpackPartials")(function* (
     plan: readonly LiteratureNotePartialUnpack[],
     options: { replace?: readonly string[] } = {},
-  ): Promise<PartialUnpackOutcome> {
-    this.#requireLoaded("unpackPartials");
+  ): Effect.fn.Return<
+    PartialUnpackOutcome,
+    TemplateFailure,
+    Vault | Workspace
+  > {
+    yield* attempt(() => coreRequireLoaded("unpackPartials"));
     const replace = new Set(options.replace);
-    const folder = this.#currentTemplateFolder();
+    const folder = coreCurrentTemplateFolder();
     const written: string[] = [];
     const kept: string[] = [];
     const refused: string[] = [];
@@ -1301,257 +1095,180 @@ class TemplateEngine {
         continue;
       }
       const declined = step.verdict === "conflict" && !replace.has(step.name);
-      if (!declined && (await this.#writePartialFile(folder, step)))
+      if (!declined && (yield* coreWritePartialFile(folder, step)))
         written.push(step.name);
       else kept.push(step.name);
       dropped.push(step.name);
     }
-    if (written.length > 0) await this.#settle();
-    this.#log("debug", "Unpacked bundled partials", {
+    if (written.length > 0) yield* coreSettle();
+    state.log("debug", "Unpacked bundled partials", {
       written,
       kept,
       refused,
       otherCase,
     });
     return { written, kept, dropped, refused, otherCase };
-  }
-
-  /**
-   * The name this vault's own Shared Partial files answer `name` under, folded
-   * the way {@link partialNameRefusal} folds it; `undefined` when none does.
-   */
-  #heldPartialName(name: string): string | undefined {
+  });
+  function coreHeldPartialName(name: string): string | undefined {
     const folded = name.toLowerCase();
-    return [...this.#partialNames].find(
+    return [...state.partialNames].find(
       (taken) => taken.toLowerCase() === folded,
     );
   }
-
-  /**
-   * Write one planned partial into the document it belongs in. A `conflict`
-   * reaches here only once the reader has approved that very name, so it is
-   * the one step that replaces a document — every other write creates.
-   *
-   * @returns false when a document the plan never read holds the path, which
-   *   is left exactly as the reader wrote it.
-   */
-  async #writePartialFile(
-    folder: string,
-    step: LiteratureNotePartialUnpack,
-  ): Promise<boolean> {
-    if (step.verdict === "conflict") {
-      const held = this.#heldPartialName(step.name);
-      const file =
-        held === undefined
-          ? null
-          : this.#app.vault.getFileByPath(partialPath(folder, held));
-      if (file) {
-        await processLiveText(this.#app, file, () => step.document);
-        return true;
+  const coreWritePartialFile = Effect.fn("Template.core.coreWritePartialFile")(
+    function* (
+      folder: string,
+      step: LiteratureNotePartialUnpack,
+    ): Effect.fn.Return<
+      boolean,
+      | VaultError
+      | VaultFolderBlockedError
+      | import("@/lib/effect-live-text").LiveTextRewriteFailed,
+      Vault | Workspace
+    > {
+      if (step.verdict === "conflict") {
+        const held = coreHeldPartialName(step.name);
+        const file =
+          held === undefined
+            ? null
+            : yield* (yield* Vault).getFileByPath(partialPath(folder, held));
+        if (file) {
+          yield* processLiveText(file, () => step.document);
+          return true;
+        }
       }
-    }
-    await ensureFolder(this.#app, folder || "/");
-    const created = await this.#runPromise(
-      this.#vault.create(partialPath(folder, step.name), step.document).pipe(
-        Effect.as(true),
-        Effect.catchTag("FileExists", () => Effect.succeed(false)),
-      ),
-    );
-    if (!created)
-      this.#log("debug", "A partial document appeared after the unpack plan", {
-        name: step.name,
-      });
-    return created;
-  }
-
-  /**
-   * The partial files whose name already answers to another Template, keyed by
-   * that name — nothing renders them, so settings names each one instead.
-   */
-  getReservedPartialFiles(): readonly { name: string; path: string }[] {
-    this.#requireLoaded("getReservedPartialFiles");
-    return [...this.#reservedPartialFiles]
+      yield* ensureVaultFolder(folder || "/");
+      const created = yield* (yield* Vault)
+        .create(partialPath(folder, step.name), step.document)
+        .pipe(
+          Effect.as(true),
+          Effect.catchTag("FileExists", () => Effect.succeed(false)),
+        );
+      if (!created)
+        state.log(
+          "debug",
+          "A partial document appeared after the unpack plan",
+          {
+            name: step.name,
+          },
+        );
+      return created;
+    },
+  );
+  function getReservedPartialFiles(): readonly {
+    name: string;
+    path: string;
+  }[] {
+    coreRequireLoaded("getReservedPartialFiles");
+    return [...state.reservedPartialFiles]
       .map(([name, path]) => ({ name, path }))
       .sort((left, right) => left.name.localeCompare(right.name));
   }
-
-  /**
-   * Create `zotlit-partial.<name>.md` and wait for the reconciler to register
-   * it, so the caller can open the document and render through it at once.
-   *
-   * The layer completes the initial folder scan before this operation is available.
-   *
-   * @param name a name the caller has already folded with
-   *   `normalizePartialName`.
-   * @throws {@link PartialNameError} when the name breaks the rule every entry
-   *   point shares.
-   */
-  async createPartial(
+  const createPartial = Effect.fn("Template.core.createPartial")(function* (
     name: string,
     options: { source?: string; language?: TemplateLanguage } = {},
-  ): Promise<TFile> {
-    this.#requireLoaded("createPartial");
-    const refusal = partialNameRefusal(name, this.#partialNames);
-    if (refusal) throw new PartialNameError(name, refusal);
-    const folder = this.#currentTemplateFolder();
-    await ensureFolder(this.#app, folder || "/");
+  ): Effect.fn.Return<TFile, TemplateFailure, Vault> {
+    yield* attempt(() => coreRequireLoaded("createPartial"));
+    const refusal = partialNameRefusal(name, state.partialNames);
+    if (refusal)
+      return yield* Effect.fail(
+        templateFailure(new PartialNameError(name, refusal)),
+      );
+    const folder = coreCurrentTemplateFolder();
+    yield* ensureVaultFolder(folder || "/");
     const source = options.source ?? "";
-    const file = await this.#app.vault.create(
+    const file = yield* (yield* Vault).create(
       partialPath(folder, name),
       options.language === undefined
         ? source
         : formatPlainTemplateDocument(source, options.language),
     );
-    await this.#settle();
-    this.#log("debug", "Created a Shared Partial", { name, path: file.path });
+    yield* coreSettle();
+    state.log("debug", "Created a Shared Partial", { name, path: file.path });
     return file;
-  }
-
-  /**
-   * Move a Shared Partial's document to Obsidian's recoverable trash. Every
-   * template that still calls the name reports a missing partial from then on:
-   * ZotLit rewrites no caller.
-   */
-  async deletePartial(name: string): Promise<void> {
-    this.#requireLoaded("deletePartial");
-    const file = this.#app.vault.getFileByPath(
-      partialPath(this.#currentTemplateFolder(), name),
+  });
+  const deletePartial = Effect.fn("Template.core.deletePartial")(function* (
+    name: string,
+  ): Effect.fn.Return<void, TemplateFailure, Vault | FileManager> {
+    yield* attempt(() => coreRequireLoaded("deletePartial"));
+    const file = yield* (yield* Vault).getFileByPath(
+      partialPath(coreCurrentTemplateFolder(), name),
     );
     if (!file) return;
-    await this.#app.fileManager.trashFile(file);
-    await this.#settle();
-  }
-
-  /**
-   * Render a draft Shared Partial — the unsaved bytes of
-   * `zotlit-partial.<name>.md` — against the installed partials, without
-   * registering the draft or writing it. This is what the Template Workbench
-   * View previews while the reader types.
-   *
-   * @throws {@link InertTemplateError} when the draft names Eta and the
-   *   JavaScript Templates gate is off.
-   * @throws {@link PlainTemplateDocumentError} when the draft's manifest is
-   *   malformed, and whatever the compile or the render itself raises.
-   */
-  renderPartialSource<T extends object>(
+    yield* (yield* FileManager).trashFile(file);
+    yield* coreSettle();
+  });
+  function renderPartialSource<T extends object>(
     source: string,
     data: T,
     options: { name: string },
   ): string {
-    this.#requireLoaded("renderPartialSource");
-    return this.#renderPlainSource(source, data, {
+    coreRequireLoaded("renderPartialSource");
+    return coreRenderPlainSource(source, data, {
       name: options.name,
-      path: partialPath(this.#currentTemplateFolder(), options.name),
+      path: partialPath(coreCurrentTemplateFolder(), options.name),
     });
   }
-
-  /**
-   * Render one plain Template Document's draft bytes under the name the facade
-   * registers that document by, without registering the draft or writing it.
-   *
-   * @param options.path - the document's own vault path, which the inert
-   *   notice names; the draft may not be written there yet.
-   */
-  #renderPlainSource<T extends object>(
+  function coreRenderPlainSource<T extends object>(
     source: string,
     data: T,
     options: { name: string; path: string },
   ): string {
     const parsed = parsePlainTemplateDocument(source);
     const { language } = parsed.manifest;
-    if (language === "eta" && !this.#javascriptTemplatesEnabled) {
+    if (language === "eta" && !state.javascriptTemplatesEnabled) {
       throw new InertTemplateError(
         m.settings_template_inert_eta({ path: options.path }),
         options.name,
       );
     }
-    return this.#classifyRender(() =>
-      this.#facade.render(options.name, data, {
+    return coreClassifyRender(() =>
+      state.facade.render(options.name, data, {
         source: parsed.source,
         language,
       }),
     );
   }
-
-  /**
-   * Render one in-text Citation through a draft Citation Template — the
-   * unsaved bytes of `zotlit-citation.md` — against the installed partials,
-   * without registering the draft or writing it. This is what the Template
-   * Workbench View previews while the reader types.
-   *
-   * @throws {@link InertTemplateError} when the draft names Eta and the
-   *   JavaScript Templates gate is off.
-   * @throws {@link PlainTemplateDocumentError} when the draft's manifest is
-   *   malformed, and whatever the compile or the render itself raises.
-   */
-  renderCitationSource(source: string, data: CitationTemplateData): string {
-    this.#requireLoaded("renderCitationSource");
+  function renderCitationSource(
+    source: string,
+    data: CitationTemplateData,
+  ): string {
+    coreRequireLoaded("renderCitationSource");
     return inlineCitation(
-      this.#renderPlainSource(source, data, {
+      coreRenderPlainSource(source, data, {
         name: CITATION_TEMPLATE_NAME,
-        path: citationPath(this.#currentTemplateFolder()),
+        path: citationPath(coreCurrentTemplateFolder()),
       }),
     );
   }
-
-  /**
-   * Render the `filename` Template and collapse the output to one trimmed
-   * line: line breaks and their surrounding whitespace are removed, so
-   * template-structural newlines never leak into the note name.
-   *
-   * @throws {@link InertTemplateError} when the `filename` winner is an
-   *   `.eta.md` template left inert by the JavaScript Templates gate.
-   * @throws when the template has a compile error or fails to render — note
-   *   creation must fail loudly rather than silently misname files.
-   */
-  renderFilename<T extends object>(data: T): string {
-    return toSingleLine(this.render("filename", data));
+  function renderFilename<T extends object>(data: T): string {
+    return toSingleLine(render("filename", data));
   }
-
-  /**
-   * Statically analyzes `name`'s own registered Liquid source and reports
-   * every root-level variable read, including `zt` — callers filter. See
-   * {@link TemplateFacade.analyzeRootVariables}.
-   *
-   * @returns `null` when `name` is unregistered or registered as Eta only.
-   */
-  analyzeRootVariables(name: string): RootVariableUse[] | null {
-    this.#requireLoaded("analyzeRootVariables");
-    return this.#facade.analyzeRootVariables(name);
+  function analyzeRootVariables(name: string): RootVariableUse[] | null {
+    coreRequireLoaded("analyzeRootVariables");
+    return state.facade.analyzeRootVariables(name);
   }
-
-  /**
-   * The raw source text behind `name`'s current winner.
-   *
-   * @returns the vault file's content when a vault file wins, or the
-   *   packaged Liquid default body otherwise — the same body {@link render}
-   *   would compile.
-   */
-  async getTemplateSource(name: TemplateName): Promise<string> {
-    this.#requireLoaded("getTemplateSource");
-    const winner = this.#winners.get(name) ?? EMBEDDED_DEFAULT_WINNER;
-    if (winner.source.kind === "vault") {
-      const file = this.#app.vault.getFileByPath(winner.source.path);
-      if (file) return await this.#app.vault.cachedRead(file);
-    }
-    return DEFAULT_TEMPLATES[name];
+  const getTemplateSource = Effect.fn("Template.core.getTemplateSource")(
+    function* (
+      name: TemplateName,
+    ): Effect.fn.Return<string, TemplateFailure, Vault> {
+      yield* attempt(() => coreRequireLoaded("getTemplateSource"));
+      const winner = state.winners.get(name) ?? EMBEDDED_DEFAULT_WINNER;
+      if (winner.source.kind === "vault") {
+        const file = yield* (yield* Vault).getFileByPath(winner.source.path);
+        if (file) return yield* (yield* Vault).cachedRead(file);
+      }
+      return DEFAULT_TEMPLATES[name];
+    },
+  );
+  function getLegacyLiteratureNoteTemplateFiles(): readonly string[] {
+    return coreLegacyLiteratureNoteSlots().flatMap(({ paths }) => paths);
   }
-
-  /** Vault files that make the default Profile use legacy Literature Note slots. */
-  getLegacyLiteratureNoteTemplateFiles(): readonly string[] {
-    return this.#legacyLiteratureNoteSlots().flatMap(({ paths }) => paths);
-  }
-
-  /**
-   * Each legacy Literature Note slot a vault file backs right now, with the
-   * files behind it. A name with no file of its own stays out: its built-in
-   * renders the slot before the conversion and after it alike.
-   */
-  #legacyLiteratureNoteSlots(): {
+  function coreLegacyLiteratureNoteSlots(): {
     name: TemplateName;
     paths: string[];
   }[] {
-    return this.#getTemplateFileStatuses(TEMPLATE_NAMES)
+    return coreGetTemplateFileStatuses(TEMPLATE_NAMES)
       .filter((status) =>
         LEGACY_LITERATURE_NOTE_TEMPLATE_NAMES.has(status.name),
       )
@@ -1567,66 +1284,50 @@ class TemplateEngine {
       }))
       .filter(({ paths }) => paths.length > 0);
   }
-
-  /**
-   * The vault's remaining 2.1.x Legacy Template Files that convert into plain
-   * Template Documents: the `cite` and `cite2` citation slots, and every bare
-   * `zotlit-<name>.(liquid|eta).md` partial.
-   */
-  getLegacyTemplateDocuments(): LegacyTemplateDocuments {
-    this.#requireLoaded("getLegacyTemplateDocuments");
+  function getLegacyTemplateDocuments(): LegacyTemplateDocuments {
+    coreRequireLoaded("getLegacyTemplateDocuments");
     const citation: LegacyTemplateFile[] = [];
     const partials: LegacyTemplateFile[] = [];
     // Sorted, so `cite` folds before `cite2` and both lists read stably.
-    for (const name of [...this.#winners.keys()].sort()) {
+    for (const name of [...state.winners.keys()].sort()) {
       if (isTemplateName(name)) continue;
-      const file = this.#legacyTemplateFile(name);
+      const file = coreLegacyTemplateFile(name);
       if (!file) continue;
       (isLegacyCitationName(name) ? citation : partials).push(file);
     }
     return { citation, partials };
   }
-
-  /**
-   * Build and verify, in memory, the plain Template Documents the vault's
-   * remaining Legacy Template Files convert into: one Citation Template
-   * folding `cite` and `cite2`, and one `zotlit-partial.<name>.md` per bare
-   * partial. Nothing is written — the caller persists the returned documents
-   * only once every verification passed.
-   *
-   * The fold is verified against the registry the whole one-shot pass leaves
-   * behind, which retires the legacy Literature Note slots as well as the
-   * citation slots: those slot files fold into the default Profile document
-   * and reach the trash in this same pass, so each name a vault file backs
-   * today renders its built-in from there on.
-   *
-   * @param refs the citation the fold verifies both Citation Variants
-   *   against, from one real Zotero item.
-   * @throws {@link LegacyTemplateConversionError} when a variant's output
-   *   differs from the legacy file it replaces, or when the fold is Eta while
-   *   the JavaScript Templates gate is off.
-   */
-  async convertLegacyTemplateDocuments(
+  const convertLegacyTemplateDocuments = Effect.fn(
+    "Template.core.convertLegacyTemplateDocuments",
+  )(function* (
     refs: readonly CiteRef[],
-  ): Promise<ConvertedLegacyTemplateDocuments> {
-    this.#requireLoaded("convertLegacyTemplateDocuments");
-    const folder = this.#currentTemplateFolder();
-    const { citation, partials } = this.getLegacyTemplateDocuments();
+  ): Effect.fn.Return<
+    ConvertedLegacyTemplateDocuments,
+    TemplateFailure,
+    Vault
+  > {
+    yield* attempt(() => coreRequireLoaded("convertLegacyTemplateDocuments"));
+    const folder = coreCurrentTemplateFolder();
+    const { citation, partials } = getLegacyTemplateDocuments();
     const documents: { path: string; source: string }[] = [];
     const trashed: string[] = [];
     const kept: string[] = [];
 
     if (citation.length > 0) {
       const language = foldCitationLanguage(citation);
-      if (language === "eta" && !this.#javascriptTemplatesEnabled) {
-        throw new LegacyTemplateConversionError(
-          "unsupported-legacy-template",
-          "The legacy citation templates are Eta while JavaScript Templates are disabled",
-          {
-            difference: "inert template",
-            recovery:
-              "Enable JavaScript Templates on this device, then retry conversion.",
-          },
+      if (language === "eta" && !state.javascriptTemplatesEnabled) {
+        return yield* Effect.fail(
+          templateFailure(
+            new LegacyTemplateConversionError(
+              "unsupported-legacy-template",
+              "The legacy citation templates are Eta while JavaScript Templates are disabled",
+              {
+                difference: "inert template",
+                recovery:
+                  "Enable JavaScript Templates on this device, then retry conversion.",
+              },
+            ),
+          ),
         );
       }
       const legacy: {
@@ -1639,7 +1340,7 @@ class TemplateEngine {
       // pass folds into the default Profile document. The fold is verified
       // against the registry that remains, so a branch that renders one of
       // them is refused rather than written.
-      const removedNames: string[] = this.#legacyLiteratureNoteSlots().map(
+      const removedNames: string[] = coreLegacyLiteratureNoteSlots().map(
         ({ name }) => name,
       );
       for (const file of citation) {
@@ -1648,17 +1349,19 @@ class TemplateEngine {
           continue;
         }
         legacy[file.name === "cite" ? "main" : "alt"] =
-          await this.#readLegacyTemplateFile(file.path);
+          yield* coreReadLegacyTemplateFile(file.path);
         trashed.push(file.path, ...file.shadowed);
         removedNames.push(file.name);
       }
-      const { source } = this.#facade.convertLegacyCitationTemplates(
-        legacy,
-        {
-          main: citekeysToCiteTemplateData(refs, "main"),
-          alt: citekeysToCiteTemplateData(refs, "alt"),
-        },
-        { removedNames },
+      const { source } = yield* attempt(() =>
+        state.facade.convertLegacyCitationTemplates(
+          legacy,
+          {
+            main: citekeysToCiteTemplateData(refs, "main"),
+            alt: citekeysToCiteTemplateData(refs, "alt"),
+          },
+          { removedNames },
+        ),
       );
       documents.push({
         path: citationPath(folder),
@@ -1670,25 +1373,23 @@ class TemplateEngine {
       documents.push({
         path: partialPath(folder, file.name),
         source: formatPlainTemplateDocument(
-          await this.#readLegacyTemplateFile(file.path),
+          yield* coreReadLegacyTemplateFile(file.path),
           file.language,
         ),
       });
       trashed.push(file.path, ...file.shadowed);
     }
-    this.#log("debug", "Planned the legacy Template Document conversion", {
+    state.log("debug", "Planned the legacy Template Document conversion", {
       documents: documents.map(({ path }) => path),
       trashed,
       kept,
     });
     return { documents, trashed, kept };
-  }
-
-  /** The reconciled state of one bare legacy name, `null` when no file backs it. */
-  #legacyTemplateFile(name: string): LegacyTemplateFile | null {
-    const winner = this.#winners.get(name);
+  });
+  function coreLegacyTemplateFile(name: string): LegacyTemplateFile | null {
+    const winner = state.winners.get(name);
     if (!winner) return null;
-    const shadowed = this.#shadowed.get(name);
+    const shadowed = state.shadowed.get(name);
     if (winner.source.kind === "vault") {
       return {
         name,
@@ -1698,7 +1399,7 @@ class TemplateEngine {
         shadowed: shadowed ? [shadowed] : [],
       };
     }
-    const inertPath = this.#inertEta.get(name);
+    const inertPath = state.inertEta.get(name);
     if (!inertPath) return null;
     return {
       name,
@@ -1708,30 +1409,37 @@ class TemplateEngine {
       shadowed: shadowed ? [shadowed] : [],
     };
   }
-
-  async #readLegacyTemplateFile(path: string): Promise<string> {
-    const file = this.#app.vault.getFileByPath(path);
+  const coreReadLegacyTemplateFile = Effect.fn(
+    "Template.core.coreReadLegacyTemplateFile",
+  )(function* (path: string): Effect.fn.Return<string, TemplateFailure, Vault> {
+    const file = yield* (yield* Vault).getFileByPath(path);
     if (!file) {
-      throw new LegacyTemplateConversionError(
-        "unsupported-legacy-template",
-        `Legacy template file '${path}' is no longer in the vault`,
-        {
-          difference: "missing legacy file",
-          recovery: "Reload the template folder, then retry conversion.",
-        },
+      return yield* Effect.fail(
+        templateFailure(
+          new LegacyTemplateConversionError(
+            "unsupported-legacy-template",
+            `Legacy template file '${path}' is no longer in the vault`,
+            {
+              difference: "missing legacy file",
+              recovery: "Reload the template folder, then retry conversion.",
+            },
+          ),
+        ),
       );
     }
-    return await this.#app.vault.cachedRead(file);
-  }
-
-  /** Build and byte-verify the converted default Profile document in memory. */
-  async convertLegacyLiteratureNoteTemplates(data: {
+    return yield* (yield* Vault).cachedRead(file);
+  });
+  const convertLegacyLiteratureNoteTemplates = Effect.fn(
+    "Template.core.convertLegacyLiteratureNoteTemplates",
+  )(function* (data: {
     readonly note: object;
     readonly filename: object;
     readonly annotation?: object;
-  }): Promise<ConvertedLegacyProfileDocument> {
-    this.#requireLoaded("convertLegacyLiteratureNoteTemplates");
-    const statuses = this.#getTemplateFileStatuses(TEMPLATE_NAMES);
+  }): Effect.fn.Return<ConvertedLegacyProfileDocument, TemplateFailure, Vault> {
+    yield* attempt(() =>
+      coreRequireLoaded("convertLegacyLiteratureNoteTemplates"),
+    );
+    const statuses = coreGetTemplateFileStatuses(TEMPLATE_NAMES);
     const inert = statuses.find(
       (status) =>
         LEGACY_LITERATURE_NOTE_TEMPLATE_NAMES.has(status.name) &&
@@ -1739,26 +1447,30 @@ class TemplateEngine {
         status.inertFiles.length > 0,
     );
     if (inert) {
-      throw new LegacyTemplateConversionError(
-        "unsupported-legacy-template",
-        `Legacy template '${inert.name}' is inert while JavaScript Templates are disabled`,
-        {
-          difference: "inert template",
-          recovery:
-            "Enable JavaScript Templates on this device, then retry conversion.",
-        },
+      return yield* Effect.fail(
+        templateFailure(
+          new LegacyTemplateConversionError(
+            "unsupported-legacy-template",
+            `Legacy template '${inert.name}' is inert while JavaScript Templates are disabled`,
+            {
+              difference: "inert template",
+              recovery:
+                "Enable JavaScript Templates on this device, then retry conversion.",
+            },
+          ),
+        ),
       );
     }
-    const source = async (
+    const source = Effect.fnUntraced(function* (
       name: "filename" | "note" | "content" | "annotation",
-    ) => {
+    ) {
       const status = statuses.find((candidate) => candidate.name === name)!;
       return {
-        source: await this.getTemplateSource(name),
+        source: yield* getTemplateSource(name),
         language: status.winner.language,
       };
-    };
-    const [note, content, filename] = await Promise.all([
+    });
+    const [note, content, filename] = yield* Effect.all([
       source("note"),
       source("content"),
       source("filename"),
@@ -1768,591 +1480,614 @@ class TemplateEngine {
     )!;
     const annotation =
       annotationStatus.winner.source.kind === "vault"
-        ? await source("annotation")
+        ? yield* source("annotation")
         : undefined;
     return {
-      ...this.#facade.convertLegacyLiteratureNoteTemplates(
-        { note, content, filename, annotation },
-        data,
-        {
-          frontmatter:
-            this.#settings.current?.["note.frontmatter-fields"] ?? [],
-          javascript: this.#javascriptTemplatesEnabled,
-          managed: this.#contentIsVaultBacked(),
-        },
-      ),
-      legacyFiles: this.getLegacyLiteratureNoteTemplateFiles(),
+      ...(yield* attempt(() =>
+        state.facade.convertLegacyLiteratureNoteTemplates(
+          { note, content, filename, annotation },
+          data,
+          {
+            frontmatter:
+              state.settings.current?.["note.frontmatter-fields"] ?? [],
+            javascript: state.javascriptTemplatesEnabled,
+            managed: coreContentIsVaultBacked(),
+          },
+        ),
+      )),
+      legacyFiles: getLegacyLiteratureNoteTemplateFiles(),
     };
-  }
-
-  /**
-   * Compile-check a single Managed Frontmatter expression for the setting tab.
-   * A javascript expression is left unvalidated while the gate is off —
-   * validating it would compile it, and the gate-off invariant forbids any
-   * dynamic code compilation.
-   * @returns `null` when `expr` compiles, or the error message when it does not.
-   */
-  validateFrontmatterExpr(
+  });
+  function validateFrontmatterExpr(
     expr: string,
     language: FrontmatterLanguage,
   ): string | null {
-    if (language === "javascript" && !this.#javascriptTemplatesEnabled) {
+    if (language === "javascript" && !state.javascriptTemplatesEnabled) {
       return null;
     }
-    return this.#facade.validateFrontmatterExpr(expr, language);
+    return state.facade.validateFrontmatterExpr(expr, language);
   }
+  const setJavascriptTemplatesEnabled = Effect.fn(
+    "Template.core.setJavascriptTemplatesEnabled",
+  )(function* (
+    enabled: boolean,
+  ): Effect.fn.Return<void, TemplateFailure, Vault> {
+    yield* attempt(() => coreRequireLoaded("setJavascriptTemplatesEnabled"));
+    if (enabled === state.javascriptTemplatesEnabled) return;
 
-  /**
-   * Flip the per-device JavaScript Templates gate and rebuild the current
-   * template folder so the change takes effect live, without a reload. The
-   * setting tab is the only caller — the flag is never read from or written
-   * to synced plugin settings.
-   */
-  async setJavascriptTemplatesEnabled(enabled: boolean): Promise<void> {
-    this.#requireLoaded("setJavascriptTemplatesEnabled");
-    if (enabled === this.#javascriptTemplatesEnabled) return;
+    state.app.saveLocalStorage(JS_TEMPLATES_STORAGE_KEY, enabled ? "1" : null);
+    state.javascriptTemplatesEnabled = enabled;
+    state.log("info", "JavaScript templates flag changed", { enabled });
 
-    this.#app.saveLocalStorage(JS_TEMPLATES_STORAGE_KEY, enabled ? "1" : null);
-    this.#javascriptTemplatesEnabled = enabled;
-    this.#log("info", "JavaScript templates flag changed", { enabled });
-
-    if (this.#lastFrontmatterFields) {
-      this.#compileFrontmatter(this.#lastFrontmatterFields);
+    if (state.lastFrontmatterFields) {
+      coreCompileFrontmatter(state.lastFrontmatterFields);
     }
 
-    await this.#rebuildFolder(this.#currentTemplateFolder());
-  }
-
-  async load(): Promise<void> {
-    const snapshot = this.#settings.current;
-    this.#lastTemplateFolder = normalizeVaultPath(snapshot["template.folder"]);
-    this.#lastAutoTrim = [
+    yield* coreRebuildFolder(coreCurrentTemplateFolder());
+  });
+  const load = Effect.fn("Template.core.load")(function* (): Effect.fn.Return<
+    void,
+    never,
+    Vault | PluginSettings
+  > {
+    const snapshot = yield* (yield* PluginSettings).current;
+    state.settings.current = snapshot;
+    state.lastTemplateFolder = normalizeVaultPath(snapshot["template.folder"]);
+    state.lastAutoTrim = [
       snapshot["template.auto-trim-leading"],
       snapshot["template.auto-trim-trailing"],
     ];
-    this.#facade.setAutoTrim(this.#lastAutoTrim);
-    this.#compileFrontmatter(snapshot["note.frontmatter-fields"]);
-    await this.#rebuildFolder(this.#lastTemplateFolder);
-    this.#loaded = true;
+    state.facade.setAutoTrim(state.lastAutoTrim);
+    coreCompileFrontmatter(snapshot["note.frontmatter-fields"]);
+    yield* coreRebuildFolder(state.lastTemplateFolder);
+    state.loaded = true;
+  });
+  function failStartup(): void {
+    state.initFailed = true;
   }
-
-  failStartup(): void {
-    this.#initFailed = true;
+  function close(): void {
+    state.closed = true;
+    state.folderGeneration += 1;
+    coreCancelFlush();
+    for (const bucket of templateWorkBuckets(state.pending)) bucket.clear();
+    for (const waiter of state.settledWaiters) waiter.resolve();
+    state.settledWaiters.clear();
   }
+  const onSettingsChanged = Effect.fn("Template.core.onSettingsChanged")(
+    function* (
+      settings: Readonly<Settings>,
+    ): Effect.fn.Return<void, never, Vault> {
+      if (state.closed) return;
+      state.settings.current = settings;
+      const folder = normalizeVaultPath(settings["template.folder"]);
+      const autoTrim: [AutoTrim, AutoTrim] = [
+        settings["template.auto-trim-leading"],
+        settings["template.auto-trim-trailing"],
+      ];
 
-  close(): void {
-    this.#closed = true;
-    this.#folderGeneration += 1;
-    this.#cancelFlush();
-    for (const bucket of templateWorkBuckets(this.#pending)) bucket.clear();
-    for (const waiter of this.#settledWaiters) waiter.resolve();
-    this.#settledWaiters.clear();
-  }
+      const folderChanged = folder !== state.lastTemplateFolder;
+      const autoTrimChanged =
+        autoTrim[0] !== state.lastAutoTrim[0] ||
+        autoTrim[1] !== state.lastAutoTrim[1];
 
-  async onSettingsChanged(settings: Readonly<Settings>): Promise<void> {
-    if (this.#closed) return;
-    const folder = normalizeVaultPath(settings["template.folder"]);
-    const autoTrim: [AutoTrim, AutoTrim] = [
-      settings["template.auto-trim-leading"],
-      settings["template.auto-trim-trailing"],
-    ];
+      const frontmatterFields = settings["note.frontmatter-fields"];
 
-    const folderChanged = folder !== this.#lastTemplateFolder;
-    const autoTrimChanged =
-      autoTrim[0] !== this.#lastAutoTrim[0] ||
-      autoTrim[1] !== this.#lastAutoTrim[1];
+      state.lastTemplateFolder = folder;
+      state.lastAutoTrim = autoTrim;
 
-    const frontmatterFields = settings["note.frontmatter-fields"];
-
-    this.#lastTemplateFolder = folder;
-    this.#lastAutoTrim = autoTrim;
-
-    if (frontmatterFields !== this.#lastFrontmatterFields) {
-      this.#compileFrontmatter(frontmatterFields);
-    }
-
-    if (autoTrimChanged) {
-      this.#facade.setAutoTrim(autoTrim);
-      this.#log("debug", "Template autoTrim changed", { autoTrim });
-    }
-
-    if (folderChanged) {
-      await this.#rebuildFolder(folder);
-    }
-  }
-
-  async #rebuildFolder(folder: string): Promise<void> {
-    this.#settlingTasks += 1;
-    try {
-      const generation = ++this.#folderGeneration;
-      this.#cancelFlush();
-      for (const bucket of templateWorkBuckets(this.#pending)) bucket.clear();
-      this.#shadowed.clear();
-      this.#inertEta.clear();
-      this.#winners.clear();
-      this.#partials.clear();
-      this.#inertPartials.clear();
-      this.#partialNames.clear();
-      this.#reservedPartialFiles.clear();
-      this.#citation = null;
-      this.#unrecognizedFiles.clear();
-      this.#facade.reset();
-      this.#compileErrors.clear();
-      this.#literatureNoteDocuments.clear();
-      this.#literatureNoteDocumentErrors.clear();
-      this.#loadedDocumentSources.clear();
-
-      const root =
-        folder === ""
-          ? this.#app.vault.getRoot()
-          : this.#app.vault.getFolderByPath(folder);
-
-      const work = emptyTemplateWork();
-      if (root) {
-        for (const child of root.children) {
-          if (child instanceof TFile) collectTemplatePath(work, child.path);
-        }
-      } else {
-        this.#log(
-          "debug",
-          "Template folder not found; embedded defaults remain",
-          {
-            folder,
-          },
-        );
+      if (frontmatterFields !== state.lastFrontmatterFields) {
+        coreCompileFrontmatter(frontmatterFields);
       }
 
-      for (const name of TEMPLATE_NAMES) {
-        if (!work.names.has(name)) this.#useDefault(name);
+      if (autoTrimChanged) {
+        state.facade.setAutoTrim(autoTrim);
+        state.log("debug", "Template autoTrim changed", { autoTrim });
       }
-      // Reconciled on every rebuild, file or none: with no document the
-      // built-in source registers, so `citation` always resolves to something.
-      work.citation.add(CITATION_TEMPLATE_NAME);
 
-      await this.#reconcileWork(work, generation);
-      if (generation !== this.#folderGeneration) return;
+      if (folderChanged) {
+        yield* coreRebuildFolder(folder);
+      }
+    },
+  );
+  const coreRebuildFolder = Effect.fn("Template.core.coreRebuildFolder")(
+    function* (folder: string): Effect.fn.Return<void, never, Vault> {
+      yield* Effect.acquireUseRelease(
+        Effect.sync(() => {
+          state.settlingTasks += 1;
+        }),
+        () =>
+          Effect.gen(function* () {
+            const generation = ++state.folderGeneration;
+            coreCancelFlush();
+            for (const bucket of templateWorkBuckets(state.pending))
+              bucket.clear();
+            state.shadowed.clear();
+            state.inertEta.clear();
+            state.winners.clear();
+            state.partials.clear();
+            state.inertPartials.clear();
+            state.partialNames.clear();
+            state.reservedPartialFiles.clear();
+            state.citation = null;
+            state.unrecognizedFiles.clear();
+            state.facade.reset();
+            state.compileErrors.clear();
+            state.literatureNoteDocuments.clear();
+            state.literatureNoteDocumentErrors.clear();
+            state.loadedDocumentSources.clear();
 
-      this.#changed();
-      this.#log("debug", "Template folder rebuilt", {
-        folder,
-        count: work.names.size,
-      });
-    } finally {
-      this.#settlingTasks -= 1;
-      this.#resolveSettledWaiters();
-    }
-  }
+            const root =
+              folder === ""
+                ? yield* (yield* Vault).getFolderByPath("/")
+                : yield* (yield* Vault).getFolderByPath(folder);
 
-  onCreateOrModify(file: TAbstractFile): void {
-    if (!(file instanceof TFile)) return;
-    this.#queueTemplatePath(file.path);
-  }
+            const work = emptyTemplateWork();
+            if (root) {
+              for (const child of root.children) {
+                if (child instanceof TFile)
+                  collectTemplatePath(work, child.path);
+              }
+            } else {
+              state.log(
+                "debug",
+                "Template folder not found; embedded defaults remain",
+                {
+                  folder,
+                },
+              );
+            }
 
-  onRename(file: TAbstractFile, oldPathRaw: string): void {
-    this.#queueTemplatePath(oldPathRaw);
-    if (file instanceof TFile) this.#queueTemplatePath(file.path);
-  }
+            for (const name of TEMPLATE_NAMES) {
+              if (!work.names.has(name)) coreUseDefault(name);
+            }
+            // Reconciled on every rebuild, file or none: with no document the
+            // built-in source registers, so `citation` always resolves to something.
+            work.citation.add(CITATION_TEMPLATE_NAME);
 
-  onDelete(file: TAbstractFile): void {
-    this.#queueTemplatePath(file.path);
-  }
+            yield* coreReconcileWork(work, generation);
+            // A rebuild publishes after the settings snapshot reaches its other
+            // subscribers, as the previous asynchronous reconcile did.
+            yield* Effect.yieldNow;
+            if (generation !== state.folderGeneration) return;
 
-  /** Queue one vault event's path; a watched file is a direct child of the
-   *  configured template folder (no recursion). */
-  #queueTemplatePath(path: string): void {
+            yield* state.changed();
+            state.log("debug", "Template folder rebuilt", {
+              folder,
+              count: work.names.size,
+            });
+          }),
+        () =>
+          Effect.sync(() => {
+            state.settlingTasks -= 1;
+            coreResolveSettledWaiters();
+          }),
+      );
+    },
+  );
+  const onCreateOrModify = Effect.fn("Template.core.onCreateOrModify")(
+    function* (file: TAbstractFile): Effect.fn.Return<void, never, never> {
+      if (!(file instanceof TFile)) return;
+      yield* coreQueueTemplatePath(file.path);
+    },
+  );
+  const onRename = Effect.fn("Template.core.onRename")(function* (
+    file: TAbstractFile,
+    oldPathRaw: string,
+  ): Effect.fn.Return<void, never, never> {
+    yield* coreQueueTemplatePath(oldPathRaw);
+    if (file instanceof TFile) yield* coreQueueTemplatePath(file.path);
+  });
+  const onDelete = Effect.fn("Template.core.onDelete")(function* (
+    file: TAbstractFile,
+  ): Effect.fn.Return<void, never, never> {
+    yield* coreQueueTemplatePath(file.path);
+  });
+  const coreQueueTemplatePath = Effect.fn(
+    "Template.core.coreQueueTemplatePath",
+  )(function* (path: string): Effect.fn.Return<void, never, never> {
     const normalized = normalizeVaultPath(path);
     if (
-      normalizeVaultPath(dirname(normalized)) !== this.#currentTemplateFolder()
+      normalizeVaultPath(dirname(normalized)) !== coreCurrentTemplateFolder()
     ) {
       return;
     }
-    if (!collectTemplatePath(this.#pending, normalized)) return;
-    this.#scheduleFlush();
-  }
-
-  #scheduleFlush(): void {
-    if (this.#closed || this.#flushTimer !== null) return;
-    this.#flushTimer = this.#schedule(FLUSH_DEBOUNCE_MS, () => {
-      this.#flushTimer = null;
-      this.#flushRequested();
-    });
-  }
-
-  async flushPending(): Promise<void> {
-    this.#settlingTasks += 1;
-    try {
-      const generation = this.#folderGeneration;
-      const work = takeTemplateWork(this.#pending);
-      await this.#reconcileWork(work, generation);
-
-      if (generation !== this.#folderGeneration) return;
-
-      this.#changed();
-      this.#log("debug", "Template flush completed", {
-        count: work.names.size,
+    if (!collectTemplatePath(state.pending, normalized)) return;
+    yield* coreScheduleFlush();
+  });
+  const coreScheduleFlush = Effect.fn("Template.core.coreScheduleFlush")(
+    function* (): Effect.fn.Return<void, never, never> {
+      if (state.closed || state.flushTimer !== null) return;
+      state.flushTimer = yield* state.schedule(FLUSH_DEBOUNCE_MS, () => {
+        state.flushTimer = null;
+        state.flushRequested();
       });
-    } finally {
-      this.#settlingTasks -= 1;
-      this.#resolveSettledWaiters();
-    }
-  }
+    },
+  );
+  const flushPending = Effect.fn("Template.core.flushPending")(
+    function* (): Effect.fn.Return<void, never, Vault> {
+      yield* Effect.acquireUseRelease(
+        Effect.sync(() => {
+          state.settlingTasks += 1;
+        }),
+        () =>
+          Effect.gen(function* () {
+            const generation = state.folderGeneration;
+            const work = takeTemplateWork(state.pending);
+            yield* coreReconcileWork(work, generation);
 
-  /**
-   * Reconcile every bucket of `work`: a `zotlit-` file no kind claims is
-   * reported or dropped by whether it still exists, and each remaining kind
-   * reconciles through its own routine.
-   */
-  async #reconcileWork(work: TemplateWork, generation: number): Promise<void> {
-    for (const path of work.unrecognizedPaths) {
-      if (this.#app.vault.getFileByPath(path)) {
-        this.#unrecognizedFiles.add(path);
+            if (generation !== state.folderGeneration) return;
+
+            yield* state.changed();
+            state.log("debug", "Template flush completed", {
+              count: work.names.size,
+            });
+          }),
+        () =>
+          Effect.sync(() => {
+            state.settlingTasks -= 1;
+            coreResolveSettledWaiters();
+          }),
+      );
+    },
+  );
+  const coreReconcileWork = Effect.fn("Template.core.coreReconcileWork")(
+    function* (
+      work: TemplateWork,
+      generation: number,
+    ): Effect.fn.Return<void, never, Vault> {
+      for (const path of work.unrecognizedPaths) {
+        if (yield* (yield* Vault).getFileByPath(path)) {
+          state.unrecognizedFiles.add(path);
+        } else {
+          state.unrecognizedFiles.delete(path);
+        }
+      }
+      yield* Effect.all([
+        ...[...work.names].map((name) => coreReconcileName(name, generation)),
+        ...[...work.documentReferences].map((reference) =>
+          coreReconcileDocument(reference, generation),
+        ),
+        ...[...work.partialNames].map((name) =>
+          coreReconcilePartial(name, generation),
+        ),
+        ...(work.citation.size > 0 ? [coreReconcileCitation(generation)] : []),
+      ]);
+    },
+  );
+  const coreReconcileName = Effect.fn("Template.core.coreReconcileName")(
+    function* (
+      name: string,
+      generation: number,
+    ): Effect.fn.Return<void, never, Vault> {
+      // Folder changes rebuild the full template set; stale reconciles from the
+      // old folder must not redefine or drop templates loaded by a newer rebuild.
+      if (generation !== state.folderGeneration) return;
+
+      const folder = coreCurrentTemplateFolder();
+      const liquidFile = yield* (yield* Vault).getFileByPath(
+        templatePath(folder, name, "liquid"),
+      );
+      const etaFile = yield* (yield* Vault).getFileByPath(
+        templatePath(folder, name, "eta"),
+      );
+
+      // One bare name, two file forms: the 2.1.x Legacy Template File and the
+      // `zotlit-partial.<name>.md` document that replaces it. The document owns
+      // the name — the conversion writes it before it trashes the legacy file,
+      // so the deletion event that follows leaves the registered partial alone.
+      if (state.partials.has(name)) {
+        if (!liquidFile && !etaFile) {
+          state.winners.delete(name);
+          state.shadowed.delete(name);
+        }
+        return;
+      }
+
+      // A shadowed eta file is reported as shadowed regardless of the gate —
+      // the liquid edition wins either way, so the flag never changes its fate.
+      if (liquidFile && etaFile) {
+        if (state.shadowed.get(name) !== etaFile.path) {
+          state.log("warn", "Eta template shadowed by its Liquid edition", {
+            name,
+            path: etaFile.path,
+          });
+        }
+        state.shadowed.set(name, etaFile.path);
       } else {
-        this.#unrecognizedFiles.delete(path);
+        state.shadowed.delete(name);
       }
-    }
-    await Promise.all([
-      ...[...work.names].map((name) => this.#reconcileName(name, generation)),
-      ...[...work.documentReferences].map((reference) =>
-        this.#reconcileDocument(reference, generation),
-      ),
-      ...[...work.partialNames].map((name) =>
-        this.#reconcilePartial(name, generation),
-      ),
-      ...(work.citation.size > 0 ? [this.#reconcileCitation(generation)] : []),
-    ]);
-  }
 
-  /**
-   * Resolve `name` from its two candidate files — `.liquid.md` wins over
-   * `.eta.md` when both exist, and only the winner stays registered on the
-   * facade. Called for every watcher event (debounced) and for each name
-   * found while rebuilding the folder.
-   */
-  async #reconcileName(name: string, generation: number): Promise<void> {
-    // Folder changes rebuild the full template set; stale reconciles from the
-    // old folder must not redefine or drop templates loaded by a newer rebuild.
-    if (generation !== this.#folderGeneration) return;
-
-    const folder = this.#currentTemplateFolder();
-    const liquidFile = this.#app.vault.getFileByPath(
-      templatePath(folder, name, "liquid"),
-    );
-    const etaFile = this.#app.vault.getFileByPath(
-      templatePath(folder, name, "eta"),
-    );
-
-    // One bare name, two file forms: the 2.1.x Legacy Template File and the
-    // `zotlit-partial.<name>.md` document that replaces it. The document owns
-    // the name — the conversion writes it before it trashes the legacy file,
-    // so the deletion event that follows leaves the registered partial alone.
-    if (this.#partials.has(name)) {
-      if (!liquidFile && !etaFile) {
-        this.#winners.delete(name);
-        this.#shadowed.delete(name);
-      }
-      return;
-    }
-
-    // A shadowed eta file is reported as shadowed regardless of the gate —
-    // the liquid edition wins either way, so the flag never changes its fate.
-    if (liquidFile && etaFile) {
-      if (this.#shadowed.get(name) !== etaFile.path) {
-        this.#log("warn", "Eta template shadowed by its Liquid edition", {
-          name,
-          path: etaFile.path,
+      // Inert means the eta file would win, but the gate keeps it from compiling.
+      // Such a name is left with no compiled template at all: render/renderFilename
+      // must fail loudly with InertTemplateError rather than degrade to the
+      // embedded default.
+      if (!state.javascriptTemplatesEnabled && !liquidFile && etaFile) {
+        if (state.inertEta.get(name) !== etaFile.path) {
+          state.log(
+            "info",
+            "Eta template inert while JavaScript templates are disabled",
+            { name, path: etaFile.path },
+          );
+        }
+        state.inertEta.set(name, etaFile.path);
+        state.winners.set(name, {
+          language: "eta",
+          source: { kind: "none" },
         });
+        state.compileErrors.delete(name);
+        state.facade.remove(name, "liquid");
+        state.facade.remove(name, "eta");
+        return;
       }
-      this.#shadowed.set(name, etaFile.path);
-    } else {
-      this.#shadowed.delete(name);
-    }
+      state.inertEta.delete(name);
 
-    // Inert means the eta file would win, but the gate keeps it from compiling.
-    // Such a name is left with no compiled template at all: render/renderFilename
-    // must fail loudly with InertTemplateError rather than degrade to the
-    // embedded default.
-    if (!this.#javascriptTemplatesEnabled && !liquidFile && etaFile) {
-      if (this.#inertEta.get(name) !== etaFile.path) {
-        this.#log(
-          "info",
-          "Eta template inert while JavaScript templates are disabled",
-          { name, path: etaFile.path },
-        );
+      const etaCandidate = state.javascriptTemplatesEnabled ? etaFile : null;
+      const winner = liquidFile
+        ? ({ file: liquidFile, language: "liquid" } as const)
+        : etaCandidate
+          ? ({ file: etaCandidate, language: "eta" } as const)
+          : null;
+
+      if (!winner) {
+        state.compileErrors.delete(name);
+        coreUseDefault(name);
+        return;
       }
-      this.#inertEta.set(name, etaFile.path);
-      this.#winners.set(name, {
-        language: "eta",
-        source: { kind: "none" },
+
+      let content: string;
+      const read = yield* Effect.result((yield* Vault).cachedRead(winner.file));
+      if (Result.isFailure(read)) {
+        const error = read.failure;
+        if (generation !== state.folderGeneration) return;
+        state.log("warn", "Failed to read template file", {
+          error,
+          path: winner.file.path,
+        });
+        coreUseDefault(name);
+        return;
+      }
+      content = read.success;
+
+      if (generation !== state.folderGeneration) return;
+      state.facade.remove(
+        name,
+        winner.language === "liquid" ? "eta" : "liquid",
+      );
+      coreDefineTemplate(name, content, winner.language);
+      state.winners.set(name, {
+        language: winner.language,
+        source: { kind: "vault", path: winner.file.path },
       });
-      this.#compileErrors.delete(name);
-      this.#facade.remove(name, "liquid");
-      this.#facade.remove(name, "eta");
-      return;
-    }
-    this.#inertEta.delete(name);
-
-    const etaCandidate = this.#javascriptTemplatesEnabled ? etaFile : null;
-    const winner = liquidFile
-      ? ({ file: liquidFile, language: "liquid" } as const)
-      : etaCandidate
-        ? ({ file: etaCandidate, language: "eta" } as const)
-        : null;
-
-    if (!winner) {
-      this.#compileErrors.delete(name);
-      this.#useDefault(name);
-      return;
-    }
-
-    let content: string;
-    try {
-      content = await this.#app.vault.cachedRead(winner.file);
-    } catch (error) {
-      if (generation !== this.#folderGeneration) return;
-      this.#log("warn", "Failed to read template file", {
-        error,
-        path: winner.file.path,
-      });
-      this.#useDefault(name);
-      return;
-    }
-
-    if (generation !== this.#folderGeneration) return;
-    this.#facade.remove(name, winner.language === "liquid" ? "eta" : "liquid");
-    this.#defineTemplate(name, content, winner.language);
-    this.#winners.set(name, {
-      language: winner.language,
-      source: { kind: "vault", path: winner.file.path },
-    });
-  }
-
-  async #reconcileDocument(
+    },
+  );
+  const coreReconcileDocument = Effect.fn(
+    "Template.core.coreReconcileDocument",
+  )(function* (
     reference: string,
     generation: number,
-  ): Promise<void> {
-    if (generation !== this.#folderGeneration) return;
-    const folder = this.#currentTemplateFolder();
+  ): Effect.fn.Return<void, never, Vault> {
+    if (generation !== state.folderGeneration) return;
+    const folder = coreCurrentTemplateFolder();
     const path = folder === "" ? reference : join(folder, reference);
-    const file = this.#app.vault.getFileByPath(path);
+    const file = yield* (yield* Vault).getFileByPath(path);
     if (!file) {
-      this.#literatureNoteDocuments.delete(reference);
-      this.#literatureNoteDocumentErrors.delete(reference);
-      this.#loadedDocumentSources.delete(path);
+      state.literatureNoteDocuments.delete(reference);
+      state.literatureNoteDocumentErrors.delete(reference);
+      state.loadedDocumentSources.delete(path);
       return;
     }
 
     let source: string | undefined;
-    try {
-      source = await this.#app.vault.cachedRead(file);
-      if (generation !== this.#folderGeneration) return;
-      this.#loadedDocumentSources.set(path, source);
-      const document = this.#facade.parseLiteratureNoteTemplate(source);
-      this.#literatureNoteDocuments.set(reference, { path, document });
-      this.#literatureNoteDocumentErrors.delete(reference);
-    } catch (error) {
-      if (generation !== this.#folderGeneration) return;
-      const failure = Error.isError(error) ? error : new Error(String(error));
-      if (source === undefined) this.#loadedDocumentSources.delete(path);
-      this.#literatureNoteDocuments.delete(reference);
-      this.#literatureNoteDocumentErrors.set(reference, failure);
-      this.#log(
-        "warn",
-        "Failed to reconcile Literature Note Template document",
-        {
-          error: failure,
-          path,
-        },
+    yield* Effect.gen(function* () {
+      source = yield* (yield* Vault).cachedRead(file);
+      if (generation !== state.folderGeneration) return;
+      state.loadedDocumentSources.set(path, source);
+      const document = yield* attempt(() =>
+        state.facade.parseLiteratureNoteTemplate(source!),
       );
-    }
-  }
+      state.literatureNoteDocuments.set(reference, { path, document });
+      state.literatureNoteDocumentErrors.delete(reference);
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.sync(() => {
+          if (generation !== state.folderGeneration) return;
+          const failure = Error.isError(error)
+            ? error
+            : new Error(String(error));
+          if (source === undefined) state.loadedDocumentSources.delete(path);
+          state.literatureNoteDocuments.delete(reference);
+          state.literatureNoteDocumentErrors.set(reference, failure);
+          state.log(
+            "warn",
+            "Failed to reconcile Literature Note Template document",
+            {
+              error: failure,
+              path,
+            },
+          );
+        }),
+      ),
+    );
+  });
+  const coreReconcilePartial = Effect.fn("Template.core.coreReconcilePartial")(
+    function* (
+      name: string,
+      generation: number,
+    ): Effect.fn.Return<void, never, Vault> {
+      if (generation !== state.folderGeneration) return;
 
-  /**
-   * Register the Shared Partial `name` from its `zotlit-partial.<name>.md`
-   * document, which carries the partial's language and its source.
-   *
-   * A partial whose document fails to parse or to compile is left undefined
-   * and records a compile error, and one written in Eta while the JavaScript
-   * Templates gate is off is left inert — a template that calls it then fails
-   * loudly rather than rendering a hole.
-   */
-  async #reconcilePartial(name: string, generation: number): Promise<void> {
-    if (generation !== this.#folderGeneration) return;
+      const path = partialPath(coreCurrentTemplateFolder(), name);
+      const file = yield* (yield* Vault).getFileByPath(path);
 
-    const path = partialPath(this.#currentTemplateFolder(), name);
-    const file = this.#app.vault.getFileByPath(path);
-
-    // A reserved name already answers to another Template, so the file owns
-    // nothing: it is reported by name in settings rather than registered.
-    if (RESERVED_PARTIAL_NAMES.has(name)) {
-      if (file) {
-        this.#log("debug", "Partial file claims a reserved template name", {
-          name,
-          path,
-        });
-        this.#reservedPartialFiles.set(name, path);
-        try {
-          const source = await this.#app.vault.cachedRead(file);
-          if (generation !== this.#folderGeneration) return;
-          this.#loadedDocumentSources.set(path, source);
-        } catch (error) {
-          if (generation !== this.#folderGeneration) return;
-          this.#loadedDocumentSources.delete(path);
-          this.#log("warn", "Failed to read reserved partial file", {
-            error,
-            path,
-          });
-        }
-      } else {
-        this.#reservedPartialFiles.delete(name);
-        this.#loadedDocumentSources.delete(path);
-      }
-      return;
-    }
-
-    if (!file) {
-      this.#partialNames.delete(name);
-      this.#loadedDocumentSources.delete(path);
-      this.#removePartial(name);
-      return;
-    }
-    this.#partialNames.add(name);
-
-    let source: string;
-    try {
-      source = await this.#app.vault.cachedRead(file);
-    } catch (error) {
-      if (generation !== this.#folderGeneration) return;
-      this.#log("warn", "Failed to read partial file", { error, path });
-      this.#loadedDocumentSources.delete(path);
-      this.#removePartial(name);
-      this.#compileErrors.set(name, { message: errorMessage(error) });
-      return;
-    }
-    if (generation !== this.#folderGeneration) return;
-
-    this.#loadedDocumentSources.set(path, source);
-    let parsed;
-    try {
-      parsed = parsePlainTemplateDocument(source);
-    } catch (error) {
-      this.#removePartial(name);
-      this.#compileErrors.set(name, { message: errorMessage(error) });
-      this.#log("warn", "Failed to parse partial document", { error, path });
-      return;
-    }
-
-    const { language } = parsed.manifest;
-    if (language === "eta" && !this.#javascriptTemplatesEnabled) {
-      if (this.#inertEta.get(name) !== path) {
-        this.#log(
-          "debug",
-          "Eta partial inert while JavaScript templates are disabled",
-          {
+      // A reserved name already answers to another Template, so the file owns
+      // nothing: it is reported by name in settings rather than registered.
+      if (RESERVED_PARTIAL_NAMES.has(name)) {
+        if (file) {
+          state.log("debug", "Partial file claims a reserved template name", {
             name,
             path,
-          },
-        );
+          });
+          state.reservedPartialFiles.set(name, path);
+          const read = yield* Effect.result((yield* Vault).cachedRead(file));
+          if (Result.isFailure(read)) {
+            const error = read.failure;
+            if (generation !== state.folderGeneration) return;
+            state.loadedDocumentSources.delete(path);
+            state.log("warn", "Failed to read reserved partial file", {
+              error,
+              path,
+            });
+            return;
+          }
+          const source = read.success;
+          if (generation !== state.folderGeneration) return;
+          state.loadedDocumentSources.set(path, source);
+        } else {
+          state.reservedPartialFiles.delete(name);
+          state.loadedDocumentSources.delete(path);
+        }
+        return;
       }
-      this.#removePartial(name);
-      this.#inertEta.set(name, path);
-      this.#inertPartials.set(name, { name, language, source: parsed.source });
-      return;
-    }
 
-    this.#removePartial(name);
-    this.#partials.set(name, { path, language, source: parsed.source });
-    this.#defineTemplate(name, parsed.source, language);
-  }
+      if (!file) {
+        state.partialNames.delete(name);
+        state.loadedDocumentSources.delete(path);
+        coreRemovePartial(name);
+        return;
+      }
+      state.partialNames.add(name);
 
-  /**
-   * Resolve the Citation Template from `zotlit-citation.md`, or register the
-   * built-in source when the vault holds no document. Either way the template
-   * answers to {@link CITATION_TEMPLATE_NAME}, so every citation render and
-   * the pack export reach it by that one name.
-   *
-   * A document that fails to parse or to compile is left undefined and records
-   * a compile error, and one written in Eta while the JavaScript Templates gate
-   * is off is left inert: inserting a citation then reports the inert notice
-   * rather than quietly falling back to the built-in text.
-   */
-  async #reconcileCitation(generation: number): Promise<void> {
-    if (generation !== this.#folderGeneration) return;
+      let source: string;
+      const read = yield* Effect.result((yield* Vault).cachedRead(file));
+      if (Result.isFailure(read)) {
+        const error = read.failure;
+        if (generation !== state.folderGeneration) return;
+        state.log("warn", "Failed to read partial file", { error, path });
+        state.loadedDocumentSources.delete(path);
+        coreRemovePartial(name);
+        state.compileErrors.set(name, { message: errorMessage(error) });
+        return;
+      }
+      source = read.success;
+
+      if (generation !== state.folderGeneration) return;
+
+      state.loadedDocumentSources.set(path, source);
+      const parsedResult = yield* Effect.result(
+        attempt(() => parsePlainTemplateDocument(source)),
+      );
+      if (Result.isFailure(parsedResult)) {
+        const error = parsedResult.failure;
+        coreRemovePartial(name);
+        state.compileErrors.set(name, { message: errorMessage(error) });
+        state.log("warn", "Failed to parse partial document", { error, path });
+        return;
+      }
+      const parsed = parsedResult.success;
+
+      const { language } = parsed.manifest;
+      if (language === "eta" && !state.javascriptTemplatesEnabled) {
+        if (state.inertEta.get(name) !== path) {
+          state.log(
+            "debug",
+            "Eta partial inert while JavaScript templates are disabled",
+            {
+              name,
+              path,
+            },
+          );
+        }
+        coreRemovePartial(name);
+        state.inertEta.set(name, path);
+        state.inertPartials.set(name, {
+          name,
+          language,
+          source: parsed.source,
+        });
+        return;
+      }
+
+      coreRemovePartial(name);
+      state.partials.set(name, { path, language, source: parsed.source });
+      coreDefineTemplate(name, parsed.source, language);
+    },
+  );
+  const coreReconcileCitation = Effect.fn(
+    "Template.core.coreReconcileCitation",
+  )(function* (generation: number): Effect.fn.Return<void, never, Vault> {
+    if (generation !== state.folderGeneration) return;
 
     const name = CITATION_TEMPLATE_NAME;
-    const path = citationPath(this.#currentTemplateFolder());
-    const file = this.#app.vault.getFileByPath(path);
+    const path = citationPath(coreCurrentTemplateFolder());
+    const file = yield* (yield* Vault).getFileByPath(path);
     if (!file) {
-      this.#useBuiltInCitation();
-      this.#loadedDocumentSources.delete(path);
+      coreUseBuiltInCitation();
+      state.loadedDocumentSources.delete(path);
       return;
     }
 
     let source: string;
-    try {
-      source = await this.#app.vault.cachedRead(file);
-    } catch (error) {
-      if (generation !== this.#folderGeneration) return;
-      this.#log("warn", "Failed to read the Citation Template", {
+    const read = yield* Effect.result((yield* Vault).cachedRead(file));
+    if (Result.isFailure(read)) {
+      const error = read.failure;
+      if (generation !== state.folderGeneration) return;
+      state.log("warn", "Failed to read the Citation Template", {
         error,
         path,
       });
-      this.#loadedDocumentSources.delete(path);
-      this.#useBuiltInCitation();
-      this.#compileErrors.set(name, { message: errorMessage(error) });
+      state.loadedDocumentSources.delete(path);
+      coreUseBuiltInCitation();
+      state.compileErrors.set(name, { message: errorMessage(error) });
       return;
     }
-    if (generation !== this.#folderGeneration) return;
+    source = read.success;
 
-    this.#loadedDocumentSources.set(path, source);
-    let parsed;
-    try {
-      parsed = parsePlainTemplateDocument(source);
-    } catch (error) {
-      this.#unregisterCitation();
-      this.#compileErrors.set(name, { message: errorMessage(error) });
-      this.#log("warn", "Failed to parse the Citation Template", {
+    if (generation !== state.folderGeneration) return;
+
+    state.loadedDocumentSources.set(path, source);
+    const parsedResult = yield* Effect.result(
+      attempt(() => parsePlainTemplateDocument(source)),
+    );
+    if (Result.isFailure(parsedResult)) {
+      const error = parsedResult.failure;
+      coreUnregisterCitation();
+      state.compileErrors.set(name, { message: errorMessage(error) });
+      state.log("warn", "Failed to parse the Citation Template", {
         error,
         path,
       });
       return;
     }
+    const parsed = parsedResult.success;
 
     const { language } = parsed.manifest;
-    if (language === "eta" && !this.#javascriptTemplatesEnabled) {
-      if (this.#inertEta.get(name) !== path) {
-        this.#log(
+    if (language === "eta" && !state.javascriptTemplatesEnabled) {
+      if (state.inertEta.get(name) !== path) {
+        state.log(
           "debug",
           "Citation Template inert while JavaScript templates are disabled",
           { path },
         );
       }
-      this.#unregisterCitation();
-      this.#inertEta.set(name, path);
+      coreUnregisterCitation();
+      state.inertEta.set(name, path);
       return;
     }
 
-    this.#registerCitation({ path, language, source: parsed.source });
-  }
-
-  /** Register the packaged Citation Template, as a vault with no document renders it. */
-  #useBuiltInCitation(): void {
-    this.#registerCitation({
+    coreRegisterCitation({ path, language, source: parsed.source });
+  });
+  function coreUseBuiltInCitation(): void {
+    coreRegisterCitation({
       path: null,
       language: "liquid",
       source: CITATION_TEMPLATE_SOURCE,
     });
   }
-
-  /**
-   * Register the source that won the Citation Template, and log the branch on
-   * every change of winner, so a diagnosis reads which source rendered a
-   * citation instead of re-instrumenting the reconcile.
-   */
-  #registerCitation(citation: RegisteredCitationTemplate): void {
-    const previous = this.#citation;
-    this.#unregisterCitation();
-    this.#citation = citation;
-    this.#defineTemplate(
+  function coreRegisterCitation(citation: RegisteredCitationTemplate): void {
+    const previous = state.citation;
+    coreUnregisterCitation();
+    state.citation = citation;
+    coreDefineTemplate(
       CITATION_TEMPLATE_NAME,
       citation.source,
       citation.language,
@@ -2361,162 +2096,206 @@ class TemplateEngine {
       previous?.path !== citation.path ||
       previous.language !== citation.language
     ) {
-      this.#log("debug", "Citation Template resolved", {
+      state.log("debug", "Citation Template resolved", {
         selected: citation.path === null ? "built-in" : "vault",
         path: citation.path,
         language: citation.language,
       });
     }
   }
-
-  #unregisterCitation(): void {
-    this.#citation = null;
-    this.#unregisterTemplate(CITATION_TEMPLATE_NAME);
+  function coreUnregisterCitation(): void {
+    state.citation = null;
+    coreUnregisterTemplate(CITATION_TEMPLATE_NAME);
   }
-
-  #removePartial(name: string): void {
-    this.#partials.delete(name);
-    this.#inertPartials.delete(name);
-    this.#unregisterTemplate(name);
+  function coreRemovePartial(name: string): void {
+    state.partials.delete(name);
+    state.inertPartials.delete(name);
+    coreUnregisterTemplate(name);
   }
-
-  /** Drop every trace of `name`: its compiled editions and the status a
-   *  previous reconcile recorded for it. */
-  #unregisterTemplate(name: string): void {
-    this.#compileErrors.delete(name);
-    this.#inertEta.delete(name);
-    this.#facade.remove(name, "liquid");
-    this.#facade.remove(name, "eta");
+  function coreUnregisterTemplate(name: string): void {
+    state.compileErrors.delete(name);
+    state.inertEta.delete(name);
+    state.facade.remove(name, "liquid");
+    state.facade.remove(name, "eta");
   }
-
-  /**
-   * Compile and register a vault template, recording any compile error. A
-   * template that fails to compile is removed from the facade and never falls
-   * back to a package default: it fails loudly through {@link render} and
-   * through any template that `include()`s it, and surfaces in the setting tab.
-   */
-  #defineTemplate(
+  function coreDefineTemplate(
     name: string,
     content: string,
     language: TemplateLanguage,
   ): void {
     try {
-      this.#facade.define(name, content, language);
-      this.#compileErrors.delete(name);
+      state.facade.define(name, content, language);
+      state.compileErrors.delete(name);
     } catch (error) {
       const at = engineFaultSpan(error, content);
-      this.#compileErrors.set(name, {
+      state.compileErrors.set(name, {
         message: errorMessage(error),
         context: errorContext(error),
         ...(at === undefined ? {} : { at }),
       });
-      this.#log("warn", "Failed to compile vault template", { error, name });
-      this.#facade.remove(name, language);
+      state.log("warn", "Failed to compile vault template", { error, name });
+      state.facade.remove(name, language);
     }
   }
-
-  /** Use a canonical name's package default (Liquid) when no vault override exists, else remove a non-canonical one. */
-  #useDefault(name: string): void {
-    this.#facade.remove(name, "eta");
+  function coreUseDefault(name: string): void {
+    state.facade.remove(name, "eta");
     if (!isTemplateName(name)) {
-      this.#facade.remove(name, "liquid");
-      this.#winners.delete(name);
+      state.facade.remove(name, "liquid");
+      state.winners.delete(name);
       return;
     }
-    this.#winners.set(name, EMBEDDED_DEFAULT_WINNER);
+    state.winners.set(name, EMBEDDED_DEFAULT_WINNER);
     try {
-      this.#facade.define(name, DEFAULT_TEMPLATES[name], "liquid");
-      this.#compileErrors.delete(name);
+      state.facade.define(name, DEFAULT_TEMPLATES[name], "liquid");
+      state.compileErrors.delete(name);
     } catch (error) {
       const at = engineFaultSpan(error, DEFAULT_TEMPLATES[name]);
-      this.#compileErrors.set(name, {
+      state.compileErrors.set(name, {
         message: errorMessage(error),
         context: errorContext(error),
         ...(at === undefined ? {} : { at }),
       });
-      this.#log("error", "Built-in default template failed to compile", {
+      state.log("error", "Built-in default template failed to compile", {
         error,
         name,
       });
-      this.#facade.remove(name, "liquid");
+      state.facade.remove(name, "liquid");
     }
   }
-
-  /** Wait for the debounced reconciler to observe a write this service made,
-   *  so a caller reads the state its own change produced. */
-  async #settle(): Promise<void> {
-    if ((await this.waitUntilSettled(SETTLE_TIMEOUT_MS)) !== "settled") {
-      throw new Error("The template folder did not finish scanning");
-    }
-  }
-
-  #currentTemplateFolder(): string {
+  const coreSettle = Effect.fn("Template.core.coreSettle")(
+    function* (): Effect.fn.Return<void, TemplateFailure, never> {
+      if ((yield* waitUntilSettled(SETTLE_TIMEOUT_MS)) !== "settled") {
+        return yield* Effect.fail(
+          templateFailure(
+            new Error("The template folder did not finish scanning"),
+          ),
+        );
+      }
+    },
+  );
+  function coreCurrentTemplateFolder(): string {
     return normalizeVaultPath(
-      this.#settings.current?.["template.folder"] ?? this.#lastTemplateFolder,
+      state.settings.current?.["template.folder"] ?? state.lastTemplateFolder,
     );
   }
-
-  /**
-   * Compile the managed-frontmatter fields, dropping reserved keys the system
-   * owns so user and system keys stay disjoint, and hold them for reuse.
-   * `"javascript"`-language fields are skipped uncompiled while the gate is
-   * off; their keys are logged and recorded so {@link frontmatterFields}
-   * throws rather than hand back a partial set.
-   */
-  #compileFrontmatter(fields: readonly FrontmatterField[]): void {
-    this.#lastFrontmatterFields = fields;
+  function coreCompileFrontmatter(fields: readonly FrontmatterField[]): void {
+    state.lastFrontmatterFields = fields;
     const filtered = fields.filter((field) => !RESERVED_KEYS.has(field.key));
-    const { compiled, inertKeys } = this.#facade.compileFrontmatterFields(
+    const { compiled, inertKeys } = state.facade.compileFrontmatterFields(
       filtered,
-      { javascript: this.#javascriptTemplatesEnabled },
+      { javascript: state.javascriptTemplatesEnabled },
     );
-    this.#compiledFrontmatterFields = compiled;
-    this.#inertFrontmatterKeys = inertKeys;
+    state.compiledFrontmatterFields = compiled;
+    state.inertFrontmatterKeys = inertKeys;
 
     if (inertKeys.length > 0) {
-      this.#log("info", "Skipping inert frontmatter fields", {
+      state.log("info", "Skipping inert frontmatter fields", {
         keys: inertKeys,
       });
     }
   }
-
-  /** Drop a scheduled flush, then release any waiter the drop settled — on
-   *  unload a waiter is answered at once rather than after its full budget. */
-  #cancelFlush(): void {
-    if (this.#flushTimer !== null) {
-      this.#flushTimer();
-      this.#flushTimer = null;
+  function coreCancelFlush(): void {
+    if (state.flushTimer !== null) {
+      state.flushTimer();
+      state.flushTimer = null;
     }
-    this.#resolveSettledWaiters();
+    coreResolveSettledWaiters();
   }
-
-  intakeHandled(): void {
-    this.#resolveSettledWaiters();
+  function intakeHandled(): void {
+    coreResolveSettledWaiters();
   }
-
-  #isSettled(): boolean {
+  function coreIsSettled(): boolean {
     return (
-      this.#intakePending() === 0 &&
-      this.#settlingTasks === 0 &&
-      this.#flushTimer === null &&
-      isTemplateWorkEmpty(this.#pending)
+      state.intakePending() === 0 &&
+      state.settlingTasks === 0 &&
+      state.flushTimer === null &&
+      isTemplateWorkEmpty(state.pending)
     );
   }
-
-  #resolveSettledWaiters(): void {
-    if (!this.#isSettled()) return;
-    for (const waiter of this.#settledWaiters) {
+  function coreResolveSettledWaiters(): void {
+    if (!coreIsSettled()) return;
+    for (const waiter of state.settledWaiters) {
       waiter.resolve();
     }
-    this.#settledWaiters.clear();
+    state.settledWaiters.clear();
   }
-
-  #requireLoaded(method: string): void {
-    if (!this.#loaded) {
+  function coreRequireLoaded(method: string): void {
+    if (!state.loaded) {
       throw new Error(`TemplateService.${method}(): service is not ready`);
     }
   }
+  return {
+    get compileErrors() {
+      return readCompileErrors();
+    },
+    getLoadedDocumentSource,
+    get shadowedFiles() {
+      return readShadowedFiles();
+    },
+    get inertEtaFiles() {
+      return readInertEtaFiles();
+    },
+    get javascriptTemplatesEnabled() {
+      return readJavascriptTemplatesEnabled();
+    },
+    get loaded() {
+      return readLoaded();
+    },
+    getUnrecognizedFiles,
+    getTemplateFileStatuses,
+    getCitationTemplateStatus,
+    materializeCitationTemplate,
+    restoreCitationTemplate,
+    getLiteratureNoteTemplate,
+    prepareLiteratureNoteTemplateSource,
+    renderProfileAnnotation,
+    getLiteratureNoteTemplateStatuses,
+    renderLiteratureNoteTemplateSource,
+    exportLiteratureNotePack,
+    exportLiteratureNotePackSource,
+    refresh,
+    waitUntilSettled,
+    get frontmatterFields() {
+      return readFrontmatterFields();
+    },
+    getFrontmatterFieldStatus,
+    evaluateFrontmatterFields,
+    render,
+    renderManagedContent,
+    renderCitation,
+    renderCitationData,
+    getPartialDocument,
+    getPartialNames,
+    getPartialDocuments,
+    getPartialEntries,
+    planPartialUnpack,
+    unpackPartials,
+    getReservedPartialFiles,
+    createPartial,
+    deletePartial,
+    renderPartialSource,
+    renderCitationSource,
+    renderFilename,
+    analyzeRootVariables,
+    getTemplateSource,
+    getLegacyLiteratureNoteTemplateFiles,
+    getLegacyTemplateDocuments,
+    convertLegacyTemplateDocuments,
+    convertLegacyLiteratureNoteTemplates,
+    validateFrontmatterExpr,
+    setJavascriptTemplatesEnabled,
+    load,
+    failStartup,
+    close,
+    onSettingsChanged,
+    onCreateOrModify,
+    onRename,
+    onDelete,
+    flushPending,
+    intakeHandled,
+  };
 }
+type TemplateEngine = ReturnType<typeof makeTemplateEngine>;
 
 /**
  * Name the artifact a render failure belongs to, reading structured error
@@ -2627,7 +2406,7 @@ export type TemplateStatus = {
   | { readonly state: "loading" | "loaded" }
   | {
       readonly state: "init-failed";
-      readonly cause: Cause.Cause<TemplateFailure>;
+      readonly cause: Cause.Cause<never>;
     }
 );
 
@@ -2641,7 +2420,11 @@ export type TemplateFailure =
   | InertTemplateError
   | PartialNameError
   | TemplateOperationError
-  | TemplateRenderError;
+  | TemplateRenderError
+  | VaultError
+  | FileExists
+  | VaultFolderBlockedError
+  | import("@/lib/effect-live-text").LiveTextRewriteFailed;
 
 export class Template extends Context.Service<
   Template,
@@ -2722,9 +2505,7 @@ export class Template extends Context.Service<
       },
     ): Effect.Effect<string, TemplateFailure>;
     readonly refresh: Effect.Effect<void, TemplateFailure>;
-    waitUntilSettled(
-      timeoutMs: number,
-    ): Effect.Effect<SettleOutcome, TemplateFailure>;
+    waitUntilSettled(timeoutMs: number): Effect.Effect<SettleOutcome>;
     readonly frontmatterFields: Effect.Effect<
       readonly CompiledFrontmatterField[],
       TemplateFailure
@@ -2830,7 +2611,7 @@ export class Template extends Context.Service<
   }
 >()("zotlit/template/Template") {}
 
-export type TemplateOperations = Pick<
+type TemplateCoreOperations = Pick<
   TemplateEngine,
   | "compileErrors"
   | "getLoadedDocumentSource"
@@ -2881,6 +2662,15 @@ export type TemplateOperations = Pick<
   | "setJavascriptTemplatesEnabled"
 >;
 
+/** The remaining Promise and synchronous callers enter through plain.ts. */
+export type TemplateOperations = {
+  [K in keyof TemplateCoreOperations]: TemplateCoreOperations[K] extends (
+    ...args: infer Args
+  ) => Effect.Effect<infer A, infer _E, infer _R>
+    ? (...args: Args) => Promise<A>
+    : TemplateCoreOperations[K];
+};
+
 export const layerTemplate = Layer.effect(
   Template,
   Effect.gen(function* () {
@@ -2888,71 +2678,72 @@ export const layerTemplate = Layer.effect(
     const vault = yield* Vault;
     const settings = yield* PluginSettings;
     const scope = yield* Scope.fork(yield* Scope.Scope);
-    const context = yield* Effect.context<never>();
-    const runSync = Effect.runSyncWith(context);
+    const context = yield* Effect.context<
+      Vault | FileManager | Workspace | PluginSettings
+    >();
+    const provide = <A, E>(
+      effect: Effect.Effect<
+        A,
+        E,
+        Vault | FileManager | Workspace | PluginSettings
+      >,
+    ) => Effect.provideContext(effect, context);
     const status = yield* SubscriptionRef.make<TemplateStatus>({
       state: "loading",
       compileErrors: new Map(),
     });
     const compileEvents = yield* PubSub.unbounded<void>();
     yield* Effect.addFinalizer(() => PubSub.shutdown(compileEvents));
-    const intake = yield* obsidianEvents<{
-      vault: [VaultEvent];
-      flush: [];
+    const logs = yield* obsidianEvents<{
+      log: [
+        "debug" | "info" | "warn" | "error",
+        string,
+        Record<string, unknown>?,
+      ];
     }>();
-    const engine = new TemplateEngine({
-      app,
-      vault,
-      runPromise: Effect.runPromiseWith(context),
-      settings: {
-        get current() {
-          return runSync(settings.current);
-        },
-      },
-      changed: () => {
-        publishStatus();
-        PubSub.publishUnsafe(compileEvents, undefined);
-      },
-      flushRequested: intake.callback("flush"),
-      intakePending: () => intake.pending,
-      schedule: (millis, task) => {
-        const fiber = runSync(
-          Effect.forkIn(
-            Effect.sleep(millis).pipe(Effect.andThen(Effect.sync(task))),
-            scope,
-            { startImmediately: true },
-          ),
-        );
-        return () => fiber.interruptUnsafe();
-      },
-      log: (level, message, fields) => {
+    yield* logs
+      .consume(({ args: [level, message, fields] }) => {
         const log = {
           debug: Effect.logDebug,
           info: Effect.logInfo,
           warn: Effect.logWarning,
           error: Effect.logError,
         }[level];
-        runSync(
-          log(message).pipe(
-            Effect.annotateLogs(fields ?? {}),
-            withLogCategory("template"),
-          ),
+        return log(message).pipe(
+          Effect.annotateLogs(fields ?? {}),
+          withLogCategory("template"),
         );
-      },
+      })
+      .pipe(Effect.forkScoped({ startImmediately: true }));
+    const intake = yield* obsidianEvents<{ vault: [VaultEvent]; flush: [] }>();
+    const engine = makeTemplateEngine({
+      app,
+      snapshot: yield* settings.current,
+      changed: () =>
+        publishStatus().pipe(
+          Effect.andThen(PubSub.publish(compileEvents, undefined)),
+          Effect.asVoid,
+        ),
+      flushRequested: intake.callback("flush"),
+      intakePending: () => intake.pending,
+      schedule: Effect.fnUntraced(function* (millis, task) {
+        const fiber = yield* Effect.sleep(millis).pipe(
+          Effect.andThen(Effect.sync(task)),
+          Effect.forkIn(scope, { startImmediately: true }),
+        );
+        return () => fiber.interruptUnsafe();
+      }),
+      log: logs.callback("log"),
     });
     const publishStatus = () =>
-      runSync(
-        SubscriptionRef.update(status, (previous) => ({
-          ...(previous.state === "init-failed"
-            ? previous
-            : {
-                state: engine.loaded
-                  ? ("loaded" as const)
-                  : ("loading" as const),
-              }),
-          compileErrors: new Map(engine.compileErrors),
-        })),
-      );
+      SubscriptionRef.update(status, (previous) => ({
+        ...(previous.state === "init-failed"
+          ? previous
+          : {
+              state: engine.loaded ? ("loaded" as const) : ("loading" as const),
+            }),
+        compileErrors: new Map(engine.compileErrors),
+      }));
     const report = (message: string) => (cause: unknown) =>
       Effect.logWarning(message).pipe(
         Effect.annotateLogs({ cause }),
@@ -2967,19 +2758,19 @@ export const layerTemplate = Layer.effect(
               switch (change._tag) {
                 case "create":
                 case "modify":
-                  engine.onCreateOrModify(change.file);
+                  yield* provide(engine.onCreateOrModify(change.file));
                   break;
                 case "rename":
-                  engine.onRename(change.file, change.oldPath);
+                  yield* provide(engine.onRename(change.file, change.oldPath));
                   break;
                 case "delete":
-                  engine.onDelete(change.file);
+                  yield* provide(engine.onDelete(change.file));
                   break;
               }
               break;
             }
             case "flush":
-              yield* attemptPromise(() => engine.flushPending());
+              yield* provide(engine.flushPending());
               break;
           }
         }).pipe(Effect.ensuring(Effect.sync(() => engine.intakeHandled()))),
@@ -2989,8 +2780,8 @@ export const layerTemplate = Layer.effect(
       // The vault's events join the flush requests in one ordered intake:
       // forkEach hands each over inside Obsidian's callback.
       yield* forkEach(vault.changes, intake.callback("vault"));
-      yield* attemptPromise(() => engine.load());
-      publishStatus();
+      yield* provide(engine.load());
+      yield* publishStatus();
     }).pipe(
       Effect.catchCause((cause) =>
         Effect.sync(() => engine.failStartup()).pipe(
@@ -3006,7 +2797,7 @@ export const layerTemplate = Layer.effect(
       ),
     );
     yield* Stream.runForEach(settings.changes, (snapshot) =>
-      attemptPromise(() => engine.onSettingsChanged(snapshot)).pipe(
+      provide(engine.onSettingsChanged(snapshot)).pipe(
         Effect.catchCause(report("Template settings update failed")),
         // Apply each snapshot immediately. Folder reads can overlap: the
         // generation check lets a newer folder supersede a pending read.
@@ -3019,7 +2810,7 @@ export const layerTemplate = Layer.effect(
       uninterruptible = false,
     ) =>
       closed
-        ? effect
+        ? Effect.interrupt
         : Effect.forkIn(effect, scope, {
             startImmediately: true,
             uninterruptible,
@@ -3053,19 +2844,19 @@ export const layerTemplate = Layer.effect(
       getTemplateFileStatuses: attempt(() =>
         engine.getTemplateFileStatuses(),
       ).pipe(Effect.withSpan("Template.getTemplateFileStatuses")),
-      getCitationTemplateStatus: attempt(() =>
+      getCitationTemplateStatus: provide(
         engine.getCitationTemplateStatus(),
       ).pipe(Effect.withSpan("Template.getCitationTemplateStatus")),
       materializeCitationTemplate: Effect.suspend(() =>
         write(
-          attemptPromise(() => engine.materializeCitationTemplate()).pipe(
+          provide(engine.materializeCitationTemplate()).pipe(
             Effect.uninterruptible,
           ),
         ),
       ).pipe(Effect.withSpan("Template.materializeCitationTemplate")),
       restoreCitationTemplate: Effect.suspend(() =>
         write(
-          attemptPromise(() => engine.restoreCitationTemplate()).pipe(
+          provide(engine.restoreCitationTemplate()).pipe(
             Effect.uninterruptible,
           ),
         ),
@@ -3110,9 +2901,7 @@ export const layerTemplate = Layer.effect(
           options: { includeFolders?: boolean } = {},
         ) {
           return yield* owned(
-            attemptPromise(() =>
-              engine.exportLiteratureNotePack(reference, options),
-            ),
+            provide(engine.exportLiteratureNotePack(reference, options)),
           );
         },
       ),
@@ -3129,20 +2918,16 @@ export const layerTemplate = Layer.effect(
         } = {},
       ) {
         return yield* owned(
-          attemptPromise(() =>
-            engine.exportLiteratureNotePackSource(source, options),
-          ),
+          provide(engine.exportLiteratureNotePackSource(source, options)),
         );
       }),
-      refresh: Effect.suspend(() =>
-        owned(attemptPromise(() => engine.refresh())),
-      ).pipe(Effect.withSpan("Template.refresh")),
+      refresh: Effect.suspend(() => owned(provide(engine.refresh()))).pipe(
+        Effect.withSpan("Template.refresh"),
+      ),
       waitUntilSettled: Effect.fn("Template.waitUntilSettled")(function* (
         timeoutMs: number,
       ) {
-        return yield* owned(
-          attemptPromise(() => engine.waitUntilSettled(timeoutMs)),
-        );
+        return yield* owned(provide(engine.waitUntilSettled(timeoutMs)));
       }),
       frontmatterFields: attempt(() => engine.frontmatterFields),
       getFrontmatterFieldStatus: attempt(() =>
@@ -3201,7 +2986,7 @@ export const layerTemplate = Layer.effect(
         options: { replace?: readonly string[] } = {},
       ) {
         return yield* write(
-          attemptPromise(() => engine.unpackPartials(plan, options)).pipe(
+          provide(engine.unpackPartials(plan, options)).pipe(
             Effect.uninterruptible,
           ),
         );
@@ -3214,7 +2999,7 @@ export const layerTemplate = Layer.effect(
         options: { source?: string; language?: TemplateLanguage } = {},
       ) {
         return yield* write(
-          attemptPromise(() => engine.createPartial(name, options)).pipe(
+          provide(engine.createPartial(name, options)).pipe(
             Effect.uninterruptible,
           ),
         );
@@ -3223,9 +3008,7 @@ export const layerTemplate = Layer.effect(
         name: string,
       ) {
         return yield* write(
-          attemptPromise(() => engine.deletePartial(name)).pipe(
-            Effect.uninterruptible,
-          ),
+          provide(engine.deletePartial(name)).pipe(Effect.uninterruptible),
         );
       }),
       renderPartialSource: Effect.fn("Template.renderPartialSource")(function* <
@@ -3255,9 +3038,7 @@ export const layerTemplate = Layer.effect(
       getTemplateSource: Effect.fn("Template.getTemplateSource")(function* (
         name: TemplateName,
       ) {
-        return yield* owned(
-          attemptPromise(() => engine.getTemplateSource(name)),
-        );
+        return yield* owned(provide(engine.getTemplateSource(name)));
       }),
       getLegacyLiteratureNoteTemplateFiles: attempt(() =>
         engine.getLegacyLiteratureNoteTemplateFiles(),
@@ -3269,7 +3050,7 @@ export const layerTemplate = Layer.effect(
         "Template.convertLegacyTemplateDocuments",
       )(function* (refs: readonly CiteRef[]) {
         return yield* owned(
-          attemptPromise(() => engine.convertLegacyTemplateDocuments(refs)),
+          provide(engine.convertLegacyTemplateDocuments(refs)),
         );
       }),
       convertLegacyLiteratureNoteTemplates: Effect.fn(
@@ -3280,9 +3061,7 @@ export const layerTemplate = Layer.effect(
         readonly annotation?: object;
       }) {
         return yield* owned(
-          attemptPromise(() =>
-            engine.convertLegacyLiteratureNoteTemplates(data),
-          ),
+          provide(engine.convertLegacyLiteratureNoteTemplates(data)),
         );
       }),
       validateFrontmatterExpr: Effect.fn("Template.validateFrontmatterExpr")(
@@ -3296,9 +3075,9 @@ export const layerTemplate = Layer.effect(
         "Template.setJavascriptTemplatesEnabled",
       )(function* (enabled: boolean) {
         return yield* write(
-          attemptPromise(() =>
-            engine.setJavascriptTemplatesEnabled(enabled),
-          ).pipe(Effect.uninterruptible),
+          provide(engine.setJavascriptTemplatesEnabled(enabled)).pipe(
+            Effect.uninterruptible,
+          ),
         );
       }),
     });
@@ -3308,6 +3087,9 @@ export const layerTemplate = Layer.effect(
 /** Preserve domain failures; map unknown host failures once, with their cause. */
 export function templateFailure(cause: unknown): TemplateFailure {
   if (
+    cause instanceof VaultError ||
+    cause instanceof FileExists ||
+    cause instanceof VaultFolderBlockedError ||
     cause instanceof TemplateError ||
     cause instanceof LegacyTemplateConversionError ||
     cause instanceof LiteratureNoteTemplateError ||
@@ -3341,9 +3123,4 @@ function attemptRender<A>(
         : error;
     },
   });
-}
-function attemptPromise<A>(
-  evaluate: () => Promise<A>,
-): Effect.Effect<A, TemplateFailure> {
-  return Effect.tryPromise({ try: evaluate, catch: templateFailure });
 }

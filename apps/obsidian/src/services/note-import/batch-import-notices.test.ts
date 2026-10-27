@@ -14,7 +14,7 @@ it("offers recovery on the Literature Note whose unavailable Profile blocked a n
   using label = vi.spyOn(ButtonComponent.prototype, "setButtonText");
   const trigger = vi.fn();
   const notice = importedNoteProfileErrorNotice(
-    new NoteImportProfileError("Missing", {
+    NoteImportProfileError.unknown("Missing", {
       path: "Literature/Parent.md",
       imported: false,
     }),

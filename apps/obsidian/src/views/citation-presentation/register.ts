@@ -1,7 +1,6 @@
+import type { App, Plugin, TFile } from "obsidian";
 // The Set citation presentation action: its command-palette entry, its place in
 // the active note's More options menu, and the update a confirmed dialog writes.
-
-import type { App, Plugin, TFile } from "obsidian";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
@@ -11,6 +10,7 @@ import { BaseNotice } from "@/lib/notice";
 import type { FileMenuSegment } from "@/services/file-menu";
 import type { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { StyleDropdownOptions } from "@/views/style-dropdown";
 
 import { openCitationPresentationModal } from "./modal";
 import {
@@ -22,11 +22,12 @@ const logger = getLogger(["views", "citation-presentation"]);
 
 export interface CitationPresentationDeps {
   app: App;
+  fileSystem: StyleDropdownOptions["fileSystem"];
   /** Where the installed styles the dialog lists are read from. */
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   /** The vault selections a note inherits where it names none of its own. */
   settings: Pick<PluginSettings["Service"], "current">;
-  bridge: Pick<EffectBridge, "runSync">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
 }
 
 /**
@@ -76,11 +77,13 @@ export function citationPresentationFileMenu(
  */
 export async function setCitationPresentation(
   file: TFile,
-  { app, zoteroPref, settings, bridge }: CitationPresentationDeps,
+  { app, zoteroPref, settings, bridge, fileSystem }: CitationPresentationDeps,
 ): Promise<void> {
   const vault = bridge.runSync(settings.current);
   const choice = await openCitationPresentationModal(app, {
     dataDir: zoteroPref.dataDir,
+    fileSystem,
+    bridge,
     vaultStyleId:
       vault["note.default-profile"].bindings["citation.references-style"],
     vaultLocale: vault["citation.locale"] ?? "",

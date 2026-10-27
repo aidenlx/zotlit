@@ -1,7 +1,8 @@
 // zotlit-effect-tests: Effect tests run inside the test runtime
 // (policies/testing-strategy.md, policies/test-timing.md). Rejects running an
 // Effect by hand in a test, real timers in an Effect case, and fake services
-// cast to `Tag["Service"]` instead of built with stubService. Rule tests:
+// cast to `Tag["Service"]` instead of built with stubService, and notice
+// modules mocked instead of observed through the Notifier. Rule tests:
 // src/lint/effect-tests.test.ts.
 import { isMemberOf } from "./oxlint-ast.ts";
 import type { AstNode, Rule } from "./oxlint-ast.ts";
@@ -269,7 +270,11 @@ function takesFake(
   if (callee?.type === "CallExpression") return takesFake(callee.callee, names);
   if (callee?.type === "Identifier") {
     const name = callee.name as string;
-    return name === "layerHostApp" || /^layer\w*From$/.test(name);
+    return (
+      name === "layerHost" ||
+      name === "layerHostApp" ||
+      /^layer\w*From$/.test(name)
+    );
   }
   return (
     isMemberOf(
@@ -343,8 +348,9 @@ function hasServiceIndex(node: unknown): boolean {
  * a layer, `stubService<T>(name, { … })` for a value that a legacy consumer
  * takes, the capability test layers for Obsidian's host, and a type
  * annotation for plain Obsidian data. Reports a cast given to a call that
- * takes a fake, and an object literal cast to a type from `obsidian` or
- * `@/lib/obsidian-*`, a service type, a `…Deps` type, or `never`.
+ * takes a fake, or in a property of its object argument, and an object
+ * literal cast to a type from `obsidian` or `@/lib/obsidian-*`, a service
+ * type, a `…Deps` type, or `never`.
  */
 export const typedFake: Rule = {
   meta: {
@@ -409,6 +415,15 @@ export const typedFake: Rule = {
           argument = parent;
           parent = parent.parent;
         }
+        // A cast in a property of the argument, as `layerHost({ vault: … })`.
+        if (
+          parent?.type === "Property" &&
+          parent.value === argument &&
+          parent.parent
+        ) {
+          argument = parent.parent;
+          parent = argument.parent;
+        }
         if (
           parent?.type === "CallExpression" &&
           parent.arguments?.includes(argument) &&
@@ -431,10 +446,49 @@ export const typedFake: Rule = {
   },
 };
 
+/** The notice modules a test reaches only by mocking them. */
+const NOTICE_MODULES = new Set(["@/lib/notice", "@/lib/toast"]);
+
+/**
+ * A test that mocks a notice module asserts what the seam renders, not what
+ * the core returns (policies/ui-seams.md): the module behind it moves behind
+ * the Notifier, and the test reads its calls through `testNotifier()`.
+ */
+export const noNoticeMock: Rule = {
+  meta: {
+    type: "suggestion",
+    docs: {
+      description: "Observe notices through the Notifier, not a module mock.",
+    },
+    messages: {
+      mock: "Move the module behind the Notifier and observe its notices with testNotifier() from @/lib/__fixtures__/notifier (policies/ui-seams.md).",
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        const source = node.arguments?.[0] as AstNode | undefined;
+        if (
+          isMemberOf(
+            node.callee as AstNode,
+            VI,
+            (name) => name === "mock" || name === "doMock",
+          ) &&
+          source?.type === "Literal" &&
+          NOTICE_MODULES.has(source.value as string)
+        )
+          context.report({ node, messageId: "mock" });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-effect-tests" },
   rules: {
     "no-effect-run-in-test": noEffectRunInTest,
+    "no-notice-mock": noNoticeMock,
     "no-real-timer-in-effect-test": noRealTimerInEffectTest,
     "service-stub": serviceStub,
     "typed-fake": typedFake,

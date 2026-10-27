@@ -4,13 +4,18 @@ import type { App } from "obsidian";
 import * as m from "./i18n/generated/messages";
 import { getLogger } from "./log";
 import { BaseNotice } from "./notice";
+import type { WorkspaceEventHost } from "./obsidian-workspace";
 import type { UnknownProfileDiagnostic } from "./profile-stamp";
 
 const logger = getLogger("profile-recovery");
 
-export function requestProfileSwitch(app: App, path: string): void {
+/** Ask for a Profile switch on the host's workspace: the app, or the Workspace tag's trigger. */
+export function requestProfileSwitch(
+  host: WorkspaceEventHost,
+  path: string,
+): void {
   logger.debug("Requested Profile recovery for {path}", { path });
-  app.workspace.trigger("zotlit:switch-profile", { path });
+  host.workspace.trigger("zotlit:switch-profile", { path });
 }
 
 export function profileRecoveryNotice(
@@ -39,7 +44,7 @@ export function profileRecoveryNotice(
 /** One recovery control per reading section, cleared when its failure clears. */
 export function renderProfileRecovery(
   container: HTMLElement,
-  app: App,
+  host: WorkspaceEventHost,
   options: { path?: string },
 ): void {
   container.querySelector("[data-profile-recovery]")?.remove();
@@ -52,7 +57,7 @@ export function renderProfileRecovery(
   button.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    requestProfileSwitch(app, path);
+    requestProfileSwitch(host, path);
   });
   container.appendChild(button);
 }

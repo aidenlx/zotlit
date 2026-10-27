@@ -3,7 +3,7 @@
 // Command, flag, and response text is all hardcoded English: an agent-facing
 // contract surface, not localized UI. See apps/obsidian/policies/cli-text.md.
 
-import { Effect, Layer } from "effect";
+import { Effect, FileSystem, Layer } from "effect";
 import { isAbsolute, relative } from "node:path";
 import { normalizePath } from "obsidian";
 import type { App, CliData, CliFlag, CliFlags, TFile } from "obsidian";
@@ -35,6 +35,7 @@ import {
   CSL_COMMAND,
   CSL_SELECTOR_MESSAGE,
   flagsInvalidResponse,
+  cslWriteFailedResponse,
   resolveCslStyle,
   resolveDocumentCslStyle,
 } from "./csl";
@@ -51,6 +52,7 @@ import {
   PANDOC_FILES_COMMAND,
   PANDOC_GUIDE_COMMAND,
 } from "./integration";
+import { reapCslStore } from "./reap-temps";
 import { resolveCitations } from "./resolve";
 import type { ResolveDocument, ResolvedItem, ResolveResponse } from "./resolve";
 import { resolveInstalledStyle } from "./styles";
@@ -59,6 +61,7 @@ export const RESOLVE_COMMAND = "zotlit:resolve";
 export { CSL_COMMAND };
 
 export interface PandocResolveDeps {
+  fileSystem: FileSystem.FileSystem;
   app: App;
   /** The vault's folder on disk, which the CLI's absolute paths start with. */
   basePath: string;
@@ -68,17 +71,30 @@ export interface PandocResolveDeps {
   profile: Pick<Profile["Service"], "loaded" | "profileOf">;
 }
 
-/** The `zotlit:resolve`, `zotlit:csl` and Pandoc integration commands. */
+/**
+ * The `zotlit:resolve`, `zotlit:csl` and Pandoc integration commands. The CSL
+ * store they materialize styles into ages out on its own clock: building the
+ * layer starts evicting the entries that ran out, on the layer's Scope, so the
+ * launch never waits on the sweep and unload interrupts it.
+ */
 export const layerPandocResolve: Layer.Layer<
   never,
   never,
-  PluginHost | ObsidianEnv | ZoteroReads | ZoteroPref | PluginSettings | Profile
+  | PluginHost
+  | ObsidianEnv
+  | ZoteroReads
+  | ZoteroPref
+  | PluginSettings
+  | Profile
+  | FileSystem.FileSystem
 > = Layer.effectDiscard(
   Effect.gen(function* () {
+    yield* reapCslStore().pipe(Effect.forkScoped);
     const host = yield* PluginHost;
     registerPandocResolve(host, {
       app: host.app,
       basePath: (yield* ObsidianEnv).basePath,
+      fileSystem: yield* FileSystem.FileSystem,
       reads: yield* ZoteroReads,
       zoteroPref: yield* ZoteroPref,
       settings: yield* PluginSettings,
@@ -212,28 +228,36 @@ export function registerPandocResolve(
           resolve: (styleId: string) =>
             resolveInstalledStyle(dataDir, { styleId }),
         };
-        const response: CslResponse = yield* Effect.promise(() =>
-          "style" in selected
-            ? resolveCslStyle(selected.style, ports)
-            : resolveDocumentCslStyle(selected.file, {
-                ...ports,
-                readStyle: (absolutePath) =>
-                  readDocumentStyle(
-                    {
-                      app: deps.app,
-                      basePath: deps.basePath,
-                      settings,
-                      profile,
-                    },
-                    absolutePath,
-                  ),
-              }),
-        );
+        const response: CslResponse = yield* "style" in selected
+          ? resolveCslStyle(selected.style, ports)
+          : resolveDocumentCslStyle(selected.file, {
+              ...ports,
+              readStyle: (absolutePath) =>
+                readDocumentStyle(
+                  {
+                    app: deps.app,
+                    basePath: deps.basePath,
+                    settings,
+                    profile,
+                  },
+                  absolutePath,
+                ),
+            });
         return JSON.stringify(response, null, 2);
       },
       catchRejection((rejection) =>
         JSON.stringify(flagsInvalidResponse(rejectionText(rejection)), null, 2),
       ),
+      Effect.catchTag("CslWriteError", (error) =>
+        Effect.as(
+          Effect.logWarning("Cannot materialize the Resolved CSL Style").pipe(
+            Effect.annotateLogs({ styleId: error.styleId, error: error.cause }),
+            withLogCategory("pandoc", "csl"),
+          ),
+          JSON.stringify(cslWriteFailedResponse(error), null, 2),
+        ),
+      ),
+      Effect.provideService(FileSystem.FileSystem, deps.fileSystem),
     ),
   });
 }

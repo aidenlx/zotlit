@@ -7,86 +7,43 @@ import type {
   Plugin,
 } from "obsidian";
 
-import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
-import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
-import { missingPartialNotice } from "@/lib/workbench-recovery";
 import type { FileMenuContext, FileMenuSegment } from "@/services/file-menu";
-import type {
-  BatchImport,
-  ReimportResult,
-} from "@/services/note-import/batch-import";
+import type { BatchImport } from "@/services/note-import/batch-import";
 import {
   batchImportAllToast,
   childImportToast,
-  importedNoteProfileErrorNotice,
 } from "@/services/note-import/batch-import-notices";
 import {
   isLiteratureNote,
   itemKeyFromFrontmatter,
   noteKeyFromFrontmatter,
 } from "@/services/note-index/service";
-import { InertTemplateError } from "@/services/template/errors";
 
-import type {
-  NoteFeature,
-  NoteOperationDiagnostic,
-  UpdateScope,
-} from "./operations";
-import { switchNoteProfileInteractively } from "./switch-view";
-import type { InteractiveProfileSwitchDeps } from "./switch-view";
-import type { BatchUpdateResult } from "./update-batch";
-import {
-  noteOperationDiagnosticContent,
-  updateNoteToast,
-} from "./update-single";
+import type { NoteActions } from "./actions-handle";
+import type { UpdateScope } from "./operations";
 
-interface NoteFeatureActionDeps extends Pick<
-  InteractiveProfileSwitchDeps,
-  "zoteroPref" | "createProfile" | "importProfile"
-> {
+interface NoteFeatureActionDeps {
   app: App;
-  noteFeature: NoteFeature;
-  batchImport: Pick<
-    BatchImport,
-    "runChildImportByKey" | "reimportNoteByKey" | "runBatchImportAll"
-  >;
-  updateAll: () => Promise<BatchUpdateResult>;
+  noteActions: NoteActions;
+  batchImport: Pick<BatchImport, "runChildImportByKey" | "runBatchImportAll">;
 }
 
 export function addNoteFeatureActions(
-  plugin: Pick<Plugin, "addCommand" | "registerEvent" | "register"> & {
+  plugin: Pick<Plugin, "addCommand" | "registerEvent"> & {
     app: Plugin["app"];
   },
   deps: NoteFeatureActionDeps,
 ): void {
-  plugin.register(
-    deps.noteFeature.on("excerpt-images-reported", (summary) => {
-      new BaseNotice(
-        m.excerpt_image_summary({
-          ...summary,
-          notRefreshed: summary.notRefreshed ?? 0,
-        }),
-      );
-    }),
-  );
-  plugin.register(
-    deps.noteFeature.on("frontmatter-eval-failed", ({ fields }) => {
-      new BaseNotice(
-        m.notice_frontmatter_eval_failed({ fields: fields.join(", ") }),
-      );
-    }),
-  );
-
   plugin.registerEvent(
     deps.app.workspace.on("zotlit:switch-profile", ({ path }) => {
       const file = deps.app.vault.getFileByPath(path);
       if (!file) return;
       const cache = deps.app.metadataCache.getFileCache(file);
       if (itemKeyFromFrontmatter(cache) || noteKeyFromFrontmatter(cache))
-        void switchNoteProfileInteractively(deps, file);
+        void deps.noteActions.switchProfile(file);
     }),
   );
 
@@ -107,7 +64,7 @@ export function addNoteFeatureActions(
     checkCallback(checking) {
       const file = deps.app.workspace.getActiveFile();
       if (!file || !isLiteratureNote(file, deps.app)) return false;
-      if (!checking) void switchNoteProfileInteractively(deps, file);
+      if (!checking) void deps.noteActions.switchProfile(file);
       return true;
     },
   });
@@ -117,7 +74,7 @@ export function addNoteFeatureActions(
     name: m.command_overwrite_note_name(),
     editorCheckCallback(checking, _editor, ctx) {
       return withLiteratureNote(plugin, { ctx, checking }, (file, itemKey) => {
-        void handleOverwriteNote(deps, file, itemKey);
+        void deps.noteActions.overwriteNote(file, itemKey);
       });
     },
   });
@@ -137,7 +94,7 @@ export function addNoteFeatureActions(
     name: m.command_reimport_note_name(),
     editorCheckCallback(checking, _editor, ctx) {
       return withImportedNote(plugin, { ctx, checking }, (file, noteKey) => {
-        void reimportNote(deps, file, noteKey);
+        void deps.noteActions.reimportNote(file, noteKey);
       });
     },
   });
@@ -146,7 +103,7 @@ export function addNoteFeatureActions(
     id: "update-all-notes",
     name: m.command_update_all_notes_name(),
     callback() {
-      void runUpdateAllWithNotice(deps.updateAll);
+      void deps.noteActions.updateAll();
     },
   });
 
@@ -185,7 +142,7 @@ function buildFileMenu(
         .setTitle(m.command_update_note_name())
         .setIcon("refresh-cw")
         .onClick(() => {
-          void handleUpdateNote(deps, file, { itemKey, scope: "full" });
+          void deps.noteActions.updateNote(file, { itemKey, scope: "full" });
         }),
     );
     menu.addItem((item) =>
@@ -194,7 +151,10 @@ function buildFileMenu(
         .setTitle(m.command_update_note_metadata_name())
         .setIcon("file-text")
         .onClick(() => {
-          void handleUpdateNote(deps, file, { itemKey, scope: "metadata" });
+          void deps.noteActions.updateNote(file, {
+            itemKey,
+            scope: "metadata",
+          });
         }),
     );
     menu.addItem((item) =>
@@ -204,7 +164,7 @@ function buildFileMenu(
         .setWarning(true)
         .setIcon("file-x")
         .onClick(() => {
-          void handleOverwriteNote(deps, file, itemKey);
+          void deps.noteActions.overwriteNote(file, itemKey);
         }),
     );
     menu.addItem((item) =>
@@ -226,65 +186,9 @@ function buildFileMenu(
         .setWarning(true)
         .setIcon("refresh-cw")
         .onClick(() => {
-          void reimportNote(deps, file, noteKey);
+          void deps.noteActions.reimportNote(file, noteKey);
         }),
     );
-  }
-}
-
-async function reimportNote(
-  deps: NoteFeatureActionDeps,
-  file: TFile,
-  noteKey: string,
-): Promise<void> {
-  const yes = await confirm(
-    {
-      title: m.modal_reimport_note_title(),
-      content: m.modal_reimport_note_desc(),
-      action: m.modal_reimport_note_confirm(),
-      destructive: true,
-    },
-    deps.app,
-  );
-  if (!yes) return;
-
-  await toast.promise(
-    deps.batchImport.reimportNoteByKey(noteKey, file),
-    reimportNoteToast({ app: deps.app, path: file.path }),
-  );
-}
-
-/** The copy one Reimport note reports with. */
-export function reimportNoteToast(options: { app: App; path: string }): {
-  loading: string;
-  success: (result: ReimportResult) => string | undefined;
-  error: (_msg: string, e: unknown) => string | DocumentFragment;
-} {
-  return {
-    loading: m.notice_reimporting_note(),
-    success: reimportNoteNotice,
-    error: (_msg, e) =>
-      missingPartialNotice(e, options) ??
-      (e instanceof InertTemplateError
-        ? e.message
-        : (importedNoteProfileErrorNotice(e, options) ??
-          m.notice_reimport_note_failed())),
-  };
-}
-
-function reimportNoteNotice(result: ReimportResult): string | undefined {
-  switch (result.outcome) {
-    case "db-unavailable":
-      return m.batch_update_db_unavailable();
-    case "not-found":
-      return m.notice_protocol_item_not_found();
-    case "created":
-    case "overwritten":
-      return m.notice_reimported_note();
-    case "skipped":
-      return m.notice_reimport_note_skipped();
-    default:
-      return undefined;
   }
 }
 
@@ -303,67 +207,13 @@ function addUpdateCommand(
     checkCallback(checking) {
       const ctx = { file: deps.app.workspace.getActiveFile() };
       return withLiteratureNote(plugin, { ctx, checking }, (file, itemKey) => {
-        void handleUpdateNote(deps, file, { itemKey, scope: command.scope });
+        void deps.noteActions.updateNote(file, {
+          itemKey,
+          scope: command.scope,
+        });
       });
     },
   });
-}
-
-function handleUpdateNote(
-  deps: NoteFeatureActionDeps,
-  file: TFile,
-  opts: { itemKey: string; scope: UpdateScope },
-): Promise<void> {
-  return toast.promise(
-    deps.noteFeature.updateNote(file, {
-      indexedKey: opts.itemKey,
-      scope: opts.scope,
-    }),
-    updateNoteToast(opts.scope, { app: deps.app }),
-  );
-}
-
-async function handleOverwriteNote(
-  deps: NoteFeatureActionDeps,
-  file: TFile,
-  itemKey: string,
-): Promise<void> {
-  const yes = await confirm(
-    {
-      title: m.modal_overwrite_note_title(),
-      content: m.modal_overwrite_note_desc(),
-      action: m.modal_overwrite_note_confirm(),
-      destructive: true,
-    },
-    deps.app,
-  );
-  if (!yes) return;
-  await toast.promise(
-    deps.noteFeature.overwriteNote(file, itemKey),
-    overwriteNoteToast({ app: deps.app }),
-  );
-}
-
-/** The copy one Overwrite note reports with, which every caller of it shares. */
-export function overwriteNoteToast(options: { app: App }): {
-  loading: string;
-  success: (result: {
-    diagnostic?: NoteOperationDiagnostic;
-  }) => string | DocumentFragment;
-  error: (_msg: string, e: unknown) => string | DocumentFragment;
-} {
-  return {
-    loading: m.notice_overwriting_note(),
-    success: (result) =>
-      result.diagnostic
-        ? noteOperationDiagnosticContent(options.app, result.diagnostic)
-        : m.notice_overwrote_note(),
-    error: (_msg, e) =>
-      missingPartialNotice(e, options) ??
-      (e instanceof InertTemplateError
-        ? e.message
-        : m.notice_overwrite_note_failed()),
-  };
 }
 
 function handleChildImport(
@@ -374,31 +224,6 @@ function handleChildImport(
     deps.batchImport.runChildImportByKey(itemKey),
     childImportToast({ app: deps.app }),
   );
-}
-
-/**
- * Run the Update all notes flow and report its outcome — the batch confirm
- * modal the command opens, reused wherever else that flow is offered.
- */
-export async function runUpdateAllWithNotice(
-  updateAll: () => Promise<BatchUpdateResult>,
-): Promise<void> {
-  await toast.promise(updateAll(), {
-    success: batchUpdateAllNotice,
-  });
-}
-
-function batchUpdateAllNotice(result: BatchUpdateResult): string | undefined {
-  switch (result.outcome) {
-    case "db-unavailable":
-      return m.batch_update_db_unavailable();
-    case "empty-selection":
-      return m.batch_update_all_empty();
-    case "no-library-in-scope":
-      return m.batch_all_no_library_in_scope();
-    default:
-      return undefined;
-  }
 }
 
 function withLiteratureNote(

@@ -1,10 +1,10 @@
+import { Effect } from "effect";
+import { spawnSync } from "node:child_process";
 // Drives a native Pandoc over fixture Markdown to check both zotlit-cite.lua
 // variants end to end. The workspace does not install the binary: `pnpm test`
 // skips the file where no `pandoc` is on PATH, and fails where PANDOC_BIN
 // names one that does not run. Point PANDOC_BIN at another binary to check a
 // second Pandoc version; `test:lua-filter` runs this file alone.
-
-import { spawnSync } from "node:child_process";
 import {
   chmod,
   mkdir,
@@ -17,12 +17,18 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { CITATION_FRAGMENT_FIXTURES } from "@/lib/__fixtures__/citation-fragments";
+import { runFileEffect } from "@/services/pandoc/__fixtures__/file-effects";
 import {
   materializeCslStyle,
-  resolveCslStyle,
-  resolveDocumentCslStyle,
+  resolveCslStyle as resolveStyleEffect,
+  resolveDocumentCslStyle as resolveDocumentEffect,
 } from "@/services/pandoc/csl";
 import { resolveInstalledStyle } from "@/services/pandoc/styles";
+const resolveCslStyle = (...args: Parameters<typeof resolveStyleEffect>) =>
+  runFileEffect(resolveStyleEffect(...args));
+const resolveDocumentCslStyle = (
+  ...args: Parameters<typeof resolveDocumentEffect>
+) => runFileEffect(resolveDocumentEffect(...args));
 
 import {
   PANDOC_DEFAULTS_FILENAME,
@@ -552,7 +558,7 @@ describe.skipIf(noPandoc)("zotlit-cite.lua under native Pandoc", () => {
       cslFileResponse,
       JSON.stringify(
         await resolveDocumentCslStyle(join(notes, "input.md"), {
-          resolve: () => Promise.reject(new Error("Default resolves nothing")),
+          resolve: () => Effect.die(new Error("Default resolves nothing")),
           readStyle: () => ({
             kind: "read",
             styleId: null,

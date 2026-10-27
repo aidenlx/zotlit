@@ -1,13 +1,7 @@
 // The listing Profile: the default Profile with a static annotation listing in
 // a Managed Block in place of its Query Block, for cases that check
 // Annotations rendered into the note body and refilled on update.
-import { obEval, obEvalUntil } from "./obsidian-cli.ts";
-
-/**
- * In-app source of a function from a Profile source to its listing Profile
- * source. It throws where the source has no Query Block.
- */
-export const LIST_ANNOTATIONS_JS = `(source)=>{const listed=source.replace(/## Annotations\\n\\n\`\`\`zotquery\\n[\\s\\S]*?\`\`\`\\n/,'{% managed %}\\n{% for annotation in zt.annotations %}\\n{% render_annotation annotation %}\\n{% endfor %}\\n{% endmanaged %}\\n');if(listed===source)throw new Error('Default Profile has no Query Block');return listed;}`;
+import { obRun, obRunUntil } from "./obsidian-cli.ts";
 
 /**
  * Write the listing Profile as the default Profile's document, and wait until
@@ -20,14 +14,25 @@ export async function useListingProfile(
   vaultId: string,
   { restore = false }: { restore?: boolean } = {},
 ): Promise<void> {
-  await obEval(
+  await obRun(
     vaultId,
-    `(async()=>{const profile=app.plugins.plugins.zotlit.services.profile;${restore ? "await profile.restoreDefault();" : ""}const listed=(${LIST_ANNOTATIONS_JS})(profile.getBuiltInSource());const path=profile.defaultDocumentPath;const folder=path.slice(0,path.lastIndexOf('/'));if(folder&&!app.vault.getFolderByPath(folder))await app.vault.createFolder(folder);await app.vault.create(path,listed);return true;})()`,
+    async ({ app, zotlit, page }, { restore }) => {
+      const profile = zotlit.services.profile;
+      if (restore) await profile.restoreDefault();
+      const listed = page.listAnnotations(profile.getBuiltInSource());
+      const path = profile.defaultDocumentPath;
+      const folder = path.slice(0, path.lastIndexOf("/"));
+      if (folder && !app.vault.getFolderByPath(folder))
+        await app.vault.createFolder(folder);
+      await app.vault.create(path, listed);
+    },
+    { restore },
   );
-  const ready = await obEvalUntil(
+  await obRunUntil(
     vaultId,
-    "String(!!app.plugins.plugins.zotlit.services.profile.resolveProfile('default')?.document)",
-    { expected: "true" },
+    ({ zotlit }) =>
+      !!zotlit.services.profile.resolveProfile("default")?.document,
+    undefined,
+    { what: "The default Profile did not read its document" },
   );
-  if (!ready) throw new Error("The default Profile did not read its document");
 }

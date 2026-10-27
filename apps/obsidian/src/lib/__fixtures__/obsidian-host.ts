@@ -15,11 +15,13 @@ import { vi } from "vitest";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { parseFrontMatter } from "@/lib/live-text";
+import type { MetadataCacheSource } from "@/lib/obsidian-metadata-cache";
+import type { VaultSource } from "@/lib/obsidian-vault";
 
 type VaultEvent = "create" | "modify" | "rename" | "delete";
 type VaultCallback = (...args: unknown[]) => void;
 
-export class MockVault {
+export class MockVault implements VaultSource {
   /** App settings the rendered surfaces read; tests run with Obsidian's defaults. */
   getConfig(_key: string): boolean {
     return false;
@@ -103,6 +105,16 @@ export class MockVault {
     return source;
   }
 
+  /** As Obsidian's adapter: the text at a path, rejecting with `ENOENT` when none. */
+  readonly adapter = {
+    read: async (path: string): Promise<string> => {
+      const text = this.contents.get(path);
+      if (text === undefined)
+        throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" });
+      return text;
+    },
+  };
+
   async modify(file: TFile, content: string): Promise<void> {
     this.modifyFile(file.path, content);
   }
@@ -154,6 +166,11 @@ export class MockVault {
     this.files.delete(path);
     this.contents.delete(path);
     this.#emit("delete", file);
+  }
+
+  /** As Obsidian: remove `file`; this vault keeps no trash to move it to. */
+  async trash(file: TAbstractFile, _system: boolean): Promise<void> {
+    this.deleteFile(file.path);
   }
 
   #ensureFolder(path: string): TFolder {
@@ -336,12 +353,28 @@ type MetadataCallback = (
  * until a test holds it; a held cache answers from the text it last parsed,
  * and `null` for a file it never parsed, until `settle`.
  */
-class HostMetadataCache {
+class HostMetadataCache implements MetadataCacheSource {
   readonly #parsed = new Map<string, string>();
   readonly #listeners = new Set<MetadataCallback>();
   #held = false;
 
   constructor(readonly vault: MockVault) {}
+
+  /** No note in this host links to another. */
+  readonly resolvedLinks: Record<string, Record<string, number>> = {};
+
+  getCache(path: string): CachedMetadata | null {
+    const file = this.vault.getFileByPath(path);
+    return file ? this.getFileCache(file) : null;
+  }
+
+  /** The file at `linkpath`, with or without `.md`; no shortest-path search. */
+  getFirstLinkpathDest(linkpath: string, _sourcePath: string): TFile | null {
+    return (
+      this.vault.getFileByPath(linkpath) ??
+      this.vault.getFileByPath(`${linkpath}.md`)
+    );
+  }
 
   getFileCache(file: TFile): CachedMetadata | null {
     const text = this.#held

@@ -16,6 +16,7 @@ import { requireDialog } from "@/lib/require";
 import type { StyleSource } from "@/services/pandoc/document-presentation";
 import type { DocumentFormat } from "@/services/pandoc/engine";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
+import type { StyleDropdownOptions } from "@/views/style-dropdown";
 import { addStyleDropdown } from "@/views/style-dropdown";
 
 import { exportDestinationLocation } from "./destination";
@@ -36,7 +37,10 @@ export interface PandocExportChoices {
   destination: string;
 }
 
-export interface PandocExportModalOptions {
+export interface PandocExportModalOptions extends Pick<
+  StyleDropdownOptions,
+  "fileSystem" | "bridge"
+> {
   /** Zotero data directory the installed styles are listed from. */
   dataDir: string;
   /** Citation and References Style ID — where the style picker starts. */
@@ -59,6 +63,8 @@ export function openPandocExportModal(
   app: App,
   {
     dataDir,
+    fileSystem,
+    bridge,
     referencesStyleId,
     styleSource,
     notePath,
@@ -109,6 +115,8 @@ export function openPandocExportModal(
   showStyleSource();
   addStyleDropdown(styleSetting, {
     dataDir,
+    fileSystem,
+    bridge,
     value: styleId,
     options: (styles, selected) => {
       installed = styles;

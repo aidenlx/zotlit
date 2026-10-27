@@ -1,15 +1,17 @@
+import { expect, it, vi } from "@effect/vitest";
 // @vitest-environment happy-dom
 import { Effect } from "effect";
 import { TFile } from "obsidian";
 import type { App, Command, WorkspaceContainer, WorkspaceLeaf } from "obsidian";
-import { expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { scopedBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { PluginHostShape } from "@/lib/plugin-host";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE } from "@/views/template-workbench/view";
 
 import { addCitationTemplateActions } from "./actions";
+import { templateFailure } from "./service";
 
 interface Harness {
   command: Command;
@@ -18,13 +20,13 @@ interface Harness {
   materialize: ReturnType<typeof vi.fn>;
 }
 
-function harness(
+const harness = Effect.fnUntraced(function* (
   materialize = vi.fn(async () =>
     Object.assign(new TFile(), {
       path: "Templates/zotlit-citation.md",
     }),
   ),
-): Harness {
+): Effect.fn.Return<Harness, never, import("effect").Scope.Scope> {
   const commands: Command[] = [];
   const opened: { type: string; path: unknown }[] = [];
   const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
@@ -55,45 +57,61 @@ function harness(
     },
   );
 
-  Effect.runSync(
-    Effect.scoped(
-      addCitationTemplateActions(plugin, {
-        template: { materializeCitationTemplate: materialize },
+  yield* addCitationTemplateActions(plugin, {
+    template: {
+      materializeCitationTemplate: Effect.tryPromise({
+        try: () => materialize(),
+        catch: templateFailure,
       }),
-    ),
-  );
+    },
+    bridge: yield* scopedBridge,
+  });
   return { command: commands[0]!, opened, materialize };
-}
-
-it("registers Customize citation text as a command", () => {
-  expect(harness().command).toMatchObject({
-    id: "customize-citation-text",
-    name: m.command_customize_citation_text_name(),
-  });
 });
 
-it("materializes the document, then opens it in the Template Workbench View", async () => {
-  const h = harness();
+it.effect("registers Customize citation text as a command", () =>
+  Effect.gen(function* () {
+    expect((yield* harness()).command).toMatchObject({
+      id: "customize-citation-text",
+      name: m.command_customize_citation_text_name(),
+    });
+  }),
+);
 
-  h.command.callback!();
-  await vi.waitFor(() => expect(h.opened).toHaveLength(1));
+it.effect(
+  "materializes the document, then opens it in the Template Workbench View",
+  () =>
+    Effect.gen(function* () {
+      const h = yield* harness();
 
-  expect(h.materialize).toHaveBeenCalledTimes(1);
-  expect(h.opened[0]).toEqual({
-    type: TEMPLATE_WORKBENCH_VIEW_TYPE,
-    path: "Templates/zotlit-citation.md",
-  });
-});
+      h.command.callback!();
+      yield* Effect.promise(() =>
+        vi.waitFor(() => expect(h.opened).toHaveLength(1)),
+      );
 
-it("reports a failure as a notice instead of opening nothing silently", async () => {
-  const h = harness(
-    vi.fn(async () => {
-      throw new Error("the template folder is a file");
+      expect(h.materialize).toHaveBeenCalledTimes(1);
+      expect(h.opened[0]).toEqual({
+        type: TEMPLATE_WORKBENCH_VIEW_TYPE,
+        path: "Templates/zotlit-citation.md",
+      });
     }),
-  );
+);
 
-  h.command.callback!();
-  await vi.waitFor(() => expect(h.materialize).toHaveBeenCalled());
+it.effect(
+  "reports a failure as a notice instead of opening nothing silently",
+  () =>
+    Effect.gen(function* () {
+      const h = yield* harness(
+        vi.fn(async () => {
+          throw new Error("the template folder is a file");
+        }),
+      );
 
-  expect(h.opened).toEqual([]);
-});
+      h.command.callback!();
+      yield* Effect.promise(() =>
+        vi.waitFor(() => expect(h.materialize).toHaveBeenCalled()),
+      );
+
+      expect(h.opened).toEqual([]);
+    }),
+);

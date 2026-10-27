@@ -1,65 +1,172 @@
 // Real Annotation View drag insertion across main and pop-out windows.
 import { expect } from "vitest";
 
-import { obEval, obEvalUntil } from "./obsidian-cli.ts";
+import { annotationPreparationModule } from "./annotation-preparation.ts";
+import { obRun, obRunUntil } from "./obsidian-cli.ts";
+import type {
+  DragTrial,
+  MarkdownLeaf,
+  AnnotationLeaf,
+} from "./page-notes-types.ts";
 
 export async function verifyAnnotationDrag(
   vaultId: string,
   sourceHost: "main" | "popout",
   targetHost: "main" | "popout",
 ) {
-  const state = "app.__zotlitDragTrial";
+  const effectPath = await annotationPreparationModule();
   try {
-    await obEval(
+    await obRun(
       vaultId,
-      `(async()=>{
-      const s=app.__zotlitDragTrial={layout:app.workspace.getLayout(),mainWin:app.workspace.rootSplit.containerEl.win};
-      const services=app.plugins.plugins.zotlit.services;s.services=services;
-      s.original=services.noteFeature.prepareAnnotationInsert;
-      s.link=app.fileManager.generateMarkdownLink;
-      app.fileManager.generateMarkdownLink=function(file,...args){if(file.name?.startsWith('zotlit-excerpt-')&&!app.vault.getFileByPath(file.path))throw new Error('Excerpt link rendered before vault registration');return s.link.call(this,file,...args);};
-      s.importEnabled=services.settings.current['attachment.import'];services.settings.update({'attachment.import':true});
-      const file=app.vault.getFileByPath('Drag-${sourceHost}-${targetHost}.md')??await app.vault.create('Drag-${sourceHost}-${targetHost}.md','LEFT RIGHT');s.file=file;
-      s.targetLeaf=app.workspace.getLeaf('tab');await s.targetLeaf.openFile(file);${targetHost === "popout" ? "app.workspace.moveLeafToPopout(s.targetLeaf);" : ""}
-      s.editor=s.targetLeaf.view.editor;s.editor.setValue('LEFT RIGHT');
-      s.viewLeaf=app.workspace.getRightLeaf(false);await s.viewLeaf.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:'RUGIER24'}});${sourceHost === "popout" ? "app.workspace.moveLeafToPopout(s.viewLeaf);" : ""}
-      s.view=s.viewLeaf.view;await s.view.read;app.workspace.setActiveLeaf(s.viewLeaf,{focus:true});
-      s.prepareCalls=0;s.finished=0;s.gate=new Promise(resolve=>s.release=resolve);
-      services.noteFeature.prepareAnnotationInsert=async options=>{s.prepareCalls++;s.options=options;await s.gate;try{return await s.original(options);}finally{s.finished++;}};
-      return true;
-    })()`,
+      async (
+        { app, zotlit, page },
+        { effectPath, notePath, targetHost, sourceHost },
+      ) => {
+        const s = (page.scratch.__zotlitDragTrial = {
+          layout: app.workspace.getLayout(),
+          mainWin: (
+            app.workspace.rootSplit as import("obsidian").WorkspaceRoot & {
+              containerEl: HTMLElement;
+            }
+          ).containerEl.win,
+        } as DragTrial);
+        const services = zotlit.services;
+        s.services = services;
+        await page.installAnnotationPreparation(services, s, effectPath);
+        s.link = app.fileManager.generateMarkdownLink;
+        app.fileManager.generateMarkdownLink = new Proxy(s.link, {
+          apply: (
+            target,
+            receiver: import("obsidian").FileManager,
+            args: Parameters<
+              import("obsidian").FileManager["generateMarkdownLink"]
+            >,
+          ) => {
+            const [file] = args;
+            if (
+              file.name?.startsWith("zotlit-excerpt-") &&
+              !app.vault.getFileByPath(file.path)!
+            )
+              throw new Error(
+                "Excerpt link rendered before vault registration",
+              );
+            return Reflect.apply(target, receiver, args);
+          },
+        });
+        s.importEnabled = services.bridge.runSync(services.settings.current)[
+          "attachment.import"
+        ];
+        services.bridge.runSync(
+          services.settings.update({ "attachment.import": true }),
+        );
+        const file =
+          app.vault.getFileByPath(notePath)! ??
+          (await app.vault.create(notePath, "LEFT RIGHT"));
+        s.file = file;
+        s.targetLeaf = app.workspace.getLeaf("tab") as MarkdownLeaf;
+        await s.targetLeaf.openFile(file);
+        if (targetHost === "popout")
+          app.workspace.moveLeafToPopout(s.targetLeaf);
+        s.editor = s.targetLeaf.view.editor;
+        s.editor.setValue("LEFT RIGHT");
+        s.viewLeaf = app.workspace.getRightLeaf(false) as AnnotationLeaf;
+        await s.viewLeaf.setViewState({
+          type: "zotero-annotation-view",
+          state: { followMode: "pinned", pinnedItemKey: "RUGIER24" },
+        });
+        if (sourceHost === "popout") app.workspace.moveLeafToPopout(s.viewLeaf);
+        s.view = s.viewLeaf.view;
+        await s.view.read;
+        app.workspace.setActiveLeaf(s.viewLeaf, { focus: true });
+        page.resetAnnotationPreparation(s);
+      },
+      {
+        effectPath,
+        notePath: `Drag-${sourceHost}-${targetHost}.md`,
+        targetHost,
+        sourceHost,
+      },
     );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(!!${state}.view.contentEl.querySelector('[data-zotero-annotation-key="FDRFQ7C2"] [draggable]'))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return !!page.scratch.__zotlitDragTrial!.view.contentEl.querySelector<HTMLElement>(
+          '[data-zotero-annotation-key="FDRFQ7C2"] [draggable]',
+        );
+      },
+      undefined,
+      {
+        what: "the draggable handle for annotation FDRFQ7C2 in the Annotation View",
+      },
+    );
     // The unrelated drop enters through CodeMirror's DOM input handler. The
     // tagged drop enters at Obsidian's editor-drop event, the plugin's public
     // consumer boundary, so core focus handling cannot activate the target.
-    const native = JSON.parse(
-      await obEval(
-        vaultId,
-        `(()=>{const s=${state};const card=s.view.contentEl.querySelector('[data-zotero-annotation-key="FDRFQ7C2"]');
-      s.button=card.querySelector('[draggable]');
-      s.sourceWin=s.button.ownerDocument.defaultView;s.targetWin=s.editor.cm.dom.ownerDocument.defaultView;
-      s.transfer=new s.sourceWin.DataTransfer();
-      const start=new s.sourceWin.DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:s.transfer});
-      s.assetsBeforeStart=app.vault.getFiles().filter(f=>f.name.startsWith('zotlit-excerpt-')).length;
-      s.sourceWin.focus();app.workspace.setActiveLeaf(s.viewLeaf,{focus:true});
-      s.button.dispatchEvent(start);s.assetsAfterStart=app.vault.getFiles().filter(f=>f.name.startsWith('zotlit-excerpt-')).length;s.prepareCallsAfterStart=s.prepareCalls;s.activeAtStart=app.workspace.activeLeaf===s.viewLeaf;
-      s.nativeAssetsBefore=app.vault.getFiles().filter(f=>f.name.startsWith('zotlit-excerpt-')).length;
-      const rect=s.editor.cm.coordsAtPos(0);if(!rect)throw new Error('Native drop coordinates unavailable');s.nativeCoords={x:Math.floor(rect.left+1),y:Math.floor((rect.top+rect.bottom)/2)};
-      s.nativePosition=s.editor.cm.posAtCoords(s.nativeCoords);s.nativeTransfer=new s.targetWin.DataTransfer();s.nativeTransfer.setData('text/plain','NATIVE');
-      const nativeDrop=new s.targetWin.DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:s.nativeTransfer,clientX:s.nativeCoords.x,clientY:s.nativeCoords.y});
-      s.editor.cm.contentDOM.dispatchEvent(nativeDrop);
-      const result={value:s.editor.getValue(),position:s.nativePosition,prepareCalls:s.prepareCalls,assetCount:app.vault.getFiles().filter(f=>f.name.startsWith('zotlit-excerpt-')).length,assetsBefore:s.nativeAssetsBefore};
-      s.editor.undo();result.afterUndo=s.editor.getValue();s.sourceWin.focus();app.workspace.setActiveLeaf(s.viewLeaf,{focus:true});return JSON.stringify(result);
-    })()`,
-      ),
-    ) as {
+    const native = (await obRun(
+      vaultId,
+      async ({ app, page }) => {
+        const s = page.scratch.__zotlitDragTrial!;
+        const card = s.view.contentEl.querySelector<HTMLElement>(
+          '[data-zotero-annotation-key="FDRFQ7C2"]',
+        );
+        s.button = card!.querySelector<HTMLElement>("[draggable]")!;
+        s.sourceWin = s.button.ownerDocument.defaultView!;
+        s.targetWin = s.editor.cm.dom.ownerDocument.defaultView!;
+        s.transfer = new s.sourceWin.DataTransfer();
+        const start = new s.sourceWin.DragEvent("dragstart", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: s.transfer,
+        });
+        s.assetsBeforeStart = app.vault
+          .getFiles()
+          .filter((f) => f.name.startsWith("zotlit-excerpt-")).length;
+        s.sourceWin.focus();
+        app.workspace.setActiveLeaf(s.viewLeaf, { focus: true });
+        s.button.dispatchEvent(start);
+        s.assetsAfterStart = app.vault
+          .getFiles()
+          .filter((f) => f.name.startsWith("zotlit-excerpt-")).length;
+        s.prepareCallsAfterStart = s.prepareCalls;
+        s.activeAtStart = app.workspace.activeLeaf === s.viewLeaf;
+        s.nativeAssetsBefore = app.vault
+          .getFiles()
+          .filter((f) => f.name.startsWith("zotlit-excerpt-")).length;
+        const rect = s.editor.cm.coordsAtPos(0);
+        if (!rect) throw new Error("Native drop coordinates unavailable");
+        s.nativeCoords = {
+          x: Math.floor(rect.left + 1),
+          y: Math.floor((rect.top + rect.bottom) / 2),
+        };
+        s.nativePosition = s.editor.cm.posAtCoords(s.nativeCoords);
+        s.nativeTransfer = new s.targetWin.DataTransfer();
+        s.nativeTransfer.setData("text/plain", "NATIVE");
+        const nativeDrop = new s.targetWin.DragEvent("drop", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: s.nativeTransfer,
+          clientX: s.nativeCoords.x,
+          clientY: s.nativeCoords.y,
+        });
+        s.editor.cm.contentDOM.dispatchEvent(nativeDrop);
+        const result = {
+          afterUndo: "",
+          value: s.editor.getValue(),
+          position: s.nativePosition,
+          prepareCalls: s.prepareCalls,
+          assetCount: app.vault
+            .getFiles()
+            .filter((f) => f.name.startsWith("zotlit-excerpt-")).length,
+          assetsBefore: s.nativeAssetsBefore,
+        };
+        s.editor.undo();
+        result.afterUndo = s.editor.getValue();
+        s.sourceWin.focus();
+        app.workspace.setActiveLeaf(s.viewLeaf, { focus: true });
+        return result;
+      },
+      undefined,
+    )) as {
       value: string;
       position: number;
       prepareCalls: number;
@@ -74,33 +181,96 @@ export async function verifyAnnotationDrag(
     expect(native.prepareCalls).toBe(0);
     expect(native.assetCount).toBe(native.assetsBefore);
     expect(native.afterUndo).toBe("LEFT RIGHT");
-    await obEval(
+    await obRun(
       vaultId,
-      `(()=>{const s=${state};s.sourceWin.focus();app.workspace.setActiveLeaf(s.viewLeaf,{focus:true});return true;
-    })()`,
+      async ({ app, page }) => {
+        const s = page.scratch.__zotlitDragTrial!;
+        s.sourceWin.focus();
+        app.workspace.setActiveLeaf(s.viewLeaf, { focus: true });
+      },
+      undefined,
     );
-    await obEval(
+    await obRun(
       vaultId,
-      `(()=>{const s=${state};
-      const original=s.editor.cm.posAtCoords.bind(s.editor.cm);s.posAtCoords=original;
-      s.coordinateCalls=[];s.editor.cm.posAtCoords=(coords,precise)=>{const position=original(coords,precise);s.coordinateCalls.push({coords,position});return position;};
-      const rect=s.editor.cm.coordsAtPos(5);if(!rect)throw new Error('Drop coordinates unavailable');s.expectedCoords={x:Math.floor(rect.left+1),y:Math.floor((rect.top+rect.bottom)/2)};
-      s.directPosition=original(s.expectedCoords,false);
-      const drop=new s.targetWin.DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:s.transfer,clientX:s.expectedCoords.x,clientY:s.expectedCoords.y});
-      app.workspace.trigger('editor-drop',drop,s.editor,s.targetLeaf.view);s.dropPrevented=drop.defaultPrevented;return true;
-    })()`,
+      async ({ app, page }) => {
+        const s = page.scratch.__zotlitDragTrial!;
+        const original = s.editor.cm.posAtCoords.bind(s.editor.cm);
+        s.posAtCoords = original;
+        s.coordinateCalls = [];
+        s.editor.cm.posAtCoords = new Proxy(original, {
+          apply: (
+            target,
+            receiver: typeof s.editor.cm,
+            args: [coords: { x: number; y: number }, precise?: false],
+          ) => {
+            const [coords, precise] = args;
+            const position =
+              precise === false ? target(coords, false) : target(coords);
+            s.coordinateCalls.push({ coords, position });
+            return position;
+          },
+        });
+        const rect = s.editor.cm.coordsAtPos(5);
+        if (!rect) throw new Error("Drop coordinates unavailable");
+        s.expectedCoords = {
+          x: Math.floor(rect.left + 1),
+          y: Math.floor((rect.top + rect.bottom) / 2),
+        };
+        s.directPosition = original(s.expectedCoords, false);
+        const drop = new s.targetWin.DragEvent("drop", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: s.transfer,
+          clientX: s.expectedCoords.x,
+          clientY: s.expectedCoords.y,
+        });
+        app.workspace.trigger("editor-drop", drop, s.editor, s.targetLeaf.view);
+        s.dropPrevented = drop.defaultPrevented;
+      },
+      undefined,
     );
-    expect(
-      await obEvalUntil(vaultId, `String(${state}.prepareCalls===1)`, {
-        expected: "true",
-      }),
-    ).toBe(true);
-    const capture = JSON.parse(
-      await obEval(
-        vaultId,
-        `JSON.stringify({sourceMain:${state}.sourceWin===${state}.mainWin,targetMain:${state}.targetWin===${state}.mainWin,separate:${state}.sourceWin!==${state}.targetWin,noAsset:${state}.assetsAfterStart===${state}.assetsBeforeStart,prepareCallsAfterStart:${state}.prepareCallsAfterStart,activeAtStart:${state}.activeAtStart,activeAfterCapture:app.workspace.activeLeaf===${state}.viewLeaf,targetInactive:app.workspace.activeLeaf!==${state}.targetLeaf,dropPrevented:${state}.dropPrevented,calls:${state}.coordinateCalls,expected:${state}.expectedCoords,directPosition:${state}.directPosition,notePath:${state}.options.notePath})`,
-      ),
-    ) as {
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return page.scratch.__zotlitDragTrial!.prepareCalls === 1;
+      },
+      undefined,
+      { what: "the drag trial prepare step to run once" },
+    );
+    const capture = (await obRun(
+      vaultId,
+      async ({ app, page }) => {
+        return {
+          sourceMain:
+            page.scratch.__zotlitDragTrial!.sourceWin ===
+            page.scratch.__zotlitDragTrial!.mainWin,
+          targetMain:
+            page.scratch.__zotlitDragTrial!.targetWin ===
+            page.scratch.__zotlitDragTrial!.mainWin,
+          separate:
+            page.scratch.__zotlitDragTrial!.sourceWin !==
+            page.scratch.__zotlitDragTrial!.targetWin,
+          noAsset:
+            page.scratch.__zotlitDragTrial!.assetsAfterStart ===
+            page.scratch.__zotlitDragTrial!.assetsBeforeStart,
+          prepareCallsAfterStart:
+            page.scratch.__zotlitDragTrial!.prepareCallsAfterStart,
+          activeAtStart: page.scratch.__zotlitDragTrial!.activeAtStart,
+          activeAfterCapture:
+            app.workspace.activeLeaf ===
+            page.scratch.__zotlitDragTrial!.viewLeaf,
+          targetInactive:
+            app.workspace.activeLeaf !==
+            page.scratch.__zotlitDragTrial!.targetLeaf,
+          dropPrevented: page.scratch.__zotlitDragTrial!.dropPrevented,
+          calls: page.scratch.__zotlitDragTrial!.coordinateCalls,
+          expected: page.scratch.__zotlitDragTrial!.expectedCoords,
+          directPosition: page.scratch.__zotlitDragTrial!.directPosition,
+          notePath: page.scratch.__zotlitDragTrial!.options!.notePath,
+        };
+      },
+      undefined,
+    )) as {
       sourceMain: boolean;
       targetMain: boolean;
       separate: boolean;
@@ -133,24 +303,55 @@ export async function verifyAnnotationDrag(
       coords: capture.expected,
       position: capture.directPosition,
     });
-    await obEval(
+    await obRun(
       vaultId,
-      `${state}.editor.cm.dispatch({changes:{from:0,insert:'user '}});${state}.release();true`,
+      async ({ page }) => {
+        page.scratch.__zotlitDragTrial!.editor.cm.dispatch({
+          changes: { from: 0, insert: "user " },
+        });
+        page.scratch.__zotlitDragTrial!.release();
+      },
+      undefined,
+    );
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return page.scratch.__zotlitDragTrial!.finished === 1;
+      },
+      undefined,
+      { what: "the drag trial drop to finish once" },
     );
     expect(
-      await obEvalUntil(vaultId, `String(${state}.finished===1)`, {
-        expected: "true",
-      }),
-    ).toBe(true);
-    expect(
-      await obEval(
+      await obRun(
         vaultId,
-        `String(app.workspace.activeLeaf===${state}.viewLeaf&&app.workspace.activeLeaf!==${state}.targetLeaf)`,
+        async ({ app, page }) => {
+          return (
+            app.workspace.activeLeaf ===
+              page.scratch.__zotlitDragTrial!.viewLeaf &&
+            app.workspace.activeLeaf !==
+              page.scratch.__zotlitDragTrial!.targetLeaf
+          );
+        },
+        undefined,
       ),
-    ).toBe("true");
-    const text = JSON.parse(
-      await obEval(vaultId, `JSON.stringify(${state}.editor.getValue())`),
-    ) as string;
+    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return page.scratch
+          .__zotlitDragTrial!.editor.getValue()
+          .includes("![[zotlit-excerpt-");
+      },
+      undefined,
+      { what: "the editor to contain a zotlit-excerpt embed after the drop" },
+    );
+    const text = (await obRun(
+      vaultId,
+      async ({ page }) => {
+        return page.scratch.__zotlitDragTrial!.editor.getValue();
+      },
+      undefined,
+    )) as string;
     expect(text).toContain("![[zotlit-excerpt-");
     expect(text.split("FDRFQ7C2")).toHaveLength(2);
     // The one mention of the Annotation is its Durable Annotation Link.
@@ -165,21 +366,65 @@ export async function verifyAnnotationDrag(
     const suffix = "LEFT RIGHT".slice(capture.directPosition);
     expect(text.slice(0, text.indexOf("> [!note]"))).toBe(`user ${prefix}\n\n`);
     if (suffix) expect(text.endsWith(`\n\n${suffix}`)).toBe(true);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(Array.from(${state}.editor.cm.dom.querySelectorAll('img')).some(img=>img.src.includes('zotlit-excerpt-')&&img.complete&&img.naturalWidth>0))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(vaultId, `${state}.editor.undo();true`);
-    expect(await obEval(vaultId, `${state}.editor.getValue()`)).toBe(
-      "user LEFT RIGHT",
-    );
-  } finally {
-    await obEval(
+    await obRunUntil(
       vaultId,
-      `(async()=>{const s=${state};if(!s)return true;try{s.release?.();if(s.original)s.services.noteFeature.prepareAnnotationInsert=s.original;if(s.link)app.fileManager.generateMarkdownLink=s.link;if(s.editor?.cm&&s.posAtCoords)s.editor.cm.posAtCoords=s.posAtCoords;if(s.importEnabled!==undefined)s.services.settings.update({'attachment.import':s.importEnabled});}finally{try{if(s.layout)await app.workspace.changeLayout(s.layout);}finally{delete app.__zotlitDragTrial;}}return true;})()`,
+      async ({ page }) => {
+        return Array.from(
+          page.scratch.__zotlitDragTrial!.editor.cm.dom.querySelectorAll<HTMLImageElement>(
+            "img",
+          ),
+        ).some(
+          (img) =>
+            img.src.includes("zotlit-excerpt-") &&
+            img.complete &&
+            img.naturalWidth > 0,
+        );
+      },
+      undefined,
+      { what: "the excerpt image to finish loading in the editor" },
+    );
+    await obRun(
+      vaultId,
+      async ({ page }) => {
+        page.scratch.__zotlitDragTrial!.editor.undo();
+      },
+      undefined,
+    );
+    expect(
+      await obRun(
+        vaultId,
+        async ({ page }) => {
+          return page.scratch.__zotlitDragTrial!.editor.getValue();
+        },
+        undefined,
+      ),
+    ).toBe("user LEFT RIGHT");
+  } finally {
+    await obRun(
+      vaultId,
+      async ({ app, page }) => {
+        const s = page.scratch.__zotlitDragTrial!;
+        if (!s) return;
+        try {
+          page.restoreAnnotationPreparation(s);
+          if (s.link) app.fileManager.generateMarkdownLink = s.link;
+          if (s.editor?.cm && s.posAtCoords)
+            s.editor.cm.posAtCoords = s.posAtCoords;
+          if (s.importEnabled !== undefined)
+            s.services.bridge.runSync(
+              s.services.settings.update({
+                "attachment.import": s.importEnabled,
+              }),
+            );
+        } finally {
+          try {
+            if (s.layout) await app.workspace.changeLayout(s.layout);
+          } finally {
+            delete page.scratch.__zotlitDragTrial;
+          }
+        }
+      },
+      undefined,
     );
   }
 }

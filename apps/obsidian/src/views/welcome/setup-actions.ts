@@ -2,15 +2,21 @@
 import { FuzzySuggestModal } from "obsidian";
 import type { App, TFolder } from "obsidian";
 
-import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { openSettingsTab } from "@/lib/open-settings";
-import { requireDialog } from "@/lib/require";
-import type { PluginSettings } from "@/services/settings/service";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 
-const logger = getLogger(["views", "welcome"]);
+import { setFolderCommand, locateZoteroCommand } from "./atoms";
+
+export function holdSetupCommands(registry: ViewRegistryHandle): () => void {
+  const releases = [
+    registry.mount(setFolderCommand),
+    registry.mount(locateZoteroCommand),
+  ];
+  return () => {
+    for (const release of releases) release();
+  };
+}
 
 export interface SetupActions {
   openSettings: () => void;
@@ -20,12 +26,7 @@ export interface SetupActions {
 
 export interface SetupActionsDeps {
   app: App;
-  settings: Pick<
-    PluginSettings["Service"],
-    "updateDefaultLiteratureNoteProfileBindings"
-  >;
-  bridge: Pick<EffectBridge, "runSync">;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "setDataDir">;
+  registry: ViewRegistryHandle;
   /** Plugin id — identifies the settings tab. */
   pluginId: string;
 }
@@ -37,15 +38,11 @@ export function createSetupActions(deps: SetupActionsDeps): SetupActions {
     },
     pickFolder: () => {
       new LiteratureFolderModal(deps.app, (folder) => {
-        deps.bridge.runSync(
-          deps.settings.updateDefaultLiteratureNoteProfileBindings({
-            "note.literature-folder": folder.path,
-          }),
-        );
+        deps.registry.set(setFolderCommand, folder.path);
       }).open();
     },
     locateZotero: () => {
-      void browseForDataDir(deps);
+      deps.registry.set(locateZoteroCommand, undefined);
     },
   };
 }
@@ -75,20 +72,5 @@ class LiteratureFolderModal extends FuzzySuggestModal<TFolder> {
 
   override onChooseItem(folder: TFolder): void {
     this.#onChoose(folder);
-  }
-}
-
-/** Mirror the settings data-dir browse flow: pick a directory, save it as this device's data-dir override. */
-async function browseForDataDir(deps: SetupActionsDeps): Promise<void> {
-  try {
-    const result = await requireDialog().showOpenDialog({
-      title: m.settings_db_data_dir_dialog_title(),
-      defaultPath: deps.zoteroPref.dataDir,
-      properties: ["openDirectory"],
-    });
-    if (result.canceled || result.filePaths.length === 0) return;
-    deps.zoteroPref.setDataDir(result.filePaths[0]!);
-  } catch (error) {
-    logger.error("Failed to open Zotero data directory dialog", { error });
   }
 }

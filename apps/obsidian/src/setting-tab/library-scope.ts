@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { Menu } from "obsidian";
 import type {
   Setting,
@@ -19,8 +20,17 @@ import type {
   LibraryScope,
   LibrarySelector,
 } from "@/services/library-scope/scope";
+import { LibraryScope as LibraryScopeService } from "@/services/library-scope/service";
+import { PluginSettings } from "@/services/settings/service";
 
 import type { SettingsKey, SettingTabContext } from "./context";
+
+// The Library Scope reads the rows take. Each one is synchronous, so a
+// definition build runs it through `ctx.tab.sync`.
+const effectiveScope = LibraryScopeService.use((scope) => scope.effective);
+const resolvedScope = LibraryScopeService.use((scope) => scope.current);
+const savedScopeInvalid = LibraryScopeService.use((scope) => scope.invalid);
+const availableLibraries = LibraryScopeService.use((scope) => scope.libraries);
 
 /** One selected Library as the list renders it. */
 interface SelectedEntry {
@@ -48,7 +58,7 @@ interface SelectedEntry {
 export function libraryScopeRow(
   ctx: SettingTabContext,
 ): SettingDefinition<SettingsKey> {
-  const scope = ctx.libraryScope.effective;
+  const scope = ctx.tab.sync(effectiveScope);
   return {
     id: "settings_library_scope",
     name: m.settings_library_scope_name(),
@@ -60,7 +70,7 @@ export function libraryScopeRow(
 export function selectedLibrariesList(
   ctx: SettingTabContext,
 ): SettingDefinitionList<SettingsKey> {
-  const scope = ctx.libraryScope.effective;
+  const scope = ctx.tab.sync(effectiveScope);
   const editable = isEditable(ctx);
   const entries = selectedEntries(ctx, scope);
   return {
@@ -96,15 +106,15 @@ export function selectedLibrariesList(
  * so the rows disable and the saved value is left exactly as it is.
  */
 function isEditable(ctx: SettingTabContext): boolean {
-  return ctx.libraryScope.current !== null;
+  return ctx.tab.sync(resolvedScope) !== null;
 }
 
 function describeScope(ctx: SettingTabContext): DocumentFragment {
   const desc = createFragment();
   desc.append(m.settings_library_scope_desc());
-  const warning = ctx.libraryScope.invalid
+  const warning = ctx.tab.sync(savedScopeInvalid)
     ? m.settings_library_scope_invalid()
-    : ctx.libraryScope.current === null
+    : ctx.tab.sync(resolvedScope) === null
       ? m.settings_library_scope_db_unavailable()
       : null;
   if (warning) {
@@ -145,7 +155,7 @@ function selectedEntries(
   scope: LibraryScope,
 ): SelectedEntry[] {
   if (scope.mode !== "selected") return [];
-  const resolved = ctx.libraryScope.current;
+  const resolved = ctx.tab.sync(resolvedScope);
   const byKey = new Map(
     resolved?.available.map((library) => [
       selectorKey(library.selector),
@@ -170,9 +180,9 @@ function addableLibraries(
 ): AvailableLibrary[] {
   if (scope.mode !== "selected") return [];
   const selected = new Set(scope.libraries.map(selectorKey));
-  return ctx.libraryScope.libraries.filter(
-    (library) => !selected.has(selectorKey(library.selector)),
-  );
+  return ctx.tab
+    .sync(availableLibraries)
+    .filter((library) => !selected.has(selectorKey(library.selector)));
 }
 
 function openAddMenu(
@@ -222,6 +232,10 @@ function removeSelector(
 
 /** Persist and rebuild the tab, so the list rows follow the new selection. */
 function saveScope(ctx: SettingTabContext, scope: LibraryScope): void {
-  ctx.bridge.runSync(ctx.settings.update({ "zotero.library-scope": scope }));
-  ctx.requestUpdate();
+  void ctx.tab.run(
+    PluginSettings.use((settings) =>
+      settings.update({ "zotero.library-scope": scope }),
+    ).pipe(Effect.andThen(ctx.tab.update)),
+    m.settings_failed_save(),
+  );
 }

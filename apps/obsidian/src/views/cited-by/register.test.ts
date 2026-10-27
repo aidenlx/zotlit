@@ -2,7 +2,7 @@ import type { App, Command, Plugin, WorkspaceLeaf } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import type { PlainCitationIndex } from "@/services/citation-index/plain";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 
 import { openCitedByView, registerCitedByView } from "./register";
 import { CITED_BY_VIEW_TYPE } from "./view";
@@ -35,7 +35,7 @@ describe("Cited By Sidebar registration", () => {
 
     registerCitedByView(plugin, {
       app,
-      citationIndex: stubService<PlainCitationIndex>("CitationIndex", {}),
+      registry: stubService<ViewRegistryHandle>("ViewRegistry", {}),
     });
     expect(getRightLeaf).not.toHaveBeenCalled();
 

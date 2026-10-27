@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import type { WorkspaceLeaf, MarkdownView, PDFFileView } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -15,14 +16,14 @@ import {
 } from "@zotlit/scripts/fixture";
 import type { FixtureItem } from "@zotlit/scripts/fixture";
 
-import {
-  annotationOpenKeys,
-  annotationOpenSubpath,
-} from "./annotation-open-subpath.ts";
+import type { StoredLibraryViewDocument } from "@/views/library/document";
+import type { LibraryView } from "@/views/library/view";
+import type { QueryFileView } from "@/views/query-view/file-view";
+
+import { annotationOpenKeys } from "./annotation-open-subpath.ts";
 import { prepareRunWindow } from "./background-throttling.ts";
 import { reachable } from "./e2e-run-fixture.ts";
 import {
-  LIBRARY_HEADING,
   MY_LIBRARY_DOCUMENT,
   annotationAttachment,
   annotationItem,
@@ -34,44 +35,97 @@ import {
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import { signalDatabaseUpdated } from "./e2e-run-note-helpers.ts";
 import * as suite from "./e2e-run-suite-helpers.ts";
-import {
-  cli,
-  obEval,
-  obEvalUntil,
-  obJson,
-  obReadUntil,
-} from "./obsidian-cli.ts";
-import { PAGE } from "./page-gestures.ts";
+import { obRun, obRunUntil } from "./obsidian-cli.ts";
+import { cli } from "./obsidian-cli.ts";
+import type { LibraryLeaf } from "./page-library-types.ts";
+import type { LibraryWorkerMessage } from "./page-library-types.ts";
+import type {} from "./page-library-types.ts";
 import { verifyPdfReads } from "./pdf-reads.ts";
 import { verifyRecentUses } from "./recent-uses.ts";
+
+/** Wait for the saved `library.document` setting, compared as JSON limited to the keys the Library View writes. */
+async function waitForLibraryDocument(
+  vaultId: string,
+  expected: unknown,
+  what: string,
+): Promise<void> {
+  await obRunUntil(
+    vaultId,
+    async ({ zotlit }) => {
+      return JSON.stringify(
+        zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+          "library.document"
+        ],
+        [
+          "node",
+          "kind",
+          "library",
+          "type",
+          "path",
+          "sort",
+          "property",
+          "direction",
+        ],
+      );
+    },
+    undefined,
+    { ready: (value) => value === JSON.stringify(expected), what },
+  );
+}
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
 
   it("opens the Library View from the ribbon and the command, lists My Library newest first, and keeps a sort change across a plugin reload, with Zotero closed", async () => {
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return JSON.stringify(app.workspace.getLayout());
+      },
+      undefined,
     );
-    const stored = await obEval(
+    const stored = await obRun(
       run.vaultId,
-      "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['library.document'])",
+      async ({ zotlit }) => {
+        return zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+          "library.document"
+        ] as StoredLibraryViewDocument | null;
+      },
+      undefined,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const settings=app.plugins.plugins.zotlit.services.settings;settings.update({'library.document':${stored}});await settings.flush();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        async ({ app, zotlit }, { stored, layout }) => {
+          const { settings, bridge } = zotlit.services;
+          bridge.runSync(settings.update({ "library.document": stored }));
+          await bridge.runPromise(settings.flush);
+          await app.workspace.changeLayout(JSON.parse(layout));
+        },
+        { stored: stored, layout: layout },
       );
     });
     // The view opens on My Library; a new view's Recent has a case of its own.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=app.plugins.plugins.zotlit.services.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}});await settings.flush();return true;})()`,
+      async ({ app, zotlit }, { myLibraryDocument }) => {
+        (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        ).forEach((leaf) => leaf.detach());
+        const { settings, bridge } = zotlit.services;
+        bridge.runSync(
+          settings.update({ "library.document": myLibraryDocument }),
+        );
+        await bridge.runPromise(settings.flush);
+      },
+      { myLibraryDocument: MY_LIBRARY_DOCUMENT },
     );
 
     /** What the Library View shows once its query settled, or `null` while no tab holds it. */
-    const readLibrary = `(async()=>{const leaves=app.workspace.getLeavesOfType('zotlit-library');const view=leaves[0]?.view;if(!view?.query)return 'null';await view.query.settled;const el=view.contentEl;const state=view.query.state.getState();return JSON.stringify({leaves:leaves.length,active:app.workspace.getMostRecentLeaf()?.view.getViewType()??null,title:view.getDisplayText(),phase:state.phase,failure:state.failure?.diagnostic.code??null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('tr[data-query-table-row="item"], [data-query-papers-row]')].map(n=>n.getAttribute('data-query-key')??n.getAttribute('data-query-papers-row'))});})()`;
+
     interface Library {
       leaves: number;
       active: string | null;
@@ -81,12 +135,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       count: string | null;
       rows: string[];
     }
-    const libraryWhen = (ready: (library: Library) => boolean) =>
-      obReadUntil<Library>(run.vaultId, readLibrary, {
-        ready,
-        what: "Library View",
-        tries: 120,
-      });
 
     // The seed's My Library Items. Items modified at the same moment may
     // come in either order, so the rows are checked by key set and by the
@@ -114,31 +162,101 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // The ribbon icon opens the view in a main-area tab, on My Library as
     // Papers, newest change first. No Zotero answers this vault.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{${PAGE}press(document.querySelector(${JSON.stringify(`.side-dock-ribbon-action[aria-label="${run.m.command_open_library_view_name()}"]`)}),'Library View ribbon icon');return true;})()`,
+      async ({ page }, { value }) => {
+        const { press } = page;
+        press(
+          document.querySelector<HTMLElement>(value),
+          "Library View ribbon icon",
+        );
+      },
+      {
+        value: `.side-dock-ribbon-action[aria-label="${run.m.command_open_library_view_name()}"]`,
+      },
     );
     /** Whether the Layout drew every row the count names. */
     const drawn = (library: Library) =>
       library.phase === "ready" &&
       library.count !== null &&
       library.rows.length === Number(library.count);
-    const opened = await libraryWhen(drawn);
+    const opened = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const leaves = app.workspace.getLeavesOfType(
+          "zotlit-library",
+        ) as (WorkspaceLeaf & { view: LibraryView })[];
+        const view = leaves[0]?.view;
+        if (!view?.query) return null;
+        await view.query.settled;
+        const el = view.contentEl;
+        const state = view.query.state.getState();
+        return {
+          leaves: leaves.length,
+          active: app.workspace.getMostRecentLeaf()?.view.getViewType() ?? null,
+          title: view.getDisplayText(),
+          phase: state.phase,
+          failure: state.failure?.diagnostic.code ?? null,
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          rows: [
+            ...el.querySelectorAll<HTMLElement>(
+              'tr[data-query-table-row="item"], [data-query-papers-row]',
+            ),
+          ].map(
+            (n) =>
+              n.getAttribute("data-query-key")! ??
+              n.getAttribute("data-query-papers-row")!,
+          ),
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) => value !== null && drawn(value),
+      },
+    );
     expect(opened).toMatchObject({
       leaves: 1,
       active: "zotlit-library",
       title: run.m.library_view_name(),
       failure: null,
     });
-    expectSeedOrder(opened, -1);
+    expectSeedOrder(opened!, -1);
     // The ribbon icon and the tab draw the 16-unit mark, both inks in the
     // icon's one color.
-    const icons = JSON.parse(
-      await obEval(
-        run.vaultId,
-        `JSON.stringify([document.querySelector(${JSON.stringify(`.side-dock-ribbon-action[aria-label="${run.m.command_open_library_view_name()}"] svg`)}),app.workspace.getLeavesOfType('zotlit-library')[0].tabHeaderInnerIconEl.querySelector('svg')].map(svg=>{const g=svg?.querySelector('g');return g&&{transform:g.getAttribute('transform'),fill:g.getAttribute('fill'),paths:[...g.querySelectorAll('path')].map(p=>p.getAttribute('d'))};}))`,
-      ),
-    ) as unknown[];
+    const icons = (await obRun(
+      run.vaultId,
+      async ({ app }, { value }) => {
+        return [
+          document.querySelector<HTMLElement>(value),
+          (
+            (
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0]! as LibraryLeaf & { view: LibraryView }
+          ).tabHeaderInnerIconEl.querySelector<HTMLElement>("svg"),
+        ].map((svg) => {
+          const g = svg?.querySelector<HTMLElement>("g");
+          return (
+            g && {
+              transform: g.getAttribute("transform"),
+              fill: g.getAttribute("fill"),
+              paths: [...g.querySelectorAll<HTMLElement>("path")].map((p) =>
+                p.getAttribute("d"),
+              ),
+            }
+          );
+        });
+      },
+      {
+        value: `.side-dock-ribbon-action[aria-label="${run.m.command_open_library_view_name()}"] svg`,
+      },
+    )) as unknown[];
     const mark = {
       transform: "scale(6.25)",
       fill: "currentColor",
@@ -151,63 +269,274 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // With another tab in front, the command and the ribbon icon each bring
     // the one Library View tab back.
-    for (const invoke of [
-      "app.commands.executeCommandById('zotlit:open-library-view')",
-      `(()=>{${PAGE}press(document.querySelector(${JSON.stringify(`.side-dock-ribbon-action[aria-label="${run.m.command_open_library_view_name()}"]`)}),'Library View ribbon icon')})()`,
-    ]) {
-      await obEval(
+    for (const invoke of ["command", "ribbon"] as const) {
+      await obRun(
         run.vaultId,
-        "(async()=>{await app.workspace.getLeaf('tab').openFile(app.vault.getMarkdownFiles()[0]);return true;})()",
+        async ({ app }) => {
+          await app.workspace
+            .getLeaf("tab")
+            .openFile(app.vault.getMarkdownFiles()[0]!);
+        },
+        undefined,
       );
       expect(
-        (await libraryWhen((library) => library.active !== "zotlit-library"))
-          .leaves,
+        (await obRunUntil(
+          run.vaultId,
+          async ({ app }) => {
+            const leaves = app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[];
+            const view = leaves[0]?.view;
+            if (!view?.query) return null;
+            await view.query.settled;
+            const el = view.contentEl;
+            const state = view.query.state.getState();
+            return {
+              leaves: leaves.length,
+              active:
+                app.workspace.getMostRecentLeaf()?.view.getViewType() ?? null,
+              title: view.getDisplayText(),
+              phase: state.phase,
+              failure: state.failure?.diagnostic.code ?? null,
+              count:
+                el
+                  .querySelector<HTMLElement>("[data-query-count]")
+                  ?.getAttribute("data-query-count") ?? null,
+              rows: [
+                ...el.querySelectorAll<HTMLElement>(
+                  'tr[data-query-table-row="item"], [data-query-papers-row]',
+                ),
+              ].map(
+                (n) =>
+                  n.getAttribute("data-query-key")! ??
+                  n.getAttribute("data-query-papers-row")!,
+              ),
+            };
+          },
+          undefined,
+          {
+            what: "Library View",
+            tries: 120,
+            ready: (value) =>
+              value !== null &&
+              ((library) => library.active !== "zotlit-library")(value),
+          },
+        ))!.leaves,
       ).toBe(1);
-      await obEval(run.vaultId, `${invoke};true`);
+      await obRun(
+        run.vaultId,
+        ({ app, page }, { invoke, ribbonLabel }) => {
+          if (invoke === "command")
+            app.commands.executeCommandById("zotlit:open-library-view");
+          else
+            page.press(
+              document.querySelector<HTMLElement>(
+                `.side-dock-ribbon-action[aria-label="${ribbonLabel}"]`,
+              ),
+              "Library View ribbon icon",
+            );
+          return "true";
+        },
+        { invoke, ribbonLabel: run.m.command_open_library_view_name() },
+      );
       expect(
-        await libraryWhen((library) => library.active === "zotlit-library"),
+        await obRunUntil(
+          run.vaultId,
+          async ({ app }) => {
+            const leaves = app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[];
+            const view = leaves[0]?.view;
+            if (!view?.query) return null;
+            await view.query.settled;
+            const el = view.contentEl;
+            const state = view.query.state.getState();
+            return {
+              leaves: leaves.length,
+              active:
+                app.workspace.getMostRecentLeaf()?.view.getViewType() ?? null,
+              title: view.getDisplayText(),
+              phase: state.phase,
+              failure: state.failure?.diagnostic.code ?? null,
+              count:
+                el
+                  .querySelector<HTMLElement>("[data-query-count]")
+                  ?.getAttribute("data-query-count") ?? null,
+              rows: [
+                ...el.querySelectorAll<HTMLElement>(
+                  'tr[data-query-table-row="item"], [data-query-papers-row]',
+                ),
+              ].map(
+                (n) =>
+                  n.getAttribute("data-query-key")! ??
+                  n.getAttribute("data-query-papers-row")!,
+              ),
+            };
+          },
+          undefined,
+          {
+            what: "Library View",
+            tries: 120,
+            ready: (value) =>
+              value !== null &&
+              ((library) => library.active === "zotlit-library")(value),
+          },
+        ),
       ).toMatchObject({ leaves: 1 });
     }
 
     // The Sort popover turns the order to oldest change first, and plugin
     // data keeps it as the Library View Document's sort.
-    const inLibrary = (script: string) =>
-      obEval(
-        run.vaultId,
-        `(async()=>{${PAGE}const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;${script};return true;})()`,
-      );
-    await inLibrary(
-      "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort');await pick(await until('sort direction',()=>el.querySelector('[data-query-popover=\"sort\"] [data-sort-direction]')),'ASC','sort direction')",
+
+    await obRun(
+      run.vaultId,
+      async ({ app, page }) => {
+        const { press, until, pick } = page;
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl;
+        press(
+          el.querySelector<HTMLElement>('[data-query-toolbar="sort"]'),
+          "Sort",
+        );
+        await pick(
+          await until("sort direction", () =>
+            el.querySelector<HTMLButtonElement | HTMLSelectElement>(
+              '[data-query-popover="sort"] [data-sort-direction]',
+            ),
+          ),
+          "ASC",
+          "sort direction",
+        );
+      },
+      undefined,
     );
     expectSeedOrder(
-      await libraryWhen(
-        (library) => drawn(library) && library.rows[0] !== opened.rows[0],
-      ),
+      (await obRunUntil(
+        run.vaultId,
+        async ({ app }) => {
+          const leaves = app.workspace.getLeavesOfType(
+            "zotlit-library",
+          ) as (WorkspaceLeaf & { view: LibraryView })[];
+          const view = leaves[0]?.view;
+          if (!view?.query) return null;
+          await view.query.settled;
+          const el = view.contentEl;
+          const state = view.query.state.getState();
+          return {
+            leaves: leaves.length,
+            active:
+              app.workspace.getMostRecentLeaf()?.view.getViewType() ?? null,
+            title: view.getDisplayText(),
+            phase: state.phase,
+            failure: state.failure?.diagnostic.code ?? null,
+            count:
+              el
+                .querySelector<HTMLElement>("[data-query-count]")
+                ?.getAttribute("data-query-count") ?? null,
+            rows: [
+              ...el.querySelectorAll<HTMLElement>(
+                'tr[data-query-table-row="item"], [data-query-papers-row]',
+              ),
+            ].map(
+              (n) =>
+                n.getAttribute("data-query-key")! ??
+                n.getAttribute("data-query-papers-row")!,
+            ),
+          };
+        },
+        undefined,
+        {
+          what: "Library View",
+          tries: 120,
+          ready: (value) =>
+            value !== null &&
+            ((library) =>
+              drawn(library) && library.rows[0] !== opened!.rows[0])(value),
+        },
+      ))!,
       1,
     );
-    expect(
-      await obEvalUntil(
-        run.vaultId,
-        "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['library.document']?.sort)",
-        {
-          expected: JSON.stringify([
-            { property: "dateModified", direction: "ASC" },
-          ]),
-        },
-      ),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ zotlit }) => {
+        return JSON.stringify(
+          zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+            "library.document"
+          ]?.sort,
+        );
+      },
+      undefined,
+      {
+        ready: (value) =>
+          value ===
+          JSON.stringify([{ property: "dateModified", direction: "ASC" }]),
+        what: "the saved library.document sort to be date modified ascending",
+      },
+    );
 
     // A plugin reload brings the tab back with the sort it kept.
-    expect(
-      await obEvalUntil(
-        run.vaultId,
-        "app.plugins.disablePlugin('zotlit').then(function () { return app.plugins.enablePlugin('zotlit'); }).then(function () { return true; })",
-        { expected: "true", tries: 20 },
-      ),
-    ).toBe(true);
-    const reloaded = await libraryWhen(drawn);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return await app.plugins
+          .disablePlugin("zotlit")
+          .then(function () {
+            return app.plugins.enablePlugin("zotlit");
+          })
+          .then(function () {
+            return true;
+          });
+      },
+      undefined,
+      {
+        tries: 20,
+        what: "the zotlit plugin to finish a disable and re-enable cycle",
+      },
+    );
+    const reloaded = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const leaves = app.workspace.getLeavesOfType(
+          "zotlit-library",
+        ) as (WorkspaceLeaf & { view: LibraryView })[];
+        const view = leaves[0]?.view;
+        if (!view?.query) return null;
+        await view.query.settled;
+        const el = view.contentEl;
+        const state = view.query.state.getState();
+        return {
+          leaves: leaves.length,
+          active: app.workspace.getMostRecentLeaf()?.view.getViewType() ?? null,
+          title: view.getDisplayText(),
+          phase: state.phase,
+          failure: state.failure?.diagnostic.code ?? null,
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          rows: [
+            ...el.querySelectorAll<HTMLElement>(
+              'tr[data-query-table-row="item"], [data-query-papers-row]',
+            ),
+          ].map(
+            (n) =>
+              n.getAttribute("data-query-key")! ??
+              n.getAttribute("data-query-papers-row")!,
+          ),
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) => value !== null && drawn(value),
+      },
+    );
     expect(reloaded).toMatchObject({ leaves: 1, failure: null });
-    expectSeedOrder(reloaded, 1);
+    expectSeedOrder(reloaded!, 1);
   });
 
   it("refreshes the empty quick switcher after a lastRead-only write without restarting Obsidian", async () => {
@@ -227,14 +556,38 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       sqlite
         .prepare("UPDATE itemAttachments SET lastRead = ? WHERE itemID = ?")
         .run(saved.lastRead, attachment.itemID);
-      await obEval(
+      await obRun(
         run.vaultId,
-        "(async()=>{activeDocument.querySelector('.prompt input')?.dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));await app.plugins.plugins.zotlit.services.zoteroReads.refresh();return true;})()",
+        async ({ zotlit }) => {
+          activeDocument
+            .querySelector<HTMLElement>(".prompt input")
+            ?.dispatchEvent(
+              new (activeWindow as Window & typeof globalThis).KeyboardEvent(
+                "keydown",
+                {
+                  key: "Escape",
+                  code: "Escape",
+                  keyCode: 27,
+                  which: 27,
+                  bubbles: true,
+                },
+              ),
+            );
+          await zotlit.services.zoteroReads.refresh();
+        },
+        undefined,
       );
     });
-    const recent =
-      "(async()=>JSON.stringify((await app.plugins.plugins.zotlit.services.itemLookup.search('',{limit:1})).map(hit=>hit.item.indexedKey)))()";
-    await obEval(run.vaultId, recent);
+
+    await obRun(
+      run.vaultId,
+      async ({ zotlit }) => {
+        return (await zotlit.services.itemLookup.search("", { limit: 1 })).map(
+          (hit) => hit.item.indexedKey,
+        );
+      },
+      undefined,
+    );
     sqlite
       .prepare("UPDATE itemAttachments SET lastRead = ? WHERE itemID = ?")
       .run(2208988800, attachment.itemID);
@@ -243,35 +596,80 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         .prepare("SELECT dateModified FROM items WHERE itemID = ?")
         .get(readItem.itemID),
     ).toEqual(modified);
-    await obReadUntil<string[]>(run.vaultId, recent, {
-      ready: (keys) => keys[0] === readItem.key,
-      what: "empty search to reflect the Zotero read",
-      tries: 160,
-    });
-    await obEval(
+    await obRunUntil(
       run.vaultId,
-      "app.commands.executeCommandById('zotlit:note-quick-switcher');true",
+      async ({ zotlit }) => {
+        return (await zotlit.services.itemLookup.search("", { limit: 1 })).map(
+          (hit) => hit.item.indexedKey,
+        );
+      },
+      undefined,
+      {
+        what: "empty search to reflect the Zotero read",
+        tries: 160,
+        ready: (value) =>
+          value !== null && ((keys) => keys[0] === readItem.key)(value),
+      },
     );
-    expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(activeDocument.querySelector('.prompt .suggestion-item')?.textContent.includes(${JSON.stringify(readItem.title)}))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
+    await obRun(
+      run.vaultId,
+      async ({ app }) => {
+        app.commands.executeCommandById("zotlit:note-quick-switcher");
+      },
+      undefined,
+    );
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { readItemTitle }) => {
+        return activeDocument
+          .querySelector<HTMLElement>(".prompt .suggestion-item")
+          ?.textContent.includes(readItemTitle);
+      },
+      { readItemTitle: readItem.title },
+      {
+        what: "the quick switcher's first suggestion to include the read item's title",
+      },
+    );
   });
 
   it("opens a new Library View on Recent, lists the Library Scope newest activity first in rows of two lines at most, keeps the tree toggle beside the search box on a narrow pane, sorts that way again when Recent is selected again, and leaves Recent's own sort behind on a Collection", async () => {
-    const services = "app.plugins.plugins.zotlit.services";
-    const snapshot = await obEval(
+    const snapshot = await obRun(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,scope:${services}.settings.current[${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}]??null})`,
+      async ({ app, zotlit }, { libraryScopeSettingKey }) => {
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+          scope:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              libraryScopeSettingKey
+            ] ?? null,
+        });
+      },
+      { libraryScopeSettingKey: LIBRARY_SCOPE_SETTING_KEY },
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:saved.scope});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+        async ({ app, zotlit }, { snapshot, libraryScopeSettingKey }) => {
+          const saved = JSON.parse(snapshot);
+          const { settings, bridge } = zotlit.services;
+          bridge.runSync(
+            settings.update({
+              "library.document": saved.document,
+              [libraryScopeSettingKey]: saved.scope,
+            }),
+          );
+          await bridge.runPromise(settings.flush);
+          await app.workspace.changeLayout(saved.layout);
+        },
+        {
+          snapshot: snapshot,
+          libraryScopeSettingKey: LIBRARY_SCOPE_SETTING_KEY,
+        },
       );
     });
     // No Library View Document yet; the Library Scope holds My Library and
@@ -282,16 +680,35 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       )!;
     const personal = library("user");
     const shared = library(4200309);
-    const scope = (libraries: readonly (typeof personal)[]) =>
-      JSON.stringify({
-        mode: "selected",
-        libraries: libraries.map(({ groupID }) =>
-          groupID === null ? { type: "personal" } : { type: "group", groupID },
-        ),
-      });
-    await obEval(
+
+    await obRun(
       run.vaultId,
-      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':null,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:${scope([personal, shared])}});await settings.flush();return true;})()`,
+      async ({ app, zotlit }, { libraryScopeSettingKey, document }) => {
+        (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        ).forEach((leaf) => leaf.detach());
+        const { settings, bridge } = zotlit.services;
+        bridge.runSync(
+          settings.update({
+            "library.document": null,
+            [libraryScopeSettingKey]: document,
+          }),
+        );
+        await bridge.runPromise(settings.flush);
+      },
+      {
+        libraryScopeSettingKey: LIBRARY_SCOPE_SETTING_KEY,
+        document: {
+          mode: "selected",
+          libraries: [personal, shared].map(({ groupID }) =>
+            groupID === null
+              ? { type: "personal" as const }
+              : { type: "group" as const, groupID },
+          ),
+        },
+      },
     );
 
     // The seed's oracle: the Items of the Libraries in scope, by Indexed
@@ -304,9 +721,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       )!;
       return groupID === null ? item.key : `${item.key}g${groupID}`;
     };
-    const uses = await obJson<Record<string, number>>(
+    const uses = await obRun(
       run.vaultId,
-      `JSON.stringify(${services}.useLedger.uses)`,
+      async ({ zotlit }) => {
+        return zotlit.services.useLedger.uses;
+      },
+      undefined,
     );
     const activity = new Map(
       ITEMS.map((item) => [
@@ -348,28 +768,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       /** The Sort button: whether it shows a sort as set, and its text. */
       sort: { set: boolean; text: string | null };
     }
-    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.query.settled;await view.tree.settled;const el=view.contentEl;const rows=[...el.querySelectorAll('[data-query-papers-row]')];const sort=el.querySelector('[data-query-toolbar="sort"]');return JSON.stringify({sort:{set:sort?.hasAttribute('data-active')??false,text:sort?.textContent??null},phase:view.query.state.getState().phase,header:${LIBRARY_HEADING},recent:[...el.querySelectorAll('[data-library-node]')].some(n=>JSON.parse(n.getAttribute('data-library-node'))[0]==='recent'&&n.getAttribute('aria-selected')==='true'),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:rows.map(n=>n.getAttribute('data-query-papers-row')),lines:rows.map(n=>n.querySelector('[data-query-papers-title]').parentElement.childElementCount)});})()`;
-    const shownWhen = (ready: (shown: Shown) => boolean) =>
-      obReadUntil<Shown>(run.vaultId, readShown, {
-        ready,
-        what: "Library View",
-        tries: 120,
-      });
+
     /** Whether the list drew every row it counted, `count` of them. */
     const listing = (count: number) => (shown: Shown) =>
       shown.phase === "ready" &&
       shown.count === String(count) &&
       shown.rows.length === count;
-    const inLibrary = (script: string) =>
-      obEval(
-        run.vaultId,
-        `(async()=>{${PAGE}const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;${script};return true;})()`,
-      );
+
     /** Press the tree node `key`; a narrow pane keeps the tree behind its button. */
-    const pressNode = (key: string, what: string) =>
-      inLibrary(
-        `const pane=el.querySelector('[data-library-tree]');if(getComputedStyle(pane).display==='none'){press(el.querySelector('[data-library-tree-toggle]'),'Library Tree button');await until('Library Tree',()=>getComputedStyle(pane).display!=='none');}press([...pane.querySelectorAll('[data-library-node]')].find(n=>n.getAttribute('data-library-node')===${JSON.stringify(key)}),${JSON.stringify(what)})`,
-      );
+
     const size = (libraries: readonly (typeof personal)[]) =>
       ITEMS.filter((item) =>
         libraries.some(({ libraryID }) => libraryID === item.libraryID),
@@ -377,19 +784,97 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // The new view opens on Recent: every Item of the Library Scope, newest
     // change first, under a heading that names Recent and counts its papers.
-    await obEval(
+    await obRun(
       run.vaultId,
-      "app.commands.executeCommandById('zotlit:open-library-view');true",
+      async ({ app }) => {
+        app.commands.executeCommandById("zotlit:open-library-view");
+      },
+      undefined,
     );
-    const opened = await shownWhen(listing(size([personal, shared])));
+    const opened = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.query.settled;
+        await view.tree.settled;
+        const el = view.contentEl;
+        const rows = [
+          ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+        ];
+        const sort = el.querySelector<HTMLElement>(
+          '[data-query-toolbar="sort"]',
+        );
+        return {
+          sort: {
+            set: sort?.hasAttribute("data-active") ?? false,
+            text: sort?.textContent ?? null,
+          },
+          phase: view.query.state.getState().phase,
+          header: ((h: Element | null) =>
+            h
+              ? ["[data-library-header]", "[data-library-header-count]"]
+                  .map((s) => h.querySelector(s)?.textContent ?? "")
+                  .filter((t) => t !== "")
+                  .join(" | ")
+              : null)(el.querySelector("[data-library-heading]")),
+          recent: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+          ].some(
+            (n) =>
+              JSON.parse(n.getAttribute("data-library-node")!)[0] ===
+                "recent" && n.getAttribute("aria-selected") === "true",
+          ),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          rows: rows.map((n) => n.getAttribute("data-query-papers-row")!),
+          lines: rows.map(
+            (n) =>
+              n.querySelector<HTMLElement>("[data-query-papers-title]")!
+                .parentElement!.childElementCount,
+          ),
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null && listing(size([personal, shared]))(value),
+      },
+    );
     expect(opened).toMatchObject({
       recent: true,
       header: `${run.m.library_view_recent()} | ${run.m.library_view_heading_papers({ count: size([personal, shared]) })}`,
     });
-    expectRecent(opened, [personal, shared], -1);
-    const reasons = await obJson<Record<string, string>>(
+    expectRecent(opened!, [personal, shared], -1);
+    const reasons = await obRun(
       run.vaultId,
-      `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0].view;return JSON.stringify(Object.fromEntries([...view.contentEl.querySelectorAll('[data-query-papers-row]')].map(row=>[row.getAttribute('data-query-papers-row'),row.querySelector('[data-query-papers-title]').parentElement.lastElementChild.textContent])));})()`,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view;
+        return Object.fromEntries(
+          [
+            ...view.contentEl.querySelectorAll<HTMLElement>(
+              "[data-query-papers-row]",
+            ),
+          ].map((row) => [
+            row.getAttribute("data-query-papers-row")!,
+            row.querySelector<HTMLElement>("[data-query-papers-title]")!
+              .parentElement!.lastElementChild!.textContent,
+          ]),
+        );
+      },
+      undefined,
     );
     // These seed signals are newer than their parent Item's addition.
     for (const [key, reason] of [
@@ -403,63 +888,409 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     }
 
-    const emptySearch = JSON.parse(
-      await obEval(
-        run.vaultId,
-        `(async()=>JSON.stringify((await ${services}.itemLookup.search('',{limit:500})).map(hit=>hit.item.indexedKey)))()`,
-      ),
+    const emptySearch = await obRun(
+      run.vaultId,
+      async ({ zotlit }) => {
+        return (
+          await zotlit.services.itemLookup.search("", { limit: 500 })
+        ).map((hit) => hit.item.indexedKey);
+      },
+      undefined,
     );
-    expect(emptySearch).toEqual(opened.rows);
+    expect(emptySearch).toEqual(opened!.rows);
 
     // On a pane too narrow for the tree beside the list, Recent's tree
     // toggle sits beside the search box, not on a row of its own.
-    const narrowRow = JSON.parse(
-      await obEval(
-        run.vaultId,
-        `(()=>{const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;const width=el.style.width;el.style.width='400px';try{const toggle=el.querySelector('[data-library-tree-toggle]');const input=el.querySelector('[data-library-search] input');const t=toggle.getBoundingClientRect();const i=input.getBoundingClientRect();return JSON.stringify({toggle:toggle.checkVisibility(),beside:t.top<i.bottom&&t.bottom>i.top&&t.right<=i.left});}finally{el.style.width=width;}})()`,
-      ),
+    const narrowRow = await obRun(
+      run.vaultId,
+      async ({ app }) => {
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl;
+        const width = el.style.width;
+        el.style.width = "400px";
+        try {
+          const toggle = el.querySelector<HTMLElement>(
+            "[data-library-tree-toggle]",
+          );
+          const input = el.querySelector<HTMLElement>(
+            "[data-library-search] input",
+          );
+          const t = toggle!.getBoundingClientRect();
+          const i = input!.getBoundingClientRect();
+          return {
+            toggle: toggle!.checkVisibility(),
+            beside: t.top < i.bottom && t.bottom > i.top && t.right <= i.left,
+          };
+        } finally {
+          el.style.width = width;
+        }
+      },
+      undefined,
     );
     expect(narrowRow).toEqual({ toggle: true, beside: true });
 
     // Another Library Scope changes what Recent lists.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{const settings=${services}.settings;settings.update({${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:${scope([personal])}});await settings.flush();return true;})()`,
+      async ({ zotlit }, { libraryScopeSettingKey, document }) => {
+        const { settings, bridge } = zotlit.services;
+        bridge.runSync(settings.update({ [libraryScopeSettingKey]: document }));
+        await bridge.runPromise(settings.flush);
+      },
+      {
+        libraryScopeSettingKey: LIBRARY_SCOPE_SETTING_KEY,
+        document: {
+          mode: "selected",
+          libraries: [personal].map(({ groupID }) =>
+            groupID === null
+              ? { type: "personal" as const }
+              : { type: "group" as const, groupID },
+          ),
+        },
+      },
     );
-    const narrowed = await shownWhen(listing(size([personal])));
-    expectRecent(narrowed, [personal], -1);
+    const narrowed = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.query.settled;
+        await view.tree.settled;
+        const el = view.contentEl;
+        const rows = [
+          ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+        ];
+        const sort = el.querySelector<HTMLElement>(
+          '[data-query-toolbar="sort"]',
+        );
+        return {
+          sort: {
+            set: sort?.hasAttribute("data-active") ?? false,
+            text: sort?.textContent ?? null,
+          },
+          phase: view.query.state.getState().phase,
+          header: ((h: Element | null) =>
+            h
+              ? ["[data-library-header]", "[data-library-header-count]"]
+                  .map((s) => h.querySelector(s)?.textContent ?? "")
+                  .filter((t) => t !== "")
+                  .join(" | ")
+              : null)(el.querySelector("[data-library-heading]")),
+          recent: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+          ].some(
+            (n) =>
+              JSON.parse(n.getAttribute("data-library-node")!)[0] ===
+                "recent" && n.getAttribute("aria-selected") === "true",
+          ),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          rows: rows.map((n) => n.getAttribute("data-query-papers-row")!),
+          lines: rows.map(
+            (n) =>
+              n.querySelector<HTMLElement>("[data-query-papers-title]")!
+                .parentElement!.childElementCount,
+          ),
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) => value !== null && listing(size([personal]))(value),
+      },
+    );
+    expectRecent(narrowed!, [personal], -1);
 
     // A sort change keeps Recent selected; selecting Recent again after a
     // Library sorts newest activity first again.
-    await inLibrary(
-      "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort');await pick(await until('sort direction',()=>el.querySelector('[data-query-popover=\"sort\"] [data-sort-direction]')),'ASC','sort direction')",
+    await obRun(
+      run.vaultId,
+      async ({ app, page }) => {
+        const { press, until, pick } = page;
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl;
+        press(
+          el.querySelector<HTMLElement>('[data-query-toolbar="sort"]'),
+          "Sort",
+        );
+        await pick(
+          await until("sort direction", () =>
+            el.querySelector<HTMLButtonElement | HTMLSelectElement>(
+              '[data-query-popover="sort"] [data-sort-direction]',
+            ),
+          ),
+          "ASC",
+          "sort direction",
+        );
+      },
+      undefined,
     );
-    const ascending = await shownWhen(
-      (shown) =>
-        listing(size([personal]))(shown) && shown.rows[0] !== narrowed.rows[0],
+    const ascending = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.query.settled;
+        await view.tree.settled;
+        const el = view.contentEl;
+        const rows = [
+          ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+        ];
+        const sort = el.querySelector<HTMLElement>(
+          '[data-query-toolbar="sort"]',
+        );
+        return {
+          sort: {
+            set: sort?.hasAttribute("data-active") ?? false,
+            text: sort?.textContent ?? null,
+          },
+          phase: view.query.state.getState().phase,
+          header: ((h: Element | null) =>
+            h
+              ? ["[data-library-header]", "[data-library-header-count]"]
+                  .map((s) => h.querySelector(s)?.textContent ?? "")
+                  .filter((t) => t !== "")
+                  .join(" | ")
+              : null)(el.querySelector("[data-library-heading]")),
+          recent: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+          ].some(
+            (n) =>
+              JSON.parse(n.getAttribute("data-library-node")!)[0] ===
+                "recent" && n.getAttribute("aria-selected") === "true",
+          ),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          rows: rows.map((n) => n.getAttribute("data-query-papers-row")!),
+          lines: rows.map(
+            (n) =>
+              n.querySelector<HTMLElement>("[data-query-papers-title]")!
+                .parentElement!.childElementCount,
+          ),
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((shown) =>
+            listing(size([personal]))(shown) &&
+            shown.rows[0] !== narrowed!.rows[0])(value),
+      },
     );
-    expect(ascending.recent).toBe(true);
-    expectRecent(ascending, [personal], 1);
-    await pressNode(JSON.stringify(["personal"]), "My Library");
-    await shownWhen((shown) => !shown.recent && shown.phase === "ready");
-    await pressNode(JSON.stringify(["recent"]), "Recent");
-    const again = await shownWhen(
-      (shown) => shown.recent && listing(size([personal]))(shown),
+    expect(ascending!.recent).toBe(true);
+    expectRecent(ascending!, [personal], 1);
+    await obRun(
+      run.vaultId,
+      async ({ app, page }, { JSONStringifyResult, myLibrary }) => {
+        const { press, until } = page;
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl;
+        const pane = el.querySelector<HTMLElement>("[data-library-tree]");
+        if (getComputedStyle(pane!).display === "none") {
+          press(
+            el.querySelector<HTMLElement>("[data-library-tree-toggle]"),
+            "Library Tree button",
+          );
+          await until(
+            "Library Tree",
+            () => getComputedStyle(pane!).display !== "none",
+          );
+        }
+        press(
+          [...pane!.querySelectorAll<HTMLElement>("[data-library-node]")].find(
+            (n) => n.getAttribute("data-library-node")! === JSONStringifyResult,
+          ),
+          myLibrary,
+        );
+      },
+      {
+        JSONStringifyResult: JSON.stringify(["personal"]),
+        myLibrary: "My Library",
+      },
     );
-    expectRecent(again, [personal], -1);
-    expect(again.sort).toEqual({ set: false, text: "Sort" });
-    const saved = (doc: object) =>
-      obEvalUntil(
-        run.vaultId,
-        `JSON.stringify(${services}.settings.current['library.document'],['node','kind','library','type','path','sort','property','direction'])`,
-        { expected: JSON.stringify(doc) },
-      );
-    expect(
-      await saved({
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.query.settled;
+        await view.tree.settled;
+        const el = view.contentEl;
+        const rows = [
+          ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+        ];
+        const sort = el.querySelector<HTMLElement>(
+          '[data-query-toolbar="sort"]',
+        );
+        return {
+          sort: {
+            set: sort?.hasAttribute("data-active") ?? false,
+            text: sort?.textContent ?? null,
+          },
+          phase: view.query.state.getState().phase,
+          header: ((h: Element | null) =>
+            h
+              ? ["[data-library-header]", "[data-library-header-count]"]
+                  .map((s) => h.querySelector(s)?.textContent ?? "")
+                  .filter((t) => t !== "")
+                  .join(" | ")
+              : null)(el.querySelector("[data-library-heading]")),
+          recent: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+          ].some(
+            (n) =>
+              JSON.parse(n.getAttribute("data-library-node")!)[0] ===
+                "recent" && n.getAttribute("aria-selected") === "true",
+          ),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          rows: rows.map((n) => n.getAttribute("data-query-papers-row")!),
+          lines: rows.map(
+            (n) =>
+              n.querySelector<HTMLElement>("[data-query-papers-title]")!
+                .parentElement!.childElementCount,
+          ),
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((shown) => !shown.recent && shown.phase === "ready")(value),
+      },
+    );
+    await obRun(
+      run.vaultId,
+      async ({ app, page }, { JSONStringifyResult, recent }) => {
+        const { press, until } = page;
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl;
+        const pane = el.querySelector<HTMLElement>("[data-library-tree]");
+        if (getComputedStyle(pane!).display === "none") {
+          press(
+            el.querySelector<HTMLElement>("[data-library-tree-toggle]"),
+            "Library Tree button",
+          );
+          await until(
+            "Library Tree",
+            () => getComputedStyle(pane!).display !== "none",
+          );
+        }
+        press(
+          [...pane!.querySelectorAll<HTMLElement>("[data-library-node]")].find(
+            (n) => n.getAttribute("data-library-node")! === JSONStringifyResult,
+          ),
+          recent,
+        );
+      },
+      { JSONStringifyResult: JSON.stringify(["recent"]), recent: "Recent" },
+    );
+    const again = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.query.settled;
+        await view.tree.settled;
+        const el = view.contentEl;
+        const rows = [
+          ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+        ];
+        const sort = el.querySelector<HTMLElement>(
+          '[data-query-toolbar="sort"]',
+        );
+        return {
+          sort: {
+            set: sort?.hasAttribute("data-active") ?? false,
+            text: sort?.textContent ?? null,
+          },
+          phase: view.query.state.getState().phase,
+          header: ((h: Element | null) =>
+            h
+              ? ["[data-library-header]", "[data-library-header-count]"]
+                  .map((s) => h.querySelector(s)?.textContent ?? "")
+                  .filter((t) => t !== "")
+                  .join(" | ")
+              : null)(el.querySelector("[data-library-heading]")),
+          recent: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+          ].some(
+            (n) =>
+              JSON.parse(n.getAttribute("data-library-node")!)[0] ===
+                "recent" && n.getAttribute("aria-selected") === "true",
+          ),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          rows: rows.map((n) => n.getAttribute("data-query-papers-row")!),
+          lines: rows.map(
+            (n) =>
+              n.querySelector<HTMLElement>("[data-query-papers-title]")!
+                .parentElement!.childElementCount,
+          ),
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((shown) => shown.recent && listing(size([personal]))(shown))(value),
+      },
+    );
+    expectRecent(again!, [personal], -1);
+    expect(again!.sort).toEqual({ set: false, text: "Sort" });
+
+    await waitForLibraryDocument(
+      run.vaultId,
+      {
         node: { kind: "recent" },
         sort: [{ property: "lastActivity", direction: "DESC" }],
-      }),
-    ).toBe(true);
+      },
+      "the library.document setting to hold the expected Recent sort before the switch",
+    );
 
     const modified = new Map(
       ITEMS.map((item) => [indexedKey(item), item.dateModified]),
@@ -496,44 +1327,382 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       library: { type: "personal" },
       path: [sharedKey.name],
     };
-    await pressNode(sharedKeyNode, "Shared key");
-    const unsorted = await shownWhen(
-      (shown) => !shown.recent && listing(filed.length)(shown),
+    await obRun(
+      run.vaultId,
+      async ({ app, page }, { sharedkeynode, sharedKey }) => {
+        const { press, until } = page;
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl;
+        const pane = el.querySelector<HTMLElement>("[data-library-tree]");
+        if (getComputedStyle(pane!).display === "none") {
+          press(
+            el.querySelector<HTMLElement>("[data-library-tree-toggle]"),
+            "Library Tree button",
+          );
+          await until(
+            "Library Tree",
+            () => getComputedStyle(pane!).display !== "none",
+          );
+        }
+        press(
+          [...pane!.querySelectorAll<HTMLElement>("[data-library-node]")].find(
+            (n) => n.getAttribute("data-library-node")! === sharedkeynode,
+          ),
+          sharedKey,
+        );
+      },
+      { sharedkeynode: sharedKeyNode, sharedKey: "Shared key" },
     );
-    expect(unsorted.sort).toEqual({ set: false, text: "Sort" });
-    expectFiled(unsorted, -1);
-    expect(await saved({ node: sharedKeyPath, sort: [] })).toBe(true);
+    const unsorted = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.query.settled;
+        await view.tree.settled;
+        const el = view.contentEl;
+        const rows = [
+          ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+        ];
+        const sort = el.querySelector<HTMLElement>(
+          '[data-query-toolbar="sort"]',
+        );
+        return {
+          sort: {
+            set: sort?.hasAttribute("data-active") ?? false,
+            text: sort?.textContent ?? null,
+          },
+          phase: view.query.state.getState().phase,
+          header: ((h: Element | null) =>
+            h
+              ? ["[data-library-header]", "[data-library-header-count]"]
+                  .map((s) => h.querySelector(s)?.textContent ?? "")
+                  .filter((t) => t !== "")
+                  .join(" | ")
+              : null)(el.querySelector("[data-library-heading]")),
+          recent: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+          ].some(
+            (n) =>
+              JSON.parse(n.getAttribute("data-library-node")!)[0] ===
+                "recent" && n.getAttribute("aria-selected") === "true",
+          ),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          rows: rows.map((n) => n.getAttribute("data-query-papers-row")!),
+          lines: rows.map(
+            (n) =>
+              n.querySelector<HTMLElement>("[data-query-papers-title]")!
+                .parentElement!.childElementCount,
+          ),
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((shown) => !shown.recent && listing(filed.length)(shown))(value),
+      },
+    );
+    expect(unsorted!.sort).toEqual({ set: false, text: "Sort" });
+    expectFiled(unsorted!, -1);
+    await waitForLibraryDocument(
+      run.vaultId,
+      { node: sharedKeyPath, sort: [] },
+      "the library.document setting after switching to a Collection",
+    );
 
     // A sort the researcher changed on Recent is theirs: it stays on the
     // Collection, and the Sort button shows it as set.
-    await pressNode(JSON.stringify(["recent"]), "Recent");
-    await shownWhen(
-      (shown) => shown.recent && listing(size([personal]))(shown),
+    await obRun(
+      run.vaultId,
+      async ({ app, page }, { JSONStringifyResult, recent }) => {
+        const { press, until } = page;
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl;
+        const pane = el.querySelector<HTMLElement>("[data-library-tree]");
+        if (getComputedStyle(pane!).display === "none") {
+          press(
+            el.querySelector<HTMLElement>("[data-library-tree-toggle]"),
+            "Library Tree button",
+          );
+          await until(
+            "Library Tree",
+            () => getComputedStyle(pane!).display !== "none",
+          );
+        }
+        press(
+          [...pane!.querySelectorAll<HTMLElement>("[data-library-node]")].find(
+            (n) => n.getAttribute("data-library-node")! === JSONStringifyResult,
+          ),
+          recent,
+        );
+      },
+      { JSONStringifyResult: JSON.stringify(["recent"]), recent: "Recent" },
     );
-    await inLibrary(
-      "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort');await pick(await until('sort direction',()=>el.querySelector('[data-query-popover=\"sort\"] [data-sort-direction]')),'ASC','sort direction')",
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.query.settled;
+        await view.tree.settled;
+        const el = view.contentEl;
+        const rows = [
+          ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+        ];
+        const sort = el.querySelector<HTMLElement>(
+          '[data-query-toolbar="sort"]',
+        );
+        return {
+          sort: {
+            set: sort?.hasAttribute("data-active") ?? false,
+            text: sort?.textContent ?? null,
+          },
+          phase: view.query.state.getState().phase,
+          header: ((h: Element | null) =>
+            h
+              ? ["[data-library-header]", "[data-library-header-count]"]
+                  .map((s) => h.querySelector(s)?.textContent ?? "")
+                  .filter((t) => t !== "")
+                  .join(" | ")
+              : null)(el.querySelector("[data-library-heading]")),
+          recent: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+          ].some(
+            (n) =>
+              JSON.parse(n.getAttribute("data-library-node")!)[0] ===
+                "recent" && n.getAttribute("aria-selected") === "true",
+          ),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          rows: rows.map((n) => n.getAttribute("data-query-papers-row")!),
+          lines: rows.map(
+            (n) =>
+              n.querySelector<HTMLElement>("[data-query-papers-title]")!
+                .parentElement!.childElementCount,
+          ),
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((shown) => shown.recent && listing(size([personal]))(shown))(value),
+      },
     );
-    const resorted = await shownWhen(
-      (shown) =>
-        shown.recent && shown.sort.set && listing(size([personal]))(shown),
+    await obRun(
+      run.vaultId,
+      async ({ app, page }) => {
+        const { press, until, pick } = page;
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl;
+        press(
+          el.querySelector<HTMLElement>('[data-query-toolbar="sort"]'),
+          "Sort",
+        );
+        await pick(
+          await until("sort direction", () =>
+            el.querySelector<HTMLButtonElement | HTMLSelectElement>(
+              '[data-query-popover="sort"] [data-sort-direction]',
+            ),
+          ),
+          "ASC",
+          "sort direction",
+        );
+      },
+      undefined,
     );
-    expectRecent(resorted, [personal], 1);
-    await pressNode(sharedKeyNode, "Shared key");
-    const kept = await shownWhen(
-      (shown) => !shown.recent && listing(filed.length)(shown),
+    const resorted = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.query.settled;
+        await view.tree.settled;
+        const el = view.contentEl;
+        const rows = [
+          ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+        ];
+        const sort = el.querySelector<HTMLElement>(
+          '[data-query-toolbar="sort"]',
+        );
+        return {
+          sort: {
+            set: sort?.hasAttribute("data-active") ?? false,
+            text: sort?.textContent ?? null,
+          },
+          phase: view.query.state.getState().phase,
+          header: ((h: Element | null) =>
+            h
+              ? ["[data-library-header]", "[data-library-header-count]"]
+                  .map((s) => h.querySelector(s)?.textContent ?? "")
+                  .filter((t) => t !== "")
+                  .join(" | ")
+              : null)(el.querySelector("[data-library-heading]")),
+          recent: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+          ].some(
+            (n) =>
+              JSON.parse(n.getAttribute("data-library-node")!)[0] ===
+                "recent" && n.getAttribute("aria-selected") === "true",
+          ),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          rows: rows.map((n) => n.getAttribute("data-query-papers-row")!),
+          lines: rows.map(
+            (n) =>
+              n.querySelector<HTMLElement>("[data-query-papers-title]")!
+                .parentElement!.childElementCount,
+          ),
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((shown) =>
+            shown.recent && shown.sort.set && listing(size([personal]))(shown))(
+            value,
+          ),
+      },
     );
-    expect(kept.sort).toEqual({ set: true, text: "Sort1" });
-    expect(kept.rows.map((key) => activity.get(key))).toEqual(
+    expectRecent(resorted!, [personal], 1);
+    await obRun(
+      run.vaultId,
+      async ({ app, page }, { sharedkeynode, sharedKey }) => {
+        const { press, until } = page;
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl;
+        const pane = el.querySelector<HTMLElement>("[data-library-tree]");
+        if (getComputedStyle(pane!).display === "none") {
+          press(
+            el.querySelector<HTMLElement>("[data-library-tree-toggle]"),
+            "Library Tree button",
+          );
+          await until(
+            "Library Tree",
+            () => getComputedStyle(pane!).display !== "none",
+          );
+        }
+        press(
+          [...pane!.querySelectorAll<HTMLElement>("[data-library-node]")].find(
+            (n) => n.getAttribute("data-library-node")! === sharedkeynode,
+          ),
+          sharedKey,
+        );
+      },
+      { sharedkeynode: sharedKeyNode, sharedKey: "Shared key" },
+    );
+    const kept = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.query.settled;
+        await view.tree.settled;
+        const el = view.contentEl;
+        const rows = [
+          ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+        ];
+        const sort = el.querySelector<HTMLElement>(
+          '[data-query-toolbar="sort"]',
+        );
+        return {
+          sort: {
+            set: sort?.hasAttribute("data-active") ?? false,
+            text: sort?.textContent ?? null,
+          },
+          phase: view.query.state.getState().phase,
+          header: ((h: Element | null) =>
+            h
+              ? ["[data-library-header]", "[data-library-header-count]"]
+                  .map((s) => h.querySelector(s)?.textContent ?? "")
+                  .filter((t) => t !== "")
+                  .join(" | ")
+              : null)(el.querySelector("[data-library-heading]")),
+          recent: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+          ].some(
+            (n) =>
+              JSON.parse(n.getAttribute("data-library-node")!)[0] ===
+                "recent" && n.getAttribute("aria-selected") === "true",
+          ),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          rows: rows.map((n) => n.getAttribute("data-query-papers-row")!),
+          lines: rows.map(
+            (n) =>
+              n.querySelector<HTMLElement>("[data-query-papers-title]")!
+                .parentElement!.childElementCount,
+          ),
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((shown) => !shown.recent && listing(filed.length)(shown))(value),
+      },
+    );
+    expect(kept!.sort).toEqual({ set: true, text: "Sort1" });
+    expect(kept!.rows.map((key) => activity.get(key!))).toEqual(
       filed
         .map((item) => activity.get(indexedKey(item))!)
         .toSorted((a, b) => a - b),
     );
-    expect(
-      await saved({
+    await waitForLibraryDocument(
+      run.vaultId,
+      {
         node: sharedKeyPath,
         sort: [{ property: "lastActivity", direction: "ASC" }],
-      }),
-    ).toBe(true);
+      },
+      "the library.document setting after reselecting Recent to restore its sort",
+    );
   });
 
   it("records PDF reads from every open route and page changes, preserves restored reads, and excludes standalone Attachments", async () => {
@@ -545,61 +1714,185 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   }, 180000);
 
   it("picks a sort property in the Library View's Sort popover from the property Select's options, and the row keeps one property Select", async () => {
-    const services = "app.plugins.plugins.zotlit.services";
-    const snapshot = await obEval(
+    const snapshot = await obRun(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null})`,
+      async ({ app, zotlit }) => {
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+        });
+      },
+      undefined,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+        async ({ app, zotlit }, { snapshot }) => {
+          const saved = JSON.parse(snapshot);
+          const { settings, bridge } = zotlit.services;
+          bridge.runSync(
+            settings.update({ "library.document": saved.document }),
+          );
+          await bridge.runPromise(settings.flush);
+          await app.workspace.changeLayout(saved.layout);
+        },
+        { snapshot: snapshot },
       );
     });
     // A new Library View opens on Recent, whose sort is last change first.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':null});await settings.flush();app.commands.executeCommandById('zotlit:open-library-view');return true;})()`,
+      async ({ app, zotlit }) => {
+        (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        ).forEach((leaf) => leaf.detach());
+        const { settings, bridge } = zotlit.services;
+        bridge.runSync(settings.update({ "library.document": null }));
+        await bridge.runPromise(settings.flush);
+        app.commands.executeCommandById("zotlit:open-library-view");
+      },
+      undefined,
     );
     // The heading draws the Sort control in a React root of its own; the
     // property Select's popup opens its Chooser there, with its search and
     // rows, and a pick shuts it.
-    const picked = JSON.parse(
-      await obEval(
-        run.vaultId,
-        `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);const el=leaf.view.contentEl;await until('rows',()=>el.querySelectorAll('[data-query-papers-row]').length>0,20000);press(el.querySelector('[data-query-toolbar="sort"]'),'Sort');const popover=await until('Sort popover',()=>el.querySelector('[data-query-popover="sort"]:popover-open'));await pick(await until('sort property',()=>popover.querySelector('[data-sort-property]')),'title','sort property');const triggers=popover.querySelectorAll('[data-sort-property]').length;popover.hidePopover();return JSON.stringify({triggers});})()`,
-      ),
-    ) as { triggers: number };
+    const picked = (await obRun(
+      run.vaultId,
+      async ({ app, page }) => {
+        const { press, until, pick } = page;
+        const leaf = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0];
+        await app.workspace.revealLeaf(leaf!);
+        const el = leaf!.view.contentEl;
+        await until(
+          "rows",
+          () =>
+            el.querySelectorAll<HTMLElement>("[data-query-papers-row]").length >
+            0,
+          20000,
+        );
+        press(
+          el.querySelector<HTMLElement>('[data-query-toolbar="sort"]'),
+          "Sort",
+        );
+        const popover = await until("Sort popover", () =>
+          el.querySelector<HTMLElement>(
+            '[data-query-popover="sort"]:popover-open',
+          ),
+        );
+        await pick(
+          await until("sort property", () =>
+            popover.querySelector<HTMLButtonElement | HTMLSelectElement>(
+              "[data-sort-property]",
+            ),
+          ),
+          "title",
+          "sort property",
+        );
+        const triggers = popover.querySelectorAll<HTMLElement>(
+          "[data-sort-property]",
+        ).length;
+        popover.hidePopover();
+        return { triggers };
+      },
+      undefined,
+    )) as { triggers: number };
     expect(picked).toEqual({ triggers: 1 });
-    expect(
-      await obEvalUntil(
-        run.vaultId,
-        `JSON.stringify(${services}.settings.current['library.document']?.sort)`,
-        {
-          expected: JSON.stringify([{ property: "title", direction: "DESC" }]),
-        },
-      ),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ zotlit }) => {
+        return JSON.stringify(
+          zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+            "library.document"
+          ]?.sort,
+        );
+      },
+      undefined,
+      {
+        ready: (value) =>
+          value === JSON.stringify([{ property: "title", direction: "DESC" }]),
+        what: "the saved library.document sort to be title descending",
+      },
+    );
   });
 
   it("filters the Library View from the Library Tree, with counts that match the seed and follow a database change", async () => {
-    const services = "app.plugins.plugins.zotlit.services";
-    const snapshot = await obEval(
+    const snapshot = await obRun(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,scope:${services}.settings.current[${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}]??null})`,
+      async ({ app, zotlit }, { libraryScopeSettingKey }) => {
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+          scope:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              libraryScopeSettingKey
+            ] ?? null,
+        });
+      },
+      { libraryScopeSettingKey: LIBRARY_SCOPE_SETTING_KEY },
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:saved.scope});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+        async ({ app, zotlit }, { snapshot, libraryScopeSettingKey }) => {
+          const saved = JSON.parse(snapshot);
+          const { settings, bridge } = zotlit.services;
+          bridge.runSync(
+            settings.update({
+              "library.document": saved.document,
+              [libraryScopeSettingKey]: saved.scope,
+            }),
+          );
+          await bridge.runPromise(settings.flush);
+          await app.workspace.changeLayout(saved.layout);
+        },
+        {
+          snapshot: snapshot,
+          libraryScopeSettingKey: LIBRARY_SCOPE_SETTING_KEY,
+        },
       );
     });
     // The Library Scope holds My Library alone; the tree opens on My Library.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)},${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:{mode:'selected',libraries:[{type:'personal'}]}});await settings.flush();return true;})()`,
+      async (
+        { app, zotlit },
+        { myLibraryDocument, libraryScopeSettingKey },
+      ) => {
+        (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        ).forEach((leaf) => leaf.detach());
+        const { settings, bridge } = zotlit.services;
+        bridge.runSync(
+          settings.update({
+            "library.document": myLibraryDocument,
+            [libraryScopeSettingKey]: {
+              mode: "selected",
+              libraries: [{ type: "personal" }],
+            },
+          }),
+        );
+        await bridge.runPromise(settings.flush);
+      },
+      {
+        myLibraryDocument: MY_LIBRARY_DOCUMENT,
+        libraryScopeSettingKey: LIBRARY_SCOPE_SETTING_KEY,
+      },
     );
 
     // The seed's oracle: each Library's Items, and the Items a Collection
@@ -657,13 +1950,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       count: string | null;
       rows: string[];
     }
-    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.query.settled;await view.tree.settled;const el=view.contentEl;return JSON.stringify({phase:view.query.state.getState().phase,header:${LIBRARY_HEADING},all:el.querySelector('[data-library-all]')?.getAttribute('data-library-all')??null,tree:[...el.querySelectorAll('[data-library-node]')].map(n=>({key:n.getAttribute('data-library-node'),level:Number(n.getAttribute('aria-level')),label:n.querySelector('[data-library-label]').textContent,count:n.querySelector('[data-library-count]')?.textContent??null,selected:n.getAttribute('aria-selected')==='true'})),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('tr[data-query-table-row="item"], [data-query-papers-row]')].map(n=>n.getAttribute('data-query-key')??n.getAttribute('data-query-papers-row'))});})()`;
-    const shownWhen = (ready: (shown: Shown) => boolean) =>
-      obReadUntil<Shown>(run.vaultId, readShown, {
-        ready,
-        what: "Library View",
-        tries: 120,
-      });
+
     /** Whether the list drew every row it counted, for the selection `key`. */
     const listing = (key: string) => (shown: Shown) =>
       shown.phase === "ready" &&
@@ -676,33 +1963,119 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
      * Press the element `target` finds in the tree pane. A narrow pane keeps
      * the tree behind its button, so the press opens it first.
      */
-    const inTree = (target: string, what: string) =>
-      obEval(
-        run.vaultId,
-        `(async()=>{${PAGE}const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;const pane=el.querySelector('[data-library-tree]');if(getComputedStyle(pane).display==='none'){press(el.querySelector('[data-library-tree-toggle]'),'Library Tree button');await until('Library Tree',()=>getComputedStyle(pane).display!=='none');}press(${target},${JSON.stringify(what)});return true;})()`,
-      );
+
     /** Press the node `key`, or its element that `part` selects. */
     const press = (key: string, part: string, what: string) => {
-      const row = `[...pane.querySelectorAll('[data-library-node]')].find(n=>n.getAttribute('data-library-node')===${JSON.stringify(key)})`;
-      return inTree(
-        part === "" ? row : `${row}.querySelector(${JSON.stringify(part)})`,
-        what,
+      return obRun(
+        run.vaultId,
+        async ({ app, page }, { key, part, condition, what }) => {
+          const { press, until } = page;
+          const el = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]!.view.contentEl;
+          const pane = el.querySelector<HTMLElement>("[data-library-tree]");
+          if (getComputedStyle(pane!).display === "none") {
+            press(
+              el.querySelector<HTMLElement>("[data-library-tree-toggle]"),
+              "Library Tree button",
+            );
+            await until(
+              "Library Tree",
+              () => getComputedStyle(pane!).display !== "none",
+            );
+          }
+          press(
+            condition
+              ? [
+                  ...pane!.querySelectorAll<HTMLElement>("[data-library-node]"),
+                ].find((n) => n.getAttribute("data-library-node")! === key)
+              : [...pane!.querySelectorAll<HTMLElement>("[data-library-node]")]
+                  .find((n) => n.getAttribute("data-library-node")! === key)!
+                  .querySelector<HTMLElement>(part),
+            what,
+          );
+          return String(true);
+        },
+        { key: key, part: part, condition: part === "", what: what },
       );
     };
 
-    await obEval(
+    await obRun(
       run.vaultId,
-      "app.commands.executeCommandById('zotlit:open-library-view');true",
+      async ({ app }) => {
+        app.commands.executeCommandById("zotlit:open-library-view");
+      },
+      undefined,
     );
     // The tree shows the Library Scope: My Library and its Collections, each
     // counted from the seed, a subcollection's Items inside its parent.
-    const opened = await shownWhen(
-      (shown) =>
-        listing(nodeKey("personal"))(shown) &&
-        node(shown, parentKey)?.count != null,
+    const opened = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.query.settled;
+        await view.tree.settled;
+        const el = view.contentEl;
+        return {
+          phase: view.query.state.getState().phase,
+          header: ((h: Element | null) =>
+            h
+              ? ["[data-library-header]", "[data-library-header-count]"]
+                  .map((s) => h.querySelector(s)?.textContent ?? "")
+                  .filter((t) => t !== "")
+                  .join(" | ")
+              : null)(el.querySelector("[data-library-heading]")),
+          all:
+            el
+              .querySelector<HTMLElement>("[data-library-all]")
+              ?.getAttribute("data-library-all") ?? null,
+          tree: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+          ].map((n) => ({
+            key: n.getAttribute("data-library-node")!,
+            level: Number(n.getAttribute("aria-level")),
+            label: n.querySelector<HTMLElement>("[data-library-label]")!
+              .textContent,
+            count:
+              n.querySelector<HTMLElement>("[data-library-count]")
+                ?.textContent ?? null,
+            selected: n.getAttribute("aria-selected") === "true",
+          })),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          rows: [
+            ...el.querySelectorAll<HTMLElement>(
+              'tr[data-query-table-row="item"], [data-query-papers-row]',
+            ),
+          ].map(
+            (n) =>
+              n.getAttribute("data-query-key")! ??
+              n.getAttribute("data-query-papers-row")!,
+          ),
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((shown) =>
+            listing(nodeKey("personal"))(shown) &&
+            node(shown, parentKey)?.count != null)(value),
+      },
     );
     expect(
-      opened.tree.map(({ key, level, count }) => ({ key, level, count })),
+      opened!.tree.map(({ key, level, count }) => ({ key, level, count })),
     ).toEqual([
       // Recent, above the Libraries, counts nothing.
       { key: JSON.stringify(["recent"]), level: 1, count: null },
@@ -719,7 +2092,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           count: String(filed(entry.collectionID).length),
         })),
     ]);
-    expect(opened.header).toBe(
+    expect(opened!.header).toBe(
       suite.libraryHeader(
         run.m.settings_library_scope_personal(),
         inLibrary(personal.libraryID),
@@ -728,7 +2101,67 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await press(parentKey, "[data-library-expand]", "Collection disclosure");
     expect(
       node(
-        await shownWhen((shown) => node(shown, childKey) !== undefined),
+        (await obRunUntil(
+          run.vaultId,
+          async ({ app }) => {
+            const view = (
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0]?.view;
+            if (!view?.tree) return null;
+            await view.query.settled;
+            await view.tree.settled;
+            const el = view.contentEl;
+            return {
+              phase: view.query.state.getState().phase,
+              header: ((h: Element | null) =>
+                h
+                  ? ["[data-library-header]", "[data-library-header-count]"]
+                      .map((s) => h.querySelector(s)?.textContent ?? "")
+                      .filter((t) => t !== "")
+                      .join(" | ")
+                  : null)(el.querySelector("[data-library-heading]")),
+              all:
+                el
+                  .querySelector<HTMLElement>("[data-library-all]")
+                  ?.getAttribute("data-library-all") ?? null,
+              tree: [
+                ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+              ].map((n) => ({
+                key: n.getAttribute("data-library-node")!,
+                level: Number(n.getAttribute("aria-level")),
+                label: n.querySelector<HTMLElement>("[data-library-label]")!
+                  .textContent,
+                count:
+                  n.querySelector<HTMLElement>("[data-library-count]")
+                    ?.textContent ?? null,
+                selected: n.getAttribute("aria-selected") === "true",
+              })),
+              count:
+                el
+                  .querySelector<HTMLElement>("[data-query-count]")
+                  ?.getAttribute("data-query-count") ?? null,
+              rows: [
+                ...el.querySelectorAll<HTMLElement>(
+                  'tr[data-query-table-row="item"], [data-query-papers-row]',
+                ),
+              ].map(
+                (n) =>
+                  n.getAttribute("data-query-key")! ??
+                  n.getAttribute("data-query-papers-row")!,
+              ),
+            };
+          },
+          undefined,
+          {
+            what: "Library View",
+            tries: 120,
+            ready: (value) =>
+              value !== null &&
+              ((shown) => node(shown, childKey) !== undefined)(value),
+          },
+        ))!,
         childKey,
       ),
     ).toMatchObject({
@@ -738,25 +2171,167 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // "All libraries" shows the group libraries outside the Library Scope;
     // one lists its own Items.
-    expect(opened.all).toBe("off");
-    await inTree("pane.querySelector('[data-library-all]')", "All libraries");
-    const widened = await shownWhen(
-      (shown) =>
-        shown.all === "on" &&
-        LIBRARIES.every(
-          ({ groupID }) =>
-            groupID === null ||
-            node(shown, nodeKey(`group:${groupID}`))?.count != null,
-        ),
+    expect(opened!.all).toBe("off");
+    await obRun(
+      run.vaultId,
+      async ({ app, page }, { allLibraries }) => {
+        const { press, until } = page;
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl;
+        const pane = el.querySelector<HTMLElement>("[data-library-tree]");
+        if (getComputedStyle(pane!).display === "none") {
+          press(
+            el.querySelector<HTMLElement>("[data-library-tree-toggle]"),
+            "Library Tree button",
+          );
+          await until(
+            "Library Tree",
+            () => getComputedStyle(pane!).display !== "none",
+          );
+        }
+        press(
+          pane!.querySelector<HTMLElement>("[data-library-all]"),
+          allLibraries,
+        );
+      },
+      { allLibraries: "All libraries" },
+    );
+    const widened = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.query.settled;
+        await view.tree.settled;
+        const el = view.contentEl;
+        return {
+          phase: view.query.state.getState().phase,
+          header: ((h: Element | null) =>
+            h
+              ? ["[data-library-header]", "[data-library-header-count]"]
+                  .map((s) => h.querySelector(s)?.textContent ?? "")
+                  .filter((t) => t !== "")
+                  .join(" | ")
+              : null)(el.querySelector("[data-library-heading]")),
+          all:
+            el
+              .querySelector<HTMLElement>("[data-library-all]")
+              ?.getAttribute("data-library-all") ?? null,
+          tree: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+          ].map((n) => ({
+            key: n.getAttribute("data-library-node")!,
+            level: Number(n.getAttribute("aria-level")),
+            label: n.querySelector<HTMLElement>("[data-library-label]")!
+              .textContent,
+            count:
+              n.querySelector<HTMLElement>("[data-library-count]")
+                ?.textContent ?? null,
+            selected: n.getAttribute("aria-selected") === "true",
+          })),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          rows: [
+            ...el.querySelectorAll<HTMLElement>(
+              'tr[data-query-table-row="item"], [data-query-papers-row]',
+            ),
+          ].map(
+            (n) =>
+              n.getAttribute("data-query-key")! ??
+              n.getAttribute("data-query-papers-row")!,
+          ),
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((shown) =>
+            shown.all === "on" &&
+            LIBRARIES.every(
+              ({ groupID }) =>
+                groupID === null ||
+                node(shown, nodeKey(`group:${groupID}`))?.count != null,
+            ))(value),
+      },
     );
     for (const entry of LIBRARIES.filter(({ groupID }) => groupID !== null))
-      expect(node(widened, nodeKey(`group:${entry.groupID}`))).toMatchObject({
+      expect(node(widened!, nodeKey(`group:${entry.groupID}`))).toMatchObject({
         label: entry.name,
         count: String(inLibrary(entry.libraryID).length),
       });
     await press(sharedNode, "", "group library");
-    const group = await shownWhen(listing(sharedNode));
-    expect(group.rows.toSorted()).toEqual(
+    const group = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.query.settled;
+        await view.tree.settled;
+        const el = view.contentEl;
+        return {
+          phase: view.query.state.getState().phase,
+          header: ((h: Element | null) =>
+            h
+              ? ["[data-library-header]", "[data-library-header-count]"]
+                  .map((s) => h.querySelector(s)?.textContent ?? "")
+                  .filter((t) => t !== "")
+                  .join(" | ")
+              : null)(el.querySelector("[data-library-heading]")),
+          all:
+            el
+              .querySelector<HTMLElement>("[data-library-all]")
+              ?.getAttribute("data-library-all") ?? null,
+          tree: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+          ].map((n) => ({
+            key: n.getAttribute("data-library-node")!,
+            level: Number(n.getAttribute("aria-level")),
+            label: n.querySelector<HTMLElement>("[data-library-label]")!
+              .textContent,
+            count:
+              n.querySelector<HTMLElement>("[data-library-count]")
+                ?.textContent ?? null,
+            selected: n.getAttribute("aria-selected") === "true",
+          })),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          rows: [
+            ...el.querySelectorAll<HTMLElement>(
+              'tr[data-query-table-row="item"], [data-query-papers-row]',
+            ),
+          ].map(
+            (n) =>
+              n.getAttribute("data-query-key")! ??
+              n.getAttribute("data-query-papers-row")!,
+          ),
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) => value !== null && listing(sharedNode)(value),
+      },
+    );
+    expect(group!.rows.toSorted()).toEqual(
       inLibrary(shared.libraryID).map(indexedKey).toSorted(),
     );
 
@@ -764,23 +2339,150 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // header names it with the count.
     await press(parentKey, "", "Collection");
     const expected = filed(parent.collectionID).map(indexedKey).toSorted();
-    const chosen = await shownWhen(listing(parentKey));
-    expect(chosen.rows.toSorted()).toEqual(expected);
-    expect(chosen.header).toBe(
+    const chosen = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.query.settled;
+        await view.tree.settled;
+        const el = view.contentEl;
+        return {
+          phase: view.query.state.getState().phase,
+          header: ((h: Element | null) =>
+            h
+              ? ["[data-library-header]", "[data-library-header-count]"]
+                  .map((s) => h.querySelector(s)?.textContent ?? "")
+                  .filter((t) => t !== "")
+                  .join(" | ")
+              : null)(el.querySelector("[data-library-heading]")),
+          all:
+            el
+              .querySelector<HTMLElement>("[data-library-all]")
+              ?.getAttribute("data-library-all") ?? null,
+          tree: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+          ].map((n) => ({
+            key: n.getAttribute("data-library-node")!,
+            level: Number(n.getAttribute("aria-level")),
+            label: n.querySelector<HTMLElement>("[data-library-label]")!
+              .textContent,
+            count:
+              n.querySelector<HTMLElement>("[data-library-count]")
+                ?.textContent ?? null,
+            selected: n.getAttribute("aria-selected") === "true",
+          })),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          rows: [
+            ...el.querySelectorAll<HTMLElement>(
+              'tr[data-query-table-row="item"], [data-query-papers-row]',
+            ),
+          ].map(
+            (n) =>
+              n.getAttribute("data-query-key")! ??
+              n.getAttribute("data-query-papers-row")!,
+          ),
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) => value !== null && listing(parentKey)(value),
+      },
+    );
+    expect(chosen!.rows.toSorted()).toEqual(expected);
+    expect(chosen!.header).toBe(
       suite.libraryHeader(parent.name, filed(parent.collectionID)),
     );
 
     // A plugin reload comes back on the Collection.
-    expect(
-      await obEvalUntil(
-        run.vaultId,
-        "app.plugins.disablePlugin('zotlit').then(function () { return app.plugins.enablePlugin('zotlit'); }).then(function () { return true; })",
-        { expected: "true", tries: 20 },
-      ),
-    ).toBe(true);
-    const reloaded = await shownWhen(listing(parentKey));
-    expect(reloaded.rows.toSorted()).toEqual(expected);
-    expect(reloaded.header).toBe(chosen.header);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return await app.plugins
+          .disablePlugin("zotlit")
+          .then(function () {
+            return app.plugins.enablePlugin("zotlit");
+          })
+          .then(function () {
+            return true;
+          });
+      },
+      undefined,
+      {
+        tries: 20,
+        what: "the zotlit plugin reload to finish before the Collection filter is checked",
+      },
+    );
+    const reloaded = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.query.settled;
+        await view.tree.settled;
+        const el = view.contentEl;
+        return {
+          phase: view.query.state.getState().phase,
+          header: ((h: Element | null) =>
+            h
+              ? ["[data-library-header]", "[data-library-header-count]"]
+                  .map((s) => h.querySelector(s)?.textContent ?? "")
+                  .filter((t) => t !== "")
+                  .join(" | ")
+              : null)(el.querySelector("[data-library-heading]")),
+          all:
+            el
+              .querySelector<HTMLElement>("[data-library-all]")
+              ?.getAttribute("data-library-all") ?? null,
+          tree: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+          ].map((n) => ({
+            key: n.getAttribute("data-library-node")!,
+            level: Number(n.getAttribute("aria-level")),
+            label: n.querySelector<HTMLElement>("[data-library-label]")!
+              .textContent,
+            count:
+              n.querySelector<HTMLElement>("[data-library-count]")
+                ?.textContent ?? null,
+            selected: n.getAttribute("aria-selected") === "true",
+          })),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          rows: [
+            ...el.querySelectorAll<HTMLElement>(
+              'tr[data-query-table-row="item"], [data-query-papers-row]',
+            ),
+          ].map(
+            (n) =>
+              n.getAttribute("data-query-key")! ??
+              n.getAttribute("data-query-papers-row")!,
+          ),
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) => value !== null && listing(parentKey)(value),
+      },
+    );
+    expect(reloaded!.rows.toSorted()).toEqual(expected);
+    expect(reloaded!.header).toBe(chosen!.header);
 
     // Zotero files one more Item in the subcollection: the counts up the
     // tree and the list take it after the database change.
@@ -800,15 +2502,75 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await signalDatabaseUpdated(run.vaultId);
     });
     await signalDatabaseUpdated(run.vaultId);
-    const changed = await shownWhen(
-      (shown) =>
-        listing(parentKey)(shown) &&
-        node(shown, parentKey)?.count === String(expected.length + 1),
+    const changed = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.query.settled;
+        await view.tree.settled;
+        const el = view.contentEl;
+        return {
+          phase: view.query.state.getState().phase,
+          header: ((h: Element | null) =>
+            h
+              ? ["[data-library-header]", "[data-library-header-count]"]
+                  .map((s) => h.querySelector(s)?.textContent ?? "")
+                  .filter((t) => t !== "")
+                  .join(" | ")
+              : null)(el.querySelector("[data-library-heading]")),
+          all:
+            el
+              .querySelector<HTMLElement>("[data-library-all]")
+              ?.getAttribute("data-library-all") ?? null,
+          tree: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+          ].map((n) => ({
+            key: n.getAttribute("data-library-node")!,
+            level: Number(n.getAttribute("aria-level")),
+            label: n.querySelector<HTMLElement>("[data-library-label]")!
+              .textContent,
+            count:
+              n.querySelector<HTMLElement>("[data-library-count]")
+                ?.textContent ?? null,
+            selected: n.getAttribute("aria-selected") === "true",
+          })),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          rows: [
+            ...el.querySelectorAll<HTMLElement>(
+              'tr[data-query-table-row="item"], [data-query-papers-row]',
+            ),
+          ].map(
+            (n) =>
+              n.getAttribute("data-query-key")! ??
+              n.getAttribute("data-query-papers-row")!,
+          ),
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((shown) =>
+            listing(parentKey)(shown) &&
+            node(shown, parentKey)?.count === String(expected.length + 1))(
+            value,
+          ),
+      },
     );
-    expect(changed.rows.toSorted()).toEqual(
+    expect(changed!.rows.toSorted()).toEqual(
       [...expected, indexedKey(added)].toSorted(),
     );
-    expect(changed.header).toBe(
+    expect(changed!.header).toBe(
       suite.libraryHeader(parent.name, [...filed(parent.collectionID), added]),
     );
   });
@@ -821,87 +2583,298 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The page before the reload carries a mark the new page lacks. The
     // workspace saves its layout a while after a change; a researcher
     // reloads later than that, so the case saves it at once.
-    await obEval(
+    await obRun(
       run.vaultId,
-      "(async()=>{window.__ztBeforeReload=true;await app.workspace.requestSaveLayout.run();return true;})()",
+      async ({ app, page }) => {
+        page.scratch.libraryBeforeReload = true;
+        void app.workspace.requestSaveLayout.run();
+      },
+      undefined,
     );
     await cli([`vault=${run.vaultId}`, "reload"]);
-    expect(
-      await obEvalUntil(
-        run.vaultId,
-        "String(!window.__ztBeforeReload&&!!app.plugins.plugins.zotlit?.services?.settings?.current&&app.workspace.layoutReady)",
-        { expected: "true", tries: 120 },
-      ),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app, zotlit, page }) => {
+        return (
+          !page.scratch.libraryBeforeReload &&
+          !!zotlit.services.bridge.runSync(zotlit.services.settings.current) &&
+          app.workspace.layoutReady
+        );
+      },
+      undefined,
+      {
+        tries: 120,
+        what: "the workspace layout and zotlit settings to finish loading after reload",
+      },
+    );
     await prepareRunWindow(run.vaultId);
   }
 
   /** What the Library View shows that a reload must keep, once it settled. */
-  interface Kept {
-    phase: string;
-    open: string[];
-    selected: string | null;
-    card: string | null;
-    inView: boolean;
-    banner: boolean;
-    pressed: string | null;
-    rows: number;
-  }
-  const readKept = (help: string) =>
-    `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.searched;await view.query.settled;await view.tree.settled;await new Promise(r=>setTimeout(r,200));const el=view.contentEl;const row=el.querySelector('[data-query-item-row][data-selected]');const card=el.querySelector('[data-library-card]');let inView=false;if(row){const r=row.getBoundingClientRect();const hit=el.ownerDocument.elementFromPoint(r.left+r.width/2,r.top+r.height/2);inView=!!hit&&row.contains(hit);}const action=view.containerEl.querySelector(${JSON.stringify(`.view-actions .view-action[aria-label="${help}"]`)});return JSON.stringify({phase:view.query.state.getState().phase,open:[...el.querySelectorAll('[data-library-node][aria-expanded="true"]')].map(n=>n.getAttribute('data-library-node')),selected:row?.getAttribute('data-query-item-row')??null,card:card&&!card.hidden&&card.checkVisibility()?card.querySelector('[data-library-card-title]')?.textContent??'':null,inView,banner:!!el.querySelector('[data-welcome-banner]'),pressed:action?.getAttribute('aria-pressed')??null,rows:el.querySelectorAll('[data-query-item-row]').length});})()`;
 
   it("puts the researcher back where they were after a window reload: the Collection left open, the selected paper in view with its Reading Card beside a wide list and none over a narrow one, and the Welcome View banner they asked for, with Zotero closed", async () => {
-    const services = "app.plugins.plugins.zotlit.services";
-    const snapshot = await obEval(
+    const snapshot = await obRun(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,scope:${services}.settings.current[${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}]??null,dismissed:${services}.settings.current['welcome.dismissed'],requested:${services}.settings.current['welcome.requested']})`,
+      async ({ app, zotlit }, { libraryScopeSettingKey }) => {
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+          scope:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              libraryScopeSettingKey
+            ] ?? null,
+          dismissed: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["welcome.dismissed"],
+          requested: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["welcome.requested"],
+        });
+      },
+      { libraryScopeSettingKey: LIBRARY_SCOPE_SETTING_KEY },
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:saved.scope,'welcome.dismissed':saved.dismissed,'welcome.requested':saved.requested});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+        async ({ app, zotlit }, { snapshot, libraryScopeSettingKey }) => {
+          const saved = JSON.parse(snapshot);
+          const { settings, bridge } = zotlit.services;
+          bridge.runSync(
+            settings.update({
+              "library.document": saved.document,
+              [libraryScopeSettingKey]: saved.scope,
+              "welcome.dismissed": saved.dismissed,
+              "welcome.requested": saved.requested,
+            }),
+          );
+          await bridge.runPromise(settings.flush);
+          await app.workspace.changeLayout(saved.layout);
+        },
+        {
+          snapshot: snapshot,
+          libraryScopeSettingKey: LIBRARY_SCOPE_SETTING_KEY,
+        },
       );
     });
     await suite.wideWindow(cleanup);
     // The window is short, so the list scrolls under the banner.
-    await obEval(
+    await obRun(
       run.vaultId,
-      "require('@electron/remote').getCurrentWindow().setSize(1600,640);true",
+      async () => {
+        require("@electron/remote").getCurrentWindow().setSize(1600, 640);
+      },
+      undefined,
     );
     // My Library alone, with the banner put away.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)},${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:{mode:'selected',libraries:[{type:'personal'}]},'welcome.dismissed':true,'welcome.requested':false});await settings.flush();await app.commands.executeCommandById('zotlit:open-library-view');return true;})()`,
+      async (
+        { app, zotlit },
+        { myLibraryDocument, libraryScopeSettingKey },
+      ) => {
+        (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        ).forEach((leaf) => leaf.detach());
+        const { settings, bridge } = zotlit.services;
+        bridge.runSync(
+          settings.update({
+            "library.document": myLibraryDocument,
+            [libraryScopeSettingKey]: {
+              mode: "selected",
+              libraries: [{ type: "personal" }],
+            },
+            "welcome.dismissed": true,
+            "welcome.requested": false,
+          }),
+        );
+        await bridge.runPromise(settings.flush);
+        app.commands.executeCommandById("zotlit:open-library-view");
+      },
+      {
+        myLibraryDocument: MY_LIBRARY_DOCUMENT,
+        libraryScopeSettingKey: LIBRARY_SCOPE_SETTING_KEY,
+      },
     );
     const help = run.m.library_view_help_action();
-    const keptWhen = (ready: (kept: Kept) => boolean) =>
-      obReadUntil<Kept>(run.vaultId, readKept(help), {
-        ready,
-        what: "Library View",
-        tries: 120,
-      });
+
     const personal = LIBRARIES.find(({ type }) => type === "user")!;
     const parent = COLLECTIONS.find(
       (entry) =>
         entry.libraryID === personal.libraryID && entry.key === "PERSNAL2",
     )!;
     const parentKey = JSON.stringify(["personal", parent.name]);
-    const first = await keptWhen(
-      (kept) => kept.phase === "ready" && kept.rows > 0,
+    const first = await obRunUntil(
+      run.vaultId,
+      async ({ app }, { value }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.searched;
+        await view.query.settled;
+        await view.tree.settled;
+        await new Promise((r) => setTimeout(r, 200));
+        const el = view.contentEl;
+        const row = el.querySelector<HTMLElement>(
+          "[data-query-item-row][data-selected]",
+        );
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+        let inView = false;
+        if (row) {
+          const r = row.getBoundingClientRect();
+          const hit = el.ownerDocument.elementFromPoint(
+            r.left + r.width / 2,
+            r.top + r.height / 2,
+          );
+          inView = !!hit && row.contains(hit);
+        }
+        const action = view.containerEl.querySelector<HTMLElement>(value);
+        return {
+          phase: view.query.state.getState().phase,
+          open: [
+            ...el.querySelectorAll<HTMLElement>(
+              '[data-library-node][aria-expanded="true"]',
+            ),
+          ].map((n) => n.getAttribute("data-library-node")!),
+          selected: row?.getAttribute("data-query-item-row") ?? null,
+          card:
+            card && !card.hidden && card.checkVisibility()
+              ? (card.querySelector<HTMLElement>("[data-library-card-title]")
+                  ?.textContent ?? "")
+              : null,
+          inView,
+          banner: !!el.querySelector<HTMLElement>("[data-welcome-banner]"),
+          pressed: action?.getAttribute("aria-pressed") ?? null,
+          rows: el.querySelectorAll<HTMLElement>("[data-query-item-row]")
+            .length,
+        };
+      },
+      { value: `.view-actions .view-action[aria-label="${help}"]` },
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((kept) => kept.phase === "ready" && kept.rows > 0)(value),
+      },
     );
     expect(first).toMatchObject({ banner: false, pressed: "false" });
-    expect(first.open).not.toContain(parentKey);
+    expect(first!.open).not.toContain(parentKey);
 
     // Open the Collection, select the last paper, and ask for the banner.
-    const last = JSON.parse(
-      await obEval(
-        run.vaultId,
-        `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});const view=leaf.view;const el=view.contentEl;press([...el.querySelectorAll('[data-library-node]')].find(n=>n.getAttribute('data-library-node')===${JSON.stringify(parentKey)}).querySelector('[data-library-expand]'),'Collection disclosure');await until('Collection open',()=>[...el.querySelectorAll('[data-library-node][aria-expanded="true"]')].some(n=>n.getAttribute('data-library-node')===${JSON.stringify(parentKey)}));const rows=[...el.querySelectorAll('[data-query-item-row]')];const row=rows.at(-1);press(row,'last paper');await until('card',()=>{const card=el.querySelector('[data-library-card]');return !card.hidden&&card.checkVisibility();});press(view.containerEl.querySelector(${JSON.stringify(`.view-actions .view-action[aria-label="${help}"]`)}),'Welcome & help');await until('banner',()=>el.querySelector('[data-welcome-banner]'));return JSON.stringify(row.getAttribute('data-query-item-row'));})()`,
-      ),
-    ) as string;
-    const before = await keptWhen(
-      (kept) => kept.selected === last && kept.banner,
+    const last = (await obRun(
+      run.vaultId,
+      async ({ app, page }, { parentkey, value }) => {
+        const { press, until } = page;
+        const leaf = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0];
+        await app.workspace.revealLeaf(leaf!);
+        app.workspace.setActiveLeaf(leaf!, { focus: true });
+        const view = leaf!.view;
+        const el = view.contentEl;
+        press(
+          [...el.querySelectorAll<HTMLElement>("[data-library-node]")]
+            .find((n) => n.getAttribute("data-library-node")! === parentkey)!
+            .querySelector<HTMLElement>("[data-library-expand]"),
+          "Collection disclosure",
+        );
+        await until("Collection open", () =>
+          [
+            ...el.querySelectorAll<HTMLElement>(
+              '[data-library-node][aria-expanded="true"]',
+            ),
+          ].some((n) => n.getAttribute("data-library-node")! === parentkey),
+        );
+        const rows = [
+          ...el.querySelectorAll<HTMLElement>("[data-query-item-row]"),
+        ];
+        const row = rows.at(-1);
+        press(row, "last paper");
+        await until("card", () => {
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          return !card!.hidden && card!.checkVisibility();
+        });
+        press(
+          view.containerEl.querySelector<HTMLElement>(value),
+          "Welcome & help",
+        );
+        await until("banner", () =>
+          el.querySelector<HTMLElement>("[data-welcome-banner]"),
+        );
+        return row!.getAttribute("data-query-item-row")!;
+      },
+      {
+        parentkey: parentKey,
+        value: `.view-actions .view-action[aria-label="${help}"]`,
+      },
+    )) as string;
+    const before = await obRunUntil(
+      run.vaultId,
+      async ({ app }, { value }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.searched;
+        await view.query.settled;
+        await view.tree.settled;
+        await new Promise((r) => setTimeout(r, 200));
+        const el = view.contentEl;
+        const row = el.querySelector<HTMLElement>(
+          "[data-query-item-row][data-selected]",
+        );
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+        let inView = false;
+        if (row) {
+          const r = row.getBoundingClientRect();
+          const hit = el.ownerDocument.elementFromPoint(
+            r.left + r.width / 2,
+            r.top + r.height / 2,
+          );
+          inView = !!hit && row.contains(hit);
+        }
+        const action = view.containerEl.querySelector<HTMLElement>(value);
+        return {
+          phase: view.query.state.getState().phase,
+          open: [
+            ...el.querySelectorAll<HTMLElement>(
+              '[data-library-node][aria-expanded="true"]',
+            ),
+          ].map((n) => n.getAttribute("data-library-node")!),
+          selected: row?.getAttribute("data-query-item-row") ?? null,
+          card:
+            card && !card.hidden && card.checkVisibility()
+              ? (card.querySelector<HTMLElement>("[data-library-card-title]")
+                  ?.textContent ?? "")
+              : null,
+          inView,
+          banner: !!el.querySelector<HTMLElement>("[data-welcome-banner]"),
+          pressed: action?.getAttribute("aria-pressed") ?? null,
+          rows: el.querySelectorAll<HTMLElement>("[data-query-item-row]")
+            .length,
+        };
+      },
+      { value: `.view-actions .view-action[aria-label="${help}"]` },
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((kept) => kept.selected === last && kept.banner)(value),
+      },
     );
     expect(before).toMatchObject({
       open: expect.arrayContaining([parentKey]),
@@ -909,32 +2882,156 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       banner: true,
       pressed: "true",
     });
-    expect(before.card).not.toBeNull();
+    expect(before!.card).not.toBeNull();
 
     // A reload right after the changes keeps every one of them.
     await reloadWindow();
-    const after = await keptWhen(
-      (kept) => kept.phase === "ready" && kept.selected !== null,
+    const after = await obRunUntil(
+      run.vaultId,
+      async ({ app }, { value }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.searched;
+        await view.query.settled;
+        await view.tree.settled;
+        await new Promise((r) => setTimeout(r, 200));
+        const el = view.contentEl;
+        const row = el.querySelector<HTMLElement>(
+          "[data-query-item-row][data-selected]",
+        );
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+        let inView = false;
+        if (row) {
+          const r = row.getBoundingClientRect();
+          const hit = el.ownerDocument.elementFromPoint(
+            r.left + r.width / 2,
+            r.top + r.height / 2,
+          );
+          inView = !!hit && row.contains(hit);
+        }
+        const action = view.containerEl.querySelector<HTMLElement>(value);
+        return {
+          phase: view.query.state.getState().phase,
+          open: [
+            ...el.querySelectorAll<HTMLElement>(
+              '[data-library-node][aria-expanded="true"]',
+            ),
+          ].map((n) => n.getAttribute("data-library-node")!),
+          selected: row?.getAttribute("data-query-item-row") ?? null,
+          card:
+            card && !card.hidden && card.checkVisibility()
+              ? (card.querySelector<HTMLElement>("[data-library-card-title]")
+                  ?.textContent ?? "")
+              : null,
+          inView,
+          banner: !!el.querySelector<HTMLElement>("[data-welcome-banner]"),
+          pressed: action?.getAttribute("aria-pressed") ?? null,
+          rows: el.querySelectorAll<HTMLElement>("[data-query-item-row]")
+            .length,
+        };
+      },
+      { value: `.view-actions .view-action[aria-label="${help}"]` },
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((kept) => kept.phase === "ready" && kept.selected !== null)(value),
+      },
     );
     expect(after).toEqual({ ...before, inView: true });
     // The list scrolled to the paper, which a fresh page would not show.
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(()=>{const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;let n=el.querySelector('[data-query-item-row][data-selected]');for(;n&&n!==el;n=n.parentElement)if(n.scrollTop>0)return 'scrolled';return 'top';})()`,
+        async ({ app }) => {
+          const el = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]!.view.contentEl;
+          let n = el.querySelector<HTMLElement>(
+            "[data-query-item-row][data-selected]",
+          );
+          for (; n && n !== el; n = n.parentElement)
+            if (n.scrollTop > 0) return "scrolled";
+          return "top";
+        },
+        undefined,
       ),
     ).toBe("scrolled");
 
     // On a narrow pane the restored paper is selected as the arrow keys
     // select a row: its card does not open over the list, which stays
     // uncovered with the row in view.
-    await obEval(
+    await obRun(
       run.vaultId,
-      "require('@electron/remote').getCurrentWindow().setSize(900,640);true",
+      async () => {
+        require("@electron/remote").getCurrentWindow().setSize(900, 640);
+      },
+      undefined,
     );
     await reloadWindow();
-    const narrow = await keptWhen(
-      (kept) => kept.phase === "ready" && kept.selected !== null,
+    const narrow = await obRunUntil(
+      run.vaultId,
+      async ({ app }, { value }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.searched;
+        await view.query.settled;
+        await view.tree.settled;
+        await new Promise((r) => setTimeout(r, 200));
+        const el = view.contentEl;
+        const row = el.querySelector<HTMLElement>(
+          "[data-query-item-row][data-selected]",
+        );
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+        let inView = false;
+        if (row) {
+          const r = row.getBoundingClientRect();
+          const hit = el.ownerDocument.elementFromPoint(
+            r.left + r.width / 2,
+            r.top + r.height / 2,
+          );
+          inView = !!hit && row.contains(hit);
+        }
+        const action = view.containerEl.querySelector<HTMLElement>(value);
+        return {
+          phase: view.query.state.getState().phase,
+          open: [
+            ...el.querySelectorAll<HTMLElement>(
+              '[data-library-node][aria-expanded="true"]',
+            ),
+          ].map((n) => n.getAttribute("data-library-node")!),
+          selected: row?.getAttribute("data-query-item-row") ?? null,
+          card:
+            card && !card.hidden && card.checkVisibility()
+              ? (card.querySelector<HTMLElement>("[data-library-card-title]")
+                  ?.textContent ?? "")
+              : null,
+          inView,
+          banner: !!el.querySelector<HTMLElement>("[data-welcome-banner]"),
+          pressed: action?.getAttribute("aria-pressed") ?? null,
+          rows: el.querySelectorAll<HTMLElement>("[data-query-item-row]")
+            .length,
+        };
+      },
+      { value: `.view-actions .view-action[aria-label="${help}"]` },
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((kept) => kept.phase === "ready" && kept.selected !== null)(value),
+      },
     );
     expect(narrow).toMatchObject({
       selected: last,
@@ -946,53 +3043,203 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   });
 
   it("keeps the Welcome View banner away after a window reload once the researcher dismissed it", async () => {
-    const services = "app.plugins.plugins.zotlit.services";
-    const snapshot = await obEval(
+    const snapshot = await obRun(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),dismissed:${services}.settings.current['welcome.dismissed'],requested:${services}.settings.current['welcome.requested']})`,
+      async ({ app, zotlit }) => {
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          dismissed: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["welcome.dismissed"],
+          requested: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["welcome.requested"],
+        });
+      },
+      undefined,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'welcome.dismissed':saved.dismissed,'welcome.requested':saved.requested});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+        async ({ app, zotlit }, { snapshot }) => {
+          const saved = JSON.parse(snapshot);
+          const { settings, bridge } = zotlit.services;
+          bridge.runSync(
+            settings.update({
+              "welcome.dismissed": saved.dismissed,
+              "welcome.requested": saved.requested,
+            }),
+          );
+          await bridge.runPromise(settings.flush);
+          await app.workspace.changeLayout(saved.layout);
+        },
+        { snapshot: snapshot },
       );
     });
     const help = run.m.library_view_help_action();
-    const helpAction = `app.workspace.getLeavesOfType('zotlit-library')[0].view.containerEl.querySelector(${JSON.stringify(`.view-actions .view-action[aria-label="${help}"]`)})`;
-    const banner = `app.workspace.getLeavesOfType('zotlit-library')[0]?.view.contentEl.querySelector('[data-welcome-banner]')`;
+
     // The banner shows, as "Open welcome view" shows it, then the researcher
     // dismisses it from its dismiss button.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());await app.commands.executeCommandById('zotlit:open-welcome-view');const el=await until('banner',()=>${banner},5000);press(el.querySelector('[data-welcome-dismiss]'),'Dismiss the welcome banner');await until('banner gone',()=>!${banner});return true;})()`,
+      async ({ app, page }) => {
+        const { press, until } = page;
+        (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        ).forEach((leaf) => leaf.detach());
+        app.commands.executeCommandById("zotlit:open-welcome-view");
+        const el = await until(
+          "banner",
+          () =>
+            (
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0]!.view.contentEl.querySelector<HTMLElement>(
+              "[data-welcome-banner]",
+            ),
+          5000,
+        );
+        press(
+          el.querySelector<HTMLElement>("[data-welcome-dismiss]"),
+          "Dismiss the welcome banner",
+        );
+        await until(
+          "banner gone",
+          () =>
+            !(
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0]!.view.contentEl.querySelector<HTMLElement>(
+              "[data-welcome-banner]",
+            ),
+        );
+      },
+      undefined,
     );
     await reloadWindow();
-    const kept = await obReadUntil<Kept>(run.vaultId, readKept(help), {
-      ready: (shown) => shown.phase === "ready",
-      what: "Library View",
-      tries: 120,
-    });
+    const kept = await obRunUntil(
+      run.vaultId,
+      async ({ app }, { value }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.tree) return null;
+        await view.searched;
+        await view.query.settled;
+        await view.tree.settled;
+        await new Promise((r) => setTimeout(r, 200));
+        const el = view.contentEl;
+        const row = el.querySelector<HTMLElement>(
+          "[data-query-item-row][data-selected]",
+        );
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+        let inView = false;
+        if (row) {
+          const r = row.getBoundingClientRect();
+          const hit = el.ownerDocument.elementFromPoint(
+            r.left + r.width / 2,
+            r.top + r.height / 2,
+          );
+          inView = !!hit && row.contains(hit);
+        }
+        const action = view.containerEl.querySelector<HTMLElement>(value);
+        return {
+          phase: view.query.state.getState().phase,
+          open: [
+            ...el.querySelectorAll<HTMLElement>(
+              '[data-library-node][aria-expanded="true"]',
+            ),
+          ].map((n) => n.getAttribute("data-library-node")!),
+          selected: row?.getAttribute("data-query-item-row") ?? null,
+          card:
+            card && !card.hidden && card.checkVisibility()
+              ? (card.querySelector<HTMLElement>("[data-library-card-title]")
+                  ?.textContent ?? "")
+              : null,
+          inView,
+          banner: !!el.querySelector<HTMLElement>("[data-welcome-banner]"),
+          pressed: action?.getAttribute("aria-pressed") ?? null,
+          rows: el.querySelectorAll<HTMLElement>("[data-query-item-row]")
+            .length,
+        };
+      },
+      { value: `.view-actions .view-action[aria-label="${help}"]` },
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null && ((shown) => shown.phase === "ready")(value),
+      },
+    );
     expect(kept).toMatchObject({ banner: false, pressed: "false" });
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `JSON.stringify({dismissed:${services}.settings.current['welcome.dismissed'],requested:${services}.settings.current['welcome.requested'],action:!!${helpAction}})`,
+        async ({ app, zotlit }, { value }) => {
+          return JSON.stringify({
+            dismissed: zotlit.services.bridge.runSync(
+              zotlit.services.settings.current,
+            )["welcome.dismissed"],
+            requested: zotlit.services.bridge.runSync(
+              zotlit.services.settings.current,
+            )["welcome.requested"],
+            action: !!(
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0]!.view.containerEl.querySelector<HTMLElement>(value),
+          });
+        },
+        { value: `.view-actions .view-action[aria-label="${help}"]` },
       ),
     ).toBe(JSON.stringify({ dismissed: true, requested: false, action: true }));
   });
 
   it("resizes the Reading Card from its inner edge with the keys and a drag, keeps the width after a window reload, returns it to 24rem on a double click, and widens it toward the list over a narrow pane, with Zotero closed", async () => {
-    const services = "app.plugins.plugins.zotlit.services";
-    const snapshot = await obEval(
+    const snapshot = await obRun(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,dismissed:${services}.settings.current['welcome.dismissed'],requested:${services}.settings.current['welcome.requested']})`,
+      async ({ app, zotlit }) => {
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+          dismissed: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["welcome.dismissed"],
+          requested: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["welcome.requested"],
+        });
+      },
+      undefined,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document,'welcome.dismissed':saved.dismissed,'welcome.requested':saved.requested});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+        async ({ app, zotlit }, { snapshot }) => {
+          const saved = JSON.parse(snapshot);
+          const { settings, bridge } = zotlit.services;
+          bridge.runSync(
+            settings.update({
+              "library.document": saved.document,
+              "welcome.dismissed": saved.dismissed,
+              "welcome.requested": saved.requested,
+            }),
+          );
+          await bridge.runPromise(settings.flush);
+          await app.workspace.changeLayout(saved.layout);
+        },
+        { snapshot: snapshot },
       );
     });
     await suite.wideWindow(cleanup);
@@ -1007,38 +3254,103 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ]);
     };
     /** The card's width, its edge's values and the width plugin data keeps. */
-    interface CardWidth {
-      phase: string;
-      shown: boolean;
-      width: number;
-      list: number;
-      pane: number;
-      overlay: boolean;
-      now: number;
-      min: number;
-      max: number;
-      stored: number | null;
-      label: string | null;
-    }
-    const readWidth = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.query)return 'null';await view.query.settled;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const el=view.contentEl;const card=el.querySelector('[data-library-card]');const edge=card.querySelector('[data-library-card-resizer]');const num=n=>Number(edge.getAttribute(n));return JSON.stringify({phase:view.query.state.getState().phase,shown:!card.hidden&&card.checkVisibility(),width:Math.round(card.getBoundingClientRect().width),list:Math.round(el.querySelector('[data-library-search-row]').parentElement.getBoundingClientRect().width),pane:Math.round(card.parentElement.parentElement.getBoundingClientRect().width),overlay:getComputedStyle(card).position==='absolute',now:num('aria-valuenow'),min:num('aria-valuemin'),max:num('aria-valuemax'),stored:${services}.settings.current['library.document']?.cardWidth??null,label:edge.getAttribute('aria-label')});})()`;
-    const widthWhen = (ready: (shown: CardWidth) => boolean) =>
-      obReadUntil<CardWidth>(run.vaultId, readWidth, {
-        ready,
+
+    // My Library with no width kept, and its first paper selected.
+    await obRun(
+      run.vaultId,
+      async ({ app, zotlit, page }, { myLibraryDocument }) => {
+        const { press, until } = page;
+        (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        ).forEach((leaf) => leaf.detach());
+        const { settings, bridge } = zotlit.services;
+        bridge.runSync(
+          settings.update({
+            "library.document": myLibraryDocument,
+            "welcome.dismissed": true,
+            "welcome.requested": false,
+          }),
+        );
+        await bridge.runPromise(settings.flush);
+        app.commands.executeCommandById("zotlit:open-library-view");
+        const leaf = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0];
+        await app.workspace.revealLeaf(leaf!);
+        app.workspace.setActiveLeaf(leaf!, { focus: true });
+        const el = leaf!.view.contentEl;
+        const row = await until(
+          "rows",
+          () => el.querySelector<HTMLElement>("[data-query-item-row]"),
+          20000,
+        );
+        press(row, "first paper");
+        await until(
+          "card",
+          () => {
+            const card = el.querySelector<HTMLElement>("[data-library-card]");
+            return !card!.hidden && card!.checkVisibility();
+          },
+          5000,
+        );
+      },
+      { myLibraryDocument: MY_LIBRARY_DOCUMENT },
+    );
+    const first = await obRunUntil(
+      run.vaultId,
+      async ({ app, zotlit }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.query) return null;
+        await view.query.settled;
+        await new Promise((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(r)),
+        );
+        const el = view.contentEl;
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+        const edge = card!.querySelector<HTMLElement>(
+          "[data-library-card-resizer]",
+        );
+        const num = (n: string) => Number(edge!.getAttribute(n));
+        return {
+          phase: view.query.state.getState().phase,
+          shown: !card!.hidden && card!.checkVisibility(),
+          width: Math.round(card!.getBoundingClientRect().width),
+          list: Math.round(
+            el
+              .querySelector<HTMLElement>("[data-library-search-row]")!
+              .parentElement!.getBoundingClientRect().width,
+          ),
+          pane: Math.round(
+            card!.parentElement!.parentElement!.getBoundingClientRect().width,
+          ),
+          overlay: getComputedStyle(card!).position === "absolute",
+          now: num("aria-valuenow"),
+          min: num("aria-valuemin"),
+          max: num("aria-valuemax"),
+          stored:
+            (
+              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+                "library.document"
+              ] as StoredLibraryViewDocument | null
+            )?.cardWidth ?? null,
+          label: edge!.getAttribute("aria-label"),
+        };
+      },
+      undefined,
+      {
         what: "Reading Card width",
         tries: 120,
-      });
-    const edge = `app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl.querySelector('[data-library-card] [data-library-card-resizer]')`;
-    const keys = (...names: string[]) =>
-      obEval(
-        run.vaultId,
-        `(async()=>{const edge=${edge};edge.focus();for(const key of ${JSON.stringify(names)}){edge.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));await new Promise(r=>requestAnimationFrame(r));}return true;})()`,
-      );
-    // My Library with no width kept, and its first paper selected.
-    await obEval(
-      run.vaultId,
-      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)},'welcome.dismissed':true,'welcome.requested':false});await settings.flush();await app.commands.executeCommandById('zotlit:open-library-view');const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});const el=leaf.view.contentEl;const row=await until('rows',()=>el.querySelector('[data-query-item-row]'),20000);press(row,'first paper');await until('card',()=>{const card=el.querySelector('[data-library-card]');return !card.hidden&&card.checkVisibility();},5000);return true;})()`,
+        ready: (value) => value !== null && ((shown) => shown.shown)(value),
+      },
     );
-    const first = await widthWhen((shown) => shown.shown);
     // The default 24rem, said on its edge, which names what it does.
     expect(first).toMatchObject({
       width: 384,
@@ -1047,55 +3359,558 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       stored: null,
       label: run.m.library_view_card_resize_hint(),
     });
-    expect(first.max).toBe(first.width + first.list - 320);
+    expect(first!.max).toBe(first!.width + first!.list - 320);
     await screenshot("card-default");
 
     // Three presses toward the list widen it by 16px each.
-    await keys("ArrowLeft", "ArrowLeft", "ArrowLeft");
-    expect(await widthWhen((shown) => shown.stored === 432)).toMatchObject({
+    await obRun(
+      run.vaultId,
+      async ({ app }, { arrowLeft }) => {
+        const edge = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl.querySelector<HTMLElement>(
+          "[data-library-card] [data-library-card-resizer]",
+        );
+        edge!.focus();
+        for (const key of arrowLeft) {
+          edge!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          await new Promise((r) => requestAnimationFrame(r));
+        }
+      },
+      { arrowLeft: ["ArrowLeft", "ArrowLeft", "ArrowLeft"] },
+    );
+    expect(
+      await obRunUntil(
+        run.vaultId,
+        async ({ app, zotlit }) => {
+          const view = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]?.view;
+          if (!view?.query) return null;
+          await view.query.settled;
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const el = view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const edge = card!.querySelector<HTMLElement>(
+            "[data-library-card-resizer]",
+          );
+          const num = (n: string) => Number(edge!.getAttribute(n));
+          return {
+            phase: view.query.state.getState().phase,
+            shown: !card!.hidden && card!.checkVisibility(),
+            width: Math.round(card!.getBoundingClientRect().width),
+            list: Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-search-row]")!
+                .parentElement!.getBoundingClientRect().width,
+            ),
+            pane: Math.round(
+              card!.parentElement!.parentElement!.getBoundingClientRect().width,
+            ),
+            overlay: getComputedStyle(card!).position === "absolute",
+            now: num("aria-valuenow"),
+            min: num("aria-valuemin"),
+            max: num("aria-valuemax"),
+            stored:
+              (
+                zotlit.services.bridge.runSync(
+                  zotlit.services.settings.current,
+                )["library.document"] as StoredLibraryViewDocument | null
+              )?.cardWidth ?? null,
+            label: edge!.getAttribute("aria-label"),
+          };
+        },
+        undefined,
+        {
+          what: "Reading Card width",
+          tries: 120,
+          ready: (value) =>
+            value !== null && ((shown) => shown.stored === 432)(value),
+        },
+      ),
+    ).toMatchObject({
       width: 432,
       now: 432,
     });
-    await keys("ArrowRight");
-    await widthWhen((shown) => shown.stored === 416);
+    await obRun(
+      run.vaultId,
+      async ({ app }, { arrowRight }) => {
+        const edge = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl.querySelector<HTMLElement>(
+          "[data-library-card] [data-library-card-resizer]",
+        );
+        edge!.focus();
+        for (const key of arrowRight) {
+          edge!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          await new Promise((r) => requestAnimationFrame(r));
+        }
+      },
+      { arrowRight: ["ArrowRight"] },
+    );
+    await obRunUntil(
+      run.vaultId,
+      async ({ app, zotlit }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.query) return null;
+        await view.query.settled;
+        await new Promise((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(r)),
+        );
+        const el = view.contentEl;
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+        const edge = card!.querySelector<HTMLElement>(
+          "[data-library-card-resizer]",
+        );
+        const num = (n: string) => Number(edge!.getAttribute(n));
+        return {
+          phase: view.query.state.getState().phase,
+          shown: !card!.hidden && card!.checkVisibility(),
+          width: Math.round(card!.getBoundingClientRect().width),
+          list: Math.round(
+            el
+              .querySelector<HTMLElement>("[data-library-search-row]")!
+              .parentElement!.getBoundingClientRect().width,
+          ),
+          pane: Math.round(
+            card!.parentElement!.parentElement!.getBoundingClientRect().width,
+          ),
+          overlay: getComputedStyle(card!).position === "absolute",
+          now: num("aria-valuenow"),
+          min: num("aria-valuemin"),
+          max: num("aria-valuemax"),
+          stored:
+            (
+              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+                "library.document"
+              ] as StoredLibraryViewDocument | null
+            )?.cardWidth ?? null,
+          label: edge!.getAttribute("aria-label"),
+        };
+      },
+      undefined,
+      {
+        what: "Reading Card width",
+        tries: 120,
+        ready: (value) =>
+          value !== null && ((shown) => shown.stored === 416)(value),
+      },
+    );
     // Home and End take it to its narrowest and its widest, which leaves
     // the list 20rem.
-    await keys("Home");
-    expect(await widthWhen((shown) => shown.stored === 288)).toMatchObject({
+    await obRun(
+      run.vaultId,
+      async ({ app }, { home }) => {
+        const edge = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl.querySelector<HTMLElement>(
+          "[data-library-card] [data-library-card-resizer]",
+        );
+        edge!.focus();
+        for (const key of home) {
+          edge!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          await new Promise((r) => requestAnimationFrame(r));
+        }
+      },
+      { home: ["Home"] },
+    );
+    expect(
+      await obRunUntil(
+        run.vaultId,
+        async ({ app, zotlit }) => {
+          const view = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]?.view;
+          if (!view?.query) return null;
+          await view.query.settled;
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const el = view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const edge = card!.querySelector<HTMLElement>(
+            "[data-library-card-resizer]",
+          );
+          const num = (n: string) => Number(edge!.getAttribute(n));
+          return {
+            phase: view.query.state.getState().phase,
+            shown: !card!.hidden && card!.checkVisibility(),
+            width: Math.round(card!.getBoundingClientRect().width),
+            list: Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-search-row]")!
+                .parentElement!.getBoundingClientRect().width,
+            ),
+            pane: Math.round(
+              card!.parentElement!.parentElement!.getBoundingClientRect().width,
+            ),
+            overlay: getComputedStyle(card!).position === "absolute",
+            now: num("aria-valuenow"),
+            min: num("aria-valuemin"),
+            max: num("aria-valuemax"),
+            stored:
+              (
+                zotlit.services.bridge.runSync(
+                  zotlit.services.settings.current,
+                )["library.document"] as StoredLibraryViewDocument | null
+              )?.cardWidth ?? null,
+            label: edge!.getAttribute("aria-label"),
+          };
+        },
+        undefined,
+        {
+          what: "Reading Card width",
+          tries: 120,
+          ready: (value) =>
+            value !== null && ((shown) => shown.stored === 288)(value),
+        },
+      ),
+    ).toMatchObject({
       width: 288,
     });
-    await keys("End");
-    const widest = await widthWhen((shown) => shown.stored === first.max);
-    expect(widest).toMatchObject({ width: first.max, list: 320 });
+    await obRun(
+      run.vaultId,
+      async ({ app }, { end }) => {
+        const edge = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl.querySelector<HTMLElement>(
+          "[data-library-card] [data-library-card-resizer]",
+        );
+        edge!.focus();
+        for (const key of end) {
+          edge!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          await new Promise((r) => requestAnimationFrame(r));
+        }
+      },
+      { end: ["End"] },
+    );
+    const widest = await obRunUntil(
+      run.vaultId,
+      async ({ app, zotlit }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.query) return null;
+        await view.query.settled;
+        await new Promise((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(r)),
+        );
+        const el = view.contentEl;
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+        const edge = card!.querySelector<HTMLElement>(
+          "[data-library-card-resizer]",
+        );
+        const num = (n: string) => Number(edge!.getAttribute(n));
+        return {
+          phase: view.query.state.getState().phase,
+          shown: !card!.hidden && card!.checkVisibility(),
+          width: Math.round(card!.getBoundingClientRect().width),
+          list: Math.round(
+            el
+              .querySelector<HTMLElement>("[data-library-search-row]")!
+              .parentElement!.getBoundingClientRect().width,
+          ),
+          pane: Math.round(
+            card!.parentElement!.parentElement!.getBoundingClientRect().width,
+          ),
+          overlay: getComputedStyle(card!).position === "absolute",
+          now: num("aria-valuenow"),
+          min: num("aria-valuemin"),
+          max: num("aria-valuemax"),
+          stored:
+            (
+              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+                "library.document"
+              ] as StoredLibraryViewDocument | null
+            )?.cardWidth ?? null,
+          label: edge!.getAttribute("aria-label"),
+        };
+      },
+      undefined,
+      {
+        what: "Reading Card width",
+        tries: 120,
+        ready: (value) =>
+          value !== null && ((shown) => shown.stored === first!.max)(value),
+      },
+    );
+    expect(widest).toMatchObject({ width: first!.max, list: 320 });
 
     // A drag of the edge 100px away from the list, back from the widest.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{const edge=${edge};const r=edge.getBoundingClientRect();const x=r.left+r.width/2;const y=r.top+r.height/2;const fire=(type,clientX)=>edge.dispatchEvent(new PointerEvent(type,{bubbles:true,cancelable:true,pointerId:7,isPrimary:true,button:0,buttons:type==='pointerup'?0:1,clientX,clientY:y}));fire('pointerdown',x);if(!document.body.classList.contains('zt-is-resizing-library-card'))throw new Error('No resize cursor');for(const step of [25,50,75,100]){fire('pointermove',x+step);await new Promise(r=>requestAnimationFrame(r));}fire('pointerup',x+100);return true;})()`,
+      async ({ app }) => {
+        const edge = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl.querySelector<HTMLElement>(
+          "[data-library-card] [data-library-card-resizer]",
+        );
+        const r = edge!.getBoundingClientRect();
+        const x = r.left + r.width / 2;
+        const y = r.top + r.height / 2;
+        const fire = (type: string, clientX: number) =>
+          edge!.dispatchEvent(
+            new PointerEvent(type, {
+              bubbles: true,
+              cancelable: true,
+              pointerId: 7,
+              isPrimary: true,
+              button: 0,
+              buttons: type === "pointerup" ? 0 : 1,
+              clientX,
+              clientY: y,
+            }),
+          );
+        fire("pointerdown", x);
+        if (!document.body.classList.contains("zt-is-resizing-library-card"))
+          throw new Error("No resize cursor");
+        for (const step of [25, 50, 75, 100]) {
+          fire("pointermove", x + step);
+          await new Promise((r) => requestAnimationFrame(r));
+        }
+        fire("pointerup", x + 100);
+      },
+      undefined,
     );
-    const dragged = await widthWhen(
-      (shown) => shown.stored === first.max - 100,
+    const dragged = await obRunUntil(
+      run.vaultId,
+      async ({ app, zotlit }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.query) return null;
+        await view.query.settled;
+        await new Promise((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(r)),
+        );
+        const el = view.contentEl;
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+        const edge = card!.querySelector<HTMLElement>(
+          "[data-library-card-resizer]",
+        );
+        const num = (n: string) => Number(edge!.getAttribute(n));
+        return {
+          phase: view.query.state.getState().phase,
+          shown: !card!.hidden && card!.checkVisibility(),
+          width: Math.round(card!.getBoundingClientRect().width),
+          list: Math.round(
+            el
+              .querySelector<HTMLElement>("[data-library-search-row]")!
+              .parentElement!.getBoundingClientRect().width,
+          ),
+          pane: Math.round(
+            card!.parentElement!.parentElement!.getBoundingClientRect().width,
+          ),
+          overlay: getComputedStyle(card!).position === "absolute",
+          now: num("aria-valuenow"),
+          min: num("aria-valuemin"),
+          max: num("aria-valuemax"),
+          stored:
+            (
+              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+                "library.document"
+              ] as StoredLibraryViewDocument | null
+            )?.cardWidth ?? null,
+          label: edge!.getAttribute("aria-label"),
+        };
+      },
+      undefined,
+      {
+        what: "Reading Card width",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((shown) => shown.stored === first!.max - 100)(value),
+      },
     );
-    expect(dragged).toMatchObject({ width: first.max - 100 });
+    expect(dragged).toMatchObject({ width: first!.max - 100 });
     await screenshot("card-resized");
 
     // A reload keeps the width.
     await reloadWindow();
-    const after = await widthWhen(
-      (shown) => shown.phase === "ready" && shown.shown,
+    const after = await obRunUntil(
+      run.vaultId,
+      async ({ app, zotlit }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.query) return null;
+        await view.query.settled;
+        await new Promise((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(r)),
+        );
+        const el = view.contentEl;
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+        const edge = card!.querySelector<HTMLElement>(
+          "[data-library-card-resizer]",
+        );
+        const num = (n: string) => Number(edge!.getAttribute(n));
+        return {
+          phase: view.query.state.getState().phase,
+          shown: !card!.hidden && card!.checkVisibility(),
+          width: Math.round(card!.getBoundingClientRect().width),
+          list: Math.round(
+            el
+              .querySelector<HTMLElement>("[data-library-search-row]")!
+              .parentElement!.getBoundingClientRect().width,
+          ),
+          pane: Math.round(
+            card!.parentElement!.parentElement!.getBoundingClientRect().width,
+          ),
+          overlay: getComputedStyle(card!).position === "absolute",
+          now: num("aria-valuenow"),
+          min: num("aria-valuemin"),
+          max: num("aria-valuemax"),
+          stored:
+            (
+              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+                "library.document"
+              ] as StoredLibraryViewDocument | null
+            )?.cardWidth ?? null,
+          label: edge!.getAttribute("aria-label"),
+        };
+      },
+      undefined,
+      {
+        what: "Reading Card width",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((shown) => shown.phase === "ready" && shown.shown)(value),
+      },
     );
     expect(after).toMatchObject({
-      width: dragged.width,
-      now: dragged.width,
-      stored: dragged.width,
+      width: dragged!.width,
+      now: dragged!.width,
+      stored: dragged!.width,
     });
 
     // A double click puts the default back, and keeps no width.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{${edge}.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,cancelable:true,detail:2}));return true;})()`,
+      async ({ app }) => {
+        (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl
+          .querySelector<HTMLElement>(
+            "[data-library-card] [data-library-card-resizer]",
+          )!
+          .dispatchEvent(
+            new MouseEvent("dblclick", {
+              bubbles: true,
+              cancelable: true,
+              detail: 2,
+            }),
+          );
+      },
+      undefined,
     );
-    expect(await widthWhen((shown) => shown.stored === null)).toMatchObject({
+    expect(
+      await obRunUntil(
+        run.vaultId,
+        async ({ app, zotlit }) => {
+          const view = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]?.view;
+          if (!view?.query) return null;
+          await view.query.settled;
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const el = view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const edge = card!.querySelector<HTMLElement>(
+            "[data-library-card-resizer]",
+          );
+          const num = (n: string) => Number(edge!.getAttribute(n));
+          return {
+            phase: view.query.state.getState().phase,
+            shown: !card!.hidden && card!.checkVisibility(),
+            width: Math.round(card!.getBoundingClientRect().width),
+            list: Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-search-row]")!
+                .parentElement!.getBoundingClientRect().width,
+            ),
+            pane: Math.round(
+              card!.parentElement!.parentElement!.getBoundingClientRect().width,
+            ),
+            overlay: getComputedStyle(card!).position === "absolute",
+            now: num("aria-valuenow"),
+            min: num("aria-valuemin"),
+            max: num("aria-valuemax"),
+            stored:
+              (
+                zotlit.services.bridge.runSync(
+                  zotlit.services.settings.current,
+                )["library.document"] as StoredLibraryViewDocument | null
+              )?.cardWidth ?? null,
+            label: edge!.getAttribute("aria-label"),
+          };
+        },
+        undefined,
+        {
+          what: "Reading Card width",
+          tries: 120,
+          ready: (value) =>
+            value !== null && ((shown) => shown.stored === null)(value),
+        },
+      ),
+    ).toMatchObject({
       width: 384,
       now: 384,
     });
@@ -1103,20 +3918,252 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // Over a narrow pane the card takes up to 85% of the pane it overlays,
     // the list's 20rem aside: from its narrowest, the key toward the list
     // widens it.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{${PAGE}require('@electron/remote').getCurrentWindow().setSize(740,1000);const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;const card=el.querySelector('[data-library-card]');await until('the narrow pane',()=>activeWindow.outerWidth===740&&getComputedStyle(card).position==='absolute',5000);if(!card.checkVisibility())press(el.querySelector('[data-query-item-row][data-selected]'),'selected paper');await until('card over the list',()=>!card.hidden&&card.checkVisibility(),5000);return true;})()`,
+      async ({ app, page }) => {
+        const { press, until } = page;
+        require("@electron/remote").getCurrentWindow().setSize(740, 1000);
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl;
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+        await until(
+          "the narrow pane",
+          () =>
+            activeWindow.outerWidth === 740 &&
+            getComputedStyle(card!).position === "absolute",
+          5000,
+        );
+        if (!card!.checkVisibility())
+          press(
+            el.querySelector<HTMLElement>(
+              "[data-query-item-row][data-selected]",
+            ),
+            "selected paper",
+          );
+        await until(
+          "card over the list",
+          () => !card!.hidden && card!.checkVisibility(),
+          5000,
+        );
+      },
+      undefined,
     );
-    const narrow = await widthWhen((shown) => shown.shown && shown.overlay);
-    expect(narrow.max).toBe(Math.floor(narrow.pane * 0.85));
-    expect(narrow.max).toBeGreaterThan(288);
-    await keys("Home");
-    expect(await widthWhen((shown) => shown.stored === 288)).toMatchObject({
+    const narrow = await obRunUntil(
+      run.vaultId,
+      async ({ app, zotlit }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.query) return null;
+        await view.query.settled;
+        await new Promise((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(r)),
+        );
+        const el = view.contentEl;
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+        const edge = card!.querySelector<HTMLElement>(
+          "[data-library-card-resizer]",
+        );
+        const num = (n: string) => Number(edge!.getAttribute(n));
+        return {
+          phase: view.query.state.getState().phase,
+          shown: !card!.hidden && card!.checkVisibility(),
+          width: Math.round(card!.getBoundingClientRect().width),
+          list: Math.round(
+            el
+              .querySelector<HTMLElement>("[data-library-search-row]")!
+              .parentElement!.getBoundingClientRect().width,
+          ),
+          pane: Math.round(
+            card!.parentElement!.parentElement!.getBoundingClientRect().width,
+          ),
+          overlay: getComputedStyle(card!).position === "absolute",
+          now: num("aria-valuenow"),
+          min: num("aria-valuemin"),
+          max: num("aria-valuemax"),
+          stored:
+            (
+              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+                "library.document"
+              ] as StoredLibraryViewDocument | null
+            )?.cardWidth ?? null,
+          label: edge!.getAttribute("aria-label"),
+        };
+      },
+      undefined,
+      {
+        what: "Reading Card width",
+        tries: 120,
+        ready: (value) =>
+          value !== null && ((shown) => shown.shown && shown.overlay)(value),
+      },
+    );
+    expect(narrow!.max).toBe(Math.floor(narrow!.pane * 0.85));
+    expect(narrow!.max).toBeGreaterThan(288);
+    await obRun(
+      run.vaultId,
+      async ({ app }, { home }) => {
+        const edge = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl.querySelector<HTMLElement>(
+          "[data-library-card] [data-library-card-resizer]",
+        );
+        edge!.focus();
+        for (const key of home) {
+          edge!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          await new Promise((r) => requestAnimationFrame(r));
+        }
+      },
+      { home: ["Home"] },
+    );
+    expect(
+      await obRunUntil(
+        run.vaultId,
+        async ({ app, zotlit }) => {
+          const view = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]?.view;
+          if (!view?.query) return null;
+          await view.query.settled;
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const el = view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const edge = card!.querySelector<HTMLElement>(
+            "[data-library-card-resizer]",
+          );
+          const num = (n: string) => Number(edge!.getAttribute(n));
+          return {
+            phase: view.query.state.getState().phase,
+            shown: !card!.hidden && card!.checkVisibility(),
+            width: Math.round(card!.getBoundingClientRect().width),
+            list: Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-search-row]")!
+                .parentElement!.getBoundingClientRect().width,
+            ),
+            pane: Math.round(
+              card!.parentElement!.parentElement!.getBoundingClientRect().width,
+            ),
+            overlay: getComputedStyle(card!).position === "absolute",
+            now: num("aria-valuenow"),
+            min: num("aria-valuemin"),
+            max: num("aria-valuemax"),
+            stored:
+              (
+                zotlit.services.bridge.runSync(
+                  zotlit.services.settings.current,
+                )["library.document"] as StoredLibraryViewDocument | null
+              )?.cardWidth ?? null,
+            label: edge!.getAttribute("aria-label"),
+          };
+        },
+        undefined,
+        {
+          what: "Reading Card width",
+          tries: 120,
+          ready: (value) =>
+            value !== null && ((shown) => shown.stored === 288)(value),
+        },
+      ),
+    ).toMatchObject({
       width: 288,
       min: 288,
     });
-    await keys("ArrowLeft", "ArrowLeft");
-    expect(await widthWhen((shown) => shown.stored === 320)).toMatchObject({
+    await obRun(
+      run.vaultId,
+      async ({ app }, { arrowLeft }) => {
+        const edge = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl.querySelector<HTMLElement>(
+          "[data-library-card] [data-library-card-resizer]",
+        );
+        edge!.focus();
+        for (const key of arrowLeft) {
+          edge!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          await new Promise((r) => requestAnimationFrame(r));
+        }
+      },
+      { arrowLeft: ["ArrowLeft", "ArrowLeft"] },
+    );
+    expect(
+      await obRunUntil(
+        run.vaultId,
+        async ({ app, zotlit }) => {
+          const view = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]?.view;
+          if (!view?.query) return null;
+          await view.query.settled;
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const el = view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const edge = card!.querySelector<HTMLElement>(
+            "[data-library-card-resizer]",
+          );
+          const num = (n: string) => Number(edge!.getAttribute(n));
+          return {
+            phase: view.query.state.getState().phase,
+            shown: !card!.hidden && card!.checkVisibility(),
+            width: Math.round(card!.getBoundingClientRect().width),
+            list: Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-search-row]")!
+                .parentElement!.getBoundingClientRect().width,
+            ),
+            pane: Math.round(
+              card!.parentElement!.parentElement!.getBoundingClientRect().width,
+            ),
+            overlay: getComputedStyle(card!).position === "absolute",
+            now: num("aria-valuenow"),
+            min: num("aria-valuemin"),
+            max: num("aria-valuemax"),
+            stored:
+              (
+                zotlit.services.bridge.runSync(
+                  zotlit.services.settings.current,
+                )["library.document"] as StoredLibraryViewDocument | null
+              )?.cardWidth ?? null,
+            label: edge!.getAttribute("aria-label"),
+          };
+        },
+        undefined,
+        {
+          what: "Reading Card width",
+          tries: 120,
+          ready: (value) =>
+            value !== null && ((shown) => shown.stored === 320)(value),
+        },
+      ),
+    ).toMatchObject({
       width: 320,
       now: 320,
       overlay: true,
@@ -1125,16 +4172,43 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   });
 
   it("closes the Reading Card on a wide pane from its close button or a drag of its edge past the minimum, keeps it closed while the arrow keys move and after a window reload, and opens it on a row click at the width it had, with Zotero closed", async () => {
-    const services = "app.plugins.plugins.zotlit.services";
-    const snapshot = await obEval(
+    const snapshot = await obRun(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,dismissed:${services}.settings.current['welcome.dismissed'],requested:${services}.settings.current['welcome.requested']})`,
+      async ({ app, zotlit }) => {
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+          dismissed: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["welcome.dismissed"],
+          requested: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["welcome.requested"],
+        });
+      },
+      undefined,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document,'welcome.dismissed':saved.dismissed,'welcome.requested':saved.requested});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+        async ({ app, zotlit }, { snapshot }) => {
+          const saved = JSON.parse(snapshot);
+          const { settings, bridge } = zotlit.services;
+          bridge.runSync(
+            settings.update({
+              "library.document": saved.document,
+              "welcome.dismissed": saved.dismissed,
+              "welcome.requested": saved.requested,
+            }),
+          );
+          await bridge.runPromise(settings.flush);
+          await app.workspace.changeLayout(saved.layout);
+        },
+        { snapshot: snapshot },
       );
     });
     await suite.wideWindow(cleanup);
@@ -1149,95 +4223,462 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ]);
     };
     /** Whether the card shows, its width, the list's, and what plugin data keeps. */
-    interface CardClosed {
-      phase: string;
-      shown: boolean;
-      width: number;
-      list: number;
-      selected: string | null;
-      focused: string | null;
-      stored: number | null;
-      closed: boolean | null;
-      kept: string | null;
-    }
-    const view = `app.workspace.getLeavesOfType('zotlit-library')[0]?.view`;
-    const readClosed = `(async()=>{const view=${view};if(!view?.query)return 'null';await view.query.settled;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const el=view.contentEl;const card=el.querySelector('[data-library-card]');const doc=${services}.settings.current['library.document'];return JSON.stringify({phase:view.query.state.getState().phase,shown:!card.hidden&&card.checkVisibility(),width:Math.round(card.getBoundingClientRect().width),list:Math.round(el.querySelector('[data-library-search-row]').parentElement.getBoundingClientRect().width),selected:view.selection.getState().key,focused:activeDocument.activeElement?.getAttribute('data-query-item-row')??null,stored:doc?.cardWidth??null,closed:doc?.cardClosed??null,kept:doc?.selected??null});})()`;
-    const closedWhen = (ready: (shown: CardClosed) => boolean) =>
-      obReadUntil<CardClosed>(run.vaultId, readClosed, {
-        ready,
-        what: "Reading Card",
-        tries: 120,
-      });
-    const rows = `[...${view}.contentEl.querySelectorAll('[data-query-item-row]')]`;
+
     const rowKey = async (index: number) =>
-      JSON.parse(
-        await obEval(
-          run.vaultId,
-          `JSON.stringify(${rows}[${index}].getAttribute('data-query-item-row'))`,
-        ),
-      ) as string;
-    const clickRow = (index: number) =>
-      obEval(
+      (await obRun(
         run.vaultId,
-        `(async()=>{${PAGE}press(${rows}[${index}],'paper ${index}');return true;})()`,
-      );
-    const edge = `${view}.contentEl.querySelector('[data-library-card] [data-library-card-resizer]')`;
+        async ({ app }, { index }) => {
+          return [
+            ...(
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0]!.view.contentEl.querySelectorAll<HTMLElement>(
+              "[data-query-item-row]",
+            )!,
+          ][index]!.getAttribute("data-query-item-row")!;
+        },
+        { index: index },
+      )) as string;
+
     /**
      * Drag the edge: press it, then move the pointer by each of `steps`
      * pixels away from the list, a frame apiece, and let go where `release`.
      */
     const drag = (steps: number[], { press = true, release = true } = {}) =>
-      obEval(
+      obRun(
         run.vaultId,
-        `(async()=>{const edge=${edge};const r=edge.getBoundingClientRect();window.__lvccDrag??={x:r.left+r.width/2,y:r.top+r.height/2};const {x,y}=window.__lvccDrag;const fire=(type,clientX)=>edge.dispatchEvent(new PointerEvent(type,{bubbles:true,cancelable:true,pointerId:7,isPrimary:true,button:0,buttons:type==='pointerup'?0:1,clientX,clientY:y}));if(${press})fire('pointerdown',x);let last=0;for(const step of ${JSON.stringify(steps)}){last=step;fire('pointermove',x+step);await new Promise(r=>requestAnimationFrame(r));}if(${release}){fire('pointerup',x+last);delete window.__lvccDrag;}return true;})()`,
+        async ({ app, page }, { press, steps, release }) => {
+          const edge = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]!.view.contentEl.querySelector<HTMLElement>(
+            "[data-library-card] [data-library-card-resizer]",
+          );
+          const r = edge!.getBoundingClientRect();
+          page.scratch.libraryCardDrag ??= {
+            x: r.left + r.width / 2,
+            y: r.top + r.height / 2,
+          };
+          const { x, y } = page.scratch.libraryCardDrag;
+          const fire = (type: string, clientX: number) =>
+            edge!.dispatchEvent(
+              new PointerEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                pointerId: 7,
+                isPrimary: true,
+                button: 0,
+                buttons: type === "pointerup" ? 0 : 1,
+                clientX,
+                clientY: y,
+              }),
+            );
+          if (press) fire("pointerdown", x);
+          let last = 0;
+          for (const step of steps) {
+            last = step;
+            fire("pointermove", x + step);
+            await new Promise((r) => requestAnimationFrame(r));
+          }
+          if (release) {
+            fire("pointerup", x + last);
+            delete page.scratch.libraryCardDrag;
+          }
+          return String(true);
+        },
+        { press: press, steps: steps, release: release },
       );
     // My Library with the card 400px wide, and its first paper selected.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify({ ...MY_LIBRARY_DOCUMENT, cardWidth: 400 })},'welcome.dismissed':true,'welcome.requested':false});await settings.flush();await app.commands.executeCommandById('zotlit:open-library-view');const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});const el=leaf.view.contentEl;const row=await until('rows',()=>el.querySelector('[data-query-item-row]'),20000);press(row,'first paper');await until('card',()=>{const card=el.querySelector('[data-library-card]');return !card.hidden&&card.checkVisibility();},5000);return true;})()`,
+      async ({ app, zotlit, page }, { document }) => {
+        const { press, until } = page;
+        (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        ).forEach((leaf) => leaf.detach());
+        const { settings, bridge } = zotlit.services;
+        bridge.runSync(
+          settings.update({
+            "library.document": document,
+            "welcome.dismissed": true,
+            "welcome.requested": false,
+          }),
+        );
+        await bridge.runPromise(settings.flush);
+        app.commands.executeCommandById("zotlit:open-library-view");
+        const leaf = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0];
+        await app.workspace.revealLeaf(leaf!);
+        app.workspace.setActiveLeaf(leaf!, { focus: true });
+        const el = leaf!.view.contentEl;
+        const row = await until(
+          "rows",
+          () => el.querySelector<HTMLElement>("[data-query-item-row]"),
+          20000,
+        );
+        press(row, "first paper");
+        await until(
+          "card",
+          () => {
+            const card = el.querySelector<HTMLElement>("[data-library-card]");
+            return !card!.hidden && card!.checkVisibility();
+          },
+          5000,
+        );
+      },
+      { document: { ...MY_LIBRARY_DOCUMENT, cardWidth: 400 } },
     );
     const first = await rowKey(0);
     const second = await rowKey(1);
-    const open = await closedWhen((shown) => shown.shown);
+    const open = await obRunUntil(
+      run.vaultId,
+      async ({ app, zotlit }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.query) return null;
+        await view.query.settled;
+        await new Promise((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(r)),
+        );
+        const el = view.contentEl;
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+        const doc = zotlit.services.bridge.runSync(
+          zotlit.services.settings.current,
+        )["library.document"] as StoredLibraryViewDocument | null;
+        return {
+          phase: view.query.state.getState().phase,
+          shown: !card!.hidden && card!.checkVisibility(),
+          width: Math.round(card!.getBoundingClientRect().width),
+          list: Math.round(
+            el
+              .querySelector<HTMLElement>("[data-library-search-row]")!
+              .parentElement!.getBoundingClientRect().width,
+          ),
+          selected: view.selected.key,
+          focused:
+            activeDocument.activeElement?.getAttribute("data-query-item-row") ??
+            null,
+          stored: doc?.cardWidth ?? null,
+          closed: doc?.cardClosed ?? null,
+          kept: doc?.selected ?? null,
+        };
+      },
+      undefined,
+      {
+        what: "Reading Card",
+        tries: 120,
+        ready: (value) => value !== null && ((shown) => shown.shown)(value),
+      },
+    );
     expect(open).toMatchObject({ width: 400, selected: first, closed: null });
 
     // The close button shows on the wide pane too; it hides the card, the
     // list takes its room, and the row keeps the selection and the focus.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{${PAGE}press(${view}.contentEl.querySelector('[data-library-card] [data-library-card-close]'),'close button');return true;})()`,
+      async ({ app, page }) => {
+        const { press } = page;
+        press(
+          (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]!.view.contentEl.querySelector<HTMLElement>(
+            "[data-library-card] [data-library-card-close]",
+          ),
+          "close button",
+        );
+      },
+      undefined,
     );
-    const closed = await closedWhen((shown) => shown.closed === true);
+    const closed = await obRunUntil(
+      run.vaultId,
+      async ({ app, zotlit }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.query) return null;
+        await view.query.settled;
+        await new Promise((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(r)),
+        );
+        const el = view.contentEl;
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+        const doc = zotlit.services.bridge.runSync(
+          zotlit.services.settings.current,
+        )["library.document"] as StoredLibraryViewDocument | null;
+        return {
+          phase: view.query.state.getState().phase,
+          shown: !card!.hidden && card!.checkVisibility(),
+          width: Math.round(card!.getBoundingClientRect().width),
+          list: Math.round(
+            el
+              .querySelector<HTMLElement>("[data-library-search-row]")!
+              .parentElement!.getBoundingClientRect().width,
+          ),
+          selected: view.selected.key,
+          focused:
+            activeDocument.activeElement?.getAttribute("data-query-item-row") ??
+            null,
+          stored: doc?.cardWidth ?? null,
+          closed: doc?.cardClosed ?? null,
+          kept: doc?.selected ?? null,
+        };
+      },
+      undefined,
+      {
+        what: "Reading Card",
+        tries: 120,
+        ready: (value) =>
+          value !== null && ((shown) => shown.closed === true)(value),
+      },
+    );
     expect(closed).toMatchObject({
       shown: false,
       selected: first,
       focused: first,
       stored: 400,
     });
-    expect(closed.list).toBe(open.list + open.width);
+    expect(closed!.list).toBe(open!.list + open!.width);
     await screenshot("wide-closed");
 
     // The arrow keys move the selection and leave the card closed.
-    await obEval(
+    await obRun(
       run.vaultId,
-      "activeDocument.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}));true",
+      async () => {
+        activeDocument.activeElement!.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "ArrowDown",
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      },
+      undefined,
     );
     expect(
-      await closedWhen((shown) => shown.selected === second),
+      await obRunUntil(
+        run.vaultId,
+        async ({ app, zotlit }) => {
+          const view = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]?.view;
+          if (!view?.query) return null;
+          await view.query.settled;
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const el = view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const doc = zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["library.document"] as StoredLibraryViewDocument | null;
+          return {
+            phase: view.query.state.getState().phase,
+            shown: !card!.hidden && card!.checkVisibility(),
+            width: Math.round(card!.getBoundingClientRect().width),
+            list: Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-search-row]")!
+                .parentElement!.getBoundingClientRect().width,
+            ),
+            selected: view.selected.key,
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+            stored: doc?.cardWidth ?? null,
+            closed: doc?.cardClosed ?? null,
+            kept: doc?.selected ?? null,
+          };
+        },
+        undefined,
+        {
+          what: "Reading Card",
+          tries: 120,
+          ready: (value) =>
+            value !== null && ((shown) => shown.selected === second)(value),
+        },
+      ),
     ).toMatchObject({ shown: false, closed: true });
 
     // A reload keeps it closed beside the restored selection.
-    await closedWhen((shown) => shown.kept === second);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app, zotlit }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.query) return null;
+        await view.query.settled;
+        await new Promise((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(r)),
+        );
+        const el = view.contentEl;
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+        const doc = zotlit.services.bridge.runSync(
+          zotlit.services.settings.current,
+        )["library.document"] as StoredLibraryViewDocument | null;
+        return {
+          phase: view.query.state.getState().phase,
+          shown: !card!.hidden && card!.checkVisibility(),
+          width: Math.round(card!.getBoundingClientRect().width),
+          list: Math.round(
+            el
+              .querySelector<HTMLElement>("[data-library-search-row]")!
+              .parentElement!.getBoundingClientRect().width,
+          ),
+          selected: view.selected.key,
+          focused:
+            activeDocument.activeElement?.getAttribute("data-query-item-row") ??
+            null,
+          stored: doc?.cardWidth ?? null,
+          closed: doc?.cardClosed ?? null,
+          kept: doc?.selected ?? null,
+        };
+      },
+      undefined,
+      {
+        what: "Reading Card",
+        tries: 120,
+        ready: (value) =>
+          value !== null && ((shown) => shown.kept === second)(value),
+      },
+    );
     await reloadWindow();
     expect(
-      await closedWhen(
-        (shown) => shown.phase === "ready" && shown.selected === second,
+      await obRunUntil(
+        run.vaultId,
+        async ({ app, zotlit }) => {
+          const view = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]?.view;
+          if (!view?.query) return null;
+          await view.query.settled;
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const el = view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const doc = zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["library.document"] as StoredLibraryViewDocument | null;
+          return {
+            phase: view.query.state.getState().phase,
+            shown: !card!.hidden && card!.checkVisibility(),
+            width: Math.round(card!.getBoundingClientRect().width),
+            list: Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-search-row]")!
+                .parentElement!.getBoundingClientRect().width,
+            ),
+            selected: view.selected.key,
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+            stored: doc?.cardWidth ?? null,
+            closed: doc?.cardClosed ?? null,
+            kept: doc?.selected ?? null,
+          };
+        },
+        undefined,
+        {
+          what: "Reading Card",
+          tries: 120,
+          ready: (value) =>
+            value !== null &&
+            ((shown) => shown.phase === "ready" && shown.selected === second)(
+              value,
+            ),
+        },
       ),
     ).toMatchObject({ shown: false, closed: true, stored: 400 });
 
     // A click on a row opens it again, at its width.
-    await clickRow(1);
-    expect(await closedWhen((shown) => shown.shown)).toMatchObject({
+    await obRun(
+      run.vaultId,
+      async ({ app, page }, { position }) => {
+        const { press } = page;
+        press(
+          [
+            ...(
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0]!.view.contentEl.querySelectorAll<HTMLElement>(
+              "[data-query-item-row]",
+            )!,
+          ][position],
+          `paper ${position}`,
+        );
+      },
+      { position: 1 },
+    );
+    expect(
+      await obRunUntil(
+        run.vaultId,
+        async ({ app, zotlit }) => {
+          const view = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]?.view;
+          if (!view?.query) return null;
+          await view.query.settled;
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const el = view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const doc = zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["library.document"] as StoredLibraryViewDocument | null;
+          return {
+            phase: view.query.state.getState().phase,
+            shown: !card!.hidden && card!.checkVisibility(),
+            width: Math.round(card!.getBoundingClientRect().width),
+            list: Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-search-row]")!
+                .parentElement!.getBoundingClientRect().width,
+            ),
+            selected: view.selected.key,
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+            stored: doc?.cardWidth ?? null,
+            closed: doc?.cardClosed ?? null,
+            kept: doc?.selected ?? null,
+          };
+        },
+        undefined,
+        {
+          what: "Reading Card",
+          tries: 120,
+          ready: (value) => value !== null && ((shown) => shown.shown)(value),
+        },
+      ),
+    ).toMatchObject({
       width: 400,
       closed: null,
     });
@@ -1246,36 +4687,332 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // 288px minimum, past the 144px that collapses it while the pointer
     // stays; back within the threshold it shows again at the minimum.
     await drag([100, 200, 300], { release: false });
-    expect(await closedWhen((shown) => !shown.shown)).toMatchObject({
+    expect(
+      await obRunUntil(
+        run.vaultId,
+        async ({ app, zotlit }) => {
+          const view = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]?.view;
+          if (!view?.query) return null;
+          await view.query.settled;
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const el = view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const doc = zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["library.document"] as StoredLibraryViewDocument | null;
+          return {
+            phase: view.query.state.getState().phase,
+            shown: !card!.hidden && card!.checkVisibility(),
+            width: Math.round(card!.getBoundingClientRect().width),
+            list: Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-search-row]")!
+                .parentElement!.getBoundingClientRect().width,
+            ),
+            selected: view.selected.key,
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+            stored: doc?.cardWidth ?? null,
+            closed: doc?.cardClosed ?? null,
+            kept: doc?.selected ?? null,
+          };
+        },
+        undefined,
+        {
+          what: "Reading Card",
+          tries: 120,
+          ready: (value) => value !== null && ((shown) => !shown.shown)(value),
+        },
+      ),
+    ).toMatchObject({
       closed: null,
       stored: 400,
     });
     await screenshot("mid-drag-collapsed");
     await drag([200], { press: false, release: false });
-    expect(await closedWhen((shown) => shown.shown)).toMatchObject({
+    expect(
+      await obRunUntil(
+        run.vaultId,
+        async ({ app, zotlit }) => {
+          const view = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]?.view;
+          if (!view?.query) return null;
+          await view.query.settled;
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const el = view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const doc = zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["library.document"] as StoredLibraryViewDocument | null;
+          return {
+            phase: view.query.state.getState().phase,
+            shown: !card!.hidden && card!.checkVisibility(),
+            width: Math.round(card!.getBoundingClientRect().width),
+            list: Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-search-row]")!
+                .parentElement!.getBoundingClientRect().width,
+            ),
+            selected: view.selected.key,
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+            stored: doc?.cardWidth ?? null,
+            closed: doc?.cardClosed ?? null,
+            kept: doc?.selected ?? null,
+          };
+        },
+        undefined,
+        {
+          what: "Reading Card",
+          tries: 120,
+          ready: (value) => value !== null && ((shown) => shown.shown)(value),
+        },
+      ),
+    ).toMatchObject({
       width: 288,
     });
     // Let go past the threshold, it closes and keeps the width it had.
     await drag([300], { press: false });
-    expect(await closedWhen((shown) => shown.closed === true)).toMatchObject({
+    expect(
+      await obRunUntil(
+        run.vaultId,
+        async ({ app, zotlit }) => {
+          const view = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]?.view;
+          if (!view?.query) return null;
+          await view.query.settled;
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const el = view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const doc = zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["library.document"] as StoredLibraryViewDocument | null;
+          return {
+            phase: view.query.state.getState().phase,
+            shown: !card!.hidden && card!.checkVisibility(),
+            width: Math.round(card!.getBoundingClientRect().width),
+            list: Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-search-row]")!
+                .parentElement!.getBoundingClientRect().width,
+            ),
+            selected: view.selected.key,
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+            stored: doc?.cardWidth ?? null,
+            closed: doc?.cardClosed ?? null,
+            kept: doc?.selected ?? null,
+          };
+        },
+        undefined,
+        {
+          what: "Reading Card",
+          tries: 120,
+          ready: (value) =>
+            value !== null && ((shown) => shown.closed === true)(value),
+        },
+      ),
+    ).toMatchObject({
       shown: false,
       stored: 400,
       focused: second,
     });
-    await clickRow(1);
-    expect(await closedWhen((shown) => shown.shown)).toMatchObject({
+    await obRun(
+      run.vaultId,
+      async ({ app, page }, { position }) => {
+        const { press } = page;
+        press(
+          [
+            ...(
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0]!.view.contentEl.querySelectorAll<HTMLElement>(
+              "[data-query-item-row]",
+            ),
+          ][position],
+          `paper ${position}`,
+        );
+      },
+      { position: 1 },
+    );
+    expect(
+      await obRunUntil(
+        run.vaultId,
+        async ({ app, zotlit }) => {
+          const view = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]?.view;
+          if (!view?.query) return null;
+          await view.query.settled;
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const el = view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const doc = zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["library.document"] as StoredLibraryViewDocument | null;
+          return {
+            phase: view.query.state.getState().phase,
+            shown: !card!.hidden && card!.checkVisibility(),
+            width: Math.round(card!.getBoundingClientRect().width),
+            list: Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-search-row]")!
+                .parentElement!.getBoundingClientRect().width,
+            ),
+            selected: view.selected.key,
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+            stored: doc?.cardWidth ?? null,
+            closed: doc?.cardClosed ?? null,
+            kept: doc?.selected ?? null,
+          };
+        },
+        undefined,
+        {
+          what: "Reading Card",
+          tries: 120,
+          ready: (value) => value !== null && ((shown) => shown.shown)(value),
+        },
+      ),
+    ).toMatchObject({
       width: 400,
       closed: null,
     });
 
     // Escape during a collapsed drag puts the card and its width back.
     await drag([100, 200, 300], { release: false });
-    await closedWhen((shown) => !shown.shown);
-    await obEval(
+    await obRunUntil(
       run.vaultId,
-      "activeDocument.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));delete window.__lvccDrag;true",
+      async ({ app, zotlit }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.query) return null;
+        await view.query.settled;
+        await new Promise((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(r)),
+        );
+        const el = view.contentEl;
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+        const doc = zotlit.services.bridge.runSync(
+          zotlit.services.settings.current,
+        )["library.document"] as StoredLibraryViewDocument | null;
+        return {
+          phase: view.query.state.getState().phase,
+          shown: !card!.hidden && card!.checkVisibility(),
+          width: Math.round(card!.getBoundingClientRect().width),
+          list: Math.round(
+            el
+              .querySelector<HTMLElement>("[data-library-search-row]")!
+              .parentElement!.getBoundingClientRect().width,
+          ),
+          selected: view.selected.key,
+          focused:
+            activeDocument.activeElement?.getAttribute("data-query-item-row") ??
+            null,
+          stored: doc?.cardWidth ?? null,
+          closed: doc?.cardClosed ?? null,
+          kept: doc?.selected ?? null,
+        };
+      },
+      undefined,
+      {
+        what: "Reading Card",
+        tries: 120,
+        ready: (value) => value !== null && ((shown) => !shown.shown)(value),
+      },
     );
-    expect(await closedWhen((shown) => shown.shown)).toMatchObject({
+    await obRun(
+      run.vaultId,
+      async ({ page }) => {
+        activeDocument.body.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "Escape",
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        delete page.scratch.libraryCardDrag;
+      },
+      undefined,
+    );
+    expect(
+      await obRunUntil(
+        run.vaultId,
+        async ({ app, zotlit }) => {
+          const view = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]?.view;
+          if (!view?.query) return null;
+          await view.query.settled;
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const el = view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const doc = zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["library.document"] as StoredLibraryViewDocument | null;
+          return {
+            phase: view.query.state.getState().phase,
+            shown: !card!.hidden && card!.checkVisibility(),
+            width: Math.round(card!.getBoundingClientRect().width),
+            list: Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-search-row]")!
+                .parentElement!.getBoundingClientRect().width,
+            ),
+            selected: view.selected.key,
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+            stored: doc?.cardWidth ?? null,
+            closed: doc?.cardClosed ?? null,
+            kept: doc?.selected ?? null,
+          };
+        },
+        undefined,
+        {
+          what: "Reading Card",
+          tries: 120,
+          ready: (value) => value !== null && ((shown) => shown.shown)(value),
+        },
+      ),
+    ).toMatchObject({
       width: 400,
       stored: 400,
       closed: null,
@@ -1283,30 +5020,56 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   });
 
   it("draws My Library as two-line Papers with the seeded Literature Notes and Attachment kinds and Sort and Save as query file in its heading, and expands a paper into its seeded Attachments, Child Notes and Annotations that open their targets, with Zotero closed", async () => {
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return JSON.stringify(app.workspace.getLayout());
+      },
+      undefined,
     );
-    const stored = await obEval(
+    const stored = await obRun(
       run.vaultId,
-      "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['library.document'])",
+      async ({ zotlit }) => {
+        return zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+          "library.document"
+        ] as StoredLibraryViewDocument | null;
+      },
+      undefined,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const settings=app.plugins.plugins.zotlit.services.settings;settings.update({'library.document':${stored}});await settings.flush();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        async ({ app, zotlit }, { stored, layout }) => {
+          const { settings, bridge } = zotlit.services;
+          bridge.runSync(settings.update({ "library.document": stored }));
+          await bridge.runPromise(settings.flush);
+          await app.workspace.changeLayout(JSON.parse(layout));
+        },
+        { stored: stored, layout: layout },
       );
     });
     // My Library on the Papers Layout, which a new Library View opens on
     // (the Recent case checks that default).
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=app.plugins.plugins.zotlit.services.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}});await settings.flush();return true;})()`,
+      async ({ app, zotlit }, { myLibraryDocument }) => {
+        (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        ).forEach((leaf) => leaf.detach());
+        const { settings, bridge } = zotlit.services;
+        bridge.runSync(
+          settings.update({ "library.document": myLibraryDocument }),
+        );
+        await bridge.runPromise(settings.flush);
+      },
+      { myLibraryDocument: MY_LIBRARY_DOCUMENT },
     );
 
     /** What the Library View shows once its query settled, or `null` while no tab holds it. */
-    const readPapers = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.query)return 'null';await view.query.settled;const el=view.contentEl;const state=view.query.state.getState();const text=(n,s)=>n.querySelector(s)?.textContent??null;return JSON.stringify({phase:state.phase,layout:el.querySelector('[data-query-layout]')?.getAttribute('data-query-layout')??null,toolbar:[...el.querySelectorAll('[role="toolbar"] > button')].map(n=>n.getAttribute('data-query-toolbar')??[...n.attributes].map(a=>a.name).find(a=>a.startsWith('data-query-'))??null),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,papers:[...el.querySelectorAll('[data-query-papers-row]')].map(n=>({key:n.getAttribute('data-query-papers-row'),title:text(n,'[data-query-papers-title]'),meta:text(n,'[data-query-papers-meta]'),lines:n.querySelector('[data-query-papers-title]').parentElement.childElementCount,attachment:n.querySelector('[data-query-papers-attachment]')?.getAttribute('data-query-papers-attachment')??null,note:n.querySelector('[data-query-papers-note]')!==null,children:[...n.querySelectorAll('[data-query-papers-child]')].map(c=>[c.getAttribute('data-query-papers-child'),c.getAttribute('data-query-key')])})),tableRows:el.querySelectorAll('tr[data-query-table-row="item"]').length});})()`;
+
     interface Paper {
       key: string;
       title: string | null;
@@ -1326,12 +5089,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       papers: Paper[];
       tableRows: number;
     }
-    const papersWhen = (ready: (papers: Papers) => boolean) =>
-      obReadUntil<Papers>(run.vaultId, readPapers, {
-        ready,
-        what: "Library View",
-        tries: 120,
-      });
 
     // The seed's My Library: each Item's Attachments, and the Literature
     // Note the Fixture Vault holds for every Item but the demo papers.
@@ -1365,15 +5122,87 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       };
     };
 
-    await obEval(
+    await obRun(
       run.vaultId,
-      "app.commands.executeCommandById('zotlit:open-library-view');true",
+      async ({ app }) => {
+        app.commands.executeCommandById("zotlit:open-library-view");
+      },
+      undefined,
     );
-    const opened = await papersWhen(
-      (papers) =>
-        papers.phase === "ready" &&
-        papers.count !== null &&
-        papers.papers.length === Number(papers.count),
+    const opened = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.query) return null;
+        await view.query.settled;
+        const el = view.contentEl;
+        const state = view.query.state.getState();
+        const text = (n: Element, s: string) =>
+          n.querySelector<HTMLElement>(s)?.textContent ?? null;
+        return {
+          phase: state.phase,
+          layout:
+            el
+              .querySelector<HTMLElement>("[data-query-layout]")
+              ?.getAttribute("data-query-layout") ?? null,
+          toolbar: [
+            ...el.querySelectorAll<HTMLElement>('[role="toolbar"] > button'),
+          ].map(
+            (n) =>
+              n.getAttribute("data-query-toolbar") ??
+              [...n.attributes]
+                .map((a) => a.name)
+                .find((a) => a.startsWith("data-query-")) ??
+              null,
+          ),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          papers: [
+            ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+          ].map((n) => ({
+            key: n.getAttribute("data-query-papers-row")!,
+            title: text(n, "[data-query-papers-title]"),
+            meta: text(n, "[data-query-papers-meta]"),
+            lines: n.querySelector<HTMLElement>("[data-query-papers-title]")!
+              .parentElement!.childElementCount,
+            attachment:
+              n
+                .querySelector<HTMLElement>("[data-query-papers-attachment]")
+                ?.getAttribute("data-query-papers-attachment") ?? null,
+            note:
+              n.querySelector<HTMLElement>("[data-query-papers-note]") !== null,
+            children: [
+              ...n.querySelectorAll<HTMLElement>("[data-query-papers-child]"),
+            ].map(
+              (c) =>
+                [
+                  c.getAttribute("data-query-papers-child")!,
+                  c.getAttribute("data-query-key")!,
+                ] as [string, string | null],
+            ),
+          })),
+          tableRows: el.querySelectorAll<HTMLElement>(
+            'tr[data-query-table-row="item"]',
+          ).length,
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((papers) =>
+            papers.phase === "ready" &&
+            papers.count !== null &&
+            papers.papers.length === Number(papers.count))(value),
+      },
     );
     // No view menu and no Properties menu: the full Query View is a
     // "Save as query file" away.
@@ -1383,22 +5212,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       count: String(personal.length),
     });
     expect(
-      opened.papers
+      opened!.papers
         .map(({ key, title, attachment, note }) => ({
           key,
           title,
           attachment,
           note,
         }))
-        .toSorted((a, b) => a.key.localeCompare(b.key)),
+        .toSorted((a, b) => a.key!.localeCompare(b.key!)),
     ).toEqual(
-      personal.map(expected).toSorted((a, b) => a.key.localeCompare(b.key)),
+      personal.map(expected).toSorted((a, b) => a.key.localeCompare(b.key!)),
     );
     // Each paper takes two lines at most, with no reading-state line.
-    expect(opened.papers.every(({ lines }) => lines <= 2)).toBe(true);
+    expect(opened!.papers.every(({ lines }) => lines <= 2)).toBe(true);
     // The second line names the first creator, the year and the Venue.
     const missing = personal.flatMap((item) => {
-      const meta = opened.papers.find(({ key }) => key === item.key)!.meta;
+      const meta = opened!.papers.find(({ key }) => key === item.key)!.meta;
       return [
         item.creators[0]?.lastName,
         item.date.slice(0, 4),
@@ -1419,81 +5248,296 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     // Each gesture brings the Library View's tab to the front first: a link
     // it opened may stand in front of it.
-    const inLibrary = (script: string) =>
-      obEval(
-        run.vaultId,
-        `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);const el=leaf.view.contentEl;${script}})()`,
-      );
-    await inLibrary(
-      `press(el.querySelector('[data-query-expand="item:${paper.key}"]'),'expand paper');return true`,
+
+    await obRun(
+      run.vaultId,
+      async ({ app, page }, { paperKey }) => {
+        const { press } = page;
+        const leaf = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0];
+        await app.workspace.revealLeaf(leaf!);
+        const el = leaf!.view.contentEl;
+        press(
+          el.querySelector<HTMLElement>(
+            `[data-query-expand="item:${paperKey}"]`,
+          ),
+          "expand paper",
+        );
+      },
+      { paperKey: paper.key },
     );
     const childrenOf = (papers: Papers) =>
       papers.papers.find(({ key }) => key === paper.key)!.children;
     // The Literature Note row shows at once; the others once their query ran.
-    const expanded = await papersWhen(
-      (papers) =>
-        childrenOf(papers).filter(([kind]) => kind === "attachment").length ===
-        attachmentsOf(paper).length,
+    const expanded = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.query) return null;
+        await view.query.settled;
+        const el = view.contentEl;
+        const state = view.query.state.getState();
+        const text = (n: Element, s: string) =>
+          n.querySelector<HTMLElement>(s)?.textContent ?? null;
+        return {
+          phase: state.phase,
+          layout:
+            el
+              .querySelector<HTMLElement>("[data-query-layout]")
+              ?.getAttribute("data-query-layout") ?? null,
+          toolbar: [
+            ...el.querySelectorAll<HTMLElement>('[role="toolbar"] > button'),
+          ].map(
+            (n) =>
+              n.getAttribute("data-query-toolbar") ??
+              [...n.attributes]
+                .map((a) => a.name)
+                .find((a) => a.startsWith("data-query-")) ??
+              null,
+          ),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          papers: [
+            ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+          ].map((n) => ({
+            key: n.getAttribute("data-query-papers-row")!,
+            title: text(n, "[data-query-papers-title]"),
+            meta: text(n, "[data-query-papers-meta]"),
+            lines: n.querySelector<HTMLElement>("[data-query-papers-title]")!
+              .parentElement!.childElementCount,
+            attachment:
+              n
+                .querySelector<HTMLElement>("[data-query-papers-attachment]")
+                ?.getAttribute("data-query-papers-attachment") ?? null,
+            note:
+              n.querySelector<HTMLElement>("[data-query-papers-note]") !== null,
+            children: [
+              ...n.querySelectorAll<HTMLElement>("[data-query-papers-child]"),
+            ].map(
+              (c) =>
+                [
+                  c.getAttribute("data-query-papers-child")!,
+                  c.getAttribute("data-query-key")!,
+                ] as [string, string | null],
+            ),
+          })),
+          tableRows: el.querySelectorAll<HTMLElement>(
+            'tr[data-query-table-row="item"]',
+          ).length,
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((papers) =>
+            childrenOf(papers).filter(([kind]) => kind === "attachment")
+              .length === attachmentsOf(paper).length)(value),
+      },
     );
-    expect(childrenOf(expanded).at(-1)?.[0]).toBe("literature-note");
+    expect(childrenOf(expanded!).at(-1)?.[0]).toBe("literature-note");
     expect(
-      childrenOf(expanded)
+      childrenOf(expanded!)
         .filter(([kind]) => kind === "attachment")
         .map(([, key]) => key)
         .toSorted((a, b) => String(a).localeCompare(String(b))),
     ).toEqual(
       attachmentsOf(paper)
         .map(({ key }) => key)
-        .toSorted((a, b) => String(a).localeCompare(String(b))),
+        .toSorted((a, b) => a.localeCompare(b)),
     );
     expect(
-      childrenOf(expanded)
+      childrenOf(expanded!)
         .filter(([kind]) => kind === "note")
         .map(([, key]) => key),
     ).toEqual(live.map(({ key }) => key));
-    await inLibrary(
-      `press(el.querySelector('[data-query-expand="attachment:${pdf.key}"]'),'expand PDF');return true`,
+    await obRun(
+      run.vaultId,
+      async ({ app, page }, { pdfKey }) => {
+        const { press } = page;
+        const leaf = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0];
+        await app.workspace.revealLeaf(leaf!);
+        const el = leaf!.view.contentEl;
+        press(
+          el.querySelector<HTMLElement>(
+            `[data-query-expand="attachment:${pdfKey}"]`,
+          ),
+          "expand PDF",
+        );
+      },
+      { pdfKey: pdf.key },
     );
     const pdfAnnotations = ANNOTATIONS.filter(
       ({ parentItemID }) => parentItemID === pdf.itemID,
     );
-    const withAnnotations = await papersWhen(
-      (papers) =>
-        childrenOf(papers).filter(([kind]) => kind === "annotation").length ===
-        pdfAnnotations.length,
+    const withAnnotations = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.query) return null;
+        await view.query.settled;
+        const el = view.contentEl;
+        const state = view.query.state.getState();
+        const text = (n: Element, s: string) =>
+          n.querySelector<HTMLElement>(s)?.textContent ?? null;
+        return {
+          phase: state.phase,
+          layout:
+            el
+              .querySelector<HTMLElement>("[data-query-layout]")
+              ?.getAttribute("data-query-layout") ?? null,
+          toolbar: [
+            ...el.querySelectorAll<HTMLElement>('[role="toolbar"] > button'),
+          ].map(
+            (n) =>
+              n.getAttribute("data-query-toolbar") ??
+              [...n.attributes]
+                .map((a) => a.name)
+                .find((a) => a.startsWith("data-query-")) ??
+              null,
+          ),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          papers: [
+            ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+          ].map((n) => ({
+            key: n.getAttribute("data-query-papers-row")!,
+            title: text(n, "[data-query-papers-title]"),
+            meta: text(n, "[data-query-papers-meta]"),
+            lines: n.querySelector<HTMLElement>("[data-query-papers-title]")!
+              .parentElement!.childElementCount,
+            attachment:
+              n
+                .querySelector<HTMLElement>("[data-query-papers-attachment]")
+                ?.getAttribute("data-query-papers-attachment") ?? null,
+            note:
+              n.querySelector<HTMLElement>("[data-query-papers-note]") !== null,
+            children: [
+              ...n.querySelectorAll<HTMLElement>("[data-query-papers-child]"),
+            ].map(
+              (c) =>
+                [
+                  c.getAttribute("data-query-papers-child")!,
+                  c.getAttribute("data-query-key")!,
+                ] as [string, string | null],
+            ),
+          })),
+          tableRows: el.querySelectorAll<HTMLElement>(
+            'tr[data-query-table-row="item"]',
+          ).length,
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((papers) =>
+            childrenOf(papers).filter(([kind]) => kind === "annotation")
+              .length === pdfAnnotations.length)(value),
+      },
     );
     expect(
-      childrenOf(withAnnotations)
+      childrenOf(withAnnotations!)
         .filter(([kind]) => kind === "annotation")
         .map(([, key]) => key)
         .toSorted((a, b) => String(a).localeCompare(String(b))),
     ).toEqual(
       pdfAnnotations
         .map(({ key }) => key)
-        .toSorted((a, b) => String(a).localeCompare(String(b))),
+        .toSorted((a, b) => a.localeCompare(b)),
     );
 
     // The PDF opens in Obsidian's reader, an Annotation at its page, and the
     // Literature Note in Obsidian.
-    const child = (kind: string, key: string) =>
-      `el.querySelector('[data-query-papers-row="${paper.key}"] [data-query-papers-child="${kind}"][data-query-key="${key}"] a')`;
+
     const pdfName = pdf.path!.split("/").pop()!;
     expect(
-      await inLibrary(
-        `press(${child("attachment", pdf.key)},'PDF link');return String(!!(await until('the PDF opens',()=>app.workspace.getLeavesOfType('pdf').find(l=>l.view.file?.name===${JSON.stringify(pdfName)}),10000)))`,
+      await obRun(
+        run.vaultId,
+        async ({ app, page }, { paperKey, attachment, pdfKey, pdfname }) => {
+          const { press, until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          const el = leaf!.view.contentEl;
+          press(
+            el.querySelector<HTMLElement>(
+              `[data-query-papers-row="${paperKey}"] [data-query-papers-child="${attachment}"][data-query-key="${pdfKey}"] a`,
+            ),
+            "PDF link",
+          );
+          return !!(await until(
+            "the PDF opens",
+            () =>
+              (
+                app.workspace.getLeavesOfType("pdf") as (WorkspaceLeaf & {
+                  view: PDFFileView;
+                })[]
+              ).find((l) => l.view.file?.name === pdfname),
+            10000,
+          ));
+        },
+        {
+          paperKey: paper.key,
+          attachment: "attachment",
+          pdfKey: pdf.key,
+          pdfname: pdfName,
+        },
       ),
-    ).toBe("true");
+    ).toBe(true);
     const anchored = pdfAnnotations.find(
       (annotation) => "pageIndex" in annotation.position,
     )!;
     // A middle click opens a new tab, as the Table case does.
     expect(
-      JSON.parse(
-        await inLibrary(
-          annotationOpenSubpath(
-            `const link=${child("annotation", anchored.key)};link.dispatchEvent(new link.ownerDocument.defaultView.MouseEvent('auxclick',{bubbles:true,cancelable:true,button:1}));`,
-          ),
-        ),
+      await obRun(
+        run.vaultId,
+        async ({ app, page }, { paperKeyInput, anchoredKey }) => {
+          const leaf = app.workspace.getLeavesOfType("zotlit-library")[0]!;
+          await app.workspace.revealLeaf(leaf);
+          const el = (leaf.view as LibraryView).contentEl;
+          return await page.annotationOpenSubpath(() => {
+            const link = el.querySelector<HTMLElement>(
+              `[data-query-papers-row="${paperKeyInput}"] [data-query-papers-child="annotation"][data-query-key="${anchoredKey}"] a`,
+            )!;
+            link.dispatchEvent(
+              new (
+                link.ownerDocument.defaultView as Window & typeof globalThis
+              ).MouseEvent("auxclick", {
+                bubbles: true,
+                cancelable: true,
+                button: 1,
+              }),
+            );
+          });
+        },
+        { paperKeyInput: paper.key, anchoredKey: anchored.key },
       ),
     ).toEqual(
       annotationOpenKeys({
@@ -1504,10 +5548,36 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
 
     expect(
-      await inLibrary(
-        `const link=el.querySelector('[data-query-papers-row="${paper.key}"] [data-query-papers-child="literature-note"] [data-query-note]');press(link,'Literature Note link');const path=link.getAttribute('data-query-note');return String(!!(await until('the Literature Note opens',()=>app.workspace.getLeavesOfType('markdown').find(l=>l.view.file?.path===path),10000)))`,
+      await obRun(
+        run.vaultId,
+        async ({ app, page }, { paperKey }) => {
+          const { press, until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          const el = leaf!.view.contentEl;
+          const link = el.querySelector<HTMLElement>(
+            `[data-query-papers-row="${paperKey}"] [data-query-papers-child="literature-note"] [data-query-note]`,
+          );
+          press(link, "Literature Note link");
+          const path = link!.getAttribute("data-query-note");
+          return !!(await until(
+            "the Literature Note opens",
+            () =>
+              (
+                app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
+                  view: MarkdownView;
+                })[]
+              ).find((l) => l.view.file?.path === path),
+            10000,
+          ));
+        },
+        { paperKey: paper.key },
       ),
-    ).toBe("true");
+    ).toBe(true);
 
     // An Item with Child Notes lists its live ones, and a Child Note opens
     // in Zotero through its link.
@@ -1516,46 +5586,201 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       (note) => note.parentItemID === noted.itemID && !note.trashed,
     );
     expect(notes.length, "the Fixture Item has a live Child Note").toBe(1);
-    await inLibrary(
-      `press(el.querySelector('[data-query-expand="item:${noted.key}"]'),'expand noted paper');return true`,
+    await obRun(
+      run.vaultId,
+      async ({ app, page }, { notedKey }) => {
+        const { press } = page;
+        const leaf = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0];
+        await app.workspace.revealLeaf(leaf!);
+        const el = leaf!.view.contentEl;
+        press(
+          el.querySelector<HTMLElement>(
+            `[data-query-expand="item:${notedKey}"]`,
+          ),
+          "expand noted paper",
+        );
+      },
+      { notedKey: noted.key },
     );
-    const withNotes = await papersWhen(
-      (papers) =>
-        papers.papers
-          .find(({ key }) => key === noted.key)!
-          .children.filter(([kind]) => kind === "note").length === notes.length,
+    const withNotes = await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (!view?.query) return null;
+        await view.query.settled;
+        const el = view.contentEl;
+        const state = view.query.state.getState();
+        const text = (n: Element, s: string) =>
+          n.querySelector<HTMLElement>(s)?.textContent ?? null;
+        return {
+          phase: state.phase,
+          layout:
+            el
+              .querySelector<HTMLElement>("[data-query-layout]")
+              ?.getAttribute("data-query-layout") ?? null,
+          toolbar: [
+            ...el.querySelectorAll<HTMLElement>('[role="toolbar"] > button'),
+          ].map(
+            (n) =>
+              n.getAttribute("data-query-toolbar") ??
+              [...n.attributes]
+                .map((a) => a.name)
+                .find((a) => a.startsWith("data-query-")) ??
+              null,
+          ),
+          count:
+            el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count") ?? null,
+          papers: [
+            ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+          ].map((n) => ({
+            key: n.getAttribute("data-query-papers-row")!,
+            title: text(n, "[data-query-papers-title]"),
+            meta: text(n, "[data-query-papers-meta]"),
+            lines: n.querySelector<HTMLElement>("[data-query-papers-title]")!
+              .parentElement!.childElementCount,
+            attachment:
+              n
+                .querySelector<HTMLElement>("[data-query-papers-attachment]")
+                ?.getAttribute("data-query-papers-attachment") ?? null,
+            note:
+              n.querySelector<HTMLElement>("[data-query-papers-note]") !== null,
+            children: [
+              ...n.querySelectorAll<HTMLElement>("[data-query-papers-child]"),
+            ].map(
+              (c) =>
+                [
+                  c.getAttribute("data-query-papers-child")!,
+                  c.getAttribute("data-query-key")!,
+                ] as [string, string | null],
+            ),
+          })),
+          tableRows: el.querySelectorAll<HTMLElement>(
+            'tr[data-query-table-row="item"]',
+          ).length,
+        };
+      },
+      undefined,
+      {
+        what: "Library View",
+        tries: 120,
+        ready: (value) =>
+          value !== null &&
+          ((papers) =>
+            papers.papers
+              .find(({ key }) => key === noted.key)!
+              .children.filter(([kind]) => kind === "note").length ===
+            notes.length)(value),
+      },
     );
     expect(
-      withNotes.papers
+      withNotes!.papers
         .find(({ key }) => key === noted.key)!
         .children.filter(([kind]) => kind === "note")
         .map(([, key]) => key),
     ).toEqual(notes.map(({ key }) => key));
     expect(
-      await inLibrary(
-        `const native=window.open;let opened=null;window.open=url=>{opened=String(url);return null;};try{press(el.querySelector('[data-query-papers-row="${noted.key}"] [data-query-papers-child="note"][data-query-key="${notes[0]!.key}"] a'),'Child Note link');return await until('Zotero shows the note',()=>opened,10000);}finally{window.open=native;}`,
+      await obRun(
+        run.vaultId,
+        async ({ app, page }, { notedKey, key }) => {
+          const { press, until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          const el = leaf!.view.contentEl;
+          const native = window.open;
+          let opened: string | null = null;
+          window.open = (url) => {
+            opened = String(url);
+            return null;
+          };
+          try {
+            press(
+              el.querySelector<HTMLElement>(
+                `[data-query-papers-row="${notedKey}"] [data-query-papers-child="note"][data-query-key="${key}"] a`,
+              ),
+              "Child Note link",
+            );
+            return await until("Zotero shows the note", () => opened, 10000);
+          } finally {
+            window.open = native;
+          }
+        },
+        { notedKey: noted.key, key: notes[0]!.key },
       ),
     ).toBe(`zotero://select/library/items/${notes[0]!.key}`);
   }, 180000);
 
   it("scrolls the Library View's rows alone, under a search box and a heading that stay put, keeps each row's trailing icons clear of the scrollbar, and keeps a row the arrow keys select in view under them, on a wide and a narrow pane", async () => {
-    const services = "app.plugins.plugins.zotlit.services";
-    const snapshot = await obEval(
+    const snapshot = await obRun(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null})`,
+      async ({ app, zotlit }) => {
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+        });
+      },
+      undefined,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+        async ({ app, zotlit }, { snapshot }) => {
+          const saved = JSON.parse(snapshot);
+          const { settings, bridge } = zotlit.services;
+          bridge.runSync(
+            settings.update({ "library.document": saved.document }),
+          );
+          await bridge.runPromise(settings.flush);
+          await app.workspace.changeLayout(saved.layout);
+        },
+        { snapshot: snapshot },
       );
     });
     // My Library: more papers than the pane holds.
     await suite.wideWindow(cleanup);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}});await settings.flush();app.commands.executeCommandById('zotlit:open-library-view');await until('library',()=>app.workspace.getLeavesOfType('zotlit-library')[0]);return true;})()`,
+      async ({ app, zotlit, page }, { myLibraryDocument }) => {
+        const { until } = page;
+        (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        ).forEach((leaf) => leaf.detach());
+        const { settings, bridge } = zotlit.services;
+        bridge.runSync(
+          settings.update({ "library.document": myLibraryDocument }),
+        );
+        await bridge.runPromise(settings.flush);
+        app.commands.executeCommandById("zotlit:open-library-view");
+        await until(
+          "library",
+          () =>
+            (
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0],
+        );
+      },
+      { myLibraryDocument: MY_LIBRARY_DOCUMENT },
     );
 
     interface Pane {
@@ -1577,12 +5802,127 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
     /** Lay the tab out `width` px wide, scroll its list, and move the selection with the arrow keys. */
     const measure = async (width: number) =>
-      JSON.parse(
-        await obEval(
-          run.vaultId,
-          `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;const el=leaf.view.contentEl;const width=el.style.width;el.style.width='${width}px';const frame=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));try{await until('rows',()=>el.querySelectorAll('[data-query-papers-row]').length>10,10000);await frame();const list=el.querySelector('[data-query-layout]');const input=el.querySelector('[data-library-search] input');const toolbar=el.querySelector('[data-library-heading]');const tops=()=>[input,toolbar].map(n=>n.getBoundingClientRect().top);list.scrollTop=0;await frame();const before=tops();list.scrollTop=list.scrollHeight;await frame();const after=tops();const scrolled=list.scrollTop;const box=list.getBoundingClientRect();const clientRight=box.left+list.clientLeft+list.clientWidth;const iconRight=Math.max(...[...list.querySelectorAll('[data-query-papers-note],[data-query-papers-attachment]')].filter(n=>n.checkVisibility()).map(n=>n.getBoundingClientRect().right));const rows=()=>[...list.querySelectorAll('[data-query-item-row]')];const place=row=>{const r=row.getBoundingClientRect();const b=list.getBoundingClientRect();return{selected:row.hasAttribute('data-selected'),inList:r.top>=b.top-0.5&&r.bottom<=b.bottom+0.5,underToolbar:r.top>=toolbar.getBoundingClientRect().bottom-0.5};};const arrow=async(key,from,to)=>{const start=rows()[from];leaf.view.selection.setState({key:start.getAttribute('data-query-item-row'),card:false});await until('row selected',()=>start.hasAttribute('data-selected'));start.focus({preventScroll:true});list.scrollTop=key==='ArrowDown'?list.scrollHeight:0;await frame();activeDocument.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));await until('selection moves',()=>rows()[to].hasAttribute('data-selected'));await frame();return place(rows()[to]);};const n=rows().length;const down=await arrow('ArrowDown',0,1);const up=await arrow('ArrowUp',n-1,n-2);leaf.view.selection.setState({key:null,card:false});return JSON.stringify({overflows:list.scrollHeight>list.clientHeight,scrolled,tops:{before,after},icon:{toClient:clientRight-iconRight,toEdge:box.right-iconRight},scrollbar:parseFloat(getComputedStyle(document.body).getPropertyValue('--scrollbar-width')),moved:{down,up}});}finally{el.style.width=width;}})()`,
-        ),
-      ) as Pane;
+      (await obRun(
+        run.vaultId,
+        async ({ app, page }, { widthInput }) => {
+          const { until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          app.workspace.setActiveLeaf(leaf!, { focus: true });
+          await leaf!.view.query.settled;
+          const el = leaf!.view.contentEl;
+          const width = el.style.width;
+          el.style.width = `${widthInput}px`;
+          const frame = () =>
+            new Promise((r) =>
+              requestAnimationFrame(() => requestAnimationFrame(r)),
+            );
+          try {
+            await until(
+              "rows",
+              () =>
+                el.querySelectorAll<HTMLElement>("[data-query-papers-row]")
+                  .length > 10,
+              10000,
+            );
+            await frame();
+            const list = el.querySelector<HTMLElement>("[data-query-layout]");
+            const input = el.querySelector<HTMLElement>(
+              "[data-library-search] input",
+            );
+            const toolbar = el.querySelector<HTMLElement>(
+              "[data-library-heading]",
+            );
+            const tops = () =>
+              [input, toolbar].map((n) => n!.getBoundingClientRect().top);
+            list!.scrollTop = 0;
+            await frame();
+            const before = tops();
+            list!.scrollTop = list!.scrollHeight;
+            await frame();
+            const after = tops();
+            const scrolled = list!.scrollTop;
+            const box = list!.getBoundingClientRect();
+            const clientRight = box.left + list!.clientLeft + list!.clientWidth;
+            const iconRight = Math.max(
+              ...[
+                ...list!.querySelectorAll<HTMLElement>(
+                  "[data-query-papers-note],[data-query-papers-attachment]",
+                ),
+              ]
+                .filter((n) => n.checkVisibility())
+                .map((n) => n.getBoundingClientRect().right),
+            );
+            const rows = () => [
+              ...list!.querySelectorAll<HTMLElement>("[data-query-item-row]"),
+            ];
+            const place = (row: HTMLElement) => {
+              const r = row.getBoundingClientRect();
+              const b = list!.getBoundingClientRect();
+              return {
+                selected: row.hasAttribute("data-selected"),
+                inList: r.top >= b.top - 0.5 && r.bottom <= b.bottom + 0.5,
+                underToolbar:
+                  r.top >= toolbar!.getBoundingClientRect().bottom - 0.5,
+              };
+            };
+            const arrow = async (key: string, from: number, to: number) => {
+              const start = rows()[from];
+              leaf!.view.card.registry.set(leaf!.view.model.selection, {
+                key: start!.getAttribute("data-query-item-row")!,
+                card: false,
+              });
+              await until("row selected", () =>
+                start!.hasAttribute("data-selected"),
+              );
+              start!.focus({ preventScroll: true });
+              list!.scrollTop = key === "ArrowDown" ? list!.scrollHeight : 0;
+              await frame();
+              activeDocument.activeElement!.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                  key,
+                  bubbles: true,
+                  cancelable: true,
+                }),
+              );
+              await until("selection moves", () =>
+                rows()[to]!.hasAttribute("data-selected"),
+              );
+              await frame();
+              return place(rows()[to]!);
+            };
+            const n = rows().length;
+            const down = await arrow("ArrowDown", 0, 1);
+            const up = await arrow("ArrowUp", n - 1, n - 2);
+            leaf!.view.card.registry.set(leaf!.view.model.selection, {
+              key: null,
+              card: false,
+            });
+            return {
+              overflows: list!.scrollHeight > list!.clientHeight,
+              scrolled,
+              tops: { before, after },
+              icon: {
+                toClient: clientRight - iconRight,
+                toEdge: box.right - iconRight,
+              },
+              scrollbar: Number.parseFloat(
+                getComputedStyle(document.body).getPropertyValue(
+                  "--scrollbar-width",
+                ),
+              ),
+              moved: { down, up },
+            };
+          } finally {
+            el.style.width = width;
+          }
+        },
+        { widthInput: width },
+      )) as Pane;
 
     for (const width of [1600, 528]) {
       const pane = await measure(width);
@@ -1606,17 +5946,36 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   }, 120000);
 
   it("expands a row of the Library View, in a tab and in the sidebar, and of a Query File's Papers and Table, in one step whether ZotLit Query answers at once or late, with no row drawn again or over another, with Zotero closed", async () => {
-    const services = "app.plugins.plugins.zotlit.services";
     const path = "query-files/Expanding.zotquery";
-    const snapshot = await obEval(
+    const snapshot = await obRun(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null})`,
+      async ({ app, zotlit }) => {
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+        });
+      },
+      undefined,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();await app.workspace.changeLayout(saved.layout);const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+        async ({ app, zotlit }, { snapshot, path }) => {
+          const saved = JSON.parse(snapshot);
+          const { settings, bridge } = zotlit.services;
+          bridge.runSync(
+            settings.update({ "library.document": saved.document }),
+          );
+          await bridge.runPromise(settings.flush);
+          await app.workspace.changeLayout(saved.layout);
+          const file = app.vault.getFileByPath(path);
+          if (file) await app.vault.delete(file);
+        },
+        { snapshot: snapshot, path: path },
       );
     });
     await suite.wideWindow(cleanup);
@@ -1651,25 +6010,167 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       }[];
       /** The Item rows the expansion took out of the page. */
       removed: string[];
+      /** Attachment reads sent after the worker delay elapsed. */
+      delayedReads: number;
     }
     /** An Item row to expand: the view that shows it, its rows, and its key. */
     interface Target {
-      view: string;
+      view: { kind: "library" } | { kind: "query"; path: string };
       rowSelector: string;
       item: string;
     }
     /**
-     * Click the expander of the target's Item, with each ZotLit Query run
-     * held `delay` ms first, and read each frame the window draws until half
+     * Click the expander of the target's Item, with its attachment request
+     * held at the worker boundary for `delay` ms, and read each frame until half
      * a second after that.
      */
-    const expand = async ({ view, rowSelector, item }: Target, delay: number) =>
-      JSON.parse(
-        await obEval(
-          run.vaultId,
-          `(async()=>{${PAGE}const view=${view};await app.workspace.revealLeaf(view.leaf);await view.query.settled;const el=view.contentEl;const rowSel=${JSON.stringify(rowSelector)};const button=await until('expander',()=>el.querySelector('[data-query-expand="item:${item}"]'),10000);const frame=()=>new Promise(r=>requestAnimationFrame(r));button.scrollIntoView({block:'center',behavior:'instant'});await stands(button,'expander');await frame();await frame();const rows=()=>[...el.querySelectorAll(rowSel)];const own=button.closest(rowSel);const at=rows().indexOf(own);const removed=[];const observer=new MutationObserver(records=>{for(const record of records)for(const n of record.removedNodes)if(n.nodeType===1&&(n.matches(rowSel)||n.querySelector(rowSel)))removed.push(n.getAttribute('data-query-papers-row')??n.getAttribute('data-query-key')??n.nodeName);});observer.observe(el,{childList:true,subtree:true});const frames=[];const take=()=>{const list=rows();const boxes=list.map(n=>n.getBoundingClientRect());const box=own.getBoundingClientRect();const top=box.top;frames.push({rows:list.length,height:Math.round(box.height),next:list[at+1]?Math.round(boxes[at+1].top-top):null,overlaps:boxes.filter((b,i)=>i>0&&b.top<boxes[i-1].bottom-0.5).length,status:el.querySelectorAll('[data-query-table-status]').length,loading:(()=>{const text=el.querySelector('[data-query-loading]');return text?getComputedStyle(text).opacity:null;})()});};const service=app.plugins.plugins.zotlit.services.query;const run=service.run;if(${delay}>0)service.run=function(...args){return new Promise(r=>setTimeout(r,${delay})).then(()=>run.apply(this,args));};let expanded=null;try{take();press(button,'expander');take();const start=performance.now();while(performance.now()-start<${delay}+500){await frame();take();}expanded=button.getAttribute('aria-expanded');}finally{service.run=run;observer.disconnect();}press(button,'collapse');return JSON.stringify({expanded,frames,removed});})()`,
-        ),
-      ) as Expansion;
+    const expand = async (
+      { view, rowSelector, item }: Target,
+      delay: number,
+    ) => {
+      const expansion = (await obRun(
+        run.vaultId,
+        async ({ app, page }, { viewInput, rowselector, item, delay }) => {
+          const { press, until, stands } = page;
+          const view =
+            viewInput.kind === "library"
+              ? (app.workspace.getLeavesOfType("zotlit-library")[0]!
+                  .view as LibraryView)
+              : (app.workspace
+                  .getLeavesOfType("zotlit-query-file")
+                  .find(
+                    (leaf) =>
+                      (leaf.view as QueryFileView).file?.path ===
+                      (viewInput as { kind: "query"; path: string }).path,
+                  )!.view as QueryFileView);
+          await app.workspace.revealLeaf(view.leaf);
+          await (view as QueryFileView).query.settled;
+          const el = view.contentEl;
+          const rowSel = rowselector;
+          const button = await until(
+            "expander",
+            () =>
+              el.querySelector<HTMLElement>(
+                `[data-query-expand="item:${item}"]`,
+              ),
+            10000,
+          );
+          const frame = () => new Promise((r) => requestAnimationFrame(r));
+          button.scrollIntoView({ block: "center", behavior: "instant" });
+          await stands(button, "expander");
+          await frame();
+          await frame();
+          const rows = () => [...el.querySelectorAll<HTMLElement>(rowSel)];
+          const own = button.closest<HTMLElement>(rowSel);
+          const at = rows().indexOf(own!);
+          const removed: string[] = [];
+          const observer = new MutationObserver((records) => {
+            for (const record of records)
+              for (const n of record.removedNodes)
+                if (
+                  n instanceof HTMLElement &&
+                  (n.matches(rowSel) || n.querySelector<HTMLElement>(rowSel))
+                )
+                  removed.push(
+                    n.getAttribute("data-query-papers-row")! ??
+                      n.getAttribute("data-query-key")! ??
+                      n.nodeName,
+                  );
+          });
+          observer.observe(el, { childList: true, subtree: true });
+          const frames: Expansion["frames"] = [];
+          const take = () => {
+            const list = rows();
+            const boxes = list.map((n) => n.getBoundingClientRect());
+            const box = own!.getBoundingClientRect();
+            const top = box.top;
+            frames.push({
+              rows: list.length,
+              height: Math.round(box.height),
+              next: list[at + 1] ? Math.round(boxes[at + 1]!.top - top) : null,
+              overlaps: boxes.filter(
+                (b, i) => i > 0 && b.top < boxes[i - 1]!.bottom - 0.5,
+              ).length,
+              status: el.querySelectorAll<HTMLElement>(
+                "[data-query-table-status]",
+              ).length,
+              loading: (() => {
+                const text = el.querySelector<HTMLElement>(
+                  "[data-query-loading]",
+                );
+                return text ? getComputedStyle(text).opacity : null;
+              })(),
+            });
+          };
+          // oxlint-disable-next-line typescript/unbound-method -- Restored unchanged and called with the original worker receiver.
+          const post = Worker.prototype.postMessage;
+          const pending = new Map<ReturnType<typeof setTimeout>, () => void>();
+          let delayedReads = 0;
+          if (delay > 0)
+            Worker.prototype.postMessage = new Proxy(post, {
+              apply: (
+                postTarget,
+                receiver: Worker,
+                args: Parameters<Worker["postMessage"]>,
+              ) => {
+                const request = (args[0] as LibraryWorkerMessage)?.[1];
+                const query =
+                  request?.tag === "ItemQuery" && "view" in request.payload.job
+                    ? request.payload.job.view
+                    : null;
+                const target = item;
+                if (
+                  !query ||
+                  query.from !== "attachments" ||
+                  query.filter !==
+                    `item.indexedKey == ${JSON.stringify(target)}`
+                )
+                  return Reflect.apply(postTarget, receiver, args);
+                const worker = receiver;
+                const send = () => Reflect.apply(postTarget, worker, args);
+                const timer = setTimeout(() => {
+                  pending.delete(timer);
+                  delayedReads++;
+                  send();
+                }, delay);
+                pending.set(timer, send);
+              },
+            });
+          let expanded = null;
+          try {
+            take();
+            press(button, "expander");
+            take();
+            const start = performance.now();
+            while (performance.now() - start < delay + 500) {
+              await frame();
+              take();
+            }
+            expanded = button.getAttribute("aria-expanded");
+          } finally {
+            Worker.prototype.postMessage = post;
+            for (const [timer, send] of pending) {
+              clearTimeout(timer);
+              send();
+            }
+            observer.disconnect();
+          }
+          press(button, "collapse");
+          return { expanded, frames, removed, delayedReads };
+        },
+        {
+          viewInput: view,
+          rowselector: rowSelector,
+          item: item,
+          delay: delay,
+        },
+      )) as Expansion;
+      expect(
+        expansion.delayedReads > 0,
+        "the expansion attachment read crosses the delayed worker boundary when requested",
+      ).toBe(delay > 0 && item !== noteOnly.key);
+      return expansion;
+    };
     /**
      * The expansion draws the closed row, then the open one: the rows under
      * it move once, straight to where the open row puts them, and none is
@@ -1724,11 +6225,35 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     };
 
     // The Library View in a tab, on Papers.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}});await settings.flush();app.commands.executeCommandById('zotlit:open-library-view');await until('library',()=>app.workspace.getLeavesOfType('zotlit-library')[0],10000);return true;})()`,
+      async ({ app, zotlit, page }, { myLibraryDocument }) => {
+        const { until } = page;
+        (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        ).forEach((leaf) => leaf.detach());
+        const { settings, bridge } = zotlit.services;
+        bridge.runSync(
+          settings.update({ "library.document": myLibraryDocument }),
+        );
+        await bridge.runPromise(settings.flush);
+        app.commands.executeCommandById("zotlit:open-library-view");
+        await until(
+          "library",
+          () =>
+            (
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0],
+          10000,
+        );
+      },
+      { myLibraryDocument: MY_LIBRARY_DOCUMENT },
     );
-    const library = "app.workspace.getLeavesOfType('zotlit-library')[0].view";
+    const library = { kind: "library" } as const;
     const papersRow = "li[data-query-papers-row]";
     await expandEach("Library View tab, note only", {
       view: library,
@@ -1742,9 +6267,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
 
     // The Library View in the sidebar.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const leaf=app.workspace.getRightLeaf(false);await leaf.setViewState({type:'zotlit-library',active:true});app.workspace.rightSplit.expand();await app.workspace.revealLeaf(leaf);return true;})()`,
+      async ({ app }) => {
+        (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        ).forEach((leaf) => leaf.detach());
+        const leaf = app.workspace.getRightLeaf(false);
+        await leaf!.setViewState({ type: "zotlit-library", active: true });
+        app.workspace.rightSplit.expand();
+        await app.workspace.revealLeaf(leaf!);
+      },
+      undefined,
     );
     await expandEach("Library View sidebar, note only", {
       view: library,
@@ -1759,10 +6295,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // A Query File tab on Papers, then on the Table.
     for (const layout of ["papers", "table"]) {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const old=app.vault.getFileByPath(${JSON.stringify(path)});if(old)await app.vault.delete(old);const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(
-          [
+        async ({ app }, { path, joinResult }) => {
+          const old = app.vault.getFileByPath(path);
+          if (old) await app.vault.delete(old);
+          const file = await app.vault.create(path, joinResult);
+          const leaf = app.workspace.getLeaf("tab");
+          await leaf.openFile(file);
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+        },
+        {
+          path: path,
+          joinResult: [
             "views:",
             `  - type: ${layout}`,
             "    name: Mine",
@@ -1771,9 +6316,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "    limit: 100",
             "",
           ].join("\n"),
-        )});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+        },
       );
-      const tab = `app.workspace.getLeavesOfType('zotlit-query-file').find(leaf=>leaf.view.file?.path===${JSON.stringify(path)}).view`;
+      const tab = { kind: "query", path } as const;
       await expandEach(`Query File ${layout}, Attachments`, {
         view: tab,
         rowSelector:

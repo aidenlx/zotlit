@@ -1,21 +1,18 @@
-// Each Preview owns its inputs, render work, data, and output presentation.
-import { apiVersion, ItemView, setIcon } from "obsidian";
+import { useAtomValue } from "@effect/atom-react";
 
 import "./style.css";
+// Each Preview owns its inputs, render work, data, and output presentation.
+import { apiVersion, ItemView, setIcon } from "obsidian";
 import type { Menu, ViewStateResult } from "obsidian";
 import type { TFile, WorkspaceLeaf } from "obsidian";
 import { useEffect } from "react";
 import type { ComponentProps } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
-import { useStore } from "zustand";
 
-import { DEFAULT_CITATION_VARIANT, isCitationVariant } from "@zotlit/db";
 import {
   CITATION_EXAMPLE_IDS,
-  DEFAULT_CITATION_EXAMPLE,
   DEFAULT_PARTIAL_CONTEXT,
-  isCitationExampleId,
   isPartialContext,
 } from "@zotlit/workbench/render";
 import type {
@@ -30,7 +27,6 @@ import {
   createRenderScheduler,
   partialContextLabel,
   renderDiagnosis,
-  TABS,
   ResultBody,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
@@ -47,17 +43,17 @@ import type {
 
 import { Icon } from "@/components/obsidian/icon";
 import { selectionControl } from "@/components/obsidian/selection-control";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { readLiveText } from "@/lib/live-text";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { openSettingsTab } from "@/lib/open-settings";
-import type { ItemLookup } from "@/services/item-lookup/service";
-import type { PlainProfile } from "@/services/profile/plain";
+import { ViewRegistryProvider } from "@/lib/view-atoms";
+import type { ItemLookupHandle } from "@/services/item-lookup/handle";
+import { profilesAtom } from "@/services/profile/atoms";
+import { templateFolderAtom } from "@/services/settings/atoms";
 import type { PluginSettings } from "@/services/settings/service";
-import {
-  templateFolderOf,
-  templatePartialName,
-} from "@/views/template-workbench/document-kind";
+import { templatePartialName } from "@/views/template-workbench/document-kind";
 import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import {
   chooseWorkbenchItem,
@@ -79,7 +75,15 @@ import type {
   TemplateAuthoringContext,
 } from "@/views/template-workbench/view";
 
+import { makeBuiltInSourceCommand, makeChoiceCommand } from "./atoms";
 import { NativeMarkdown } from "./markdown";
+import {
+  makePreviewModel,
+  holdPreviewModel,
+  previewStateHandle,
+  readSavedPreview,
+  readEphemeralPreview,
+} from "./model";
 import {
   activeTemplateWorkbench,
   registerCompanionHistory,
@@ -89,19 +93,16 @@ import {
 import {
   retainNativeOutputs,
   nativeResult,
-  renderNativeTemplate,
+  makeNativeRenderer,
 } from "./render";
 import type { NativeRenderDeps, NativeRenderResult } from "./render";
-import { createNativePreviewStore, NativePreviewSession } from "./session";
+import { NativePreviewSession } from "./session";
 import type { NativePreviewState } from "./session";
 
 export interface PreviewViewDeps extends NativeRenderDeps {
   settings: Pick<PluginSettings["Service"], "current" | "update">;
-  itemLookup: Pick<ItemLookup, "search" | "openSession">;
-  profile: Pick<
-    PlainProfile,
-    "getBuiltInSource" | "profiles" | "resolveProfile"
-  >;
+  itemLookup: Pick<ItemLookupHandle, "search" | "openSession">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
 }
 
 /** Which result the preview shows for the editor's current authoring context. */
@@ -153,7 +154,7 @@ function PreviewSheet({
   session,
   ...props
 }: ComponentProps<typeof NativeMarkdown> & { session: NativePreviewSession }) {
-  const context = useStore(session.state, (state) => state.context);
+  const context = useAtomValue(session.state.model.state).context;
   return (
     <NativeMarkdown {...props} expandProperties={propertiesTabOpen(context)} />
   );
@@ -166,7 +167,12 @@ let previewCount = 0;
 export class NotePreviewView extends ItemView {
   readonly #pluginId: string;
   readonly #deps: PreviewViewDeps;
-  readonly state = createNativePreviewStore();
+  readonly model = makePreviewModel();
+  readonly state;
+  #releaseModel: (() => void) | null = null;
+  readonly #restoreBuiltIn;
+  readonly #chooseItemCommand;
+  readonly #chooseAnnotationCommand;
   #root: Root | null = null;
   #cleanup: DisposableStack | null = null;
   #editor: TemplateWorkbenchView | null = null;
@@ -190,6 +196,13 @@ export class NotePreviewView extends ItemView {
     super(leaf);
     this.#pluginId = pluginId;
     this.#deps = deps;
+    this.state = previewStateHandle(deps.registry, this.model);
+    this.#releaseModel = holdPreviewModel(deps.registry, this.model);
+    this.#restoreBuiltIn = makeBuiltInSourceCommand();
+    this.#chooseItemCommand = makeChoiceCommand(() => this.#chooseItem());
+    this.#chooseAnnotationCommand = makeChoiceCommand(() =>
+      this.#chooseAnnotation(),
+    );
     this.contentEl.addClass("zt-root");
   }
   override getViewType(): string {
@@ -232,7 +245,9 @@ export class NotePreviewView extends ItemView {
         .setSection(MENU_SECTION.action)
         .setTitle(m.workbench_choose_item())
         .setIcon("search")
-        .onClick(() => void this.#chooseItem()),
+        .onClick(() =>
+          this.#deps.registry.set(this.#chooseItemCommand, undefined),
+        ),
     );
     const citationSet =
       mode === "citation" || partialContextOf(state.context) === "citation";
@@ -243,7 +258,9 @@ export class NotePreviewView extends ItemView {
           .setSection(MENU_SECTION.action)
           .setTitle(m.workbench_choose_annotation())
           .setIcon("highlighter")
-          .onClick(() => void this.#chooseAnnotation()),
+          .onClick(() =>
+            this.#deps.registry.set(this.#chooseAnnotationCommand, undefined),
+          ),
       );
     menu.addItem((item) =>
       item
@@ -399,7 +416,7 @@ export class NotePreviewView extends ItemView {
       );
     // `profiles` holds the custom Profiles alone, so an empty list is the
     // default Profile by itself: there is nothing to choose between.
-    const profiles = this.#deps.profile.profiles;
+    const profiles = this.#deps.registry.get(profilesAtom);
     if (profiles.length === 0) return;
     const selected = state.context?.partial?.profile ?? null;
     menu.addItem((item) => {
@@ -458,6 +475,16 @@ export class NotePreviewView extends ItemView {
 
   protected override async onOpen(): Promise<void> {
     using cleanup = new DisposableStack();
+    this.#releaseModel ??= holdPreviewModel(this.#deps.registry, this.model);
+    cleanup.defer(() => {
+      this.#releaseModel?.();
+      this.#releaseModel = null;
+    });
+    for (const atom of [this.#chooseItemCommand, this.#chooseAnnotationCommand])
+      cleanup.defer(this.#deps.registry.mount(atom));
+    cleanup.defer(this.#deps.registry.mount(this.#restoreBuiltIn));
+    cleanup.defer(this.#deps.registry.mount(profilesAtom));
+    cleanup.defer(this.#deps.registry.mount(templateFolderAtom));
     cleanup.defer(registerCompanionHistory(this));
     cleanup.defer(() => {
       this.#root = null;
@@ -470,6 +497,7 @@ export class NotePreviewView extends ItemView {
     });
     const resources = cleanup.use(new DisposableStack());
     const deps = this.#deps;
+    const renderer = resources.use(makeNativeRenderer(deps));
     const scheduler = resources.use(
       createRenderScheduler({
         input: {
@@ -477,7 +505,7 @@ export class NotePreviewView extends ItemView {
           snapshot: null,
           ...this.state.getState().preview,
         },
-        render: (request) => renderNativeTemplate(deps, request),
+        render: (request) => renderer.render(request),
         failed: nativeResult,
         retain: retainNativeOutputs,
         reportContext: () => this.#reportContext(),
@@ -488,7 +516,7 @@ export class NotePreviewView extends ItemView {
     );
     const host = resources.use(
       createTemplateWorkbenchHost(this.app, {
-        render: (request) => renderNativeTemplate(deps, request),
+        render: (request) => renderer.render(request),
         // This view shows no Match.
         matchData: NO_MATCH_DATA,
         insertTarget: () => null,
@@ -533,8 +561,9 @@ export class NotePreviewView extends ItemView {
       "search",
       m.workbench_choose_item(),
       () => {
-        if (this.#annotationChoice()) void this.#chooseAnnotation();
-        else void this.#chooseItem();
+        if (this.#annotationChoice())
+          this.#deps.registry.set(this.#chooseAnnotationCommand, undefined);
+        else this.#deps.registry.set(this.#chooseItemCommand, undefined);
       },
     );
     let syncedMarkdown: boolean | null = null;
@@ -723,45 +752,23 @@ export class NotePreviewView extends ItemView {
     }
   }
   async #restoreState(input: unknown, result: ViewStateResult): Promise<void> {
-    if (input && typeof input === "object" && Object.hasOwn(input, "source")) {
-      const value = input as Record<string, unknown>;
-      const source = value["source"] as {
-        path?: unknown;
-        builtin?: unknown;
-      } | null;
-      const path =
-        source && typeof source.path === "string" ? source.path : null;
-      const item =
-        typeof value["item"] === "string"
-          ? { id: value["item"], title: null }
-          : null;
+    const value = readSavedPreview(input);
+    if (value) {
+      const source = value.source;
+      const path = source?.path ?? null;
+      const item = value.item === null ? null : { id: value.item, title: null };
       const previous = this.state.getState();
       const citation = {
-        variant: isCitationVariant(value["variant"])
-          ? value["variant"]
-          : DEFAULT_CITATION_VARIANT,
-        citationExample:
-          typeof value["citationExample"] === "string" &&
-          isCitationExampleId(value["citationExample"])
-            ? value["citationExample"]
-            : value["citationExample"] === null
-              ? null
-              : DEFAULT_CITATION_EXAMPLE,
+        variant: value.variant,
+        citationExample: value.citationExample,
       };
-      // The shown root is the one value the caller lives in: on a partial it is
-      // the caller the reader chose, so nothing else has to be kept in step.
-      const root =
-        value["root"] === "annotation" ||
-        value["root"] === "filename" ||
-        value["root"] === "citation"
-          ? value["root"]
-          : "note";
+      const root = value.root;
       const partialName =
         path === null
           ? null
           : templatePartialName(
               path,
-              templateFolderOf(this.#deps.settings, this.#deps.bridge),
+              this.#deps.registry.get(templateFolderAtom),
             );
       const context: TemplateAuthoringContext | null =
         source && (path !== null || source.builtin === true)
@@ -774,7 +781,7 @@ export class NotePreviewView extends ItemView {
                   ? value["kind"]
                   : "profile",
               root,
-              tab: TABS.find((tab) => tab === value["tab"]) ?? "note",
+              tab: value.tab,
               advanced: value["advanced"] === true,
               annotationId:
                 typeof value["annotationId"] === "string"
@@ -864,21 +871,10 @@ export class NotePreviewView extends ItemView {
     };
   }
   override setEphemeralState(input: unknown): void {
-    if (!input || typeof input !== "object") return;
-    const value = (input as { zotlitPreview?: Record<string, unknown> })
-      .zotlitPreview;
-    if (!value || value["context"] !== this.#presentationContext()) return;
-    const scrollTop = value["scrollTop"];
-    this.state.setState({
-      presentation: {
-        scrollTop:
-          typeof scrollTop === "number" && Number.isFinite(scrollTop)
-            ? Math.max(0, scrollTop)
-            : 0,
-        reveal: typeof value["reveal"] === "string" ? value["reveal"] : null,
-        pending: true,
-      },
-    });
+    const value = readEphemeralPreview(input);
+    if (!value || value.context !== this.#presentationContext()) return;
+    const { context: _context, ...presentation } = value;
+    this.state.setState({ presentation });
     this.#restorePresentation();
   }
   #restorePresentation(): void {
@@ -921,7 +917,30 @@ export class NotePreviewView extends ItemView {
     if (context.path === null) {
       this.#file = null;
       this.#sourceGeneration++;
-      this.#session.setSource(this.#deps.profile.getBuiltInSource());
+      const registry = this.#deps.registry;
+      const generation = this.#sourceGeneration;
+      const session = this.#session;
+      await new Promise<void>((resolve) => {
+        const unsubscribe = registry.subscribe(
+          this.#restoreBuiltIn,
+          (result) => {
+            if (result.waiting || result._tag === "Initial") return;
+            if (
+              result._tag === "Success" &&
+              generation === this.#sourceGeneration &&
+              this.#session === session
+            )
+              session.setSource(result.value);
+            unsubscribe();
+            resolve();
+          },
+        );
+        this.#cleanup?.defer(() => {
+          unsubscribe();
+          resolve();
+        });
+        registry.set(this.#restoreBuiltIn, undefined);
+      });
       return;
     }
     this.#file = this.app.vault.getFileByPath(context.path);
@@ -1127,39 +1146,48 @@ export class NotePreviewView extends ItemView {
     const scheduler = this.#scheduler;
     const host = this.#host;
     this.#root?.render(
-      session && scheduler && host && session.state.getState().context ? (
-        <WorkbenchThemeProvider theme={templateWorkbenchTheme}>
-          <WorkbenchHostProvider host={host}>
-            <PreviewContent
-              session={session}
-              rendered={this.#rendered}
-              scheduler={scheduler}
-              editorAvailable={this.#sourceEditor() !== null}
-              chooseItem={() => void this.#chooseItem()}
-              chooseAnnotation={() => void this.#chooseAnnotation()}
-              publishProblems={(diagnostics) =>
-                this.#publishProblems(diagnostics)
+      <ViewRegistryProvider registry={this.#deps.registry}>
+        {session && scheduler && host && session.state.getState().context ? (
+          <WorkbenchThemeProvider theme={templateWorkbenchTheme}>
+            <WorkbenchHostProvider host={host}>
+              <PreviewContent
+                session={session}
+                rendered={this.#rendered}
+                scheduler={scheduler}
+                editorAvailable={this.#sourceEditor() !== null}
+                chooseItem={() =>
+                  this.#deps.registry.set(this.#chooseItemCommand, undefined)
+                }
+                chooseAnnotation={() =>
+                  this.#deps.registry.set(
+                    this.#chooseAnnotationCommand,
+                    undefined,
+                  )
+                }
+                publishProblems={(diagnostics) =>
+                  this.#publishProblems(diagnostics)
+                }
+                showProblem={(id, reveal, occurrence) =>
+                  this.#sourceEditor()?.showProblem(id, reveal, occurrence)
+                }
+              />
+            </WorkbenchHostProvider>
+          </WorkbenchThemeProvider>
+        ) : (
+          <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3">
+            <p>{m.profile_preview_empty()}</p>
+            <button
+              onClick={() =>
+                openSettingsTab(this.app, this.#pluginId, [
+                  "settings_page_profiles",
+                ])
               }
-              showProblem={(id, reveal, occurrence) =>
-                this.#sourceEditor()?.showProblem(id, reveal, occurrence)
-              }
-            />
-          </WorkbenchHostProvider>
-        </WorkbenchThemeProvider>
-      ) : (
-        <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3">
-          <p>{m.profile_preview_empty()}</p>
-          <button
-            onClick={() =>
-              openSettingsTab(this.app, this.#pluginId, [
-                "settings_page_profiles",
-              ])
-            }
-          >
-            {m.settings_page_profiles()}
-          </button>
-        </div>
-      ),
+            >
+              {m.settings_page_profiles()}
+            </button>
+          </div>
+        )}
+      </ViewRegistryProvider>,
     );
   }
   protected override async onClose(): Promise<void> {
@@ -1213,7 +1241,7 @@ function PreviewContent({
     snapshot,
     variant,
     citationExample,
-  } = useStore(session.state, (state) => state);
+  } = useAtomValue(session.state.model.state);
   useEffect(rendered, [result, status, showMarkdown, showManaged, rendered]);
   // The editor owns the explanation, so this preview publishes what its render
   // found and takes it back when it closes. A deliberate Run that failed opens

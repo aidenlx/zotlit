@@ -59,6 +59,23 @@ const commonImports = {
   paths: [...obsidianImportPaths, ...itemQuerySchemaPaths],
 };
 
+/**
+ * What a view gives up when it moves onto view atoms
+ * (docs/adr/0082-obsidian-views-read-effect-services-through-view-atoms.md).
+ */
+const viewStorePaths = ["zustand", "zustand/vanilla", "zustand/middleware"].map(
+  (name) => ({
+    name,
+    message:
+      "A view on view atoms keeps its state in a per-leaf model of atoms (ADR 0082).",
+  }),
+);
+const plainAdapterPattern = {
+  group: ["@/services/*/plain"],
+  message:
+    "A view on view atoms reads the service tag through an atom (ADR 0082).",
+};
+
 const runtimeImports = {
   ...commonImports,
   paths: [
@@ -156,28 +173,9 @@ export default defineConfig({
     {
       // Logging backlog: rework the file to log through Effect, then remove it from the list.
       files: [
-        "src/lib/wikilink-citation.ts",
-        "src/services/attachment-import/service.ts",
-        "src/services/attachment-open/actions.ts",
-        "src/services/attachment-resolver/service.ts",
-        "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
-        "src/services/citekey-editor/service.ts",
-        "src/services/citekey-reading/service.ts",
-        "src/services/excerpt-image/prepare.ts",
-        "src/services/graph-citations/service.ts",
-        "src/services/item-lookup/service.ts",
-        "src/services/item-query/service.ts",
-        "src/services/local-bridge/service.ts",
-        "src/services/note-feature/operations.ts",
-        "src/services/note-feature/update-batch.ts",
-        "src/services/note-import/batch-import.ts",
-        "src/services/note-import/service.ts",
         "src/services/pandoc/document-presentation.ts",
-        "src/services/protocol/register.ts",
         "src/services/template/actions.ts",
-        "src/services/wikilink-editor/service.ts",
-        "src/services/wikilink-reading/service.ts",
         "src/views/annot-view/view.tsx",
         "src/views/library/item-actions.ts",
         "src/views/library/library-tree.tsx",
@@ -212,6 +210,7 @@ export default defineConfig({
       files: ["src/**/*.test.{ts,tsx}"],
       rules: {
         "zotlit-effect-tests/no-effect-run-in-test": "error",
+        "zotlit-effect-tests/no-notice-mock": "error",
         "zotlit-effect-tests/no-real-timer-in-effect-test": "error",
       },
     },
@@ -231,6 +230,13 @@ export default defineConfig({
       // These tests exercise the run entry points themselves.
       files: ["src/lib/effect-runtime.test.ts", "src/lib/effect-entry.test.ts"],
       rules: { "zotlit-effect-tests/no-effect-run-in-test": "off" },
+    },
+    {
+      // Tests written before the rule that mock @/lib/notice. A file leaves
+      // this list once it asserts its module's outcomes without a mock of
+      // @/lib/notice or @/lib/toast.
+      files: ["src/views/template-workbench/register.test.ts"],
+      rules: { "zotlit-effect-tests/no-notice-mock": "off" },
     },
     {
       files: ["src/**"],
@@ -273,12 +279,9 @@ export default defineConfig({
       // Legacy classes that hold the App (`app`, `#app`, `#deps.app`). A file
       // moves off the list when its service converts to Effect.
       files: [
-        "src/services/citekey-reading/service.ts",
-        "src/services/graph-citations/service.ts",
         "src/services/profile/service.ts",
         "src/services/template/migration.ts",
         "src/services/template/service.ts",
-        "src/services/wikilink-reading/service.ts",
       ],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
@@ -295,62 +298,36 @@ export default defineConfig({
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
-      // No tag member yet: `vault.getMarkdownFiles`. citation-index/service.ts
-      // also calls `vault.getFileByPath` and `vault.cachedRead`, which the
-      // Vault tag has.
-      files: [
-        "src/services/citation-index/service.ts",
-        "src/services/note-index/service.ts",
-        "src/services/template-workbench/inspect.ts",
-      ],
-      rules: { "zotlit-services/obsidian-capabilities": "off" },
-    },
-    {
       // No tag member yet: `vault.getName`.
-      files: [
-        "src/services/citation-index/cli/register.ts",
-        "src/services/local-bridge/customize.ts",
-        "src/services/template-workbench/register.ts",
-      ],
+      files: ["src/services/citation-index/cli/register.ts"],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
       // No tag member yet: `vault.adapter`.
       files: [
-        "src/services/attachment-open/actions.ts",
         "src/services/log/service.ts",
         "src/views/pandoc-export/register.ts",
       ],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
-      // No tag member yet: `metadataCache.getFirstLinkpathDest` and
-      // `metadataCache.getCache`. citation-text/service.ts also calls
-      // `vault.getFileByPath`, which the Vault tag has.
-      files: [
-        "src/services/citation-text/service.ts",
-        "src/views/query-view/table-notes.ts",
-      ],
+      // No tag member yet: `metadataCache.getCache`. The file also calls
+      // `metadataCache.getFirstLinkpathDest` (the MetadataCache tag's
+      // `firstLinkpathDest`) and `vault.getFileByPath`, which the Vault tag
+      // has.
+      files: ["src/views/query-view/table-notes.ts"],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
-      // No tag member yet: `workspace.updateOptions` (citekey-editor,
-      // wikilink-editor), `workspace.requestActiveLeafEvents` (use-ledger),
-      // `workspace.openLinkText` (companion-view), the side splits
-      // (library/view.ts), and the raw workspace that the editor lookup
-      // takes (library/view.ts, library/item-actions.ts).
-      files: [
-        "src/services/citekey-editor/service.ts",
-        "src/services/note-feature/companion-view.ts",
-        "src/services/use-ledger/service.ts",
-        "src/services/wikilink-editor/service.ts",
-        "src/views/library/item-actions.ts",
-        "src/views/library/view.ts",
-      ],
+      // No tag member yet: the side splits (library/view.ts), and the raw
+      // workspace that the editor lookup takes (library/view.ts,
+      // library/item-actions.ts).
+      files: ["src/views/library/item-actions.ts", "src/views/library/view.ts"],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
-      // No tag event yet: the workspace's `layout-change`.
+      // Listens to the workspace's `layout-change` on the App; the Workspace
+      // tag's `changes` now carries it.
       files: ["src/views/welcome/register.ts"],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
@@ -358,26 +335,13 @@ export default defineConfig({
       // Helpers and constructors that take a raw App object
       // (`documentPresentation(app.metadataCache, …)`,
       // `readProfileStamp(app.metadataCache, …)`, `vault: app.vault`).
-      // note-feature/operations.ts also listens to `metadataCache.on("changed")`
-      // in `parsedCache` through a local alias, which the rule does not see.
-      files: [
-        "src/services/build.ts",
-        "src/services/citation-popover/service.tsx",
-        "src/services/note-feature/operations.ts",
-        "src/services/pandoc/register.ts",
-        "src/services/template-workbench/data.ts",
-      ],
+      files: ["src/services/build.ts", "src/services/pandoc/register.ts"],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
       // Plain async code, or an Effect.fn, that reaches the App through
       // `deps.app`: the deps must carry the tag first.
       files: [
-        "src/services/local-bridge/vault-targets.ts",
-        "src/services/note-feature/update-single.ts",
-        "src/services/note-import/service.ts",
-        "src/services/protocol/register.ts",
-        "src/services/template-workbench/check-profile-document.ts",
         "src/views/note-preview/render.ts",
         "src/views/note-preview/session.ts",
       ],
@@ -412,32 +376,9 @@ export default defineConfig({
       // Default-runtime backlog: run the Effect through the bridge, a layer context runner or a runtime, then remove the file from the list.
       files: [
         "src/lib/effect-scope.ts",
-        "src/lib/temp-sweep.ts",
-        "src/services/attachment-open/actions.ts",
-        "src/services/attachment-resolver/service.ts",
         "src/services/batch-run.ts",
-        "src/services/citation-index/ambiguity.ts",
         "src/services/citation-index/sources.ts",
-        "src/services/citekey-editor/service.ts",
-        "src/services/database/reap-temps.ts",
-        "src/services/excerpt-image/prepare.ts",
-        "src/services/excerpt-image/request.ts",
-        "src/services/graph-citations/service.ts",
-        "src/services/item-lookup/service.ts",
-        "src/services/item-query/service.ts",
-        "src/services/local-bridge/reads.ts",
-        "src/services/local-bridge/vault-targets.ts",
-        "src/services/note-feature/annotation-citation.ts",
-        "src/services/note-feature/companion-view.ts",
-        "src/services/note-feature/operations.ts",
-        "src/services/note-feature/update-batch.ts",
-        "src/services/note-feature/update-single.ts",
-        "src/services/note-import/batch-import.ts",
-        "src/services/note-import/service.ts",
         "src/services/profile/service.ts",
-        "src/services/protocol/register.ts",
-        "src/services/template-workbench/data.ts",
-        "src/services/template/migration.ts",
         "src/views/annot-view/view.tsx",
         "src/views/library/item-actions.ts",
         "src/views/library/library-tree.tsx",
@@ -452,6 +393,17 @@ export default defineConfig({
         "src/views/welcome/connection.ts",
       ],
       rules: { "zotlit-services/no-default-runtime": "off" },
+    },
+    {
+      files: ["src/services/**"],
+      excludeFiles: [
+        "**/*.test.{ts,tsx}",
+        "**/*.browser-test.ts",
+        "**/__fixtures__/**",
+        "**/__fixtures__.ts",
+        "**/test-harness.ts",
+      ],
+      rules: { "zotlit-services/scoped-runner": "error" },
     },
     {
       files: ["src/**/*.{ts,tsx}"],
@@ -472,7 +424,6 @@ export default defineConfig({
       // Clock backlog: read time through Clock (`Clock.currentTimeMillis` or `DateTime.now` in Effect code; `instantClock(yield* Clock.Clock)` from `@/lib/effect-clock` for a non-Effect core), then remove the file from the list.
       files: [
         "src/services/citation-index/snapshot.ts",
-        "src/services/item-lookup/service.ts",
         "src/services/item-query/answer.ts",
         "src/services/item-query/job.ts",
         "src/services/item-query/measure.ts",
@@ -519,12 +470,6 @@ export default defineConfig({
       // Legacy emitters, written before no-nanoevents. A file moves off this
       // list when its service converts to Effect.
       files: [
-        "src/services/attachment-import/service.ts",
-        "src/services/attachment-resolver/service.ts",
-        "src/services/citekey-editor/service.ts",
-        "src/services/local-bridge/service.ts",
-        "src/services/note-feature/operations.ts",
-        "src/services/pdf-annotation-editor/__fixtures__.ts",
         "src/services/pdf-annotation-editor/service.ts",
         "src/services/reader-session/session.ts",
         "src/views/library/item-drag.test.ts",
@@ -566,6 +511,53 @@ export default defineConfig({
       // The wrappers that hand Obsidian's control classes to everything else.
       files: ["src/components/obsidian/**"],
       rules: { "zotlit-css/no-obsidian-class": "off" },
+    },
+    {
+      // Views on view atoms. A view joins when it migrates (ADR 0082).
+      files: [
+        "src/views/library/**",
+        "src/views/query-view/**",
+        "src/views/cited-by/**",
+        "src/views/references/**",
+        "src/views/note-preview/**",
+        "src/views/template-workbench/**",
+        "src/views/welcome/**",
+        "src/views/template-data-explorer/**",
+        "src/views/annot-view/**",
+      ],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            ...runtimeImports,
+            paths: [...runtimeImports.paths, ...viewStorePaths],
+          },
+        ],
+      },
+    },
+    {
+      // Views on view atoms with no Plain dependency left. The Template Data
+      // Explorer joins when the Template service converts.
+      files: [
+        "src/views/library/**",
+        "src/views/query-view/**",
+        "src/views/annot-view/**",
+        "src/views/cited-by/**",
+        "src/views/references/**",
+        "src/views/note-preview/**",
+        "src/views/template-workbench/**",
+        "src/views/welcome/**",
+      ],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            ...runtimeImports,
+            paths: [...runtimeImports.paths, ...viewStorePaths],
+            patterns: [...runtimeImports.patterns, plainAdapterPattern],
+          },
+        ],
+      },
     },
     {
       // Tests can inspect the schema; the plugin's other import rules remain.
@@ -675,7 +667,6 @@ export default defineConfig({
       // Effect tests written before the rule, in plain Vitest. A file moves
       // off this list when its cases move to it.effect.
       files: [
-        "src/services/note-feature/update-batch.test.ts",
         "src/services/zotero-reads/citation-lookup.test.ts",
         "src/services/zotero-reads/connection.test.ts",
         "src/services/zotero-reads/handlers.test.ts",
@@ -688,20 +679,8 @@ export default defineConfig({
       // Legacy services, written before the rule. A file moves off this list
       // when its service converts to Effect (/obsidian-services).
       files: [
-        "src/services/annotation-repository/notices.ts",
-        "src/services/attachment-import/service.ts",
-        "src/services/attachment-resolver/service.ts",
-        "src/services/citekey-editor/service.ts",
-        "src/services/citekey-reading/service.ts",
         "src/services/excerpt-image/display.ts",
-        "src/services/excerpt-image/service.ts",
-        "src/services/graph-citations/service.ts",
-        "src/services/item-lookup/service.ts",
-        "src/services/item-query/service.ts",
-        "src/services/local-bridge/service.ts",
         "src/services/pdf-annotation-editor/service.ts",
-        "src/services/wikilink-editor/service.ts",
-        "src/services/wikilink-reading/service.ts",
       ],
       rules: { "zotlit-services/no-legacy-service": "off" },
     },

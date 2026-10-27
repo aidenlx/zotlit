@@ -2,10 +2,10 @@
 import { DatabaseSync } from "node:sqlite";
 import { expect } from "vitest";
 
-import { cli, obEval, obJson, obReadUntil } from "./obsidian-cli.ts";
-import { PAGE } from "./page-gestures.ts";
+import { obRun, obRunUntil } from "./obsidian-cli.ts";
+import { cli } from "./obsidian-cli.ts";
+import type { PagePdfView, FileExplorerView } from "./page-notes-types.ts";
 
-const services = "app.plugins.plugins.zotlit.services";
 const path = "attachments/rougier-2014.pdf";
 const itemKey = "RUGIER24";
 const attachmentKey = "RGRPDF24";
@@ -17,16 +17,18 @@ export async function verifyPdfReads(
   databasePath: string,
   reloadWindow: () => Promise<void>,
 ) {
-  const run = (body: string) =>
-    obEval(vaultId, `(async()=>{${PAGE}const s=${services};${body}})()`);
-  const ledger = () =>
-    obJson<Record<string, { kind: string; instant: string }>>(
-      vaultId,
-      `JSON.stringify(${services}.useLedger.current)`,
-    );
-  const saved = await obEval(
+  const saved = await obRun(
     vaultId,
-    `JSON.stringify({layout:app.workspace.getLayout(),settings:${services}.settings.current,ledger:app.loadLocalStorage('zotlit-use-ledger')??null})`,
+    async ({ app, zotlit }) => {
+      return JSON.stringify({
+        layout: app.workspace.getLayout(),
+        settings: zotlit.services.bridge.runSync(
+          zotlit.services.settings.current,
+        ),
+        ledger: app.loadLocalStorage("zotlit-use-ledger") ?? null,
+      });
+    },
+    undefined,
   );
   using db = new DatabaseSync(databasePath);
   const attachment = db
@@ -36,9 +38,22 @@ export async function verifyPdfReads(
     .get(attachmentKey) as { itemID: number; parentItemID: number };
   await using cleanup = new AsyncDisposableStack();
   cleanup.defer(async () => {
-    const restored = await obEval(
+    const restored = await obRun(
       vaultId,
-      `(async()=>{app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();await oldServices.useLedger[Symbol.asyncDispose]();await oldServices.zoteroLocalApi[Symbol.asyncDispose]();app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');await app.plugins.plugins.zotlit.services.useLedger.ready;return JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current);})()`,
+      async ({ app, zotlit }, { saved }) => {
+        app.workspace.requestActiveLeafEvents.run();
+        const oldServices = zotlit.services;
+        await app.plugins.disablePlugin("zotlit");
+        await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();
+        for (let i = 0; i < 200 && !oldServices.bridge.closed(); i++)
+          await new Promise((r) => setTimeout(r, 25));
+        if (!oldServices.bridge.closed())
+          throw new Error("The ZotLit services did not close");
+        app.saveLocalStorage("zotlit-use-ledger", JSON.parse(saved).ledger);
+        await app.plugins.enablePlugin("zotlit");
+        return JSON.stringify(zotlit.services.useLedger.current);
+      },
+      { saved },
     );
     expect(JSON.parse(restored)).toEqual(JSON.parse(saved).ledger ?? {});
   });
@@ -47,92 +62,633 @@ export async function verifyPdfReads(
       attachment.parentItemID,
       attachment.itemID,
     );
-    await run(
-      `app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());const saved=JSON.parse(${JSON.stringify(saved)});s.settings.update({'library.document':saved.settings['library.document']??null});await s.settings.flush();await app.workspace.changeLayout(saved.layout);await s.zoteroReads.refresh();return true;`,
+    await obRun(
+      vaultId,
+      async ({ app, zotlit }, { savedJson }) => {
+        const s = zotlit.services;
+        (
+          app.workspace.getLeavesOfType(
+            "pdf",
+          ) as (import("obsidian").WorkspaceLeaf & {
+            view: PagePdfView;
+          })[]
+        ).forEach((l) => l.detach());
+        const saved = JSON.parse(savedJson);
+        s.bridge.runSync(
+          s.settings.update({
+            "library.document": saved.settings["library.document"] ?? null,
+          }),
+        );
+        await s.bridge.runPromise(s.settings.flush);
+        await app.workspace.changeLayout(saved.layout);
+        await s.zoteroReads.refresh();
+      },
+      { savedJson: saved },
     );
   });
-  await run(
-    "app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());app.workspace.getLeavesOfType('zotlit-library').forEach(l=>l.detach());s.settings.update({'library.document':null});await s.settings.flush();app.commands.executeCommandById('zotlit:open-library-view');await until('Recent',()=>app.workspace.getLeavesOfType('zotlit-library')[0]?.view.query);return true;",
-  );
-  const opened = () =>
-    run(
-      `await until('PDF and resolved Attachment',()=>{const leaf=app.workspace.getLeavesOfType('pdf').find(l=>l.view.file?.path==='${path}');return (leaf?.view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount??0)>0&&leaf.view.viewer.child.getPage(1)?.pdfPage&&s.pdfAnnotationEditor.bindings.find((b)=>b.filePath==='${path}')?.session?.target?.attachmentKey==='${attachmentKey}';},20000);return true;`,
-    );
-  const open = () =>
-    run(`await app.workspace.openLinkText('${path}','',true);return true;`);
-  const close = () =>
-    run(
-      "app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());app.workspace.requestActiveLeafEvents.run();return true;",
-    );
-  await run(
-    `app.workspace.protocolHandler.handlers.get('zotlit/open-attachment')({action:'zotlit/open-attachment',item:'${attachment.itemID}','source-id':s.zoteroPref.sourceId});return true;`,
-  );
-  await opened();
-  expect((await ledger())[itemKey]?.kind).toBe("read");
-  await obReadUntil<string[]>(
+  await obRun(
     vaultId,
-    `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0].view;await view.query.settled;return JSON.stringify([...view.contentEl.querySelectorAll('[data-query-papers-row]')].map(n=>n.getAttribute('data-query-papers-row')));})()`,
-    { ready: (keys) => keys[0] === itemKey, what: "PDF read first in Recent" },
+    async ({ app, zotlit, page }) => {
+      const { until } = page;
+      const s = zotlit.services;
+      (
+        app.workspace.getLeavesOfType(
+          "pdf",
+        ) as (import("obsidian").WorkspaceLeaf & {
+          view: PagePdfView;
+        })[]
+      ).forEach((l) => l.detach());
+      (
+        app.workspace.getLeavesOfType(
+          "zotlit-library",
+        ) as (import("obsidian").WorkspaceLeaf & {
+          view: import("../../../apps/obsidian/src/views/library/view.ts").LibraryView;
+        })[]
+      ).forEach((l) => l.detach());
+      s.bridge.runSync(s.settings.update({ "library.document": null }));
+      await s.bridge.runPromise(s.settings.flush);
+      app.commands.executeCommandById("zotlit:open-library-view");
+      await until(
+        "Recent",
+        () =>
+          (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (import("obsidian").WorkspaceLeaf & {
+              view: import("../../../apps/obsidian/src/views/library/view.ts").LibraryView;
+            })[]
+          )[0]?.view.query,
+      );
+    },
+    undefined,
   );
-  const reason = await obJson<string>(
+
+  await obRun(
     vaultId,
-    `(()=>{const row=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl.querySelector('[data-query-papers-row="${itemKey}"]');return JSON.stringify(row.querySelector('[data-query-papers-title]').parentElement.lastElementChild.textContent);})()`,
+    async ({ app, zotlit }, { itemId }) => {
+      const s = zotlit.services;
+      app.workspace.protocolHandler.handlers.get("zotlit/open-attachment")!({
+        action: "zotlit/open-attachment",
+        item: itemId,
+        "source-id": s.zoteroPref.sourceId!,
+      });
+    },
+    { itemId: String(attachment.itemID) },
+  );
+  await obRun(
+    vaultId,
+    async ({ app, zotlit, page }, { notePath, attachmentKey }) => {
+      const { until } = page;
+      const s = zotlit.services;
+      await until(
+        "PDF and resolved Attachment",
+        () => {
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "pdf",
+            ) as (import("obsidian").WorkspaceLeaf & {
+              view: PagePdfView;
+            })[]
+          ).find((l) => l.view.file?.path === notePath);
+          return (
+            (leaf?.view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount ?? 0) >
+              0 &&
+            leaf!.view.viewer.child.getPage(1)?.pdfPage &&
+            s.pdfAnnotationEditor.bindings.find((b) => b.filePath === notePath)
+              ?.session?.target?.attachmentKey === attachmentKey
+          );
+        },
+        20000,
+      );
+    },
+    { notePath: path, attachmentKey },
+  );
+  expect(
+    (
+      await obRun(
+        vaultId,
+        async ({ zotlit }) => {
+          return Object.fromEntries(
+            Object.entries(zotlit.services.useLedger.current).map(
+              ([key, value]) =>
+                [key, { ...value, instant: value.instant.toString() }] as const,
+            ),
+          );
+        },
+        undefined,
+      )
+    )[itemKey]?.kind,
+  ).toBe("read");
+  await obRunUntil(
+    vaultId,
+    async ({ app }) => {
+      const view = (
+        app.workspace.getLeavesOfType(
+          "zotlit-library",
+        ) as (import("obsidian").WorkspaceLeaf & {
+          view: import("../../../apps/obsidian/src/views/library/view.ts").LibraryView;
+        })[]
+      )[0]!.view;
+      await view.query.settled;
+      return [
+        ...view.contentEl.querySelectorAll<HTMLElement>(
+          "[data-query-papers-row]",
+        ),
+      ].map((n) => n.getAttribute("data-query-papers-row"));
+    },
+    undefined,
+    {
+      what: "PDF read first in Recent",
+      ready: (value) =>
+        value !== null && ((keys) => keys[0]! === itemKey)(value),
+    },
+  );
+  const reason = await obRun(
+    vaultId,
+    async ({ app }) => {
+      const row = (
+        app.workspace.getLeavesOfType(
+          "zotlit-library",
+        ) as (import("obsidian").WorkspaceLeaf & {
+          view: import("../../../apps/obsidian/src/views/library/view.ts").LibraryView;
+        })[]
+      )[0]!.view.contentEl.querySelector<HTMLElement>(
+        '[data-query-papers-row="RUGIER24"]',
+      )!;
+      return row.querySelector<HTMLElement>("[data-query-papers-title]")!
+        .parentElement!.lastElementChild!.textContent;
+    },
+    undefined,
   );
   expect(reason).toContain("read ");
   expect(reason.endsWith("in Obsidian")).toBe(true);
-  await run(
-    `app.commands.executeCommandById('zotlit:note-quick-switcher');await until('PDF parent first in quick switcher',()=>activeDocument.querySelector('.prompt .suggestion-item')?.textContent.includes('Ten Simple Rules for Better Figures'));activeDocument.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));return true;`,
+  await obRun(
+    vaultId,
+    async ({ app, page }) => {
+      const { until } = page;
+
+      app.commands.executeCommandById("zotlit:note-quick-switcher");
+      await until("PDF parent first in quick switcher", () =>
+        activeDocument
+          .querySelector<HTMLElement>(".prompt .suggestion-item")
+          ?.textContent.includes("Ten Simple Rules for Better Figures"),
+      );
+      activeDocument.querySelector<HTMLElement>(".prompt input")!.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          code: "Escape",
+          keyCode: 27,
+          which: 27,
+          bubbles: true,
+        }),
+      );
+    },
+    undefined,
   );
-  const firstRead = (await ledger())[itemKey]!;
+  const firstRead = (
+    await obRun(
+      vaultId,
+      async ({ zotlit }) => {
+        return Object.fromEntries(
+          Object.entries(zotlit.services.useLedger.current).map(
+            ([key, value]) =>
+              [key, { ...value, instant: value.instant.toString() }] as const,
+          ),
+        );
+      },
+      undefined,
+    )
+  )[itemKey]!;
   // A real page transition reaches PDF.js's pagechanging event; rendering and
   // immediate turns stay inside the five-minute limit established by open.
-  await run(
-    `const view=app.workspace.getLeavesOfType('pdf')[0].view;const reader=view.viewer.child;window.__ztPageChanges=0;reader.on('pagechanging',()=>window.__ztPageChanges++);reader.applySubpath('#page=2');await until('real page change',()=>window.__ztPageChanges>0);return true;`,
+  await obRun(
+    vaultId,
+    async ({ app, page }) => {
+      const { until } = page;
+
+      const view = (
+        app.workspace.getLeavesOfType(
+          "pdf",
+        ) as (import("obsidian").WorkspaceLeaf & {
+          view: PagePdfView;
+        })[]
+      )[0]!.view;
+      const reader = view.viewer.child;
+      page.scratch.pageChanges = 0;
+      reader.on("pagechanging", () => page.scratch.pageChanges!++);
+      reader.applySubpath("#page=2");
+      await until("real page change", () => page.scratch.pageChanges! > 0);
+    },
+    undefined,
   );
-  expect((await ledger())[itemKey]).toEqual(firstRead);
+  expect(
+    (
+      await obRun(
+        vaultId,
+        async ({ zotlit }) => {
+          return Object.fromEntries(
+            Object.entries(zotlit.services.useLedger.current).map(
+              ([key, value]) =>
+                [key, { ...value, instant: value.instant.toString() }] as const,
+            ),
+          );
+        },
+        undefined,
+      )
+    )[itemKey],
+  ).toEqual(firstRead);
   await cli([`vault=${vaultId}`, "plugin:reload", "id=zotlit"]);
-  await opened();
-  expect((await ledger())[itemKey]).toEqual(firstRead);
-  await reloadWindow();
-  await opened();
-  expect((await ledger())[itemKey]).toEqual(firstRead);
-  await run(
-    `const reader=app.workspace.getLeavesOfType('pdf')[0].view.viewer.child;const page=reader.getPage(reader.pdfViewer.pdfViewer.currentPageNumber);page.reset();await page.draw();return true;`,
+  await obRun(
+    vaultId,
+    async ({ app, zotlit, page }, { notePath, attachmentKey }) => {
+      const { until } = page;
+      const s = zotlit.services;
+      await until(
+        "PDF and resolved Attachment",
+        () => {
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "pdf",
+            ) as (import("obsidian").WorkspaceLeaf & {
+              view: PagePdfView;
+            })[]
+          ).find((l) => l.view.file?.path === notePath);
+          return (
+            (leaf?.view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount ?? 0) >
+              0 &&
+            leaf!.view.viewer.child.getPage(1)?.pdfPage &&
+            s.pdfAnnotationEditor.bindings.find((b) => b.filePath === notePath)
+              ?.session?.target?.attachmentKey === attachmentKey
+          );
+        },
+        20000,
+      );
+    },
+    { notePath: path, attachmentKey },
   );
-  expect((await ledger())[itemKey]).toEqual(firstRead);
+  expect(
+    (
+      await obRun(
+        vaultId,
+        async ({ zotlit }) => {
+          return Object.fromEntries(
+            Object.entries(zotlit.services.useLedger.current).map(
+              ([key, value]) =>
+                [key, { ...value, instant: value.instant.toString() }] as const,
+            ),
+          );
+        },
+        undefined,
+      )
+    )[itemKey],
+  ).toEqual(firstRead);
+  await reloadWindow();
+  await obRun(
+    vaultId,
+    async ({ app, zotlit, page }, { notePath, attachmentKey }) => {
+      const { until } = page;
+      const s = zotlit.services;
+      await until(
+        "PDF and resolved Attachment",
+        () => {
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "pdf",
+            ) as (import("obsidian").WorkspaceLeaf & {
+              view: PagePdfView;
+            })[]
+          ).find((l) => l.view.file?.path === notePath);
+          return (
+            (leaf?.view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount ?? 0) >
+              0 &&
+            leaf!.view.viewer.child.getPage(1)?.pdfPage &&
+            s.pdfAnnotationEditor.bindings.find((b) => b.filePath === notePath)
+              ?.session?.target?.attachmentKey === attachmentKey
+          );
+        },
+        20000,
+      );
+    },
+    { notePath: path, attachmentKey },
+  );
+  expect(
+    (
+      await obRun(
+        vaultId,
+        async ({ zotlit }) => {
+          return Object.fromEntries(
+            Object.entries(zotlit.services.useLedger.current).map(
+              ([key, value]) =>
+                [key, { ...value, instant: value.instant.toString() }] as const,
+            ),
+          );
+        },
+        undefined,
+      )
+    )[itemKey],
+  ).toEqual(firstRead);
+  await obRun(
+    vaultId,
+    async ({ app }) => {
+      const reader = (
+        app.workspace.getLeavesOfType(
+          "pdf",
+        ) as (import("obsidian").WorkspaceLeaf & {
+          view: PagePdfView;
+        })[]
+      )[0]!.view.viewer.child;
+      const pdfPage = reader.getPage(
+        reader.pdfViewer.pdfViewer.currentPageNumber,
+      );
+      pdfPage!.reset();
+      await pdfPage!.draw();
+    },
+    undefined,
+  );
+  expect(
+    (
+      await obRun(
+        vaultId,
+        async ({ zotlit }) => {
+          return Object.fromEntries(
+            Object.entries(zotlit.services.useLedger.current).map(
+              ([key, value]) =>
+                [key, { ...value, instant: value.instant.toString() }] as const,
+            ),
+          );
+        },
+        undefined,
+      )
+    )[itemKey],
+  ).toEqual(firstRead);
   // The restored reader may turn pages later. A fresh plugin has no page
   // throttle history, so this real transition proves the subscription records.
-  await run(
-    `const reader=app.workspace.getLeavesOfType('pdf')[0].view.viewer.child;reader.applySubpath(reader.pdfViewer.pdfViewer.currentPageNumber===1?'#page=2':'#page=1');await until('page read',()=>s.useLedger.get('${itemKey}')?.instant.toString()!==${JSON.stringify(firstRead.instant)});return true;`,
+  await obRun(
+    vaultId,
+    async ({ app, zotlit, page }, { itemKey, firstInstant }) => {
+      const { until } = page;
+      const s = zotlit.services;
+      const reader = (
+        app.workspace.getLeavesOfType(
+          "pdf",
+        ) as (import("obsidian").WorkspaceLeaf & {
+          view: PagePdfView;
+        })[]
+      )[0]!.view.viewer.child;
+      reader.applySubpath(
+        reader.pdfViewer.pdfViewer.currentPageNumber === 1
+          ? "#page=2"
+          : "#page=1",
+      );
+      await until(
+        "page read",
+        () => s.useLedger.get(itemKey)?.instant.toString() !== firstInstant,
+      );
+    },
+    { itemKey, firstInstant: firstRead.instant },
   );
-  const pageRead = (await ledger())[itemKey]!;
-  await close();
-  expect((await ledger())[itemKey]?.instant).not.toBe(pageRead.instant);
-  const closed = (await ledger())[itemKey]!;
-  await run(
-    `const leaf=app.workspace.getLeavesOfType('file-explorer')[0];app.workspace.leftSplit.expand();await app.workspace.revealLeaf(leaf);leaf.view.revealInFolder(app.vault.getFileByPath('${path}'));const row=await until('PDF file explorer row',()=>leaf.view.fileItems['${path}']?.selfEl);row.dispatchEvent(new MouseEvent('click',{bubbles:true,detail:1}));return true;`,
+  const pageRead = (
+    await obRun(
+      vaultId,
+      async ({ zotlit }) => {
+        return Object.fromEntries(
+          Object.entries(zotlit.services.useLedger.current).map(
+            ([key, value]) =>
+              [key, { ...value, instant: value.instant.toString() }] as const,
+          ),
+        );
+      },
+      undefined,
+    )
+  )[itemKey]!;
+  await obRun(
+    vaultId,
+    async ({ app }) => {
+      (
+        app.workspace.getLeavesOfType(
+          "pdf",
+        ) as (import("obsidian").WorkspaceLeaf & {
+          view: PagePdfView;
+        })[]
+      ).forEach((l) => l.detach());
+      app.workspace.requestActiveLeafEvents.run();
+    },
+    undefined,
   );
-  await opened();
-  expect((await ledger())[itemKey]?.instant).not.toBe(closed.instant);
-  await close();
+  expect(
+    (
+      await obRun(
+        vaultId,
+        async ({ zotlit }) => {
+          return Object.fromEntries(
+            Object.entries(zotlit.services.useLedger.current).map(
+              ([key, value]) =>
+                [key, { ...value, instant: value.instant.toString() }] as const,
+            ),
+          );
+        },
+        undefined,
+      )
+    )[itemKey]?.instant,
+  ).not.toBe(pageRead.instant);
+  const closed = (
+    await obRun(
+      vaultId,
+      async ({ zotlit }) => {
+        return Object.fromEntries(
+          Object.entries(zotlit.services.useLedger.current).map(
+            ([key, value]) =>
+              [key, { ...value, instant: value.instant.toString() }] as const,
+          ),
+        );
+      },
+      undefined,
+    )
+  )[itemKey]!;
+  await obRun(
+    vaultId,
+    async ({ app, page }, { path }) => {
+      const { until } = page;
+
+      const leaf = (
+        app.workspace.getLeavesOfType(
+          "file-explorer",
+        ) as (import("obsidian").WorkspaceLeaf & {
+          view: FileExplorerView;
+        })[]
+      )[0]!;
+      app.workspace.leftSplit.expand();
+      await app.workspace.revealLeaf(leaf);
+      leaf.view.revealInFolder(app.vault.getFileByPath(path)!);
+      const row = await until(
+        "PDF file explorer row",
+        () => leaf.view.fileItems[path]?.selfEl,
+      );
+      row.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    },
+    { path },
+  );
+  await obRun(
+    vaultId,
+    async ({ app, zotlit, page }, { notePath, attachmentKey }) => {
+      const { until } = page;
+      const s = zotlit.services;
+      await until(
+        "PDF and resolved Attachment",
+        () => {
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "pdf",
+            ) as (import("obsidian").WorkspaceLeaf & {
+              view: PagePdfView;
+            })[]
+          ).find((l) => l.view.file?.path === notePath);
+          return (
+            (leaf?.view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount ?? 0) >
+              0 &&
+            leaf!.view.viewer.child.getPage(1)?.pdfPage &&
+            s.pdfAnnotationEditor.bindings.find((b) => b.filePath === notePath)
+              ?.session?.target?.attachmentKey === attachmentKey
+          );
+        },
+        20000,
+      );
+    },
+    { notePath: path, attachmentKey },
+  );
+  expect(
+    (
+      await obRun(
+        vaultId,
+        async ({ zotlit }) => {
+          return Object.fromEntries(
+            Object.entries(zotlit.services.useLedger.current).map(
+              ([key, value]) =>
+                [key, { ...value, instant: value.instant.toString() }] as const,
+            ),
+          );
+        },
+        undefined,
+      )
+    )[itemKey]?.instant,
+  ).not.toBe(closed.instant);
+  await obRun(
+    vaultId,
+    async ({ app }) => {
+      (
+        app.workspace.getLeavesOfType(
+          "pdf",
+        ) as (import("obsidian").WorkspaceLeaf & {
+          view: PagePdfView;
+        })[]
+      ).forEach((l) => l.detach());
+      app.workspace.requestActiveLeafEvents.run();
+    },
+    undefined,
+  );
   // Turn the Fixture Attachment into a standalone one, then reload the plugin
   // to resolve it from the actual database rather than an old held path index.
   db.prepare("UPDATE itemAttachments SET parentItemID=NULL WHERE itemID=?").run(
     attachment.itemID,
   );
   await cli([`vault=${vaultId}`, "plugin:reload", "id=zotlit"]);
-  const beforeStandalone = await ledger();
-  await open();
-  await opened();
+  const beforeStandalone = await obRun(
+    vaultId,
+    async ({ zotlit }) => {
+      return Object.fromEntries(
+        Object.entries(zotlit.services.useLedger.current).map(
+          ([key, value]) =>
+            [key, { ...value, instant: value.instant.toString() }] as const,
+        ),
+      );
+    },
+    undefined,
+  );
+  await obRun(
+    vaultId,
+    async ({ app }, { path }) => {
+      await app.workspace.openLinkText(path, "", true);
+    },
+    { path },
+  );
+  await obRun(
+    vaultId,
+    async ({ app, zotlit, page }, { notePath, attachmentKey }) => {
+      const { until } = page;
+      const s = zotlit.services;
+      await until(
+        "PDF and resolved Attachment",
+        () => {
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "pdf",
+            ) as (import("obsidian").WorkspaceLeaf & {
+              view: PagePdfView;
+            })[]
+          ).find((l) => l.view.file?.path === notePath);
+          return (
+            (leaf?.view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount ?? 0) >
+              0 &&
+            leaf!.view.viewer.child.getPage(1)?.pdfPage &&
+            s.pdfAnnotationEditor.bindings.find((b) => b.filePath === notePath)
+              ?.session?.target?.attachmentKey === attachmentKey
+          );
+        },
+        20000,
+      );
+    },
+    { notePath: path, attachmentKey },
+  );
   expect(
-    await obJson(
+    await obRun(
       vaultId,
-      `JSON.stringify(${services}.pdfAnnotationEditor.bindings.find((b)=>b.filePath==='${path}')?.session.target)`,
+      async ({ zotlit }, { path }) => {
+        return zotlit.services.pdfAnnotationEditor.bindings.find(
+          (b) => b.filePath === path,
+        )?.session.target;
+      },
+      { path },
     ),
   ).toMatchObject({ attachmentKey, itemKey: null });
-  await run(
-    `app.workspace.getLeavesOfType('pdf')[0].view.viewer.child.applySubpath('#page=2');return true;`,
+  await obRun(
+    vaultId,
+    async ({ app }) => {
+      (
+        app.workspace.getLeavesOfType(
+          "pdf",
+        ) as (import("obsidian").WorkspaceLeaf & {
+          view: PagePdfView;
+        })[]
+      )[0]!.view.viewer.child.applySubpath("#page=2");
+    },
+    undefined,
   );
-  await close();
-  expect(await ledger()).toEqual(beforeStandalone);
+  await obRun(
+    vaultId,
+    async ({ app }) => {
+      (
+        app.workspace.getLeavesOfType(
+          "pdf",
+        ) as (import("obsidian").WorkspaceLeaf & {
+          view: PagePdfView;
+        })[]
+      ).forEach((l) => l.detach());
+      app.workspace.requestActiveLeafEvents.run();
+    },
+    undefined,
+  );
+  expect(
+    await obRun(
+      vaultId,
+      async ({ zotlit }) => {
+        return Object.fromEntries(
+          Object.entries(zotlit.services.useLedger.current).map(
+            ([key, value]) =>
+              [key, { ...value, instant: value.instant.toString() }] as const,
+          ),
+        );
+      },
+      undefined,
+    ),
+  ).toEqual(beforeStandalone);
 }

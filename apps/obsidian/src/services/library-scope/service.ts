@@ -12,6 +12,7 @@ import {
 
 import type { Library } from "@zotlit/db";
 
+import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
 import { QueryClients } from "@/services/query-client/service";
@@ -86,8 +87,7 @@ export const layerLibraryScope = Layer.effect(
     const queries = yield* QueryClients;
     const settings = yield* PluginSettings;
     const scope = yield* Scope.Scope;
-    const context = yield* Effect.context<never>();
-    const runPromise = Effect.runPromiseWith(context);
+    const { runPromise } = yield* scopedBridge;
     let closed = false;
     const state = yield* SubscriptionRef.make<LibraryScopeState>({
       current: null,
