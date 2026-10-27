@@ -13,6 +13,11 @@ const config: KnipConfig = {
   ignoreIssues: {
     // shadcn/ui components: each file ships the component's whole API.
     "apps/docs/src/components/ui/**": ["exports", "types"],
+    // Temporary: the docs skeleton dropped the install pages that render
+    // <VersionLedger> and <XpiDownload>, the readers of useReleaseSnapshot.
+    // The keep-zotero-and-obsidian-in-sync lesson (#1605) renders them again
+    // and removes this entry.
+    "apps/docs/src/components/release-snapshot.tsx": ["exports"],
   },
   workspaces: {
     ".": {
