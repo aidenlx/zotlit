@@ -326,9 +326,9 @@ async function mount(
     }),
   };
   const readers = {
-    open: vi.fn<QueryViewDeps["opener"]["open"]>(async () => ({
-      kind: "reader",
-    })),
+    open: vi.fn<QueryViewDeps["opener"]["open"]>(() =>
+      Effect.succeed({ kind: "reader" }),
+    ),
   };
   const runtime = testRuntime();
   const readService = new Proxy(

@@ -44,7 +44,7 @@ async function host(
 ) {
   const native = vi.fn((..._args: Parameters<Window["open"]>) => null);
   const target = { open: native } as unknown as Window;
-  const { opener, service, opened } = await openerHarness(stack, {
+  const { opener, service, opened, bridge } = await openerHarness(stack, {
     missing,
     native: (url) => void target.open(url, EXTERNAL_TARGET),
   });
@@ -56,7 +56,7 @@ async function host(
         "reader.open-file-links": enabled,
       } as Settings),
     },
-    bridge: { runSync: Effect.runSync },
+    bridge,
     window: target,
   });
   let installed = true;

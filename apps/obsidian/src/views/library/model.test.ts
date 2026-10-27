@@ -4,7 +4,6 @@ import { Effect, Layer, Stream } from "effect";
 import { expect } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { AbortError } from "@/lib/abort-error";
 import { ItemLookup } from "@/services/item-lookup/service";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
 import type { QueryViewRequest } from "@/services/item-query/query-view";
@@ -14,16 +13,13 @@ import { LibraryScope } from "@/services/library-scope/service";
 import { defaults } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
+import { openTargetCommand, viewTargetOpener } from "@/views/open-target";
 import { waitFor } from "@/views/welcome/__fixtures__";
 
 import { makeLibraryHost } from "./__fixtures__";
 import { makeItemNodeCommand } from "./atoms";
 import { makeCardModel, patchCard } from "./card-model";
-import {
-  libraryItemCommand,
-  libraryTargetOpener,
-  openLibraryTargetCommand,
-} from "./item-actions";
+import { libraryItemCommand } from "./item-actions";
 import { waitForRead } from "./model";
 import { makeSearchModel, patchSearch } from "./search-model";
 import { LibraryViewStorage } from "./storage";
@@ -442,7 +438,7 @@ it.live(
         ),
       );
       host.registry.mount(libraryItemCommand);
-      host.registry.mount(openLibraryTargetCommand);
+      host.registry.mount(openTargetCommand);
       const storage = new LibraryViewStorage(host.registry, () => null);
       let acting = false;
       const result = Promise.withResolvers<void>();
@@ -457,15 +453,20 @@ it.live(
         }).pipe(Effect.andThen(Effect.never)),
       });
       let opening = false;
-      const opener = libraryTargetOpener(host.registry, {
-        open: () => {
-          opening = true;
-          return new Promise(() => {});
-        },
-      });
-      const opened = opener
-        .open({ kind: "attachment", attachmentKey: "ABCD2345" }, false)
-        .catch((error: unknown) => error);
+      let openInterrupted = false;
+      viewTargetOpener(host.registry, {
+        open: () =>
+          Effect.sync(() => {
+            opening = true;
+          }).pipe(
+            Effect.andThen(Effect.never),
+            Effect.onInterrupt(() =>
+              Effect.sync(() => {
+                openInterrupted = true;
+              }),
+            ),
+          ),
+      }).open({ kind: "attachment", attachmentKey: "ABCD2345" }, false);
       const saved = storage.save().catch((error: unknown) => error);
       yield* Effect.promise(() =>
         waitFor(() => {
@@ -477,7 +478,7 @@ it.live(
       storage.close();
       yield* Effect.promise(() => host.close());
       expect(yield* Effect.promise(() => acted)).toBeUndefined();
-      expect(AbortError.test(yield* Effect.promise(() => opened))).toBe(true);
+      expect(openInterrupted).toBe(true);
       expect(yield* Effect.promise(() => saved)).toBeUndefined();
     }),
 );

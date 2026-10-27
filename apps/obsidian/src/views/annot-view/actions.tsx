@@ -5,7 +5,7 @@ import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 
 import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 
-import { AbortError, passAborted } from "@/lib/abort-error";
+import { AbortError } from "@/lib/abort-error";
 import { buildColorMenu } from "@/lib/annotation-colors";
 import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
@@ -31,6 +31,7 @@ import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
 import { menuSections, raiseMenu } from "@/services/menu-events";
 import type { AnnotationCitation } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
+import { viewTargetOpener } from "@/views/open-target";
 
 import {
   annotationDraftCommand,
@@ -254,7 +255,7 @@ export interface AnnotActions {
 export interface AnnotActionDeps {
   app: App;
   /** Opens an Annotation at its page. */
-  opener: Pick<TargetOpener, "open">;
+  opener: Pick<TargetOpener["Service"], "open">;
   excerptImageRequest: AnnotActions["excerptImageRequest"];
   registry: ViewRegistryHandle;
   /** The clock a failure notice reads a cooldown's remaining seconds against. */
@@ -733,19 +734,17 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   return {
     getBacklink,
     onOpenPage(annot, pane) {
-      void deps.opener
-        .open(
-          {
-            kind: "annotation",
-            attachmentKey: annot.parentKey,
-            annotationKey: annot.key,
-            pageIndex:
-              "pageIndex" in annot.position ? annot.position.pageIndex : null,
-            pageLabel: annot.pageLabel,
-          },
-          pane,
-        )
-        .catch(passAborted);
+      viewTargetOpener(deps.registry, deps.opener).open(
+        {
+          kind: "annotation",
+          attachmentKey: annot.parentKey,
+          annotationKey: annot.key,
+          pageIndex:
+            "pageIndex" in annot.position ? annot.position.pageIndex : null,
+          pageLabel: annot.pageLabel,
+        },
+        pane,
+      );
     },
     openExcerptImage: () => {
       deps.registry.set(openExcerptDemandCommand, undefined);

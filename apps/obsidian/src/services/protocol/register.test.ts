@@ -28,6 +28,7 @@ import { FileManager } from "@/lib/obsidian-file-manager";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
+import { TargetOpener } from "@/services/attachment-open/open-target";
 import { toObsidianOpenableAttachments } from "@/services/attachment-open/resolve";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 import { LibraryScope } from "@/services/library-scope/service";
@@ -225,6 +226,8 @@ function appStub(members: Partial<App> = {}): App {
 /** What one case sets on the services and legacy values the handlers read. */
 interface Setup {
   readonly deps?: Partial<ProtocolDeps>;
+  /** The Attachment opener the `open-attachment` handler reads. */
+  readonly opener?: Pick<TargetOpener["Service"], "open">;
   /** The database state; `ready` by default. */
   readonly state?: ZoteroReadsState["state"];
   readonly updateManyRequests?: Stream.Stream<UpdateManyRequest>;
@@ -279,6 +282,7 @@ function servicesFor(setup: Setup = {}) {
     Layer.mock(NoteImporter, {}),
     Layer.mock(PluginSettings, {}),
     Layer.mock(Profile, {}),
+    Layer.mock(TargetOpener, setup.opener ?? {}),
     Layer.mock(Vault, {
       getFileByPath:
         setup.getFileByPath ??
@@ -396,13 +400,23 @@ describe("paneType", () => {
 describe("open-attachment protocol link", () => {
   const app = appStub();
   const opener = {
-    open: vi.fn(() => Promise.resolve({ kind: "reader" as const })),
+    open: vi.fn(() => Effect.succeed({ kind: "reader" as const })),
   };
   beforeEach(() => opener.open.mockClear());
 
   /** Register with the Attachment opener and the App the reader gets. */
   const registerOpener = (state?: ZoteroReadsState["state"]) =>
-    register({ deps: { app, opener }, state });
+    register({
+      deps: {
+        app,
+        // The picker's opens run here; each case reads the open it asked for.
+        bridge: stubService<ProtocolDeps["bridge"]>("EffectBridge", {
+          runAndForget: () => {},
+        }),
+      },
+      opener,
+      state,
+    });
 
   it.effect("treats the id as the Attachment itself when it names one", () =>
     Effect.gen(function* () {
@@ -511,7 +525,7 @@ describe("open-attachment protocol link", () => {
 
         expect(openAttachments).toHaveBeenCalledOnce();
         const { reader } = vi.mocked(openAttachments).mock.calls[0]![1];
-        void reader.open(opened, "tab");
+        reader.open(opened, "tab");
         expect(opener.open).toHaveBeenCalledExactlyOnceWith(
           { kind: "attachment", attachmentKey: "ATCH1" },
           "tab",
@@ -535,7 +549,7 @@ describe("open-attachment protocol link", () => {
 
         expect(openAttachments).toHaveBeenCalledOnce();
         const { reader } = vi.mocked(openAttachments).mock.calls[0]![1];
-        void reader.open(opened, false);
+        reader.open(opened, false);
         expect(opener.open).toHaveBeenCalledExactlyOnceWith(
           { kind: "attachment", attachmentKey: "ATCH1" },
           "split",

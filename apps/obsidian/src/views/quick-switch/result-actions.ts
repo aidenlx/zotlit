@@ -11,7 +11,10 @@ import type { Item } from "@zotlit/db";
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import { viewRuntime } from "@/lib/view-atoms";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
-import { pdfPickerReader } from "@/services/attachment-open/actions";
+import {
+  openGesture,
+  pdfPickerReader,
+} from "@/services/attachment-open/actions";
 import type { AttachmentOpenDeps } from "@/services/attachment-open/actions";
 import type { InteractiveCreationPorts } from "@/services/note-feature/creation-view";
 import { openLiteratureNote } from "@/services/note-feature/navigation";
@@ -63,7 +66,10 @@ export async function openItemPdf(
     await deps.attachments.literatureNoteAttachments(indexedKey);
   if (!attachments) return;
   openAttachments(attachments, {
-    reader: withFixedPane(pdfPickerReader(deps.opener), pane),
+    reader: withFixedPane(
+      pdfPickerReader(openGesture(deps.opener, deps.bridge.runAndForget)),
+      pane,
+    ),
     app: deps.app,
   });
 }

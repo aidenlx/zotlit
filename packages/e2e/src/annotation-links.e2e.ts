@@ -908,15 +908,17 @@ async function sharedTabs(): Promise<SharedTabsOutcome> {
           }),
         );
         app.workspace.setActiveLeaf(restored, { focus: true });
-        const opened = await services().targetOpener.open(
-          {
-            kind: "annotation",
-            attachmentKey: targetAttachment,
-            annotationKey: targetAnnotation,
-            pageIndex: 0,
-            pageLabel: targetPage,
-          },
-          false,
+        const opened = await services().bridge.runPromise(
+          services().targetOpener.open(
+            {
+              kind: "annotation",
+              attachmentKey: targetAttachment,
+              annotationKey: targetAnnotation,
+              pageIndex: 0,
+              pageLabel: targetPage,
+            },
+            false,
+          ),
         );
         if (opened.kind !== "reader")
           throw new Error(`The open went elsewhere: ${JSON.stringify(opened)}`);

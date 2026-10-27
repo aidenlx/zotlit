@@ -46,6 +46,10 @@ import type { AnnotationRepository } from "./annotation-repository/service";
 import { layerAttachmentSkipNotice } from "./attachment-import/notices";
 import { layerAttachmentImport } from "./attachment-import/service";
 import type { AttachmentImport } from "./attachment-import/service";
+import { openWithSystem } from "./attachment-open/capture";
+import { layerTargetOpener } from "./attachment-open/open-target";
+import type { TargetOpener } from "./attachment-open/open-target";
+import { pdfReader } from "./attachment-open/pdf-reader";
 import { layerAttachmentResolver } from "./attachment-resolver/service";
 import type { AttachmentResolver } from "./attachment-resolver/service";
 import { layerChineseSegmenter } from "./chinese-segmenter/service";
@@ -189,8 +193,8 @@ export function pluginLayer(
     readonly creation: InteractiveCreationPorts;
     /** The launch sheet, the browser and the native editor Customize opens. */
     readonly customize: CustomizePorts;
-    /** The note import's modals and the Attachment opener the protocol handlers call. */
-    readonly protocol: Pick<ProtocolDeps, "noteImportView" | "opener">;
+    /** The note import's modals the protocol handlers call. */
+    readonly protocol: Pick<ProtocolDeps, "noteImportView">;
     readonly excerpt: {
       readonly openStore: () => Promise<ExcerptStore>;
       readonly readers: ExcerptReaderDocuments;
@@ -222,6 +226,7 @@ export function pluginLayer(
   | Profile
   | LibraryScope
   | AttachmentImport
+  | TargetOpener
   | AttachmentResolver
   | ZoteroReads
   | PluginSettings
@@ -290,6 +295,13 @@ export function pluginLayer(
         ...migration,
         loadVerificationData: readMigrationVerificationData,
       }).pipe(startingAs("TemplateMigration")),
+    ),
+    // Every ZotLit gesture that opens an Attachment, and File Link Capture
+    // for a link Obsidian rendered, decides through this one opener.
+    Layer.provideMerge(
+      layerTargetOpener({ reader: pdfReader, native: openWithSystem }).pipe(
+        startingAs("TargetOpener"),
+      ),
     ),
     Layer.provideMerge(
       Layer.mergeAll(

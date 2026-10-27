@@ -170,8 +170,6 @@ export async function openResolver(
   };
 }
 
-export type ResolverHarness = Awaited<ReturnType<typeof openResolver>>;
-
 /** {@link openResolver} on the test's own context, closed with its Scope. */
 export const resolverFixture = Effect.fnUntraced(function* (
   options: ResolverHarnessOptions,
@@ -182,14 +180,3 @@ export const resolverFixture = Effect.fnUntraced(function* (
     (harness) => Effect.promise(() => harness.close()),
   );
 });
-
-/** {@link openResolver} for a Promise suite, disposed with `stack`. */
-export async function resolverHarness(
-  stack: AsyncDisposableStack,
-  options: ResolverHarnessOptions,
-  context?: Context.Context<never>,
-): Promise<ResolverHarness> {
-  const harness = await openResolver(options, context);
-  stack.defer(() => harness.close());
-  return harness;
-}

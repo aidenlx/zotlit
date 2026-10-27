@@ -1,5 +1,4 @@
 import { Effect, FileSystem } from "effect";
-import type { FileSystemAdapter } from "obsidian";
 
 import { cliRunner } from "@/lib/cli-command";
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
@@ -35,11 +34,9 @@ import { AnnotationPopover } from "./annotation-popover/service";
 import { CapabilityNotices } from "./annotation-repository/notices";
 import { bindCapabilityNotices } from "./annotation-repository/notices-handle";
 import { AnnotationRepository } from "./annotation-repository/service";
-import { createPdfReader } from "./attachment-open/actions";
-import { openWithSystem } from "./attachment-open/capture";
 import { bindLiteratureNoteAttachments } from "./attachment-open/handle";
 import type { LiteratureNoteServices } from "./attachment-open/literature-note";
-import { createTargetOpener } from "./attachment-open/open-target";
+import { TargetOpener } from "./attachment-open/open-target";
 import { AttachmentResolver } from "./attachment-resolver/service";
 import { ChineseSegmenter } from "./chinese-segmenter/service";
 import { CitationLookup } from "./citation-index/lookup-service";
@@ -98,8 +95,8 @@ import { ZoteroPref } from "./zotero-pref/service";
 import { acquireReadLease } from "./zotero-reads/lease";
 import { ZoteroReads } from "./zotero-reads/service";
 
-/** What the protocol handlers open: the note import's modals and the Attachment opener. */
-type ProtocolViews = Pick<ProtocolDeps, "noteImportView" | "opener">;
+/** What the protocol handlers open: the note import's modals. */
+type ProtocolViews = Pick<ProtocolDeps, "noteImportView">;
 
 /**
  * Compose the plugin's runtime over {@link pluginLayer} and bind the values
@@ -137,8 +134,8 @@ export async function createPluginRuntime(
     createProfile: (options) => createProfileDialog(plugin.app, options),
     importProfile: (options) => importProfileDialog(plugin.app, options),
   };
-  // The protocol handlers open the note import's modals and the Attachment
-  // opener, which are built after the graph.
+  // The protocol handlers open the note import's modals, which are built
+  // after the graph.
   let bindProtocolViews!: (views: ProtocolViews) => void;
   const protocolViews = new Promise<ProtocolViews>((resolve) => {
     bindProtocolViews = resolve;
@@ -158,10 +155,6 @@ export async function createPluginRuntime(
         Effect.flatMap(importView, (view) => view.confirm(options)),
       chooseProfile: (options) =>
         Effect.flatMap(importView, (view) => view.chooseProfile(options)),
-    },
-    opener: {
-      open: async (target, pane) =>
-        (await protocolViews).opener.open(target, pane),
     },
   };
   // The excerpt service is registered before the PDF reader, so the reader
@@ -238,19 +231,6 @@ export async function createPluginRuntime(
   const zoteroPrefService = runtime.runSync(ZoteroPref);
   const notifier = runtime.runSync(Notifier);
   const pandocEngine = runtime.runSync(PandocEngine);
-  // Every ZotLit gesture that opens an Attachment, and File Link Capture for
-  // a link Obsidian rendered, decides through this one opener.
-  const targetOpener = createTargetOpener({
-    attachments: attachmentResolver,
-    reader: createPdfReader({ app: plugin.app, settings, bridge }),
-    native: openWithSystem,
-    settings,
-    bridge,
-    // Desktop-only plugin: the adapter is always a `FileSystemAdapter`.
-    vaultBasePath: (
-      plugin.app.vault.adapter as FileSystemAdapter
-    ).getBasePath(),
-  });
   const noteFeature: NoteFeatureHandle = bindNoteFeature(
     bridge,
     runtime.runSync(NoteFeature),
@@ -275,7 +255,7 @@ export async function createPluginRuntime(
   const importProfile: ImportProfile = async (options) =>
     valueOr(await runProfileDialog(creation.importProfile(options)), undefined);
   const noteImportView = createNoteImportView(plugin.app, creation);
-  bindProtocolViews({ noteImportView, opener: targetOpener });
+  bindProtocolViews({ noteImportView });
 
   return {
     runtime,
@@ -305,7 +285,7 @@ export async function createPluginRuntime(
     excerptImage: runtime.runSync(ExcerptImageService),
     excerptDisplay: runtime.runSync(ExcerptDisplays),
     attachmentResolver,
-    targetOpener,
+    targetOpener: runtime.runSync(TargetOpener),
     literatureNoteAttachments: bindLiteratureNoteAttachments(
       bridge,
       runtime.runSync(Effect.context<LiteratureNoteServices>()),

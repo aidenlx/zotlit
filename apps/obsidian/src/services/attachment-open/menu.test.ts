@@ -83,7 +83,12 @@ function fileMenuHandler(
           literatureNoteAttachments: (indexedKey) =>
             Promise.resolve(indexedKey === "ABCD2345" ? resolved : []),
         },
-        opener: stubService<Pick<TargetOpener, "open">>("TargetOpener", {}),
+        opener: stubService<Pick<TargetOpener["Service"], "open">>(
+          "TargetOpener",
+          {},
+        ),
+        // The picker is mocked, so no open runs.
+        bridge: { runAndForget: () => {} },
         ...deps,
       }),
     ],

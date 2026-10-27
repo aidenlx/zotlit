@@ -56,6 +56,7 @@ import { registerCitedByView } from "./views/cited-by/register";
 import { itemActions } from "./views/library/item-actions";
 import { registerLibraryView, showInLibrary } from "./views/library/register";
 import { registerNotePreview } from "./views/note-preview/register";
+import { openTargetCommand } from "./views/open-target";
 import { registerPandocExport } from "./views/pandoc-export/register";
 import { registerQueryBlock } from "./views/query-view/block";
 import { QueryCardFocus } from "./views/query-view/card-focus";
@@ -262,6 +263,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       app: this.app,
       attachments: services.literatureNoteAttachments,
       opener: services.targetOpener,
+      bridge: services.bridge,
     };
     addAttachmentOpenActions(this, attachmentOpenDeps);
     void stack.use(
@@ -342,6 +344,9 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       }),
       opener: services.targetOpener,
     };
+    // A view's open outlives the tab that started it: the reader may
+    // replace that tab.
+    stack.defer(queryViewDeps.registry.mount(openTargetCommand));
     registerAnnotView(this, {
       ...queryViewDeps,
       bridge: services.bridge,

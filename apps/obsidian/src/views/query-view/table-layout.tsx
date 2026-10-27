@@ -18,11 +18,9 @@ import { isPageNumber, itemSelectUri, parseIndexedKey } from "@zotlit/db";
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
+import type { TargetOpenGesture } from "@/services/attachment-open/actions";
 import { zoteroUri } from "@/services/attachment-open/open-target";
-import type {
-  OpenTarget,
-  TargetOpener,
-} from "@/services/attachment-open/open-target";
+import type { OpenTarget } from "@/services/attachment-open/open-target";
 import type { QueryHandle } from "@/services/item-query/handle";
 import type {
   QueryViewRequest,
@@ -477,7 +475,7 @@ export function ReaderLink({
   target,
   children,
 }: {
-  readers: Pick<TargetOpener, "open">;
+  readers: TargetOpenGesture;
   target: OpenTarget;
   children: ReactNode;
 }) {
@@ -485,7 +483,7 @@ export function ReaderLink({
     event.preventDefault();
     // Obsidian's own pane for a link click: a middle click or a Cmd/Ctrl
     // press opens a new tab.
-    void readers.open(target, Keymap.isModEvent(event));
+    readers.open(target, Keymap.isModEvent(event));
   };
   return (
     <a
@@ -568,7 +566,7 @@ function ChildRows({
   columns: number;
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
-  readers: Pick<TargetOpener, "open">;
+  readers: TargetOpenGesture;
 }) {
   const state = expanded.get(id(parent));
   if (!state) return null;
@@ -651,7 +649,7 @@ function ChildRow({
   columns: number;
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
-  readers: Pick<TargetOpener, "open">;
+  readers: TargetOpenGesture;
 }) {
   const link: ChildRowContext["link"] = (target, children) => (
     <ReaderLink readers={readers} target={target}>
@@ -815,7 +813,7 @@ function ItemRow({
   host: VaultHost | null;
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
-  readers: Pick<TargetOpener, "open">;
+  readers: TargetOpenGesture;
   gestures: ItemRowGestures | undefined;
 }) {
   const row = useItemRow(gestures, record.key);
