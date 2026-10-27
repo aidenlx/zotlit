@@ -99,11 +99,6 @@ export async function obEval(
   return parseEvalReply(text);
 }
 
-/** {@link obEval}, with its reply parsed as JSON. */
-export async function obJson<T>(vaultId: string, code: string): Promise<T> {
-  return JSON.parse(await obEval(vaultId, code)) as T;
-}
-
 /**
  * The document of every window of the vault, the main window first, as an
  * eval expression: a notice goes to the window Obsidian counts as active.
@@ -181,22 +176,6 @@ export async function readUntil<T>(
   }, tries);
   if (!settled) throw new Error(`${what}: ${JSON.stringify(value)}`);
   return value!;
-}
-
-/** {@link readUntil} over the JSON that `code` answers in the vault's window. */
-export function obReadUntil<T>(
-  vaultId: string,
-  code: string,
-  {
-    ready,
-    ...options
-  }: { ready: (value: T) => boolean; what: string; tries?: number },
-): Promise<T> {
-  return readUntil(
-    async () => JSON.parse(await obEval(vaultId, code)) as T | null,
-    ready,
-    options,
-  );
 }
 
 /**
