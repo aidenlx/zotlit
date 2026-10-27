@@ -8,7 +8,6 @@
 // plans the Formula when the view runs, and marks a mistake it finds at the
 // Formula's row.
 import { useMemo, useRef, useState } from "react";
-import { useStore } from "zustand";
 
 import { parseExpression } from "@zotlit/filter-expression";
 import { FORMULA_NAME, nameDictionary } from "@zotlit/item-query";
@@ -38,6 +37,7 @@ import {
   expressionVocabulary,
   useViewCustomFields,
 } from "./expression-vocabulary";
+import { useQueryViewState } from "./model";
 import { displayName, formulaProperty } from "./query-file";
 import { formulaIssuesOf } from "./results";
 import type { FormulaIssue } from "./results";
@@ -192,8 +192,8 @@ function ExpressionField({
 }) {
   const app = useObsidianApp();
   const properties = useViewProperties(view);
-  const dataset = useStore(view.state, (s) => s.view?.from);
-  const formulas = useStore(view.state, (s) => s.file?.formulas);
+  const dataset = useQueryViewState(view, (s) => s.view?.from);
+  const formulas = useQueryViewState(view, (s) => s.file?.formulas);
   const custom = useViewCustomFields(view);
   // A Formula reads no vault property, and naming itself is a cycle.
   const vocabulary = useMemo(
@@ -307,8 +307,10 @@ const ownEntry = <T,>(
  * typing, and when the field loses focus.
  */
 function FormulaText({ view, name }: { view: QueryView; name: string }) {
-  const saved = useStore(view.state, (s) => s.file?.formulas?.[name] ?? "");
-  const issue = useStore(view.state, (s) => ownEntry(formulaIssuesOf(s), name));
+  const saved = useQueryViewState(view, (s) => s.file?.formulas?.[name] ?? "");
+  const issue = useQueryViewState(view, (s) =>
+    ownEntry(formulaIssuesOf(s), name),
+  );
   const [text, setText, typed] = useChooserPageText(saved);
   // The pending save, on the timers of the window the field stands in.
   const pending = useRef<{ win: Window; timer: number } | null>(null);
@@ -364,7 +366,7 @@ export function PropertyPage({
   onShownChange: (shown: boolean) => void;
 }) {
   const { back } = useChooserPage();
-  const formula = useStore(view.state, (s) =>
+  const formula = useQueryViewState(view, (s) =>
     entry.formula !== null &&
     Object.hasOwn(s.file?.formulas ?? {}, entry.formula)
       ? entry.formula
@@ -420,7 +422,7 @@ export function PropertyPage({
  */
 export function NewFormulaPage({ view }: { view: QueryView }) {
   const { replacePage } = useChooserPage();
-  const file = useStore(view.state, (s) => s.file);
+  const file = useQueryViewState(view, (s) => s.file);
   const formulas = file?.formulas ?? nameDictionary<string>();
   const [name, setName] = useState("");
   const [text, setText] = useState("");

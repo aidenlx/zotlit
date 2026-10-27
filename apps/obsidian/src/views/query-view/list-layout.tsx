@@ -3,7 +3,6 @@
 // Its options are those of Bases 1.14.4: `markers`, `indentProperties` and
 // `separator`.
 import { Fragment } from "react";
-import { useStore } from "zustand";
 
 import { Chooser } from "@/components/chooser";
 import { Dropdown, DropdownItem } from "@/components/obsidian/dropdown";
@@ -12,6 +11,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 
 import type { QueryLayout } from "./layouts";
+import { useQueryViewState } from "./model";
 import type { QueryFileView } from "./query-file";
 import { RecordCell, RecordGroupHeading, useRecordGroups } from "./record-rows";
 import type { QueryView } from "./view";
@@ -126,7 +126,7 @@ export function ListLayoutFields({
 /** The rows of the shown view, one line each, under their group headings. */
 export function ListLayout({ view }: { view: QueryView }) {
   const { properties, groups } = useRecordGroups(view);
-  const options = listLayoutOptions(useStore(view.state, (s) => s.view));
+  const options = listLayoutOptions(useQueryViewState(view, (s) => s.view));
   // Numbers count the rows of a list; bullets and none mark no order.
   const List = options.markers === "number" ? "ol" : "ul";
   return (

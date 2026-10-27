@@ -5,7 +5,16 @@ import {
   ExtraButtonComponent,
   renderRow,
 } from "@mock/obsidian";
-import { Effect, Layer, PubSub, Queue, Stream, SubscriptionRef } from "effect";
+import {
+  Cause,
+  Effect,
+  Exit,
+  Layer,
+  PubSub,
+  Queue,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 import { TestClock } from "effect/testing";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
@@ -29,9 +38,13 @@ import type {
 } from "@/services/zotero-reads/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
-import { scopedSettingTab } from "./__fixtures__";
+import { failureOf, recordingRuns, scopedSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
-import { databaseFileItem, databaseLocationItems } from "./database";
+import {
+  databaseFileItem,
+  databaseLocationItems,
+  refreshReads,
+} from "./database";
 
 const SNAPSHOT: ZoteroPrefSnapshot = {
   state: "ready",
@@ -68,7 +81,6 @@ const setup = Effect.fn("setup")(function* (
   refresh: ZoteroReads["Service"]["refresh"] = Effect.void,
   update: PluginSettings["Service"]["update"] = () => Effect.succeed(defaults),
 ) {
-  const notifier = testNotifier();
   const pref = yield* SubscriptionRef.make(SNAPSHOT);
   const reads = yield* SubscriptionRef.make(READS);
   const events = yield* PubSub.unbounded<ZoteroReadsEvent>({ replay: 1 });
@@ -87,7 +99,7 @@ const setup = Effect.fn("setup")(function* (
     );
   const services = yield* Layer.build(
     Layer.mergeAll(
-      notifier.layer,
+      testNotifier().layer,
       Layer.mock(ZoteroPref, {
         current: SubscriptionRef.get(pref),
         changes: SubscriptionRef.changes(pref),
@@ -109,10 +121,9 @@ const setup = Effect.fn("setup")(function* (
       }),
     ),
   );
-  const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    tab: (yield* scopedSettingTab(services)).tab,
-  });
-  return { ctx, pref, reads, events, writes, notices: notifier.notices };
+  const { tab, runs } = recordingRuns((yield* scopedSettingTab(services)).tab);
+  const ctx = stubService<SettingTabContext>("SettingTabContext", { tab });
+  return { ctx, pref, reads, events, writes, runs };
 });
 
 /**
@@ -276,13 +287,22 @@ it.effect("names the read mode again after the reads change", () =>
   }),
 );
 
-/** Every message the notices showed, in order. */
-const messages = (notices: readonly { messages: readonly unknown[] }[]) =>
-  notices.flatMap((notice) => notice.messages);
+/** A refresh that counts its runs and ends with `outcome`. */
+const countedRefresh = (outcome: ZoteroReads["Service"]["refresh"]) => {
+  let runs = 0;
+  return {
+    refresh: Effect.suspend(() => {
+      runs += 1;
+      return outcome;
+    }),
+    runs: () => runs,
+  };
+};
 
-it.effect("reports a refresh from the database row as it ends", () =>
+it.effect("refreshes the reads from the database row", () =>
   Effect.gen(function* () {
-    const { ctx, notices } = yield* setup();
+    const refresh = countedRefresh(Effect.void);
+    const { ctx } = yield* setup(refresh.refresh);
     const row = yield* render(ctx, "settings_db_file");
     // The path paints once the row's fiber has wired the button.
     yield* settle;
@@ -290,18 +310,20 @@ it.effect("reports a refresh from the database row as it ends", () =>
 
     row.button!.click();
     yield* settle;
-    expect(messages(notices)).toEqual([m.notice_db_refreshed()]);
+    expect(refresh.runs()).toBe(1);
   }),
 );
 
-it.effect("shows a failed read mode save in a notice", () =>
+it.effect("fails the read mode save under its label", () =>
   Effect.gen(function* () {
-    const { ctx, notices } = yield* setup(Effect.void, () =>
-      Effect.fail(
-        new SettingsMutationError({
-          message: "Settings are read-only",
-          cause: null,
-        }),
+    const patches: unknown[] = [];
+    const failure = new SettingsMutationError({
+      message: "Settings are read-only",
+      cause: null,
+    });
+    const { ctx, runs } = yield* setup(Effect.void, (patch) =>
+      Effect.sync(() => patches.push(patch)).pipe(
+        Effect.andThen(Effect.fail(failure)),
       ),
     );
     const row = yield* render(ctx, "settings_db_read_mode");
@@ -309,23 +331,43 @@ it.effect("shows a failed read mode save in a notice", () =>
 
     row.dropdown!.choose("immutable");
     yield* settle;
-    expect(messages(notices)).toEqual([
-      `${m.settings_failed_save()}: Settings are read-only`,
+    expect(patches).toEqual([{ "zotero.read-mode": "immutable" }]);
+    expect(runs.map((run) => [failureOf(run), run.label])).toEqual([
+      [failure, m.settings_failed_save()],
     ]);
   }),
 );
 
-it.effect("shows a failed refresh in one notice", () =>
+it.effect("runs one refresh when the refresh fails", () =>
   Effect.gen(function* () {
-    const { ctx, notices } = yield* setup(
+    const refresh = countedRefresh(
       Effect.fail(new DbUnavailable({ message: "zotero.sqlite is locked" })),
     );
+    const { ctx } = yield* setup(refresh.refresh);
     const row = yield* render(ctx, "settings_db_file");
     yield* settle;
     expect(row.text()).toContain("/home/ada/Zotero/zotero.sqlite");
 
     row.button!.click();
     yield* settle;
-    expect(messages(notices)).toEqual([m.notice_db_refresh_failed()]);
+    expect(refresh.runs()).toBe(1);
+  }),
+);
+
+/** How `refreshReads` ends over `refresh`, with a recording Notifier. */
+const refreshExit = <E>(refresh: Effect.Effect<void, E>) =>
+  refreshReads(refresh).pipe(Effect.provide(testNotifier().layer), Effect.exit);
+
+it.effect("fails a refresh with the database's error", () =>
+  Effect.gen(function* () {
+    const failure = new DbUnavailable({ message: "zotero.sqlite is locked" });
+    const exit = yield* refreshExit(Effect.fail(failure));
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(failure);
+  }),
+);
+
+it.effect("ends a done refresh with no failure", () =>
+  Effect.gen(function* () {
+    expect(Exit.isSuccess(yield* refreshExit(Effect.void))).toBe(true);
   }),
 );

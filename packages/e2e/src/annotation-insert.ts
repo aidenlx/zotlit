@@ -5,6 +5,11 @@ import { expect } from "vitest";
 
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import {
+  annotationPreparationProbe,
+  resetAnnotationPreparation,
+  restoreAnnotationPreparation,
+} from "./annotation-preparation.ts";
 import { cli, obEval, obEvalUntil } from "./obsidian-cli.ts";
 import { PAGE } from "./page-gestures.ts";
 
@@ -13,13 +18,15 @@ export async function verifyAnnotationInsert(
   host: "main" | "popout",
 ) {
   const state = "window.__zotlitInsertTrial";
+  const probe = await annotationPreparationProbe();
   try {
     await obEval(
       vaultId,
       `(async()=>{
     const s=window.__zotlitInsertTrial={layout:app.workspace.getLayout()};
     const services=app.plugins.plugins.zotlit.services;
-    s.services=services;s.original=services.noteFeature.prepareAnnotationInsert;
+    s.services=services;
+    ${probe}
     s.link=app.fileManager.generateMarkdownLink;
     app.fileManager.generateMarkdownLink=function(file,...args){if(file.name?.startsWith('zotlit-excerpt-')&&!app.vault.getFileByPath(file.path))throw new Error('Excerpt link rendered before vault registration');return s.link.call(this,file,...args);};
     s.importEnabled=services.bridge.runSync(services.settings.current)['attachment.import'];
@@ -85,10 +92,8 @@ export async function verifyAnnotationInsert(
         `(async()=>{${PAGE}
         const s=${state};s.editor=s.leaf.view.editor;s.editor.setValue('before TARGET after');s.editor.setSelection({line:0,ch:7},{line:0,ch:13});
         await app.workspace.revealLeaf(s.viewLeaf);await app.workspace.revealLeaf(s.leaf);s.leaf.getContainer().focus();
-        app.workspace.setActiveLeaf(s.leaf,{focus:true});s.started=false;s.finished=0;s.error=null;
+        app.workspace.setActiveLeaf(s.leaf,{focus:true});${resetAnnotationPreparation}
         s.services.bridge.runSync(s.services.settings.update({'attachment.import':${mode !== "disabled"}}));
-        s.gate=new Promise(resolve=>s.release=resolve);
-        s.services.noteFeature.prepareAnnotationInsert=async options=>{s.started=true;s.options=options;await s.gate;try{return await s.original(options);}catch(e){s.error=String(e);throw e;}finally{s.finished++;}};
         const a=s.view.snapshot.annotations.find(a=>a.key==='${mode === "ink" ? "TYY6Z6ZF" : "FDRFQ7C2"}');
         ${
           mode === "success" && host === "main"
@@ -132,6 +137,15 @@ export async function verifyAnnotationInsert(
           },
         ),
       ).toBe(true);
+      if (mode !== "escape" && mode !== "switch" && mode !== "close") {
+        expect(
+          await obEvalUntil(
+            vaultId,
+            `String(${state}.editor.getValue().includes(${JSON.stringify(mode === "disabled" ? "[Zotero](zotero://" : "zotlit-excerpt-")}))`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+      }
       const text =
         mode === "close"
           ? await obEval(vaultId, `app.vault.read(${state}.file)`)
@@ -192,7 +206,7 @@ export async function verifyAnnotationInsert(
   } finally {
     await obEval(
       vaultId,
-      `(async()=>{const s=${state};if(!s)return true;try{s.release?.();if(s.original)s.services.noteFeature.prepareAnnotationInsert=s.original;if(s.link)app.fileManager.generateMarkdownLink=s.link;if(s.importEnabled!==undefined)s.services.bridge.runSync(s.services.settings.update({'attachment.import':s.importEnabled}));}finally{try{if(s.layout)await app.workspace.changeLayout(s.layout);}finally{delete window.__zotlitInsertTrial;}}return true;})()`,
+      `(async()=>{const s=${state};if(!s)return true;try{${restoreAnnotationPreparation}if(s.link)app.fileManager.generateMarkdownLink=s.link;if(s.importEnabled!==undefined)s.services.bridge.runSync(s.services.settings.update({'attachment.import':s.importEnabled}));}finally{try{if(s.layout)await app.workspace.changeLayout(s.layout);}finally{delete window.__zotlitInsertTrial;}}return true;})()`,
     );
   }
 }

@@ -145,19 +145,31 @@ function renderActions(
       .onClick(() => {
         btn.buttonEl.blur();
         // The progress notice reports a failure, so the run drops it.
-        void tab.run(
-          withProgress(
-            Effect.flatMap(binary, (api) => api.install),
-            {
-              loading: copy.notices.downloading,
-              success: copy.notices.installed,
-              error: copy.notices.installFailed,
-            },
-          ).pipe(Effect.ignore),
-        );
+        void tab.run(installBinary(binary, copy).pipe(Effect.ignore));
       }),
   );
 }
+
+/**
+ * Install `binary` behind a progress notice in `copy`'s words. It fails with
+ * the install's own error, which the notice names.
+ */
+export const installBinary = <R>(
+  binary: Effect.Effect<
+    Pick<ManagedBinaryApi<Disposable | AsyncDisposable>, "install">,
+    never,
+    R
+  >,
+  copy: ManagedBinaryCopy,
+) =>
+  withProgress(
+    Effect.flatMap(binary, (api) => api.install),
+    {
+      loading: copy.notices.downloading,
+      success: copy.notices.installed,
+      error: copy.notices.installFailed,
+    },
+  );
 
 function installLabel(
   status: ManagedBinaryStatus,

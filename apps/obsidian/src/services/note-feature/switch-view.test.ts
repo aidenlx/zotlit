@@ -16,6 +16,7 @@ import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
 import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
+import { interruptedWithin } from "./__fixtures__/interrupt";
 import {
   awaitProfileSwitchConsent,
   switchNoteProfileInteractively,
@@ -57,10 +58,13 @@ function observeDialog() {
   };
 }
 
-/** Open the consent dialog for `options` on a fiber of its own. */
+/**
+ * Open the consent dialog for `options` on a detached fiber of its own, for
+ * {@link interruptedWithin}.
+ */
 const consentFor = (options: Parameters<typeof awaitProfileSwitchConsent>[1]) =>
   awaitProfileSwitchConsent(stubService<App>("App", {}), options).pipe(
-    Effect.forkChild({ startImmediately: true }),
+    Effect.forkDetach({ startImmediately: true }),
   );
 
 it.effect(
@@ -166,7 +170,7 @@ it.effect("closes the consent dialog when the switch is interrupted", () =>
       requested: "Papers",
       importedCount: 0,
     });
-    yield* Fiber.interrupt(decision);
+    expect(yield* interruptedWithin(decision)).toBe(true);
     expect(dialog.closed).toHaveBeenCalledOnce();
   }),
 );
@@ -185,14 +189,12 @@ const PROFILES = [
 ];
 const SWITCHED: UpdateResult = { bodyUpdated: false, duplicateRegionCount: 0 };
 
-/** The switch's services over a note that holds `imported`, with its notices recorded. */
+/** The switch's services over a note that holds `imported`. */
 function switching(
   imported: TFile,
   switchNoteProfile: NoteFeature["Service"]["switchNoteProfile"],
 ) {
-  const notifier = testNotifier();
   return {
-    notifier,
     layer: Layer.mergeAll(
       unimplementedProfileDialogServices,
       Layer.mock(NoteFeature, {
@@ -205,7 +207,7 @@ function switching(
           }),
         switchNoteProfile,
       }),
-      notifier.layer,
+      testNotifier().layer,
       Layer.mock(ZoteroPref, {
         current: Effect.succeed(
           stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
@@ -336,9 +338,10 @@ it.effect.each(["new", "import"] as const)(
         Deferred.doneUnsafe(opened, Effect.void);
         return { close };
       });
-      const harness = switching(noteAt("Imported/Child.md"), () =>
-        Effect.succeed(SWITCHED),
-      );
+      const switchNoteProfile = vi.fn<
+        NoteFeature["Service"]["switchNoteProfile"]
+      >(() => Effect.succeed(SWITCHED));
+      const harness = switching(noteAt("Imported/Child.md"), switchNoteProfile);
       vi.mocked(openLiteratureNoteProfile).mockImplementation(
         (_app, _options, resolve) => {
           resolve({ action });
@@ -350,12 +353,12 @@ it.effect.each(["new", "import"] as const)(
         noteAt("Books/2024/My title.md"),
       ).pipe(
         Effect.provide(harness.layer),
-        Effect.forkChild({ startImmediately: true }),
+        Effect.forkDetach({ startImmediately: true }),
       );
       yield* Deferred.await(opened);
-      yield* Fiber.interrupt(task);
+      expect(yield* interruptedWithin(task)).toBe(true);
       expect(close).toHaveBeenCalledOnce();
-      expect(harness.notifier.notices).toEqual([]);
+      expect(switchNoteProfile).not.toHaveBeenCalled();
     }),
 );
 

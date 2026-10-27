@@ -1,8 +1,8 @@
 // What the Welcome View banner shows, as one decision over its state.
 import { describe, expect, it } from "vitest";
 
-import { bannerBadge, bannerSections } from "./store";
-import type { WelcomeState } from "./store";
+import { bannerBadge, bannerSections } from "./presentation";
+import type { WelcomeState } from "./presentation";
 
 /** A set-up vault: connected, with the literature-notes folder, never dismissed. */
 const SET_UP: WelcomeState = {

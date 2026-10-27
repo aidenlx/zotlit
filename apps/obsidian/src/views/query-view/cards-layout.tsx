@@ -3,7 +3,6 @@
 // title; each other one shows under its name. Its option is `cardSize`, the
 // narrowest a card is drawn, as in Bases 1.14.4.
 import type { CSSProperties } from "react";
-import { useStore } from "zustand";
 
 import { Chooser } from "@/components/chooser";
 import { Slider } from "@/components/obsidian/slider";
@@ -11,6 +10,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 
 import type { QueryLayout } from "./layouts";
+import { useQueryViewState } from "./model";
 import type { QueryFileView } from "./query-file";
 import { RecordCell, RecordGroupHeading, useRecordGroups } from "./record-rows";
 import type { QueryView } from "./view";
@@ -76,7 +76,7 @@ const CARD_LINE =
 /** The rows of the shown view, one card each, under their group headings. */
 export function CardsLayout({ view }: { view: QueryView }) {
   const { properties, groups } = useRecordGroups(view);
-  const options = cardsLayoutOptions(useStore(view.state, (s) => s.view));
+  const options = cardsLayoutOptions(useQueryViewState(view, (s) => s.view));
   return (
     <div
       className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-3 zt:pb-11 zt:in-[.zt-query-note]:pb-3"

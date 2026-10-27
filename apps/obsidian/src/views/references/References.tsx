@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { IconName } from "obsidian";
 import type { MouseEvent, ReactNode } from "react";
 
@@ -17,8 +18,8 @@ import type {
 
 import { useReferenceActions } from "./actions";
 import type { ReferenceEntry } from "./entries";
-import { useReferencesStore } from "./store";
-import type { ReferencesCopyBlock } from "./store";
+import { useReferencesModel } from "./model";
+import type { ReferencesCopyBlock } from "./state";
 
 /**
  * The pane: the fixed toolbar above, then one scrolling region holding the
@@ -28,14 +29,14 @@ import type { ReferencesCopyBlock } from "./store";
  */
 export function References() {
   const actions = useReferenceActions();
-  const entries = useReferencesStore((s) => s.entries);
-  const listMode = useReferencesStore((s) => s.listMode);
-  const engine = useReferencesStore((s) => s.engine);
-  const formattingFailed = useReferencesStore((s) => s.formattingFailed);
-  const documentPresentationError = useReferencesStore(
-    (s) => s.documentPresentationError,
-  );
-  const dbReady = useReferencesStore((s) => s.dbReady);
+  const {
+    entries,
+    listMode,
+    engine,
+    formattingFailed,
+    documentPresentationError,
+    dbReady,
+  } = useAtomValue(useReferencesModel().state);
   const numbered = listMode.kind === "minimal";
   const serials = listMode.kind === "bibliography" && listMode.entrySerials;
   const guttered =
@@ -119,7 +120,7 @@ export function References() {
  */
 function Toolbar() {
   const actions = useReferenceActions();
-  const copy = useReferencesStore((s) => s.copy);
+  const copy = useAtomValue(useReferencesModel().state).copy;
   const copyReady = copy.kind === "ready";
 
   return (
@@ -247,7 +248,8 @@ function Reference({
   const actions = useReferenceActions();
   // A missing Held Read has not answered for this list, so an unresolved row
   // reads as a lookup in progress rather than a verdict.
-  const pending = useReferencesStore((s) => s.citekeyResolution) === null;
+  const pending =
+    useAtomValue(useReferencesModel().state).citekeyResolution === null;
   const presentation = referencePresentation(entry, {
     numbered,
     serials,

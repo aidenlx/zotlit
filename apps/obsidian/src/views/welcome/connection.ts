@@ -1,142 +1,153 @@
-import { Effect } from "effect";
+// The Welcome connection readout, held across leaves and refreshed on database events.
+import { Effect, Option, Stream } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Atom from "effect/reactivity/Atom";
 import { homedir } from "node:os";
 
-// Zotero connection readout for Welcome View step 1; the view re-runs it on database lifecycle events for a live status.
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
-import type { PlainQueryClients } from "@/services/query-client/plain";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import { held, viewRuntime } from "@/lib/view-atoms";
+import { QueryClients } from "@/services/query-client/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsState } from "@/services/zotero-reads/service";
 
 export type ConnectionReadout =
   | { status: "checking" }
   | { status: "missing" }
-  | {
-      status: "connected";
-      path: string;
-      /** Items across every library the database holds, independent of Library Scope. */
-      itemCount: number;
-    };
+  | { status: "connected"; path: string; itemCount: number };
 
-/** The query key the held item count lives under. */
 const ITEM_COUNT_KEY = ["welcome", "connection-readout"] as const;
 
-interface ConnectionQueryDeps {
-  reads: Pick<PlainZoteroReads, "state" | "error" | "moved">;
-  queries: Pick<PlainQueryClients, "peek">;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
-}
+type ConnectionState = Pick<ZoteroReadsState, "state" | "error" | "moved">;
 
-export interface ReadConnectionStatusDeps extends ConnectionQueryDeps {
-  reads: Pick<PlainZoteroReads, "state" | "error" | "moved" | "reads">;
-  queries: Pick<PlainQueryClients, "peek" | "read">;
-}
-
-export type ReadConnectionSyncDeps = ConnectionQueryDeps;
-
-/**
- * Keeps the held item count current for the plugin's life: a database change
- * marks it stale, and the next readout reads it again while the old count
- * still seeds the view.
- *
- * @returns the unsubscribe.
- */
-export function holdConnectionReadout(deps: {
-  runtime: SubscriptionRuntime;
-  reads: Pick<
-    PlainZoteroReads,
-    | "changed"
-    | "degraded"
-    | "refresh-failed"
-    | "refreshing"
-    | "db-file-missing"
-    | "refresh-requested"
-  >;
-  queries: Pick<PlainQueryClients, "invalidate">;
-}): () => void {
-  return subscribe(deps.runtime, deps.reads["changed"], () =>
-    deps.queries.invalidate(ITEM_COUNT_KEY),
-  );
-}
-
-/**
- * Step 1 answers "is Zotero reachable, and does it hold anything", so it counts
- * every library the database holds rather than a configured subset — Library
- * Scope governs discovery, not whether the connection is healthy.
- */
-function connectedReadout(
-  deps: Pick<ConnectionQueryDeps, "zoteroPref">,
-  itemCount: number,
-): ConnectionReadout {
-  const path = deps.zoteroPref.dataDir.replace(homedir(), "~");
-  return { status: "connected", path, itemCount };
-}
-
-/**
- * ZotLit cannot read the Zotero data directory the settings name: no
- * connection serves, as where the folder is missing or unreadable at start,
- * or the one that serves reads another folder, as where the data folder
- * changed to one that does not read. The Library View then says "Zotero not
- * found" in place of its tree and list.
- *
- * @see apps/obsidian/docs/adr/0077-the-library-view-is-the-first-screen.md
- */
-export function unavailable(deps: Pick<ConnectionQueryDeps, "reads">): boolean {
+export function unavailable(deps: { reads: ConnectionState }): boolean {
   return (
     deps.reads.state === "degraded" ||
     (deps.reads.error !== null && deps.reads.moved)
   );
 }
 
-/**
- * The last refresh of the database the settings name failed while that
- * database still serves, as for a locked or briefly unreadable file: the
- * Library View keeps its rows and says so.
- */
-export function refreshFailed(
-  deps: Pick<ConnectionQueryDeps, "reads">,
-): boolean {
+export function refreshFailed(deps: { reads: ConnectionState }): boolean {
   return !unavailable(deps) && deps.reads.error !== null;
 }
 
-/**
- * Whether step 1 reads as missing: no connection serves, or the folder the
- * settings name does not read, so step 1 shows the broken location rather
- * than the earlier connection's item count.
- */
-function missing(deps: Pick<ConnectionQueryDeps, "reads">): boolean {
-  return unavailable(deps) || refreshFailed(deps);
-}
+const missing = (reads: ConnectionState) =>
+  unavailable({ reads }) || refreshFailed({ reads });
 
-export async function readConnectionStatus(
-  deps: ReadConnectionStatusDeps,
-): Promise<ConnectionReadout> {
-  const { reads } = deps.reads;
-  if (missing(deps)) return { status: "missing" };
+const connected = (dataDir: string, itemCount: number): ConnectionReadout => ({
+  status: "connected",
+  path: dataDir.replace(homedir(), "~"),
+  itemCount,
+});
 
-  const held = await deps.queries.read(ITEM_COUNT_KEY, ({ signal }) =>
-    Effect.runPromise(reads.ConnectionReadout({}), { signal }),
+/** Marks the held count stale before a changed event can start its next read. */
+export const connectionLifecycleAtom = held(
+  Stream.unwrap(
+    Effect.gen(function* () {
+      const reads = yield* ZoteroReads;
+      const queries = yield* QueryClients;
+      return reads.events.pipe(
+        Stream.filter(
+          (event) =>
+            event._tag !== "refresh-requested" &&
+            (event._tag !== "refreshing" || event.active),
+        ),
+        Stream.tap((event) =>
+          event._tag === "changed"
+            ? queries.invalidate(ITEM_COUNT_KEY)
+            : Effect.void,
+        ),
+        Stream.scan(
+          () => ({ revision: 0, refreshing: false }),
+          (before, event) => ({
+            revision: before.revision + 1,
+            refreshing: event._tag === "refreshing",
+          }),
+        ),
+      );
+    }),
+  ),
+  { revision: 0, refreshing: false },
+);
+
+/** The cached count seeds a reopened banner before its first paint. */
+export const readConnectionSync = Effect.gen(function* () {
+  const reads = yield* (yield* ZoteroReads).current;
+  if (reads.state === "loading") return null;
+  if (missing(reads)) return { status: "missing" } satisfies ConnectionReadout;
+  const value = yield* (yield* QueryClients).peek<{ itemCount: number }>(
+    ITEM_COUNT_KEY,
   );
-  if (held === null || deps.reads.state !== "ready" || missing(deps)) {
-    return { status: "missing" };
-  }
-  return connectedReadout(deps, held.itemCount);
-}
+  return value === null
+    ? null
+    : connected(
+        (yield* (yield* ZoteroPref).current).dataDir,
+        value.value.itemCount,
+      );
+});
 
-/**
- * Synchronous readout for seeding step 1 before the view's first paint, from
- * the held item count.
- * @returns `null` while the database is doing its first load or no count is
- * held yet — the caller shows the checking spinner until the async readout
- * lands. When the count is held (the common open path), the definite readout
- * is available synchronously, so the spinner never has to flash.
- */
-export function readConnectionSync(
-  deps: ReadConnectionSyncDeps,
-): ConnectionReadout | null {
-  if (deps.reads.state === "loading") return null;
-  if (missing(deps)) return { status: "missing" };
+export const readConnectionStatus = Effect.gen(function* () {
+  const reads = yield* ZoteroReads;
+  if (missing(yield* reads.current))
+    return { status: "missing" } satisfies ConnectionReadout;
+  const queries = yield* QueryClients;
+  const run = Effect.runPromiseWith(yield* Effect.context<never>());
+  const value = yield* queries.read(ITEM_COUNT_KEY, ({ signal }) =>
+    run(reads.reads.ConnectionReadout({}), { signal }),
+  );
+  const current = yield* reads.current;
+  return value === null || current.state !== "ready" || missing(current)
+    ? ({ status: "missing" } satisfies ConnectionReadout)
+    : connected((yield* (yield* ZoteroPref).current).dataDir, value.itemCount);
+});
 
-  const held = deps.queries.peek<{ itemCount: number }>(ITEM_COUNT_KEY);
-  return held === null ? null : connectedReadout(deps, held.value.itemCount);
-}
+/** A refresh replaces and interrupts the old wait; a held count stays visible. */
+export const connectionLoadAtom = viewRuntime.atom((get) => {
+  const lifecycle = get(connectionLifecycleAtom);
+  const previous = get
+    .self<AsyncResult.AsyncResult<ConnectionReadout>>()
+    .pipe(Option.flatMap((result) => AsyncResult.value(result)));
+  return Stream.unwrap(
+    Effect.gen(function* () {
+      const seed = yield* readConnectionSync;
+      const first =
+        seed ??
+        Option.getOrElse(previous, (): ConnectionReadout => ({
+          status: "checking",
+        }));
+      // This shared atom owns the Welcome query across all its leaves. Its
+      // interruption cancels the cached read as well as the caller's wait.
+      const read = lifecycle.refreshing
+        ? Effect.never
+        : readConnectionStatus.pipe(
+            Effect.onInterrupt(() =>
+              QueryClients.use((queries) => queries.invalidate(ITEM_COUNT_KEY)),
+            ),
+          );
+      // With no cached answer, a slow refresh shows checking after the same grace
+      // period as the former banner timer. Losing a reader interrupts the timer.
+      const pending =
+        seed === null && first.status !== "checking"
+          ? Stream.merge(
+              Stream.fromEffect(
+                Effect.as(Effect.sleep(200), {
+                  status: "checking",
+                } as ConnectionReadout),
+              ),
+              Stream.fromEffect(read),
+              { haltStrategy: "right" },
+            )
+          : Stream.fromEffect(read);
+      return Stream.concat(Stream.make(first), pending);
+    }),
+  );
+});
+
+export const connectionAtom: Atom.Atom<ConnectionReadout> = Atom.map(
+  connectionLoadAtom,
+  (result) =>
+    AsyncResult.isFailure(result)
+      ? { status: "missing" }
+      : Option.getOrElse(AsyncResult.value(result), () => ({
+          status: "checking",
+        })),
+);

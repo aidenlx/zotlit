@@ -12,7 +12,6 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { useStore } from "zustand";
 
 import { isPageNumber, itemSelectUri, parseIndexedKey } from "@zotlit/db";
 
@@ -35,6 +34,7 @@ import { useAnnotStore } from "@/views/annot-view/store";
 import { useItemRow } from "./item-rows";
 import type { ItemRowGestures } from "./item-rows";
 import type { QueryLayout } from "./layouts";
+import { useQueryViewState } from "./model";
 import { LITERATURE_NOTE, vaultName } from "./query-file";
 import type { ColumnSizes } from "./query-file";
 import { CellContent, recordCells, searchFinds } from "./record-rows";
@@ -695,17 +695,20 @@ function ChildRow({
 
 /** The view's rows as a table of Items. */
 export function TableLayout({ view }: { view: QueryView }) {
-  const rows = useStore(view.state, (s) => (s.results ?? NO_RESULTS).records);
+  const rows = useQueryViewState(
+    view,
+    (s) => (s.results ?? NO_RESULTS).records,
+  );
   const search = useAnnotStore((s) => s.filterQuery)
     .trim()
     .toLowerCase();
   const { query, literatureNotes, readers } = view.tableDeps;
   const { children: expanded, toggle } = useChildren(query);
   const properties = useViewProperties(view);
-  const dataset = useStore(view.state, (s) => s.view?.from ?? "annotations");
+  const dataset = useQueryViewState(view, (s) => s.view?.from ?? "annotations");
   const columns = useMemo(() => properties?.visible ?? [], [properties]);
   const scroller = useRef<HTMLDivElement>(null);
-  const sizes = useStore(view.state, (s) => s.view?.columnSize);
+  const sizes = useQueryViewState(view, (s) => s.view?.columnSize);
   // The search reads the vault properties as the cells do, again on a
   // change of the notes, as the List and Cards search them.
   const vaultVersion = useVaultVersion(literatureNotes);

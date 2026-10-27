@@ -1,18 +1,20 @@
-import { Effect } from "effect";
+import { it } from "@effect/vitest";
+import { Effect, Layer, Stream } from "effect";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { subscribe } from "@/lib/effect-stream";
-import { queryClientsFixture } from "@/services/query-client/__fixtures__";
+import { readsFixture } from "@/services/zotero-reads/__fixtures__";
+import { layerRcRef } from "@/services/zotero-reads/connection";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import {
-  inProcessReadsService,
+  inProcessClient,
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 
+import { makeWelcomeHost, waitFor } from "./__fixtures__";
 import {
-  holdConnectionReadout,
+  connectionLifecycleAtom,
   readConnectionStatus,
   readConnectionSync,
 } from "./connection";
@@ -39,123 +41,147 @@ function itemsSql(libraryItems: [libraryID: number, count: number][]): string {
 const ONE_LIBRARY = `insert into itemTypes (itemTypeID, typeName) values (1, 'book');
 ${itemsSql([[1, 2]])}`;
 
-async function setup(
-  stack: AsyncDisposableStack,
+const setup = Effect.fnUntraced(function* (
   seeds: (string | null)[],
   dataDir = "/opt/zotero-data",
 ) {
   const { open } = memoryOpener((n) => seeds[n - 1] ?? null);
-  const reads = stack.use(inProcessReadsService(open));
-  const queries = stack.use(queryClientsFixture());
-  stack.defer(
-    holdConnectionReadout({ runtime: testRuntime(), reads, queries }),
+  const { service } = yield* readsFixture(inProcessClient(layerRcRef(open)));
+  yield* Stream.runHead(
+    Stream.filter(service.changes, (state) => state.state !== "loading"),
   );
-  const { reads: initial } = await reads.ready;
-  await Effect.runPromise(Effect.ignore(initial.Libraries({})));
-  await expect.poll(() => reads.state).not.toBe("loading");
-  return { reads, queries, zoteroPref: { dataDir } };
-}
+  const host = yield* Effect.acquireRelease(
+    Effect.promise(() =>
+      makeWelcomeHost({
+        dataDir,
+        services: Layer.succeed(ZoteroReads, service),
+      }),
+    ),
+    (host) => Effect.promise(() => host.close()),
+  );
+  return {
+    reads: service,
+    read: Effect.provideContext(readConnectionStatus, host.context),
+    sync: Effect.provideContext(readConnectionSync, host.context),
+    host,
+  };
+});
 
 describe("readConnectionStatus", () => {
-  it("database that cannot open → missing", async () => {
-    await using stack = new AsyncDisposableStack();
-    const deps = await setup(stack, [null]);
+  it.effect("database that cannot open → missing", () =>
+    Effect.gen(function* () {
+      const deps = yield* setup([null]);
 
-    expect(await readConnectionStatus(deps)).toEqual({ status: "missing" });
-  });
+      expect(yield* deps.read).toEqual({ status: "missing" });
+    }),
+  );
 
-  it("ready but last refresh failed → missing", async () => {
-    await using stack = new AsyncDisposableStack();
-    const deps = await setup(stack, [ONE_LIBRARY, null]);
-    await readConnectionStatus(deps);
+  it.effect("ready but last refresh failed → missing", () =>
+    Effect.gen(function* () {
+      const deps = yield* setup([ONE_LIBRARY, null]);
+      yield* deps.read;
 
-    await deps.reads.refresh().catch(() => {});
-    await expect.poll(() => deps.reads.error).not.toBeNull();
+      yield* Effect.ignore(deps.reads.refresh);
+      yield* Stream.runHead(
+        Stream.filter(deps.reads.changes, (state) => state.error !== null),
+      );
 
-    expect(await readConnectionStatus(deps)).toEqual({ status: "missing" });
-  });
+      expect(yield* deps.read).toEqual({ status: "missing" });
+    }),
+  );
 
-  it("ready → connected with the item count of the one library", async () => {
-    await using stack = new AsyncDisposableStack();
-    const deps = await setup(stack, [ONE_LIBRARY]);
+  it.effect("ready → connected with the item count of the one library", () =>
+    Effect.gen(function* () {
+      const deps = yield* setup([ONE_LIBRARY]);
 
-    expect(await readConnectionStatus(deps)).toEqual({
-      status: "connected",
-      path: "/opt/zotero-data",
-      itemCount: 2,
-    });
-  });
+      expect(yield* deps.read).toEqual({
+        status: "connected",
+        path: "/opt/zotero-data",
+        itemCount: 2,
+      });
+    }),
+  );
 
-  it("totals every library the database holds, whatever the library scope is", async () => {
-    await using stack = new AsyncDisposableStack();
-    const deps = await setup(stack, [
-      `insert into itemTypes (itemTypeID, typeName) values (1, 'book');
+  it.effect(
+    "totals every library the database holds, whatever the library scope is",
+    () =>
+      Effect.gen(function* () {
+        const deps = yield* setup([
+          `insert into itemTypes (itemTypeID, typeName) values (1, 'book');
        ${itemsSql([
          [1, 4],
          [2, 2],
          [3, 1],
        ])}`,
-    ]);
+        ]);
 
-    expect(await readConnectionStatus(deps)).toMatchObject({
-      status: "connected",
-      itemCount: 7,
-    });
-  });
+        expect(yield* deps.read).toMatchObject({
+          status: "connected",
+          itemCount: 7,
+        });
+      }),
+  );
 
-  it("abbreviates a data dir under the home directory to ~", async () => {
-    await using stack = new AsyncDisposableStack();
-    const deps = await setup(stack, [ONE_LIBRARY], join(homedir(), "Zotero"));
+  it.effect("abbreviates a data dir under the home directory to ~", () =>
+    Effect.gen(function* () {
+      const deps = yield* setup([ONE_LIBRARY], join(homedir(), "Zotero"));
 
-    expect(await readConnectionStatus(deps)).toMatchObject({
-      path: "~/Zotero",
-    });
-  });
+      expect(yield* deps.read).toMatchObject({
+        path: "~/Zotero",
+      });
+    }),
+  );
 });
 
 describe("readConnectionSync", () => {
-  it("answers nothing until a count is held, then the held count", async () => {
-    await using stack = new AsyncDisposableStack();
-    const deps = await setup(stack, [ONE_LIBRARY]);
+  it.effect("answers nothing until a count is held, then the held count", () =>
+    Effect.gen(function* () {
+      const deps = yield* setup([ONE_LIBRARY]);
 
-    expect(readConnectionSync(deps)).toBeNull();
-    await readConnectionStatus(deps);
+      expect(yield* deps.sync).toBeNull();
+      yield* deps.read;
 
-    expect(readConnectionSync(deps)).toEqual({
-      status: "connected",
-      path: "/opt/zotero-data",
-      itemCount: 2,
-    });
-  });
-
-  it("keeps the previous count after a refresh until the fresh readout lands", async () => {
-    await using stack = new AsyncDisposableStack();
-    const deps = await setup(stack, [
-      ONE_LIBRARY,
-      `insert into itemTypes (itemTypeID, typeName) values (1, 'book');
-       ${itemsSql([[1, 5]])}`,
-    ]);
-    await readConnectionStatus(deps);
-
-    const changed = new Promise<void>((resolve) => {
-      const off = subscribe(deps.reads.runtime, deps.reads["changed"], () => {
-        off();
-        resolve();
+      expect(yield* deps.sync).toEqual({
+        status: "connected",
+        path: "/opt/zotero-data",
+        itemCount: 2,
       });
-    });
-    await deps.reads.refresh();
-    await changed;
+    }),
+  );
 
-    expect(readConnectionSync(deps)).toMatchObject({ itemCount: 2 });
-    expect(await readConnectionStatus(deps)).toMatchObject({ itemCount: 5 });
-    expect(readConnectionSync(deps)).toMatchObject({ itemCount: 5 });
-  });
+  it.effect(
+    "keeps the previous count after a refresh until the fresh readout lands",
+    () =>
+      Effect.gen(function* () {
+        const deps = yield* setup([
+          ONE_LIBRARY,
+          `insert into itemTypes (itemTypeID, typeName) values (1, 'book');
+       ${itemsSql([[1, 5]])}`,
+        ]);
+        yield* deps.read;
 
-  it("answers missing when the database cannot open", async () => {
-    await using stack = new AsyncDisposableStack();
-    const deps = await setup(stack, [null]);
-    await readConnectionStatus(deps);
+        yield* deps.reads.refresh;
+        // Invalidation is delivered before the revision changes in the view registry.
+        yield* Effect.promise(() =>
+          waitFor(() =>
+            expect(
+              deps.host.registry.get(connectionLifecycleAtom).revision,
+            ).toBeGreaterThan(0),
+          ),
+        );
 
-    expect(readConnectionSync(deps)).toEqual({ status: "missing" });
-  });
+        expect(yield* deps.sync).toMatchObject({ itemCount: 2 });
+        expect(yield* deps.read).toMatchObject({ itemCount: 5 });
+        expect(yield* deps.sync).toMatchObject({ itemCount: 5 });
+      }),
+  );
+
+  it.effect("answers missing when the database cannot open", () =>
+    Effect.gen(function* () {
+      const deps = yield* setup([null]);
+      yield* deps.read;
+
+      expect(yield* deps.sync).toEqual({ status: "missing" });
+    }),
+  );
 });

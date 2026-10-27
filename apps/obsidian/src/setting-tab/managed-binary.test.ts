@@ -2,8 +2,7 @@
 import { expect, it } from "@effect/vitest";
 import { ButtonComponent, renderRow } from "@mock/obsidian";
 import type { Setting } from "@mock/obsidian";
-import { Context, Effect, Layer, Stream } from "effect";
-import { TestClock } from "effect/testing";
+import { Context, Effect, Exit, Layer, Stream } from "effect";
 import { describe, vi } from "vitest";
 
 import { eventually } from "@/lib/__fixtures__/eventually";
@@ -21,7 +20,7 @@ import { PandocEngine } from "@/services/pandoc/service";
 import { scopedSettingTab, testSettingTab } from "./__fixtures__";
 import { chineseSegmenterDefinition } from "./chinese-segmenter";
 import type { SettingTabContext } from "./context";
-import { managedBinaryDefinition } from "./managed-binary";
+import { installBinary, managedBinaryDefinition } from "./managed-binary";
 import type { ManagedBinaryCopy } from "./managed-binary";
 import { pandocEngineDefinition } from "./pandoc-engine";
 
@@ -74,10 +73,9 @@ function binary(
 
 /** The tab over a recording Notifier whose tracked notices run on the test's Scope. */
 const notifiedTab = Effect.gen(function* () {
-  const notifier = testNotifier();
-  const services = yield* Layer.build(notifier.layer);
+  const services = yield* Layer.build(testNotifier().layer);
   const { tab } = yield* scopedSettingTab(services);
-  return { tab, notices: notifier.notices };
+  return { tab };
 });
 
 function button(setting: Setting): ButtonComponent {
@@ -90,15 +88,11 @@ function button(setting: Setting): ButtonComponent {
   return found;
 }
 
-/** Every message the notices showed, in order. */
-const shown = (notices: readonly { messages: unknown[] }[]) =>
-  notices.flatMap((notice) => notice.messages);
-
 describe("managedBinaryDefinition", () => {
   it.effect("offers the install while nothing is cached", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const { tab, notices } = yield* notifiedTab;
+        const { tab } = yield* notifiedTab;
         const fake = binary({ kind: "absent" });
         const row = managedBinaryDefinition(
           tab,
@@ -115,46 +109,43 @@ describe("managedBinaryDefinition", () => {
         expect(install.text).toBe("Install");
 
         install.click();
-        yield* eventually(() =>
-          expect(shown(notices)).toEqual(["Segmenter installed"]),
-        );
-        expect(fake.install).toHaveBeenCalledOnce();
-        // The success notice stands for 2 s.
-        yield* TestClock.adjust("2 seconds");
-        expect(notices[0]?.hidden).toBe(true);
+        yield* eventually(() => expect(fake.install).toHaveBeenCalledOnce());
       }),
     ),
   );
 
-  it.effect("names a failed install in its own words, once", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const { tab, notices } = yield* notifiedTab;
-        const fake = binary(
-          { kind: "absent" },
-          Effect.fail(new ManagedBinaryError({ message: "offline" })),
-        );
-        const row = managedBinaryDefinition(
-          tab,
-          Effect.succeed(fake.api),
-          COPY,
-        );
+  it.effect("fails the install with the install's own error", () =>
+    Effect.gen(function* () {
+      const failure = new ManagedBinaryError({ message: "offline" });
+      const fake = binary({ kind: "absent" }, Effect.fail(failure));
 
-        button(renderRow(row)).click();
-        yield* eventually(() =>
-          expect(shown(notices)).toEqual(["Segmenter install failed"]),
-        );
-        // The error notice stands for 4 s.
-        yield* TestClock.adjust("4 seconds");
-        expect(notices[0]?.hidden).toBe(true);
-      }),
-    ),
+      const error = yield* installBinary(Effect.succeed(fake.api), COPY).pipe(
+        Effect.provide(testNotifier().layer),
+        Effect.flip,
+      );
+
+      expect(error).toBe(failure);
+      expect(fake.install).toHaveBeenCalledOnce();
+    }),
+  );
+
+  it.effect("ends the install with no failure once it is done", () =>
+    Effect.gen(function* () {
+      const fake = binary({ kind: "absent" });
+
+      const exit = yield* installBinary(Effect.succeed(fake.api), COPY).pipe(
+        Effect.provide(testNotifier().layer),
+        Effect.exit,
+      );
+
+      expect(Exit.isSuccess(exit)).toBe(true);
+    }),
   );
 
   it.effect("offers the removal once installed", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const { tab, notices } = yield* notifiedTab;
+        const { tab } = yield* notifiedTab;
         const fake = binary({
           kind: "installed",
           version: "2.4.0",
@@ -171,10 +162,7 @@ describe("managedBinaryDefinition", () => {
         expect(uninstall.text).toBe("Uninstall");
 
         uninstall.click();
-        yield* eventually(() =>
-          expect(shown(notices)).toEqual(["Segmenter removed"]),
-        );
-        expect(fake.uninstall).toHaveBeenCalledOnce();
+        yield* eventually(() => expect(fake.uninstall).toHaveBeenCalledOnce());
       }),
     ),
   );

@@ -5,7 +5,6 @@
 // them with the view's Formulas and Query Context.
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import { useCallback, useMemo } from "react";
-import { useStore } from "zustand";
 
 import type { ContextRecord } from "@zotlit/item-query";
 import { datasetVocabulary } from "@zotlit/workbench/language";
@@ -16,6 +15,7 @@ import { getLogger } from "@/lib/log";
 
 import { boundRecords } from "./context-hint";
 import { datasetSpec } from "./datasets";
+import { useQueryViewState } from "./model";
 import type { QueryFileDataset } from "./query-file";
 import type { QueryView } from "./view";
 import { fieldLabel } from "./view-properties";
@@ -91,7 +91,7 @@ export function useFilterExpressions(
   properties: ViewProperties | null,
   { reading, vaultNames }: { reading: boolean; vaultNames?: readonly string[] },
 ): (dataset: QueryFileDataset) => ExpressionVocabulary {
-  const formulas = useStore(view.state, (s) => s.file?.formulas);
+  const formulas = useQueryViewState(view, (s) => s.file?.formulas);
   const custom = useViewCustomFields(view, reading);
   const context = boundRecords(view.contextSource);
   return useMemo(() => {

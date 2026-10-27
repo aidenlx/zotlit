@@ -189,4 +189,55 @@ describe("withProgress", () => {
       ]);
     }),
   );
+
+  it.effect("shows only the result for a task done within 200 ms", () =>
+    Effect.gen(function* () {
+      const notifier = testNotifier();
+      const context = yield* Layer.build(notifier.layer);
+      yield* withProgress(Effect.succeed("Paper"), copy).pipe(
+        Effect.provideContext(context),
+      );
+      yield* TestClock.adjust("200 millis");
+
+      expect(notifier.notices).toEqual([
+        { messages: ["Created Paper"], duration: 0, hidden: false },
+      ]);
+    }),
+  );
+
+  it.effect("hides the success message after 2 seconds", () =>
+    Effect.gen(function* () {
+      const notifier = testNotifier();
+      const context = yield* Layer.build(notifier.layer);
+      yield* withProgress(Effect.succeed("Paper"), copy).pipe(
+        Effect.provideContext(context),
+      );
+      yield* Effect.yieldNow;
+
+      yield* TestClock.adjust("1999 millis");
+      expect(notifier.notices[0]?.hidden).toBe(false);
+      yield* TestClock.adjust("1 millis");
+      expect(notifier.notices[0]?.hidden).toBe(true);
+    }),
+  );
+
+  it.effect("shows the error message for 4 seconds", () =>
+    Effect.gen(function* () {
+      const notifier = testNotifier();
+      const context = yield* Layer.build(notifier.layer);
+      yield* withProgress(Effect.fail("disk full"), copy).pipe(
+        Effect.provideContext(context),
+        Effect.ignore,
+      );
+      yield* Effect.yieldNow;
+
+      expect(notifier.notices).toEqual([
+        { messages: ["Failed"], duration: 0, hidden: false },
+      ]);
+      yield* TestClock.adjust("3999 millis");
+      expect(notifier.notices[0]?.hidden).toBe(false);
+      yield* TestClock.adjust("1 millis");
+      expect(notifier.notices[0]?.hidden).toBe(true);
+    }),
+  );
 });
