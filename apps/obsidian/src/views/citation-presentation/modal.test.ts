@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { modalAnswer } from "@/lib/modal-answer";
 import { nodeFileSystem } from "@/services/pandoc/__fixtures__/file-effects";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 
@@ -32,15 +33,21 @@ const UNINSTALLED = "http://www.zotero.org/styles/gone";
 
 /** One dialog on screen, read and driven the way the user reads and drives it. */
 async function openDialog(options: Partial<CitationPresentationModalOptions>) {
-  const choice = openCitationPresentationModal(stubService<App>("App", {}), {
-    fileSystem: nodeFileSystem,
-    bridge: { runPromiseExit: Effect.runPromiseExit },
-    dataDir: "/zotero",
-    vaultStyleId: null,
-    vaultLocale: "",
-    declared: { styleId: null, language: "" },
-    ...options,
-  });
+  const choice = modalAnswer<CitationPresentationChoice | null>((resolve) =>
+    openCitationPresentationModal(
+      stubService<App>("App", {}),
+      {
+        fileSystem: nodeFileSystem,
+        bridge: { runPromiseExit: Effect.runPromiseExit },
+        dataDir: "/zotero",
+        vaultStyleId: null,
+        vaultLocale: "",
+        declared: { styleId: null, language: "" },
+        ...options,
+      },
+      resolve,
+    ),
+  );
 
   const modal = Modal.instances.at(-1)!;
   const rows = settingsOf(modal.contentEl);

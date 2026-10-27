@@ -6,7 +6,7 @@ import {
   settingsOf,
   TextComponent,
 } from "@mock/obsidian";
-import { Effect, Exit, FileSystem, Scope } from "effect";
+import { Effect, Exit, Fiber, FileSystem, Scope } from "effect";
 import type {
   App,
   Command,
@@ -275,6 +275,45 @@ describe("Set citation presentation", () => {
         [m.notice_citation_presentation_failed()],
       ]);
     }),
+  );
+
+  it.effect.each([false, true])(
+    "waits for a confirmed save on unload and keeps its outcome (failed: %s, #1858)",
+    (failed) =>
+      Effect.gen(function* () {
+        const vault = yield* setup();
+        const view = vault.host.openInEditor(vault.file);
+        vault.host.saves.hold();
+        yield* Effect.addFinalizer(() =>
+          Effect.promise(() => vault.host.saves.release()),
+        );
+        if (failed)
+          vault.host.vault.modify = async () => {
+            throw new Error("Disk is full");
+          };
+        const pending = vault.open();
+        dialog().language.setValue("de-DE");
+        dialog().confirm();
+        yield* waitFor(() => expect(view.saving).toBe(true));
+        expect(view.getViewData()).toContain("lang: de-DE");
+        const closing = yield* Scope.close(vault.scope, Exit.void).pipe(
+          Effect.forkChild({ startImmediately: true }),
+        );
+        expect(closing.pollUnsafe()).toBeUndefined();
+        yield* Effect.promise(() => vault.host.saves.release());
+        yield* Fiber.join(closing);
+        yield* Effect.promise(() => pending);
+        expect(view.saving).toBe(false);
+        if (failed) {
+          expect(yield* vault.read).toBe("A draft.\n");
+          expect(
+            vault.notifier.notices.map((notice) => notice.messages),
+          ).toEqual([[m.notice_citation_presentation_failed()]]);
+        } else {
+          expect(yield* vault.read).toContain("lang: de-DE");
+          expect(vault.notifier.notices).toEqual([]);
+        }
+      }),
   );
 
   it.effect(

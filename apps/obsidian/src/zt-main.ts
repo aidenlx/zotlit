@@ -9,8 +9,6 @@ import {
   WEB_WORKBENCH_ENABLED,
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
-import { MetadataCache } from "@/lib/obsidian-metadata-cache";
-import { Workspace } from "@/lib/obsidian-workspace";
 import { ViewRegistry } from "@/lib/view-atoms";
 
 import { startI18n } from "./lib/i18n";
@@ -458,8 +456,8 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     const citationPresentationDeps = {
-      workspace: services.runtime.runSync(Workspace),
-      metadataCache: services.runtime.runSync(MetadataCache),
+      workspace: services.workspace,
+      metadataCache: services.metadataCache,
       fileSystem: services.fileSystem,
       app: this.app,
       zoteroPref: services.zoteroPrefService,

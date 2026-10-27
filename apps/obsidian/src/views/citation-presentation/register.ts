@@ -5,6 +5,7 @@ import type { App, Plugin, TFile } from "obsidian";
 
 import { valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
+import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { Notifier, reportOutcome } from "@/lib/notifier";
@@ -16,6 +17,7 @@ import type { ZoteroPref } from "@/services/zotero-pref/service";
 import type { StyleDropdownOptions } from "@/views/style-dropdown";
 
 import { openCitationPresentationModal } from "./modal";
+import type { CitationPresentationChoice } from "./presentation";
 import {
   applyCitationPresentation,
   declaredPresentation,
@@ -88,10 +90,9 @@ export async function setCitationPresentation(
   deps: CitationPresentationDeps,
 ): Promise<void> {
   const exit = await deps.bridge.runPromiseExit(
-    reportOutcome(choosePresentation(file, deps), {
-      success: () => undefined,
-      error: () => m.notice_citation_presentation_failed(),
-    }).pipe(Effect.provideService(Notifier, deps.notifier)),
+    choosePresentation(file, deps).pipe(
+      Effect.provideService(Notifier, deps.notifier),
+    ),
   );
   valueOr(exit, undefined);
 }
@@ -110,25 +111,33 @@ const choosePresentation = Effect.fn("CitationPresentation.choose")(function* (
   const vault = yield* settings.current;
   const { dataDir } = yield* zoteroPref.current;
   const declared = declaredPresentation(yield* metadataCache.fileCache(file));
-  const choice = yield* Effect.promise((signal) =>
-    openCitationPresentationModal(
-      app,
-      {
-        dataDir,
-        fileSystem,
-        bridge,
-        vaultStyleId:
-          vault["note.default-profile"].bindings["citation.references-style"],
-        vaultLocale: vault["citation.locale"] ?? "",
-        declared,
-      },
-      signal,
-    ),
+  const choice = yield* awaitModal<CitationPresentationChoice | null>(
+    (resolve) =>
+      openCitationPresentationModal(
+        app,
+        {
+          dataDir,
+          fileSystem,
+          bridge,
+          vaultStyleId:
+            vault["note.default-profile"].bindings["citation.references-style"],
+          vaultLocale: vault["citation.locale"] ?? "",
+          declared,
+        },
+        resolve,
+      ),
   );
   if (!choice) return;
-  yield* Effect.tryPromise({
-    try: () => applyCitationPresentation(app, file, choice),
-    catch: (cause) =>
-      new CitationPresentationWriteError({ path: file.path, cause }),
-  });
+  // Once confirmed, the save and its known outcome finish before unload.
+  yield* reportOutcome(
+    Effect.tryPromise({
+      try: () => applyCitationPresentation(app, file, choice),
+      catch: (cause) =>
+        new CitationPresentationWriteError({ path: file.path, cause }),
+    }),
+    {
+      success: () => undefined,
+      error: () => m.notice_citation_presentation_failed(),
+    },
+  ).pipe(Effect.uninterruptible);
 });

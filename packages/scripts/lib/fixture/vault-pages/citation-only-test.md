@@ -22,4 +22,6 @@ Better figures repay the effort [@rougierTenSimpleRules2014].
 5. Clear the language and confirm to return to the vault language.
 
 If the note cannot be written, confirmation shows the existing failure notice.
-The failed operation leaves the note's previous text in place.
+The failed operation leaves the note's previous text in place. If confirmation
+has started a save, disabling ZotLit waits for that save to finish. A failed save
+still shows its failure notice.
