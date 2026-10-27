@@ -470,7 +470,6 @@ export default defineConfig({
       // Legacy emitters, written before no-nanoevents. A file moves off this
       // list when its service converts to Effect.
       files: [
-        "src/services/pdf-annotation-editor/service.ts",
         "src/services/reader-session/session.ts",
         "src/views/library/item-drag.test.ts",
         "src/views/library/view.test.ts",
@@ -678,10 +677,7 @@ export default defineConfig({
     {
       // Legacy services, written before the rule. A file moves off this list
       // when its service converts to Effect (/obsidian-services).
-      files: [
-        "src/services/excerpt-image/display.ts",
-        "src/services/pdf-annotation-editor/service.ts",
-      ],
+      files: ["src/services/excerpt-image/display.ts"],
       rules: { "zotlit-services/no-legacy-service": "off" },
     },
     {

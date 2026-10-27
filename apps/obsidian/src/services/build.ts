@@ -1,12 +1,10 @@
 import { Effect, FileSystem } from "effect";
 import type { FileSystemAdapter } from "obsidian";
 
-import { passAborted } from "@/lib/abort-error";
 import { cliRunner } from "@/lib/cli-command";
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
 import { effectBridge, exitOver, valueOr } from "@/lib/effect-bridge";
-import { fromInstant } from "@/lib/effect-clock";
 import { buildRuntime } from "@/lib/effect-layer";
 import { Notifier } from "@/lib/notifier";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
@@ -103,12 +101,10 @@ import type { TemplateMigrationOptions } from "./template/migration";
 import { plainTemplate, plainTemplateMigration } from "./template/plain";
 import { plainUseLedger } from "./use-ledger/plain";
 import { UseLedger } from "./use-ledger/service";
-import { writeReadUse } from "./zotero-local-api/last-read";
 import { ZoteroLocalApi } from "./zotero-local-api/service";
 import { plainZoteroPref } from "./zotero-pref/plain";
 import { ZoteroPref } from "./zotero-pref/service";
 import { plainZoteroReads } from "./zotero-reads/plain";
-import { ZoteroReads } from "./zotero-reads/service";
 
 /** What the protocol handlers open: the note import's modals and the Attachment opener. */
 type ProtocolViews = Pick<ProtocolDeps, "noteImportView" | "opener">;
@@ -181,10 +177,7 @@ export async function buildServices(
   // The excerpt service is registered before the PDF reader, so the reader
   // hands its documents over through this one holder. A crop asks for a reader
   // document per resolution, and answers detached while the holder is empty.
-  let reader: PdfAnnotationEditor | undefined;
-  const readers: ExcerptReaderDocuments = {
-    borrow: (path) => reader?.borrowDocument(path) ?? null,
-  };
+  const readers: ExcerptReaderDocuments = { borrow: () => null };
   const runtime = buildRuntime(
     pluginLayer(
       plugin,
@@ -222,6 +215,11 @@ export async function buildServices(
             }),
         },
         protocol,
+        pdfEditor: {
+          revealAnnotation: (key) => void revealAnnotationInView(plugin, key),
+          blockedPress: blockedNotice,
+          readers,
+        },
         excerpt: {
           openStore: () => openExcerptStore(plugin.app.appId),
           readers,
@@ -233,7 +231,6 @@ export async function buildServices(
   );
   await runtime.context();
   const bridge = effectBridge(runtime);
-  const zoteroReadsService = runtime.runSync(ZoteroReads);
   const zoteroLocalApiService = runtime.runSync(ZoteroLocalApi);
   const container = new ServiceContainer(stack, (key, error) => {
     console.error(`Service "${key}" failed to initialize`, error);
@@ -320,61 +317,8 @@ export async function buildServices(
       capabilityNotices: () =>
         bindCapabilityNotices(bridge, runtime.runSync(CapabilityNotices)),
     })
-    .use({
-      pdfAnnotationEditor: ({
-        useLedger,
-        zoteroLocalApi,
-        attachmentResolver,
-        annotationRepository,
-        capabilityNotices,
-        libraryTagNames,
-        noteIndex,
-        settings,
-      }) => {
-        reader = new PdfAnnotationEditor({
-          recordRead: ({ attachmentKey, itemKey, serverID, instant }) => {
-            useLedger.record(itemKey, "read", instant);
-            void bridge.runPromiseExit(
-              writeReadUse({
-                attachmentKey,
-                instant: fromInstant(instant),
-                serverID,
-              }).pipe(
-                Effect.provideService(ZoteroReads, zoteroReadsService),
-                Effect.provideService(ZoteroLocalApi, zoteroLocalApi),
-              ),
-            );
-          },
-          app: plugin.app,
-          attachments: attachmentResolver,
-          annotations: annotationRepository,
-          bridge,
-          noteIndex,
-          libraryTagNames,
-          settings,
-          capabilityGestures: {
-            reportBlockedGesture: (attachmentKey) =>
-              capabilityNotices.reportBlockedGesture(attachmentKey),
-            allowEditing: () =>
-              void capabilityNotices.showEditingCapability().catch(passAborted),
-          },
-          markGestures: {
-            revealAnnotation: (annotationKey) =>
-              void revealAnnotationInView(plugin, annotationKey),
-            // The notice renders here, at the seam, as the card's own
-            // blocked press renders it.
-            blockedPress: (block) =>
-              blockedNotice(
-                block,
-                () =>
-                  void capabilityNotices
-                    .showEditingCapability()
-                    .catch(passAborted),
-              ),
-          },
-        });
-        return reader;
-      },
+    .useValue({
+      pdfAnnotationEditor: () => runtime.runSync(PdfAnnotationEditor),
     })
     .useValue({ libraryScope: () => plainLibraryScope(runtime) })
     .useValue({

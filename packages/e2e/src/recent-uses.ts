@@ -39,7 +39,7 @@ export async function verifyRecentUses(
   cleanup.defer(async () => {
     const restored = await obEval(
       vaultId,
-      `(async()=>{app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();for(let i=0;i<200&&!oldServices.bridge.closed();i++)await new Promise(r=>setTimeout(r,25));if(!oldServices.bridge.closed())throw new Error('The ZotLit services did not close');app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');return JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current);})()`,
+      `(async()=>{app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');for(let i=0;i<200&&!oldServices.bridge.closed();i++)await new Promise(r=>setTimeout(r,25));if(!oldServices.bridge.closed())throw new Error('The ZotLit services did not close');await oldServices.runtime.dispose();app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');return JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current);})()`,
     );
     expect(JSON.parse(restored)).toEqual(JSON.parse(saved).ledger ?? {});
   });

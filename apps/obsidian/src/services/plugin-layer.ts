@@ -117,6 +117,11 @@ import { layerBibliographyRender } from "./pandoc/render-cache";
 import type { BibliographyRender } from "./pandoc/render-cache";
 import { layerPandocEngine } from "./pandoc/service";
 import type { PandocEngine } from "./pandoc/service";
+import { layerPdfAnnotationEditor } from "./pdf-annotation-editor/service";
+import type {
+  PdfAnnotationEditor,
+  PdfAnnotationEditorPorts,
+} from "./pdf-annotation-editor/service";
 import { layerProfile } from "./profile/service";
 import type { Profile } from "./profile/service";
 import { layerProtocolHandlers } from "./protocol/register";
@@ -177,8 +182,10 @@ export function pluginLayer(
     excerpt,
     languagePack,
     protocol,
+    pdfEditor,
   }: {
     readonly capabilityNotices: CapabilityNoticePorts;
+    readonly pdfEditor: PdfAnnotationEditorPorts;
     readonly creation: InteractiveCreationPorts;
     /** The launch sheet, the browser and the native editor Customize opens. */
     readonly customize: CustomizePorts;
@@ -192,6 +199,7 @@ export function pluginLayer(
   },
 ): Layer.Layer<
   | GraphCitations
+  | PdfAnnotationEditor
   | LanguagePack
   | LocalBridge
   | Notifier
@@ -447,7 +455,12 @@ export function pluginLayer(
   // The Notifier is the one the layers share: the setting tab's Language Pack
   // toast shows through it.
   return registrations.pipe(
-    Layer.provideMerge(noteFeature),
+    Layer.provideMerge(
+      layerPdfAnnotationEditor(pdfEditor).pipe(
+        startingAs("PdfAnnotationEditor"),
+        Layer.provideMerge(noteFeature),
+      ),
+    ),
     Layer.provideMerge(NodeFileSystem.layer),
     Layer.merge(layerNotifier),
   );

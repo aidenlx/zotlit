@@ -37,7 +37,7 @@ import {
   activeNoteAtom,
   noteSourceAtom,
 } from "@/services/note-index/atoms";
-import type { PdfAnnotationEditor } from "@/services/pdf-annotation-editor/service";
+import { pdfSessionsAtom } from "@/services/pdf-annotation-editor/atoms";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { ReaderSessionHost } from "@/services/reader-session/session";
 import type { PluginSettings } from "@/services/settings/service";
@@ -146,7 +146,6 @@ export interface AnnotViewDeps extends QueryViewDeps {
   /** The shared item picker still consumes settings through its bridge. */
   bridge: Pick<EffectBridge, "runSync">;
   /** Every open Obsidian PDF view, as the Reader Session it exposes. */
-  pdfReaders: Pick<PdfAnnotationEditor, "sessionFor" | "on">;
   itemLookup: Pick<ItemLookupHandle, "openSession">;
   settings: Pick<PluginSettings["Service"], "current">;
   /** The plugin's view registry, which holds each leaf's Follow Mode state. */
@@ -529,14 +528,13 @@ export class AnnotationView extends ItemView implements HistorySurface {
     );
 
     opened.defer(
-      this.#deps.pdfReaders.on("session-added", (filePath) => {
-        if (
-          this.#followMode === "active-tab" &&
-          this.#deps.app.workspace.getActiveFile()?.path === filePath
-        ) {
-          this.#reload();
-        }
-      }),
+      registry.subscribe(
+        pdfSessionsAtom,
+        () => {
+          if (this.#followMode === "active-tab") this.#reload();
+        },
+        { immediate: true },
+      ),
     );
 
     const windowFocus = registerMigratingWindowEvent(
@@ -817,9 +815,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * Attachments that keep it.
    */
   #activePdfSession(): ReaderSession | null {
-    return this.#deps.pdfReaders.sessionFor(
-      this.#deps.app.workspace.getMostRecentLeaf()?.view,
-    );
+    const view = this.#deps.app.workspace.getMostRecentLeaf()?.view;
+    return view
+      ? (this.#deps.registry.get(pdfSessionsAtom).get(view) ?? null)
+      : null;
   }
 
   #loadTarget(target: LoadTarget | null): void {
