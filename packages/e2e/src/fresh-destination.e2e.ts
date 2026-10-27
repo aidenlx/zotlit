@@ -89,7 +89,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       view: {
         path: await obRun(vaultId, ({ zotlit }) =>
           zotlit.services.bridge.runSync(
-            zotlit.services.profileService.defaultDocumentPath,
+            zotlit.services.profile.defaultDocumentPath,
           ),
         ),
       },
@@ -154,7 +154,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
         vaultId,
         async ({ zotlit }) => {
           return zotlit.services.bridge.runSync(
-            zotlit.services.profileService.profiles,
+            zotlit.services.profile.profiles,
           ).length;
         },
         undefined,
@@ -237,7 +237,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       vaultId,
       async ({ zotlit }) => {
         return zotlit.services.bridge
-          .runSync(zotlit.services.profileService.profiles)
+          .runSync(zotlit.services.profile.profiles)
           .some((p) => p.label === "Books");
       },
       undefined,
@@ -247,7 +247,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       vaultId,
       async ({ zotlit }) => {
         return zotlit.services.bridge
-          .runSync(zotlit.services.profileService.profiles)
+          .runSync(zotlit.services.profile.profiles)
           .find((p) => p.label === "Books");
       },
       undefined,

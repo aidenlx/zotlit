@@ -120,7 +120,7 @@ wikilink as an indexed citation too:
 According to @Hensher2011, the method compares with [[literatures/wangMutationalClinicalSpectrum2020a]].
 
 
-## Citation search and insertion (#1857)
+## Citation search and insertion
 
 Use the `all` Scope Case. In Source mode, put the cursor on a new line below
 this section. Repeat the following steps with the inline `[@` picker and the

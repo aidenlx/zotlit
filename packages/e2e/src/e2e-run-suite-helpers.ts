@@ -335,7 +335,7 @@ async function saveMatch(match: unknown): Promise<void> {
         JSON.stringify(
           (() => {
             const match = zotlit.services.bridge
-              .runSync(zotlit.services.profileService.profiles)
+              .runSync(zotlit.services.profile.profiles)
               .find((p) => p.id === booksProfileId)?.match;
             return match && "tree" in match ? match.tree : undefined;
           })(),
@@ -375,7 +375,7 @@ async function writeMatch(
         JSON.stringify(
           (() => {
             const match = zotlit.services.bridge
-              .runSync(zotlit.services.profileService.profiles)
+              .runSync(zotlit.services.profile.profiles)
               .find((p) => p.id === profileId)?.match;
             return match && "tree" in match ? match.tree : undefined;
           })(),

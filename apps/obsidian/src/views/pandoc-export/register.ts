@@ -1,4 +1,5 @@
 import { Cause, Effect, FileSystem, Schema } from "effect";
+import type { Context } from "effect";
 // Registers the built-in export command and drives one export end to end:
 // modal → resolution → bibliography → engine → chosen destination.
 import { basename, join } from "node:path";
@@ -15,7 +16,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { Notifier, withProgress } from "@/lib/notifier";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
 import { ZoteroHttp } from "@/lib/zotero-http";
-import type { CitationLookup } from "@/services/citation-index/lookup-service";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
 import { CitationParse } from "@/services/citation-parse/service";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
@@ -36,36 +37,40 @@ import { describeError, exportCitedDocument } from "@/services/pandoc/export";
 import type { ExportPorts } from "@/services/pandoc/export";
 import { resolveInstalledStyle } from "@/services/pandoc/styles";
 import type { CslStyleRequest } from "@/services/pandoc/styles";
-import type { Profile } from "@/services/profile/service";
+import { Profile } from "@/services/profile/service";
 import type { PluginSettings } from "@/services/settings/service";
-import type { ZoteroPref } from "@/services/zotero-pref/service";
-import type { ZoteroReads } from "@/services/zotero-reads/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import type { PandocExportChoices } from "./modal";
 import { openPandocExportModal } from "./modal";
 import { engineMissingMessage, exportFailureMessage } from "./notices";
 import type { ExportProblem } from "./notices";
 
+/** The services an export reads. */
+export type PandocExportServices =
+  | CitationLookup
+  | Profile
+  | ZoteroPref
+  | ZoteroReads;
+
 export interface PandocExportDeps {
   citationParse: Pick<CitationParse["Service"], "parse">;
   app: App;
   fileSystem: FileSystem.FileSystem;
-  db: Pick<ZoteroReads["Service"], "reads">;
-  /** Resolves the literal citation keys of the exported document. */
-  citationLookup: Pick<CitationLookup["Service"], "read">;
   pandocEngine: Pick<
     ManagedBinaryApi<CitationEngine>,
     "getStatus" | "getEngine"
   >;
-  zoteroPref: Pick<ZoteroPref["Service"], "current" | "get">;
   /** The `ZoteroHttp` loopback client the bibliography is fetched over. */
   zoteroHttp: ZoteroHttp["Service"];
   settings: Pick<PluginSettings["Service"], "current">;
   bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
-  profile: Pick<Profile["Service"], "loaded" | "profileOf">;
   notifier: Notifier["Service"];
   /** Opens the settings page the engine install lives on. */
   openSettings: () => void;
+  /** The services the command callback runs each export with. */
+  context: Context.Context<PandocExportServices>;
 }
 
 export function registerPandocExport(
@@ -144,6 +149,7 @@ export function runPandocExport(
         ),
       ),
       Effect.provideService(Notifier, deps.notifier),
+      Effect.provideContext(deps.context),
     ),
   );
 }
@@ -157,16 +163,24 @@ export type PandocExportOutcome =
   | { kind: "exported"; destination: string; styleTitle: string };
 
 /** One export, from the dialog to the written file. */
-export const exportWithCitations = Effect.fn("exportWithCitations")(
-  (file: TFile, deps: PandocExportDeps) =>
-    prepareExport(file, deps).pipe(Effect.flatMap(({ run }) => run)),
+export const exportWithCitations = Effect.fn(
+  "PandocExport.exportWithCitations",
+)((file: TFile, deps: PandocExportDeps) =>
+  prepareExport(file, deps).pipe(Effect.flatMap(({ run }) => run)),
 );
 
-const prepareExport = Effect.fn("prepareExport")(function* (
+const prepareExport = Effect.fn("PandocExport.prepareExport")(function* (
   file: TFile,
   deps: PandocExportDeps,
-): Effect.fn.Return<{ run: Effect.Effect<PandocExportOutcome> }> {
-  const { app, bridge, fileSystem, pandocEngine, zoteroPref, settings } = deps;
+): Effect.fn.Return<
+  { run: Effect.Effect<PandocExportOutcome> },
+  never,
+  PandocExportServices
+> {
+  const { app, bridge, fileSystem, pandocEngine, settings } = deps;
+  const zoteroPref = yield* ZoteroPref;
+  const citationLookup = yield* CitationLookup;
+  const db = yield* ZoteroReads;
   const pref = yield* zoteroPref.current;
   if ((yield* pandocEngine.getStatus).kind !== "installed")
     return { run: Effect.succeed({ kind: "engine-missing" }) };
@@ -176,7 +190,7 @@ const prepareExport = Effect.fn("prepareExport")(function* (
     app.metadataCache,
     file,
     profileReaderOf(
-      deps.profile,
+      yield* Profile,
       Effect.runSyncWith(yield* Effect.context<never>()),
     ),
   );
@@ -277,7 +291,12 @@ const prepareExport = Effect.fn("prepareExport")(function* (
             format: choices.format,
             ...engineStyle,
           },
-          exportPorts(deps, engine, { ...pref, localApiEnabled }),
+          exportPorts(deps, engine, {
+            ...pref,
+            localApiEnabled,
+            citationLookup,
+            db,
+          }),
         ).pipe(Effect.provideService(CitationParse, deps.citationParse));
       }).pipe(
         // This outcome keeps the engine's actual detail; its fallback depends
@@ -335,26 +354,36 @@ const prepareExport = Effect.fn("prepareExport")(function* (
  *   the requested style is unusable — the document stops rather than exporting
  *   in another style.
  */
-const exportPresentation = Effect.fn("exportPresentation")(function* (
-  deps: PandocExportDeps,
-  dataDir: string,
-  request: CslStyleRequest,
-) {
-  const style = yield* resolveInstalledStyle(dataDir, request).pipe(
-    Effect.provideService(FileSystem.FileSystem, deps.fileSystem),
-  );
-  if (style.kind === "installed")
-    return { styleXml: style.xml, title: style.title };
-  if (style.kind === "failed") return null;
-  return { locale: style.locale, title: citationStyleLabel() };
-});
+const exportPresentation = Effect.fn("PandocExport.exportPresentation")(
+  function* (
+    deps: PandocExportDeps,
+    dataDir: string,
+    request: CslStyleRequest,
+  ) {
+    const style = yield* resolveInstalledStyle(dataDir, request).pipe(
+      Effect.provideService(FileSystem.FileSystem, deps.fileSystem),
+    );
+    if (style.kind === "installed")
+      return { styleXml: style.xml, title: style.title };
+    if (style.kind === "failed") return null;
+    return { locale: style.locale, title: citationStyleLabel() };
+  },
+);
 
 function exportPorts(
   deps: PandocExportDeps,
   engine: CitationEngine,
-  pref: { dataDir: string; httpPort: number | null; localApiEnabled: boolean },
+  pref: {
+    dataDir: string;
+    httpPort: number | null;
+    localApiEnabled: boolean;
+    /** Resolves the literal citation keys of the exported document. */
+    citationLookup: CitationLookup["Service"];
+    db: ZoteroReads["Service"];
+  },
 ): ExportPorts {
-  const { app, citationLookup, db } = deps;
+  const { app } = deps;
+  const { citationLookup, db } = pref;
   return {
     engine,
     dataDir: () => pref.dataDir,
@@ -370,8 +399,8 @@ function exportPorts(
   };
 }
 
-const readItemRefs = Effect.fn("export.readItemRefs")(
-  function* (db: PandocExportDeps["db"], indexedKeys: readonly string[]) {
+const readItemRefs = Effect.fn("PandocExport.readItemRefs")(
+  function* (db: ZoteroReads["Service"], indexedKeys: readonly string[]) {
     const libraries = yield* db.reads.Libraries({});
     const refs = new Map<string, BibliographyItemRef>();
     for (const indexedKey of new Set(indexedKeys)) {

@@ -1314,7 +1314,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         vaultId,
         async ({ zotlit }) => {
           await zotlit.services.bridge.runPromise(
-            zotlit.services.profileService.restoreDefault,
+            zotlit.services.profile.restoreDefault,
           );
         },
         undefined,
@@ -1553,7 +1553,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           ])
             for (const leaf of app.workspace.getLeavesOfType(type))
               leaf.detach();
-          const { bridge, profileService: profile } = zotlit.services;
+          const { bridge, profile } = zotlit.services;
           if (kind === "built-in")
             await bridge.runPromise(profile.restoreDefault);
           else await bridge.runPromise(profile.materializeDefault);
@@ -1627,7 +1627,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             mainSamples,
             customized: !!app.vault.getFileByPath(
               zotlit.services.bridge.runSync(
-                zotlit.services.profileService.defaultDocumentPath,
+                zotlit.services.profile.defaultDocumentPath,
               ),
             )!,
           };
@@ -1672,7 +1672,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       async ({ app: host, zotlit }) => {
         const app = host as WalkthroughApp;
 
-        const { bridge, profileService: profile } = zotlit.services;
+        const { bridge, profile } = zotlit.services;
         await bridge.runPromise(profile.materializeDefault);
         return await app.vault.read(
           app.vault.getFileByPath(bridge.runSync(profile.defaultDocumentPath))!,
@@ -1687,7 +1687,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         async ({ app: host, zotlit }, { original }) => {
           const app = host as WalkthroughApp;
 
-          const { bridge, profileService: profile } = zotlit.services;
+          const { bridge, profile } = zotlit.services;
           await app.vault.modify(
             app.vault.getFileByPath(
               bridge.runSync(profile.defaultDocumentPath),
@@ -1703,7 +1703,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       async ({ app: host, zotlit, page }) => {
         const app = host as WalkthroughApp;
 
-        const { bridge, profileService: profile } = zotlit.services;
+        const { bridge, profile } = zotlit.services;
         const file = app.vault.getFileByPath(
           bridge.runSync(profile.defaultDocumentPath),
         )!;
@@ -1732,7 +1732,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             (leaf) =>
               leaf.view.file?.path ===
               zotlit.services.bridge.runSync(
-                zotlit.services.profileService.defaultDocumentPath,
+                zotlit.services.profile.defaultDocumentPath,
               ),
           )?.view;
         const doc = view?.contentEl?.ownerDocument;
@@ -1771,7 +1771,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             (leaf) =>
               leaf.view.file?.path ===
               zotlit.services.bridge.runSync(
-                zotlit.services.profileService.defaultDocumentPath,
+                zotlit.services.profile.defaultDocumentPath,
               ),
           )
           ?.view?.contentEl?.ownerDocument.querySelector<HTMLElement>(".prompt")
@@ -1803,7 +1803,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
               (leaf) =>
                 leaf.view.file?.path ===
                 zotlit.services.bridge.runSync(
-                  zotlit.services.profileService.defaultDocumentPath,
+                  zotlit.services.profile.defaultDocumentPath,
                 ),
             )
             ?.view?.contentEl?.ownerDocument.querySelector<HTMLElement>(
@@ -1845,7 +1845,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                     (leaf) =>
                       leaf.view.file?.path ===
                       zotlit.services.bridge.runSync(
-                        zotlit.services.profileService.defaultDocumentPath,
+                        zotlit.services.profile.defaultDocumentPath,
                       ),
                   )?.view?.contentEl?.ownerDocument,
             )
@@ -1862,7 +1862,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                     (leaf) =>
                       leaf.view.file?.path ===
                       zotlit.services.bridge.runSync(
-                        zotlit.services.profileService.defaultDocumentPath,
+                        zotlit.services.profile.defaultDocumentPath,
                       ),
                   )?.view?.contentEl?.ownerDocument,
             )?.view.contentEl)!.querySelector<HTMLElement>(
@@ -1891,7 +1891,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                       (leaf) =>
                         leaf.view.file?.path ===
                         zotlit.services.bridge.runSync(
-                          zotlit.services.profileService.defaultDocumentPath,
+                          zotlit.services.profile.defaultDocumentPath,
                         ),
                     )?.view?.contentEl?.ownerDocument,
               )?.view.contentEl)!.querySelectorAll<HTMLElement>(".callout p"),
@@ -1924,7 +1924,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
 
         const { press, until, waitFor } = page;
         await using cleanup = new AsyncDisposableStack();
-        const { bridge, profileService: profile } = zotlit.services;
+        const { bridge, profile } = zotlit.services;
         await bridge.runPromise(profile.materializeDefault);
         const file = app.vault.getFileByPath(
           bridge.runSync(profile.defaultDocumentPath),
@@ -2106,7 +2106,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           );
         });
         const profile = await services.bridge.runPromise(
-          services.profileService.create({
+          services.profile.create({
             label: "Path preview",
             bindings: { folder: "path-notes" },
           }),
@@ -2114,7 +2114,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         cleanup.defer(async () => {
           detach();
           await services.bridge.runPromise(
-            services.profileService.delete(profile.id, "default"),
+            services.profile.delete(profile.id, "default"),
           );
         });
         const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
@@ -2203,9 +2203,8 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         // The Profile takes the saved document once the template recompiles.
         await waitFor(
           () =>
-            services.bridge.runSync(
-              services.profileService.resolveProfile(profile.id),
-            )?.bindings["note.literature-folder"],
+            services.bridge.runSync(services.profile.resolveProfile(profile.id))
+              ?.bindings["note.literature-folder"],
           "Reading list",
           "Saved folder",
         );
@@ -2397,7 +2396,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       async ({ app: host, zotlit }) => {
         const app = host as WalkthroughApp;
 
-        const { bridge, profileService: profile } = zotlit.services;
+        const { bridge, profile } = zotlit.services;
         const books = await bridge.runPromise(
           profile.create({
             label: "Books",
@@ -2586,7 +2585,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           const body = await app.vault.read(moved);
           const left = !!app.vault.getAbstractFileByPath(createdPath);
           await app.vault.delete(moved);
-          const { bridge, profileService: profile } = zotlit.services;
+          const { bridge, profile } = zotlit.services;
           await app.vault.delete(
             app.vault.getFileByPath(
               bridge.runSync(profile.profiles).find((p) => p.id === createdId)!

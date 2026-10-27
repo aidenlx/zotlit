@@ -1,10 +1,11 @@
 import { missingStyleChanges } from "@/services/pandoc/render-cache";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { Notifier } from "@/lib/notifier";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { delay } from "@std/async";
-import { DateTime, Effect, FileSystem, Layer, Stream } from "effect";
+import { Context, DateTime, Effect, FileSystem, Layer, Stream } from "effect";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -743,7 +744,6 @@ function exportAdapter({
   return {
     citationParse: inProcessParseClient,
     fileSystem: Effect.runSync(FileSystem.FileSystem.pipe(Effect.provide(NodeFileSystem.layer))),
-    profile: { loaded: Effect.succeed(true), profileOf: (file) => Effect.sync(() => profileReader(profileSettings, harness.metadataCache).profileOf(file)) },
     notifier,
     app: stubService<App>("App", {
       metadataCache: harness.metadataCache as unknown as MetadataCache,
@@ -754,13 +754,7 @@ function exportAdapter({
         cachedRead: (file: TFile) => harness.vault.cachedRead(file),
       }),
     }),
-    db: harness.db,
-    citationLookup: harness.lookup.runtime.runSync(CitationLookup),
     pandocEngine: pandocEngineHandle(engine).binary,
-    zoteroPref: stubService<PandocExportDeps["zoteroPref"]>("ZoteroPref", {
-      current: Effect.succeed(stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", { dataDir, httpPort: 23119 })),
-      get: () => Effect.succeed(true),
-    }),
     // The bibliography fetch is mocked, so nothing reaches Zotero.
     zoteroHttp: fakeFetchClient(() => {
       throw new Error("No Zotero in this fixture");
@@ -768,6 +762,23 @@ function exportAdapter({
     settings,
     bridge: settings.bridge,
     openSettings: () => undefined,
+    context: Context.make(
+      ZoteroPref,
+      stubService<ZoteroPref["Service"]>("ZoteroPref", {
+        current: Effect.succeed(stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", { dataDir, httpPort: 23119 })),
+        get: () => Effect.succeed(true),
+      }),
+    ).pipe(
+      Context.add(ZoteroReads, stubService<ZoteroReads["Service"]>("ZoteroReads", { reads: harness.db.reads })),
+      Context.add(CitationLookup, harness.lookup.runtime.runSync(CitationLookup)),
+      Context.add(
+        Profile,
+        stubService<Profile["Service"]>("Profile", {
+          loaded: Effect.succeed(true),
+          profileOf: (file) => Effect.sync(() => profileReader(profileSettings, harness.metadataCache).profileOf(file)),
+        }),
+      ),
+    ),
   };
 }
 

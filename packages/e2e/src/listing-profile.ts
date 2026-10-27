@@ -17,7 +17,7 @@ export async function useListingProfile(
   await obRun(
     vaultId,
     async ({ app, zotlit, page }, { restore }) => {
-      const { bridge, profileService: profile } = zotlit.services;
+      const { bridge, profile } = zotlit.services;
       if (restore) await bridge.runPromise(profile.restoreDefault);
       const listed = page.listAnnotations(
         bridge.runSync(profile.getBuiltInSource),
@@ -34,7 +34,7 @@ export async function useListingProfile(
     vaultId,
     ({ zotlit }) =>
       !!zotlit.services.bridge.runSync(
-        zotlit.services.profileService.resolveProfile("default"),
+        zotlit.services.profile.resolveProfile("default"),
       )?.document,
     undefined,
     { what: "The default Profile did not read its document" },

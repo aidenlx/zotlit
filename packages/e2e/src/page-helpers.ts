@@ -620,12 +620,12 @@ export function createPageHelpers(app: PageApp) {
     ) {
       const services = getServices();
       const profilePath = services.bridge.runSync(
-        services.profileService.defaultDocumentPath,
+        services.profile.defaultDocumentPath,
       );
       const existing = app.vault.getFileByPath(profilePath);
       const original = existing
         ? await app.vault.read(existing)
-        : services.bridge.runSync(services.profileService.getBuiltInSource);
+        : services.bridge.runSync(services.profile.getBuiltInSource);
       const header = "--- zotlit:annotation ---";
       if (!original.includes(header))
         throw new Error("The default profile has no annotation section");

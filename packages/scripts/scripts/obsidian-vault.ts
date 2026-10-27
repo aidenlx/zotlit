@@ -681,7 +681,7 @@ async function linkFixture(vaultId: string): Promise<void> {
   const dataDir = fixtureLayout.dataDir;
   const configured = await waitFor(async () => {
     const answer = await obEval(
-      `{const services=app.plugins.plugins.${pluginId}.services;const pref=services.zoteroPrefService;services.bridge.runSync(pref.setProfileDir(${JSON.stringify(profileDir)}));services.bridge.runSync(pref.setDataDir(${JSON.stringify(dataDir)}));"configured"}`,
+      `{const services=app.plugins.plugins.${pluginId}.services;const pref=services.zoteroPref;services.bridge.runSync(pref.setProfileDir(${JSON.stringify(profileDir)}));services.bridge.runSync(pref.setDataDir(${JSON.stringify(dataDir)}));"configured"}`,
       vaultId,
     ).catch(rethrowUnreachable);
     return answer === "configured";
@@ -704,7 +704,7 @@ async function linkFixture(vaultId: string): Promise<void> {
 
   const refreshed = await waitFor(async () => {
     const raw = await obEval(
-      `(async()=>{const services=app.plugins.plugins.${pluginId}.services;await services.bridge.runPromise(services.zoteroReads.refresh).catch(()=>{});return JSON.stringify({profileDir:services.bridge.runSync(services.zoteroPrefService.current).resolvedProfileDir,databasePath:services.bridge.runSync(services.zoteroPrefService.current).databasePath,dbState:services.bridge.runSync(services.zoteroReads.current).state})})()`,
+      `(async()=>{const services=app.plugins.plugins.${pluginId}.services;await services.bridge.runPromise(services.zoteroReads.refresh).catch(()=>{});return JSON.stringify({profileDir:services.bridge.runSync(services.zoteroPref.current).resolvedProfileDir,databasePath:services.bridge.runSync(services.zoteroPref.current).databasePath,dbState:services.bridge.runSync(services.zoteroReads.current).state})})()`,
       vaultId,
     ).catch(rethrowUnreachable);
     if (!raw) return false;
@@ -741,7 +741,7 @@ async function setFixtureWriteAuthorization(
 
 async function readFixtureLink(vaultId: string): Promise<FixtureLinkReport> {
   const raw = await obEval(
-    `{const services=app.plugins.plugins.${pluginId}.services;JSON.stringify({profileDir:services.bridge.runSync(services.zoteroPrefService.current).resolvedProfileDir,databasePath:services.bridge.runSync(services.zoteroPrefService.current).databasePath,dbState:services.bridge.runSync(services.zoteroReads.current).state})}`,
+    `{const services=app.plugins.plugins.${pluginId}.services;JSON.stringify({profileDir:services.bridge.runSync(services.zoteroPref.current).resolvedProfileDir,databasePath:services.bridge.runSync(services.zoteroPref.current).databasePath,dbState:services.bridge.runSync(services.zoteroReads.current).state})}`,
     vaultId,
   );
   return JSON.parse(raw) as FixtureLinkReport;

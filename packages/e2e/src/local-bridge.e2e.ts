@@ -57,7 +57,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ zotlit }) => {
           return zotlit.services.bridge.runSync(
-            zotlit.services.profileService.defaultDocumentPath,
+            zotlit.services.profile.defaultDocumentPath,
           );
         },
         undefined,
@@ -191,7 +191,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ zotlit }) => {
           await zotlit.services.bridge.runPromise(
-            zotlit.services.profileService.restoreDefault,
+            zotlit.services.profile.restoreDefault,
           );
         },
         undefined,
@@ -480,7 +480,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           async ({ zotlit }, { unsupported }) => {
             return (
               (await zotlit.services.bridge.runPromise(
-                zotlit.services.profileService.getSource("default"),
+                zotlit.services.profile.getSource("default"),
               )) === unsupported
             );
           },

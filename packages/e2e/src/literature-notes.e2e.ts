@@ -165,7 +165,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         freshId,
         async ({ zotlit }) => {
           return zotlit.services.bridge.runSync(
-            zotlit.services.profileService.profiles,
+            zotlit.services.profile.profiles,
           ).length;
         },
         undefined,
@@ -756,7 +756,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       async ({ zotlit }) => {
         return (
           zotlit.services.bridge.runSync(
-            zotlit.services.profileService.resolveProfile("default"),
+            zotlit.services.profile.resolveProfile("default"),
           )?.document === undefined
         );
       },
@@ -1629,7 +1629,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return {
           hostname: settings["server.hostname"],
           port: services.bridge.runSync(services.localServer.effectivePort),
-          sourceId: services.bridge.runSync(services.zoteroPrefService.current)
+          sourceId: services.bridge.runSync(services.zoteroPref.current)
             .sourceId,
         };
       },
@@ -1848,7 +1848,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ zotlit }, { articlesProfileId }) => {
         return !zotlit.services.bridge
-          .runSync(zotlit.services.profileService.profiles)
+          .runSync(zotlit.services.profile.profiles)
           .some((p) => p.id === articlesProfileId);
       },
       { articlesProfileId: suite.articlesProfile.id },
@@ -2204,7 +2204,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ zotlit }, { booksProfileId }) => {
         return !zotlit.services.bridge
-          .runSync(zotlit.services.profileService.profiles)
+          .runSync(zotlit.services.profile.profiles)
           .some((p) => p.id === booksProfileId);
       },
       { booksProfileId: booksProfile.id },
@@ -2268,9 +2268,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           var settings = services.bridge.runSync(services.settings.current);
           return {
             port: services.bridge.runSync(services.localServer.effectivePort),
-            sourceId: services.bridge.runSync(
-              services.zoteroPrefService.current,
-            ).sourceId,
+            sourceId: services.bridge.runSync(services.zoteroPref.current)
+              .sourceId,
             workbench: settings["server.workbench"],
           };
         },

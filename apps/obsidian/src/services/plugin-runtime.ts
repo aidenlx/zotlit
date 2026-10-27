@@ -1,3 +1,4 @@
+// Composes the plugin's Effect runtime and binds the services the plugin shell and debug surface read.
 import { Effect, FileSystem } from "effect";
 
 import { cliRunner } from "@/lib/cli-command";
@@ -20,6 +21,7 @@ import {
   annotationCardShown,
   revealAnnotationInView,
 } from "@/views/annot-view/register";
+import type { PandocExportServices } from "@/views/pandoc-export/register";
 import {
   profileCustomization,
   saveProfileCustomization,
@@ -227,7 +229,7 @@ export async function createPluginRuntime(
   const citationLookup = runtime.runSync(CitationLookup);
   const citationIndex = runtime.runSync(CitationIndex);
   const useLedger = runtime.runSync(UseLedger);
-  const zoteroPrefService = runtime.runSync(ZoteroPref);
+  const zoteroPref = runtime.runSync(ZoteroPref);
   const notifier = runtime.runSync(Notifier);
   const pandocEngine = runtime.runSync(PandocEngine);
   const noteFeature: NoteFeatureHandle = bindNoteFeature(
@@ -268,7 +270,7 @@ export async function createPluginRuntime(
     workspace: runtime.runSync(Workspace),
     metadataCache: runtime.runSync(MetadataCache),
     notifier,
-    zoteroPrefService,
+    zoteroPref,
     fileSystem: runtime.runSync(FileSystem.FileSystem),
     settings,
     useLedger,
@@ -303,7 +305,7 @@ export async function createPluginRuntime(
     pdfAnnotationEditor: runtime.runSync(PdfAnnotationEditor),
     libraryScope: runtime.runSync(LibraryScope),
     query: bindQuery(bridge, runtime.runSync(QueryService)),
-    profileService: runtime.runSync(Profile),
+    profile: runtime.runSync(Profile),
     localBridge: bindLocalBridge(bridge, runtime.runSync(LocalBridge)),
     customize: bindCustomize(bridge, runtime.runSync(Customize)),
     templateData: bindTemplateData(
@@ -329,15 +331,13 @@ export async function createPluginRuntime(
       },
     ),
     citationLookup,
-    citationParseService: runtime.runSync(CitationParse),
+    citationParse: runtime.runSync(CitationParse),
     citationIndex,
     citationSuggestServices: { citationLookup, citationIndex, useLedger },
     pandocExportServices: {
-      db: zoteroReads,
-      citationLookup,
-      zoteroPref: zoteroPrefService,
       pandocEngine,
       notifier,
+      context: runtime.runSync(Effect.context<PandocExportServices>()),
     },
     pandocEngine: bindManagedBinary(bridge, pandocEngine),
     citationText: runtime.runSync(CitationText),

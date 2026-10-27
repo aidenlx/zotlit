@@ -1059,7 +1059,7 @@ export async function verifyRecentUses(
       app.workspace.protocolHandler.handlers.get("zotlit/update")!({
         action: "zotlit/update",
         item: "1",
-        "source-id": s.bridge.runSync(s.zoteroPrefService.current).sourceId!,
+        "source-id": s.bridge.runSync(s.zoteroPref.current).sourceId!,
         scope: "metadata",
       });
       await until(
@@ -1091,7 +1091,7 @@ export async function verifyRecentUses(
       app.workspace.protocolHandler.handlers.get("zotlit/open")!({
         action: "zotlit/open",
         item: "1",
-        "source-id": s.bridge.runSync(s.zoteroPrefService.current).sourceId!,
+        "source-id": s.bridge.runSync(s.zoteroPref.current).sourceId!,
       });
       await until(
         "Companion open",

@@ -106,7 +106,7 @@ export type ExcerptPdfQueue = Effect.Success<
 >;
 
 /** Admission, preflight, and ordered rendering share the owner's Scope. */
-export const makeExcerptPdfQueue = Effect.fn("makeExcerptPdfQueue")(function* (
+export const makeExcerptPdfQueue = Effect.fn("ExcerptPdfQueue.make")(function* (
   options: { limit?: number; render?: number; preflight?: number } = {},
 ) {
   const scope = yield* Scope.Scope;

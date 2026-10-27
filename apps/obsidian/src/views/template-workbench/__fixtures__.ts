@@ -15,6 +15,7 @@ import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
+import { vaultError } from "@/lib/vault-errors";
 import type { ViewServices } from "@/lib/view-atoms";
 import { makeViewRegistry } from "@/lib/view-atoms";
 import type { QueryHandle } from "@/services/item-query/handle";
@@ -298,6 +299,11 @@ export function makeWorkbenchHost(
       stubService<Vault["Service"]>("Vault", {
         getFileByPath: (path) =>
           Effect.sync(() => deps.app!.vault.getFileByPath(path)),
+        read: (file) =>
+          Effect.tryPromise({
+            try: () => deps.app!.vault.read(file),
+            catch: vaultError("read", file.path),
+          }),
       }),
     ),
     Context.add(

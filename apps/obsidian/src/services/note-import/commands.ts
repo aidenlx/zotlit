@@ -7,8 +7,8 @@ import type { App } from "obsidian";
 import { scopedBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
-import { reportOutcome } from "@/lib/notifier";
-import type { Notifier, OutcomeCopy } from "@/lib/notifier";
+import { withOutcome } from "@/lib/notifier";
+import type { Notifier } from "@/lib/notifier";
 import { PluginHost } from "@/lib/plugin-host";
 import { withLiteratureNote } from "@/services/note-feature/actions";
 
@@ -25,30 +25,15 @@ import type { NoteImportView } from "./view";
 type ImportCommandServices = BatchImportServices | Notifier;
 
 /**
- * Run `task`, report its outcome as {@link reportOutcome} does, and end with
- * that outcome. It shows no loading message, so no notice shows while a
- * confirm the import opens waits for the user.
- */
-const reported = <A, E, R>(
-  task: Effect.Effect<A, E, R>,
-  copy: OutcomeCopy<A>,
-): Effect.Effect<A, E, R | Notifier> =>
-  Effect.gen(function* () {
-    const exit = yield* Effect.exit(task);
-    yield* reportOutcome(exit, copy);
-    return yield* exit;
-  });
-
-/**
  * Import all child and standalone notes in the Library Scope. Answers the
  * import's outcome, or fails with what failed; the notice reports either.
  * An interrupt (unload) ends it with no outcome and no notice.
  */
-export const importAllNotes = Effect.fn("importAllNotes")(function* (
+export const importAllNotes = Effect.fn("NoteImport.importAllNotes")(function* (
   ports: BatchImportPorts,
   app: App,
 ) {
-  return yield* reported(
+  return yield* withOutcome(
     runBatchImportAll(ports),
     importNotices(batchImportAllToast({ app })),
   );
@@ -58,16 +43,14 @@ export const importAllNotes = Effect.fn("importAllNotes")(function* (
  * Import the child notes of the item `indexedKey` names, as
  * {@link importAllNotes} does: `null` when the key names no live item.
  */
-export const importChildNotes = Effect.fn("importChildNotes")(function* (
-  ports: BatchImportPorts,
-  app: App,
-  indexedKey: string,
-) {
-  return yield* reported(
-    runChildImportByKey(ports, indexedKey),
-    importNotices(childImportToast({ app })),
-  );
-});
+export const importChildNotes = Effect.fn("NoteImport.importChildNotes")(
+  function* (ports: BatchImportPorts, app: App, indexedKey: string) {
+    return yield* withOutcome(
+      runChildImportByKey(ports, indexedKey),
+      importNotices(childImportToast({ app })),
+    );
+  },
+);
 
 /**
  * Start a note import command from a callback over `context`. Its notice

@@ -1113,7 +1113,7 @@ export class AnnotationsLayout extends Component {
 
   // #endregion
 
-  /** The file inputs one record on screen resolves through ({@link savedExcerptRequest}). */
+  /** The file inputs one record on screen resolves through ({@link makeExcerptRequestCommand}). */
   #excerptRequest(input: {
     annotation: AnnotationRecord;
     source: AnnotationSource | null;

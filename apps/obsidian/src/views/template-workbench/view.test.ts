@@ -165,8 +165,9 @@ function setup(
     updateHeader: vi.fn(),
   });
   Object.defineProperty(leaf, "app", { value: app });
-  const host = makeWorkbenchHost(
-    stubService<TemplateWorkbenchDeps>("TemplateWorkbenchDeps", {
+  const host = makeWorkbenchHost({
+    app,
+    ...stubService<TemplateWorkbenchDeps>("TemplateWorkbenchDeps", {
       settings: stubService<TemplateWorkbenchDeps["settings"]>(
         "PluginSettings",
         {
@@ -201,7 +202,7 @@ function setup(
       }),
       ...deps,
     }),
-  );
+  });
   const view = new TestTemplateWorkbenchView(leaf, host.deps);
   host.own(() => view.close());
   leaf.view = view;

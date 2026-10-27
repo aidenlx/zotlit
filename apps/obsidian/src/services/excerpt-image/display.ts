@@ -230,9 +230,9 @@ export const layerExcerptDisplays = Layer.effect(
     const resolve = Effect.fnUntraced(function* (request: ExcerptRequest) {
       const outcome = yield* images.resolve(request);
       if (outcome.kind === "unavailable") {
-        yield* Effect.logDebug("Excerpt display has no image", {
-          annotationKey: request.annotation.key,
-        });
+        yield* Effect.logDebug("Excerpt display has no image").pipe(
+          Effect.annotateLogs({ annotationKey: request.annotation.key }),
+        );
         return yield* new ExcerptUnavailable({
           annotationKey: request.annotation.key,
         });
@@ -253,6 +253,7 @@ export const layerExcerptDisplays = Layer.effect(
       const work: Effect.Effect<void> = Effect.all(
         [
           seed(slot),
+          // The TanStack edge: QueryClients reads through a QueryFunction alone.
           queries.read<AvailableExcerpt>(slot.key, ({ signal }) =>
             bridge.runPromise(resolve(request), { signal }),
           ),
@@ -346,10 +347,12 @@ export const layerExcerptDisplays = Layer.effect(
         yield* images.resolve(request);
       }).pipe(
         Effect.catch((error) =>
-          Effect.logDebug("Stored excerpt replacement failed", {
-            annotationKey: request.annotation.key,
-            error,
-          }),
+          Effect.logDebug("Stored excerpt replacement failed").pipe(
+            Effect.annotateLogs({
+              annotationKey: request.annotation.key,
+              error,
+            }),
+          ),
         ),
         Effect.ensuring(
           Ref.update(refreshes, (held) => {
