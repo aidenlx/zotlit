@@ -559,7 +559,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
   )(function* (): Effect.fn.Return<
     CitationTemplateStatus,
     TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
+    Vault
   > {
     yield* attempt(() => coreRequireLoaded("getCitationTemplateStatus"));
     const path = citationPath(coreCurrentTemplateFolder());
@@ -575,11 +575,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
   });
   const materializeCitationTemplate = Effect.fn(
     "Template.core.materializeCitationTemplate",
-  )(function* (): Effect.fn.Return<
-    TFile,
-    TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
-  > {
+  )(function* (): Effect.fn.Return<TFile, TemplateFailure, Vault> {
     yield* attempt(() => coreRequireLoaded("materializeCitationTemplate"));
     const path = citationPath(coreCurrentTemplateFolder());
     const existing = yield* (yield* Vault).getFileByPath(path);
@@ -591,11 +587,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
   });
   const restoreCitationTemplate = Effect.fn(
     "Template.core.restoreCitationTemplate",
-  )(function* (): Effect.fn.Return<
-    void,
-    TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
-  > {
+  )(function* (): Effect.fn.Return<void, TemplateFailure, Vault | FileManager> {
     yield* attempt(() => coreRequireLoaded("restoreCitationTemplate"));
     const file = yield* (yield* Vault).getFileByPath(
       citationPath(coreCurrentTemplateFolder()),
@@ -816,11 +808,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
   )(function* (
     reference: string,
     options: { includeFolders?: boolean } = {},
-  ): Effect.fn.Return<
-    string,
-    TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
-  > {
+  ): Effect.fn.Return<string, TemplateFailure, Vault | Workspace> {
     yield* attempt(() => coreRequireLoaded("exportLiteratureNotePack"));
     const reconciled = state.literatureNoteDocuments.get(reference);
     if (!reconciled) {
@@ -854,11 +842,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
       /** Reports a name no partial answers instead of failing the export. */
       onMissingPartial?: (name: string) => void;
     } = {},
-  ): Effect.fn.Return<
-    string,
-    TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
-  > {
+  ): Effect.fn.Return<string, TemplateFailure, Vault | Workspace> {
     yield* attempt(() => coreRequireLoaded("exportLiteratureNotePackSource"));
     const partials = (yield* Effect.forEach(
       [...state.winners.entries()],
@@ -902,11 +886,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
     );
   });
   const refresh = Effect.fn("Template.core.refresh")(
-    function* (): Effect.fn.Return<
-      void,
-      TemplateFailure,
-      Vault | FileManager | Workspace | PluginSettings
-    > {
+    function* (): Effect.fn.Return<void, TemplateFailure, Vault> {
       yield* coreRebuildFolder(coreCurrentTemplateFolder());
       yield* coreSettle();
     },
@@ -914,11 +894,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
   const waitUntilSettled = Effect.fn("Template.core.waitUntilSettled")(
     function* (
       timeoutMs: number,
-    ): Effect.fn.Return<
-      SettleOutcome,
-      TemplateFailure,
-      Vault | FileManager | Workspace | PluginSettings
-    > {
+    ): Effect.fn.Return<SettleOutcome, never, never> {
       if (timeoutMs <= 0) return "timeout";
       if (state.initFailed) return "init-failed";
       if (state.closed || coreIsSettled()) return "settled";
@@ -1090,7 +1066,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
   ): Effect.fn.Return<
     PartialUnpackOutcome,
     TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
+    Vault | Workspace
   > {
     yield* attempt(() => coreRequireLoaded("unpackPartials"));
     const replace = new Set(options.replace);
@@ -1145,8 +1121,10 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
       step: LiteratureNotePartialUnpack,
     ): Effect.fn.Return<
       boolean,
-      TemplateFailure,
-      Vault | FileManager | Workspace | PluginSettings
+      | VaultError
+      | VaultFolderBlockedError
+      | import("@/lib/effect-live-text").LiveTextRewriteFailed,
+      Vault | Workspace
     > {
       if (step.verdict === "conflict") {
         const held = coreHeldPartialName(step.name);
@@ -1189,11 +1167,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
   const createPartial = Effect.fn("Template.core.createPartial")(function* (
     name: string,
     options: { source?: string; language?: TemplateLanguage } = {},
-  ): Effect.fn.Return<
-    TFile,
-    TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
-  > {
+  ): Effect.fn.Return<TFile, TemplateFailure, Vault> {
     yield* attempt(() => coreRequireLoaded("createPartial"));
     const refusal = partialNameRefusal(name, state.partialNames);
     if (refusal)
@@ -1215,11 +1189,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
   });
   const deletePartial = Effect.fn("Template.core.deletePartial")(function* (
     name: string,
-  ): Effect.fn.Return<
-    void,
-    TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
-  > {
+  ): Effect.fn.Return<void, TemplateFailure, Vault | FileManager> {
     yield* attempt(() => coreRequireLoaded("deletePartial"));
     const file = yield* (yield* Vault).getFileByPath(
       partialPath(coreCurrentTemplateFolder(), name),
@@ -1281,11 +1251,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
   const getTemplateSource = Effect.fn("Template.core.getTemplateSource")(
     function* (
       name: TemplateName,
-    ): Effect.fn.Return<
-      string,
-      TemplateFailure,
-      Vault | FileManager | Workspace | PluginSettings
-    > {
+    ): Effect.fn.Return<string, TemplateFailure, Vault> {
       yield* attempt(() => coreRequireLoaded("getTemplateSource"));
       const winner = state.winners.get(name) ?? EMBEDDED_DEFAULT_WINNER;
       if (winner.source.kind === "vault") {
@@ -1338,7 +1304,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
   ): Effect.fn.Return<
     ConvertedLegacyTemplateDocuments,
     TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
+    Vault
   > {
     yield* attempt(() => coreRequireLoaded("convertLegacyTemplateDocuments"));
     const folder = coreCurrentTemplateFolder();
@@ -1445,13 +1411,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
   }
   const coreReadLegacyTemplateFile = Effect.fn(
     "Template.core.coreReadLegacyTemplateFile",
-  )(function* (
-    path: string,
-  ): Effect.fn.Return<
-    string,
-    TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
-  > {
+  )(function* (path: string): Effect.fn.Return<string, TemplateFailure, Vault> {
     const file = yield* (yield* Vault).getFileByPath(path);
     if (!file) {
       return yield* Effect.fail(
@@ -1475,11 +1435,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
     readonly note: object;
     readonly filename: object;
     readonly annotation?: object;
-  }): Effect.fn.Return<
-    ConvertedLegacyProfileDocument,
-    TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
-  > {
+  }): Effect.fn.Return<ConvertedLegacyProfileDocument, TemplateFailure, Vault> {
     yield* attempt(() =>
       coreRequireLoaded("convertLegacyLiteratureNoteTemplates"),
     );
@@ -1555,11 +1511,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
     "Template.core.setJavascriptTemplatesEnabled",
   )(function* (
     enabled: boolean,
-  ): Effect.fn.Return<
-    void,
-    TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
-  > {
+  ): Effect.fn.Return<void, TemplateFailure, Vault> {
     yield* attempt(() => coreRequireLoaded("setJavascriptTemplatesEnabled"));
     if (enabled === state.javascriptTemplatesEnabled) return;
 
@@ -1575,8 +1527,8 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
   });
   const load = Effect.fn("Template.core.load")(function* (): Effect.fn.Return<
     void,
-    TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
+    never,
+    Vault | PluginSettings
   > {
     const snapshot = yield* (yield* PluginSettings).current;
     state.settings.current = snapshot;
@@ -1604,11 +1556,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
   const onSettingsChanged = Effect.fn("Template.core.onSettingsChanged")(
     function* (
       settings: Readonly<Settings>,
-    ): Effect.fn.Return<
-      void,
-      TemplateFailure,
-      Vault | FileManager | Workspace | PluginSettings
-    > {
+    ): Effect.fn.Return<void, never, Vault> {
       if (state.closed) return;
       state.settings.current = settings;
       const folder = normalizeVaultPath(settings["template.folder"]);
@@ -1642,89 +1590,82 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
     },
   );
   const coreRebuildFolder = Effect.fn("Template.core.coreRebuildFolder")(
-    function* (
-      folder: string,
-    ): Effect.fn.Return<
-      void,
-      TemplateFailure,
-      Vault | FileManager | Workspace | PluginSettings
-    > {
-      state.settlingTasks += 1;
-      yield* Effect.gen(function* () {
-        const generation = ++state.folderGeneration;
-        coreCancelFlush();
-        for (const bucket of templateWorkBuckets(state.pending)) bucket.clear();
-        state.shadowed.clear();
-        state.inertEta.clear();
-        state.winners.clear();
-        state.partials.clear();
-        state.inertPartials.clear();
-        state.partialNames.clear();
-        state.reservedPartialFiles.clear();
-        state.citation = null;
-        state.unrecognizedFiles.clear();
-        state.facade.reset();
-        state.compileErrors.clear();
-        state.literatureNoteDocuments.clear();
-        state.literatureNoteDocumentErrors.clear();
-        state.loadedDocumentSources.clear();
+    function* (folder: string): Effect.fn.Return<void, never, Vault> {
+      yield* Effect.acquireUseRelease(
+        Effect.sync(() => {
+          state.settlingTasks += 1;
+        }),
+        () =>
+          Effect.gen(function* () {
+            const generation = ++state.folderGeneration;
+            coreCancelFlush();
+            for (const bucket of templateWorkBuckets(state.pending))
+              bucket.clear();
+            state.shadowed.clear();
+            state.inertEta.clear();
+            state.winners.clear();
+            state.partials.clear();
+            state.inertPartials.clear();
+            state.partialNames.clear();
+            state.reservedPartialFiles.clear();
+            state.citation = null;
+            state.unrecognizedFiles.clear();
+            state.facade.reset();
+            state.compileErrors.clear();
+            state.literatureNoteDocuments.clear();
+            state.literatureNoteDocumentErrors.clear();
+            state.loadedDocumentSources.clear();
 
-        const root =
-          folder === ""
-            ? yield* (yield* Vault).getFolderByPath("/")
-            : yield* (yield* Vault).getFolderByPath(folder);
+            const root =
+              folder === ""
+                ? yield* (yield* Vault).getFolderByPath("/")
+                : yield* (yield* Vault).getFolderByPath(folder);
 
-        const work = emptyTemplateWork();
-        if (root) {
-          for (const child of root.children) {
-            if (child instanceof TFile) collectTemplatePath(work, child.path);
-          }
-        } else {
-          state.log(
-            "debug",
-            "Template folder not found; embedded defaults remain",
-            {
+            const work = emptyTemplateWork();
+            if (root) {
+              for (const child of root.children) {
+                if (child instanceof TFile)
+                  collectTemplatePath(work, child.path);
+              }
+            } else {
+              state.log(
+                "debug",
+                "Template folder not found; embedded defaults remain",
+                {
+                  folder,
+                },
+              );
+            }
+
+            for (const name of TEMPLATE_NAMES) {
+              if (!work.names.has(name)) coreUseDefault(name);
+            }
+            // Reconciled on every rebuild, file or none: with no document the
+            // built-in source registers, so `citation` always resolves to something.
+            work.citation.add(CITATION_TEMPLATE_NAME);
+
+            yield* coreReconcileWork(work, generation);
+            // A rebuild publishes after the settings snapshot reaches its other
+            // subscribers, as the previous asynchronous reconcile did.
+            yield* Effect.yieldNow;
+            if (generation !== state.folderGeneration) return;
+
+            yield* state.changed();
+            state.log("debug", "Template folder rebuilt", {
               folder,
-            },
-          );
-        }
-
-        for (const name of TEMPLATE_NAMES) {
-          if (!work.names.has(name)) coreUseDefault(name);
-        }
-        // Reconciled on every rebuild, file or none: with no document the
-        // built-in source registers, so `citation` always resolves to something.
-        work.citation.add(CITATION_TEMPLATE_NAME);
-
-        yield* coreReconcileWork(work, generation);
-        // A rebuild publishes after the settings snapshot reaches its other
-        // subscribers, as the previous asynchronous reconcile did.
-        yield* Effect.yieldNow;
-        if (generation !== state.folderGeneration) return;
-
-        yield* state.changed();
-        state.log("debug", "Template folder rebuilt", {
-          folder,
-          count: work.names.size,
-        });
-      }).pipe(
-        Effect.ensuring(
+              count: work.names.size,
+            });
+          }),
+        () =>
           Effect.sync(() => {
             state.settlingTasks -= 1;
             coreResolveSettledWaiters();
           }),
-        ),
       );
     },
   );
   const onCreateOrModify = Effect.fn("Template.core.onCreateOrModify")(
-    function* (
-      file: TAbstractFile,
-    ): Effect.fn.Return<
-      void,
-      TemplateFailure,
-      Vault | FileManager | Workspace | PluginSettings
-    > {
+    function* (file: TAbstractFile): Effect.fn.Return<void, never, never> {
       if (!(file instanceof TFile)) return;
       yield* coreQueueTemplatePath(file.path);
     },
@@ -1732,32 +1673,18 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
   const onRename = Effect.fn("Template.core.onRename")(function* (
     file: TAbstractFile,
     oldPathRaw: string,
-  ): Effect.fn.Return<
-    void,
-    TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
-  > {
+  ): Effect.fn.Return<void, never, never> {
     yield* coreQueueTemplatePath(oldPathRaw);
     if (file instanceof TFile) yield* coreQueueTemplatePath(file.path);
   });
   const onDelete = Effect.fn("Template.core.onDelete")(function* (
     file: TAbstractFile,
-  ): Effect.fn.Return<
-    void,
-    TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
-  > {
+  ): Effect.fn.Return<void, never, never> {
     yield* coreQueueTemplatePath(file.path);
   });
   const coreQueueTemplatePath = Effect.fn(
     "Template.core.coreQueueTemplatePath",
-  )(function* (
-    path: string,
-  ): Effect.fn.Return<
-    void,
-    TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
-  > {
+  )(function* (path: string): Effect.fn.Return<void, never, never> {
     const normalized = normalizeVaultPath(path);
     if (
       normalizeVaultPath(dirname(normalized)) !== coreCurrentTemplateFolder()
@@ -1768,11 +1695,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
     yield* coreScheduleFlush();
   });
   const coreScheduleFlush = Effect.fn("Template.core.coreScheduleFlush")(
-    function* (): Effect.fn.Return<
-      void,
-      TemplateFailure,
-      Vault | FileManager | Workspace | PluginSettings
-    > {
+    function* (): Effect.fn.Return<void, never, never> {
       if (state.closed || state.flushTimer !== null) return;
       state.flushTimer = yield* state.schedule(FLUSH_DEBOUNCE_MS, () => {
         state.flushTimer = null;
@@ -1781,30 +1704,29 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
     },
   );
   const flushPending = Effect.fn("Template.core.flushPending")(
-    function* (): Effect.fn.Return<
-      void,
-      TemplateFailure,
-      Vault | FileManager | Workspace | PluginSettings
-    > {
-      state.settlingTasks += 1;
-      yield* Effect.gen(function* () {
-        const generation = state.folderGeneration;
-        const work = takeTemplateWork(state.pending);
-        yield* coreReconcileWork(work, generation);
+    function* (): Effect.fn.Return<void, never, Vault> {
+      yield* Effect.acquireUseRelease(
+        Effect.sync(() => {
+          state.settlingTasks += 1;
+        }),
+        () =>
+          Effect.gen(function* () {
+            const generation = state.folderGeneration;
+            const work = takeTemplateWork(state.pending);
+            yield* coreReconcileWork(work, generation);
 
-        if (generation !== state.folderGeneration) return;
+            if (generation !== state.folderGeneration) return;
 
-        yield* state.changed();
-        state.log("debug", "Template flush completed", {
-          count: work.names.size,
-        });
-      }).pipe(
-        Effect.ensuring(
+            yield* state.changed();
+            state.log("debug", "Template flush completed", {
+              count: work.names.size,
+            });
+          }),
+        () =>
           Effect.sync(() => {
             state.settlingTasks -= 1;
             coreResolveSettledWaiters();
           }),
-        ),
       );
     },
   );
@@ -1812,11 +1734,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
     function* (
       work: TemplateWork,
       generation: number,
-    ): Effect.fn.Return<
-      void,
-      TemplateFailure,
-      Vault | FileManager | Workspace | PluginSettings
-    > {
+    ): Effect.fn.Return<void, never, Vault> {
       for (const path of work.unrecognizedPaths) {
         if (yield* (yield* Vault).getFileByPath(path)) {
           state.unrecognizedFiles.add(path);
@@ -1840,11 +1758,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
     function* (
       name: string,
       generation: number,
-    ): Effect.fn.Return<
-      void,
-      TemplateFailure,
-      Vault | FileManager | Workspace | PluginSettings
-    > {
+    ): Effect.fn.Return<void, never, Vault> {
       // Folder changes rebuild the full template set; stale reconciles from the
       // old folder must not redefine or drop templates loaded by a newer rebuild.
       if (generation !== state.folderGeneration) return;
@@ -1951,11 +1865,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
   )(function* (
     reference: string,
     generation: number,
-  ): Effect.fn.Return<
-    void,
-    TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
-  > {
+  ): Effect.fn.Return<void, never, Vault> {
     if (generation !== state.folderGeneration) return;
     const folder = coreCurrentTemplateFolder();
     const path = folder === "" ? reference : join(folder, reference);
@@ -2003,11 +1913,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
     function* (
       name: string,
       generation: number,
-    ): Effect.fn.Return<
-      void,
-      TemplateFailure,
-      Vault | FileManager | Workspace | PluginSettings
-    > {
+    ): Effect.fn.Return<void, never, Vault> {
       if (generation !== state.folderGeneration) return;
 
       const path = partialPath(coreCurrentTemplateFolder(), name);
@@ -2108,13 +2014,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
   );
   const coreReconcileCitation = Effect.fn(
     "Template.core.coreReconcileCitation",
-  )(function* (
-    generation: number,
-  ): Effect.fn.Return<
-    void,
-    TemplateFailure,
-    Vault | FileManager | Workspace | PluginSettings
-  > {
+  )(function* (generation: number): Effect.fn.Return<void, never, Vault> {
     if (generation !== state.folderGeneration) return;
 
     const name = CITATION_TEMPLATE_NAME;
@@ -2263,11 +2163,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
     }
   }
   const coreSettle = Effect.fn("Template.core.coreSettle")(
-    function* (): Effect.fn.Return<
-      void,
-      TemplateFailure,
-      Vault | FileManager | Workspace | PluginSettings
-    > {
+    function* (): Effect.fn.Return<void, TemplateFailure, never> {
       if ((yield* waitUntilSettled(SETTLE_TIMEOUT_MS)) !== "settled") {
         return yield* Effect.fail(
           templateFailure(
@@ -2510,7 +2406,7 @@ export type TemplateStatus = {
   | { readonly state: "loading" | "loaded" }
   | {
       readonly state: "init-failed";
-      readonly cause: Cause.Cause<TemplateFailure>;
+      readonly cause: Cause.Cause<never>;
     }
 );
 
@@ -2609,9 +2505,7 @@ export class Template extends Context.Service<
       },
     ): Effect.Effect<string, TemplateFailure>;
     readonly refresh: Effect.Effect<void, TemplateFailure>;
-    waitUntilSettled(
-      timeoutMs: number,
-    ): Effect.Effect<SettleOutcome, TemplateFailure>;
+    waitUntilSettled(timeoutMs: number): Effect.Effect<SettleOutcome>;
     readonly frontmatterFields: Effect.Effect<
       readonly CompiledFrontmatterField[],
       TemplateFailure
